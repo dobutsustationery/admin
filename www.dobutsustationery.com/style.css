@@ -2,18 +2,20 @@ body {
     background-color: rgb(225 225 225);
     color: white;
     min-height: 100vh;
+    font-family: "Ubuntu", sans-serif;
 }
 
 .hedgehog {
-    padding-top: 20px;
-    margin: 20px;
+    padding: 20px;
+    -margin: 20px;
 
 }
 
 .footer {
     background-color: rgb(102 102 102);
     padding: 2em;
-    color: rgb(172 170 171)
+    color: rgb(172 170 171);
+    font-family: "Ubuntu", sans-serif;
 }
 
 div {
@@ -38,6 +40,7 @@ span {
 
 .wrap {
     flex-wrap: wrap;
+    justify-content: center;
 }
 
 .filler {
@@ -62,6 +65,7 @@ span {
         1px -1px 3px white,
         -1px 1px 3px white,
         1px 1px 3px white;
+    margin-top: 1em;
 }
 
 .mountain {
@@ -84,6 +88,7 @@ span {
     box-shadow: 5px 3px 3px rgb(76 76 76);
     min-width: 10em;
     width: 10em;
+    opacity: 0.9;
 }
 
 .white {
@@ -102,8 +107,9 @@ span {
 
 .nudge {
     margin: 0;
-    margin-top: -1.2em;
+    margin-top: -1em;
     margin-left: 2.5em;
+    margin-bottom: 0.5em;
 }
 
 .nudgeleft {
@@ -122,6 +128,12 @@ span {
     margin-right: 15px;
     margin-bottom: 5px;
     width: 42px;
+}
+
+.iconlarge {
+    margin-right: 2px;
+    margin-bottom: 5px;
+    width: 55px;
 }
 
 .insta {
