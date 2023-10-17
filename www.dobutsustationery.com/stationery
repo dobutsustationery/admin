@@ -49,86 +49,78 @@
     </div>
     <div class="column mountain centered large">
         <span class="tagline">
-            Frequently Asked Questions
+            Stationery & Lifestyle Pack
         </span>
-
-        <p class="q">
-            Where are the products from?
-        </p>
-        <p class="a">
-            Each and every product was purchased from local suppliers in Tokyo, Japan!
-        </p>
-        <p class="q">
-            Where does Dobutsu Stationery ship?
-        </p>
-        <p class="a">
-            All European countries, The United States, Canada, Mexico, South America, Australia, New Zealand, Asia and
-            most countries in Africa. No one is excluded!
-            <span>
-                Shipping and handling costs for the monthly packs:
-            </span>
-            <span class="cost">
-                Europe: &euro;9
-            </span>
-            <span class="cost">
-                Other Countries: &euro;10
-            </span>
-            <span>
-                Shipping and handling costs for the Advent Calendar:
-            </span>
-            <span class="cost">
-                Europe: &euro;15
-            </span>
-            <span class="cost">
-                Other countries: &euro;18
-            </span>
-        </p>
-        <p class="q">
-            When are the monthly packs shipped?
-        </p>
-        <p class="a">
-            Monthly, between the 25th and the last day of each month.
+        <p>
+            This monthly pack includes not only a variety of stationery items, but also cute objects the Japanese use in their day-to-day lives.
             <br />
-            2023 Advent Calendars will be shipped twice in November.
             <br />
-            Subscribe and save! A 3-month subscription is discounted 10%.
+            <span class="cost">
+                Writing implements: pens, markers, highlighters, pencils
+            </span>
+            <span class="cost">
+                Sticker sheets
+            </span>
+            <span class="cost">
+                Unique flake stickers
+            </span>
+            <span class="cost">
+                Decorative tape strips
+            </span>
+            <span class="cost">
+                Washi tape
+            </span>
+            <span class="cost">
+                Notepads
+            </span>
+            <span class="cost">
+                Letter Sets
+            </span>
+            <span class="cost">
+                Gift cards and tags with envelopes
+            </span>
+            <span class="cost">
+                Clips
+            </span>
+            <span class="cost">
+                Sticky Notes
+            </span>
+            <span class="cost">
+                Glue
+            </span>
+            <span class="cost">
+                Postcards
+            </span>
+            <span class="cost">
+                Greeting cards
+            </span>
+            <span class="cost">
+                Lifestyle items: an ode to the Japanese and their unique ability to create a product for all needs. I don’t want to spoil the surprise by listing them, but they will surely bring a smile to your face.
+            </span>
+            <br/>
+            <br/>
+            Each pack includes 8-9 items plus a few free surprises.
         </p>
         <p class="q">
-            Is shipping tracked?
-        </p>
-        <p class="a">
-            Yes! All packages are shipped from our headquarters in Bulgaria via courier or Registered Post. A
-            tracking number will be provided to you as soon as your pack ships.
-        </p>
-        <p class="q">
-            How can I pay?
-        </p>
-        <p class="a">
-            PayPal or Bank Transfer. If you opt for the latter, please contact me at dobutsustationery@gmail.com and I
-            will provide you with the details.
-        </p>
-        </p>
-        <p class="q">
-            What is the Refund Policy?
-        </p>
-        <p class="a">
-            I do my best to ensure all items arrive undamaged, and refunds/replacements are offered on damaged items
-            only. Please contact me at dobutsustationery@gmail.com and I’ll make it right.
+            Cost: &euro;28 + shipping
+            <br />
+            <br />
+            Subscribe and save!
+            <br />
+            3-month subscription is discounted 10%
+            <br/>
         </p>
         <div class="wrap">
+        
             <span class="productboxsm">
                 <span class="mountaingrey filler">Journaling Pack</span>
-            </span>
-            <span class="productboxsm">
-                <span class="mountaingrey filler">Stationery and Lifestyle Pack</span>
-            </span>
+              </span>
             <span class="productboxsm">
                 <span class="mountaingrey filler">2023 Advent Calendar</span>
             </span>
         </div>
-        
-
-
+        <img class="biopic" src="images/product4.jpg" />
+        </span>
     </div>
     <span class="filler" />
     </div>
@@ -166,6 +158,7 @@
         <span>
             <span class="filler"></span>
             <a href="https://www.instagram.com/dobutsustationery">
+                <img class="iconlarge" src="images/FAQred1.png" alt="FAQ">
             </a>
             <span class="filler"></span>
         </span>
