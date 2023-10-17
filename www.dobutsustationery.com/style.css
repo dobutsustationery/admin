@@ -8,7 +8,17 @@ body {
 .hedgehog {
     padding: 20px;
     -margin: 20px;
+    max-width: 20vw;
 
+}
+
+.biopic {
+    max-width: 8em;
+    margin: 2em;
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 1em;
+    box-shadow: 1px 1px 5px rgb(225 225 225);
 }
 
 .footer {
@@ -66,6 +76,7 @@ span {
         -1px 1px 3px white,
         1px 1px 3px white;
     margin-top: 1em;
+    margin-bottom: 1em;
 }
 
 .mountain {
@@ -91,6 +102,20 @@ span {
     opacity: 0.9;
 }
 
+.productboxsm {
+    background: linear-gradient(rgb(255 235 235), rgb(250 125 121));
+    border-radius: 1.1em;
+    padding: 1em;
+    margin: 0.75em;
+    text-align: center;
+    box-shadow: 5px 3px 3px rgb(76 76 76);
+    min-width: 1em;
+    width: 7em;
+    opacity: 0.9;
+    font-size: small;
+    margin-top: 2.5em;
+}
+
 .white {
     color: white;
 }
@@ -108,7 +133,7 @@ span {
 .nudge {
     margin: 0;
     margin-top: -1em;
-    margin-left: 2.5em;
+    text-align: center;
     margin-bottom: 0.5em;
 }
 
@@ -118,6 +143,42 @@ span {
 
 .centered {
     text-align: center;
+}
+
+p {
+    text-align: justify;
+    padding: 1em;
+    background-color: white;
+    opacity: 0.85;
+    margin: 0;
+    padding-bottom: 0em;
+    font-size: medium;
+    line-height: 150%;
+}
+
+p:last-of-type {
+    padding-bottom: 1em;
+}
+
+.q {
+    font-weight: bold;
+}
+
+.a {
+    font-style: italic;
+    padding-top: 0;
+}
+
+.a>span {
+    font-style: normal;
+    font-size: 80%;
+    margin-left: 2em;
+    line-height: 140%;
+}
+
+span.cost {
+    display: list-item;
+    margin-left: 4em;
 }
 
 .bold {
