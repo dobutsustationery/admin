@@ -12,9 +12,30 @@ body {
 
 }
 
+a {
+    text-decoration: none;
+    color: rgb(250 125 121);
+}
+
+a:link {
+    
+}
+
+a:visited {
+    
+}
+
+a:hover {
+    color: rgb(250 125 121);
+}
+
+a:active {
+    
+}
+
 .biopic {
     max-width: 8em;
-    margin: 2em;
+    margin-bottom: 2em;
     margin-left: auto;
     margin-right: auto;
     border-radius: 1em;
@@ -97,9 +118,10 @@ span {
     margin: 1em;
     text-align: center;
     box-shadow: 5px 3px 3px rgb(76 76 76);
-    min-width: 10em;
-    width: 10em;
+    min-width: 1em;
+    width: 7em;
     opacity: 0.9;
+    font-size: 100%;
 }
 
 .productboxsm {
@@ -114,6 +136,15 @@ span {
     opacity: 0.9;
     font-size: small;
     margin-top: 2.5em;
+    margin-bottom: 2.5em;
+}
+
+.productbox:hover {
+    opacity: 1.0;
+}
+
+.productboxsm:hover {
+    opacity: 1.0;
 }
 
 .white {
@@ -146,7 +177,7 @@ span {
 }
 
 p {
-    text-align: justify;
+    text-align: left;
     padding: 1em;
     background-color: white;
     opacity: 0.85;
