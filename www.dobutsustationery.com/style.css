@@ -18,27 +18,21 @@ a {
     color: rgb(250 125 121);
 }
 
-a:link {
-    
-}
+a:link {}
 
-a:visited {
-    
-}
+a:visited {}
 
 a:hover {
     color: rgb(250 125 121);
 }
 
-a:active {
-    
-}
+a:active {}
 
 .biopic {
     max-width: 8em;
     margin-bottom: 2em;
-    margin-left: auto;
-    margin-right: auto;
+    margin-left: 0.65em;
+    margin-right: 0.65em;
     border-radius: 1em;
     box-shadow: 1px 1px 5px rgb(225 225 225);
 }
@@ -87,8 +81,9 @@ span {
 
 .title {
     text-align: center;
-    margin-top: 40px;
+    margin-top: 1vh;
     color: rgb(76 76 76);
+    font-size: 6vh;
 }
 
 .tagline {
@@ -250,4 +245,14 @@ span.cost {
     font-style: normal;
     font-weight: normal;
     src: local('Okashi italic'), url('Okashi-italic.woff') format('woff');
+}
+
+.hedgehogfiller {
+    opacity: 0;
+}
+
+@media screen and (max-width:600px) {
+    .hedgehogfiller {
+        display:none;
+    }
 }
