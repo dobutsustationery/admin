@@ -51,6 +51,10 @@
         <span class="tagline">
             Journaling Pack
         </span>
+        <div class="wrap">
+            <img class="biopic" src="images/journal2.jpg" />
+            </span>
+        </div>
         <p>
             Inside each themed and curated monthly pack, journalers (and scrapbookers) will find a themed variety of
             items guaranteed to make each page memorable.
@@ -75,7 +79,7 @@
             Each pack includes 8-9 items plus a few free surprises.
         </p>
         <p class="q">
-            Cost: &euro;27 + shipping
+            Cost: &euro;27 + <a href="faq.html">shipping</a>
             <br />
             <br />
             Subscribe and save!
@@ -85,42 +89,43 @@
         </p>
 
         <div id="paypal-button-container-P-04952890CG445715TMUYVQZA"></div>
-        <script src="https://www.paypal.com/sdk/js?client-id=Ac9zRLJ66jnQOysxqVslfYG6Ssf5I2Yo0_4p1pSDLyEqj4qTlDHwrATlBsYBgC5oBifP6wtUF4kNxJgo&vault=true&intent=subscription" data-sdk-integration-source="button-factory"></script>
+        <script
+            src="https://www.paypal.com/sdk/js?client-id=Ac9zRLJ66jnQOysxqVslfYG6Ssf5I2Yo0_4p1pSDLyEqj4qTlDHwrATlBsYBgC5oBifP6wtUF4kNxJgo&vault=true&intent=subscription"
+            data-sdk-integration-source="button-factory"></script>
         <script>
-          paypal.Buttons({
-              style: {
-                  shape: 'rect',
-                  color: 'gold',
-                  layout: 'horizontal',
-                  label: 'paypal'
-              },
-              createSubscription: function(data, actions) {
-                return actions.subscription.create({
-                  /* Creates the subscription */
-                  plan_id: 'P-04952890CG445715TMUYVQZA'
-                });
-              },
-              onApprove: function(data, actions) {
-                alert(data.subscriptionID); // You can add optional success message for the subscriber here
-              }
-          }).render('#paypal-button-container-P-04952890CG445715TMUYVQZA'); // Renders the PayPal button
+            paypal.Buttons({
+                style: {
+                    shape: 'rect',
+                    color: 'gold',
+                    layout: 'horizontal',
+                    label: 'paypal'
+                },
+                createSubscription: function (data, actions) {
+                    return actions.subscription.create({
+                        /* Creates the subscription */
+                        plan_id: 'P-04952890CG445715TMUYVQZA'
+                    });
+                },
+                onApprove: function (data, actions) {
+                    alert(data.subscriptionID); // You can add optional success message for the subscriber here
+                }
+            }).render('#paypal-button-container-P-04952890CG445715TMUYVQZA'); // Renders the PayPal button
         </script>
-        
+
 
         <div class="wrap">
-              <a href="stationery.html">
+            <a href="stationery.html">
                 <span class="productboxsm">
-                  <span class="mountaingrey filler">Stationery and Lifestyle Pack</span>
+                    <span class="mountaingrey filler">Stationery and Lifestyle Pack</span>
                 </span>
-              </a>
-              <a href="advent.html">
+            </a>
+            <a href="advent.html">
                 <span class="productboxsm">
-                  <span class="mountaingrey filler">2023 Advent Calendar</span>
+                    <span class="mountaingrey filler">2023 Advent Calendar</span>
                 </span>
-              </a>
+            </a>
         </div>
         <div class="wrap">
-            <img class="biopic" src="images/journal2.jpg" />
             <img class="biopic" src="images/journal4.jpg" />
             </span>
         </div>
@@ -149,7 +154,7 @@
                 by SCS Ltd.
             </div>
             <div>
-                Sofia 1526, Bulgaria
+                Sofia 1527, Bulgaria
             </div>
             <div>
                 BG205669335
@@ -161,7 +166,7 @@
             <span class="filler"></span>
             <a href="faq.html">
                 <img class="iconlarge" src="images/FAQred1.png" alt="FAQ">
-              </a>
+            </a>
             <span class="filler"></span>
         </span>
 
