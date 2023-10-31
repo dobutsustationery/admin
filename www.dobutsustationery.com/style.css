@@ -30,7 +30,7 @@ a:active {}
 
 .biopic {
     max-width: 8em;
-    margin-bottom: 2em;
+    margin-bottom: 1em;
     margin-left: 0.65em;
     margin-right: 0.65em;
     border-radius: 1em;
@@ -92,8 +92,9 @@ span {
         1px -1px 3px white,
         -1px 1px 3px white,
         1px 1px 3px white;
-    margin-top: 1em;
-    margin-bottom: 1em;
+    margin-top: 0.1em;
+    margin-bottom: 0.5em;
+    
 }
 
 .mountain {
@@ -192,13 +193,14 @@ border: 1px solid green;
 }
 label {
     text-align: left;
-    padding: 1em;
     background-color: white;
     opacity: 0.85;
     margin: 0;
-    padding-bottom: 0em;
+    padding-left: 1em;
+    padding-bottom: 0.3em;
     font-size: medium;
-    line-height: 150%;
+    display: inline-block;
+    vertical-align: middle;
 }
 
 .q {
@@ -267,6 +269,23 @@ span.cost {
 
 .hedgehogfiller {
     opacity: 0;
+}
+
+.paybutton>span {
+    max-width: 12em;
+    display:inline-block;
+}
+
+.paybutton {
+    text-align: left;
+    padding: 0;
+    padding-left: 3.5em;
+    margin: 0;
+}
+
+.pricing {
+    padding-top: 0.2em;
+    margin:0;
 }
 
 @media screen and (max-width:600px) {

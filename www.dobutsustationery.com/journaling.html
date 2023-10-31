@@ -1,30 +1,19 @@
 <!DOCTYPE html>
 <html style="font-size: 16px" lang="en">
-  <head>
+
+<head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta charset="utf-8" />
     <title>Dobutsu Stationery</title>
 
-    <link
-      id="u-theme-google-font"
-      rel="stylesheet"
-      href="../fonts.googleapis.com/css%3Ffamily=Roboto:100,100i,300,300i,400,400i,500,500i,700,700i,900,900i|Open+Sans:300,300i,400,400i,500,500i,600,600i,700,700i,800,800i.css"
-    />
-    <link
-      id="u-page-google-font"
-      rel="stylesheet"
-      href="../fonts.googleapis.com/css%3Ffamily=Ubuntu:300,300i,400,400i,500,500i,700,700i.css"
-    />
-    <link
-      rel="stylesheet"
-      type="text/css"
-      href="http://fonts.googleapis.com/css?family=Ubuntu:regular,bold&subset=Latin"
-    />
-    <link
-      rel="stylesheet"
-      type="text/css"
-      href="http://fonts.googleapis.com/css?family=Ubuntu:regular,bold&subset=Latin"
-    />
+    <link id="u-theme-google-font" rel="stylesheet"
+        href="../fonts.googleapis.com/css%3Ffamily=Roboto:100,100i,300,300i,400,400i,500,500i,700,700i,900,900i|Open+Sans:300,300i,400,400i,500,500i,600,600i,700,700i,800,800i.css" />
+    <link id="u-page-google-font" rel="stylesheet"
+        href="../fonts.googleapis.com/css%3Ffamily=Ubuntu:300,300i,400,400i,500,500i,700,700i.css" />
+    <link rel="stylesheet" type="text/css"
+        href="http://fonts.googleapis.com/css?family=Ubuntu:regular,bold&subset=Latin" />
+    <link rel="stylesheet" type="text/css"
+        href="http://fonts.googleapis.com/css?family=Ubuntu:regular,bold&subset=Latin" />
     <script type="application/ld+json">
       {
         "@context": "http://schema.org",
@@ -37,132 +26,122 @@
     <meta property="og:title" content="Dobutsu Stationery" />
     <meta property="og:type" content="website" />
     <link rel="stylesheet" type="text/css" href="style.css" />
-  </head>
+</head>
 
-  <body>
+<body>
     <div>
-      <span class="filler"></span>
-      <span class="hedgehogfiller">
-        <img class="hedgehog" src="images/HedgehogSmall.png" />
-        <span class="okashi small nudge" href="index.html">Home</span>
-      </span>
-      <span class="filler"></span>
-      <span>
-        <div class="filler"></div>
-        <div class="title okashi bold filler">Dobutsu Stationery</div>
-        <div class="filler"></div>
-      </span>
-      <span class="filler"></span>
-      <span style="opacity: 1">
-        <a href="index.html"
-          ><img class="hedgehog" src="images/HedgehogSmall.png"
-        /></a>
-        <a class="okashi small nudge" href="index.html">Home</a>
-      </span>
+        <span class="filler"></span>
+        <span class="hedgehogfiller">
+            <img class="hedgehog" src="images/HedgehogSmall.png" />
+            <span class="okashi small nudge" href="index.html">Home</span>
+        </span>
+        <span class="filler"></span>
+        <span>
+            <div class="filler"></div>
+            <div class="title okashi bold filler">Dobutsu Stationery</div>
+            <div class="filler"></div>
+        </span>
+        <span class="filler"></span>
+        <span style="opacity: 1">
+            <a href="index.html"><img class="hedgehog" src="images/HedgehogSmall.png" /></a>
+            <a class="okashi small nudge" href="index.html">Home</a>
+        </span>
     </div>
 
     <div class="column mountain centered large">
-      <span class="tagline"> Journaling Pack </span>
-      <div class="wrap">
-        <img class="biopic" src="images/journal2.jpg" />
-      </div>
-      <p>
-        Inside each themed and curated monthly pack, journalers (and
-        scrapbookers) will find a themed variety of items guaranteed to make
-        each page memorable.
-        <br />
-        <br />
-        <span class="cost">
-          Writing implements: pens, markers, highlighters, pencils
-        </span>
-        <span class="cost"> Sticker sheets </span>
-        <span class="cost"> Unique flake stickers </span>
-        <span class="cost"> Decorative tape strips </span>
-        <span class="cost"> Washi tape </span>
-        <br />
-        Each pack includes 8-9 items plus a few free surprises.
-      </p>
+        <span class="tagline"> Journaling Pack </span>
+        <div class="wrap">
+            <img class="biopic" src="images/journal2.jpg" />
+        </div>
+        <p>
+            Each pack includes 8-9 items plus a few free surprises.
+        </p>
+        <p class="pricing">
+            <input type="radio" id="single" name="product" value="single-journaling" /><label for="single">
+                1 month: &euro;27 + &euro;9 <a href="faq.html">shipping</a>
+            </label>
+        </p>
+        <p class="pricing">
+            <input type="radio" checked="true" id="subscribe" name="product" value="subscribe-journaling" /><label
+                for="subscribe">
+                Subscribe &amp; save 10% for 3 months! <br />&euro;72.90 +
+                &euro;27 <a href="faq.html">shipping</a>
+        </p>
+        <p class="paybutton">
+            <span id="paypal-button-container-1"></span>
+        </p>
+        <script
+            src="https://www.paypal.com/sdk/js?client-id=ASWfSDWObYvx6suKzLmQfCwJONtIulskHEJ4MRJKKr4bw2gyWJv_qn9wv20ZEhj-qpH4J2l3RlxisTiL&currency=EUR"></script>
+        <script src="paypal/payments.js"></script>
+        <script>
+            buy();
+        </script>
+        <span class="filler" id="result-message-1"></span>
+        
+        <p>
+            Inside each curated monthly pack, journalers (and
+            scrapbookers) will find a themed variety of items guaranteed to make
+            each page memorable.
+            <br />
+            <br />
+            <span class="cost">
+                Writing implements: pens, markers, highlighters, pencils
+            </span>
+            <span class="cost"> Sticker sheets </span>
+            <span class="cost"> Unique flake stickers </span>
+            <span class="cost"> Decorative tape strips </span>
+            <span class="cost"> Washi tape </span>
+            <br />
 
-      <p>
-        <input
-          type="radio"
-          id="single"
-          name="product"
-          value="single-journaling"
-        /><label for="single">
-          Single Pack: &euro;27 + <a href="faq.html">&euro;9 shipping</a>
-        </label>
-      </p>
-      <p>
-        <input
-          type="radio"
-          checked="true"
-          id="subscribe"
-          name="product"
-          value="subscribe-journaling"
-        /><label for="subscribe">
-          Save 10% with 3 packs! &euro;72.90 +
-          <a href="faq.html">&euro;27 shipping</a> = &euro;99.90
-        </label>
-      </p>
-
-      <div id="paypal-button-container-1"></div>
-      <script src="https://www.paypal.com/sdk/js?client-id=ASWfSDWObYvx6suKzLmQfCwJONtIulskHEJ4MRJKKr4bw2gyWJv_qn9wv20ZEhj-qpH4J2l3RlxisTiL&currency=EUR"></script>
-      <script src="paypal/payments.js"></script>
-      <script>
-        buy();
-      </script>
-      <span class="filler" id="result-message-1"></span>
-
-      <div class="wrap">
-        <a href="stationery.html">
-          <span class="productboxsm">
-            <span class="mountaingrey filler"
-              >Stationery and Lifestyle Pack</span
-            >
-          </span>
-        </a>
-        <a href="advent.html">
-          <span class="productboxsm">
-            <span class="mountaingrey filler">2023 Advent Calendar</span>
-          </span>
-        </a>
-      </div>
-      <div class="wrap">
-        <img class="biopic" src="images/journal4.jpg" />
-      </div>
-      <span class="filler"></span>
+        </p>
+        <div class="wrap">
+            <a href="stationery.html">
+                <span class="productboxsm">
+                    <span class="mountaingrey filler">Stationery and Lifestyle Pack</span>
+                </span>
+            </a>
+            <a href="advent.html">
+                <span class="productboxsm">
+                    <span class="mountaingrey filler">2023 Advent Calendar</span>
+                </span>
+            </a>
+        </div>
+        <div class="wrap">
+            <img class="biopic" src="images/journal4.jpg" />
+        </div>
+        <span class="filler"></span>
     </div>
     <div class="footer">
-      <div class="column">
-        <span>
-          <a href="mailto:dobutsustationery@gmail.com">
-            <img class="icon" src="images/Gmail.png" />
-          </a>
-        </span>
-        <span>
-          <a href="https://www.instagram.com/dobutsustationery">
-            <img class="icon" src="images/1409946.png" alt="Instagram" />
-          </a>
-        </span>
-      </div>
-      <span class="filler"></span>
-      <span>
-        <div class="filler"></div>
-        <div>Dobutsu Stationery</div>
-        <div>by SCS Ltd.</div>
-        <div>Sofia 1527, Bulgaria</div>
-        <div>BG205669335</div>
-        <div class="filler"></div>
-      </span>
-      <span class="filler"></span>
-      <span>
+        <div class="column">
+            <span>
+                <a href="mailto:dobutsustationery@gmail.com">
+                    <img class="icon" src="images/Gmail.png" />
+                </a>
+            </span>
+            <span>
+                <a href="https://www.instagram.com/dobutsustationery">
+                    <img class="icon" src="images/1409946.png" alt="Instagram" />
+                </a>
+            </span>
+        </div>
         <span class="filler"></span>
-        <a href="faq.html">
-          <img class="iconlarge" src="images/FAQred1.png" alt="FAQ" />
-        </a>
+        <span>
+            <div class="filler"></div>
+            <div>Dobutsu Stationery</div>
+            <div>by SCS Ltd.</div>
+            <div>Sofia 1527, Bulgaria</div>
+            <div>BG205669335</div>
+            <div class="filler"></div>
+        </span>
         <span class="filler"></span>
-      </span>
+        <span>
+            <span class="filler"></span>
+            <a href="faq.html">
+                <img class="iconlarge" src="images/FAQred1.png" alt="FAQ" />
+            </a>
+            <span class="filler"></span>
+        </span>
     </div>
-  </body>
+</body>
+
 </html>

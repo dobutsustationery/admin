@@ -53,7 +53,26 @@
         </span>
         <p>
             I love advent calendars, don’t you? The sheer anticipation of having a new surprise every day is an
-            unparalleled feeling. This 25-day Advent Calendar includes one item for each day, up to and including
+            unparalleled feeling.
+        </p>
+        <p class="pricing">
+            <input type="radio" checked="true" id="subscribe" name="product" value="advent-2023" /><label
+                for="subscribe">
+                Cost: &euro;75 + 
+                &euro;27 <a href="faq.html">shipping</a>
+        </p>
+        <p class="paybutton">
+            <span id="paypal-button-container-1"></span>
+        </p>
+        <script
+            src="https://www.paypal.com/sdk/js?client-id=ASWfSDWObYvx6suKzLmQfCwJONtIulskHEJ4MRJKKr4bw2gyWJv_qn9wv20ZEhj-qpH4J2l3RlxisTiL&currency=EUR"></script>
+        <script src="paypal/payments.js"></script>
+        <script>
+            buy();
+        </script>
+        <span class="filler" id="result-message-1"></span>
+        <p>
+            This 25-day Advent Calendar includes one item for each day, up to and including
             Christmas Day:
             <br />
             <br />
@@ -101,11 +120,7 @@
                 don’t want to spoil the surprise by listing them, but they will surely bring a smile to your face.
             </span>
         </p>
-        <p class="q">
-            Cost: &euro;75 + <a href="faq.html">shipping</a>
-            <br />
-            <br />
-        </p>
+        
         <div class="wrap">
             <a href="journaling.html">
                 <span class="productboxsm">

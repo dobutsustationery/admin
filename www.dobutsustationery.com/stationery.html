@@ -55,7 +55,31 @@
             <img class="biopic" src="images/product4.jpg" />
         </div>
         <p>
-            This monthly pack includes not only a variety of stationery items, but also cute objects the Japanese use in
+            Each pack includes 8-9 items plus a few free surprises.
+        </p>
+        <p class="pricing">
+            <input type="radio" id="single" name="product" value="single-stationery" /><label for="single">
+                1 month: &euro;28 + &euro;9 <a href="faq.html">shipping</a>
+            </label>
+        </p>
+        <p class="pricing">
+            <input type="radio" checked="true" id="subscribe" name="product" value="subscribe-stationery" /><label
+                for="subscribe">
+                Subscribe &amp; save 10% for 3 months! <br />&euro;75.60 +
+                &euro;27 <a href="faq.html">shipping</a>
+        </p>
+        <p class="paybutton">
+            <span id="paypal-button-container-1"></span>
+        </p>
+        <script
+            src="https://www.paypal.com/sdk/js?client-id=ASWfSDWObYvx6suKzLmQfCwJONtIulskHEJ4MRJKKr4bw2gyWJv_qn9wv20ZEhj-qpH4J2l3RlxisTiL&currency=EUR"></script>
+        <script src="paypal/payments.js"></script>
+        <script>
+            buy();
+        </script>
+        <span class="filler" id="result-message-1"></span>
+        <p>
+            This monthly pack includes both a variety of stationery items as well as cute objects the Japanese use in
             their day-to-day lives.
             <br />
             <br />
@@ -103,17 +127,8 @@
                 don’t want to spoil the surprise by listing them, but they will surely bring a smile to your face.
             </span>
             <br />
-            Each pack includes 8-9 items plus a few free surprises.
         </p>
-        <p class="q">
-            Cost: &euro;28 + <a href="faq.html">shipping</a>
-            <br />
-            <br />
-            Subscribe and save!
-            <br />
-            3-month subscription is discounted 10%
-            <br />
-        </p>
+        
         <div class="wrap">
             <a href="journaling.html">
                 <span class="productboxsm">
