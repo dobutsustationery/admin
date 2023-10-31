@@ -187,6 +187,20 @@ p:last-of-type {
     padding-bottom: 1em;
 }
 
+input {
+border: 1px solid green;
+}
+label {
+    text-align: left;
+    padding: 1em;
+    background-color: white;
+    opacity: 0.85;
+    margin: 0;
+    padding-bottom: 0em;
+    font-size: medium;
+    line-height: 150%;
+}
+
 .q {
     font-weight: bold;
 }
