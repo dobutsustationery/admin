@@ -10,7 +10,7 @@ window.buy = () => {
       },
       async createOrder() {
         const choices = document.getElementsByTagName('input');
-        const selectedProduct = Object.keys(choices).filter(k => choices[k].computedRole === 'radio' && choices[k].checked);
+        const selectedProduct = Object.keys(choices).filter(k => choices[k].checked);
         const product = choices[selectedProduct[0]].value;
 
         try {
