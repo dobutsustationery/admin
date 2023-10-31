@@ -228,6 +228,10 @@ span.cost {
     color: rgb(39 38 37)
 }
 
+.paybox {
+    border: 4px solid green;
+}
+
 .redbox {
     border: 1px solid red;
 }
