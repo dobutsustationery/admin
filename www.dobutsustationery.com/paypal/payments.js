@@ -83,7 +83,7 @@ window.buy = () => {
               orderData?.purchase_units?.[0]?.payments?.captures?.[0] ||
               orderData?.purchase_units?.[0]?.payments?.authorizations?.[0];
             resultMessage(
-              `Transaction ${transaction.status}: ${transaction.id}<br><br>See console for all available details`
+              `<a href="${orderData.links[0].href}>Thank you for your purchase!</a>`
             );
             console.log(
               "Capture result",

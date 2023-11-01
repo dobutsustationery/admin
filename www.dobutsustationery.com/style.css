@@ -188,6 +188,18 @@ p:last-of-type {
     padding-bottom: 1em;
 }
 
+#result-message-1 {
+    text-align: left;
+    background-color: white;
+    opacity: 0.85;
+    margin: 0;
+    padding-left: 3.75em;
+    padding-bottom: 0em;
+    font-size: medium;
+    font-weight: bold;
+    line-height: 150%;
+}
+
 input {
 border: 1px solid green;
 }
@@ -291,5 +303,10 @@ span.cost {
 @media screen and (max-width:600px) {
     .hedgehogfiller {
         display:none;
+    }
+    .productbox {
+        padding: 1em;
+        margin: 0.5em;
+        font-size: 80%;
     }
 }
