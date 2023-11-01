@@ -82,8 +82,9 @@ window.buy = () => {
             const transaction =
               orderData?.purchase_units?.[0]?.payments?.captures?.[0] ||
               orderData?.purchase_units?.[0]?.payments?.authorizations?.[0];
+            const base = orderData.links[0].href.split("v2")[0].replaceAll("api.","www.");
             resultMessage(
-              `<a href="${orderData.links[0].href}">Thank you for your purchase!</a>`
+              `<a href="${base}myaccount/activities/details/${orderData.id}">Thank you for your purchase!</a>`
             );
             console.log(
               "Capture result",
