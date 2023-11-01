@@ -197,6 +197,7 @@ p:last-of-type {
     padding-bottom: 0em;
     font-size: medium;
     font-weight: bold;
+    color: rgb(76 76 76);
     line-height: 150%;
 }
 
