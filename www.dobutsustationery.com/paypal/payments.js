@@ -69,7 +69,7 @@ window.buy = () => {
             // (1) Recoverable INSTRUMENT_DECLINED -> call actions.restart()
             // recoverable state, per https://developer.paypal.com/docs/checkout/standard/customize/handle-funding-failures/
             // return actions.restart();
-            throw new Error("Payment declined &emdash; please try again");
+            throw new Error("Payment declined &#8212; please try again");
           } else if (errorDetail) {
             // (2) Other non-recoverable errors -> Show a failure message
             throw new Error(
@@ -95,7 +95,7 @@ window.buy = () => {
         } catch (error) {
           console.error(error);
           resultMessage(
-            `Sorry, your transaction could not be processed...<br><br>${error}`
+            `Sorry, your transaction could not be processed...<br>${error}`
           );
         }
       },
