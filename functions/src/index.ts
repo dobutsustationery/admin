@@ -3,8 +3,8 @@ import * as admin from "firebase-admin";
 //import { CollectionReference, DocumentData } from "firebase-admin/firestore";
 
 // TODO: hit real API
-const base = "https://api-m.sandbox.paypal.com";
-const { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, ROOT_COLLECTION } = process.env;
+const { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, ROOT_COLLECTION, BASE_URL } = process.env;
+const base = BASE_URL;
 
 admin.initializeApp();
 
