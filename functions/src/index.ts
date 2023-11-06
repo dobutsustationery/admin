@@ -100,8 +100,8 @@ const paypalOrder = async (cart: any) => {
 			discount: 0,
 			quantity: 1,
 			subtotal: 75,
-			shipping: 27,
-			grandTotal: 102,
+			shipping: 17,
+			grandTotal: 92,
 		},
 		{
 			name: "Journaling Pack",
