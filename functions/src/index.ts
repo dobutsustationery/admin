@@ -3,7 +3,8 @@ import * as admin from "firebase-admin";
 //import { CollectionReference, DocumentData } from "firebase-admin/firestore";
 
 // TODO: hit real API
-const { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, ROOT_COLLECTION, BASE_URL } = process.env;
+const { PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, ROOT_COLLECTION, BASE_URL } =
+	process.env;
 const base = BASE_URL;
 
 admin.initializeApp();
@@ -100,8 +101,8 @@ const paypalOrder = async (cart: any) => {
 			discount: 0,
 			quantity: 1,
 			subtotal: 75,
-			shipping: 27,
-			grandTotal: 102,
+			shipping: 17,
+			grandTotal: 92,
 		},
 		{
 			name: "Journaling Pack",
