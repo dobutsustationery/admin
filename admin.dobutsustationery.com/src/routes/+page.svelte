@@ -1,7 +1,7 @@
 <script lang="ts">
   import BarcodeScanner from "$lib/BarcodeScanner.svelte";
-  import Signin from "$lib/Signin.svelte";
   import substrings from "common-substrings";
+  import { Signin } from "@ourway/svelte-firebase-auth";
 
   function user(e: CustomEvent) {
     console.log("CUSTOM EVENT: ", e);

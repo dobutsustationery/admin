@@ -1,10 +1,9 @@
 <script lang="ts">
-  import Signin from "$lib/Signin.svelte";
   import { doc, setDoc } from "firebase/firestore";
-  import type { User } from "$lib/auth";
   import { firestore } from "$lib/firebase"
 
   import { auth, googleAuthProvider } from "$lib/firebase";
+  import { Signin, type User } from "@ourway/svelte-firebase-auth";
 
   let me: User = { signedIn: false };
   function user(e: CustomEvent) {

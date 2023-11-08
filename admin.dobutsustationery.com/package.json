@@ -46,6 +46,7 @@
   "type": "module",
   "dependencies": {
     "@firebase/auth": "^1.3.2",
+    "@ourway/svelte-firebase-auth": "^0.0.1",
     "@sveltejs/adapter-static": "^2.0.3",
     "@zxing/library": "^0.20.0",
     "common-substrings": "^3.0.1",
