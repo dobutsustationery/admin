@@ -1,6 +1,7 @@
 <script lang="ts">
   import BarcodeScanner from "$lib/BarcodeScanner.svelte";
   import Signin from "$lib/Signin.svelte";
+  import substrings from "common-substrings";
 
   function user(e: CustomEvent) {
     console.log("CUSTOM EVENT: ", e);
@@ -9,8 +10,10 @@
   import { auth, googleAuthProvider } from "$lib/firebase";
   import { get } from "$lib/http";
 
-  let result = "No scan yet";
+  let janCode = "No scan yet";
+  let subtype = "";
   let hsCode = "39199080";
+  let description = "";
   let qty = "10";
   let dirty = true;
   let imageItems: any[] = [];
@@ -19,15 +22,24 @@
     newResult(e.detail);
   }
   function blur() {
-    newResult(result);
+    newResult(janCode);
   }
   async function newResult(r: string) {
-    result = r;
-    const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${result}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
+    janCode = r;
+    const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
 
     const images = await get(imgSearch);
     console.log({ images });
     imageItems = images.items;
+    if (imageItems) {
+      const stringArray = imageItems.map((x) => x.title);
+      const substrs = substrings(stringArray);
+      substrs.sort((a, b) => b.weight - a.weight);
+      console.log({ stringArray, substrs });
+      description = substrs[0].name;
+    } else {
+      imageItems = [];
+    }
     dataURL = "";
     selectedPic = 0;
   }
@@ -57,7 +69,7 @@
     }
   }
 
-  $: if (result) {
+  $: if (janCode) {
     dirty = true;
   }
   $: if (qty) {
@@ -112,18 +124,26 @@
   </div>
   <label>
     JAN Code:
-    <input type="text" bind:value={result} on:blur={blur} />
+    <input type="text" bind:value={janCode} on:blur={blur} />
+  </label>
+  <label>
+    Subtype:
+    <input type="text" bind:value={subtype} />
+  </label>
+  <label>
+    Description:<br/>
+    <textarea bind:value={description} rows="4" cols="25"/>
   </label>
   <label>
     HS Code:
-    <input type="text" bind:value={hsCode}/>
+    <input type="text" bind:value={hsCode} />
   </label>
   <label>
     Quantity:
-    <input type="text" bind:value={qty}/>
+    <input type="text" bind:value={qty} />
   </label>
   {#if dirty}
-     <button on:click={save}>Save</button>
+    <button on:click={save}>Save</button>
   {/if}
   <div class="filler" />
   <div>
