@@ -3,15 +3,16 @@
   import substrings from "common-substrings";
   import { Signin } from "@ourway/svelte-firebase-auth";
 
-  function user(e: CustomEvent) {
-    console.log("CUSTOM EVENT: ", e);
-  }
-
-  import { auth, googleAuthProvider } from "$lib/firebase";
+  import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { get } from "$lib/http";
+  import ComboBox from "$lib/ComboBox.svelte";
+  import { broadcast } from "$lib/redux-firestore";
+  import { user } from "$lib/globals";
+  import { update_item } from "$lib/inventory";
 
   let janCode = "No scan yet";
   let subtype = "";
+  let pieces = "";
   let hsCode = "39199080";
   let description = "";
   let qty = "10";
@@ -81,6 +82,12 @@
 
   function save() {
     dirty = false;
+    const id = janCode + subtype;
+    const image = dataURL || imageItems[selectedPic].link;
+    const item = {
+      janCode, subtype, description, hsCode, image, qty: +qty, pieces: +pieces
+    };
+    broadcast(firestore, $user.uid, update_item({id, item}));
   }
 </script>
 
@@ -126,28 +133,23 @@
     JAN Code:
     <input type="text" bind:value={janCode} on:blur={blur} />
   </label>
-  <label>
-    Subtype:
-    <input type="text" bind:value={subtype} />
-  </label>
+  <ComboBox id="Subtype" bind:value={subtype}/>
+  <ComboBox id="Pieces" bind:value={pieces}/>
   <label>
     Description:<br/>
     <textarea bind:value={description} rows="4" cols="25"/>
   </label>
-  <label>
-    HS Code:
-    <input type="text" bind:value={hsCode} />
-  </label>
+  <ComboBox id="HS Code" bind:value={hsCode}/>
   <label>
     Quantity:
     <input type="text" bind:value={qty} />
   </label>
   {#if dirty}
-    <button on:click={save}>Save</button>
+    <button on:click={save}>Add to Inventory</button>
   {/if}
   <div class="filler" />
   <div>
-    <Signin {auth} {googleAuthProvider} on:user_changed={user} />
+    <Signin {auth} {googleAuthProvider} />
   </div>
 </div>
 

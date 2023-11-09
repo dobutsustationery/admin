@@ -41,7 +41,7 @@
     const videoInputDevices = await codeReader.listVideoInputDevices();
     let selectedDeviceId = videoInputDevices[0].deviceId;
     const scanner = new Audio("/scanner-beep.mp3");
-    scanner.play();
+    //scanner.play();
     codeReader.decodeFromVideoDevice(
       selectedDeviceId,
       "video",
@@ -53,7 +53,7 @@
             console.log(`New Result: ${result}`);
             dispatchEvent("barcode", result);
             //scanner.src = "/scanner-beep.mp3";
-            scanner.play();
+            //scanner.play();
             /*
   const imageSearchKey = "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q";
             const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${result}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
@@ -86,9 +86,23 @@
     if (canvasElement && videoElement) {
       const canvas = canvasElement as HTMLCanvasElement;
       const video = videoElement as HTMLVideoElement;
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      let outputWidth = 200;
+      let outputHeight = 200;
+      const aspect = w/h;
+      if (aspect > 1.0) {
+        outputHeight = outputHeight / aspect;
+      } else {
+        outputWidth = outputWidth * aspect;
+      }
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
       var context = canvas.getContext("2d");
       if (context) {
-        context.drawImage(video, 0, 0, 220, 150);
+        console.log({w: video.videoWidth, h: video.videoHeight})
+        context.drawImage(video, 0, 0, outputWidth, outputHeight);
+        //context.drawImage(video, 0, 0, 200, 200);
         var dataURL = canvas.toDataURL();
         dispatchEvent("snapshot", dataURL);
         const sound = new Audio("/shutter.mp3");
