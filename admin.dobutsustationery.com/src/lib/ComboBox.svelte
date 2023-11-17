@@ -21,7 +21,7 @@
 </script>
 
 <label
-  >{id} <input type="text" name="myFruit" id="myFruit" list={id} bind:value on:blur={recordValue}/>
+  >{id} <input type="text" list={id} bind:value on:blur={recordValue}/>
   <datalist {id}>
     {#each state.names.nameIdToNames[id] || [] as name}
       <option>{name}</option>

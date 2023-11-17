@@ -8,6 +8,7 @@
   import type { AnyAction } from "@reduxjs/toolkit";
   import { watchBroadcastActions } from "$lib/redux-firestore";
   import { store } from "$lib/store";
+  import { logTime } from "$lib/timing";
 
   let me: User = { signedIn: false };
   let loading = true;
@@ -31,23 +32,37 @@
 
   const executedActions: { [k: string]: AnyAction } = {};
   const confirmedActions: { [k: string]: AnyAction } = {};
+  let unsyncedActions = 0;
+  logTime('about to watchBroadcastActions');
   watchBroadcastActions(firestore, (changes) => {
+    logTime(`  watchBroadcastActions received ${changes.length} actions.`);
     changes.forEach((change) => {
       const action = change.doc.data() as AnyAction;
       const id = change.doc.id;
       if (executedActions[id] === undefined) {
-        console.log(JSON.stringify(action));
         executedActions[id] = action;
         store.dispatch(action);
       }
       if (action.timestamp !== null) {
         confirmedActions[id] = action;
       }
+      unsyncedActions = Object.keys(executedActions).length - Object.keys(confirmedActions).length;
     });
   });
+  /*
+  const delayLimit = 100000000;
+  for (let delay = 0; delay < delayLimit; ++delay) {
+    if (delay % (delayLimit / 10) === 0) {
+      logTime('twiddling our thumbs')
+    }
+  }
+  */
 </script>
 
 {#if me.signedIn}
+  {#if unsyncedActions}
+    <div>{unsyncedActions}</div>
+  {/if}
   <slot />
 {:else}
   <p class:loading>Loading...</p>
@@ -57,6 +72,18 @@
 {/if}
 
 <style>
+  div {
+    width: 1em;
+    height: 1em;
+    line-height: 1em;
+    text-align: center;
+    background-color: red;
+    color: ivory;
+    font-weight: bold;
+    border-radius: 50%;
+    padding: 0.5em;
+    float: right;
+  }
   p {
     display: none;
   }
