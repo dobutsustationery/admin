@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte";
   import { firestore } from "./firebase";
   import { user } from "./globals";
   import { create_name } from "./names";
@@ -6,22 +7,48 @@
   import { store } from "./store";
 
   export let id: string = "";
-  export let value: string = "";
+  export let label: string | null = null;
+  export let value: string | null = "";
   let state = store.getState();
+
+  const dispatchEvent = createEventDispatcher();
   $: if ($store) {
     state = store.getState();
   }
 
+  function getLabel() {
+    return label === null ? id : label;
+  }
+
   function recordValue() {
-    if (!state.names.nameIdToNames[id] || state.names.nameIdToNames[id].indexOf(value) === -1) {
-      console.log({state, index:state.names.nameIdToNames[id]?.indexOf(value), value, id  })
-        broadcast(firestore, $user.uid, create_name({id, name: value}));
+    if (value !== null) {
+      if (
+        !state.names.nameIdToNames[id] ||
+        state.names.nameIdToNames[id].indexOf(value) === -1
+      ) {
+        broadcast(firestore, $user.uid, create_name({ id, name: value }));
+      }
+      dispatchEvent("value", value);
+    }
+  }
+  function handleEnterKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      const target = e.target as HTMLInputElement;
+      target.blur();
     }
   }
 </script>
 
 <label
-  >{id} <input type="text" list={id} bind:value on:blur={recordValue}/>
+  >{getLabel()}
+  <input
+    size="12"
+    type="text"
+    list={id}
+    bind:value
+    on:blur={recordValue}
+    on:keyup={handleEnterKey}
+  />
   <datalist {id}>
     {#each state.names.nameIdToNames[id] || [] as name}
       <option>{name}</option>

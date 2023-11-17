@@ -27,9 +27,9 @@ export const names = createReducer(initialState, (r) => {
   r.addCase(remove_name, (state, action) => {
     const { id, name } = action.payload;
     if (!state.nameIdToNames[id]) {
-        return;
+      return;
     }
-    state.nameIdToNames[id] = state.nameIdToNames[id].filter(x => name !== x);
+    state.nameIdToNames[id] = state.nameIdToNames[id].filter((x) => name !== x);
     state.nameIdToNames[id].sort();
   });
 });

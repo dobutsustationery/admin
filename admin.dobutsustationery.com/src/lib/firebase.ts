@@ -1,6 +1,10 @@
 import { GoogleAuthProvider, getAuth } from "@firebase/auth";
 import { initializeApp } from "firebase/app";
-import { initializeFirestore, persistentLocalCache } from "firebase/firestore";
+import {
+  connectFirestoreEmulator,
+  initializeFirestore,
+  persistentLocalCache,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q",
@@ -18,3 +22,8 @@ export const googleAuthProvider = new GoogleAuthProvider();
 export const firestore = initializeFirestore(app, {
   localCache: persistentLocalCache(),
 });
+
+if (!import.meta.env.PROD) {
+  connectFirestoreEmulator(firestore, "localhost", 8080);
+  console.warn("DEVELOPMENT mode for firestore");
+}
