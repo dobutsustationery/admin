@@ -24,6 +24,6 @@ export const firestore = initializeFirestore(app, {
 });
 
 if (!import.meta.env.PROD) {
-  connectFirestoreEmulator(firestore, "localhost", 8080);
-  console.warn("DEVELOPMENT mode for firestore");
+  //connectFirestoreEmulator(firestore, "localhost", 8080);
+  //console.warn("DEVELOPMENT mode for firestore");
 }

@@ -84,7 +84,13 @@ export const inventory = createReducer(initialState, (r) => {
       (i) => i.itemKey === itemKey,
     );
     if (existingItem.length > 0) {
-      existingItem[0].qty = qty;
+      if (qty > 0) {
+        existingItem[0].qty = qty;
+      } else {
+        state.orderIdToOrder[orderID].items = state.orderIdToOrder[
+          orderID
+        ].items.filter((i) => i.itemKey !== itemKey);
+      }
     } else {
       state.orderIdToOrder[orderID].items.push({ itemKey, qty });
     }

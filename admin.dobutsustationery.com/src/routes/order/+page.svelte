@@ -11,6 +11,8 @@
   let state = store.getState();
 
   $: orderID = $page.url.searchParams.get("orderId");
+  $: email = $page.url.searchParams.get("email");
+  $: product = $page.url.searchParams.get("product");
 
   let orderItems: LineItem[] = [];
   $: if ($store) {
@@ -71,7 +73,7 @@
 </script>
 
 <BarcodeScanner on:barcode={barcode} on:snapshot={snapshot} />
-<p>Order: {orderID}</p>
+<p>Order: {product} ({orderID}) for {email}</p>
 <table>
   <thead
     ><tr>
