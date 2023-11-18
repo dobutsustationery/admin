@@ -79,6 +79,9 @@
   $: if (hsCode) {
     dirty = true;
   }
+  $: if (subtype) {
+    dirty = true;
+  }
 
   function save() {
     dirty = false;
