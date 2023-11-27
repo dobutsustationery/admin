@@ -70,6 +70,7 @@
       }
     };
   }
+  $: orderItemsR = [...orderItems].reverse();
 </script>
 
 <BarcodeScanner on:barcode={barcode} on:snapshot={snapshot} />
@@ -84,7 +85,7 @@
       <th>Quantity</th>
     </tr></thead
   >
-  {#each orderItems as k, i}
+  {#each orderItemsR as k, i}
     <OrderRow
       key={k.itemKey}
       row={i}

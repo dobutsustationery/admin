@@ -60,6 +60,14 @@ export const inventory = createReducer(initialState, (r) => {
   });
   r.addCase(update_field, (state, action) => {
     state.idToItem[action.payload.id][action.payload.field] = action.payload.to;
+    if (action.payload.field === 'qty') {
+      const q = state.idToItem[action.payload.id][action.payload.field];
+      // type mismatch issue TODO
+      if (q == 0) {
+        // remove item from inventory
+        delete state.idToItem[action.payload.id];
+      }
+    }
   });
   r.addCase(package_item, (state, action) => {
     const { itemKey, qty, orderID } = action.payload;
@@ -100,17 +108,21 @@ export const inventory = createReducer(initialState, (r) => {
     if (state.orderIdToOrder[orderID] === undefined) {
       state.orderIdToOrder[orderID] = { id: orderID, items: [] };
     }
-    state.orderIdToOrder[orderID].items = state.orderIdToOrder[
-      orderID
-    ].items.filter((i) => i.itemKey !== itemKey);
     const newItemKey = `${janCode}${subtype}`;
-    const existingItem = state.orderIdToOrder[orderID].items.filter(
-      (i) => i.itemKey === newItemKey,
-    );
-    if (existingItem.length > 0) {
-      existingItem[0].qty += qty;
+    if (newItemKey !== itemKey) {
+      state.orderIdToOrder[orderID].items = state.orderIdToOrder[
+        orderID
+      ].items.filter((i) => i.itemKey !== itemKey);
+      const existingItem = state.orderIdToOrder[orderID].items.filter(
+        (i) => i.itemKey === newItemKey,
+      );
+      if (existingItem.length > 0) {
+        existingItem[0].qty += qty;
+      } else {
+        state.orderIdToOrder[orderID].items.push({ itemKey: newItemKey, qty });
+      }
     } else {
-      state.orderIdToOrder[orderID].items.push({ itemKey: newItemKey, qty });
+      console.error(`${itemKey} vs ${newItemKey}`);
     }
   });
 });
