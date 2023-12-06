@@ -8,6 +8,7 @@ export interface Item {
   image: string;
   qty: number;
   pieces: number;
+  shipped: number;
 }
 export interface LineItem {
   itemKey: string;
@@ -56,11 +57,15 @@ export const initialState: InventoryState = {
 
 export const inventory = createReducer(initialState, (r) => {
   r.addCase(update_item, (state, action) => {
-    state.idToItem[action.payload.id] = action.payload.item;
+    const id = action.payload.id;
+    state.idToItem[id] = { ...action.payload.item };
+    if (state.idToItem[id].shipped === undefined) {
+      state.idToItem[id].shipped = 0;
+    }
   });
   r.addCase(update_field, (state, action) => {
     state.idToItem[action.payload.id][action.payload.field] = action.payload.to;
-    if (action.payload.field === 'qty') {
+    if (action.payload.field === "qty") {
       const q = state.idToItem[action.payload.id][action.payload.field];
       // type mismatch issue TODO
       if (q == 0) {
@@ -82,6 +87,9 @@ export const inventory = createReducer(initialState, (r) => {
     } else {
       state.orderIdToOrder[orderID].items.push({ itemKey, qty });
     }
+    if (state.idToItem[itemKey] !== undefined) {
+      state.idToItem[itemKey].shipped += qty;
+    }
   });
   r.addCase(quantify_item, (state, action) => {
     const { itemKey, qty, orderID } = action.payload;
@@ -91,7 +99,9 @@ export const inventory = createReducer(initialState, (r) => {
     const existingItem = state.orderIdToOrder[orderID].items.filter(
       (i) => i.itemKey === itemKey,
     );
+    let priorQty = 0;
     if (existingItem.length > 0) {
+      priorQty = existingItem[0].qty;
       if (qty > 0) {
         existingItem[0].qty = qty;
       } else {
@@ -101,6 +111,9 @@ export const inventory = createReducer(initialState, (r) => {
       }
     } else {
       state.orderIdToOrder[orderID].items.push({ itemKey, qty });
+    }
+    if (state.idToItem[itemKey] !== undefined) {
+      state.idToItem[itemKey].shipped += qty - priorQty;
     }
   });
   r.addCase(retype_item, (state, action) => {

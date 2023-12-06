@@ -7,7 +7,6 @@
   import { store } from "./store";
 
     export let key: string = "";
-    export let row: number = -1;
 
     let state = store.getState();
     let item: Item | null = null;
@@ -34,7 +33,7 @@
 </script>
 
 {#if key && item !== null}
-    <tr class={row % 2 === 0 ? "even" : "odd"}>
+    <tr>
         <td>{item.janCode}</td>
         <td>{item.subtype}</td>
         <td><input class="description" type="text" on:blur={updateField(key, item, "description")} on:keyup={handleEnterKey} value={item.description}></td>
@@ -42,12 +41,13 @@
         <td><ComboBox label="" value={item.hsCode} id="HSCode" on:value={updateField(key, item, "hsCode")}/></td>
         <td><input class="pieces" type="number" on:blur={updateField(key, item, "pieces")} on:keyup={handleEnterKey} value={item.pieces}></td>
         <td><input class="qty" type="number" on:blur={updateField(key, item, "qty")} on:keyup={handleEnterKey} value={item.qty}></td>
-        <td class="total">{item.pieces > 0 ? item.pieces*item.qty : item.qty}</td>
+        <td>{item.shipped}</td>
+        <td class="total">{(item.pieces > 0 ? item.pieces*item.qty : item.qty) - item.shipped}</td>
     </tr>
 {/if}
 
 <style>
-    .odd {
+    tr:nth-child(odd) {
         background-color: bisque;
     }
 
