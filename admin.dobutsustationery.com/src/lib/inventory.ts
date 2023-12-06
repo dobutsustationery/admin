@@ -15,6 +15,9 @@ export interface LineItem {
   qty: number;
 }
 export interface OrderInfo {
+  date: Date;
+  email?: string;
+  product?: string;
   id: string;
   items: LineItem[];
 }
@@ -32,6 +35,12 @@ export const update_field = createAction<{
   from: string | number;
   to: string | number;
 }>("update_field");
+export const new_order = createAction<{
+  orderID: string;
+  date: Date;
+  email: string;
+  product: string;
+}>("new_order");
 export const package_item = createAction<{
   orderID: string;
   itemKey: string;
@@ -74,10 +83,31 @@ export const inventory = createReducer(initialState, (r) => {
       }
     }
   });
+  r.addCase(new_order, (state, action) => {
+    const orderID = action.payload.orderID;
+    const email = action.payload.email;
+    const date = action.payload.date;
+    const product = action.payload.product;
+    let items: LineItem[] = [];
+    if (state.orderIdToOrder[orderID]) {
+      items = [...state.orderIdToOrder[orderID].items];
+    }
+    state.orderIdToOrder[orderID] = {
+      id: orderID,
+      items,
+      email,
+      product,
+      date,
+    };
+  });
   r.addCase(package_item, (state, action) => {
     const { itemKey, qty, orderID } = action.payload;
     if (state.orderIdToOrder[orderID] === undefined) {
-      state.orderIdToOrder[orderID] = { id: orderID, items: [] };
+      let date = new Date();
+      if (action.timestamp) {
+        date = new Date(action.timestamp.seconds * 1000);
+      }
+      state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
     }
     const existingItem = state.orderIdToOrder[orderID].items.filter(
       (i) => i.itemKey === itemKey,
@@ -94,7 +124,8 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(quantify_item, (state, action) => {
     const { itemKey, qty, orderID } = action.payload;
     if (state.orderIdToOrder[orderID] === undefined) {
-      state.orderIdToOrder[orderID] = { id: orderID, items: [] };
+      const date = new Date();
+      state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
     }
     const existingItem = state.orderIdToOrder[orderID].items.filter(
       (i) => i.itemKey === itemKey,
@@ -119,7 +150,8 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(retype_item, (state, action) => {
     const { itemKey, subtype, orderID, janCode, qty } = action.payload;
     if (state.orderIdToOrder[orderID] === undefined) {
-      state.orderIdToOrder[orderID] = { id: orderID, items: [] };
+      const date = new Date();
+      state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
     }
     const newItemKey = `${janCode}${subtype}`;
     if (newItemKey !== itemKey) {
