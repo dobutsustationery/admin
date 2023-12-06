@@ -18,6 +18,15 @@ service cloud.firestore {
     match /broadcast/{action} {
       // Force data's creator to be uid
       allow write: if request.auth != null && request.resource.data.creator == request.auth.uid;
+      allow delete: if request.auth != null;
+      allow read: if request.auth != null;
+		}
+    match /jailed/{action} {
+      // Force data's creator to be uid
+      allow write: if request.auth != null;
+      allow read: if request.auth != null;
+		}
+    match /dobutsu/{document=**} {
       allow read: if request.auth != null;
 		}
 	}

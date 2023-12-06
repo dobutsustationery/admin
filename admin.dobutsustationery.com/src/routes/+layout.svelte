@@ -1,7 +1,13 @@
 <script lang="ts">
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/globals";
-  import { doc, setDoc } from "firebase/firestore";
+  import {
+    addDoc,
+    collection,
+    deleteDoc,
+    doc,
+    setDoc,
+  } from "firebase/firestore";
 
   import { auth, googleAuthProvider } from "$lib/firebase";
   import { Signin, type User } from "@ourway/svelte-firebase-auth";
@@ -33,7 +39,7 @@
   const executedActions: { [k: string]: AnyAction } = {};
   const confirmedActions: { [k: string]: AnyAction } = {};
   let unsyncedActions = 0;
-  logTime('about to watchBroadcastActions');
+  logTime("about to watchBroadcastActions");
   watchBroadcastActions(firestore, (changes) => {
     logTime(`  watchBroadcastActions received ${changes.length} actions.`);
     changes.forEach((change) => {
@@ -41,12 +47,35 @@
       const id = change.doc.id;
       if (executedActions[id] === undefined) {
         executedActions[id] = action;
+        if (action.type === "retype_item") {
+          const itemKey = action.payload.itemKey;
+          const newItemKey = action.payload.janCode + action.payload.subtype;
+          if (itemKey == newItemKey) {
+            console.error("bad retype item detected: ", JSON.stringify(action));
+            setDoc(doc(firestore, `jailed/${id}`), action)
+              .then(() => {
+                console.log(`jail complete for ${id}`);
+              })
+              .catch((err) => {
+                console.error(`JAILED ERROR for ${id}: `, err);
+              });
+            deleteDoc(change.doc.ref)
+              .then(() => {
+                console.log(`deletion of jailed item complete for ${id}`);
+              })
+              .catch((err) => {
+                console.error(`DELETE ERROR for ${id}: `, err);
+              });
+          }
+        }
         store.dispatch(action);
       }
       if (action.timestamp !== null) {
         confirmedActions[id] = action;
       }
-      unsyncedActions = Object.keys(executedActions).length - Object.keys(confirmedActions).length;
+      unsyncedActions =
+        Object.keys(executedActions).length -
+        Object.keys(confirmedActions).length;
     });
   });
   /*
