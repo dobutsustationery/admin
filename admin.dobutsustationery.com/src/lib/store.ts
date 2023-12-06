@@ -2,6 +2,7 @@ import { configureStore } from "@reduxjs/toolkit";
 import type { Writable } from "svelte/store";
 import { names } from "./names";
 import { inventory } from "./inventory";
+import { history } from "./history";
 
 function svelteStoreEnhancer(createStoreApi: (arg0: any, arg1: any) => any) {
   return function (reducer: any, initialState: any) {
@@ -22,6 +23,7 @@ function svelteStoreEnhancer(createStoreApi: (arg0: any, arg1: any) => any) {
 const reducer = {
   names,
   inventory,
+  history,
 };
 
 const reduxStore = configureStore({
