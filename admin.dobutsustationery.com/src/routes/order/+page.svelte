@@ -85,7 +85,7 @@
       <th>Quantity</th>
     </tr></thead
   >
-  {#each orderItemsR as k, i}
+  {#each orderItemsR as k , i (k.itemKey)}
     <OrderRow
       key={k.itemKey}
       row={i}
