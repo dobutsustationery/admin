@@ -79,6 +79,8 @@ export const inventory = createReducer(initialState, (r) => {
       // type mismatch issue TODO
       if (q == 0) {
         // remove item from inventory
+        // TODO: don't delete the item, instead verify that it
+        // is removed from the display by the shipped vs qty check
         delete state.idToItem[action.payload.id];
       }
     }
@@ -114,8 +116,10 @@ export const inventory = createReducer(initialState, (r) => {
     );
     if (existingItem.length > 0) {
       existingItem[0].qty += qty;
+      console.log(`Package existing item ${existingItem[0].itemKey} to ${existingItem[0].qty} (of ${existingItem.length} items) for ${orderID}`)
     } else {
       state.orderIdToOrder[orderID].items.push({ itemKey, qty });
+      console.log(`Create item ${itemKey} to ${qty} for order ${orderID}`)
     }
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty;
@@ -168,6 +172,10 @@ export const inventory = createReducer(initialState, (r) => {
       }
     } else {
       console.error(`${itemKey} vs ${newItemKey}`);
+    }
+    if (state.idToItem[itemKey] !== undefined && state.idToItem[newItemKey] !== undefined) {
+      state.idToItem[itemKey].shipped -= qty;
+      state.idToItem[newItemKey].shipped += qty;
     }
   });
 });
