@@ -15,7 +15,6 @@
   function updateOrderInfo() {
     const state = store.getState();
     const orderIds = Object.keys(state.inventory.orderIdToOrder);
-    console.log('ORDER IDs ', orderIds)
     orderInfo = [];
     for (const id of orderIds) {
       const email = state.inventory.orderIdToOrder[id].email || "";
@@ -45,9 +44,8 @@
           const dateStr = data.payment.purchase_units[0].payments.captures[0].create_time;
           const date = new Date(dateStr);
           const units = data.payment.purchase_units;
-          console.log({ units, dateStr, pay: data.payment, data, email, item, id });
           const state = store.getState();
-          if (state.inventory.orderIdToOrder[id].email === undefined) {
+          if (state.inventory.orderIdToOrder[id]?.email === undefined) {
             store.dispatch(new_order({orderID: id, date, email, product: item}));
           }
         }
