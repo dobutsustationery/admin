@@ -116,10 +116,10 @@ export const inventory = createReducer(initialState, (r) => {
     );
     if (existingItem.length > 0) {
       existingItem[0].qty += qty;
-      console.log(`Package existing item ${existingItem[0].itemKey} to ${existingItem[0].qty} (of ${existingItem.length} items) for ${orderID}`)
+      //console.log(`Package existing item ${existingItem[0].itemKey} to ${existingItem[0].qty} (of ${existingItem.length} items) for ${orderID}`)
     } else {
       state.orderIdToOrder[orderID].items.push({ itemKey, qty });
-      console.log(`Create item ${itemKey} to ${qty} for order ${orderID}`)
+      //console.log(`Create item ${itemKey} to ${qty} for order ${orderID}`)
     }
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty;
@@ -173,7 +173,10 @@ export const inventory = createReducer(initialState, (r) => {
     } else {
       console.error(`${itemKey} vs ${newItemKey}`);
     }
-    if (state.idToItem[itemKey] !== undefined && state.idToItem[newItemKey] !== undefined) {
+    if (
+      state.idToItem[itemKey] !== undefined &&
+      state.idToItem[newItemKey] !== undefined
+    ) {
       state.idToItem[itemKey].shipped -= qty;
       state.idToItem[newItemKey].shipped += qty;
     }
