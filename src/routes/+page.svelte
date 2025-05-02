@@ -1,103 +1,126 @@
 <script lang="ts">
-import BarcodeScanner from "$lib/BarcodeScanner.svelte";
-import Signin from "$lib/Signin.svelte";
-import substrings from "common-substrings";
+  import BarcodeScanner from "$lib/BarcodeScanner.svelte";
+  import Signin from "$lib/Signin.svelte";
+  import substrings from "common-substrings";
 
-import ComboBox from "$lib/ComboBox.svelte";
-import { auth, firestore, googleAuthProvider } from "$lib/firebase";
-import { user } from "$lib/globals";
-import { get } from "$lib/http";
-import { update_item } from "$lib/inventory";
-import { broadcast } from "$lib/redux-firestore";
+  import ComboBox from "$lib/ComboBox.svelte";
+  import { auth, firestore, googleAuthProvider } from "$lib/firebase";
+  import { user } from "$lib/globals";
+  import { get } from "$lib/http";
+  import { update_item } from "$lib/inventory";
+  import { broadcast } from "$lib/redux-firestore";
+  import { store } from "$lib/store";
 
-let janCode = "No scan yet";
-let subtype = "";
-let pieces = "";
-let hsCode = "39199080";
-let description = "";
-let qty = "10";
-let dirty = true;
-let imageItems: any[] = [];
-async function barcode(e: CustomEvent) {
-  console.log(`New Result: ${e}`, e);
-  newResult(e.detail);
-}
-function blur() {
-  newResult(janCode);
-}
-async function newResult(r: string) {
-  janCode = r;
-  const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
-
-  const images = await get(imgSearch);
-  console.log({ images });
-  imageItems = images.items;
-  if (imageItems) {
-    const stringArray = imageItems.map((x) => x.title);
-    const substrs = substrings(stringArray);
-    substrs.sort((a, b) => b.weight - a.weight);
-    console.log({ stringArray, substrs });
-    description = substrs[0].name;
-  } else {
-    imageItems = [];
+  let janCode = "No scan yet";
+  let subtype = "";
+  let pieces = "";
+  let hsCode = "39199080";
+  let description = "";
+  let qty = "10";
+  let dirty = true;
+  let imageItems: any[] = [];
+  async function barcode(e: CustomEvent) {
+    console.log(`New Result: ${e}`, e);
+    newResult(e.detail);
   }
-  dataURL = "";
-  selectedPic = 0;
-}
+  function blur() {
+    newResult(janCode);
+  }
+  let otherSubtypes: string[] = [];
+  async function newResult(r: string) {
+    const state = store.getState();
+    let key = r;
+    const allKeys = Object.keys(state.inventory.idToItem);
+    otherSubtypes = allKeys.filter((x) => x.startsWith(r));
+    if (!state.inventory.idToItem[key]) {
+      if (otherSubtypes.length > 0) {
+        key = otherSubtypes[0];
+      }
+    }
+    otherSubtypes = otherSubtypes.map((x) => {
+      const item = state.inventory.idToItem[x];
+      return item.subtype;
+    });
+    if (state.inventory.idToItem[key]) {
+      const item = state.inventory.idToItem[key];
+      janCode = item.janCode;
+      subtype = item.subtype;
+      hsCode = item.hsCode;
+      description = item.description;
+    } else {
+      janCode = r;
+      const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
 
-let dataURL = "";
-function snapshot(e: CustomEvent) {
-  dataURL = e.detail;
-}
+      const images = await get(imgSearch);
+      console.log({ images });
+      imageItems = images.items;
+      if (imageItems) {
+        const stringArray = imageItems.map((x) => x.title);
+        const substrs = substrings(stringArray);
+        substrs.sort((a, b) => b.weight - a.weight);
+        console.log({ stringArray, substrs });
+        description = substrs[0].name;
+      } else {
+        imageItems = [];
+      }
+      dataURL = "";
+      selectedPic = 0;
+    }
+  }
 
-const imageSearchKey = "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q";
-const picWidth = 140;
-let selectedPic = 0;
-function chooseImage(i: number) {
-  return () => {
-    selectedPic = i;
-    dropdownOpen = "";
-    dataURL = "";
+  let dataURL = "";
+  function snapshot(e: CustomEvent) {
+    dataURL = e.detail;
+  }
+
+  const imageSearchKey = "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q";
+  const picWidth = 140;
+  let selectedPic = 0;
+  function chooseImage(i: number) {
+    return () => {
+      selectedPic = i;
+      dropdownOpen = "";
+      dataURL = "";
+      dirty = true;
+    };
+  }
+  let dropdownOpen = "";
+  function toggleDropdown() {
+    if (dropdownOpen) {
+      dropdownOpen = "";
+    } else {
+      dropdownOpen = "ddopen";
+    }
+  }
+
+  $: if (janCode) {
     dirty = true;
-  };
-}
-let dropdownOpen = "";
-function toggleDropdown() {
-  if (dropdownOpen) {
-    dropdownOpen = "";
-  } else {
-    dropdownOpen = "ddopen";
   }
-}
+  $: if (qty) {
+    dirty = true;
+  }
+  $: if (hsCode) {
+    dirty = true;
+  }
+  $: if (subtype) {
+    dirty = true;
+  }
 
-$: if (janCode) {
-  dirty = true;
-}
-$: if (qty) {
-  dirty = true;
-}
-$: if (hsCode) {
-  dirty = true;
-}
-$: if (subtype) {
-  dirty = true;
-}
-
-function save() {
-  dirty = false;
-  const id = janCode + subtype;
-  const image = dataURL || imageItems[selectedPic].link;
-  const item = {
-    janCode,
-    subtype,
-    description,
-    hsCode,
-    image,
-    qty: +qty,
-    pieces: +pieces,
-  };
-  broadcast(firestore, $user.uid, update_item({ id, item }));
-}
+  function save() {
+    dirty = false;
+    const id = janCode + subtype;
+    const image = dataURL || imageItems[selectedPic].link;
+    const item = {
+      janCode,
+      subtype,
+      description,
+      hsCode,
+      image,
+      qty: +qty,
+      pieces: +pieces,
+    };
+    broadcast(firestore, $user.uid, update_item({ id, item }));
+  }
 </script>
 
 <div class="column fullheight">
@@ -142,13 +165,16 @@ function save() {
     JAN Code:
     <input type="text" bind:value={janCode} on:blur={blur} />
   </label>
-  <ComboBox id="Subtype" bind:value={subtype}/>
-  <ComboBox id="Pieces" bind:value={pieces}/>
+  {#if otherSubtypes.length > 0}
+    <p>Other Subtypes: {otherSubtypes.join(" | ")}</p>
+  {/if}
+  <ComboBox id="Subtype" bind:value={subtype} />
+  <ComboBox id="Pieces" bind:value={pieces} />
   <label>
-    Description:<br/>
-    <textarea bind:value={description} rows="4" cols="25"/>
+    Description:<br />
+    <textarea bind:value={description} rows="4" cols="25" />
   </label>
-  <ComboBox id="HS Code" bind:value={hsCode}/>
+  <ComboBox id="HS Code" bind:value={hsCode} />
   <label>
     Quantity:
     <input type="text" bind:value={qty} />
