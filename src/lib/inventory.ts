@@ -23,6 +23,7 @@ export interface OrderInfo {
 }
 export interface InventoryState {
   idToItem: { [key: string]: Item };
+  archivedInventoryState: { [key: string]: InventoryState };
   orderIdToOrder: { [key: string]: OrderInfo };
 }
 
@@ -58,10 +59,43 @@ export const retype_item = createAction<{
   subtype: string;
   qty: number;
 }>("retype_item");
+export const rename_subtype = createAction<{
+  itemKey: string;
+  subtype: string;
+}>("rename_subtype");
+export const delete_empty_order = createAction<{
+  orderID: string;
+}>("delete_empty_order");
+export const archive_inventory = createAction<{
+  archiveName: string;
+}>("archive_inventory");
+
+export function itemsLookIdentical(oldItem: Item, mergeItem: Item) {
+  if (mergeItem.description !== oldItem.description) {
+    //console.error(
+    //`Merge conflict on description ${oldItem.description} vs ${mergeItem.description}`,
+    //);
+    return false;
+  }
+  if (mergeItem.hsCode !== oldItem.hsCode) {
+    //console.error(
+    //`Merge conflict on hsCode ${oldItem.hsCode} vs ${mergeItem.hsCode}`,
+    //);
+    return false;
+  }
+  if (mergeItem.image !== oldItem.image) {
+    //console.error(
+    //`Merge conflict on image ${oldItem.image} vs ${mergeItem.image}`,
+    //);
+    return false;
+  }
+  return true;
+}
 
 export const initialState: InventoryState = {
   idToItem: {},
   orderIdToOrder: {},
+  archivedInventoryState: {},
 };
 
 export const inventory = createReducer(initialState, (r) => {
@@ -179,6 +213,57 @@ export const inventory = createReducer(initialState, (r) => {
     ) {
       state.idToItem[itemKey].shipped -= qty;
       state.idToItem[newItemKey].shipped += qty;
+    }
+  });
+  r.addCase(rename_subtype, (state, action) => {
+    const { itemKey, subtype } = action.payload;
+    if (state.idToItem[itemKey] !== undefined) {
+      const mergeItemKey = `${state.idToItem[itemKey].janCode}${subtype}`;
+      if (state.idToItem[mergeItemKey] !== undefined) {
+        // make sure there are no merge confligcts on description, hsCode, image
+        const mergeItem = state.idToItem[mergeItemKey];
+        const oldItem = state.idToItem[itemKey];
+        if (!itemsLookIdentical(oldItem, mergeItem)) {
+          return state;
+        }
+        mergeItem.qty += oldItem.qty;
+        mergeItem.shipped += oldItem.shipped;
+      } else {
+        state.idToItem[mergeItemKey] = {
+          ...state.idToItem[itemKey],
+          subtype,
+        };
+      }
+      // find all orders which refer to the itemKey and point at the new itemKey
+      for (const orderID in state.orderIdToOrder) {
+        const existingItem = state.orderIdToOrder[orderID].items.filter(
+          (i) => i.itemKey === itemKey,
+        );
+        for (let i = 0; i < existingItem.length; i++) {
+          existingItem[i].itemKey = mergeItemKey;
+        }
+      }
+      delete state.idToItem[itemKey];
+      return state;
+    }
+  });
+  r.addCase(delete_empty_order, (state, action) => {
+    const orderID = action.payload.orderID;
+    if (state.orderIdToOrder[orderID] !== undefined) {
+      if (state.orderIdToOrder[orderID].items.length === 0) {
+        delete state.orderIdToOrder[orderID];
+      }
+    }
+  });
+  r.addCase(archive_inventory, (state, action) => {
+    const archiveName = action.payload.archiveName;
+    state.archivedInventoryState[archiveName] = { ...state };
+    // clear the item quantities
+    state.idToItem = { ...state.idToItem };
+    for (const itemKey in state.idToItem) {
+      state.idToItem[itemKey] = { ...state.idToItem[itemKey] };
+      state.idToItem[itemKey].shipped = 0;
+      state.idToItem[itemKey].qty = 0;
     }
   });
 });
