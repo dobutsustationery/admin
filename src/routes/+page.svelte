@@ -46,6 +46,7 @@
       janCode = item.janCode;
       subtype = item.subtype;
       hsCode = item.hsCode;
+      dataURL = item.image;
       description = item.description;
     } else {
       janCode = r;
@@ -109,7 +110,7 @@
   function save() {
     dirty = false;
     const id = janCode + subtype;
-    const image = dataURL || imageItems[selectedPic].link;
+    const image = dataURL || imageItems[selectedPic]?.link;
     const item = {
       janCode,
       subtype,
