@@ -38,9 +38,25 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# Step 1: Ensure we're in a clean state (allow deleted files from cleanup)
+# Step 1: Check if this is a shallow clone
 echo ""
-echo "Step 1: Checking repository state..."
+echo "Step 1: Checking if repository is shallow..."
+if [ -f .git/shallow ]; then
+    echo "⚠ WARNING: This is a shallow clone!"
+    echo ""
+    echo "Git subtree split requires a full clone with complete history."
+    echo "You need to unshallow the repository first:"
+    echo ""
+    echo "  git fetch --unshallow"
+    echo ""
+    echo "After unshallowing, run this script again."
+    exit 1
+fi
+echo "✓ Repository has full history"
+
+# Step 2: Ensure we're in a clean state (allow deleted files from cleanup)
+echo ""
+echo "Step 2: Checking repository state..."
 UNTRACKED=$(git status --porcelain | grep -E '^\?\?' || true)
 if [[ -n "$UNTRACKED" ]]; then
     echo "ERROR: Working directory has untracked files. Please remove or commit them first."
@@ -49,20 +65,31 @@ if [[ -n "$UNTRACKED" ]]; then
 fi
 echo "✓ Repository is ready (note: deleted files from previous manual creation are OK)"
 
-# Step 2: Fetch the source branch
+# Step 3: Fetch the source branch
 echo ""
-echo "Step 2: Fetching '$SOURCE_BRANCH' branch..."
-if ! git fetch origin "$SOURCE_BRANCH:$SOURCE_BRANCH" 2>/dev/null; then
+echo "Step 3: Fetching '$SOURCE_BRANCH' branch..."
+# First, try to create/update the local branch from remote
+if git fetch origin "$SOURCE_BRANCH:$SOURCE_BRANCH" 2>&1 | grep -q "fatal\|error"; then
     echo "Note: Branch may already exist locally, trying to update..."
-    if ! git fetch origin "$SOURCE_BRANCH" 2>/dev/null; then
-        echo "Note: Could not update branch, will try to use existing local copy"
+    if ! git fetch origin "$SOURCE_BRANCH" 2>&1; then
+        echo "ERROR: Could not fetch branch '$SOURCE_BRANCH'"
+        echo "Make sure you have internet connectivity and access to the repository."
+        exit 1
     fi
 fi
-echo "✓ Branch ready"
 
-# Step 3: Use git subtree split to extract the subdirectory history
+# Verify the branch exists now
+if ! git rev-parse --verify "$SOURCE_BRANCH" >/dev/null 2>&1; then
+    echo "ERROR: Branch '$SOURCE_BRANCH' still not found after fetch."
+    echo "Available branches:"
+    git branch -a
+    exit 1
+fi
+echo "✓ Branch fetched: $SOURCE_BRANCH"
+
+# Step 4: Use git subtree split to extract the subdirectory history
 echo ""
-echo "Step 3: Extracting subdirectory history using git subtree split..."
+echo "Step 4: Extracting subdirectory history using git subtree split..."
 echo "This may take a few minutes..."
 
 # Create a new branch with just the subdirectory
@@ -86,9 +113,9 @@ if [ $? -ne 0 ]; then
 fi
 echo "✓ Created temporary branch: $TEMP_BRANCH"
 
-# Step 4: Read the files from the temporary branch into the current branch
+# Step 5: Read the files from the temporary branch into the current branch
 echo ""
-echo "Step 4: Reading extracted content into current branch..."
+echo "Step 5: Reading extracted content into current branch..."
 
 # Use git read-tree to get the content at the root
 git read-tree "$TEMP_BRANCH"
@@ -110,13 +137,13 @@ standalone Firebase project for the admin site." || {
 
 echo "✓ Extraction complete"
 
-# Step 5: Clean up temporary branch
+# Step 6: Clean up temporary branch
 echo ""
-echo "Step 5: Cleaning up..."
+echo "Step 6: Cleaning up..."
 git branch -D "$TEMP_BRANCH"
 echo "✓ Temporary branch deleted"
 
-# Step 6: Show the result
+# Step 7: Show the result
 echo ""
 echo "==============================================="
 echo "Extraction Complete!"
