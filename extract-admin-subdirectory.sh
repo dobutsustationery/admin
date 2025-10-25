@@ -65,17 +65,26 @@ if [[ -n "$UNTRACKED" ]]; then
 fi
 echo "✓ Repository is ready (note: deleted files from previous manual creation are OK)"
 
-# Step 3: Fetch the source branch
+# Step 3: Fetch the source branch with full history
 echo ""
-echo "Step 3: Fetching '$SOURCE_BRANCH' branch..."
-# First, try to create/update the local branch from remote
-if git fetch origin "$SOURCE_BRANCH:$SOURCE_BRANCH" 2>&1 | grep -q "fatal\|error"; then
-    echo "Note: Branch may already exist locally, trying to update..."
-    if ! git fetch origin "$SOURCE_BRANCH" 2>&1; then
-        echo "ERROR: Could not fetch branch '$SOURCE_BRANCH'"
-        echo "Make sure you have internet connectivity and access to the repository."
-        exit 1
-    fi
+echo "Step 3: Fetching '$SOURCE_BRANCH' branch with full history..."
+
+# Fetch the branch from remote with full history (not just the tip)
+git fetch origin "$SOURCE_BRANCH" 2>&1 || {
+    echo "ERROR: Could not fetch branch '$SOURCE_BRANCH'"
+    echo "Make sure you have internet connectivity and access to the repository."
+    exit 1
+}
+
+# Create or update local branch to track the remote branch
+if git show-ref --verify --quiet "refs/heads/$SOURCE_BRANCH"; then
+    # Branch exists, update it
+    echo "Updating existing local branch..."
+    git branch -f "$SOURCE_BRANCH" "origin/$SOURCE_BRANCH"
+else
+    # Branch doesn't exist, create it
+    echo "Creating local branch..."
+    git branch "$SOURCE_BRANCH" "origin/$SOURCE_BRANCH"
 fi
 
 # Verify the branch exists now
@@ -97,14 +106,23 @@ echo "This may take a few minutes..."
 TEMP_BRANCH="temp-admin-extraction-$(date +%s)"
 
 # Check if the subdirectory exists in the source branch
+echo ""
+echo "Verifying that '$SUBDIRECTORY' exists in '$SOURCE_BRANCH'..."
 if ! git ls-tree -r "$SOURCE_BRANCH" --name-only | grep -q "^$SUBDIRECTORY/"; then
     echo "ERROR: Directory '$SUBDIRECTORY' not found in branch '$SOURCE_BRANCH'"
-    echo "Available top-level directories:"
+    echo "Available top-level directories in $SOURCE_BRANCH:"
     git ls-tree "$SOURCE_BRANCH" --name-only
+    echo ""
+    echo "Checking if directory exists with different path..."
+    git ls-tree -r "$SOURCE_BRANCH" --name-only | grep -i admin | head -10
     exit 1
 fi
+echo "✓ Directory '$SUBDIRECTORY' found in branch"
 
 # Run subtree split
+echo ""
+echo "Running git subtree split (this may take several minutes)..."
+echo "Command: git subtree split --prefix=\"$SUBDIRECTORY\" \"$SOURCE_BRANCH\" -b \"$TEMP_BRANCH\""
 git subtree split --prefix="$SUBDIRECTORY" "$SOURCE_BRANCH" -b "$TEMP_BRANCH"
 
 if [ $? -ne 0 ]; then
