@@ -35,7 +35,15 @@ if (!validEnvs.includes(env)) {
   process.exit(1);
 }
 
-const sourceFile = resolve(process.cwd(), `.env.${env}`);
+// Map environment names to their corresponding .env files
+// "local" uses .env.emulator to avoid Vite's mode name conflict with .env.local
+const envFileMap = {
+  local: ".env.emulator",
+  staging: ".env.staging",
+  production: ".env.production",
+};
+
+const sourceFile = resolve(process.cwd(), envFileMap[env]);
 const targetFile = resolve(process.cwd(), ".env");
 
 if (!existsSync(sourceFile)) {
@@ -46,7 +54,7 @@ if (!existsSync(sourceFile)) {
 try {
   copyFileSync(sourceFile, targetFile);
   console.log(`✅ Environment switched to: ${env}`);
-  console.log(`   Copied: .env.${env} → .env`);
+  console.log(`   Copied: ${envFileMap[env]} → .env`);
   console.log(`\n💡 Run 'npm run dev' to start with ${env} environment`);
 } catch (error) {
   console.error(`❌ Error copying file: ${error.message}`);

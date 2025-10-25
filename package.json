@@ -6,7 +6,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "dev": "vite dev",
-    "dev:local": "vite dev --mode local",
+    "dev:local": "vite dev --mode emulator",
     "dev:staging": "vite dev --mode staging",
     "dev:production": "vite dev --mode production",
     "env:local": "node scripts/switch-env.js local",
@@ -16,7 +16,7 @@
     "emulators:export": "firebase emulators:export ./emulator-data",
     "emulators:import": "firebase emulators:start --import=./emulator-data",
     "build": "vite build",
-    "build:local": "vite build --mode local",
+    "build:local": "vite build --mode emulator",
     "build:staging": "vite build --mode staging",
     "build:production": "vite build --mode production",
     "preview": "vite preview",

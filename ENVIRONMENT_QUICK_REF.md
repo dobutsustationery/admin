@@ -34,7 +34,8 @@ npm run dev             # Use .env
 ```
 admin/
 ├── .env.example         # Documentation template
-├── .env.local          # Local emulator config (tracked)
+├── .env.emulator        # Local emulator config (tracked)
+├── .env.local           # Vite's local override file (tracked, optional)
 ├── .env.staging        # Staging config template (tracked)
 ├── .env.production     # Production config (tracked)
 ├── .env                # Your active config (git-ignored)
