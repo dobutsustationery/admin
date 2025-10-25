@@ -173,7 +173,7 @@ admin/
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details
+Proprietary - All rights reserved. See [LICENSE](LICENSE) file for details.
 
 ## Support
 
