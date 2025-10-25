@@ -26,18 +26,18 @@ describe("Environment Configuration", () => {
   });
 
   it("should support production environment configuration", () => {
-    // Test production config structure
+    // Test production config structure with example values
     const productionConfig = {
-      apiKey: "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q",
-      authDomain: "dobutsu-stationery-6b227.firebaseapp.com",
-      projectId: "dobutsu-stationery-6b227",
-      storageBucket: "dobutsu-stationery-6b227.appspot.com",
-      messagingSenderId: "346660531589",
-      appId: "1:346660531589:web:d04e079432b6434a7b28ec",
-      measurementId: "G-QM2RSC0RC7",
+      apiKey: "example-api-key",
+      authDomain: "example-project.firebaseapp.com",
+      projectId: "example-project",
+      storageBucket: "example-project.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef123456",
+      measurementId: "G-ABCDEF1234",
     };
 
-    expect(productionConfig.projectId).toBe("dobutsu-stationery-6b227");
+    expect(productionConfig.projectId).toBe("example-project");
     expect(productionConfig.authDomain).toContain("firebaseapp.com");
   });
 
