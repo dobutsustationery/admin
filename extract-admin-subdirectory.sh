@@ -122,13 +122,31 @@ echo "✓ Directory '$SUBDIRECTORY' found in branch"
 # Run subtree split
 echo ""
 echo "Running git subtree split (this may take several minutes)..."
-echo "Command: git subtree split --prefix=\"$SUBDIRECTORY\" \"$SOURCE_BRANCH\" -b \"$TEMP_BRANCH\""
-git subtree split --prefix="$SUBDIRECTORY" "$SOURCE_BRANCH" -b "$TEMP_BRANCH"
+echo "Note: Temporarily checking out $SOURCE_BRANCH to run the split..."
+
+# Save current branch
+ORIGINAL_BRANCH="$CURRENT_BRANCH"
+
+# Checkout the source branch to run subtree split from its context
+git checkout "$SOURCE_BRANCH" >/dev/null 2>&1 || {
+    echo "ERROR: Could not checkout $SOURCE_BRANCH"
+    exit 1
+}
+
+echo "Command: git subtree split --prefix=\"$SUBDIRECTORY\" -b \"$TEMP_BRANCH\""
+git subtree split --prefix="$SUBDIRECTORY" -b "$TEMP_BRANCH"
 
 if [ $? -ne 0 ]; then
     echo "ERROR: git subtree split failed"
+    git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1
     exit 1
 fi
+
+# Switch back to original branch
+git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || {
+    echo "ERROR: Could not switch back to $ORIGINAL_BRANCH"
+    exit 1
+}
 echo "✓ Created temporary branch: $TEMP_BRANCH"
 
 # Step 5: Read the files from the temporary branch into the current branch
