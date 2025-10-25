@@ -53,7 +53,7 @@ npm run dev
 
 **Setup:**
 
-1. No configuration needed - `.env.local` is pre-configured
+1. No configuration needed - `.env.emulator` is pre-configured (loaded automatically when using `npm run dev:local`)
 2. Start the Firebase emulators:
    ```bash
    npm run emulators
@@ -132,10 +132,12 @@ npm run dev:production
 
 ## Configuration Files
 
-### `.env.local`
-Pre-configured for Firebase emulators. Uses localhost ports:
+### `.env.emulator`
+Pre-configured for Firebase emulators. This file is loaded when using `npm run dev:local` or `--mode emulator`. Uses localhost ports:
 - Firestore: localhost:8080
 - Auth: localhost:9099
+
+Note: `.env.local` is also available and loaded by Vite in all non-production modes, but `.env.emulator` is the primary configuration for local development.
 
 ### `.env.staging`
 Template for staging environment. **Requires manual configuration** with your staging Firebase project credentials.

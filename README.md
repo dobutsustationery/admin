@@ -90,15 +90,23 @@ npm run env:production
 npm run dev
 ```
 
-This copies the selected `.env.[environment]` file to `.env`, which becomes your default environment.
+This copies the selected environment configuration to `.env`, which becomes your default environment.
+
+**Note:** The actual environment files are:
+- Local: `.env.emulator` (used with `--mode emulator`)
+- Staging: `.env.staging` (used with `--mode staging`)  
+- Production: `.env.production` (used with `--mode production`)
+
+The `.env.local` file is also present and loaded by Vite in all non-production modes.
 
 #### Detailed Environment Setup
 
-The application uses Vite's environment mode feature. Three pre-configured environment files are provided:
+The application uses Vite's environment mode feature. Pre-configured environment files are provided:
 
-- `.env.local` - Local emulator configuration (default for development)
-- `.env.staging` - Staging environment configuration
-- `.env.production` - Production environment configuration
+- `.env.emulator` - Local emulator configuration (used with `--mode emulator`)
+- `.env.local` - Vite's local override file (always loaded in non-production)
+- `.env.staging` - Staging environment configuration (used with `--mode staging`)
+- `.env.production` - Production environment configuration (used with `--mode production`)
 
 To customize your environment:
 
