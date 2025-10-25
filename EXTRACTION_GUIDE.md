@@ -91,22 +91,26 @@ If you prefer to run the commands manually (after ensuring you have a full clone
 # 0. If you have a shallow clone, unshallow it first
 git fetch --unshallow
 
-# 1. Fetch the source branch
-git fetch origin website-admin:website-admin
+# 1. Fetch the source branch with full history
+git fetch origin website-admin
 
-# 2. Verify the branch exists
+# 2. Create a local branch tracking the remote
+git branch website-admin origin/website-admin
+
+# 3. Verify the branch and directory exist
 git rev-parse --verify website-admin
+git ls-tree website-admin --name-only | grep admin.dobutsustationery.com
 
-# 3. Create a new branch with just the subdirectory
+# 4. Create a new branch with just the subdirectory
 git subtree split --prefix=admin.dobutsustationery.com website-admin -b temp-admin
 
-# 4. Read the extracted tree into the current branch
+# 5. Read the extracted tree into the current branch
 git read-tree temp-admin
 
-# 5. Commit the changes
+# 6. Commit the changes
 git commit -m "Extract admin subdirectory to root"
 
-# 6. Clean up
+# 7. Clean up
 git branch -D temp-admin
 ```
 
