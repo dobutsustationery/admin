@@ -31,7 +31,13 @@ A script has been provided: `extract-admin-subdirectory.sh`
 
 1. You must have Git authentication configured (the script needs to fetch branches)
 2. You should be on the branch where you want the files (e.g., `copilot/bring-admin-folder-to-root`)
-3. Your working directory should be clean (no uncommitted changes)
+3. Remove any manually created files first:
+   ```bash
+   # If you have manually created files from previous attempts, remove them:
+   git rm -r .firebaserc .gitignore .husky .npmrc .vscode LICENSE README.md \
+            biome.json firebase.json package.json src static svelte.config.js \
+            tests tsconfig.json vite.config.ts 2>/dev/null || true
+   ```
 
 ### Running the Script
 
@@ -45,18 +51,19 @@ git checkout copilot/bring-admin-folder-to-root
 
 ### What the Script Does
 
-1. **Validates** repository state
+1. **Validates** repository state (allows deleted files from cleanup)
 2. **Fetches** the `website-admin` branch
 3. **Extracts** the `admin.dobutsustationery.com` subdirectory using `git subtree split`
-4. **Merges** the extracted content into your current branch
-5. **Cleans up** temporary branches
+4. **Reads** the extracted content into your current branch using `git read-tree`
+5. **Creates** a new commit with the extracted files at root level
+6. **Cleans up** temporary branches
 
 ### After Running
 
 Review the changes:
 ```bash
-git log --oneline -20
-git diff HEAD~1
+git log --oneline -10
+git show --stat
 ```
 
 If satisfied, push:
@@ -75,39 +82,28 @@ git fetch origin website-admin:website-admin
 # 2. Create a new branch with just the subdirectory
 git subtree split --prefix=admin.dobutsustationery.com website-admin -b temp-admin
 
-# 3. Merge into your current branch (will place files at root)
-git merge temp-admin --allow-unrelated-histories -m "Extract admin subdirectory to root"
+# 3. Read the extracted tree into the current branch
+git read-tree temp-admin
 
-# 4. Clean up
+# 4. Commit the changes
+git commit -m "Extract admin subdirectory to root"
+
+# 5. Clean up
 git branch -D temp-admin
 ```
 
-## Why the Shallow Clone Was a Problem
+## Key Differences from Initial Script
 
-The repository was cloned with `--depth=1` (shallow clone), which:
-- Only fetches recent commits
-- Cannot fetch additional branches without authentication
-- Cannot properly run `git subtree split` without full history
-
-This is why the proper approach requires git authentication to fetch the full branch.
-
-## Handling Conflicts
-
-If there are merge conflicts (because files already exist from manual creation):
-
-```bash
-# Accept the extracted version (from website-admin branch)
-git checkout --theirs .
-git add .
-git commit --no-edit
-```
-
-Or manually resolve conflicts and commit.
+The corrected script:
+- Runs `git subtree split` on the **source branch** (`website-admin`), not the current branch
+- Uses `git read-tree` instead of `git merge` to avoid conflicts with existing files
+- Properly checks for the subdirectory's existence before attempting extraction
+- Allows deleted files in the working directory (from cleanup) before running
 
 ## Summary
 
-**Current state**: Files were manually copied, losing git history
+**Current state**: All manually created files have been removed
 
 **Recommended action**: Run `extract-admin-subdirectory.sh` to properly extract with history
 
-**Benefit**: Complete git history, proper attribution, and all files extracted correctly
+**Benefit**: Complete git history, proper attribution, and all files extracted correctly including binaries
