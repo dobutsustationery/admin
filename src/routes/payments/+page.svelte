@@ -1,47 +1,53 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import { firestore } from "$lib/firebase";
-  import { collection, onSnapshot, query } from "firebase/firestore";
-  import { store } from '$lib/store';
-  import { new_order } from "$lib/inventory";
+import { collection, onSnapshot, query } from "firebase/firestore";
+import { goto } from "$app/navigation";
+import { firestore } from "$lib/firebase";
+import { new_order } from "$lib/inventory";
+import { store } from "$lib/store";
 
-  interface PaymentInfo {
-    id: string;
-    email: string;
-    item: string;
-    date: Date;
-  }
+interface PaymentInfo {
+  id: string;
+  email: string;
+  item: string;
+  date: Date;
+}
 
-  let paymentInfo: PaymentInfo[] = [];
-  const dobutsu = collection(firestore, "dobutsu");
-  const unsub = onSnapshot(
-    query(dobutsu),
-    (querySnapshot) => {
-      for (const change of querySnapshot.docChanges()) {
-        const data = change.doc.data();
-        if (data.payment !== undefined) {
-          const id = data.order_response.id;
-          const item = data.order_request?.cart[0].product;
-          const email = data.payment?.payment_source?.paypal?.email_address;
-          const dateStr = data.payment.purchase_units[0].payments.captures[0].create_time;
-          const date = new Date(dateStr);
-          const units = data.payment.purchase_units;
-          paymentInfo.push({id, email, item, date});
-        } 
+let paymentInfo: PaymentInfo[] = [];
+const dobutsu = collection(firestore, "dobutsu");
+const unsub = onSnapshot(
+  query(dobutsu),
+  (querySnapshot) => {
+    for (const change of querySnapshot.docChanges()) {
+      const data = change.doc.data();
+      if (data.payment !== undefined) {
+        const id = data.order_response.id;
+        const item = data.order_request?.cart[0].product;
+        const email = data.payment?.payment_source?.paypal?.email_address;
+        const dateStr =
+          data.payment.purchase_units[0].payments.captures[0].create_time;
+        const date = new Date(dateStr);
+        const units = data.payment.purchase_units;
+        paymentInfo.push({ id, email, item, date });
       }
-      paymentInfo = [...paymentInfo].sort((d0, d1) => {
-        return d0.date.getTime() - d1.date.getTime();
-      });
-    },
-    (error) => {
-      console.log("query failing: ");
-      console.error(error);
     }
-  );
-  
-  function formatDate(d: Date) {
-    return d.toLocaleDateString('en-us', { weekday: "short", year:"numeric", month:"short", day:"numeric"}) 
-  }
+    paymentInfo = [...paymentInfo].sort((d0, d1) => {
+      return d0.date.getTime() - d1.date.getTime();
+    });
+  },
+  (error) => {
+    console.log("query failing: ");
+    console.error(error);
+  },
+);
+
+function formatDate(d: Date) {
+  return d.toLocaleDateString("en-us", {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 </script>
 
 <h1>Payments</h1>

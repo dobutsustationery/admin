@@ -72,6 +72,26 @@ npm run dev:production
 npm run dev:staging
 ```
 
+#### Environment Switcher (Alternative Method)
+
+If you prefer to use `npm run dev` without specifying the mode each time, you can use the environment switcher scripts to set a default:
+
+```bash
+# Switch to local environment
+npm run env:local
+
+# Switch to staging environment  
+npm run env:staging
+
+# Switch to production environment
+npm run env:production
+
+# Now just run dev normally - it will use the selected environment
+npm run dev
+```
+
+This copies the selected `.env.[environment]` file to `.env`, which becomes your default environment.
+
 #### Detailed Environment Setup
 
 The application uses Vite's environment mode feature. Three pre-configured environment files are provided:
@@ -141,6 +161,8 @@ npm run build:production
 # Preview the production build
 npm run preview
 ```
+
+**For detailed environment configuration information, see [ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md).**
 
 ### Deployment
 
@@ -242,6 +264,7 @@ admin/
 
 ## Documentation
 
+- **[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md)**: Comprehensive guide for environment configuration
 - **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
 - **[EXTRACTION_GUIDE.md](EXTRACTION_GUIDE.md)**: How this repository was extracted from the monorepo

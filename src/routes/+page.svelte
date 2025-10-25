@@ -1,97 +1,102 @@
 <script lang="ts">
-  import BarcodeScanner from "$lib/BarcodeScanner.svelte";
-  import substrings from "common-substrings";
-  import { Signin } from "@ourway/svelte-firebase-auth";
+import { Signin } from "@ourway/svelte-firebase-auth";
+import substrings from "common-substrings";
+import BarcodeScanner from "$lib/BarcodeScanner.svelte";
+import ComboBox from "$lib/ComboBox.svelte";
+import { auth, firestore, googleAuthProvider } from "$lib/firebase";
+import { user } from "$lib/globals";
+import { get } from "$lib/http";
+import { update_item } from "$lib/inventory";
+import { broadcast } from "$lib/redux-firestore";
 
-  import { auth, firestore, googleAuthProvider } from "$lib/firebase";
-  import { get } from "$lib/http";
-  import ComboBox from "$lib/ComboBox.svelte";
-  import { broadcast } from "$lib/redux-firestore";
-  import { user } from "$lib/globals";
-  import { update_item } from "$lib/inventory";
+let janCode = "No scan yet";
+const subtype = "";
+const pieces = "";
+const hsCode = "39199080";
+let description = "";
+const qty = "10";
+let dirty = true;
+let imageItems: any[] = [];
+async function barcode(e: CustomEvent) {
+  console.log(`New Result: ${e}`, e);
+  newResult(e.detail);
+}
+function blur() {
+  newResult(janCode);
+}
+async function newResult(r: string) {
+  janCode = r;
+  const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
 
-  let janCode = "No scan yet";
-  let subtype = "";
-  let pieces = "";
-  let hsCode = "39199080";
-  let description = "";
-  let qty = "10";
-  let dirty = true;
-  let imageItems: any[] = [];
-  async function barcode(e: CustomEvent) {
-    console.log(`New Result: ${e}`, e);
-    newResult(e.detail);
+  const images = await get(imgSearch);
+  console.log({ images });
+  imageItems = images.items;
+  if (imageItems) {
+    const stringArray = imageItems.map((x) => x.title);
+    const substrs = substrings(stringArray);
+    substrs.sort((a, b) => b.weight - a.weight);
+    console.log({ stringArray, substrs });
+    description = substrs[0].name;
+  } else {
+    imageItems = [];
   }
-  function blur() {
-    newResult(janCode);
-  }
-  async function newResult(r: string) {
-    janCode = r;
-    const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
+  dataURL = "";
+  selectedPic = 0;
+}
 
-    const images = await get(imgSearch);
-    console.log({ images });
-    imageItems = images.items;
-    if (imageItems) {
-      const stringArray = imageItems.map((x) => x.title);
-      const substrs = substrings(stringArray);
-      substrs.sort((a, b) => b.weight - a.weight);
-      console.log({ stringArray, substrs });
-      description = substrs[0].name;
-    } else {
-      imageItems = [];
-    }
+let dataURL: string = "";
+function snapshot(e: CustomEvent) {
+  dataURL = e.detail;
+}
+
+const imageSearchKey = "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q";
+const picWidth = 140;
+let selectedPic = 0;
+function chooseImage(i: number) {
+  return () => {
+    selectedPic = i;
+    dropdownOpen = "";
     dataURL = "";
-    selectedPic = 0;
-  }
-
-  let dataURL: string = "";
-  function snapshot(e: CustomEvent) {
-    dataURL = e.detail;
-  }
-
-  const imageSearchKey = "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q";
-  const picWidth = 140;
-  let selectedPic = 0;
-  function chooseImage(i: number) {
-    return () => {
-      selectedPic = i;
-      dropdownOpen = "";
-      dataURL = "";
-      dirty = true;
-    };
-  }
-  let dropdownOpen = "";
-  function toggleDropdown() {
-    if (dropdownOpen) {
-      dropdownOpen = "";
-    } else {
-      dropdownOpen = "ddopen";
-    }
-  }
-
-  $: if (janCode) {
     dirty = true;
+  };
+}
+let dropdownOpen = "";
+function toggleDropdown() {
+  if (dropdownOpen) {
+    dropdownOpen = "";
+  } else {
+    dropdownOpen = "ddopen";
   }
-  $: if (qty) {
-    dirty = true;
-  }
-  $: if (hsCode) {
-    dirty = true;
-  }
-  $: if (subtype) {
-    dirty = true;
-  }
+}
 
-  function save() {
-    dirty = false;
-    const id = janCode + subtype;
-    const image = dataURL || imageItems[selectedPic].link;
-    const item = {
-      janCode, subtype, description, hsCode, image, qty: +qty, pieces: +pieces
-    };
-    broadcast(firestore, $user.uid, update_item({id, item}));
-  }
+$: if (janCode) {
+  dirty = true;
+}
+$: if (qty) {
+  dirty = true;
+}
+$: if (hsCode) {
+  dirty = true;
+}
+$: if (subtype) {
+  dirty = true;
+}
+
+function save() {
+  dirty = false;
+  const id = janCode + subtype;
+  const image = dataURL || imageItems[selectedPic].link;
+  const item = {
+    janCode,
+    subtype,
+    description,
+    hsCode,
+    image,
+    qty: +qty,
+    pieces: +pieces,
+  };
+  broadcast(firestore, $user.uid, update_item({ id, item }));
+}
 </script>
 
 <div class="column fullheight">
