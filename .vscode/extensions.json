@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "biomejs.biome",
+    "svelte.svelte-vscode",
+    "zixuanchen.vitest-explorer",
+    "wallabyjs.wallaby-vscode"
+  ]
+}
