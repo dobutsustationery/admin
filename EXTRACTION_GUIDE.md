@@ -101,16 +101,22 @@ git branch website-admin origin/website-admin
 git rev-parse --verify website-admin
 git ls-tree website-admin --name-only | grep admin.dobutsustationery.com
 
-# 4. Create a new branch with just the subdirectory
-git subtree split --prefix=admin.dobutsustationery.com website-admin -b temp-admin
+# 4. Checkout the source branch (required for subtree split to work)
+git checkout website-admin
 
-# 5. Read the extracted tree into the current branch
+# 5. Create a new branch with just the subdirectory using subtree split
+git subtree split --prefix=admin.dobutsustationery.com -b temp-admin
+
+# 6. Switch back to your target branch
+git checkout copilot/bring-admin-folder-to-root
+
+# 7. Read the extracted tree into the current branch
 git read-tree temp-admin
 
-# 6. Commit the changes
+# 8. Commit the changes
 git commit -m "Extract admin subdirectory to root"
 
-# 7. Clean up
+# 9. Clean up
 git branch -D temp-admin
 ```
 
@@ -118,13 +124,15 @@ git branch -D temp-admin
 
 **Critical**: The repository MUST be a full clone, not a shallow clone. Git subtree split requires complete history to work.
 
+**Important**: Git subtree split must be run from a branch that contains the subdirectory in its history. The script temporarily checks out the source branch, runs the split, then returns to your original branch.
+
 The corrected script:
 - **Checks for shallow clone** and exits with clear instructions if found
-- Runs `git subtree split` on the **source branch** (`website-admin`), not the current branch
-- Uses `git read-tree` instead of `git merge` to avoid conflicts with existing files
-- Properly checks for the subdirectory's existence before attempting extraction
-- Verifies the branch was fetched successfully before proceeding
-- Allows deleted files in the working directory (from cleanup) before running
+- Fetches the source branch and creates/updates local tracking branch
+- **Temporarily checks out the source branch** to run subtree split in the correct context
+- Returns to the original branch after split completes
+- Uses `git read-tree` to bring files to root without merge conflicts
+- Properly cleans up temporary branches
 
 ## Summary
 
