@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "A basic order and inventory management system.",
   "author": "Alex Nicolaou",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
