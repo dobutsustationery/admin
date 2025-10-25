@@ -6,6 +6,10 @@ node_modules
 .env
 .env.*
 !.env.example
+!.env.local
+!.env.staging
+!.env.production
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 /coverage
+emulator-data
