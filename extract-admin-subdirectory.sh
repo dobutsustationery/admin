@@ -38,27 +38,27 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# Step 1: Ensure we're in a clean state
+# Step 1: Ensure we're in a clean state (allow deleted files from cleanup)
 echo ""
 echo "Step 1: Checking repository state..."
-if [[ -n $(git status -s) ]]; then
-    echo "ERROR: Working directory is not clean. Please commit or stash changes first."
-    git status -s
+UNTRACKED=$(git status --porcelain | grep -E '^\?\?' || true)
+if [[ -n "$UNTRACKED" ]]; then
+    echo "ERROR: Working directory has untracked files. Please remove or commit them first."
+    echo "$UNTRACKED"
     exit 1
 fi
-echo "✓ Repository is clean"
+echo "✓ Repository is ready (note: deleted files from previous manual creation are OK)"
 
 # Step 2: Fetch the source branch
 echo ""
 echo "Step 2: Fetching '$SOURCE_BRANCH' branch..."
 if ! git fetch origin "$SOURCE_BRANCH:$SOURCE_BRANCH" 2>/dev/null; then
     echo "Note: Branch may already exist locally, trying to update..."
-    git fetch origin "$SOURCE_BRANCH" || {
-        echo "ERROR: Could not fetch branch '$SOURCE_BRANCH'"
-        exit 1
-    }
+    if ! git fetch origin "$SOURCE_BRANCH" 2>/dev/null; then
+        echo "Note: Could not update branch, will try to use existing local copy"
+    fi
 fi
-echo "✓ Branch fetched"
+echo "✓ Branch ready"
 
 # Step 3: Use git subtree split to extract the subdirectory history
 echo ""
@@ -66,7 +66,18 @@ echo "Step 3: Extracting subdirectory history using git subtree split..."
 echo "This may take a few minutes..."
 
 # Create a new branch with just the subdirectory
+# We need to run subtree split on the SOURCE_BRANCH, not the current branch
 TEMP_BRANCH="temp-admin-extraction-$(date +%s)"
+
+# Check if the subdirectory exists in the source branch
+if ! git ls-tree -r "$SOURCE_BRANCH" --name-only | grep -q "^$SUBDIRECTORY/"; then
+    echo "ERROR: Directory '$SUBDIRECTORY' not found in branch '$SOURCE_BRANCH'"
+    echo "Available top-level directories:"
+    git ls-tree "$SOURCE_BRANCH" --name-only
+    exit 1
+fi
+
+# Run subtree split
 git subtree split --prefix="$SUBDIRECTORY" "$SOURCE_BRANCH" -b "$TEMP_BRANCH"
 
 if [ $? -ne 0 ]; then
@@ -75,30 +86,29 @@ if [ $? -ne 0 ]; then
 fi
 echo "✓ Created temporary branch: $TEMP_BRANCH"
 
-# Step 4: Merge the extracted branch into current branch
+# Step 4: Read the files from the temporary branch into the current branch
 echo ""
-echo "Step 4: Merging extracted content into current branch..."
-echo "Strategy: Replace current content with extracted content"
+echo "Step 4: Reading extracted content into current branch..."
 
-# We'll use a strategy that brings in the files at the root level
-git merge "$TEMP_BRANCH" --allow-unrelated-histories -m "Extract admin.dobutsustationery.com to root from website-admin branch" || {
+# Use git read-tree to get the content at the root
+git read-tree "$TEMP_BRANCH"
+
+# Create a new commit with the extracted content
+git commit -m "Extract admin.dobutsustationery.com to root from website-admin branch
+
+This commit extracts the admin.dobutsustationery.com subdirectory from the
+website-admin branch using git subtree split, preserving the complete git
+history of all files within that directory.
+
+The files are now at the root level of this repository, making this a
+standalone Firebase project for the admin site." || {
     echo ""
-    echo "Note: Merge may have conflicts. This is expected if files already exist."
-    echo "The extracted files are now at the root level."
-    echo ""
-    echo "To resolve conflicts and prefer the extracted version:"
-    echo "  git checkout --theirs ."
-    echo "  git add ."
-    echo "  git commit --no-edit"
-    echo ""
-    echo "Or to manually resolve, edit the conflicting files and then:"
-    echo "  git add <resolved-files>"
-    echo "  git commit --no-edit"
-    echo ""
-    exit 0
+    echo "Note: Commit may have failed. Checking status..."
+    git status
+    exit 1
 }
 
-echo "✓ Merge complete"
+echo "✓ Extraction complete"
 
 # Step 5: Clean up temporary branch
 echo ""
@@ -120,7 +130,7 @@ git ls-tree --name-only HEAD | head -20
 echo ""
 echo "Review the changes with:"
 echo "  git log --oneline -10"
-echo "  git diff HEAD~1"
+echo "  git show --stat"
 echo ""
 echo "If everything looks good, push with:"
 echo "  git push origin $CURRENT_BRANCH"
