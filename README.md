@@ -36,26 +36,109 @@ cd admin
 # Install dependencies (choose one)
 bun install  # Recommended for speed
 npm install  # Alternative
+```
 
-# Start development server
-bun dev
-# or
+### Environment Configuration
+
+This application supports three environments:
+1. **Local** - Firebase emulators for offline development
+2. **Staging** - Staging Firebase project (optional)
+3. **Production** - Production Firebase project
+
+#### Quick Setup
+
+**Option 1: Local Development with Emulators (Recommended for development)**
+
+```bash
+# No additional setup needed - uses .env.local by default
+npm run dev:local
+
+# In a separate terminal, start the Firebase emulators
+npm run emulators
+```
+
+**Option 2: Production Environment**
+
+```bash
+# Uses production Firebase project
+npm run dev:production
+```
+
+**Option 3: Staging Environment**
+
+```bash
+# First, update .env.staging with your staging Firebase credentials
+# Then run:
+npm run dev:staging
+```
+
+#### Detailed Environment Setup
+
+The application uses Vite's environment mode feature. Three pre-configured environment files are provided:
+
+- `.env.local` - Local emulator configuration (default for development)
+- `.env.staging` - Staging environment configuration
+- `.env.production` - Production environment configuration
+
+To customize your environment:
+
+1. Copy `.env.example` to `.env` if you want to override the defaults
+2. Set `VITE_FIREBASE_ENV` to `local`, `staging`, or `production`
+3. Configure the appropriate Firebase credentials
+
+See `.env.example` for all available configuration options.
+
+### Running the Application
+
+**Local Development with Emulators:**
+
+```bash
+# Terminal 1: Start Firebase emulators
+npm run emulators
+
+# Terminal 2: Start dev server
+npm run dev:local
+# or simply
 npm run dev
 ```
 
 The application will be available at `http://localhost:5173`
+The Firebase Emulator UI will be available at `http://localhost:4000`
+
+**Development with Staging/Production:**
+
+```bash
+# Staging
+npm run dev:staging
+
+# Production
+npm run dev:production
+```
+
+### Firebase Emulator Commands
+
+```bash
+# Start emulators
+npm run emulators
+
+# Export emulator data (save state)
+npm run emulators:export
+
+# Import previously exported data
+npm run emulators:import
+```
 
 ### Building for Production
 
 ```bash
 # Build the application
-bun run build
-# or
 npm run build
+# or for specific environment
+npm run build:local
+npm run build:staging
+npm run build:production
 
 # Preview the production build
-bun run preview
-# or
 npm run preview
 ```
 
