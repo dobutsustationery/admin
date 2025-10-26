@@ -295,7 +295,7 @@ async function importData(db, inputDir) {
   )) {
     console.log(`\n  Importing ${collectionName} (${documents.length} docs)...`);
     
-    const batch = db.batch();
+    let batch = db.batch();
     let batchCount = 0;
     const BATCH_SIZE = 500; // Firestore batch limit
 
@@ -326,6 +326,8 @@ async function importData(db, inputDir) {
       if (batchCount >= BATCH_SIZE) {
         await batch.commit();
         console.log(`    Committed batch of ${batchCount} documents`);
+        // Create a new batch for the next set of documents
+        batch = db.batch();
         batchCount = 0;
       }
     }
