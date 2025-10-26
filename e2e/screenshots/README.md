@@ -36,6 +36,21 @@ The numbered screenshots provide:
 ## Notes
 
 - Screenshots are generated during test execution
-- They are excluded from git (see `.gitignore`)
-- Screenshots are uploaded as artifacts in CI/CD for review
-- Only `.gitkeep` is committed to maintain the directory structure
+- **Important**: Screenshots are now committed to git for documentation
+- Current screenshots are placeholders - run `npm run test:e2e` to generate actual screenshots
+- Screenshots are also uploaded as artifacts in CI/CD for review
+- When running tests locally, the numbered screenshots will be updated with actual application screens
+
+## Updating Screenshots
+
+To regenerate screenshots with actual test execution:
+
+```bash
+# Start emulators (Terminal 1)
+npm run emulators
+
+# Run tests (Terminal 2)
+npm run test:e2e:simple
+```
+
+After tests complete, the screenshots in this directory will show the actual application state at each step of the user journey.
