@@ -156,6 +156,23 @@ npm run emulators:export
 npm run emulators:import
 ```
 
+### Data Transfer Between Environments
+
+Transfer Firestore data between production, staging, and emulator environments:
+
+```bash
+# Transfer from production to emulator (for local testing with real data)
+npm run data:transfer -- --from production --to emulator
+
+# Export data from production
+npm run data:export -- --source production --output ./data-export
+
+# Import data to staging
+npm run data:import -- --target staging --input ./data-export
+```
+
+**For detailed usage and options, see [DATA_TRANSFER.md](DATA_TRANSFER.md).**
+
 ### Building for Production
 
 ```bash
@@ -273,6 +290,7 @@ admin/
 ## Documentation
 
 - **[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md)**: Comprehensive guide for environment configuration
+- **[DATA_TRANSFER.md](DATA_TRANSFER.md)**: Guide for transferring data between environments
 - **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
 - **[EXTRACTION_GUIDE.md](EXTRACTION_GUIDE.md)**: How this repository was extracted from the monorepo
