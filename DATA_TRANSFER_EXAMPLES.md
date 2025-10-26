@@ -36,9 +36,9 @@ npm run dev:local
 ```
 
 **Notes**:
-- This transfers the last 30 days of broadcast actions by default
+- This transfers the complete broadcast action history (required for app to function)
 - Users collection is included
-- Orders are NOT included by default (add `--include-orders` if needed)
+- Orders (dobutsu collection) are included by default
 
 ## Example 2: Populate Staging with Fresh Production Data
 
@@ -51,15 +51,15 @@ npm run dev:local
 #    - service-account-production.json
 #    - service-account-staging.json
 
-# 2. Transfer directly from production to staging
-npm run data:transfer -- --from production --to staging --days 7
+# 2. Transfer all data from production to staging
+npm run data:transfer -- --from production --to staging
 
 # 3. Verify by accessing your staging URL
 ```
 
 **Notes**:
-- This example only transfers the last 7 days of data
-- Useful for keeping staging data fresh without full history
+- This transfers the complete dataset (all broadcast history, users, and orders)
+- Essential for keeping staging environment in sync with production
 
 ## Example 3: Create a Production Backup
 
@@ -71,12 +71,10 @@ npm run data:transfer -- --from production --to staging --days 7
 # 1. Create a backup directory with today's date
 mkdir -p backups/backup-$(date +%Y-%m-%d)
 
-# 2. Export all production data including orders
+# 2. Export all production data (broadcast, users, orders)
 npm run data:export -- \
   --source production \
-  --output backups/backup-$(date +%Y-%m-%d) \
-  --days 0 \
-  --include-orders
+  --output backups/backup-$(date +%Y-%m-%d)
 
 # 3. Verify the export
 ls -lh backups/backup-$(date +%Y-%m-%d)/firestore-export.json
@@ -86,8 +84,8 @@ cd backups && tar -czf backup-$(date +%Y-%m-%d).tar.gz backup-$(date +%Y-%m-%d)
 ```
 
 **Notes**:
-- `--days 0` includes all broadcast history, not just recent
-- `--include-orders` includes the dobutsu collection with order data
+- Exports complete broadcast history with exact timestamps
+- Includes all collections (broadcast, users, and orders) by default
 - Store backups securely; they contain sensitive data
 
 ## Example 4: Restore from a Backup
@@ -110,29 +108,29 @@ npm run data:import -- \
 
 **Warning**: This will overwrite existing data in staging!
 
-## Example 5: Transfer Only Inventory (No Actions History)
+## Example 5: Transfer Without Orders
 
-**Goal**: Transfer just the current inventory state without action history.
+**Goal**: Transfer broadcast and users data, but exclude orders.
 
 **Steps**:
 
 ```bash
-# Export without broadcast actions
+# Export without orders
 npm run data:export -- \
   --source production \
-  --output ./inventory-snapshot \
-  --skip-broadcast
+  --output ./data-no-orders \
+  --skip-orders
 
 # Import to emulator
 npm run data:import -- \
   --target emulator \
-  --input ./inventory-snapshot
+  --input ./data-no-orders
 ```
 
 **Notes**:
-- Skipping broadcast means you only get the current state
-- The app will still work but won't have action history for debugging
-- Much faster for large datasets
+- Complete broadcast history is still transferred (required for app to function)
+- Only orders are excluded
+- Useful when orders contain sensitive customer information
 
 ## Example 6: Migrate Data Between Projects
 
@@ -144,9 +142,7 @@ npm run data:import -- \
 # 1. Export from source project (using its service account)
 npm run data:export -- \
   --source production \
-  --output ./migration-data \
-  --days 0 \
-  --include-orders
+  --output ./migration-data
 
 # 2. Manually update service-account-staging.json to point to the new project
 
@@ -157,6 +153,8 @@ npm run data:import -- \
 ```
 
 **Notes**:
+- Exports complete dataset with all collections
+- Timestamps are preserved with full precision for exact action replay
 - Ensure the new project has the same Firestore structure
 - Consider setting up security rules before importing
 
@@ -200,23 +198,21 @@ npm run emulators
 
 **Solution**:
 ```bash
-# Reduce the amount of data being transferred:
+# Large datasets take time - be patient
+# The broadcast collection requires all historical data for the app to function
+# Firestore batches writes (500 documents per batch) for safety
 
-# Option 1: Limit days
-npm run data:transfer -- --from production --to emulator --days 7
-
-# Option 2: Skip broadcast history entirely
+# If you only need users/orders without broadcast history (not recommended):
 npm run data:transfer -- --from production --to emulator --skip-broadcast
-
-# Option 3: Skip users if not needed
-npm run data:transfer -- --from production --to emulator --skip-users
 ```
+
+**Note**: Skipping broadcast history will prevent the application from functioning correctly. The system requires the complete action history to reconstruct state.
 
 ## Best Practices
 
 1. **Test First**: Always test transfers on emulator before touching staging/production
 2. **Backup Before Import**: Create a backup before importing data to any environment
-3. **Use Time Filters**: Don't transfer more data than you need
+3. **Transfer Complete Data**: Include all broadcast history for app to function correctly
 4. **Secure Keys**: Never commit service account keys to version control
 5. **Document Transfers**: Keep a log of when and why you transferred data
 
@@ -245,7 +241,7 @@ echo "Creating backup..."
 npm run data:export -- --source staging --output "$BACKUP_DIR"
 
 echo "Refreshing staging with production data..."
-npm run data:transfer -- --from production --to staging --days 7
+npm run data:transfer -- --from production --to staging
 
 echo "Done! Backup saved at $BACKUP_DIR"
 ```

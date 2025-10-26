@@ -101,62 +101,52 @@ This is equivalent to running export followed by import, but more convenient.
 
 ## Options
 
-### Time Filtering
-
-By default, only the last 30 days of broadcast actions are exported to avoid transferring stale data:
-
-```bash
-# Export only last 7 days
-npm run data:export -- --source production --output ./data --days 7
-
-# Export all broadcast history
-npm run data:export -- --source production --output ./data --days 0
-```
-
 ### Collection Selection
 
 Control which collections are transferred:
 
 ```bash
-# Skip broadcast collection (action history)
+# Skip broadcast collection (not recommended - app needs full history)
 npm run data:transfer -- --from production --to emulator --skip-broadcast
 
 # Skip users collection
 npm run data:transfer -- --from production --to emulator --skip-users
 
-# Include orders (dobutsu collection) - not included by default
-npm run data:transfer -- --from production --to emulator --include-orders
+# Skip orders (dobutsu collection)
+npm run data:transfer -- --from production --to emulator --skip-orders
 ```
+
+**⚠️ Important**: The broadcast collection contains the complete action history that is required to reconstruct the application state. Skipping it is not recommended for normal use.
 
 ### Combined Options
 
 ```bash
-# Export production inventory only (no broadcast, no users, with orders)
+# Export only users (skip broadcast and orders)
 npm run data:export -- \
   --source production \
   --output ./data \
   --skip-broadcast \
-  --skip-users \
-  --include-orders
+  --skip-orders
 ```
 
 ## Collections
 
 ### Transferred by Default
 
-1. **`broadcast`** - Action history for state synchronization
-   - Contains Redux actions that modify inventory state
-   - Filtered by time (last 30 days by default) to reduce size
+1. **`broadcast`** - Complete action history for state synchronization
+   - Contains all Redux actions that modify inventory state
+   - **Required** for the application to function correctly
+   - Actions must be replayed in exact order with precise timestamps
 
+2. **`users`** - Admin user data
+   - User profiles and activity timestamps
 2. **`users`** - Admin user data
    - User profiles and activity timestamps
    - Small dataset, always fully transferred
 
-### Optional Collections
-
 3. **`dobutsu`** - Orders and payments
    - Contains order details and PayPal payment information
-   - Only transferred with `--include-orders` flag
+   - Transferred by default (use `--skip-orders` to exclude)
    - Can be large depending on order volume
 
 ## Common Workflows
@@ -177,19 +167,17 @@ npm run dev:local
 ### Scenario 2: Populate Staging Environment
 
 ```bash
-# Transfer recent data to staging
-npm run data:transfer -- --from production --to staging --days 7
+# Transfer all data to staging
+npm run data:transfer -- --from production --to staging
 ```
 
 ### Scenario 3: Create a Backup
 
 ```bash
-# Export all data including orders
+# Export all data (broadcast, users, and orders)
 npm run data:export -- \
   --source production \
-  --output ./backup-2025-10-26 \
-  --days 0 \
-  --include-orders
+  --output ./backup-2025-10-26
 
 # Store the backup directory safely
 ```
@@ -215,17 +203,22 @@ Exported data is stored in JSON format in `firestore-export.json`:
         "data": {
           "type": "update_item",
           "payload": { ... },
-          "timestamp": "2025-10-26T12:00:00.000Z",
+          "timestamp": {
+            "_timestamp": true,
+            "_seconds": 1729944000,
+            "_nanoseconds": 123456789
+          },
           "creator": "user-uid"
         }
       }
     ],
-    "users": [ ... ]
+    "users": [ ... ],
+    "dobutsu": [ ... ]
   }
 }
 ```
 
-Firestore Timestamps are automatically converted to ISO 8601 strings for JSON serialization and converted back during import.
+**Timestamp Preservation**: Firestore Timestamps are preserved with full precision (seconds and nanoseconds) to ensure actions can be replayed in the exact order they occurred. This is critical for the application's state reconstruction.
 
 ## Troubleshooting
 
@@ -255,15 +248,15 @@ npm run emulators
 **Problem**: Large datasets take time to import
 
 **Solution**: 
-- Use `--days 7` to limit broadcast history
-- Use `--skip-broadcast` if you don't need action history
-- Be patient - Firestore batches writes for safety
+- Be patient - Firestore batches writes (500 documents at a time) for safety
+- The broadcast collection requires all historical data to function correctly
+- Consider the time investment as necessary for data integrity
 
 ## Best Practices
 
 1. **Always backup before importing**: Export current state before importing data
 2. **Test locally first**: Use emulator to test transfers before touching staging/production
-3. **Use time filtering**: Don't transfer unnecessary historical data
+3. **Transfer complete data**: The application requires full broadcast history to function
 4. **Secure service accounts**: Keep service account keys out of version control
 5. **Document transfers**: Note when and why you transferred data in your team's records
 

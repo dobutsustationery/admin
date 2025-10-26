@@ -17,9 +17,9 @@
  *   npm run data:transfer -- --from production --to staging
  *
  * Collections transferred:
- * - broadcast: Action history (with optional time filtering)
+ * - broadcast: Complete action history (required for state reconstruction)
  * - users: Admin user data
- * - dobutsu: Orders and payments (optional)
+ * - dobutsu: Orders and payments
  *
  * Note: Requires service account keys for non-emulator environments
  */
@@ -27,7 +27,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { initializeApp, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -63,19 +63,17 @@ if (!command) {
   console.log("  Transfer: --from <env> --to <env>");
   console.log("\nEnvironments: production | staging | emulator");
   console.log("\nOptions:");
-  console.log("  --days <number>      Only export broadcast actions from last N days (default: 30)");
-  console.log("  --skip-broadcast     Skip the broadcast collection");
+  console.log("  --skip-broadcast     Skip the broadcast collection (not recommended)");
   console.log("  --skip-users         Skip the users collection");
-  console.log("  --include-orders     Include the dobutsu (orders) collection");
+  console.log("  --skip-orders        Skip the dobutsu (orders) collection");
   process.exit(1);
 }
 
 // Configuration
 const config = {
-  days: Number.parseInt(options.days || "30", 10),
   skipBroadcast: options["skip-broadcast"] === true,
   skipUsers: options["skip-users"] === true,
-  includeOrders: options["include-orders"] === true,
+  skipOrders: options["skip-orders"] === true,
 };
 
 console.log("🔧 Configuration:", config);
@@ -152,7 +150,7 @@ async function exportData(db, outputDir) {
   if (!config.skipUsers) {
     collections.push("users");
   }
-  if (config.includeOrders) {
+  if (!config.skipOrders) {
     collections.push("dobutsu");
   }
 
@@ -165,30 +163,23 @@ async function exportData(db, outputDir) {
     console.log(`\n  Exporting ${collectionName}...`);
     const collectionRef = db.collection(collectionName);
     
-    let query = collectionRef;
-    
-    // Filter broadcast by date if specified
-    if (collectionName === "broadcast" && config.days > 0) {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - config.days);
-      console.log(`    Filtering actions since ${cutoffDate.toISOString()}`);
-      query = query.where("timestamp", ">=", cutoffDate);
-    }
-
-    const snapshot = await query.get();
+    const snapshot = await collectionRef.get();
     const documents = [];
 
     snapshot.forEach((doc) => {
       const data = doc.data();
       
-      // Convert Firestore timestamps to ISO strings for JSON serialization
+      // Preserve Firestore Timestamps with full precision
+      // Store them as objects with _seconds and _nanoseconds
       const serializedData = JSON.parse(
         JSON.stringify(data, (key, value) => {
-          if (value && typeof value === "object" && value._seconds) {
-            // Firestore Timestamp
-            return new Date(
-              value._seconds * 1000 + value._nanoseconds / 1000000,
-            ).toISOString();
+          if (value && typeof value === "object" && value._seconds !== undefined) {
+            // Firestore Timestamp - preserve exact seconds and nanoseconds
+            return {
+              _timestamp: true,
+              _seconds: value._seconds,
+              _nanoseconds: value._nanoseconds || 0,
+            };
           }
           return value;
         }),
@@ -239,15 +230,18 @@ async function importData(db, inputDir) {
     for (const { id, data } of documents) {
       const docRef = db.collection(collectionName).doc(id);
       
-      // Convert ISO date strings back to Firestore Timestamps
+      // Restore Firestore Timestamps from stored _seconds and _nanoseconds
       const deserializedData = JSON.parse(
         JSON.stringify(data),
         (key, value) => {
           if (
-            typeof value === "string" &&
-            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)
+            value &&
+            typeof value === "object" &&
+            value._timestamp === true &&
+            value._seconds !== undefined
           ) {
-            return new Date(value);
+            // Restore as Firestore Timestamp with exact precision
+            return new Timestamp(value._seconds, value._nanoseconds || 0);
           }
           return value;
         },
