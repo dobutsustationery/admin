@@ -76,5 +76,10 @@
   },
   "trustedDependencies": [
     "protobufjs"
-  ]
+  ],
+  "main": "svelte.config.js",
+  "directories": {
+    "test": "tests"
+  },
+  "keywords": []
 }
