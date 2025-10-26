@@ -27,8 +27,9 @@ test.describe("Inventory Management Story", () => {
 		await page.goto("/inventory");
 		await page.waitForLoadState("networkidle");
 		
-		// Wait for page to render (even if just showing Loading text)
-		await page.waitForTimeout(3000);
+		// Wait for Firebase emulator connection and page rendering
+		// The app connects to emulators and loads broadcast actions to rebuild state
+		await page.waitForTimeout(5000);
 
 		// Take screenshot of signed-out state
 		await page.screenshot({

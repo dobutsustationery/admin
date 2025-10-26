@@ -51,9 +51,17 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: "npx http-server build -p 4173 -c-1",
+    command: "vite preview --mode emulator --port 4173",
     url: "http://localhost:4173",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
+    env: {
+      VITE_FIREBASE_ENV: "local",
+      VITE_FIREBASE_LOCAL_PROJECT_ID: "demo-test-project",
+      VITE_EMULATOR_FIRESTORE_HOST: "localhost",
+      VITE_EMULATOR_FIRESTORE_PORT: "8080",
+      VITE_EMULATOR_AUTH_HOST: "localhost",
+      VITE_EMULATOR_AUTH_PORT: "9099",
+    },
   },
 });
