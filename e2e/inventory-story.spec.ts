@@ -26,6 +26,9 @@ test.describe("Inventory Management Story", () => {
 		// Step 0: Navigate to app while signed out
 		await page.goto("/inventory");
 		await page.waitForLoadState("networkidle");
+		
+		// Wait for page to render (even if just showing Loading text)
+		await page.waitForTimeout(3000);
 
 		// Take screenshot of signed-out state
 		await page.screenshot({

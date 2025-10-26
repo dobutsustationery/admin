@@ -29,7 +29,7 @@ test.describe("Inventory Page", () => {
 	}) => {
 		// Step 0: Start from signed-out state
 		await page.goto("/inventory", { waitUntil: "networkidle" });
-		await page.waitForTimeout(2000);
+		await page.waitForTimeout(3000);
 
 		await page.screenshot({
 			path: "e2e/screenshots/inventory-000-signed-out.png",
