@@ -13,14 +13,19 @@ The E2E tests verify that the application works correctly when integrated with F
 ## Prerequisites
 
 1. **Node.js 18+** or **Bun 1.0+**
-2. **Firebase CLI**: `npm install -g firebase-tools`
+2. **Firebase CLI**: Available via `npx firebase-tools` or `npm install -g firebase-tools`
 3. **Playwright**: Installed via `npm install`
+4. **Network Access**: Firebase emulators require downloading JAR files on first run
 
 ## Running Tests
 
-### Quick Run (Recommended)
+### In CI/GitHub Actions (Recommended)
 
-The easiest way to run E2E tests is using the helper script:
+The tests are designed to run in GitHub Actions where network access is available for downloading Firebase emulators. Simply push to your branch or create a PR, and the tests will run automatically.
+
+### Locally (If Firebase Emulators Can Be Downloaded)
+
+#### Option 1: All-in-One Script
 
 ```bash
 npm run test:e2e
@@ -33,20 +38,16 @@ This script will:
 4. Run Playwright tests
 5. Clean up emulators afterwards
 
-### Manual Run
+#### Option 2: Manual Control
 
-If you prefer to run tests manually:
+If you prefer to run tests manually with emulators already running:
 
 ```bash
 # Terminal 1: Start Firebase emulators
 npm run emulators
 
-# Terminal 2: Load test data
-node e2e/helpers/load-test-data.js
-
-# Terminal 2: Build and run tests
-npm run build:local
-npx playwright test
+# Terminal 2: Run tests (simpler script for when emulators are running)
+npm run test:e2e:simple
 ```
 
 ### Other Test Commands
@@ -66,14 +67,15 @@ npm run test:e2e:report
 
 ```
 e2e/
-├── fixtures/          # Custom Playwright fixtures
-│   └── auth.ts       # Authentication mocking fixture
-├── helpers/          # Helper scripts
-│   └── load-test-data.js  # Loads test data into emulator
-├── screenshots/      # Test screenshots (gitignored)
-├── reports/          # Test reports (gitignored)
-├── inventory.spec.ts # Inventory page tests
-└── run-tests.sh      # Test runner script
+├── fixtures/              # Custom Playwright fixtures
+│   └── auth.ts           # Authentication mocking fixture
+├── helpers/              # Helper scripts
+│   └── load-test-data.js # Loads test data into emulator
+├── screenshots/          # Test screenshots (gitignored)
+├── reports/              # Test reports (gitignored)
+├── inventory.spec.ts     # Inventory page tests
+├── run-tests.sh          # Full test runner with emulator management
+└── run-tests-simple.sh   # Simple test runner (assumes emulators running)
 ```
 
 ## Writing Tests

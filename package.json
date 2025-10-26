@@ -27,6 +27,7 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest watch --coverage",
     "test:e2e": "bash e2e/run-tests.sh",
+    "test:e2e:simple": "bash e2e/run-tests-simple.sh",
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:headed": "npx playwright test --headed",
     "test:e2e:report": "npx playwright show-report e2e/reports/html",
