@@ -1,37 +1,37 @@
 <script lang="ts">
-import { createEventDispatcher } from "svelte";
-import type { Item } from "./inventory";
-import SelectBox from "./SelectBox.svelte";
-import { store } from "./store";
+  import { createEventDispatcher } from "svelte";
+  import SelectBox from "./SelectBox.svelte";
+  import type { Item } from "./inventory";
+  import { store } from "./store";
 
-export const key: string = "";
-export const row: number = -1;
-export const qty: number = -1;
+  export let key: string = "";
+  export let row: number = -1;
+  export let qty: number = -1;
 
-let state = store.getState();
-let item: Item | null = null;
-$: if ($store) {
-  state = store.getState();
-  item = { ...state.inventory.idToItem[key] };
-}
-
-const dispatchEvent = createEventDispatcher();
-function updateQty() {
-  dispatchEvent("qty", qty);
-}
-function handleEnterKey(e: KeyboardEvent) {
-  if (e.key === "Enter") {
-    const target = e.target as HTMLInputElement;
-    target.blur();
+  let state = store.getState();
+  let item: Item | null = null;
+  $: if ($store) {
+    state = store.getState();
+    item = { ...state.inventory.idToItem[key] };
   }
-}
 
-function updateSubtype(key: string) {
-  return (e: CustomEvent) => {
-    const subtype = e.detail;
-    dispatchEvent("subtype", subtype);
-  };
-}
+  const dispatchEvent = createEventDispatcher();
+  function updateQty() {
+    dispatchEvent("qty", qty);
+  }
+  function handleEnterKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      const target = e.target as HTMLInputElement;
+      target.blur();
+    }
+  }
+
+  function updateSubtype(key: string) {
+    return (e: CustomEvent) => {
+        const subtype = e.detail;
+        dispatchEvent("subtype", subtype);
+    }
+  }
 </script>
 
 {#if key && item !== null}
