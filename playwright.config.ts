@@ -26,9 +26,9 @@ export default defineConfig({
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: "http://localhost:4173",
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: "on-first-retry",
+    trace: "off",
     screenshot: "on",
-    video: "retain-on-failure",
+    video: "off",
   },
 
   /* Configure visual regression testing */
