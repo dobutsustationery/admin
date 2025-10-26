@@ -179,7 +179,9 @@ export async function authenticateUser(
 	}
 
 	// Inject the auth state into the browser
-	await page.goto("about:blank");
+	// Navigate to the base URL first so localStorage is accessible
+	await page.goto("/");
+	await page.waitForLoadState("domcontentloaded");
 	await injectAuthState(page, user);
 
 	return user;
