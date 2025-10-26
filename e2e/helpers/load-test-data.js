@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+
+/**
+ * Helper script to load test data into Firestore emulator for E2E tests
+ * 
+ * This script loads the test-data/firestore-export.json into the Firestore emulator
+ * before running E2E tests.
+ */
+
+import { readFileSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+
+// Initialize Firebase Admin for emulator
+const app = initializeApp({
+  projectId: 'demo-test-project',
+});
+
+const db = getFirestore(app);
+
+// Connect to emulator
+db.settings({
+  host: 'localhost:8080',
+  ssl: false,
+});
+
+console.log('🔧 Connected to Firestore emulator at localhost:8080');
+
+/**
+ * Load test data into Firestore emulator
+ */
+async function loadTestData() {
+  const testDataPath = resolve(process.cwd(), 'test-data', 'firestore-export.json');
+  
+  console.log(`\n📥 Loading test data from ${testDataPath}...`);
+  
+  const exportData = JSON.parse(readFileSync(testDataPath, 'utf8'));
+  console.log(`   Exported at: ${exportData.exportedAt}`);
+
+  for (const [collectionName, documents] of Object.entries(exportData.collections)) {
+    console.log(`\n  Loading ${collectionName} (${documents.length} docs)...`);
+    
+    let batch = db.batch();
+    let batchCount = 0;
+    const BATCH_SIZE = 500; // Firestore batch limit
+
+    for (const { id, data } of documents) {
+      const docRef = db.collection(collectionName).doc(id);
+      
+      // Restore Firestore Timestamps from stored _seconds and _nanoseconds
+      const deserializedData = JSON.parse(
+        JSON.stringify(data),
+        (key, value) => {
+          if (
+            value &&
+            typeof value === 'object' &&
+            value._timestamp === true &&
+            value._seconds !== undefined
+          ) {
+            // Restore as Firestore Timestamp with exact precision
+            return new Timestamp(value._seconds, value._nanoseconds || 0);
+          }
+          return value;
+        },
+      );
+
+      batch.set(docRef, deserializedData);
+      batchCount++;
+
+      // Commit batch when it reaches the limit
+      if (batchCount >= BATCH_SIZE) {
+        await batch.commit();
+        console.log(`    Committed batch of ${batchCount} documents`);
+        // Create a new batch for the next set of documents
+        batch = db.batch();
+        batchCount = 0;
+      }
+    }
+
+    // Commit remaining documents
+    if (batchCount > 0) {
+      await batch.commit();
+      console.log(`    Committed final batch of ${batchCount} documents`);
+    }
+
+    console.log(`    ✓ Loaded ${documents.length} documents to ${collectionName}`);
+  }
+
+  console.log('\n✅ Test data loaded successfully\n');
+}
+
+// Run the loader
+loadTestData()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('\n❌ Error loading test data:', error);
+    process.exit(1);
+  });
