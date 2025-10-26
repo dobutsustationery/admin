@@ -30,6 +30,9 @@ data-export
 # Exclude actual screenshots but keep baselines
 /e2e/*-actual.png
 /e2e/*-diff.png
+# Numbered story screenshots (generated during tests)
+/e2e/screenshots/*.png
+!/e2e/screenshots/.gitkeep
 
 # Firebase debug logs
 firebase-debug.log

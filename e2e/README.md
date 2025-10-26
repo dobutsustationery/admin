@@ -7,8 +7,9 @@ This directory contains Playwright-based E2E tests for the Dobutsu Admin applica
 The E2E tests verify that the application works correctly when integrated with Firebase emulators. They test:
 
 - **Inventory Page**: Loads and displays inventory data from Firestore
-- **Authentication**: Mocks Firebase Auth to bypass login
+- **Authentication**: Uses Firebase Auth Emulator for real authentication
 - **Data Loading**: Verifies test data from `test-data/firestore-export.json` is properly loaded
+- **User Journey**: Tests complete workflows with numbered screenshots that tell a story
 
 ## Prerequisites
 
@@ -68,12 +69,15 @@ npm run test:e2e:report
 ```
 e2e/
 ├── fixtures/              # Custom Playwright fixtures
-│   └── auth.ts           # Authentication mocking fixture
+│   └── auth.ts           # Legacy authentication fixture (not used)
 ├── helpers/              # Helper scripts
+│   ├── auth-emulator.ts  # Firebase Auth Emulator integration
 │   └── load-test-data.js # Loads test data into emulator
-├── screenshots/          # Test screenshots (gitignored)
+├── screenshots/          # Numbered story screenshots (gitignored)
+│   └── README.md         # Screenshot documentation
 ├── reports/              # Test reports (gitignored)
-├── inventory.spec.ts     # Inventory page tests
+├── inventory.spec.ts     # Inventory page tests with auth
+├── inventory-story.spec.ts # Complete user journey test
 ├── run-tests.sh          # Full test runner with emulator management
 └── run-tests-simple.sh   # Simple test runner (assumes emulators running)
 ```
@@ -95,7 +99,44 @@ test('my test', async ({ page }) => {
 
 ### Authentication
 
-Tests automatically mock Firebase authentication. No need to handle login manually.
+Tests use the Firebase Auth Emulator to create real authenticated sessions:
+
+```typescript
+import { authenticateUser } from './helpers/auth-emulator.ts';
+
+test('my authenticated test', async ({ page }) => {
+  // Sign in via Firebase Auth Emulator
+  const user = await authenticateUser(page, 'test@example.com', 'password123');
+  
+  // Now navigate to protected pages
+  await page.goto('/inventory');
+  
+  // Your test assertions
+});
+```
+
+The `authenticateUser` helper:
+1. Creates a user in the Firebase Auth Emulator (or signs in if exists)
+2. Injects the auth tokens into the browser
+3. Returns user details (uid, email, etc.)
+
+### Numbered Screenshots
+
+Tests create numbered screenshots that tell a visual story:
+
+```typescript
+// Step 0: Start from signed-out state
+await page.screenshot({ path: 'e2e/screenshots/000-signed-out.png' });
+
+// Step 1: After authentication
+await page.screenshot({ path: 'e2e/screenshots/001-authenticated.png' });
+
+// Step 2: Data loaded
+await page.screenshot({ path: 'e2e/screenshots/002-data-loaded.png' });
+```
+
+This creates a sequential visual narrative of the user journey through the application.
+See `e2e/screenshots/README.md` for more details.
 
 ### Test Data
 
