@@ -114,6 +114,22 @@ To customize your environment:
 2. Set `VITE_FIREBASE_ENV` to `local`, `staging`, or `production`
 3. Configure the appropriate Firebase credentials
 
+**Converting Firebase Console Config:**
+
+If you have a Firebase web app configuration from the Firebase Console, use the provided utility to convert it to the `.env` format:
+
+```bash
+# Interactive mode - paste your Firebase config
+npm run firebase:convert:staging
+# or
+npm run firebase:convert:production
+
+# Or convert from a file
+node scripts/firebase-config-to-env.js --input firebase-config.json --env staging --output .env.staging
+```
+
+See `scripts/README.md` for detailed information about the Firebase config converter utility.
+
 See `.env.example` for all available configuration options.
 
 ### Running the Application
@@ -290,6 +306,7 @@ admin/
 ## Documentation
 
 - **[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md)**: Comprehensive guide for environment configuration
+- **[scripts/README.md](scripts/README.md)**: Firebase config to .env converter utility documentation
 - **[DATA_TRANSFER.md](DATA_TRANSFER.md)**: Guide for transferring data between environments
 - **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
