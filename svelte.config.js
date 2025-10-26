@@ -7,7 +7,14 @@ const config = {
 	// for more information about preprocessors
 	preprocess: [
 		preprocess({
-			postcss: false
+			postcss: false,
+			typescript: {
+				tsconfigFile: false,
+				compilerOptions: {
+					module: 'esnext',
+					target: 'esnext',
+				}
+			}
 		})
 	],
 
