@@ -36,28 +36,141 @@ cd admin
 # Install dependencies (choose one)
 bun install  # Recommended for speed
 npm install  # Alternative
+```
 
-# Start development server
-bun dev
-# or
+### Environment Configuration
+
+This application supports three environments:
+1. **Local** - Firebase emulators for offline development
+2. **Staging** - Staging Firebase project (optional)
+3. **Production** - Production Firebase project
+
+#### Quick Setup
+
+**Option 1: Local Development with Emulators (Recommended for development)**
+
+```bash
+# No additional setup needed - uses .env.local by default
+npm run dev:local
+
+# In a separate terminal, start the Firebase emulators
+npm run emulators
+```
+
+**Option 2: Production Environment**
+
+```bash
+# Uses production Firebase project
+npm run dev:production
+```
+
+**Option 3: Staging Environment**
+
+```bash
+# First, update .env.staging with your staging Firebase credentials
+# Then run:
+npm run dev:staging
+```
+
+#### Environment Switcher (Alternative Method)
+
+If you prefer to use `npm run dev` without specifying the mode each time, you can use the environment switcher scripts to set a default:
+
+```bash
+# Switch to local environment
+npm run env:local
+
+# Switch to staging environment  
+npm run env:staging
+
+# Switch to production environment
+npm run env:production
+
+# Now just run dev normally - it will use the selected environment
+npm run dev
+```
+
+This copies the selected environment configuration to `.env`, which becomes your default environment.
+
+**Note:** The actual environment files are:
+- Local: `.env.emulator` (used with `--mode emulator`)
+- Staging: `.env.staging` (used with `--mode staging`)  
+- Production: `.env.production` (used with `--mode production`)
+
+The `.env.local` file is also present and loaded by Vite in all non-production modes.
+
+#### Detailed Environment Setup
+
+The application uses Vite's environment mode feature. Pre-configured environment files are provided:
+
+- `.env.emulator` - Local emulator configuration (used with `--mode emulator`)
+- `.env.local` - Vite's local override file (always loaded in non-production)
+- `.env.staging` - Staging environment configuration (used with `--mode staging`)
+- `.env.production` - Production environment configuration (used with `--mode production`)
+
+To customize your environment:
+
+1. Copy `.env.example` to `.env` if you want to override the defaults
+2. Set `VITE_FIREBASE_ENV` to `local`, `staging`, or `production`
+3. Configure the appropriate Firebase credentials
+
+See `.env.example` for all available configuration options.
+
+### Running the Application
+
+**Local Development with Emulators:**
+
+```bash
+# Terminal 1: Start Firebase emulators
+npm run emulators
+
+# Terminal 2: Start dev server
+npm run dev:local
+# or simply
 npm run dev
 ```
 
 The application will be available at `http://localhost:5173`
+The Firebase Emulator UI will be available at `http://localhost:4000`
+
+**Development with Staging/Production:**
+
+```bash
+# Staging
+npm run dev:staging
+
+# Production
+npm run dev:production
+```
+
+### Firebase Emulator Commands
+
+```bash
+# Start emulators
+npm run emulators
+
+# Export emulator data (save state)
+npm run emulators:export
+
+# Import previously exported data
+npm run emulators:import
+```
 
 ### Building for Production
 
 ```bash
 # Build the application
-bun run build
-# or
 npm run build
+# or for specific environment
+npm run build:local
+npm run build:staging
+npm run build:production
 
 # Preview the production build
-bun run preview
-# or
 npm run preview
 ```
+
+**For detailed environment configuration information, see [ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md).**
 
 ### Deployment
 
@@ -159,6 +272,7 @@ admin/
 
 ## Documentation
 
+- **[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md)**: Comprehensive guide for environment configuration
 - **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
 - **[EXTRACTION_GUIDE.md](EXTRACTION_GUIDE.md)**: How this repository was extracted from the monorepo
