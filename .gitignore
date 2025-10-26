@@ -14,3 +14,11 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 /coverage
 emulator-data
+
+# Service account keys (security sensitive)
+service-account-*.json
+!service-account-example.json
+
+# Data transfer temporary files
+.data-transfer-tmp
+data-export
