@@ -2,6 +2,10 @@
 
 A command-line tool for transferring Firestore data between environments (production → staging/emulator).
 
+## Quick Start
+
+**New to this tool?** Check out [DATA_TRANSFER_EXAMPLES.md](DATA_TRANSFER_EXAMPLES.md) for step-by-step examples and common scenarios.
+
 ## Overview
 
 This tool enables you to:
@@ -309,7 +313,8 @@ execSync('node scripts/transfer-data.js --target staging --input ./data');
 
 ## See Also
 
+- **[DATA_TRANSFER_EXAMPLES.md](DATA_TRANSFER_EXAMPLES.md)** - Step-by-step examples and common scenarios
 - [Firebase Emulator Documentation](https://firebase.google.com/docs/emulator-suite)
 - [Firestore Data Export/Import](https://firebase.google.com/docs/firestore/manage-data/export-import)
-- [ENVIRONMENT_SETUP.md](../ENVIRONMENT_SETUP.md) - Environment configuration guide
-- [README.md](../README.md) - General project documentation
+- [ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md) - Environment configuration guide
+- [README.md](README.md) - General project documentation
