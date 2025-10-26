@@ -8,9 +8,12 @@ Before using the data transfer tool, ensure you have:
 
 - [ ] Node.js 18+ installed
 - [ ] Dependencies installed: `npm install`
-- [ ] Service account keys downloaded (for production/staging):
-  - [ ] `service-account-production.json` (if transferring from/to production)
-  - [ ] `service-account-staging.json` (if transferring from/to staging)
+- [ ] Service account keys downloaded (for reading):
+  - [ ] `service-account-production.json` (for reading from production)
+  - [ ] `service-account-staging.json` (for reading/writing to staging)
+- [ ] **For writing to production** (rare):
+  - [ ] `service-account-production-write.json` (special write credentials)
+  - [ ] Understanding of `--force` flag requirement
 - [ ] Firebase emulators installed (if using emulator): `npm install -g firebase-tools`
 
 ## Example 1: Test Locally with Production Data
@@ -107,6 +110,40 @@ npm run data:import -- \
 ```
 
 **Warning**: This will overwrite existing data in staging!
+
+## Example 4b: Restore to Production (Emergency Recovery)
+
+**Goal**: Restore production from a backup in case of data loss or corruption.
+
+**⚠️ EXTREME CAUTION REQUIRED** - Only do this in an emergency!
+
+**Steps**:
+
+```bash
+# 1. Ensure you have production write credentials
+# Place service-account-production-write.json in project root
+
+# 2. Create a backup of current production state FIRST
+npm run data:export -- \
+  --source production \
+  --output ./backup-before-restore-$(date +%Y-%m-%d-%H%M%S)
+
+# 3. Restore from backup to production (requires --force)
+npm run data:import -- \
+  --target production \
+  --input backups/backup-2025-10-20 \
+  --force
+
+# 4. Verify the data in production
+```
+
+**Critical Notes**:
+- **ALWAYS backup current production first** before restoring
+- Requires `service-account-production-write.json` (separate from read credentials)
+- Must use `--force` flag
+- Script will show warnings - read them carefully
+- Consider testing restore in staging first
+- This will **OVERWRITE** all production data!
 
 ## Example 5: Transfer Without Orders
 

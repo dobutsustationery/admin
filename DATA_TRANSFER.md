@@ -25,11 +25,38 @@ You need a Firebase service account key for each non-emulator environment:
 3. Navigate to: **Project Settings** → **Service Accounts**
 4. Click **Generate New Private Key**
 5. Save the downloaded JSON file as:
-   - `service-account-production.json` (for production)
+   - `service-account-production.json` (for **reading** from production)
    - `service-account-staging.json` (for staging)
 6. Place the file in the root directory of this project
 
 **⚠️ Security Warning**: Never commit service account keys to version control! These files are already in `.gitignore`.
+
+### For Writing to Production (Extra Protection)
+
+**Writing data to production is dangerous!** To prevent accidental overwrites, additional safeguards are required:
+
+1. **Special Write Credentials**: Create a separate service account with write permissions
+   - Go to Firebase Console → IAM & Admin → Service Accounts
+   - Create a new service account (e.g., "Firestore Data Import Writer")
+   - Grant it "Cloud Datastore User" role
+   - Generate and download the key
+   - Save as: `service-account-production-write.json`
+   - **Keep this file extremely secure** - it has write access to production!
+
+2. **Force Flag Required**: You must explicitly add `--force` to any command that writes to production
+   - This prevents accidental production writes
+   - The script will refuse to run without this flag
+
+3. **Example**:
+   ```bash
+   # This will FAIL (missing --force)
+   npm run data:import -- --target production --input ./backup
+   
+   # This will WORK (with --force)
+   npm run data:import -- --target production --input ./backup --force
+   ```
+
+**Note**: Reading from production (exports) does NOT require special credentials or `--force` flag.
 
 ### For Emulator Environment
 
@@ -78,9 +105,16 @@ npm run data:import -- --target emulator --input ./data-export
 
 # Import to staging
 npm run data:import -- --target staging --input ./data-export
+
+# Import to PRODUCTION (requires --force and special credentials)
+npm run data:import -- --target production --input ./data-export --force
 ```
 
 **⚠️ Warning**: Import will overwrite existing documents with the same IDs!
+
+**🔒 Production Write Protection**: Importing to production requires:
+- `--force` flag
+- `service-account-production-write.json` credentials
 
 ### Transfer Data Directly
 
@@ -90,12 +124,16 @@ Transfer data from one environment to another in a single command:
 # Production → Emulator (most common use case)
 npm run data:transfer -- --from production --to emulator
 
-# Production → Staging
-npm run data:transfer -- --from production --to staging
+# Production → Staging (writing to production requires --force)
+npm run data:transfer -- --from staging --to production --force
 
 # Staging → Emulator
 npm run data:transfer -- --from staging --to emulator
 ```
+
+**🔒 Production Write Protection**: When transferring TO production, you must:
+- Add `--force` flag to the command
+- Have `service-account-production-write.json` credentials
 
 This is equivalent to running export followed by import, but more convenient.
 
@@ -222,6 +260,30 @@ Exported data is stored in JSON format in `firestore-export.json`:
 
 ## Troubleshooting
 
+### "Writing to production requires --force flag"
+
+**Problem**: Attempting to import or transfer data to production without the `--force` flag
+
+**Solution**: This is a safety feature. Add `--force` to your command:
+```bash
+npm run data:import -- --target production --input ./backup --force
+```
+
+**Why**: This prevents accidental overwrites of production data.
+
+### "Production write credentials not found"
+
+**Problem**: Missing `service-account-production-write.json` file
+
+**Solution**: 
+1. Go to Firebase Console → IAM & Admin → Service Accounts
+2. Create a new service account with write permissions
+3. Grant it "Cloud Datastore User" role
+4. Download the key and save as `service-account-production-write.json`
+5. Keep this file secure - it has write access to production!
+
+**Why**: Production writes require separate, more restricted credentials than read operations.
+
 ### "Service account key not found"
 
 **Problem**: Missing service account JSON file
@@ -259,14 +321,35 @@ npm run emulators
 3. **Transfer complete data**: The application requires full broadcast history to function
 4. **Secure service accounts**: Keep service account keys out of version control
 5. **Document transfers**: Note when and why you transferred data in your team's records
+6. **Never write to production casually**: Use the `--force` flag only when absolutely necessary
 
 ## Security Considerations
 
+### General Security
 - Service account keys grant full access to Firestore - treat them like passwords
 - Never commit service account keys to git (they're in `.gitignore`)
 - Rotate service account keys periodically
 - Use different service accounts for production vs staging
-- Consider using read-only service accounts for export-only operations
+
+### Production Write Protection
+This tool implements multiple layers of protection for production writes:
+
+1. **Separate Credentials**: Production writes require `service-account-production-write.json`
+   - Different from read-only `service-account-production.json`
+   - Must be explicitly created and configured
+   - Allows you to grant minimal write permissions only when needed
+
+2. **Force Flag Required**: The `--force` flag must be explicitly added
+   - Prevents accidental copy-paste errors
+   - Makes production writes intentional and explicit
+   - Script will exit with error message if flag is missing
+
+3. **Warning Messages**: The script displays prominent warnings
+   - Alerts you when writing to production
+   - Reminds you to create backups first
+   - Provides clear error messages if protection checks fail
+
+**Recommendation**: Keep `service-account-production-write.json` in a secure location (not on developer laptops). Only copy it temporarily when needed for data migrations.
 
 ## Limitations
 

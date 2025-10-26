@@ -66,6 +66,7 @@ if (!command) {
   console.log("  --skip-broadcast     Skip the broadcast collection (not recommended)");
   console.log("  --skip-users         Skip the users collection");
   console.log("  --skip-orders        Skip the dobutsu (orders) collection");
+  console.log("  --force              Required when importing/transferring to production");
   process.exit(1);
 }
 
@@ -74,14 +75,62 @@ const config = {
   skipBroadcast: options["skip-broadcast"] === true,
   skipUsers: options["skip-users"] === true,
   skipOrders: options["skip-orders"] === true,
+  force: options.force === true,
 };
 
 console.log("🔧 Configuration:", config);
 
 /**
+ * Check if writing to production is allowed
+ * Requires --force flag and special write credentials
+ */
+function checkProductionWriteProtection(targetEnv) {
+  if (targetEnv !== "production") {
+    return; // No protection needed for non-production
+  }
+
+  // Check for --force flag
+  if (!config.force) {
+    console.error("\n❌ ERROR: Writing to production requires --force flag");
+    console.error("\n⚠️  PRODUCTION WRITE PROTECTION");
+    console.error("   Writing data to production is dangerous and can overwrite live data.");
+    console.error("   If you are certain you want to proceed, add --force to your command:");
+    console.error(`   \n   ${process.argv.slice(0, 2).join(' ')} ${process.argv.slice(2).join(' ')} --force\n`);
+    process.exit(1);
+  }
+
+  // Check for special write credentials
+  const writeKeyPath = resolve(
+    process.cwd(),
+    "service-account-production-write.json",
+  );
+
+  if (!existsSync(writeKeyPath)) {
+    console.error("\n❌ ERROR: Production write credentials not found");
+    console.error("\n⚠️  PRODUCTION WRITE PROTECTION");
+    console.error("   Writing to production requires special write credentials.");
+    console.error(`   Expected file: ${writeKeyPath}`);
+    console.error("\n   This is separate from the read-only production service account.");
+    console.error("   To create write credentials:");
+    console.error("   1. Go to Firebase Console > Project Settings > Service Accounts");
+    console.error("   2. Create a new service account with write permissions");
+    console.error("   3. Save as: service-account-production-write.json");
+    console.error("\n   ⚠️  Keep these credentials extremely secure!\n");
+    process.exit(1);
+  }
+
+  // Final warning
+  console.warn("\n⚠️  WARNING: WRITING TO PRODUCTION");
+  console.warn("   You are about to write data to the PRODUCTION environment.");
+  console.warn("   This will OVERWRITE existing production data.");
+  console.warn("   Make sure you have a backup before proceeding.");
+  console.warn("");
+}
+
+/**
  * Initialize Firebase Admin SDK for a specific environment
  */
-function initializeFirebaseForEnv(env, appName = undefined) {
+function initializeFirebaseForEnv(env, appName = undefined, isWrite = false) {
   if (env === "emulator") {
     // For emulator, use default credentials and connect to emulator
     const app = initializeApp(
@@ -103,10 +152,19 @@ function initializeFirebaseForEnv(env, appName = undefined) {
     return db;
   } else {
     // For production/staging, use service account key
-    const keyPath = resolve(
-      process.cwd(),
-      `service-account-${env}.json`,
-    );
+    // Production writes require special write credentials
+    let keyPath;
+    if (env === "production" && isWrite) {
+      keyPath = resolve(
+        process.cwd(),
+        "service-account-production-write.json",
+      );
+    } else {
+      keyPath = resolve(
+        process.cwd(),
+        `service-account-${env}.json`,
+      );
+    }
 
     if (!existsSync(keyPath)) {
       console.error(
@@ -115,7 +173,7 @@ function initializeFirebaseForEnv(env, appName = undefined) {
       console.log(
         `\n💡 Download from Firebase Console > Project Settings > Service Accounts`,
       );
-      console.log(`   Save as: service-account-${env}.json`);
+      console.log(`   Save as: ${keyPath.split('/').pop()}`);
       process.exit(1);
     }
 
@@ -127,7 +185,8 @@ function initializeFirebaseForEnv(env, appName = undefined) {
       appName,
     );
 
-    console.log(`🔥 Connected to ${env} Firestore`);
+    const accessType = (env === "production" && isWrite) ? " (WRITE ACCESS)" : "";
+    console.log(`🔥 Connected to ${env} Firestore${accessType}`);
     return getFirestore(app);
   }
 }
@@ -287,8 +346,11 @@ async function main() {
       const targetEnv = options.target;
       const inputDir = resolve(process.cwd(), options.input);
       
+      // Check production write protection
+      checkProductionWriteProtection(targetEnv);
+      
       console.log(`📥 Importing to ${targetEnv} from ${inputDir}`);
-      const db = initializeFirebaseForEnv(targetEnv);
+      const db = initializeFirebaseForEnv(targetEnv, undefined, true);
       await importData(db, inputDir);
       
     } else if (command === COMMAND_TRANSFER) {
@@ -296,14 +358,17 @@ async function main() {
       const toEnv = options.to;
       const tempDir = resolve(process.cwd(), ".data-transfer-tmp");
       
+      // Check production write protection
+      checkProductionWriteProtection(toEnv);
+      
       console.log(`🔄 Transferring from ${fromEnv} to ${toEnv}`);
       
       // Export from source
       const sourceDb = initializeFirebaseForEnv(fromEnv, "source");
       await exportData(sourceDb, tempDir);
       
-      // Import to target
-      const targetDb = initializeFirebaseForEnv(toEnv, "target");
+      // Import to target (with write flag for production)
+      const targetDb = initializeFirebaseForEnv(toEnv, "target", true);
       await importData(targetDb, tempDir);
       
       console.log(`\n✅ Transfer complete from ${fromEnv} to ${toEnv}`);
