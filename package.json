@@ -26,6 +26,10 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run --coverage",
     "test:watch": "vitest watch --coverage",
+    "test:e2e": "bash e2e/run-tests.sh",
+    "test:e2e:ui": "npx playwright test --ui",
+    "test:e2e:headed": "npx playwright test --headed",
+    "test:e2e:report": "npx playwright show-report e2e/reports/html",
     "format": "biome format --write src tests",
     "lint": "biome check src tests",
     "lint:fix": "biome check --apply src tests",
@@ -43,6 +47,7 @@
     "svelte": "^4.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@sveltejs/adapter-auto": "^2.0.0",
     "@sveltejs/kit": "^1.20.4",
     "@vitest/coverage-v8": "^0.34.6",
