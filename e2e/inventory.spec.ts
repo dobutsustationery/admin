@@ -14,7 +14,7 @@ import { expect, test } from "@playwright/test";
  */
 
 test.describe("Inventory Page", () => {
-  test("should load and display inventory items", async ({ page }) => {
+  test("should match visual snapshot", async ({ page }) => {
     // Navigate to the inventory page
     await page.goto("/inventory", { waitUntil: "networkidle" });
 
@@ -22,11 +22,22 @@ test.describe("Inventory Page", () => {
     // The app connects to emulators and loads broadcast actions to rebuild state
     await page.waitForTimeout(5000);
 
-    // Take a screenshot for visual verification
-    await page.screenshot({
-      path: "e2e/screenshots/inventory-page.png",
+    // Visual regression test - will fail if screenshot differs from baseline
+    // First run will create the baseline, subsequent runs will compare
+    await expect(page).toHaveScreenshot("inventory-page.png", {
       fullPage: true,
     });
+
+    console.log("✓ Visual snapshot matches baseline");
+  });
+
+  test("should load and display inventory items", async ({ page }) => {
+    // Navigate to the inventory page
+    await page.goto("/inventory", { waitUntil: "networkidle" });
+
+    // Wait a bit for Firebase emulator connection and data loading
+    // The app connects to emulators and loads broadcast actions to rebuild state
+    await page.waitForTimeout(5000);
 
     // Check if we see the sign-in UI or the actual inventory
     const hasSignIn = await page
@@ -78,12 +89,6 @@ test.describe("Inventory Page", () => {
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(3000);
 
-    // Take a screenshot
-    await page.screenshot({
-      path: "e2e/screenshots/inventory-page-structure.png",
-      fullPage: true,
-    });
-
     // Verify basic page structure
     const bodyText = await page.textContent("body");
     expect(bodyText).toBeTruthy();
@@ -104,12 +109,6 @@ test.describe("Inventory Page", () => {
     await page.goto("/inventory");
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(3000);
-
-    // Take a screenshot showing the current state
-    await page.screenshot({
-      path: "e2e/screenshots/inventory-with-emulators.png",
-      fullPage: true,
-    });
 
     // Verify page loaded successfully (even if auth blocked content)
     const html = await page.content();

@@ -104,6 +104,37 @@ Test data is loaded from `test-data/firestore-export.json` before tests run. Thi
 - `users` collection: Admin user data
 - `dobutsu` collection: Orders and payments
 
+### Visual Regression Testing
+
+The inventory page test includes visual regression testing using Playwright's screenshot comparison:
+
+```typescript
+test('should match visual snapshot', async ({ page }) => {
+  await page.goto('/inventory');
+  await expect(page).toHaveScreenshot('inventory-page.png', {
+    fullPage: true,
+  });
+});
+```
+
+**How it works:**
+1. Baseline screenshots are stored in `e2e/inventory.spec.ts-snapshots/`
+2. Tests compare current screenshots against baselines
+3. Tests fail if visual differences exceed tolerance thresholds
+4. Differences require manual review and approval
+
+**Updating baselines** when UI changes are intentional:
+```bash
+npx playwright test --update-snapshots
+```
+
+**Reviewing failures:**
+- Check `test-results/` for diff images showing what changed
+- If intentional, update baseline with `--update-snapshots`
+- If a bug, fix the code
+
+See `e2e/inventory.spec.ts-snapshots/README.md` for more details.
+
 ## CI/CD
 
 Tests run automatically in GitHub Actions on:
