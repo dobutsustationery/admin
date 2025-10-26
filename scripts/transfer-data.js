@@ -222,7 +222,20 @@ async function exportData(db, outputDir) {
     console.log(`\n  Exporting ${collectionName}...`);
     const collectionRef = db.collection(collectionName);
     
-    const snapshot = await collectionRef.get();
+    let snapshot;
+    try {
+      snapshot = await collectionRef.get();
+    } catch (error) {
+      // Handle collection not found or permission errors
+      if (error.code === 5 || error.message.includes('NOT_FOUND')) {
+        console.log(`    ⚠️  Collection "${collectionName}" not found or empty - skipping`);
+        exportData.collections[collectionName] = [];
+        continue;
+      }
+      // Re-throw other errors
+      throw error;
+    }
+    
     const documents = [];
 
     snapshot.forEach((doc) => {
@@ -379,7 +392,23 @@ async function main() {
     process.exit(0);
   } catch (error) {
     console.error("\n❌ Error:", error.message);
+    
+    // Provide helpful diagnostics for common errors
+    if (error.code === 5 || error.message.includes('NOT_FOUND')) {
+      console.error("\n💡 Troubleshooting tips:");
+      console.error("   - This error usually means a collection doesn't exist in Firestore");
+      console.error("   - Check that your service account has permission to read from Firestore");
+      console.error("   - Verify you're connecting to the correct Firebase project");
+      console.error("   - Make sure the collections exist in your Firestore database");
+    } else if (error.message.includes('Permission denied')) {
+      console.error("\n💡 Troubleshooting tips:");
+      console.error("   - Check that your service account has the 'Cloud Datastore User' role");
+      console.error("   - Verify the service account key is valid and not expired");
+      console.error("   - Ensure Firestore security rules allow service account access");
+    }
+    
     if (error.stack) {
+      console.error("\nStack trace:");
       console.error(error.stack);
     }
     process.exit(1);
