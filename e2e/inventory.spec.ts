@@ -1,116 +1,121 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
 /**
  * E2E test for the /inventory page
- * 
+ *
  * This test verifies that:
  * 1. The inventory page loads successfully
  * 2. Test data from Firestore emulator is displayed
  * 3. The page renders the expected elements
- * 
+ *
  * Note: These tests use Firebase emulators and load test data from
  * test-data/firestore-export.json. The emulators must be running
  * before tests execute.
  */
 
-test.describe('Inventory Page', () => {
-  test('should load and display inventory items', async ({ page }) => {
+test.describe("Inventory Page", () => {
+  test("should load and display inventory items", async ({ page }) => {
     // Navigate to the inventory page
-    await page.goto('/inventory', { waitUntil: 'networkidle' });
+    await page.goto("/inventory", { waitUntil: "networkidle" });
 
     // Wait a bit for Firebase emulator connection and data loading
     // The app connects to emulators and loads broadcast actions to rebuild state
     await page.waitForTimeout(5000);
 
     // Take a screenshot for visual verification
-    await page.screenshot({ 
-      path: 'e2e/screenshots/inventory-page.png',
-      fullPage: true 
+    await page.screenshot({
+      path: "e2e/screenshots/inventory-page.png",
+      fullPage: true,
     });
 
     // Check if we see the sign-in UI or the actual inventory
-    const hasSignIn = await page.locator('text=Loading...').isVisible({ timeout: 1000 }).catch(() => false);
-    const hasTable = await page.locator('table').isVisible({ timeout: 1000 }).catch(() => false);
+    const hasSignIn = await page
+      .locator("text=Loading...")
+      .isVisible({ timeout: 1000 })
+      .catch(() => false);
+    const hasTable = await page
+      .locator("table")
+      .isVisible({ timeout: 1000 })
+      .catch(() => false);
 
     if (hasSignIn) {
-      console.log('⚠️  Sign-in UI detected - auth mock may need adjustment');
-      console.log('   Test will verify page structure instead of data');
-      
+      console.log("⚠️  Sign-in UI detected - auth mock may need adjustment");
+      console.log("   Test will verify page structure instead of data");
+
       // At minimum, verify the page loaded
       await expect(page).toHaveTitle(/.*/);
     } else if (hasTable) {
-      console.log('✓ Inventory table detected');
-      
+      console.log("✓ Inventory table detected");
+
       // Verify the table headers are present
-      const headers = await page.locator('table thead th').allTextContents();
+      const headers = await page.locator("table thead th").allTextContents();
       expect(headers.length).toBeGreaterThan(0);
-      
+
       // Check for expected headers
-      const headersText = headers.join(' ');
-      expect(headersText).toContain('JAN Code');
-      expect(headersText).toContain('Quantity');
+      const headersText = headers.join(" ");
+      expect(headersText).toContain("JAN Code");
+      expect(headersText).toContain("Quantity");
 
       // Count rows - with test data loaded, we should have items
-      const rowCount = await page.locator('table tbody tr').count();
+      const rowCount = await page.locator("table tbody tr").count();
       console.log(`✓ Found ${rowCount} inventory items displayed`);
-      
+
       // We should have at least some items from the test data
       expect(rowCount).toBeGreaterThanOrEqual(0);
     } else {
-      console.log('⚠️  Neither sign-in nor table detected');
-      console.log('   This may indicate a problem with the page or emulators');
-      
+      console.log("⚠️  Neither sign-in nor table detected");
+      console.log("   This may indicate a problem with the page or emulators");
+
       // At minimum, page should have loaded
       await expect(page).toHaveTitle(/.*/);
     }
   });
 
-  test('should have correct page structure', async ({ page }) => {
-    await page.goto('/inventory');
-    
+  test("should have correct page structure", async ({ page }) => {
+    await page.goto("/inventory");
+
     // Wait for page to be fully loaded
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(3000);
 
     // Take a screenshot
-    await page.screenshot({ 
-      path: 'e2e/screenshots/inventory-page-structure.png',
-      fullPage: true 
+    await page.screenshot({
+      path: "e2e/screenshots/inventory-page-structure.png",
+      fullPage: true,
     });
 
     // Verify basic page structure
-    const bodyText = await page.textContent('body');
+    const bodyText = await page.textContent("body");
     expect(bodyText).toBeTruthy();
     expect(bodyText.length).toBeGreaterThan(0);
 
     console.log(`✓ Page loaded with ${bodyText.length} characters of content`);
   });
 
-  test('should connect to Firebase emulators', async ({ page }) => {
+  test("should connect to Firebase emulators", async ({ page }) => {
     // Enable console logging to see Firebase connection messages
-    page.on('console', msg => {
+    page.on("console", (msg) => {
       const text = msg.text();
-      if (text.includes('Firebase') || text.includes('emulator')) {
-        console.log('Browser console:', text);
+      if (text.includes("Firebase") || text.includes("emulator")) {
+        console.log("Browser console:", text);
       }
     });
 
-    await page.goto('/inventory');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/inventory");
+    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(3000);
 
     // Take a screenshot showing the current state
     await page.screenshot({
-      path: 'e2e/screenshots/inventory-with-emulators.png',
-      fullPage: true
+      path: "e2e/screenshots/inventory-with-emulators.png",
+      fullPage: true,
     });
 
     // Verify page loaded successfully (even if auth blocked content)
     const html = await page.content();
-    expect(html).toContain('html');
+    expect(html).toContain("html");
     expect(html.length).toBeGreaterThan(100);
 
-    console.log('✓ Page HTML loaded successfully');
+    console.log("✓ Page HTML loaded successfully");
   });
 });
-

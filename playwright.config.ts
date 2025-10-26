@@ -1,8 +1,8 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Playwright configuration for E2E tests
- * 
+ *
  * These tests run against a local build with Firebase emulators.
  * Prerequisites:
  * - Firebase emulators must be running (npm run emulators)
@@ -10,7 +10,7 @@ import { defineConfig, devices } from '@playwright/test';
  * - App must be built for emulator mode (npm run build:local)
  */
 export default defineConfig({
-  testDir: './e2e',
+  testDir: "./e2e",
   /* Run tests in files in parallel */
   fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -20,41 +20,38 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: [
-    ['html', { outputFolder: 'e2e/reports/html' }],
-    ['list'],
-  ],
+  reporter: [["html", { outputFolder: "e2e/reports/html" }], ["list"]],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:4173',
+    baseURL: "http://localhost:4173",
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
-    screenshot: 'on',
-    video: 'retain-on-failure',
+    trace: "on-first-retry",
+    screenshot: "on",
+    video: "retain-on-failure",
   },
 
   /* Configure projects for major browsers */
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
     },
   ],
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'vite preview --mode emulator --port 4173',
-    url: 'http://localhost:4173',
+    command: "vite preview --mode emulator --port 4173",
+    url: "http://localhost:4173",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
-      VITE_FIREBASE_ENV: 'local',
-      VITE_FIREBASE_LOCAL_PROJECT_ID: 'demo-test-project',
-      VITE_EMULATOR_FIRESTORE_HOST: 'localhost',
-      VITE_EMULATOR_FIRESTORE_PORT: '8080',
-      VITE_EMULATOR_AUTH_HOST: 'localhost',
-      VITE_EMULATOR_AUTH_PORT: '9099',
+      VITE_FIREBASE_ENV: "local",
+      VITE_FIREBASE_LOCAL_PROJECT_ID: "demo-test-project",
+      VITE_EMULATOR_FIRESTORE_HOST: "localhost",
+      VITE_EMULATOR_FIRESTORE_PORT: "8080",
+      VITE_EMULATOR_AUTH_HOST: "localhost",
+      VITE_EMULATOR_AUTH_PORT: "9099",
     },
   },
 });

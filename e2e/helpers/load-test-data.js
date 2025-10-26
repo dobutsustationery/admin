@@ -2,59 +2,65 @@
 
 /**
  * Helper script to load test data into Firestore emulator for E2E tests
- * 
+ *
  * This script loads the test-data/firestore-export.json into the Firestore emulator
  * before running E2E tests.
  */
 
-import { readFileSync } from 'node:fs';
-import { resolve, join } from 'node:path';
-import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { cert, initializeApp } from "firebase-admin/app";
+import { Timestamp, getFirestore } from "firebase-admin/firestore";
 
 // Initialize Firebase Admin for emulator
 const app = initializeApp({
-  projectId: 'demo-test-project',
+  projectId: "demo-test-project",
 });
 
 const db = getFirestore(app);
 
 // Connect to emulator
 db.settings({
-  host: 'localhost:8080',
+  host: "localhost:8080",
   ssl: false,
 });
 
-console.log('🔧 Connected to Firestore emulator at localhost:8080');
+console.log("🔧 Connected to Firestore emulator at localhost:8080");
 
 /**
  * Load test data into Firestore emulator
  */
 async function loadTestData() {
-  const testDataPath = resolve(process.cwd(), 'test-data', 'firestore-export.json');
-  
+  const testDataPath = resolve(
+    process.cwd(),
+    "test-data",
+    "firestore-export.json",
+  );
+
   console.log(`\n📥 Loading test data from ${testDataPath}...`);
-  
-  const exportData = JSON.parse(readFileSync(testDataPath, 'utf8'));
+
+  const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
 
-  for (const [collectionName, documents] of Object.entries(exportData.collections)) {
+  for (const [collectionName, documents] of Object.entries(
+    exportData.collections,
+  )) {
     console.log(`\n  Loading ${collectionName} (${documents.length} docs)...`);
-    
+
     let batch = db.batch();
     let batchCount = 0;
     const BATCH_SIZE = 500; // Firestore batch limit
 
     for (const { id, data } of documents) {
       const docRef = db.collection(collectionName).doc(id);
-      
+
       // Restore Firestore Timestamps from stored _seconds and _nanoseconds
       const deserializedData = JSON.parse(
         JSON.stringify(data),
         (key, value) => {
           if (
             value &&
-            typeof value === 'object' &&
+            typeof value === "object" &&
             value._timestamp === true &&
             value._seconds !== undefined
           ) {
@@ -84,10 +90,12 @@ async function loadTestData() {
       console.log(`    Committed final batch of ${batchCount} documents`);
     }
 
-    console.log(`    ✓ Loaded ${documents.length} documents to ${collectionName}`);
+    console.log(
+      `    ✓ Loaded ${documents.length} documents to ${collectionName}`,
+    );
   }
 
-  console.log('\n✅ Test data loaded successfully\n');
+  console.log("\n✅ Test data loaded successfully\n");
 }
 
 // Run the loader
@@ -96,6 +104,6 @@ loadTestData()
     process.exit(0);
   })
   .catch((error) => {
-    console.error('\n❌ Error loading test data:', error);
+    console.error("\n❌ Error loading test data:", error);
     process.exit(1);
   });
