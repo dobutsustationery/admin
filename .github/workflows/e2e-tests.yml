@@ -1,0 +1,82 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  e2e-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Firebase Tools
+        run: npm install -g firebase-tools
+
+      - name: Start Firebase Emulators
+        run: |
+          firebase emulators:start --project demo-test-project &
+          # Wait for emulators to be ready
+          timeout 60 bash -c 'until curl -s http://localhost:8080 > /dev/null; do sleep 1; done'
+          echo "✓ Firebase emulators are ready"
+
+      - name: Load test data into emulator
+        run: node e2e/helpers/load-test-data.js
+
+      - name: Build application
+        run: npm run build:local
+        env:
+          VITE_FIREBASE_ENV: local
+          VITE_FIREBASE_LOCAL_PROJECT_ID: demo-test-project
+          VITE_EMULATOR_FIRESTORE_HOST: localhost
+          VITE_EMULATOR_FIRESTORE_PORT: 8080
+          VITE_EMULATOR_AUTH_HOST: localhost
+          VITE_EMULATOR_AUTH_PORT: 9099
+
+      - name: Run Playwright tests
+        run: npx playwright test
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: e2e/reports/html/
+          retention-days: 30
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-screenshots
+          path: e2e/screenshots/
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 30

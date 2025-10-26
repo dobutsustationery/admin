@@ -22,3 +22,9 @@ service-account-*.json
 # Data transfer temporary files
 .data-transfer-tmp
 data-export
+
+# Playwright E2E test artifacts
+/e2e/screenshots
+/e2e/reports
+/playwright-report
+/test-results
