@@ -90,7 +90,17 @@ npm run emulators:import
 **Setup:**
 
 1. Create a Firebase project for staging (if you haven't already)
-2. Edit `.env.staging` with your staging Firebase credentials:
+2. Get your Firebase web app configuration from the Firebase Console
+3. Convert it to `.env.staging` format using the Firebase config converter:
+   ```bash
+   npm run firebase:convert:staging
+   ```
+   Then paste your Firebase config when prompted, or use:
+   ```bash
+   node scripts/firebase-config-to-env.js --input firebase-config.json --env staging --output .env.staging
+   ```
+   
+   Alternatively, manually edit `.env.staging` with your staging Firebase credentials:
    ```
    VITE_FIREBASE_ENV=staging
    VITE_FIREBASE_STAGING_API_KEY=your-staging-api-key
@@ -101,7 +111,7 @@ npm run emulators:import
    VITE_FIREBASE_STAGING_APP_ID=your-staging-app-id
    VITE_FIREBASE_STAGING_MEASUREMENT_ID=your-staging-measurement-id
    ```
-3. Run:
+4. Run:
    ```bash
    npm run dev:staging
    ```
@@ -132,6 +142,20 @@ npm run dev:production
 
 ## Configuration Files
 
+### Firebase Config Converter
+
+For easy setup of staging or production environments, use the Firebase config converter utility:
+
+```bash
+# Convert Firebase config to .env.staging
+npm run firebase:convert:staging
+
+# Convert Firebase config to .env.production
+npm run firebase:convert:production
+```
+
+This utility converts the standard Firebase web app configuration (from the Firebase Console) to the `.env` format used by this project. See `scripts/README.md` for detailed usage instructions.
+
 ### `.env.emulator`
 Pre-configured for Firebase emulators. This file is loaded when using `npm run dev:local` or `--mode emulator`. Uses localhost ports:
 - Firestore: localhost:8080
@@ -140,7 +164,7 @@ Pre-configured for Firebase emulators. This file is loaded when using `npm run d
 Note: `.env.local` is also available and loaded by Vite in all non-production modes, but `.env.emulator` is the primary configuration for local development.
 
 ### `.env.staging`
-Template for staging environment. **Requires manual configuration** with your staging Firebase project credentials.
+Template for staging environment. **Requires manual configuration** with your staging Firebase project credentials, or use the Firebase config converter utility.
 
 ### `.env.production`
 Pre-configured with production Firebase credentials. Ready to use.
