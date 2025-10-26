@@ -24,7 +24,9 @@ service-account-*.json
 data-export
 
 # Playwright E2E test artifacts
-/e2e/screenshots
 /e2e/reports
 /playwright-report
 /test-results
+# Exclude actual screenshots but keep baselines
+/e2e/*-actual.png
+/e2e/*-diff.png
