@@ -284,6 +284,23 @@ npm run data:import -- --target production --input ./backup --force
 
 **Why**: Production writes require separate, more restricted credentials than read operations.
 
+### "5 NOT_FOUND" or "Collection not found"
+
+**Problem**: Error when trying to export data from a collection
+
+**Possible Causes**:
+1. The collection doesn't exist in the Firestore database
+2. The collection exists but has never had any documents (appears as non-existent)
+3. Service account lacks permission to read the collection
+
+**Solution**:
+1. **Verify collections exist**: Check Firebase Console → Firestore Database to confirm the collections exist
+2. **Check permissions**: Ensure service account has "Cloud Datastore User" or "Firebase Admin" role
+3. **Verify project**: Confirm the service account is for the correct Firebase project
+4. **Empty collections**: If a collection is truly empty, the script will now skip it with a warning
+
+The script will now automatically skip missing or empty collections rather than failing.
+
 ### "Service account key not found"
 
 **Problem**: Missing service account JSON file
