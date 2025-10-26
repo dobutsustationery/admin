@@ -2,9 +2,11 @@
 
 This directory contains baseline screenshots for visual regression testing of the inventory page.
 
-## Initial Setup
+## Initial Baseline
 
-**IMPORTANT**: The baseline screenshot needs to be generated on first run:
+**NOTE**: The current baseline (`inventory-Inventory-Page-should-match-visual-snapshot-chromium.png`) is a placeholder white image. It should be replaced with an actual screenshot on first test run.
+
+To generate the real baseline screenshot:
 
 ```bash
 # Make sure emulators are running
@@ -14,7 +16,7 @@ npm run emulators
 bash e2e/generate-baselines.sh
 ```
 
-This will create `inventory-Inventory-Page-should-match-visual-snapshot-chromium.png` which should be committed to git.
+This will capture the actual inventory page and replace the placeholder with the real baseline screenshot.
 
 ## How it Works
 
