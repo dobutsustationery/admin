@@ -43,9 +43,11 @@
   const confirmedActions: { [k: string]: AnyAction } = {};
   let unsyncedActions = 0;
 
-  // Wait for auth to be ready before initializing watchers and rendering Signin
+  // Wait for auth to be fully ready before initializing watchers and rendering Signin
+  // This prevents "Component auth has not been registered yet" errors in automated tests
   onMount(() => {
-    // Give Firebase auth time to initialize
+    // Give Firebase auth extra time to fully initialize and connect to emulator
+    // Automated browsers (Playwright) navigate faster than humans, catching initialization errors
     const authTimer = setTimeout(() => {
       authReady = true;
       
@@ -89,7 +91,7 @@
             Object.keys(confirmedActions).length;
         });
       });
-    }, 200);
+    }, 500); // Increased delay for automated browsers
 
     return () => clearTimeout(authTimer);
   });
