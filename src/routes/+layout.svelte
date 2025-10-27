@@ -18,6 +18,8 @@
 
   let me: User = { signedIn: false };
   let loading = true;
+  let watcherInitialized = false;
+
   function signedInEvent(e: CustomEvent) {
     me = e.detail;
     loading = false;
@@ -39,45 +41,55 @@
   const executedActions: { [k: string]: AnyAction } = {};
   const confirmedActions: { [k: string]: AnyAction } = {};
   let unsyncedActions = 0;
-  logTime("about to watchBroadcastActions");
-  watchBroadcastActions(firestore, (changes) => {
-    logTime(`  watchBroadcastActions received ${changes.length} actions.`);
-    changes.forEach((change) => {
-      const action = change.doc.data() as AnyAction;
-      const id = change.doc.id;
-      if (executedActions[id] === undefined) {
-        executedActions[id] = action;
-        if (action.type === "retype_item") {
-          const itemKey = action.payload.itemKey;
-          const newItemKey = action.payload.janCode + action.payload.subtype;
-          if (itemKey == newItemKey) {
-            console.error("bad retype item detected: ", JSON.stringify(action));
-            setDoc(doc(firestore, `jailed/${id}`), action)
-              .then(() => {
-                console.log(`jail complete for ${id}`);
-              })
-              .catch((err) => {
-                console.error(`JAILED ERROR for ${id}: `, err);
-              });
-            deleteDoc(change.doc.ref)
-              .then(() => {
-                console.log(`deletion of jailed item complete for ${id}`);
-              })
-              .catch((err) => {
-                console.error(`DELETE ERROR for ${id}: `, err);
-              });
-          }
-        }
-        store.dispatch(action);
+
+  // Initialize broadcast watcher after a small delay to ensure auth is ready
+  // This prevents "Component auth has not been registered yet" errors
+  if (typeof window !== "undefined") {
+    setTimeout(() => {
+      if (!watcherInitialized) {
+        watcherInitialized = true;
+        logTime("about to watchBroadcastActions");
+        watchBroadcastActions(firestore, (changes) => {
+          logTime(`  watchBroadcastActions received ${changes.length} actions.`);
+          changes.forEach((change) => {
+            const action = change.doc.data() as AnyAction;
+            const id = change.doc.id;
+            if (executedActions[id] === undefined) {
+              executedActions[id] = action;
+              if (action.type === "retype_item") {
+                const itemKey = action.payload.itemKey;
+                const newItemKey = action.payload.janCode + action.payload.subtype;
+                if (itemKey == newItemKey) {
+                  console.error("bad retype item detected: ", JSON.stringify(action));
+                  setDoc(doc(firestore, `jailed/${id}`), action)
+                    .then(() => {
+                      console.log(`jail complete for ${id}`);
+                    })
+                    .catch((err) => {
+                      console.error(`JAILED ERROR for ${id}: `, err);
+                    });
+                  deleteDoc(change.doc.ref)
+                    .then(() => {
+                      console.log(`deletion of jailed item complete for ${id}`);
+                    })
+                    .catch((err) => {
+                      console.error(`DELETE ERROR for ${id}: `, err);
+                    });
+                }
+              }
+              store.dispatch(action);
+            }
+            if (action.timestamp !== null) {
+              confirmedActions[id] = action;
+            }
+            unsyncedActions =
+              Object.keys(executedActions).length -
+              Object.keys(confirmedActions).length;
+          });
+        });
       }
-      if (action.timestamp !== null) {
-        confirmedActions[id] = action;
-      }
-      unsyncedActions =
-        Object.keys(executedActions).length -
-        Object.keys(confirmedActions).length;
-    });
-  });
+    }, 100);
+  }
   /*
   const delayLimit = 100000000;
   for (let delay = 0; delay < delayLimit; ++delay) {
