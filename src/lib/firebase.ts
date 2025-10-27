@@ -3,7 +3,7 @@ import {
   connectAuthEmulator,
   GoogleAuthProvider,
   getAuth,
-} from "@firebase/auth";
+} from "firebase/auth";
 import { getApp, getApps, initializeApp } from "firebase/app";
 import {
   connectFirestoreEmulator,
