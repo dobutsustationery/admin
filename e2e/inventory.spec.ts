@@ -14,14 +14,6 @@ import { expect, test } from "@playwright/test";
  */
 
 test.describe("Inventory Page", () => {
-  // Helper function to filter out expected errors in emulator mode
-  const isExpectedError = (errorText: string): boolean => {
-    return (
-      errorText.includes("Component auth has not been registered yet") ||
-      errorText.includes("Firebase") && errorText.includes("emulator")
-    );
-  };
-
   test("should match visual snapshot", async ({ page }) => {
     // Collect console errors
     const consoleErrors: string[] = [];
@@ -38,17 +30,11 @@ test.describe("Inventory Page", () => {
     // The app connects to emulators and loads broadcast actions to rebuild state
     await page.waitForTimeout(5000);
 
-    // Filter out expected errors
-    const unexpectedErrors = consoleErrors.filter(
-      (error) => !isExpectedError(error),
-    );
-
     // Check for console errors
     if (consoleErrors.length > 0) {
       console.log(`⚠️  Found ${consoleErrors.length} console errors:`);
       for (const error of consoleErrors) {
-        const isExpected = isExpectedError(error);
-        console.log(`   ${isExpected ? "(expected)" : "(UNEXPECTED)"} - ${error.substring(0, 100)}`);
+        console.log(`   - ${error.substring(0, 200)}`);
       }
     } else {
       console.log("✓ No console errors detected");
@@ -62,8 +48,8 @@ test.describe("Inventory Page", () => {
 
     console.log("✓ Visual snapshot matches baseline");
 
-    // Verify no unexpected console errors (allow expected Firebase initialization errors)
-    expect(unexpectedErrors.length).toBe(0);
+    // Verify no console errors
+    expect(consoleErrors.length).toBe(0);
   });
 
   test("should load and display inventory items", async ({ page }) => {
@@ -80,18 +66,14 @@ test.describe("Inventory Page", () => {
     // The app connects to emulators and loads broadcast actions to rebuild state
     await page.waitForTimeout(5000);
 
-    // Filter errors
-    const allErrors = consoleMessages.filter((m) => m.type === "error");
-    const unexpectedErrors = allErrors.filter(
-      (m) => !isExpectedError(m.text),
-    );
+    // Get console errors
+    const errors = consoleMessages.filter((m) => m.type === "error");
 
     // Log console errors if any
-    if (allErrors.length > 0) {
-      console.log(`⚠️  Console errors detected: ${allErrors.length} total, ${unexpectedErrors.length} unexpected`);
-      for (const error of allErrors) {
-        const isExpected = isExpectedError(error.text);
-        console.log(`   ${isExpected ? "(expected)" : "(UNEXPECTED)"} - ${error.text.substring(0, 100)}`);
+    if (errors.length > 0) {
+      console.log(`⚠️  Console errors detected: ${errors.length}`);
+      for (const error of errors) {
+        console.log(`   - ${error.text.substring(0, 200)}`);
       }
     }
 
@@ -147,8 +129,8 @@ test.describe("Inventory Page", () => {
       await expect(page).toHaveTitle(/.*/);
     }
 
-    // Verify no unexpected console errors
-    expect(unexpectedErrors.length).toBe(0);
+    // Verify no console errors
+    expect(errors.length).toBe(0);
   });
 
   test("should have correct page structure", async ({ page }) => {
@@ -177,24 +159,18 @@ test.describe("Inventory Page", () => {
     const hasHeader = await page.locator("header, nav, h1, h2").count();
     console.log(`✓ Found ${hasHeader} header/navigation elements`);
 
-    // Filter errors
-    const unexpectedErrors = consoleErrors.filter(
-      (error) => !isExpectedError(error),
-    );
-
     // Check for console errors
     if (consoleErrors.length > 0) {
-      console.log(`⚠️  Found ${consoleErrors.length} console errors (${unexpectedErrors.length} unexpected)`);
+      console.log(`⚠️  Found ${consoleErrors.length} console errors`);
       for (const error of consoleErrors) {
-        const isExpected = isExpectedError(error);
-        console.log(`   ${isExpected ? "(expected)" : "(UNEXPECTED)"} - ${error.substring(0, 100)}`);
+        console.log(`   - ${error.substring(0, 200)}`);
       }
     } else {
       console.log("✓ No console errors detected");
     }
 
-    // Verify no unexpected errors
-    expect(unexpectedErrors.length).toBe(0);
+    // Verify no errors
+    expect(consoleErrors.length).toBe(0);
   });
 
   test("should connect to Firebase emulators", async ({ page }) => {
@@ -226,25 +202,23 @@ test.describe("Inventory Page", () => {
     console.log("✓ Page HTML loaded successfully");
 
     // Report console messages summary
-    const allErrors = consoleMessages.filter((m) => m.type === "error");
-    const unexpectedErrors = allErrors.filter((m) => !isExpectedError(m.text));
+    const errors = consoleMessages.filter((m) => m.type === "error");
     const warnings = consoleMessages.filter((m) => m.type === "warning");
     const logs = consoleMessages.filter((m) => m.type === "log");
 
     console.log(
-      `✓ Console summary: ${logs.length} logs, ${warnings.length} warnings, ${allErrors.length} errors (${unexpectedErrors.length} unexpected)`,
+      `✓ Console summary: ${logs.length} logs, ${warnings.length} warnings, ${errors.length} errors`,
     );
 
     // Log all console errors for debugging
-    if (allErrors.length > 0) {
+    if (errors.length > 0) {
       console.log("Console errors:");
-      for (const error of allErrors) {
-        const isExpected = isExpectedError(error.text);
-        console.log(`  ${isExpected ? "(expected)" : "(UNEXPECTED)"} - ${error.text.substring(0, 100)}`);
+      for (const error of errors) {
+        console.log(`  - ${error.text.substring(0, 200)}`);
       }
     }
 
-    // Verify no unexpected console errors
-    expect(unexpectedErrors.length).toBe(0);
+    // Verify no console errors
+    expect(errors.length).toBe(0);
   });
 });
