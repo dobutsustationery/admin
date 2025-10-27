@@ -5,6 +5,7 @@
   "author": "Alex Nicolaou",
   "license": "UNLICENSED",
   "scripts": {
+    "postinstall": "node scripts/install-biome-cli.cjs",
     "dev": "vite dev",
     "dev:local": "vite dev --mode emulator",
     "dev:staging": "vite dev --mode staging",
@@ -52,7 +53,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "@biomejs/cli-linux-x64": "1.9.4",
     "@playwright/test": "^1.56.1",
     "@sveltejs/adapter-auto": "^2.0.0",
     "@sveltejs/kit": "^1.20.4",
