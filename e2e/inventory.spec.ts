@@ -31,6 +31,17 @@ test.describe("Inventory Page", () => {
     // Navigate to the inventory page
     await page.goto("/inventory", { waitUntil: "load" });
 
+    // Wait for SvelteKit app to hydrate and be ready
+    // The app shell loads first, then JavaScript hydrates the content
+    await page.waitForFunction(() => {
+      // Wait for body to have actual content beyond just the script tag
+      const bodyChildren = document.body.children;
+      // SvelteKit removes the script and adds app content when hydrated
+      return bodyChildren.length > 1 || (bodyChildren.length === 1 && bodyChildren[0].tagName !== 'SCRIPT');
+    }, { timeout: 30000 });
+
+    console.log('✓ SvelteKit app hydrated');
+
     // DEBUG: Capture HTML content to see what's actually loaded
     const bodyHTML = await page.content();
     console.log('🔍 DEBUG: Page HTML length:', bodyHTML.length);
