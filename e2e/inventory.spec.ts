@@ -24,7 +24,7 @@ test.describe("Inventory Page", () => {
     });
 
     // Navigate to the inventory page
-    await page.goto("/inventory", { waitUntil: "networkidle" });
+    await page.goto("/inventory", { waitUntil: "load" });
 
     // Wait a bit for Firebase emulator connection and data loading
     // The app connects to emulators and loads broadcast actions to rebuild state
@@ -60,7 +60,7 @@ test.describe("Inventory Page", () => {
     });
 
     // Navigate to the inventory page
-    await page.goto("/inventory", { waitUntil: "networkidle" });
+    await page.goto("/inventory", { waitUntil: "load" });
 
     // Wait a bit for Firebase emulator connection and data loading
     // The app connects to emulators and loads broadcast actions to rebuild state
@@ -145,7 +145,7 @@ test.describe("Inventory Page", () => {
     await page.goto("/inventory");
 
     // Wait for page to be fully loaded
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("load");
     await page.waitForTimeout(3000);
 
     // Verify basic page structure
@@ -191,7 +191,7 @@ test.describe("Inventory Page", () => {
     });
 
     await page.goto("/inventory");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("load");
     await page.waitForTimeout(3000);
 
     // Verify page loaded successfully (even if auth blocked content)
