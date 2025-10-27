@@ -104,7 +104,6 @@
             Object.keys(confirmedActions).length;
         });
       });
-    });
   });
   /*
   const delayLimit = 100000000;
