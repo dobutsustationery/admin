@@ -46,18 +46,27 @@
 
   // Wait for auth to be fully ready before initializing watchers and rendering Signin
   // This prevents "Component auth has not been registered yet" errors in automated tests
-  onMount(() => {
-    // Give Firebase auth extra time to fully initialize and connect to emulator
-    // Automated browsers (Playwright) navigate faster than humans, catching initialization errors
-    const authTimer = setTimeout(async () => {
-      // Dynamically import Signin component after delay to avoid initialization race
-      const module = await import("@ourway/svelte-firebase-auth");
-      SigninComponent = module.Signin;
-      authReady = true;
-      
-      // Initialize broadcast watcher after auth is ready
-      logTime("about to watchBroadcastActions");
-      watchBroadcastActions(firestore, (changes) => {
+  onMount(async () => {
+    // Wait for Firebase Auth to be fully initialized and ready
+    // This is critical for emulator mode where auth connection takes time
+    try {
+      await auth.authStateReady();
+      console.log("✓ Firebase Auth is ready");
+    } catch (error) {
+      console.error("Auth ready error:", error);
+    }
+    
+    // Give a small additional delay for safety
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Dynamically import Signin component after auth is ready
+    const module = await import("@ourway/svelte-firebase-auth");
+    SigninComponent = module.Signin;
+    authReady = true;
+    
+    // Initialize broadcast watcher after auth is ready
+    logTime("about to watchBroadcastActions");
+    watchBroadcastActions(firestore, (changes) => {
         logTime(`  watchBroadcastActions received ${changes.length} actions.`);
         changes.forEach((change) => {
           const action = change.doc.data() as AnyAction;
@@ -95,9 +104,7 @@
             Object.keys(confirmedActions).length;
         });
       });
-    }, 500); // Increased delay for automated browsers
-
-    return () => clearTimeout(authTimer);
+    });
   });
   /*
   const delayLimit = 100000000;
