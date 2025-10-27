@@ -1,10 +1,17 @@
-import { initializeApp } from "firebase/app";
 import {
-  GoogleAuthProvider,
+  type Auth,
   connectAuthEmulator,
+  GoogleAuthProvider,
   getAuth,
-} from "firebase/auth";
-import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
+} from "@firebase/auth";
+import { getApp, getApps, initializeApp } from "firebase/app";
+import {
+  connectFirestoreEmulator,
+  type Firestore,
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+} from "firebase/firestore";
 
 // Get environment mode from environment variables
 // Possible values: 'local' | 'staging' | 'production'
@@ -66,12 +73,13 @@ const firebaseConfig = getFirebaseConfig();
 console.log(`🔥 Firebase Environment: ${firebaseEnv}`);
 console.log(`📦 Firebase Project: ${firebaseConfig.projectId}`);
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const googleAuthProvider = new GoogleAuthProvider();
-export const firestore = getFirestore(app);
+// Check if app is already initialized (for HMR)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Connect to emulators if in local environment
+let auth: Auth;
+let firestore: Firestore;
+
+// Check if we're in emulator mode  
 if (firebaseEnv === "local") {
   const firestoreHost =
     import.meta.env.VITE_EMULATOR_FIRESTORE_HOST || "localhost";
@@ -85,16 +93,50 @@ if (firebaseEnv === "local") {
     10,
   );
 
-  connectFirestoreEmulator(firestore, firestoreHost, firestorePort);
-  connectAuthEmulator(auth, `http://${authHost}:${authPort}`, {
-    disableWarnings: true,
-  });
-
   console.log(
-    `🔧 Connected to Firestore emulator at ${firestoreHost}:${firestorePort}`,
+    `🔧 Connecting to Firestore emulator at ${firestoreHost}:${firestorePort}`,
   );
-  console.log(`🔧 Connected to Auth emulator at ${authHost}:${authPort}`);
+  console.log(`🔧 Connecting to Auth emulator at ${authHost}:${authPort}`);
+
+  // Try to get existing instances first (for HMR)
+  try {
+    firestore = getFirestore(app);
+    console.log("📦 Using existing Firestore instance");
+  } catch {
+    firestore = initializeFirestore(app, {
+      localCache: persistentLocalCache(),
+    });
+    connectFirestoreEmulator(firestore, firestoreHost, firestorePort);
+    console.log("📦 Initialized new Firestore instance");
+  }
+
+  auth = getAuth(app);
+  
+  // connectAuthEmulator can be called multiple times safely
+  try {
+    connectAuthEmulator(auth, `http://${authHost}:${authPort}`, {
+      disableWarnings: true,
+    });
+  } catch (e) {
+    // Already connected, ignore
+    console.log("🔧 Auth emulator already connected");
+  }
+
+  console.log("✅ Firebase emulators ready");
+} else {
+  // Production/staging mode
+  try {
+    firestore = getFirestore(app);
+  } catch {
+    firestore = initializeFirestore(app, {
+      localCache: persistentLocalCache(),
+    });
+  }
+  auth = getAuth(app);
 }
+
+export const googleAuthProvider = new GoogleAuthProvider();
+export { auth, firestore };
 
 // Export environment info for debugging
 export const environment = firebaseEnv;
