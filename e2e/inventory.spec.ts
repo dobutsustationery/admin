@@ -31,9 +31,47 @@ test.describe("Inventory Page", () => {
     // Navigate to the inventory page
     await page.goto("/inventory", { waitUntil: "load" });
 
+    // DEBUG: Capture HTML content to see what's actually loaded
+    const bodyHTML = await page.content();
+    console.log('🔍 DEBUG: Page HTML length:', bodyHTML.length);
+    console.log('🔍 DEBUG: Page title:', await page.title());
+    
+    // Check if page has basic HTML structure
+    const hasBody = bodyHTML.includes('<body');
+    const hasHead = bodyHTML.includes('<head');
+    console.log('🔍 DEBUG: Has <body>:', hasBody, ', Has <head>:', hasHead);
+
     // Wait a bit for Firebase emulator connection and data loading
     // The app connects to emulators and loads broadcast actions to rebuild state
     await page.waitForTimeout(5000);
+
+    // DEBUG: Try to wait explicitly for sign-in button to appear
+    console.log('🔍 DEBUG: Waiting for sign-in button or main content...');
+    try {
+      // Try multiple selectors that might indicate the page has rendered
+      await Promise.race([
+        page.waitForSelector('button:has-text("Sign in")', { timeout: 10000 }),
+        page.waitForSelector('button:has-text("Sign In")', { timeout: 10000 }),
+        page.waitForSelector('[data-testid="sign-in-button"]', { timeout: 10000 }),
+        page.waitForSelector('table', { timeout: 10000 }), // Might show table if signed in
+        page.waitForSelector('nav', { timeout: 10000 }), // Navigation elements
+      ]).then(() => {
+        console.log('✓ Sign-in button or main content found!');
+      });
+    } catch (error) {
+      console.log('⚠️  Sign-in button/content not found within 10s');
+      
+      // Additional debugging: check what's actually on the page
+      const bodyText = await page.textContent('body');
+      console.log('🔍 DEBUG: Body text content length:', bodyText?.length || 0);
+      console.log('🔍 DEBUG: Body text preview:', bodyText?.substring(0, 200) || '(empty)');
+      
+      // Check for specific elements
+      const buttons = await page.locator('button').count();
+      const links = await page.locator('a').count();
+      const divs = await page.locator('div').count();
+      console.log(`🔍 DEBUG: Elements found - buttons: ${buttons}, links: ${links}, divs: ${divs}`);
+    }
 
     // Filter out transient auth initialization errors
     const significantErrors = consoleErrors.filter(
