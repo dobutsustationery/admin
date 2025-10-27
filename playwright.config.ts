@@ -3,11 +3,11 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright configuration for E2E tests
  *
- * These tests run against a local build with Firebase emulators.
+ * These tests run against a local dev server with Firebase emulators.
  * Prerequisites:
  * - Firebase emulators must be running (npm run emulators)
- * - Test data must be loaded into emulator (node e2e/helpers/load-test-data.js)
- * - App must be built for emulator mode (npm run build:local)
+ * - Test data must be loaded into emulator (node e2e/helpers/load-test-data.js --prefix=400)
+ * - Dev server will be started automatically by Playwright
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -24,7 +24,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: "http://localhost:4173",
+    baseURL: "http://localhost:5173",
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: "off",
     screenshot: "on",
@@ -56,8 +56,8 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: "vite preview --mode emulator --port 4173",
-    url: "http://localhost:4173",
+    command: "vite dev --mode emulator --port 5173",
+    url: "http://localhost:5173",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {

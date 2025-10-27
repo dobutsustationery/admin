@@ -72,7 +72,7 @@ e2e/
 │   └── auth.ts           # Legacy authentication fixture (not used)
 ├── helpers/              # Helper scripts
 │   ├── auth-emulator.ts  # Firebase Auth Emulator integration
-│   └── load-test-data.js # Loads test data into emulator
+│   └── load-test-data.js # Loads test data into emulator (supports --prefix=N for faster loading)
 ├── screenshots/          # Numbered story screenshots (gitignored)
 │   └── README.md         # Screenshot documentation
 ├── reports/              # Test reports (gitignored)
@@ -81,6 +81,22 @@ e2e/
 ├── run-tests.sh          # Full test runner with emulator management
 └── run-tests-simple.sh   # Simple test runner (assumes emulators running)
 ```
+
+## Test Data Loading
+
+The test data loader (`e2e/helpers/load-test-data.js`) supports loading a subset of broadcast events for faster test execution:
+
+```bash
+# Load all test data (slower, ~76k broadcast events)
+node e2e/helpers/load-test-data.js
+
+# Load only first 400 broadcast events (recommended for E2E tests, much faster)
+node e2e/helpers/load-test-data.js --prefix=400
+```
+
+**Important**: The `--prefix` flag loads only the first N broadcast events chronologically (the oldest events), while still loading all documents from other collections. This significantly reduces data loading time without affecting test functionality since tests only need a representative sample of data.
+
+For typical E2E testing, use `--prefix=400` as recommended in the playwright.config.ts prerequisites.
 
 ## Writing Tests
 
