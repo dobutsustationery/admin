@@ -38,7 +38,11 @@ bun install  # Recommended for speed
 npm install  # Alternative (npm is configured to skip optional dependencies for reliability)
 ```
 
-> **Note for npm users**: The project is configured to omit optional dependencies during npm install to avoid installation issues. This is safe and doesn't affect functionality - esbuild and other tools will use their fallback implementations.
+> **Note for npm users**: 
+> - The project is configured to omit optional dependencies during npm install to avoid installation issues
+> - This is safe and doesn't affect functionality - esbuild and other tools will use their fallback implementations
+> - Platform-specific packages (currently `@biomejs/cli-linux-x64` for Linux) are explicitly included as devDependencies
+> - If you're on a different platform (macOS, Windows), you may need to add the appropriate platform-specific Biome package
 
 ### Environment Configuration
 

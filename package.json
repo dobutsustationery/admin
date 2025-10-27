@@ -51,12 +51,12 @@
     "svelte": "^4.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "1.9.4",
     "@biomejs/cli-linux-x64": "1.9.4",
     "@playwright/test": "^1.56.1",
     "@sveltejs/adapter-auto": "^2.0.0",
     "@sveltejs/kit": "^1.20.4",
     "@vitest/coverage-v8": "^0.34.6",
-    "@biomejs/biome": "^1.2.2",
     "@sveltejs/package": "^2.0.0",
     "publint": "^0.1.9",
     "svelte": "^4.0.5",
