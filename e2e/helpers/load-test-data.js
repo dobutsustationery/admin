@@ -5,6 +5,14 @@
  *
  * This script loads the test-data/firestore-export.json into the Firestore emulator
  * before running E2E tests.
+ * 
+ * Usage:
+ *   node e2e/helpers/load-test-data.js              # Load all data
+ *   node e2e/helpers/load-test-data.js --prefix=400 # Load only first 400 broadcast events
+ * 
+ * The --prefix flag is recommended for faster test data loading. It loads only the first N
+ * broadcast events (which must be the oldest/first events chronologically) while still loading
+ * all documents from other collections. Use --prefix=400 for typical E2E testing.
  */
 
 import { readFileSync } from "node:fs";
@@ -37,7 +45,14 @@ async function loadTestData() {
     "firestore-export.json",
   );
 
+  // Parse --prefix argument if provided
+  const prefixArg = process.argv.find(arg => arg.startsWith('--prefix='));
+  const prefixLimit = prefixArg ? parseInt(prefixArg.split('=')[1], 10) : null;
+
   console.log(`\n📥 Loading test data from ${testDataPath}...`);
+  if (prefixLimit) {
+    console.log(`   ⚠️  Prefix mode: Loading only first ${prefixLimit} broadcast events`);
+  }
 
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
@@ -45,7 +60,15 @@ async function loadTestData() {
   for (const [collectionName, documents] of Object.entries(
     exportData.collections,
   )) {
-    console.log(`\n  Loading ${collectionName} (${documents.length} docs)...`);
+    // Apply prefix limit only to broadcast collection (must be first events)
+    const docsToLoad = collectionName === 'broadcast' && prefixLimit 
+      ? documents.slice(0, prefixLimit)
+      : documents;
+    
+    console.log(`\n  Loading ${collectionName} (${docsToLoad.length} docs)...`);
+    if (collectionName === 'broadcast' && prefixLimit && documents.length > prefixLimit) {
+      console.log(`    (Skipped ${documents.length - prefixLimit} broadcast events due to --prefix=${prefixLimit})`);
+    }
 
     let batch = db.batch();
     let batchCount = 0;
@@ -55,7 +78,7 @@ async function loadTestData() {
     // the limit. Using 100 documents (~650KB) provides a safe margin.
     const BATCH_SIZE = 100;
 
-    for (const { id, data } of documents) {
+    for (const { id, data } of docsToLoad) {
       const docRef = db.collection(collectionName).doc(id);
 
       // Restore Firestore Timestamps from stored _seconds and _nanoseconds
@@ -95,7 +118,7 @@ async function loadTestData() {
     }
 
     console.log(
-      `    ✓ Loaded ${documents.length} documents to ${collectionName}`,
+      `    ✓ Loaded ${docsToLoad.length} documents to ${collectionName}`,
     );
   }
 
