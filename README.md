@@ -35,8 +35,10 @@ cd admin
 
 # Install dependencies (choose one)
 bun install  # Recommended for speed
-npm install  # Alternative
+npm install  # Alternative (npm is configured to skip optional dependencies for reliability)
 ```
+
+> **Note for npm users**: The project is configured to omit optional dependencies during npm install to avoid installation issues. This is safe and doesn't affect functionality - esbuild and other tools will use their fallback implementations.
 
 ### Environment Configuration
 
