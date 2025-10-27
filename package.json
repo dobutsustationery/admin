@@ -5,7 +5,7 @@
   "author": "Alex Nicolaou",
   "license": "UNLICENSED",
   "scripts": {
-    "postinstall": "node scripts/install-biome-cli.cjs",
+    "postinstall": "node scripts/install-biome-cli.cjs && node scripts/patch-playwright.cjs",
     "dev": "vite dev",
     "dev:local": "vite dev --mode emulator",
     "dev:staging": "vite dev --mode staging",
