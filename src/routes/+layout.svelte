@@ -11,7 +11,7 @@
   } from "firebase/firestore";
 
   import { auth, googleAuthProvider } from "$lib/firebase";
-  import { Signin, type User } from "@ourway/svelte-firebase-auth";
+  import type { User } from "@ourway/svelte-firebase-auth";
   import type { AnyAction } from "@reduxjs/toolkit";
   import { watchBroadcastActions } from "$lib/redux-firestore";
   import { store } from "$lib/store";
@@ -20,6 +20,7 @@
   let me: User = { signedIn: false };
   let loading = true;
   let authReady = false;
+  let SigninComponent: any = null;
 
   function signedInEvent(e: CustomEvent) {
     me = e.detail;
@@ -48,7 +49,10 @@
   onMount(() => {
     // Give Firebase auth extra time to fully initialize and connect to emulator
     // Automated browsers (Playwright) navigate faster than humans, catching initialization errors
-    const authTimer = setTimeout(() => {
+    const authTimer = setTimeout(async () => {
+      // Dynamically import Signin component after delay to avoid initialization race
+      const module = await import("@ourway/svelte-firebase-auth");
+      SigninComponent = module.Signin;
       authReady = true;
       
       // Initialize broadcast watcher after auth is ready
@@ -112,9 +116,9 @@
   <slot />
 {:else}
   <p class:loading>Loading...</p>
-  {#if authReady}
+  {#if authReady && SigninComponent}
     <span class:loading>
-      <Signin {auth} {googleAuthProvider} on:user_changed={signedInEvent} />
+      <svelte:component this={SigninComponent} {auth} {googleAuthProvider} on:user_changed={signedInEvent} />
     </span>
   {/if}
 {/if}
