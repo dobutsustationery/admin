@@ -24,8 +24,7 @@ test.describe("Inventory Management Story", () => {
 
 	test("complete user journey from sign-out to inventory", async ({ page }) => {
 		// Step 0: Navigate to app while signed out
-		await page.goto("/inventory");
-		await page.waitForLoadState("networkidle");
+		await page.goto("/inventory", { waitUntil: "load" });
 		
 		// Wait for Firebase emulator connection and page rendering
 		// The app connects to emulators and loads broadcast actions to rebuild state
@@ -63,8 +62,7 @@ test.describe("Inventory Management Story", () => {
 		console.log(`✓ Authenticated as: ${user.email} (${user.uid})`);
 
 		// Step 2: Navigate to inventory page (now authenticated)
-		await page.goto("/inventory");
-		await page.waitForLoadState("networkidle");
+		await page.goto("/inventory", { waitUntil: "load" });
 
 		// Wait for Firebase to connect and load data
 		await page.waitForTimeout(5000);
@@ -167,8 +165,7 @@ test.describe("Inventory Management Story", () => {
 		);
 
 		// Navigate to inventory
-		await page.goto("/inventory");
-		await page.waitForLoadState("networkidle");
+		await page.goto("/inventory", { waitUntil: "load" });
 		await page.waitForTimeout(5000);
 
 		// Take initial screenshot

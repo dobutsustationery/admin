@@ -16,7 +16,7 @@ import { expect, test } from "@playwright/test";
 test.describe("Inventory Page", () => {
   test("should match visual snapshot", async ({ page }) => {
     // Navigate to the inventory page
-    await page.goto("/inventory", { waitUntil: "networkidle" });
+    await page.goto("/inventory", { waitUntil: "load" });
 
     // Wait a bit for Firebase emulator connection and data loading
     // The app connects to emulators and loads broadcast actions to rebuild state
@@ -33,7 +33,7 @@ test.describe("Inventory Page", () => {
 
   test("should load and display inventory items", async ({ page }) => {
     // Navigate to the inventory page
-    await page.goto("/inventory", { waitUntil: "networkidle" });
+    await page.goto("/inventory", { waitUntil: "load" });
 
     // Wait a bit for Firebase emulator connection and data loading
     // The app connects to emulators and loads broadcast actions to rebuild state
@@ -83,10 +83,9 @@ test.describe("Inventory Page", () => {
   });
 
   test("should have correct page structure", async ({ page }) => {
-    await page.goto("/inventory");
+    await page.goto("/inventory", { waitUntil: "load" });
 
     // Wait for page to be fully loaded
-    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(3000);
 
     // Verify basic page structure
@@ -106,8 +105,7 @@ test.describe("Inventory Page", () => {
       }
     });
 
-    await page.goto("/inventory");
-    await page.waitForLoadState("networkidle");
+    await page.goto("/inventory", { waitUntil: "load" });
     await page.waitForTimeout(3000);
 
     // Verify page loaded successfully (even if auth blocked content)
@@ -132,7 +130,7 @@ const { authenticateUser, clearAuthEmulator } = await import(
 await clearAuthEmulator();
 
 // Step 0: Start from signed-out state
-await page.goto("/inventory", { waitUntil: "networkidle" });
+await page.goto("/inventory", { waitUntil: "load" });
 await page.waitForTimeout(5000);
 
 await page.screenshot({
@@ -146,7 +144,7 @@ const user = await authenticateUser(page, "test@example.com", "password123");
 console.log(`✓ Authenticated as: ${user.email}`);
 
 // Step 2: Navigate to inventory (authenticated)
-await page.goto("/inventory", { waitUntil: "networkidle" });
+await page.goto("/inventory", { waitUntil: "load" });
 await page.waitForTimeout(5000);
 
 await page.screenshot({
