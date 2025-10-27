@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { test, expect } from "./fixtures/auth";
 
 /**
  * E2E test for the /inventory page
@@ -14,7 +14,7 @@ import { expect, test } from "@playwright/test";
  */
 
 test.describe("Inventory Page", () => {
-  test("should match visual snapshot", async ({ page }) => {
+  test("should match visual snapshot", async ({ authenticatedPage: page }) => {
     // Collect console errors
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
@@ -52,7 +52,7 @@ test.describe("Inventory Page", () => {
     expect(consoleErrors.length).toBe(0);
   });
 
-  test("should load and display inventory items", async ({ page }) => {
+  test("should load and display inventory items", async ({ authenticatedPage: page }) => {
     // Collect console messages for debugging
     const consoleMessages: { type: string; text: string }[] = [];
     page.on("console", (msg) => {
@@ -133,7 +133,7 @@ test.describe("Inventory Page", () => {
     expect(errors.length).toBe(0);
   });
 
-  test("should have correct page structure", async ({ page }) => {
+  test("should have correct page structure", async ({ authenticatedPage: page }) => {
     // Track console errors
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
@@ -173,7 +173,7 @@ test.describe("Inventory Page", () => {
     expect(consoleErrors.length).toBe(0);
   });
 
-  test("should connect to Firebase emulators", async ({ page }) => {
+  test("should connect to Firebase emulators", async ({ authenticatedPage: page }) => {
     const consoleMessages: {
       type: string;
       text: string;
