@@ -1,35 +1,39 @@
 <script lang="ts">
-  import ComboBox from "./ComboBox.svelte";
-  import { firestore } from "./firebase";
-  import { user } from "./globals";
-  import { type Item, update_field } from "./inventory";
-  import { broadcast } from "./redux-firestore";
-  import { store } from "./store";
+import ComboBox from "./ComboBox.svelte";
+import { firestore } from "./firebase";
+import { user } from "./globals";
+import { type Item, update_field } from "./inventory";
+import { broadcast } from "./redux-firestore";
+import { store } from "./store";
 
-    export let key: string = "";
+export const key = "";
 
-    let state = store.getState();
-    let item: Item | null = null;
-    $: if ($store) {
-        state = store.getState();
-        item = {...state.inventory.idToItem[key]};
-    }
+let state = store.getState();
+let item: Item | null = null;
+$: if ($store) {
+  state = store.getState();
+  item = { ...state.inventory.idToItem[key] };
+}
 
-    function updateField(key: string, item: Item, field: keyof Item) {
-        return (e: any) => {
-            const to = e.detail || e.target.value;
-            const from = item[field];
-            if (to !== null) {
-                broadcast(firestore, $user.uid, update_field({ id: key, field, to, from }))
-            }
-        }
+function updateField(key: string, item: Item, field: keyof Item) {
+  return (e: any) => {
+    const to = e.detail || e.target.value;
+    const from = item[field];
+    if (to !== null) {
+      broadcast(
+        firestore,
+        $user.uid,
+        update_field({ id: key, field, to, from }),
+      );
     }
-    function handleEnterKey(e: KeyboardEvent) {
-        if (e.key === 'Enter') {
-            const target = e.target as HTMLInputElement;
-            target.blur();
-        }
-    }
+  };
+}
+function handleEnterKey(e: KeyboardEvent) {
+  if (e.key === "Enter") {
+    const target = e.target as HTMLInputElement;
+    target.blur();
+  }
+}
 </script>
 
 {#if key && item !== null}

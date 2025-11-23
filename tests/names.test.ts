@@ -1,4 +1,4 @@
-import { names, create_name, initialState, remove_name } from "$lib/names";
+import { create_name, initialState, names, remove_name } from "$lib/names";
 import { describe, expect, it } from "vitest";
 
 describe("names reducer", () => {

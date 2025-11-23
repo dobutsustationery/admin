@@ -1,6 +1,6 @@
 import {
-  connectAuthEmulator,
   GoogleAuthProvider,
+  connectAuthEmulator,
   getAuth,
 } from "@firebase/auth";
 import { initializeApp } from "firebase/app";
@@ -22,8 +22,7 @@ function getFirebaseConfig() {
       apiKey: "demo-api-key",
       authDomain: "localhost",
       projectId:
-        import.meta.env.VITE_FIREBASE_LOCAL_PROJECT_ID ||
-        "dobutsu-stationery-6b227",
+        import.meta.env.VITE_FIREBASE_LOCAL_PROJECT_ID || "dobutsu-admin",
       storageBucket: "demo-storage-bucket",
       messagingSenderId: "demo-sender-id",
       appId: "demo-app-id",
