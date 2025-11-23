@@ -12,6 +12,8 @@ import {
   initializeFirestore,
   persistentLocalCache,
 } from "firebase/firestore";
+// Force Firestore component registration by importing the module
+import "firebase/firestore";
 
 // Get environment mode from environment variables
 // Possible values: 'local' | 'staging' | 'production'
@@ -74,7 +76,10 @@ console.log(`🔥 Firebase Environment: ${firebaseEnv}`);
 console.log(`📦 Firebase Project: ${firebaseConfig.projectId}`);
 
 // Check if app is already initialized (for HMR)
+console.log("DEBUG: About to initialize Firebase app");
+console.log("DEBUG: getApps().length = " + getApps().length);
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+console.log("DEBUG: Firebase app initialized, app.name = " + app.name);
 
 let auth: Auth;
 let firestore: Firestore;
@@ -93,30 +98,26 @@ if (firebaseEnv === "local") {
     10,
   );
 
+  console.log("DEBUG: About to log emulator connection info");
   console.log(
     `🔧 Connecting to Firestore emulator at ${firestoreHost}:${firestorePort}`,
   );
   console.log(`🔧 Connecting to Auth emulator at ${authHost}:${authPort}`);
+  console.log("DEBUG: After logging emulator info, before Firestore init");
   console.log("🔧 About to initialize Firestore...");
+  console.log("DEBUG: About to call getFirestore");
 
-  // Initialize Firestore with emulator connection
-  // Note: Don't use persistentLocalCache with emulators - it can cause issues
+  // Initialize Firestore and connect to emulator
+  // Use getFirestore to get the default instance, then connect to emulator
+  // connectFirestoreEmulator must be called before any Firestore operations
   try {
-    console.log("🔧 Calling initializeFirestore...");
-    firestore = initializeFirestore(app, {});
-    console.log("🔧 initializeFirestore returned, calling connectFirestoreEmulator...");
+    firestore = getFirestore(app);
+    console.log("DEBUG: getFirestore succeeded");
     connectFirestoreEmulator(firestore, firestoreHost, firestorePort);
-    console.log("📦 Initialized new Firestore with emulator connection");
+    console.log("📦 Initialized Firestore with emulator connection");
   } catch (error) {
-    // Already initialized (HMR), reuse existing instance
-    console.log("⚠️  initializeFirestore failed, trying getFirestore:", error);
-    try {
-      firestore = getFirestore(app);
-      console.log("📦 Reusing existing Firestore instance (HMR)");
-    } catch (getError) {
-      console.error("❌ Failed to get Firestore instance:", getError);
-      throw getError;
-    }
+    console.error("❌ ERROR during Firestore initialization:", error);
+    throw error;
   }
   console.log("✅ Firestore initialized successfully");
 
