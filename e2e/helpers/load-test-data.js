@@ -18,8 +18,9 @@ const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
 process.env.FIRESTORE_EMULATOR_HOST = emulatorHost;
 
 // Initialize Firebase Admin for emulator
+// Use the same project ID as configured in .firebaserc
 const app = initializeApp({
-  projectId: "demo-test-project",
+  projectId: "dobutsu-admin",
 });
 
 const db = getFirestore(app);
