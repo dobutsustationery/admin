@@ -49,7 +49,9 @@ async function loadTestData() {
     let batch = db.batch();
     let batchCount = 0;
     // Reduced batch size to avoid gRPC message size limit (4MB)
-    // With large documents, 500 documents can exceed the gRPC limit
+    // The emulator enforces a 4MB limit per gRPC message. With the test data
+    // averaging ~6.5KB per document, 500 documents (~3.25MB) was approaching
+    // the limit. Using 100 documents (~650KB) provides a safe margin.
     const BATCH_SIZE = 100;
 
     for (const { id, data } of documents) {
