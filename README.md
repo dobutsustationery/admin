@@ -39,7 +39,6 @@ npm install  # Alternative (automatically installs platform-specific Biome CLI f
 ```
 
 > **Note for npm users**: 
-> - The project is configured to omit optional dependencies during npm install to avoid installation issues
 > - A postinstall script automatically installs the correct Biome CLI package for your platform (Linux, macOS, or Windows)
 > - This approach ensures reliable installation while maintaining full linter functionality on all platforms
 
