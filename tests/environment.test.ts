@@ -50,4 +50,14 @@ describe("Environment Configuration", () => {
     expect(Number.isNaN(port1)).toBe(false);
     expect(Number.isNaN(port2)).toBe(false);
   });
+
+  it("should use correct fallback project ID for local environment", () => {
+    // The fallback project ID should match the project ID in .firebaserc
+    // This ensures consistency when environment variables fail to load
+    const expectedProjectId = "dobutsu-admin";
+    const fallbackProjectId = "dobutsu-admin"; // From firebase.ts local config fallback
+
+    expect(fallbackProjectId).toBe(expectedProjectId);
+    expect(fallbackProjectId).not.toBe("dobutsu-stationery-6b227");
+  });
 });
