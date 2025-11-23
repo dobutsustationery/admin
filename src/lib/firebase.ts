@@ -97,18 +97,28 @@ if (firebaseEnv === "local") {
     `🔧 Connecting to Firestore emulator at ${firestoreHost}:${firestorePort}`,
   );
   console.log(`🔧 Connecting to Auth emulator at ${authHost}:${authPort}`);
+  console.log("🔧 About to initialize Firestore...");
 
-  // Try to get existing instances first (for HMR)
+  // Initialize Firestore with emulator connection
+  // Note: Don't use persistentLocalCache with emulators - it can cause issues
   try {
-    firestore = getFirestore(app);
-    console.log("📦 Using existing Firestore instance");
-  } catch {
-    firestore = initializeFirestore(app, {
-      localCache: persistentLocalCache(),
-    });
+    console.log("🔧 Calling initializeFirestore...");
+    firestore = initializeFirestore(app, {});
+    console.log("🔧 initializeFirestore returned, calling connectFirestoreEmulator...");
     connectFirestoreEmulator(firestore, firestoreHost, firestorePort);
-    console.log("📦 Initialized new Firestore instance");
+    console.log("📦 Initialized new Firestore with emulator connection");
+  } catch (error) {
+    // Already initialized (HMR), reuse existing instance
+    console.log("⚠️  initializeFirestore failed, trying getFirestore:", error);
+    try {
+      firestore = getFirestore(app);
+      console.log("📦 Reusing existing Firestore instance (HMR)");
+    } catch (getError) {
+      console.error("❌ Failed to get Firestore instance:", getError);
+      throw getError;
+    }
   }
+  console.log("✅ Firestore initialized successfully");
 
   auth = getAuth(app);
   
