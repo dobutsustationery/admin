@@ -252,7 +252,7 @@ When the application starts, you'll see console messages indicating the active e
 
 ```
 🔥 Firebase Environment: local
-📦 Firebase Project: dobutsu-stationery-6b227
+📦 Firebase Project: dobutsu-admin
 🔧 Connected to Firestore emulator at localhost:8080
 🔧 Connected to Auth emulator at localhost:9099
 ```
