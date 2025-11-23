@@ -48,7 +48,9 @@ async function loadTestData() {
 
     let batch = db.batch();
     let batchCount = 0;
-    const BATCH_SIZE = 500; // Firestore batch limit
+    // Reduced batch size to avoid gRPC message size limit (4MB)
+    // With large documents, 500 documents can exceed the gRPC limit
+    const BATCH_SIZE = 100;
 
     for (const { id, data } of documents) {
       const docRef = db.collection(collectionName).doc(id);
