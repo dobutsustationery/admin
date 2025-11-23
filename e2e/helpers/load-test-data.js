@@ -12,6 +12,11 @@ import { join, resolve } from "node:path";
 import { cert, initializeApp } from "firebase-admin/app";
 import { Timestamp, getFirestore } from "firebase-admin/firestore";
 
+// Set emulator host before initializing Firebase Admin
+// This is the proper way to connect to the Firestore emulator
+const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
+process.env.FIRESTORE_EMULATOR_HOST = emulatorHost;
+
 // Initialize Firebase Admin for emulator
 const app = initializeApp({
   projectId: "demo-test-project",
@@ -19,13 +24,7 @@ const app = initializeApp({
 
 const db = getFirestore(app);
 
-// Connect to emulator
-db.settings({
-  host: "localhost:8080",
-  ssl: false,
-});
-
-console.log("🔧 Connected to Firestore emulator at localhost:8080");
+console.log(`🔧 Connected to Firestore emulator at ${emulatorHost}`);
 
 /**
  * Load test data into Firestore emulator
