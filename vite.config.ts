@@ -5,5 +5,8 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	test: {
 		include: ['tests/**/*.{test,spec}.{js,ts}']
+	},
+	optimizeDeps: {
+		exclude: ['firebase', 'firebase/app', 'firebase/auth', 'firebase/firestore']
 	}
 });
