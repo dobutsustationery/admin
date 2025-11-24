@@ -1,6 +1,6 @@
 <script lang="ts">
 import BarcodeScanner from "$lib/BarcodeScanner.svelte";
-import { Signin } from "@ourway/svelte-firebase-auth";
+import Signin from "$lib/Signin.svelte";
 import substrings from "common-substrings";
 
 import ComboBox from "$lib/ComboBox.svelte";
