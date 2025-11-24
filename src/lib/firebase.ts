@@ -6,8 +6,7 @@ import {
 import { initializeApp } from "firebase/app";
 import {
   connectFirestoreEmulator,
-  initializeFirestore,
-  persistentLocalCache,
+  getFirestore,
 } from "firebase/firestore";
 
 // Get environment mode from environment variables
@@ -73,9 +72,7 @@ console.log(`📦 Firebase Project: ${firebaseConfig.projectId}`);
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleAuthProvider = new GoogleAuthProvider();
-export const firestore = initializeFirestore(app, {
-  localCache: persistentLocalCache(),
-});
+export const firestore = getFirestore(app);
 
 // Connect to emulators if in local environment
 if (firebaseEnv === "local") {
