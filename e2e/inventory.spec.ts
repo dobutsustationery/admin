@@ -59,8 +59,8 @@ test.describe("Inventory Page", () => {
   });
 
   test("should match visual snapshot - authenticated", async ({ authenticatedPage: page }) => {
-    // Increase test timeout significantly for slow emulator processing
-    test.setTimeout(180000); // 3 minutes
+    // Reasonable timeout for test
+    test.setTimeout(60000); // 1 minute
     
     // Collect console errors
     const consoleErrors: string[] = [];
@@ -80,21 +80,27 @@ test.describe("Inventory Page", () => {
     await inventoryTable.waitFor({ state: 'visible', timeout: 15000 });
     console.log('✓ Inventory table found');
     
-    // Wait a LONG time for inventory to load - the broadcast actions take time to process
-    // and Redux needs to update the state
-    console.log('🔍 Waiting for inventory data to load (90 seconds)...');
-    await page.waitForTimeout(90000); // Wait full 90 seconds
+    // Wait for inventory data to load by checking for rows appearing
+    // With --prefix=400, data should load within a few seconds
+    console.log('🔍 Waiting for inventory data to load...');
     
-    console.log('✓ Wait complete, checking for rows...');
-    const rowCount = await page.locator('table tbody tr').count();
-    console.log(`   Found ${rowCount} rows`);
+    // Poll for rows with a maximum wait time of 10 seconds
+    const maxWaitMs = 10000;
+    const pollIntervalMs = 500;
+    const startTime = Date.now();
+    let rowCount = 0;
     
-    // If no rows, wait even longer
+    while (Date.now() - startTime < maxWaitMs) {
+      rowCount = await page.locator('table tbody tr').count();
+      if (rowCount > 0) {
+        console.log(`✓ Found ${rowCount} rows after ${Date.now() - startTime}ms`);
+        break;
+      }
+      await page.waitForTimeout(pollIntervalMs);
+    }
+    
     if (rowCount === 0) {
-      console.log('⚠️  No rows yet, waiting another 30 seconds...');
-      await page.waitForTimeout(30000);
-      const newRowCount = await page.locator('table tbody tr').count();
-      console.log(`   Found ${newRowCount} rows after extended wait`);
+      console.log(`⚠️  No rows found after ${maxWaitMs}ms - data may not have loaded`);
     }
 
     // Verify table structure
@@ -105,13 +111,11 @@ test.describe("Inventory Page", () => {
     expect(headers.join(' ')).toContain('JAN Code');
     expect(headers.join(' ')).toContain('Quantity');
 
-    // Get final row count
-    const finalRowCount = await page.locator('table tbody tr').count();
-    console.log(`✓ Found ${finalRowCount} inventory items displayed`);
+    console.log(`✓ Found ${rowCount} inventory items displayed`);
 
     // Get sample data from first few rows if any exist
-    if (finalRowCount > 0) {
-      const sampleRows = Math.min(3, finalRowCount);
+    if (rowCount > 0) {
+      const sampleRows = Math.min(3, rowCount);
       console.log(`📊 Sample inventory data (first ${sampleRows} rows):`);
       for (let i = 0; i < sampleRows; i++) {
         const rowText = await page.locator('table tbody tr').nth(i).textContent();
@@ -162,10 +166,10 @@ test.describe("Inventory Page", () => {
     // Navigate to the inventory page with auth already set
     await page.goto("/inventory", { waitUntil: "load" });
 
-    // Wait for inventory to load
+    // Wait for inventory to load - poll for data instead of fixed timeout
     console.log('🔍 Waiting for inventory table...');
-    await page.waitForTimeout(5000); // Give time for broadcast actions to load
-
+    
+    // Poll for table with reasonable timeout
     const hasTable = await page.locator("table").isVisible({ timeout: 10000 });
 
     if (hasTable) {
@@ -181,8 +185,22 @@ test.describe("Inventory Page", () => {
       expect(headersText).toContain("JAN Code");
       expect(headersText).toContain("Quantity");
 
-      // Count rows - with test data loaded, we should have items
-      const rowCount = await page.locator("table tbody tr").count();
+      // Poll for rows to appear with max 10 second wait
+      console.log('🔍 Waiting for data rows to appear...');
+      const maxWaitMs = 10000;
+      const pollIntervalMs = 500;
+      const startTime = Date.now();
+      let rowCount = 0;
+      
+      while (Date.now() - startTime < maxWaitMs) {
+        rowCount = await page.locator("table tbody tr").count();
+        if (rowCount > 0) {
+          console.log(`✓ Found ${rowCount} rows after ${Date.now() - startTime}ms`);
+          break;
+        }
+        await page.waitForTimeout(pollIntervalMs);
+      }
+      
       console.log(`✓ Found ${rowCount} inventory items displayed`);
 
       // We should have at least some items from the test data
