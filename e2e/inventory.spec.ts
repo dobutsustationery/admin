@@ -20,39 +20,12 @@ test.describe("Inventory Page", () => {
     return errorText.includes("Component auth has not been registered yet");
   };
 
-  test("should match visual snapshot", async ({ page }) => {
-    // Collect console errors
-    const consoleErrors: string[] = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        consoleErrors.push(msg.text());
-      }
-    });
-
-    // Navigate to the inventory page
-    await page.goto("/inventory", { waitUntil: "load" });
-
-    console.log('🔍 Waiting for page to initialize...');
-    
-    // Wait for auth to be ready and page to load
-    await page.waitForTimeout(2000);
-
-    // Wait for the sign-in button to appear
-    console.log('🔍 Waiting for sign-in button...');
-    const signInButton = page.locator('button:has-text("Sign In")');
-    await signInButton.waitFor({ state: 'visible', timeout: 15000 });
-    console.log('✓ Sign-in button found');
-
-    // Take screenshot of sign-in page
-    await expect(page).toHaveScreenshot("inventory-signin-page.png", {
-      fullPage: true,
-    });
-    console.log('✓ Sign-in page screenshot captured');
-
-    // Click the sign-in button to trigger auth popup
+  // Helper function to perform sign-in via Firebase Auth emulator
+  const signInViaEmulator = async (page: any) => {
     console.log('🔍 Clicking sign-in button...');
     
     // Start waiting for popup before clicking
+    const signInButton = page.locator('button:has-text("Sign In")');
     const popupPromise = page.waitForEvent('popup', { timeout: 15000 });
     await signInButton.click();
     
@@ -62,10 +35,6 @@ test.describe("Inventory Page", () => {
       
       // Wait for the popup to load
       await popup.waitForLoadState('domcontentloaded');
-      
-      // Take screenshot of auth popup for debugging
-      await popup.screenshot({ path: 'e2e/screenshots/auth-popup.png' });
-      console.log('✓ Auth popup screenshot saved');
       
       // In the Firebase Auth emulator, look for the account selection or auto-sign-in
       // The emulator UI is simple and usually just lists existing accounts or has an "Add new account" button
@@ -112,6 +81,39 @@ test.describe("Inventory Page", () => {
       console.log('⚠️  Error during auth popup flow:', error);
       console.log('   This might be expected if auth flow is different - attempting to continue...');
     }
+  };
+
+  test("should match visual snapshot", async ({ page }) => {
+    // Collect console errors
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") {
+        consoleErrors.push(msg.text());
+      }
+    });
+
+    // Navigate to the inventory page
+    await page.goto("/inventory", { waitUntil: "load" });
+
+    console.log('🔍 Waiting for page to initialize...');
+    
+    // Wait for auth to be ready and page to load
+    await page.waitForTimeout(2000);
+
+    // Wait for the sign-in button to appear
+    console.log('🔍 Waiting for sign-in button...');
+    const signInButton = page.locator('button:has-text("Sign In")');
+    await signInButton.waitFor({ state: 'visible', timeout: 15000 });
+    console.log('✓ Sign-in button found');
+
+    // Take screenshot of sign-in page
+    await expect(page).toHaveScreenshot("inventory-signin-page.png", {
+      fullPage: true,
+    });
+    console.log('✓ Sign-in page screenshot captured');
+
+    // Perform sign-in using the helper
+    await signInViaEmulator(page);
 
     // Wait for redirect back to main page and for inventory to load
     console.log('🔍 Waiting for inventory table to appear...');
@@ -190,42 +192,8 @@ test.describe("Inventory Page", () => {
     const signInButton = page.locator('button:has-text("Sign In")');
     await signInButton.waitFor({ state: 'visible', timeout: 15000 });
     
-    // Click sign-in and wait for popup
-    const popupPromise = page.waitForEvent('popup', { timeout: 15000 });
-    await signInButton.click();
-    
-    // Handle auth popup
-    try {
-      const popup = await popupPromise;
-      await popup.waitForLoadState('domcontentloaded');
-      await popup.waitForTimeout(1000);
-      
-      // Try to click add account or auto-generate button
-      const addBtn = popup.locator('button:has-text("Add"), button:has-text("Auto-generate")').first();
-      if (await addBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await addBtn.click();
-        await popup.waitForTimeout(1000);
-      }
-      
-      // Fill in email if input is present
-      const emailInput = popup.locator('input[name="email"], input[type="email"]').first();
-      if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await emailInput.fill('test@example.com');
-        
-        const nameInput = popup.locator('input[name="displayName"]').first();
-        if (await nameInput.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await nameInput.fill('Test User');
-        }
-        
-        const submitBtn = popup.locator('button[type="submit"]').first();
-        await submitBtn.click();
-      }
-      
-      await popup.waitForEvent('close', { timeout: 10000 });
-      console.log('✓ Auth completed');
-    } catch (error) {
-      console.log('⚠️  Auth popup handling:', error);
-    }
+    // Perform sign-in using the helper
+    await signInViaEmulator(page);
 
     // Wait for inventory to load after sign-in
     console.log('🔍 Waiting for inventory table...');
