@@ -1,29 +1,29 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-  import { store } from "./store";
+import { createEventDispatcher } from "svelte";
+import { store } from "./store";
 
-  export let id: string = "";
-  export let label: string | null = null;
-  export let value: string | null = "";
-  export let barcode: string | null = null;
-  let state = store.getState();
+export const id = "";
+export const label: string | null = null;
+export const value: string | null = "";
+export const barcode: string | null = null;
+let state = store.getState();
 
-  const dispatchEvent = createEventDispatcher();
-  let options: string[] = [];
-  $: if ($store) {
-    state = store.getState();
-    options = state.names.nameIdToNames[id].filter(
-      (n) => state.inventory.idToItem[`${barcode}${n}`] !== undefined
-    );
-  }
+const dispatchEvent = createEventDispatcher();
+let options: string[] = [];
+$: if ($store) {
+  state = store.getState();
+  options = state.names.nameIdToNames[id].filter(
+    (n) => state.inventory.idToItem[`${barcode}${n}`] !== undefined,
+  );
+}
 
-  function getLabel() {
-    return label === null ? id : label;
-  }
+function getLabel() {
+  return label === null ? id : label;
+}
 
-  $: if (value) {
-      dispatchEvent("value", value);
-  }
+$: if (value) {
+  dispatchEvent("value", value);
+}
 </script>
 
 {#if options.length > 0}

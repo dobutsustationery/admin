@@ -1,41 +1,40 @@
 <script lang="ts">
-  import ComboBox from "$lib/ComboBox.svelte";
-  import { auth, firestore, googleAuthProvider } from "$lib/firebase";
-  import { create_name, remove_name } from "$lib/names";
-  import { broadcast, watchBroadcastActions } from "$lib/redux-firestore";
-  import { store } from "$lib/store";
-  import { Signin, type User } from "@ourway/svelte-firebase-auth";
-  import type { AnyAction } from "@reduxjs/toolkit";
+import ComboBox from "$lib/ComboBox.svelte";
+import { auth, firestore, googleAuthProvider } from "$lib/firebase";
+import { create_name, remove_name } from "$lib/names";
+import { broadcast, watchBroadcastActions } from "$lib/redux-firestore";
+import { store } from "$lib/store";
+import { Signin, type User } from "@ourway/svelte-firebase-auth";
+import type { AnyAction } from "@reduxjs/toolkit";
 
-  let id = "";
-  let name = "";
-  let ids: string[] = [];
-  let state = store.getState();
+const id = "";
+const name = "";
+let ids: string[] = [];
+let state = store.getState();
 
-  $: if ($store) {
-    state = store.getState();
-    ids = Object.keys(state.names.nameIdToNames);
+$: if ($store) {
+  state = store.getState();
+  ids = Object.keys(state.names.nameIdToNames);
+}
+
+let me: User = { signedIn: false };
+function newName() {
+  if (me.signedIn) {
+    broadcast(firestore, me.uid, create_name({ id, name }));
   }
+}
 
-  let me: User = { signedIn: false };
-  function newName() {
+function removeName(id: string, name: string) {
+  return () => {
     if (me.signedIn) {
-      broadcast(firestore, me.uid, create_name({ id, name }));
+      broadcast(firestore, me.uid, remove_name({ id, name }));
     }
-  }
+  };
+}
 
-  function removeName(id: string, name: string) {
-    return () => {
-      if (me.signedIn) {
-        broadcast(firestore, me.uid, remove_name({ id, name }));
-      }
-    };
-  }
-
-  function user(e: CustomEvent) {
-    me = e.detail;
-  }
-
+function user(e: CustomEvent) {
+  me = e.detail;
+}
 </script>
 
 <h1>Recently Used Names and Codes</h1>

@@ -1,11 +1,11 @@
 import { configureStore } from "@reduxjs/toolkit";
 import type { Writable } from "svelte/store";
-import { names } from "./names";
-import { inventory } from "./inventory";
 import { history } from "./history";
+import { inventory } from "./inventory";
+import { names } from "./names";
 
 function svelteStoreEnhancer(createStoreApi: (arg0: any, arg1: any) => any) {
-  return function (reducer: any, initialState: any) {
+  return (reducer: any, initialState: any) => {
     const reduxStore = createStoreApi(reducer, initialState);
     return {
       ...reduxStore,
