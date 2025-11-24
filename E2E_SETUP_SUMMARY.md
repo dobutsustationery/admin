@@ -31,12 +31,23 @@ This document provides a comprehensive summary of the Playwright-based E2E testi
 
 ### 3. Test Suite
 
-- **Inventory Page Tests** (`e2e/inventory.spec.ts`)
-  - Test 1: Basic page loading and structure validation
-  - Test 2: Page structure verification (works with or without auth)
-  - Test 3: Firebase emulator connection verification
-  - All tests take screenshots for visual validation
-  - Robust to authentication state (works even if mock auth fails)
+- **User Story Pattern** (`e2e/inventory.spec.ts`)
+  - Tests follow a complete user journey pattern
+  - Numbered screenshots tell a coherent story (000-xxx.png, 001-xxx.png, etc.)
+  - Each test starts from realistic initial state (signed out)
+  - Programmatic verification (assertions) + visual verification (screenshots)
+  - Single comprehensive test replaces multiple fragmented tests
+  
+- **Screenshot Helper** (`e2e/helpers/screenshot-helper.ts`)
+  - Automated sequential numbering of screenshots
+  - Support for programmatic checks before capture
+  - Counter management and reset functionality
+  
+- **Test Documentation** (`e2e/inventory/README.md`)
+  - Screenshot gallery with descriptions
+  - Programmatic and manual verification points
+  - What to verify in each screenshot
+  - Complete user story documentation
 
 ### 4. GitHub Actions CI/CD
 
@@ -98,6 +109,13 @@ This document provides a comprehensive summary of the Playwright-based E2E testi
 
 ## Key Features
 
+### User Story Testing
+
+- **Numbered Screenshots**: Each test produces screenshots like `000-signed-out-state.png`, `001-signed-in-state.png`, etc.
+- **Complete Journeys**: Tests follow realistic user flows from start to finish
+- **Dual Verification**: Both programmatic (assertions) and visual (screenshots) verification
+- **Documentation**: Each test has a README with screenshot gallery and verification points
+
 ### Test Data
 
 - Uses real production data exported to `test-data/firestore-export.json`
@@ -106,25 +124,27 @@ This document provides a comprehensive summary of the Playwright-based E2E testi
   - User data
   - Order/payment data
 - Data is loaded into emulators before each test run
-
-### Authentication
-
-- Tests are designed to work with or without authentication
-- Gracefully handles sign-in UI if auth mocking fails
-- Still validates page structure and basic functionality
+- Loads 400 broadcast events for inventory tests
 
 ### Screenshots
 
-All tests capture screenshots for visual validation:
-- `inventory-page.png` - Main inventory view
-- `inventory-page-structure.png` - Page structure validation
-- `inventory-with-emulators.png` - Emulator connection state
+Tests capture numbered screenshots that tell a story:
+
+**Inventory Test:**
+- `000-signed-out-state.png` - User arrives at inventory page (signed out)
+- `001-signed-in-state.png` - User has signed in
+- `002-inventory-loaded.png` - Inventory data is displayed
+
+Each screenshot has:
+- Programmatic verification (assertions run before capture)
+- Visual verification (screenshot comparison)
+- Documentation of what to manually verify
 
 ### Robustness
 
-- Network timeout handling
-- Graceful degradation if auth doesn't work
-- Console logging for debugging
+- Network timeout handling with polling
+- Console error filtering (transient errors ignored)
+- Detailed logging for debugging
 - Comprehensive error messages
 
 ## Configuration Files
