@@ -1,13 +1,19 @@
 import { test, expect } from "./fixtures/auth";
+import { createScreenshotHelper } from "./helpers/screenshot-helper";
 
 /**
  * E2E test for the /inventory page
  *
- * This test verifies that:
- * 1. The inventory page loads successfully
- * 2. User is able to sign in using Firebase Auth emulator
- * 3. Test data from Firestore emulator is displayed in the inventory table
- * 4. The page renders the expected elements with actual data
+ * This test suite tells a user story through numbered screenshots:
+ * - 000-xxx: Initial signed-out state
+ * - 001-xxx: After successful sign-in
+ * - 002-xxx: Inventory data loaded and displayed
+ * - etc.
+ *
+ * Each test is a complete user story with:
+ * - Programmatic verification (expect() assertions)
+ * - Visual verification (numbered screenshots)
+ * - Documentation of what to verify in each screenshot
  *
  * Note: These tests use Firebase emulators and load test data from
  * test-data/firestore-export.json. The emulators must be running
@@ -20,8 +26,23 @@ test.describe("Inventory Page", () => {
     return errorText.includes("Component auth has not been registered yet");
   };
 
-  test("should match visual snapshot - unauthenticated", async ({ page }) => {
-    // Collect console errors
+  /**
+   * User Story: Admin views inventory after signing in
+   * 
+   * This test tells a complete story:
+   * 1. User starts signed out
+   * 2. User signs in
+   * 3. User views inventory with data loaded
+   * 
+   * Each step has both programmatic and visual verification.
+   */
+  test("complete inventory workflow", async ({ page, context }) => {
+    // Set test timeout for complete workflow
+    test.setTimeout(120000); // 2 minutes
+    
+    const screenshots = createScreenshotHelper();
+    
+    // Collect console errors throughout the test
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
       if (msg.type() === "error") {
@@ -29,324 +50,200 @@ test.describe("Inventory Page", () => {
       }
     });
 
-    // Navigate to the inventory page without auth
-    await page.goto("/inventory", { waitUntil: "load" });
-
-    console.log('🔍 Waiting for page to initialize...');
+    // ====================================================================
+    // STEP 1: Signed out state - user needs to sign in
+    // ====================================================================
+    console.log('\n📖 STEP 1: Navigate to inventory page (signed out)');
     
-    // Wait for auth to be ready and page to load
-    await page.waitForTimeout(2000);
-
-    // Wait for the sign-in button to appear
+    await page.goto("/inventory", { waitUntil: "load" });
+    await page.waitForTimeout(2000); // Allow page to initialize
+    
+    // Wait for and verify sign-in button appears
     console.log('🔍 Waiting for sign-in button...');
     const signInButton = page.locator('button:has-text("Sign In")');
     await signInButton.waitFor({ state: 'visible', timeout: 15000 });
-    console.log('✓ Sign-in button found');
-
-    // Take screenshot of sign-in page
-    await expect(page).toHaveScreenshot("inventory-signin-page.png", {
-      fullPage: true,
-    });
-    console.log('✓ Sign-in page screenshot captured');
-
-    // Filter out transient auth initialization errors
-    const significantErrors = consoleErrors.filter(
-      (error) => !isTransientAuthError(error),
-    );
-
-    // Verify no significant console errors (transient auth errors are acceptable)
-    expect(significantErrors.length).toBe(0);
-  });
-
-  test("should match visual snapshot - authenticated", async ({ authenticatedPage: page }) => {
-    // Reasonable timeout for test
-    test.setTimeout(60000); // 1 minute
     
-    // Collect console errors
-    const consoleErrors: string[] = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        consoleErrors.push(msg.text());
+    await screenshots.capture(page, "signed-out-state", {
+      programmaticCheck: async () => {
+        // Verify sign-in button is visible
+        await expect(signInButton).toBeVisible();
+        console.log('   ✓ Sign-in button is visible');
       }
     });
 
-    // Navigate to the inventory page with auth already set
-    await page.goto("/inventory", { waitUntil: "load" });
-
-    console.log('🔍 Waiting for page to load with auth...');
+    // ====================================================================
+    // STEP 2: Sign in to the application
+    // ====================================================================
+    console.log('\n📖 STEP 2: Sign in to application');
     
-    // Wait for the inventory table to be visible
+    // Create authenticated user
+    const authEmulatorUrl = "http://localhost:9099";
+    const testEmail = `test-${Date.now()}@example.com`;
+    const testPassword = "testpassword123";
+    
+    console.log(`   Creating test user: ${testEmail}`);
+    const authResponse = await page.request.post(
+      `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
+      {
+        data: {
+          email: testEmail,
+          password: testPassword,
+          displayName: "Test User",
+          returnSecureToken: true,
+        },
+      }
+    );
+    
+    if (!authResponse.ok()) {
+      throw new Error(`Failed to create test user: ${authResponse.status()}`);
+    }
+    
+    const authData = await authResponse.json();
+    console.log(`   ✓ Test user created with UID: ${authData.localId}`);
+    
+    // Inject auth state into localStorage
+    await page.evaluate((authInfo) => {
+      const authKey = "firebase:authUser:demo-api-key:[DEFAULT]";
+      localStorage.setItem(
+        authKey,
+        JSON.stringify({
+          uid: authInfo.localId,
+          email: authInfo.email,
+          emailVerified: false,
+          displayName: "Test User",
+          isAnonymous: false,
+          photoURL: null,
+          providerData: [
+            {
+              providerId: "password",
+              uid: authInfo.localId,
+              displayName: "Test User",
+              email: authInfo.email,
+              phoneNumber: null,
+              photoURL: null,
+            },
+          ],
+          stsTokenManager: {
+            refreshToken: authInfo.refreshToken,
+            accessToken: authInfo.idToken,
+            expirationTime: Date.now() + 3600000,
+          },
+          createdAt: String(Date.now()),
+          lastLoginAt: String(Date.now()),
+          apiKey: "demo-api-key",
+          appName: "[DEFAULT]",
+        }),
+      );
+    }, authData);
+    
+    console.log('   ✓ Auth state injected into localStorage');
+    
+    // Reload the page to apply authentication
+    await page.reload({ waitUntil: "load" });
+    await page.waitForTimeout(2000);
+    
+    console.log('   ✓ Page reloaded with authentication');
+    
+    await screenshots.capture(page, "signed-in-state", {
+      programmaticCheck: async () => {
+        // Verify we're no longer seeing the sign-in button
+        const signInStillVisible = await signInButton.isVisible().catch(() => false);
+        expect(signInStillVisible).toBe(false);
+        console.log('   ✓ Sign-in button no longer visible');
+      }
+    });
+
+    // ====================================================================
+    // STEP 3: Wait for inventory data to load
+    // ====================================================================
+    console.log('\n📖 STEP 3: Wait for inventory data to load');
+    
+    // Wait for inventory table to appear
+    console.log('🔍 Waiting for inventory table...');
     const inventoryTable = page.locator('table');
     await inventoryTable.waitFor({ state: 'visible', timeout: 15000 });
-    console.log('✓ Inventory table found');
+    console.log('   ✓ Inventory table found');
     
-    // Wait for inventory data to load by checking for rows appearing
-    // With --prefix=400, data should load within a few seconds
-    console.log('🔍 Waiting for inventory data to load...');
-    
-    // Poll for rows with a maximum wait time of 15 seconds
-    // Processing 400 broadcast events through Redux can take time
-    console.log('🔍 Waiting for inventory data to load...');
+    // Poll for inventory data to load (Redux state processing takes time)
+    console.log('🔍 Waiting for inventory data rows...');
     const maxWaitMs = 15000;
-    const pollIntervalMs = 1000;  // Check every second
+    const pollIntervalMs = 1000;
     const startTime = Date.now();
     let rowCount = 0;
     
     while (Date.now() - startTime < maxWaitMs) {
       rowCount = await page.locator('table tbody tr').count();
       if (rowCount > 0) {
-        console.log(`✓ Found ${rowCount} rows after ${Date.now() - startTime}ms`);
+        console.log(`   ✓ Found ${rowCount} rows after ${Date.now() - startTime}ms`);
         break;
       }
       console.log(`   Still waiting... ${Math.floor((Date.now() - startTime) / 1000)}s elapsed`);
       await page.waitForTimeout(pollIntervalMs);
     }
     
-    if (rowCount === 0) {
-      console.log(`⚠️  No rows found after ${maxWaitMs}ms - data may not have loaded`);
-      // Log Redux state for debugging
-      const reduxState = await page.evaluate(() => {
-        return {
-          inventoryCount: (window as any).store?.getState?.()?.inventory?.items ? Object.keys((window as any).store.getState().inventory.items).length : 'N/A'
-        };
-      });
-      console.log(`   Redux inventory state:`, reduxState);
-    }
-
-    // Verify table structure
-    const headers = await page.locator('table thead th').allTextContents();
-    console.log(`✓ Found ${headers.length} table headers:`, headers);
-
-    // Verify expected headers are present
-    expect(headers.join(' ')).toContain('JAN Code');
-    expect(headers.join(' ')).toContain('Quantity');
-
-    console.log(`✓ Found ${rowCount} inventory items displayed`);
-
-    // Get sample data from first few rows if any exist
-    if (rowCount > 0) {
-      const sampleRows = Math.min(3, rowCount);
-      console.log(`📊 Sample inventory data (first ${sampleRows} rows):`);
-      for (let i = 0; i < sampleRows; i++) {
-        const rowText = await page.locator('table tbody tr').nth(i).textContent();
-        console.log(`   Row ${i + 1}: ${rowText?.substring(0, 100)}...`);
+    await screenshots.capture(page, "inventory-loaded", {
+      programmaticCheck: async () => {
+        // Verify table structure
+        const headers = await page.locator('table thead th').allTextContents();
+        console.log(`   ✓ Found ${headers.length} table headers:`, headers);
+        
+        // Verify expected headers are present
+        expect(headers.join(' ')).toContain('JAN Code');
+        expect(headers.join(' ')).toContain('Quantity');
+        
+        // Verify we have inventory rows
+        const finalRowCount = await page.locator('table tbody tr').count();
+        console.log(`   ✓ Found ${finalRowCount} inventory items displayed`);
+        expect(finalRowCount).toBeGreaterThan(0);
+        
+        // Verify sample data structure
+        if (finalRowCount > 0) {
+          const sampleRows = Math.min(3, finalRowCount);
+          console.log(`   📊 Sample inventory data (first ${sampleRows} rows):`);
+          for (let i = 0; i < sampleRows; i++) {
+            const row = page.locator('table tbody tr').nth(i);
+            const cells = await row.locator('td').allTextContents();
+            
+            // Verify row has cells with data
+            expect(cells.length).toBeGreaterThan(0);
+            
+            // At least some cells should have non-empty content
+            const nonEmptyCells = cells.filter(c => c.trim().length > 0);
+            expect(nonEmptyCells.length).toBeGreaterThan(0);
+            
+            console.log(`      Row ${i + 1}: ${cells.slice(0, 3).join(' | ')}`);
+          }
+        }
       }
-    } else {
-      console.log(`⚠️  WARNING: No inventory rows found - taking screenshot anyway`);
-    }
+    });
 
-    // Filter out transient auth initialization errors AND image loading errors
+    // ====================================================================
+    // Final verification: No significant console errors
+    // ====================================================================
+    console.log('\n📖 Final verification: Console errors');
+    
+    // Filter out transient auth initialization errors and image loading errors
     const significantErrors = consoleErrors.filter(
       (error) => !isTransientAuthError(error) && 
                  !error.includes('ERR_NAME_NOT_RESOLVED') && 
                  !error.includes('Failed to load resource')
     );
-
-    // Check for console errors
+    
     if (consoleErrors.length > 0) {
-      console.log(`⚠️  Found ${consoleErrors.length} console errors (${significantErrors.length} significant):`);
-      for (const error of consoleErrors) {
-        const isTransient = isTransientAuthError(error);
-        console.log(`   ${isTransient ? "(transient)" : "(SIGNIFICANT)"} - ${error.substring(0, 200)}`);
-      }
-    } else {
-      console.log("✓ No console errors detected");
-    }
-
-    // Take screenshot regardless of row count
-    await expect(page).toHaveScreenshot("inventory-page-authenticated.png", {
-      fullPage: true,
-    });
-
-    console.log("✓ Inventory page screenshot captured");
-
-    // Verify no significant console errors (transient auth errors and image load errors are acceptable)
-    expect(significantErrors.length).toBe(0);
-    
-    // Note: Row count verification is commented out because the Redux state takes variable time to populate
-    // The screenshot will show whether data loaded or not
-    // expect(finalRowCount).toBeGreaterThan(0);
-  });
-
-  test("should load and display inventory items", async ({ authenticatedPage: page }) => {
-    // Collect console messages for debugging
-    const consoleMessages: { type: string; text: string }[] = [];
-    page.on("console", (msg) => {
-      consoleMessages.push({ type: msg.type(), text: msg.text() });
-    });
-
-    // Navigate to the inventory page with auth already set
-    await page.goto("/inventory", { waitUntil: "load" });
-
-    // Wait for inventory to load - poll for data instead of fixed timeout
-    console.log('🔍 Waiting for inventory table...');
-    
-    // Poll for table with reasonable timeout
-    const hasTable = await page.locator("table").isVisible({ timeout: 10000 });
-
-    if (hasTable) {
-      console.log("✓ Inventory table detected");
-
-      // Verify the table headers are present
-      const headers = await page.locator("table thead th").allTextContents();
-      expect(headers.length).toBeGreaterThan(0);
-      console.log(`✓ Found ${headers.length} table headers:`, headers);
-
-      // Check for expected headers
-      const headersText = headers.join(" ");
-      expect(headersText).toContain("JAN Code");
-      expect(headersText).toContain("Quantity");
-
-      // Poll for rows to appear with max 15 second wait
-      // Processing broadcast events through Redux can take time
-      console.log('🔍 Waiting for data rows to appear...');
-      const maxWaitMs = 15000;
-      const pollIntervalMs = 1000;  // Check every second
-      const startTime = Date.now();
-      let rowCount = 0;
-      
-      while (Date.now() - startTime < maxWaitMs) {
-        rowCount = await page.locator("table tbody tr").count();
-        if (rowCount > 0) {
-          console.log(`✓ Found ${rowCount} rows after ${Date.now() - startTime}ms`);
-          break;
-        }
-        console.log(`   Still waiting... ${Math.floor((Date.now() - startTime) / 1000)}s elapsed`);
-        await page.waitForTimeout(pollIntervalMs);
-      }
-      
-      console.log(`✓ Found ${rowCount} inventory items displayed`);
-
-      // We should have at least some items from the test data
-      expect(rowCount).toBeGreaterThan(0);
-
-      // Inspect sample rows to verify data structure
-      if (rowCount > 0) {
-        const sampleSize = Math.min(3, rowCount);
-        console.log(`📊 Verifying data in first ${sampleSize} rows:`);
-        
-        for (let i = 0; i < sampleSize; i++) {
-          const row = page.locator("table tbody tr").nth(i);
-          const cells = await row.locator('td').allTextContents();
-          
-          // Verify row has cells with data
-          expect(cells.length).toBeGreaterThan(0);
-          
-          // At least some cells should have non-empty content
-          const nonEmptyCells = cells.filter(c => c.trim().length > 0);
-          expect(nonEmptyCells.length).toBeGreaterThan(0);
-          
-          console.log(`   Row ${i + 1}: ${cells.length} cells, sample: ${cells.slice(0, 3).join(' | ')}`);
+      console.log(`   Found ${consoleErrors.length} console errors (${significantErrors.length} significant):`);
+      if (significantErrors.length > 0) {
+        for (const error of significantErrors) {
+          console.log(`      (SIGNIFICANT) - ${error.substring(0, 200)}`);
         }
       }
     } else {
-      throw new Error("Inventory table not found after sign-in");
+      console.log("   ✓ No console errors detected");
     }
-
-    // Get console errors
-    const errors = consoleMessages.filter((m) => m.type === "error");
-
-    // Log console errors if any
-    if (errors.length > 0) {
-      console.log(`⚠️  Console errors detected: ${errors.length}`);
-      for (const error of errors) {
-        console.log(`   - ${error.text.substring(0, 200)}`);
-      }
-    }
-
-    // Verify no console errors (except transient auth errors)
-    const significantErrors = errors.filter((error) => !isTransientAuthError(error.text));
+    
+    // Verify no significant console errors
     expect(significantErrors.length).toBe(0);
-  });
-
-  test("should have correct page structure", async ({ page }) => {
-    // Track console errors
-    const consoleErrors: string[] = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        consoleErrors.push(msg.text());
-      }
-    });
-
-    await page.goto("/inventory");
-
-    // Wait for page to be fully loaded
-    await page.waitForLoadState("load");
-    await page.waitForTimeout(3000);
-
-    // Verify basic page structure
-    const bodyText = await page.textContent("body");
-    expect(bodyText).toBeTruthy();
-    expect(bodyText.length).toBeGreaterThan(0);
-
-    console.log(`✓ Page loaded with ${bodyText.length} characters of content`);
-
-    // Inspect DOM for key elements
-    const hasHeader = await page.locator("header, nav, h1, h2").count();
-    console.log(`✓ Found ${hasHeader} header/navigation elements`);
-
-    // Check for console errors
-    if (consoleErrors.length > 0) {
-      console.log(`⚠️  Found ${consoleErrors.length} console errors`);
-      for (const error of consoleErrors) {
-        console.log(`   - ${error.substring(0, 200)}`);
-      }
-    } else {
-      console.log("✓ No console errors detected");
-    }
-
-    // Verify no errors
-    const significantErrors = consoleErrors.filter((error) => !isTransientAuthError(error));
-    expect(significantErrors.length).toBe(0);
-  });
-
-  test("should connect to Firebase emulators", async ({ page }) => {
-    const consoleMessages: {
-      type: string;
-      text: string;
-    }[] = [];
-
-    // Enable console logging to see all messages
-    page.on("console", (msg) => {
-      const text = msg.text();
-      const type = msg.type();
-      consoleMessages.push({ type, text });
-
-      if (text.includes("Firebase") || text.includes("emulator")) {
-        console.log(`Browser console (${type}):`, text);
-      }
-    });
-
-    await page.goto("/inventory");
-    await page.waitForLoadState("load");
-    await page.waitForTimeout(3000);
-
-    // Verify page loaded successfully (even if auth blocked content)
-    const html = await page.content();
-    expect(html).toContain("html");
-    expect(html.length).toBeGreaterThan(100);
-
-    console.log("✓ Page HTML loaded successfully");
-
-    // Report console messages summary
-    const errors = consoleMessages.filter((m) => m.type === "error");
-    const warnings = consoleMessages.filter((m) => m.type === "warning");
-    const logs = consoleMessages.filter((m) => m.type === "log");
-
-    console.log(
-      `✓ Console summary: ${logs.length} logs, ${warnings.length} warnings, ${errors.length} errors`,
-    );
-
-    // Log all console errors for debugging
-    if (errors.length > 0) {
-      console.log("Console errors:");
-      for (const error of errors) {
-        console.log(`  - ${error.text.substring(0, 200)}`);
-      }
-    }
-
-    // Verify no console errors
-    const significantErrors = errors.filter((error) => !isTransientAuthError(error.text));
-    expect(significantErrors.length).toBe(0);
+    
+    console.log('\n✅ Complete inventory workflow test passed!');
+    console.log(`   Total screenshots captured: ${screenshots.getCounter()}`);
   });
 });
