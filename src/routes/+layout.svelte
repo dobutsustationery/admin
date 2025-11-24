@@ -11,7 +11,7 @@
   } from "firebase/firestore";
 
   import { auth, googleAuthProvider } from "$lib/firebase";
-  import type { User } from "@ourway/svelte-firebase-auth";
+  import type { User } from "$lib/Signin.svelte";
   import type { AnyAction } from "@reduxjs/toolkit";
   import { watchBroadcastActions } from "$lib/redux-firestore";
   import { store } from "$lib/store";
@@ -77,8 +77,8 @@
     
     // Dynamically import Signin component after auth is ready
     try {
-      const module = await import("@ourway/svelte-firebase-auth");
-      SigninComponent = module.Signin;
+      const module = await import("$lib/Signin.svelte");
+      SigninComponent = module.default;
       authReady = true;
       console.log("✓ Signin component loaded");
     } catch (error) {
