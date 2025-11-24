@@ -7,7 +7,7 @@ import { auth, googleAuthProvider } from "$lib/firebase";
 import { watchBroadcastActions } from "$lib/redux-firestore";
 import { store } from "$lib/store";
 import { logTime } from "$lib/timing";
-import { Signin, type User } from "@ourway/svelte-firebase-auth";
+import Signin, { type User } from "$lib/Signin.svelte";
 import type { AnyAction } from "@reduxjs/toolkit";
 
 let me: User = { signedIn: false };

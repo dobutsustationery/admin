@@ -4,7 +4,7 @@ import { auth, firestore, googleAuthProvider } from "$lib/firebase";
 import { create_name, remove_name } from "$lib/names";
 import { broadcast, watchBroadcastActions } from "$lib/redux-firestore";
 import { store } from "$lib/store";
-import { Signin, type User } from "@ourway/svelte-firebase-auth";
+import Signin, { type User } from "$lib/Signin.svelte";
 import type { AnyAction } from "@reduxjs/toolkit";
 
 let id = "";
