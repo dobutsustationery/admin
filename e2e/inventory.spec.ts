@@ -5,8 +5,9 @@ import { expect, test } from "@playwright/test";
  *
  * This test verifies that:
  * 1. The inventory page loads successfully
- * 2. Test data from Firestore emulator is displayed
- * 3. The page renders the expected elements
+ * 2. User is able to sign in using Firebase Auth emulator
+ * 3. Test data from Firestore emulator is displayed in the inventory table
+ * 4. The page renders the expected elements with actual data
  *
  * Note: These tests use Firebase emulators and load test data from
  * test-data/firestore-export.json. The emulators must be running
@@ -31,46 +32,119 @@ test.describe("Inventory Page", () => {
     // Navigate to the inventory page
     await page.goto("/inventory", { waitUntil: "load" });
 
-    // DEBUG: Capture HTML content to see what's actually loaded
-    const bodyHTML = await page.content();
-    console.log('🔍 DEBUG: Page HTML length:', bodyHTML.length);
-    console.log('🔍 DEBUG: Page title:', await page.title());
+    console.log('🔍 Waiting for page to initialize...');
     
-    // Check if page has basic HTML structure
-    const hasBody = bodyHTML.includes('<body');
-    const hasHead = bodyHTML.includes('<head');
-    console.log('🔍 DEBUG: Has <body>:', hasBody, ', Has <head>:', hasHead);
+    // Wait for auth to be ready and page to load
+    await page.waitForTimeout(2000);
 
-    // Wait a bit for Firebase emulator connection and data loading
-    // The app connects to emulators and loads broadcast actions to rebuild state
-    await page.waitForTimeout(5000);
+    // Wait for the sign-in button to appear
+    console.log('🔍 Waiting for sign-in button...');
+    const signInButton = page.locator('button:has-text("Sign In")');
+    await signInButton.waitFor({ state: 'visible', timeout: 15000 });
+    console.log('✓ Sign-in button found');
 
-    // DEBUG: Try to wait explicitly for sign-in button to appear
-    console.log('🔍 DEBUG: Waiting for sign-in button or main content...');
+    // Take screenshot of sign-in page
+    await expect(page).toHaveScreenshot("inventory-signin-page.png", {
+      fullPage: true,
+    });
+    console.log('✓ Sign-in page screenshot captured');
+
+    // Click the sign-in button to trigger auth popup
+    console.log('🔍 Clicking sign-in button...');
+    
+    // Start waiting for popup before clicking
+    const popupPromise = page.waitForEvent('popup', { timeout: 15000 });
+    await signInButton.click();
+    
     try {
-      // Try multiple selectors that might indicate the page has rendered
-      await Promise.race([
-        page.waitForSelector('button:has-text("Sign in")', { timeout: 10000 }),
-        page.waitForSelector('button:has-text("Sign In")', { timeout: 10000 }),
-        page.waitForSelector('[data-testid="sign-in-button"]', { timeout: 10000 }),
-        page.waitForSelector('table', { timeout: 10000 }), // Might show table if signed in
-        page.waitForSelector('nav', { timeout: 10000 }), // Navigation elements
-      ]).then(() => {
-        console.log('✓ Sign-in button or main content found!');
-      });
+      const popup = await popupPromise;
+      console.log('✓ Auth popup opened');
+      
+      // Wait for the popup to load
+      await popup.waitForLoadState('domcontentloaded');
+      
+      // Take screenshot of auth popup for debugging
+      await popup.screenshot({ path: 'e2e/screenshots/auth-popup.png' });
+      console.log('✓ Auth popup screenshot saved');
+      
+      // In the Firebase Auth emulator, look for the account selection or auto-sign-in
+      // The emulator UI is simple and usually just lists existing accounts or has an "Add new account" button
+      
+      // Wait a bit for the popup content to render
+      await popup.waitForTimeout(1000);
+      
+      // Try to find and click "Add new account" button or any existing account
+      const addAccountBtn = popup.locator('button:has-text("Add"), button:has-text("Auto-generate"), button:has-text("Sign in")').first();
+      const isAddBtnVisible = await addAccountBtn.isVisible({ timeout: 3000 }).catch(() => false);
+      
+      if (isAddBtnVisible) {
+        console.log('✓ Found account/add button, clicking...');
+        await addAccountBtn.click();
+        await popup.waitForTimeout(1000);
+      }
+      
+      // Check if there's an email input field
+      const emailInput = popup.locator('input[name="email"], input[type="email"], input[placeholder*="email" i]').first();
+      const isEmailVisible = await emailInput.isVisible({ timeout: 2000 }).catch(() => false);
+      
+      if (isEmailVisible) {
+        console.log('✓ Email input found, filling with test email...');
+        await emailInput.fill('test@example.com');
+        
+        // Check for display name input
+        const nameInput = popup.locator('input[name="displayName"], input[placeholder*="name" i]').first();
+        const isNameVisible = await nameInput.isVisible({ timeout: 1000 }).catch(() => false);
+        if (isNameVisible) {
+          await nameInput.fill('Test User');
+        }
+        
+        // Find and click the submit/continue button
+        const submitBtn = popup.locator('button[type="submit"], button:has-text("Sign in"), button:has-text("Continue")').first();
+        await submitBtn.click();
+        console.log('✓ Submitted auth form');
+      }
+      
+      // Wait for the popup to close (indicating successful sign-in)
+      await popup.waitForEvent('close', { timeout: 10000 });
+      console.log('✓ Auth popup closed - sign-in completed');
+      
     } catch (error) {
-      console.log('⚠️  Sign-in button/content not found within 10s');
-      
-      // Additional debugging: check what's actually on the page
-      const bodyText = await page.textContent('body');
-      console.log('🔍 DEBUG: Body text content length:', bodyText?.length || 0);
-      console.log('🔍 DEBUG: Body text preview:', bodyText?.substring(0, 200) || '(empty)');
-      
-      // Check for specific elements
-      const buttons = await page.locator('button').count();
-      const links = await page.locator('a').count();
-      const divs = await page.locator('div').count();
-      console.log(`🔍 DEBUG: Elements found - buttons: ${buttons}, links: ${links}, divs: ${divs}`);
+      console.log('⚠️  Error during auth popup flow:', error);
+      console.log('   This might be expected if auth flow is different - attempting to continue...');
+    }
+
+    // Wait for redirect back to main page and for inventory to load
+    console.log('🔍 Waiting for inventory table to appear...');
+    await page.waitForTimeout(5000); // Give time for broadcast actions to load
+
+    // Wait for the inventory table to be visible
+    const inventoryTable = page.locator('table');
+    await inventoryTable.waitFor({ state: 'visible', timeout: 15000 });
+    console.log('✓ Inventory table found');
+
+    // Verify table structure
+    const headers = await page.locator('table thead th').allTextContents();
+    console.log(`✓ Found ${headers.length} table headers:`, headers);
+
+    // Verify expected headers are present
+    expect(headers.join(' ')).toContain('JAN Code');
+    expect(headers.join(' ')).toContain('Quantity');
+
+    // Count inventory rows
+    const rowCount = await page.locator('table tbody tr').count();
+    console.log(`✓ Found ${rowCount} inventory items displayed`);
+
+    // Verify we have some inventory items
+    expect(rowCount).toBeGreaterThan(0);
+
+    // Get sample data from first few rows to verify actual content
+    if (rowCount > 0) {
+      const sampleRows = Math.min(3, rowCount);
+      console.log(`📊 Sample inventory data (first ${sampleRows} rows):`);
+      for (let i = 0; i < sampleRows; i++) {
+        const rowText = await page.locator('table tbody tr').nth(i).textContent();
+        console.log(`   Row ${i + 1}: ${rowText?.substring(0, 100)}...`);
+      }
     }
 
     // Filter out transient auth initialization errors
@@ -89,13 +163,12 @@ test.describe("Inventory Page", () => {
       console.log("✓ No console errors detected");
     }
 
-    // Visual regression test - will fail if screenshot differs from baseline
-    // First run will create the baseline, subsequent runs will compare
-    await expect(page).toHaveScreenshot("inventory-page.png", {
+    // Take screenshot of the fully loaded inventory page
+    await expect(page).toHaveScreenshot("inventory-page-authenticated.png", {
       fullPage: true,
     });
 
-    console.log("✓ Visual snapshot matches baseline");
+    console.log("✓ Inventory page screenshot captured");
 
     // Verify no significant console errors (transient auth errors are acceptable)
     expect(significantErrors.length).toBe(0);
@@ -111,38 +184,56 @@ test.describe("Inventory Page", () => {
     // Navigate to the inventory page
     await page.goto("/inventory", { waitUntil: "load" });
 
-    // Wait a bit for Firebase emulator connection and data loading
-    // The app connects to emulators and loads broadcast actions to rebuild state
-    await page.waitForTimeout(5000);
-
-    // Get console errors
-    const errors = consoleMessages.filter((m) => m.type === "error");
-
-    // Log console errors if any
-    if (errors.length > 0) {
-      console.log(`⚠️  Console errors detected: ${errors.length}`);
-      for (const error of errors) {
-        console.log(`   - ${error.text.substring(0, 200)}`);
+    console.log('🔍 Waiting for sign-in button...');
+    
+    // Wait for the sign-in button to appear
+    const signInButton = page.locator('button:has-text("Sign In")');
+    await signInButton.waitFor({ state: 'visible', timeout: 15000 });
+    
+    // Click sign-in and wait for popup
+    const popupPromise = page.waitForEvent('popup', { timeout: 15000 });
+    await signInButton.click();
+    
+    // Handle auth popup
+    try {
+      const popup = await popupPromise;
+      await popup.waitForLoadState('domcontentloaded');
+      await popup.waitForTimeout(1000);
+      
+      // Try to click add account or auto-generate button
+      const addBtn = popup.locator('button:has-text("Add"), button:has-text("Auto-generate")').first();
+      if (await addBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await addBtn.click();
+        await popup.waitForTimeout(1000);
       }
+      
+      // Fill in email if input is present
+      const emailInput = popup.locator('input[name="email"], input[type="email"]').first();
+      if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await emailInput.fill('test@example.com');
+        
+        const nameInput = popup.locator('input[name="displayName"]').first();
+        if (await nameInput.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await nameInput.fill('Test User');
+        }
+        
+        const submitBtn = popup.locator('button[type="submit"]').first();
+        await submitBtn.click();
+      }
+      
+      await popup.waitForEvent('close', { timeout: 10000 });
+      console.log('✓ Auth completed');
+    } catch (error) {
+      console.log('⚠️  Auth popup handling:', error);
     }
 
-    // Inspect DOM: Check if we see the sign-in UI or the actual inventory
-    const hasSignIn = await page
-      .locator("text=Loading...")
-      .isVisible({ timeout: 1000 })
-      .catch(() => false);
-    const hasTable = await page
-      .locator("table")
-      .isVisible({ timeout: 1000 })
-      .catch(() => false);
+    // Wait for inventory to load after sign-in
+    console.log('🔍 Waiting for inventory table...');
+    await page.waitForTimeout(5000); // Give time for broadcast actions to load
 
-    if (hasSignIn) {
-      console.log("⚠️  Sign-in UI detected - auth mock may need adjustment");
-      console.log("   Test will verify page structure instead of data");
+    const hasTable = await page.locator("table").isVisible({ timeout: 10000 });
 
-      // At minimum, verify the page loaded
-      await expect(page).toHaveTitle(/.*/);
-    } else if (hasTable) {
+    if (hasTable) {
       console.log("✓ Inventory table detected");
 
       // Verify the table headers are present
@@ -159,26 +250,44 @@ test.describe("Inventory Page", () => {
       const rowCount = await page.locator("table tbody tr").count();
       console.log(`✓ Found ${rowCount} inventory items displayed`);
 
-      // Inspect a sample row if available
-      if (rowCount > 0) {
-        const firstRow = await page
-          .locator("table tbody tr")
-          .first()
-          .allTextContents();
-        console.log(`✓ Sample row data:`, firstRow);
-      }
-
       // We should have at least some items from the test data
-      expect(rowCount).toBeGreaterThanOrEqual(0);
-    } else {
-      console.log("⚠️  Neither sign-in nor table detected");
-      console.log("   This may indicate a problem with the page or emulators");
+      expect(rowCount).toBeGreaterThan(0);
 
-      // At minimum, page should have loaded
-      await expect(page).toHaveTitle(/.*/);
+      // Inspect sample rows to verify data structure
+      if (rowCount > 0) {
+        const sampleSize = Math.min(3, rowCount);
+        console.log(`📊 Verifying data in first ${sampleSize} rows:`);
+        
+        for (let i = 0; i < sampleSize; i++) {
+          const row = page.locator("table tbody tr").nth(i);
+          const cells = await row.locator('td').allTextContents();
+          
+          // Verify row has cells with data
+          expect(cells.length).toBeGreaterThan(0);
+          
+          // At least some cells should have non-empty content
+          const nonEmptyCells = cells.filter(c => c.trim().length > 0);
+          expect(nonEmptyCells.length).toBeGreaterThan(0);
+          
+          console.log(`   Row ${i + 1}: ${cells.length} cells, sample: ${cells.slice(0, 3).join(' | ')}`);
+        }
+      }
+    } else {
+      throw new Error("Inventory table not found after sign-in");
     }
 
-    // Verify no console errors
+    // Get console errors
+    const errors = consoleMessages.filter((m) => m.type === "error");
+
+    // Log console errors if any
+    if (errors.length > 0) {
+      console.log(`⚠️  Console errors detected: ${errors.length}`);
+      for (const error of errors) {
+        console.log(`   - ${error.text.substring(0, 200)}`);
+      }
+    }
+
+    // Verify no console errors (except transient auth errors)
     const significantErrors = errors.filter((error) => !isTransientAuthError(error.text));
     expect(significantErrors.length).toBe(0);
   });
