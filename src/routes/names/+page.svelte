@@ -7,8 +7,8 @@ import { store } from "$lib/store";
 import { Signin, type User } from "@ourway/svelte-firebase-auth";
 import type { AnyAction } from "@reduxjs/toolkit";
 
-const id = "";
-const name = "";
+let id = "";
+let name = "";
 let ids: string[] = [];
 let state = store.getState();
 

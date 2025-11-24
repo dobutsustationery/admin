@@ -4,9 +4,9 @@ import SelectBox from "./SelectBox.svelte";
 import type { Item } from "./inventory";
 import { store } from "./store";
 
-export const key = "";
-export const row = -1;
-export const qty = -1;
+export let key = "";
+export let row = -1;
+export let qty = -1;
 
 let state = store.getState();
 let item: Item | null = null;
