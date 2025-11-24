@@ -71,7 +71,6 @@
   "type": "module",
   "dependencies": {
     "@json2csv/plainjs": "^7.0.3",
-    "@ourway/svelte-firebase-auth": "^0.0.1",
     "@reduxjs/toolkit": "^1.9.7",
     "@sveltejs/adapter-static": "^2.0.3",
     "@zxing/library": "^0.20.0",
