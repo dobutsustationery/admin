@@ -280,9 +280,10 @@ firebase deploy --only hosting
    - Missing types in some Redux reducers
 
 2. **Testing**:
-   - Minimal test coverage (2 test files)
-   - No E2E tests
-   - Missing integration tests for Firebase
+   - Minimal unit test coverage (focused on utility functions)
+   - E2E tests implemented with Playwright (see `e2e/` directory and `E2E_SETUP_SUMMARY.md`)
+   - User story-based E2E testing with numbered screenshots
+   - Missing integration tests for some Firebase operations
 
 3. **Documentation**:
    - Component-level documentation needed
