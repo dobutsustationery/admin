@@ -1,15 +1,15 @@
 import type { AnyAction } from "@reduxjs/toolkit";
 import {
-  Firestore,
-  FirestoreError,
+  type DocumentChange,
+  type DocumentData,
+  type Firestore,
+  type FirestoreError,
   addDoc,
   collection,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  type DocumentChange,
-  type DocumentData,
 } from "firebase/firestore";
 
 export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
