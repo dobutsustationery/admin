@@ -73,7 +73,7 @@ jobs:
           done
 
       - name: Load test data into emulator
-        run: node e2e/helpers/load-test-data.js
+        run: node e2e/helpers/load-test-data.js --prefix=400
 
       - name: Build application
         run: npm run build:local
