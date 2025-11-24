@@ -67,20 +67,118 @@ npm run test:e2e:report
 
 ```
 e2e/
-├── fixtures/              # Custom Playwright fixtures
-│   └── auth.ts           # Authentication mocking fixture
-├── helpers/              # Helper scripts
-│   └── load-test-data.js # Loads test data into emulator
-├── screenshots/          # Test screenshots (gitignored)
-├── reports/              # Test reports (gitignored)
-├── inventory.spec.ts     # Inventory page tests
-├── run-tests.sh          # Full test runner with emulator management
-└── run-tests-simple.sh   # Simple test runner (assumes emulators running)
+├── fixtures/                      # Custom Playwright fixtures
+│   └── auth.ts                   # Authentication fixture
+├── helpers/                       # Helper scripts and utilities
+│   ├── load-test-data.js         # Loads test data into emulator
+│   └── screenshot-helper.ts      # Helper for numbered screenshots
+├── inventory/                     # Inventory test documentation
+│   └── README.md                 # User story, screenshots, verification
+├── inventory.spec.ts             # Inventory page E2E test
+├── inventory.spec.ts-snapshots/  # Baseline screenshots for inventory test
+│   ├── 000-signed-out-state-chromium-linux.png
+│   ├── 001-signed-in-state-chromium-linux.png
+│   ├── 002-inventory-loaded-chromium-linux.png
+│   └── README.md                 # Snapshot documentation
+├── screenshots/                   # Runtime screenshots (gitignored)
+├── reports/                       # Test reports (gitignored)
+├── run-tests.sh                   # Full test runner with emulator management
+└── run-tests-simple.sh            # Simple test runner (assumes emulators running)
 ```
+
+Each test follows the pattern:
+- `<name>.spec.ts` - The test file with user story
+- `<name>/README.md` - Documentation with screenshot gallery
+- `<name>.spec.ts-snapshots/` - Baseline screenshots (checked into git)
 
 ## Writing Tests
 
+### Test Strategy: User Story with Numbered Screenshots
+
+E2E tests follow a **user story pattern** with numbered screenshots that tell a coherent story:
+
+- Each test represents a complete user journey
+- Screenshots are numbered sequentially: `000-description.png`, `001-description.png`, etc.
+- Tests start from a signed-out state and progress through realistic user interactions
+- Each screenshot has both **programmatic verification** (assertions) and **visual verification**
+- Each test has a dedicated README documenting the story and what to verify
+
+**Example: Inventory Page Test**
+
+See [e2e/inventory/README.md](inventory/README.md) for a complete example.
+
+### Writing a User Story Test
+
+```typescript
+import { test, expect } from './fixtures/auth';
+import { createScreenshotHelper } from './helpers/screenshot-helper';
+
+test('complete user workflow', async ({ page }) => {
+  const screenshots = createScreenshotHelper();
+  
+  // Step 1: Starting state
+  await page.goto('/my-route');
+  await screenshots.capture(page, 'initial-state', {
+    programmaticCheck: async () => {
+      await expect(page.locator('h1')).toBeVisible();
+    }
+  });
+  
+  // Step 2: User action
+  await page.click('button:has-text("Click Me")');
+  await screenshots.capture(page, 'after-click', {
+    programmaticCheck: async () => {
+      await expect(page.locator('.result')).toHaveText('Success');
+    }
+  });
+  
+  // Step 3: Final state
+  // ... continue the story
+});
+```
+
+### Screenshot Helper
+
+Use `createScreenshotHelper()` to manage numbered screenshots:
+
+```typescript
+const screenshots = createScreenshotHelper();
+
+// Captures 000-description.png
+await screenshots.capture(page, 'description');
+
+// Captures 001-next-step.png
+await screenshots.capture(page, 'next-step', {
+  fullPage: true,  // Optional
+  programmaticCheck: async () => {
+    // Run assertions before screenshot
+    await expect(page.locator('.element')).toBeVisible();
+  }
+});
+
+screenshots.getCounter(); // Returns 2
+screenshots.reset(); // Reset counter to 0
+```
+
+### Creating Test Documentation
+
+Each test should have a README in `e2e/<test-name>/README.md` that includes:
+
+1. **User Story**: Who, what, why
+2. **Screenshot Gallery**: Each screenshot with:
+   - Image preview
+   - What it shows
+   - Programmatic verification performed
+   - Manual verification checklist
+3. **Test Data**: What data is used
+4. **Running Instructions**: How to run the test
+5. **Troubleshooting**: Common issues
+
+See [e2e/inventory/README.md](inventory/README.md) as a template.
+
 ### Basic Test Structure
+
+For simple tests that don't need the full user story pattern:
 
 ```typescript
 import { test, expect } from '@playwright/test';
@@ -95,7 +193,16 @@ test('my test', async ({ page }) => {
 
 ### Authentication
 
-Tests automatically mock Firebase authentication. No need to handle login manually.
+Tests can use the `authenticatedPage` fixture for pre-authenticated tests:
+
+```typescript
+test('authenticated test', async ({ authenticatedPage: page }) => {
+  // User is already signed in
+  await page.goto('/protected-route');
+});
+```
+
+Or handle authentication manually within the test for user story tests.
 
 ### Test Data
 
@@ -106,21 +213,12 @@ Test data is loaded from `test-data/firestore-export.json` before tests run. Thi
 
 ### Visual Regression Testing
 
-The inventory page test includes visual regression testing using Playwright's screenshot comparison:
-
-```typescript
-test('should match visual snapshot', async ({ page }) => {
-  await page.goto('/inventory');
-  await expect(page).toHaveScreenshot('inventory-page.png', {
-    fullPage: true,
-  });
-});
-```
+All screenshots use Playwright's visual regression testing:
 
 **How it works:**
-1. Baseline screenshots are stored in `e2e/inventory.spec.ts-snapshots/`
+1. Baseline screenshots are stored in `e2e/<test-name>.spec.ts-snapshots/`
 2. Tests compare current screenshots against baselines
-3. Tests fail if visual differences exceed tolerance thresholds
+3. Tests fail if visual differences exceed tolerance thresholds (configured in `playwright.config.ts`)
 4. Differences require manual review and approval
 
 **Updating baselines** when UI changes are intentional:
@@ -133,7 +231,7 @@ npx playwright test --update-snapshots
 - If intentional, update baseline with `--update-snapshots`
 - If a bug, fix the code
 
-See `e2e/inventory.spec.ts-snapshots/README.md` for more details.
+See individual test READMEs (e.g., `e2e/inventory/README.md`) for screenshot details.
 
 ## CI/CD
 
@@ -237,8 +335,53 @@ VITE_EMULATOR_AUTH_PORT=9099
 
 When adding new E2E tests:
 
-1. Place spec files in `e2e/` directory
-2. Name files with `.spec.ts` extension
-3. Use descriptive test names
-4. Take screenshots for visual verification
-5. Clean up any test-specific data if needed
+1. **Follow the user story pattern**
+   - Each test should tell a complete story from start to finish
+   - Start from a realistic initial state (usually signed out)
+   - Progress through meaningful user interactions
+   
+2. **Use numbered screenshots**
+   - Import and use `createScreenshotHelper()` from `e2e/helpers/screenshot-helper`
+   - Capture screenshots in sequence: `000-description.png`, `001-next-step.png`, etc.
+   - Use descriptive names that explain what the screenshot shows
+   
+3. **Include both programmatic and visual verification**
+   - Use `expect()` assertions for data validation
+   - Use `programmaticCheck` option in `screenshots.capture()` to run assertions before screenshots
+   - Screenshots provide visual regression testing
+   
+4. **Create test documentation**
+   - Create `e2e/<test-name>/README.md` documenting the user story
+   - Include a screenshot gallery with descriptions
+   - List what to verify in each screenshot (programmatic + manual)
+   - Use `e2e/inventory/README.md` as a template
+   
+5. **Place files correctly**
+   - Test spec: `e2e/<test-name>.spec.ts`
+   - Documentation: `e2e/<test-name>/README.md`
+   - Snapshots auto-generated in: `e2e/<test-name>.spec.ts-snapshots/`
+   
+6. **Baseline screenshots are tracked in git**
+   - Numbered screenshots in `*-snapshots/` directories are committed
+   - These serve as visual regression baselines
+   - Update with `npx playwright test --update-snapshots` when UI changes are intentional
+
+Example test structure:
+```typescript
+import { test, expect } from './fixtures/auth';
+import { createScreenshotHelper } from './helpers/screenshot-helper';
+
+test('my user story', async ({ page }) => {
+  const screenshots = createScreenshotHelper();
+  
+  // Step 1
+  await page.goto('/route');
+  await screenshots.capture(page, 'initial-state', {
+    programmaticCheck: async () => {
+      await expect(page.locator('.element')).toBeVisible();
+    }
+  });
+  
+  // Continue the story...
+});
+```
