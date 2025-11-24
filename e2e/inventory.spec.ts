@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { test, expect } from "./fixtures/auth";
 
 /**
  * E2E test for the /inventory page
@@ -20,70 +20,7 @@ test.describe("Inventory Page", () => {
     return errorText.includes("Component auth has not been registered yet");
   };
 
-  // Helper function to perform sign-in via Firebase Auth emulator
-  const signInViaEmulator = async (page: any) => {
-    console.log('🔍 Clicking sign-in button...');
-    
-    // Start waiting for popup before clicking
-    const signInButton = page.locator('button:has-text("Sign In")');
-    const popupPromise = page.waitForEvent('popup', { timeout: 15000 });
-    await signInButton.click();
-    
-    try {
-      const popup = await popupPromise;
-      console.log('✓ Auth popup opened');
-      
-      // Wait for the popup to load
-      await popup.waitForLoadState('domcontentloaded');
-      
-      // In the Firebase Auth emulator, look for the account selection or auto-sign-in
-      // The emulator UI is simple and usually just lists existing accounts or has an "Add new account" button
-      
-      // Wait a bit for the popup content to render
-      await popup.waitForTimeout(1000);
-      
-      // Try to find and click "Add new account" button or any existing account
-      const addAccountBtn = popup.locator('button:has-text("Add"), button:has-text("Auto-generate"), button:has-text("Sign in")').first();
-      const isAddBtnVisible = await addAccountBtn.isVisible({ timeout: 3000 }).catch(() => false);
-      
-      if (isAddBtnVisible) {
-        console.log('✓ Found account/add button, clicking...');
-        await addAccountBtn.click();
-        await popup.waitForTimeout(1000);
-      }
-      
-      // Check if there's an email input field
-      const emailInput = popup.locator('input[name="email"], input[type="email"], input[placeholder*="email" i]').first();
-      const isEmailVisible = await emailInput.isVisible({ timeout: 2000 }).catch(() => false);
-      
-      if (isEmailVisible) {
-        console.log('✓ Email input found, filling with test email...');
-        await emailInput.fill('test@example.com');
-        
-        // Check for display name input
-        const nameInput = popup.locator('input[name="displayName"], input[placeholder*="name" i]').first();
-        const isNameVisible = await nameInput.isVisible({ timeout: 1000 }).catch(() => false);
-        if (isNameVisible) {
-          await nameInput.fill('Test User');
-        }
-        
-        // Find and click the submit/continue button
-        const submitBtn = popup.locator('button[type="submit"], button:has-text("Sign in"), button:has-text("Continue")').first();
-        await submitBtn.click();
-        console.log('✓ Submitted auth form');
-      }
-      
-      // Wait for the popup to close (indicating successful sign-in)
-      await popup.waitForEvent('close', { timeout: 10000 });
-      console.log('✓ Auth popup closed - sign-in completed');
-      
-    } catch (error) {
-      console.log('⚠️  Error during auth popup flow:', error);
-      console.log('   This might be expected if auth flow is different - attempting to continue...');
-    }
-  };
-
-  test("should match visual snapshot", async ({ page }) => {
+  test("should match visual snapshot - unauthenticated", async ({ page }) => {
     // Collect console errors
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
@@ -92,7 +29,7 @@ test.describe("Inventory Page", () => {
       }
     });
 
-    // Navigate to the inventory page
+    // Navigate to the inventory page without auth
     await page.goto("/inventory", { waitUntil: "load" });
 
     console.log('🔍 Waiting for page to initialize...');
@@ -112,11 +49,30 @@ test.describe("Inventory Page", () => {
     });
     console.log('✓ Sign-in page screenshot captured');
 
-    // Perform sign-in using the helper
-    await signInViaEmulator(page);
+    // Filter out transient auth initialization errors
+    const significantErrors = consoleErrors.filter(
+      (error) => !isTransientAuthError(error),
+    );
 
-    // Wait for redirect back to main page and for inventory to load
-    console.log('🔍 Waiting for inventory table to appear...');
+    // Verify no significant console errors (transient auth errors are acceptable)
+    expect(significantErrors.length).toBe(0);
+  });
+
+  test("should match visual snapshot - authenticated", async ({ authenticatedPage: page }) => {
+    // Collect console errors
+    const consoleErrors: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") {
+        consoleErrors.push(msg.text());
+      }
+    });
+
+    // Navigate to the inventory page with auth already set
+    await page.goto("/inventory", { waitUntil: "load" });
+
+    console.log('🔍 Waiting for page to load with auth...');
+    
+    // Wait for inventory to load
     await page.waitForTimeout(5000); // Give time for broadcast actions to load
 
     // Wait for the inventory table to be visible
@@ -176,26 +132,17 @@ test.describe("Inventory Page", () => {
     expect(significantErrors.length).toBe(0);
   });
 
-  test("should load and display inventory items", async ({ page }) => {
+  test("should load and display inventory items", async ({ authenticatedPage: page }) => {
     // Collect console messages for debugging
     const consoleMessages: { type: string; text: string }[] = [];
     page.on("console", (msg) => {
       consoleMessages.push({ type: msg.type(), text: msg.text() });
     });
 
-    // Navigate to the inventory page
+    // Navigate to the inventory page with auth already set
     await page.goto("/inventory", { waitUntil: "load" });
 
-    console.log('🔍 Waiting for sign-in button...');
-    
-    // Wait for the sign-in button to appear
-    const signInButton = page.locator('button:has-text("Sign In")');
-    await signInButton.waitFor({ state: 'visible', timeout: 15000 });
-    
-    // Perform sign-in using the helper
-    await signInViaEmulator(page);
-
-    // Wait for inventory to load after sign-in
+    // Wait for inventory to load
     console.log('🔍 Waiting for inventory table...');
     await page.waitForTimeout(5000); // Give time for broadcast actions to load
 
