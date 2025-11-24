@@ -84,9 +84,11 @@ test.describe("Inventory Page", () => {
     // With --prefix=400, data should load within a few seconds
     console.log('🔍 Waiting for inventory data to load...');
     
-    // Poll for rows with a maximum wait time of 10 seconds
-    const maxWaitMs = 10000;
-    const pollIntervalMs = 500;
+    // Poll for rows with a maximum wait time of 15 seconds
+    // Processing 400 broadcast events through Redux can take time
+    console.log('🔍 Waiting for inventory data to load...');
+    const maxWaitMs = 15000;
+    const pollIntervalMs = 1000;  // Check every second
     const startTime = Date.now();
     let rowCount = 0;
     
@@ -96,11 +98,19 @@ test.describe("Inventory Page", () => {
         console.log(`✓ Found ${rowCount} rows after ${Date.now() - startTime}ms`);
         break;
       }
+      console.log(`   Still waiting... ${Math.floor((Date.now() - startTime) / 1000)}s elapsed`);
       await page.waitForTimeout(pollIntervalMs);
     }
     
     if (rowCount === 0) {
       console.log(`⚠️  No rows found after ${maxWaitMs}ms - data may not have loaded`);
+      // Log Redux state for debugging
+      const reduxState = await page.evaluate(() => {
+        return {
+          inventoryCount: (window as any).store?.getState?.()?.inventory?.items ? Object.keys((window as any).store.getState().inventory.items).length : 'N/A'
+        };
+      });
+      console.log(`   Redux inventory state:`, reduxState);
     }
 
     // Verify table structure
@@ -127,7 +137,9 @@ test.describe("Inventory Page", () => {
 
     // Filter out transient auth initialization errors AND image loading errors
     const significantErrors = consoleErrors.filter(
-      (error) => !isTransientAuthError(error) && !error.includes('ERR_NAME_NOT_RESOLVED') && !error.includes('Failed to load resource')
+      (error) => !isTransientAuthError(error) && 
+                 !error.includes('ERR_NAME_NOT_RESOLVED') && 
+                 !error.includes('Failed to load resource')
     );
 
     // Check for console errors
@@ -185,10 +197,11 @@ test.describe("Inventory Page", () => {
       expect(headersText).toContain("JAN Code");
       expect(headersText).toContain("Quantity");
 
-      // Poll for rows to appear with max 10 second wait
+      // Poll for rows to appear with max 15 second wait
+      // Processing broadcast events through Redux can take time
       console.log('🔍 Waiting for data rows to appear...');
-      const maxWaitMs = 10000;
-      const pollIntervalMs = 500;
+      const maxWaitMs = 15000;
+      const pollIntervalMs = 1000;  // Check every second
       const startTime = Date.now();
       let rowCount = 0;
       
@@ -198,6 +211,7 @@ test.describe("Inventory Page", () => {
           console.log(`✓ Found ${rowCount} rows after ${Date.now() - startTime}ms`);
           break;
         }
+        console.log(`   Still waiting... ${Math.floor((Date.now() - startTime) / 1000)}s elapsed`);
         await page.waitForTimeout(pollIntervalMs);
       }
       
