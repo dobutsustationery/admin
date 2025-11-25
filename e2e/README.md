@@ -221,14 +221,29 @@ All screenshots use Playwright's visual regression testing:
 3. Tests fail if visual differences exceed tolerance thresholds (configured in `playwright.config.ts`)
 4. Differences require manual review and approval
 
-**Updating baselines** when UI changes are intentional:
+**⚠️ IMPORTANT: Baseline Screenshot Responsibility**
+
+- **Test authors** are responsible for generating initial baseline screenshots when creating new tests
+- **UI change PRs** must regenerate and commit updated baselines when visual changes occur
+- **CI will NOT regenerate baselines** - it only compares against existing baselines
+- If baselines don't exist, tests will fail in CI
+
+**Generating/Updating baselines:**
 ```bash
+# Generate initial baselines for new tests
 npx playwright test --update-snapshots
+
+# Update baselines after intentional UI changes
+npx playwright test --update-snapshots
+
+# Commit the baseline screenshots with your PR
+git add e2e/<test-name>.spec.ts-snapshots/
+git commit -m "Add/Update baseline screenshots"
 ```
 
 **Reviewing failures:**
 - Check `test-results/` for diff images showing what changed
-- If intentional, update baseline with `--update-snapshots`
+- If intentional, update baseline with `--update-snapshots` and commit
 - If a bug, fix the code
 
 See individual test READMEs (e.g., `e2e/inventory/README.md`) for screenshot details.
@@ -364,7 +379,11 @@ When adding new E2E tests:
 6. **Baseline screenshots are tracked in git**
    - Numbered screenshots in `*-snapshots/` directories are committed
    - These serve as visual regression baselines
-   - Update with `npx playwright test --update-snapshots` when UI changes are intentional
+   - **⚠️ Test authors must generate and commit initial baselines**
+   - **⚠️ UI changes require regenerating and committing updated baselines**
+   - **⚠️ CI will NOT regenerate baselines - tests will fail if baselines are missing**
+   - Generate/update with `npx playwright test --update-snapshots`
+   - Commit baselines: `git add e2e/<test-name>.spec.ts-snapshots/`
 
 Example test structure:
 ```typescript
