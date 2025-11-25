@@ -244,7 +244,7 @@ npm run check
 ### Testing
 
 ```bash
-# Run tests
+# Run unit tests
 bun test
 npm test
 
@@ -256,6 +256,30 @@ npm run test:watch
 bun test --coverage
 npm test -- --coverage
 ```
+
+### E2E Testing
+
+End-to-end tests use Playwright with Firebase emulators. See [E2E_TEST_GUIDELINES.md](E2E_TEST_GUIDELINES.md) for comprehensive guidelines.
+
+```bash
+# Run E2E tests (manages emulators automatically)
+npm run test:e2e
+
+# Run with emulators already running
+npm run test:e2e:simple
+
+# Interactive UI mode
+npm run test:e2e:ui
+
+# Headed mode (see browser)
+npm run test:e2e:headed
+```
+
+**Key principles:**
+- Tests must come with committed baseline screenshots
+- Zero-pixel tolerance is enforced (exact match required)
+- No arbitrary delays or retries allowed
+- Test authors are responsible for generating baselines
 
 ## Project Structure
 
@@ -310,6 +334,7 @@ admin/
 ## Documentation
 
 - **[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md)**: Comprehensive guide for environment configuration
+- **[E2E_TEST_GUIDELINES.md](E2E_TEST_GUIDELINES.md)**: Guidelines for writing E2E tests with Playwright
 - **[scripts/README.md](scripts/README.md)**: Firebase config to .env converter utility documentation
 - **[DATA_TRANSFER.md](DATA_TRANSFER.md)**: Guide for transferring data between environments
 - **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details

@@ -213,12 +213,12 @@ Test data is loaded from `test-data/firestore-export.json` before tests run. Thi
 
 ### Visual Regression Testing
 
-All screenshots use Playwright's visual regression testing:
+All screenshots use Playwright's visual regression testing with **zero-pixel tolerance**:
 
 **How it works:**
 1. Baseline screenshots are stored in `e2e/<test-name>.spec.ts-snapshots/`
-2. Tests compare current screenshots against baselines
-3. Tests fail if visual differences exceed tolerance thresholds (configured in `playwright.config.ts`)
+2. Tests compare current screenshots against baselines with exact pixel matching
+3. Tests fail if **any** visual difference is detected (0-pixel tolerance)
 4. Differences require manual review and approval
 
 **⚠️ IMPORTANT: Baseline Screenshot Responsibility**
@@ -247,6 +247,8 @@ git commit -m "Add/Update baseline screenshots"
 - If a bug, fix the code
 
 See individual test READMEs (e.g., `e2e/inventory/README.md`) for screenshot details.
+
+For comprehensive guidelines, see [E2E_TEST_GUIDELINES.md](../E2E_TEST_GUIDELINES.md).
 
 ## CI/CD
 

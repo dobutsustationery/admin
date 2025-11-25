@@ -61,10 +61,10 @@ This naming makes it easy to:
 ## Tolerance Settings
 
 Visual comparison is configured in `playwright.config.ts`:
-- `maxDiffPixelRatio: 0.01` - Maximum 1% of pixels can differ
-- `threshold: 0.2` - Per-pixel color difference threshold (0-1, higher = more tolerant)
+- `maxDiffPixels: 0` - Zero pixels can differ (exact match required)
+- `threshold: 0` - No color difference allowed
 
-These settings allow for minor rendering differences (anti-aliasing, font rendering) while catching significant visual regressions.
+**Screenshots must match exactly.** Test authors are responsible for generating and committing accurate baseline screenshots.
 
 ## In CI/CD
 
