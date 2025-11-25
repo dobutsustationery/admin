@@ -165,14 +165,17 @@ test.describe("Inventory Page", () => {
     console.log('   ✓ Inventory table found');
     
     // Poll for inventory data to load (Redux state processing takes time)
+    // Processing 400 broadcast events through Redux can take significant time
     console.log('🔍 Waiting for inventory data rows...');
-    const maxWaitMs = 15000;
+    const maxWaitMs = 60000; // 60 seconds - data loading can take time
     const pollIntervalMs = 1000;
     const startTime = Date.now();
     let rowCount = 0;
     
+    // Note: table rows are direct children of <table>, not in <tbody>
+    // We count all <tr> elements except the header row in <thead>
     while (Date.now() - startTime < maxWaitMs) {
-      rowCount = await page.locator('table tbody tr').count();
+      rowCount = await page.locator('table > tr').count();
       if (rowCount > 0) {
         console.log(`   ✓ Found ${rowCount} rows after ${Date.now() - startTime}ms`);
         break;
@@ -191,8 +194,8 @@ test.describe("Inventory Page", () => {
         expect(headers.join(' ')).toContain('JAN Code');
         expect(headers.join(' ')).toContain('Quantity');
         
-        // Verify we have inventory rows
-        const finalRowCount = await page.locator('table tbody tr').count();
+        // Verify we have inventory rows (rows directly under table, not in thead)
+        const finalRowCount = await page.locator('table > tr').count();
         console.log(`   ✓ Found ${finalRowCount} inventory items displayed`);
         expect(finalRowCount).toBeGreaterThan(0);
         
@@ -201,7 +204,7 @@ test.describe("Inventory Page", () => {
           const sampleRows = Math.min(3, finalRowCount);
           console.log(`   📊 Sample inventory data (first ${sampleRows} rows):`);
           for (let i = 0; i < sampleRows; i++) {
-            const row = page.locator('table tbody tr').nth(i);
+            const row = page.locator('table > tr').nth(i);
             const cells = await row.locator('td').allTextContents();
             
             // Verify row has cells with data

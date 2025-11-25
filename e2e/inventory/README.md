@@ -111,13 +111,27 @@ npm run test:e2e:headed
 
 ## Updating Screenshots
 
-When UI changes are intentional and screenshots need updating:
+**⚠️ IMPORTANT:** Baseline screenshots must be committed by test authors and PRs. CI will NOT regenerate baselines.
+
+### When to update baselines:
+
+1. **New tests:** Generate initial baselines when creating the test
+2. **UI changes:** Regenerate baselines when your PR changes the visual appearance
+3. **Test changes:** Regenerate if the test flow changes
+
+### How to update:
 
 ```bash
+# Generate/update baselines locally
 npx playwright test --update-snapshots
+
+# Verify the screenshots look correct
+# Then commit them with your PR
+git add e2e/inventory.spec.ts-snapshots/
+git commit -m "Update inventory baseline screenshots"
 ```
 
-This will regenerate all baseline screenshots.
+**Note:** If baselines are missing or outdated, CI tests will fail. Always commit baseline screenshots with your PR.
 
 ## Troubleshooting
 
@@ -125,7 +139,7 @@ This will regenerate all baseline screenshots.
 
 1. Check if the UI change was intentional
 2. Review the diff in `test-results/`
-3. If intentional, update baselines with `--update-snapshots`
+3. If intentional, update baselines with `--update-snapshots` and **commit them**
 4. If not, fix the code
 
 ### Data not loading
