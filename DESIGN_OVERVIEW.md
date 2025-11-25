@@ -281,8 +281,8 @@ firebase deploy --only hosting
 
 2. **Testing**:
    - Minimal unit test coverage (focused on utility functions)
-   - E2E tests implemented with Playwright (see `e2e/` directory and `E2E_SETUP_SUMMARY.md`)
-   - User story-based E2E testing with numbered screenshots
+   - E2E tests implemented with Playwright (see `e2e/` directory and `E2E_TEST_GUIDELINES.md`)
+   - User story-based E2E testing with numbered screenshots and zero-pixel tolerance
    - Missing integration tests for some Firebase operations
 
 3. **Documentation**:
