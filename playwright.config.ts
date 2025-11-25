@@ -15,8 +15,8 @@ export default defineConfig({
   fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
+  /* No retries - tests must pass consistently on every run */
+  retries: 0,
   /* Opt out of parallel tests on CI. */
   workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
@@ -31,13 +31,13 @@ export default defineConfig({
     video: "retain-on-failure",
   },
 
-  /* Configure visual regression testing */
+  /* Configure visual regression testing - 0-pixel tolerance required */
   expect: {
     toHaveScreenshot: {
-      /* Maximum allowed pixel difference ratio (0.0 to 1.0) */
-      maxDiffPixelRatio: 0.01,
-      /* Threshold for pixel comparison (0-1, higher = more tolerant) */
-      threshold: 0.2,
+      /* Zero tolerance - screenshots must match exactly */
+      maxDiffPixels: 0,
+      /* Zero threshold - no color difference allowed */
+      threshold: 0,
     },
   },
 
