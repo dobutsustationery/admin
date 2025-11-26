@@ -278,7 +278,8 @@ test.describe("Root Page (Inventory Entry)", () => {
         !isTransientAuthError(error) &&
         !error.includes("ERR_NAME_NOT_RESOLVED") &&
         !error.includes("Failed to load resource") &&
-        !error.includes("CustomSearch API"),
+        !error.includes("CustomSearch API") &&
+        !error.includes("Could not reach Cloud Firestore backend"),
     );
 
     if (consoleErrors.length > 0) {

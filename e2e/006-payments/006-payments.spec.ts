@@ -176,9 +176,9 @@ test.describe("Payments Page", () => {
     });
 
     // ====================================================================
-    // STEP 3: Wait for payments page to load
+    // STEP 3: Wait for payments page to be ready
     // ====================================================================
-    console.log("\n📖 STEP 3: Wait for payments page to load");
+    console.log("\n📖 STEP 3: Wait for payments page to be ready");
 
     // Wait for the store to be ready
     console.log("🔍 Waiting for Redux store to initialize...");
@@ -196,7 +196,10 @@ test.describe("Payments Page", () => {
 
     console.log("   ✓ Redux store initialized");
 
-    await screenshots.capture(page, "payments-loaded", {
+    // Wait a bit for page to stabilize
+    await page.waitForTimeout(2000);
+
+    await screenshots.capture(page, "payments-page-ready", {
       programmaticCheck: async () => {
         // Verify Redux store exists
         const storeExists = await page.evaluate(() => {
