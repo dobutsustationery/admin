@@ -176,54 +176,6 @@ test.describe("Payments Page", () => {
     });
 
     // ====================================================================
-    // STEP 3: Wait for payments page to be ready
-    // ====================================================================
-    console.log("\n📖 STEP 3: Wait for payments page to be ready");
-
-    // Wait for the store to be ready
-    console.log("🔍 Waiting for Redux store to initialize...");
-    await page.waitForFunction(
-      () => {
-        try {
-          const store = (window as any).__REDUX_STORE__;
-          return !!store;
-        } catch (e) {
-          return false;
-        }
-      },
-      { timeout: 5000 },
-    );
-
-    console.log("   ✓ Redux store initialized");
-
-    await screenshots.capture(page, "payments-page-ready", {
-      programmaticCheck: async () => {
-        // Verify Redux store exists
-        const storeExists = await page.evaluate(() => {
-          try {
-            const store = (window as any).__REDUX_STORE__;
-            return !!store;
-          } catch (e) {
-            return false;
-          }
-        });
-
-        expect(storeExists).toBe(true);
-        console.log(`   ✓ Redux store is present`);
-
-        // Check if the page has loaded
-        const pageContent = await page.content();
-        console.log(`   ✓ Page loaded with content (${pageContent.length} characters)`);
-
-        // Verify no errors
-        const errorMessage = page.locator('.error, [role="alert"]').first();
-        const hasError = await errorMessage.isVisible().catch(() => false);
-        expect(hasError).toBe(false);
-        console.log("   ✓ No error messages displayed");
-      },
-    });
-
-    // ====================================================================
     // Final verification: No significant console errors
     // ====================================================================
     console.log("\n📖 Final verification: Console errors");

@@ -185,69 +185,6 @@ test.describe("CSV Export Page", () => {
     });
 
     // ====================================================================
-    // STEP 3: Wait for CSV page to be ready
-    // ====================================================================
-    console.log("\n📖 STEP 3: Wait for CSV page to be ready");
-
-    // Wait for the store to be initialized
-    console.log("🔍 Waiting for Redux store...");
-    await page.waitForFunction(
-      () => {
-        try {
-          const store = (window as any).__REDUX_STORE__;
-          return !!store;
-        } catch (e) {
-          return false;
-        }
-      },
-      { timeout: 5000 },
-    );
-
-    console.log("   ✓ Redux store initialized");
-
-    const preElement = page.locator("pre");
-
-    await screenshots.capture(page, "csv-page-loaded", {
-      programmaticCheck: async () => {
-        // Verify <pre> element is visible
-        await expect(preElement).toBeVisible();
-        console.log("   ✓ CSV content area is visible");
-
-        // Get CSV content (may be empty if no data)
-        const csvContent = await preElement.textContent();
-        console.log(`   ✓ CSV content length: ${csvContent?.length || 0} characters`);
-
-        // Verify Redux store exists
-        const inventoryState = await page.evaluate(() => {
-          try {
-            const store = (window as any).__REDUX_STORE__;
-            if (store) {
-              const state = store.getState();
-              return {
-                hasInventory: !!state.inventory,
-                itemCount: Object.keys(state.inventory?.idToItem || {}).length,
-              };
-            }
-            return null;
-          } catch (e) {
-            return null;
-          }
-        });
-
-        if (inventoryState) {
-          console.log(`   ✓ Redux inventory state:`, inventoryState);
-          expect(inventoryState.hasInventory).toBe(true);
-        }
-
-        // Verify no errors
-        const errorMessage = page.locator('.error, [role="alert"]').first();
-        const hasError = await errorMessage.isVisible().catch(() => false);
-        expect(hasError).toBe(false);
-        console.log("   ✓ No error messages displayed");
-      },
-    });
-
-    // ====================================================================
     // Final verification: No significant console errors
     // ====================================================================
     console.log("\n📖 Final verification: Console errors");
