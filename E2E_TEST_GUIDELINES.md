@@ -55,6 +55,54 @@ retries: 0,  // Tests must pass on first attempt
 
 If a test is flaky, fix the underlying issue rather than relying on retries.
 
+### 4. Programmatic Verification is Required
+
+**Every screenshot must be accompanied by programmatic verification of the page content or Redux store state.**
+
+Visual snapshots alone are not sufficient. Each screenshot should verify that the application state matches expectations based on the test scenario.
+
+✅ **Always include programmatic checks:**
+```typescript
+await screenshots.capture(page, 'inventory-loaded', {
+  programmaticCheck: async () => {
+    // Verify DOM content
+    await expect(page.locator('table')).toBeVisible();
+    const rowCount = await page.locator('table > tr').count();
+    expect(rowCount).toBeGreaterThan(0);
+    
+    // Verify specific data
+    const headers = await page.locator('table thead th').allTextContents();
+    expect(headers).toContain('JAN Code');
+    expect(headers).toContain('Quantity');
+  }
+});
+```
+
+**What to verify:**
+- DOM elements are visible/hidden as expected
+- Content matches expected values (text, counts, etc.)
+- Data is correctly displayed (table rows, form values, etc.)
+- Redux store state (if applicable, using page.evaluate())
+- Network responses completed successfully
+- Error states are shown/hidden appropriately
+
+**Example verifying Redux store:**
+```typescript
+await screenshots.capture(page, 'after-update', {
+  programmaticCheck: async () => {
+    // Access Redux store from the page context
+    const storeState = await page.evaluate(() => {
+      return window.__REDUX_STORE__.getState();
+    });
+    
+    expect(storeState.inventory.items.length).toBeGreaterThan(0);
+    expect(storeState.inventory.selectedItem).toBeDefined();
+  }
+});
+```
+
+The `programmaticCheck` callback runs **before** the screenshot is captured, ensuring the page is in the correct state before visual verification.
+
 ## Writing a New E2E Test
 
 ### Step 1: Create the Test File
@@ -323,6 +371,7 @@ Before submitting a PR with a new E2E test, verify:
 
 - [ ] Test file created in `e2e/<name>.spec.ts`
 - [ ] Test uses `createScreenshotHelper()` for screenshots
+- [ ] **Every screenshot includes programmatic verification via `programmaticCheck`**
 - [ ] Test waits for specific conditions (no arbitrary delays)
 - [ ] Test does not rely on retries
 - [ ] Baseline screenshots generated with `--update-snapshots`
