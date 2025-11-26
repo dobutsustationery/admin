@@ -226,14 +226,7 @@ test.describe("Inventory Page", () => {
     // We count all <tr> elements except the header row in <thead>
     console.log("🔍 Waiting for inventory data rows...");
 
-    // Wait for at least one data row to appear
-    await page
-      .locator("table > tr")
-      .first()
-      .waitFor({ state: "attached", timeout: 60000 });
-
-    // Wait for the table to stabilize by waiting for a specific number of rows
-    // The test data should have a known number of items
+    // Wait for at least one data row to appear by checking that rows exist
     await page.waitForFunction(
       () => {
         const rows = document.querySelectorAll("table > tr");
