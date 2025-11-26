@@ -33,7 +33,7 @@ test.describe("Names Page", () => {
    */
   test("complete names workflow", async ({ page, context }) => {
     // Set test timeout for complete workflow
-    test.setTimeout(120000); // 2 minutes
+    test.setTimeout(30000); // 30 seconds
 
     const screenshots = createScreenshotHelper();
 
@@ -55,7 +55,7 @@ test.describe("Names Page", () => {
     // Wait for and verify sign-in button appears
     console.log("🔍 Waiting for sign-in button...");
     const signInButton = page.locator('button:has-text("Sign In")');
-    await signInButton.waitFor({ state: "visible", timeout: 15000 });
+    await signInButton.waitFor({ state: "visible", timeout: 5000 });
 
     await screenshots.capture(page, "signed-out-state", {
       programmaticCheck: async () => {
@@ -148,7 +148,7 @@ test.describe("Names Page", () => {
 
     // Wait for authentication to be processed
     await signInButton
-      .waitFor({ state: "hidden", timeout: 10000 })
+      .waitFor({ state: "hidden", timeout: 5000 })
       .catch(() => {
         console.log("   ⚠️  Sign-in button still visible, but continuing...");
       });
@@ -192,7 +192,7 @@ test.describe("Names Page", () => {
     // Wait for form elements to appear
     console.log("🔍 Waiting for form elements...");
     const idInput = page.locator('label:has-text("ID")');
-    await idInput.waitFor({ state: "visible", timeout: 30000 });
+    await idInput.waitFor({ state: "visible", timeout: 5000 });
     console.log("   ✓ ID input found");
 
     await screenshots.capture(page, "names-loaded", {
