@@ -14,7 +14,9 @@ The test follows a complete user journey from signed-out state through viewing i
 
 ### Screenshots
 
-Screenshots are numbered sequentially to tell the story:
+Screenshots are numbered sequentially to tell the story.
+
+**Note:** Screenshot filenames include the browser and platform (e.g., `-chromium-linux.png`) as part of Playwright's naming convention. These tests run on Chromium on Linux in CI, so all baseline screenshots use this suffix.
 
 #### 000-signed-out-state.png
 

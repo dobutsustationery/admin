@@ -30,8 +30,11 @@ echo "✓ Build exists"
 echo ""
 echo "📸 Running Playwright to generate baseline screenshots..."
 echo "   This will create/update snapshots in e2e/###-<testname>/screenshots/"
+echo "   for all tests (use specific test path to update only one test)"
 echo ""
 
+# Generate baselines for all tests
+# To update a specific test only: npx playwright test e2e/000-inventory/000-inventory.spec.ts --update-snapshots
 npx playwright test --update-snapshots
 
 echo ""
