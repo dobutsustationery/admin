@@ -29,15 +29,15 @@ echo "✓ Build exists"
 # Run Playwright to generate baseline
 echo ""
 echo "📸 Running Playwright to generate baseline screenshots..."
-echo "   This will create/update snapshots in e2e/inventory.spec.ts-snapshots/"
+echo "   This will create/update snapshots in e2e/###-<testname>/screenshots/"
 echo ""
 
-npx playwright test inventory.spec.ts --grep "should match visual snapshot" --update-snapshots
+npx playwright test --update-snapshots
 
 echo ""
 echo "✅ Baseline screenshots generated!"
 echo ""
-echo "📁 Check the files in e2e/inventory.spec.ts-snapshots/"
+echo "📁 Check the files in e2e/###-<testname>/screenshots/"
 echo "   These should be committed to git for visual regression testing"
 echo ""
 echo "ℹ️  Note: The test will fail on subsequent runs if the UI changes."
