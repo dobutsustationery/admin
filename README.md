@@ -338,6 +338,7 @@ admin/
 - **[scripts/README.md](scripts/README.md)**: Firebase config to .env converter utility documentation
 - **[DATA_TRANSFER.md](DATA_TRANSFER.md)**: Guide for transferring data between environments
 - **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
+- **[SHOPIFY_INTEGRATION.md](SHOPIFY_INTEGRATION.md)**: Design document for Shopify integration and two-way sync
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
 - **[EXTRACTION_GUIDE.md](EXTRACTION_GUIDE.md)**: How this repository was extracted from the monorepo
 
