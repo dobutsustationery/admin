@@ -11,11 +11,11 @@ import { update_item } from "$lib/inventory";
 import { broadcast } from "$lib/redux-firestore";
 
 let janCode = "No scan yet";
-let subtype = "";
-let pieces = "";
-let hsCode = "39199080";
+const subtype = "";
+const pieces = "";
+const hsCode = "39199080";
 let description = "";
-let qty = "10";
+const qty = "10";
 let dirty = true;
 let imageItems: any[] = [];
 async function barcode(e: CustomEvent) {

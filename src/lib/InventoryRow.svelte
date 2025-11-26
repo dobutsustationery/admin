@@ -6,7 +6,7 @@ import { type Item, update_field } from "./inventory";
 import { broadcast } from "./redux-firestore";
 import { store } from "./store";
 
-export let key = "";
+export const key = "";
 
 let state = store.getState();
 let item: Item | null = null;

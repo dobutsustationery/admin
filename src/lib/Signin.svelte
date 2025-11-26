@@ -1,13 +1,13 @@
 <script lang="ts">
-import { createEventDispatcher } from "svelte";
 import {
-  onAuthStateChanged,
-  signOut,
-  signInWithPopup,
   type Auth,
   type AuthProvider,
   type User as FirebaseUser,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
 } from "firebase/auth";
+import { createEventDispatcher } from "svelte";
 
 export interface User {
   signedIn: boolean;
