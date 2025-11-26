@@ -17,6 +17,7 @@ $: if ($store) {
     "hsCode",
     "qty",
     "pieces",
+      "shipped",
   ];
   const parser = new Parser({ fields });
   const data = itemKeys.map((k) => state.inventory.idToItem[k]);
