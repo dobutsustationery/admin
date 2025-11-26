@@ -28,6 +28,7 @@ data-export
 /playwright-report
 /test-results
 # Exclude actual screenshots but keep baselines
+# Baselines are in e2e/###-testname/screenshots/ and MUST be committed
 /e2e/*-actual.png
 /e2e/*-diff.png
 
