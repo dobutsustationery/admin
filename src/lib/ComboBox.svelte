@@ -6,9 +6,9 @@ import { create_name } from "./names";
 import { broadcast } from "./redux-firestore";
 import { store } from "./store";
 
-export const id = "";
-export const label: string | null = null;
-export const value: string | null = "";
+export let id = "";
+export let label: string | null = null;
+export let value: string | null = "";
 let state = store.getState();
 
 const dispatchEvent = createEventDispatcher();
