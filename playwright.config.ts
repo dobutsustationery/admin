@@ -41,6 +41,9 @@ export default defineConfig({
     },
   },
 
+  /* Custom snapshot path template to support new folder structure */
+  snapshotPathTemplate: "{testDir}/{testFileDir}/screenshots/{arg}{ext}",
+
   /* Configure projects for major browsers */
   projects: [
     {
