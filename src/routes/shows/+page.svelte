@@ -1,7 +1,7 @@
 <script lang="ts">
   import { auth, googleAuthProvider } from "$lib/firebase";
   import { store } from "$lib/store";
-  import { Signin, type User } from "@ourway/svelte-firebase-auth";
+  import Signin, { type User } from "$lib/Signin.svelte";
   import OrderRow from "$lib/OrderRow.svelte";
   import { hide_archive, make_sales, type OrderInfo } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
