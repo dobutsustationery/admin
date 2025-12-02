@@ -82,7 +82,8 @@
     "@zxing/library": "^0.20.0",
     "common-substrings": "^3.0.1",
     "firebase": "^12.6.0",
-    "firebase-admin": "^12.0.0"
+    "firebase-admin": "^12.0.0",
+    "googleapis": "^128.0.0"
   },
   "trustedDependencies": [
     "protobufjs"
