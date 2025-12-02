@@ -121,11 +121,10 @@ The test includes two comprehensive scenarios:
   - Drive OAuth connection (mocked)
   - Filename input and CSV upload
   - Upload success verification
-- Captures 4 additional screenshots (004-007) showing:
-  - 004-authenticated-drive-ui: Drive connection button visible
-  - 005-connected-to-drive: Connected state with export form
-  - 006-upload-complete: Successful CSV upload
-  - 007+ (if needed): Additional verification steps
+- Captures 3 additional screenshots (004-006) showing:
+  - **004-authenticated-drive-ui**: Drive connection button visible after Firebase auth
+  - **005-connected-to-drive**: Connected state with export form (filename input, export button)
+  - **006-upload-complete**: CSV upload attempt (with mocked API response)
 
 **Note:** The second test uses Playwright's route mocking to simulate Google Drive API responses, allowing complete flow testing without real Google credentials.
 
