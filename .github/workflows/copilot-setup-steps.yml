@@ -8,7 +8,7 @@ on:
   pull_request:
 
 jobs:
-  disabled-copilot-setup-steps:
+  setup-and-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
