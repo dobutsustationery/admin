@@ -339,6 +339,7 @@ admin/
 - **[DATA_TRANSFER.md](DATA_TRANSFER.md)**: Guide for transferring data between environments
 - **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
 - **[PRODUCT_IMPORT_DESIGN.md](PRODUCT_IMPORT_DESIGN.md)**: Design for photo-based product import process with LLM assistance
+- **[PHOTOS_INTEGRATION.md](PHOTOS_INTEGRATION.md)**: Google Photos API integration specification for product import workflow
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
 - **[EXTRACTION_GUIDE.md](EXTRACTION_GUIDE.md)**: How this repository was extracted from the monorepo
 
