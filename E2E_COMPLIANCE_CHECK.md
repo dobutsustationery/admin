@@ -1,6 +1,6 @@
 # E2E Test Suite Compliance Check
 
-**Date:** $(date)
+**Date:** 2025-12-02 03:57:00 UTC
 **Checked by:** Automated compliance checker
 
 ## Summary
@@ -89,15 +89,15 @@ All tests use `createScreenshotHelper()`:
 ### 5. Test Documentation ✅
 
 All test directories have README.md with screenshot galleries:
-- e2e/000-inventory: ✓ README exists with  image references
-- e2e/001-root: ✓ README exists with  image references
-- e2e/002-csv: ✓ README exists with  image references
-- e2e/003-names: ✓ README exists with  image references
-- e2e/004-order: ✓ README exists with  image references
-- e2e/005-orders: ✓ README exists with  image references
-- e2e/006-payments: ✓ README exists with  image references
-- e2e/007-archives: ✓ README exists with  image references
-- e2e/008-subtypes: ✓ README exists with  image references
+- e2e/000-inventory: ✓ README exists with 3 screenshot image references
+- e2e/001-root: ✓ README exists with 3 screenshot image references
+- e2e/002-csv: ✓ README exists with 2 screenshot image references
+- e2e/003-names: ✓ README exists with 3 screenshot image references
+- e2e/004-order: ✓ README exists with 2 screenshot image references
+- e2e/005-orders: ✓ README exists with 2 screenshot image references
+- e2e/006-payments: ✓ README exists with 2 screenshot image references
+- e2e/007-archives: ✓ README exists with 3 screenshot image references
+- e2e/008-subtypes: ✓ README exists with 3 screenshot image references
 
 ### 6. Test Structure ✅
 
