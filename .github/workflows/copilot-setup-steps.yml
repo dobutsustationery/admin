@@ -22,16 +22,21 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Enter Nix development shell and verify tools
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Verify Nix development shell and Java
         run: |
           nix develop --command bash -c "
             echo '✓ Nix development shell activated'
-            bun --version
             java --version
           "
 
       - name: Install project dependencies
-        run: nix develop --command bun install
+        run: npm ci
 
       - name: Configure environment for emulators
         run: |
@@ -88,7 +93,7 @@ jobs:
         run: nix develop --command node e2e/helpers/load-test-data.js --prefix=400
 
       - name: Build application
-        run: nix develop --command bun run build:local
+        run: npm run build:local
         env:
           VITE_FIREBASE_ENV: local
           VITE_FIREBASE_LOCAL_PROJECT_ID: demo-test-project
@@ -98,13 +103,13 @@ jobs:
           VITE_EMULATOR_AUTH_PORT: 9099
 
       - name: Run linter
-        run: nix develop --command bun run lint
+        run: npm run lint
 
       - name: Run type checker
-        run: nix develop --command bun run check
+        run: npm run check
 
       - name: Run unit tests
-        run: nix develop --command bun test
+        run: npm test
 
       - name: Stop Firebase Emulators
         if: always()
