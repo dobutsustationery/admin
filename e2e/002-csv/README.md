@@ -103,42 +103,31 @@ The test follows a complete user journey demonstrating the Google Drive integrat
 
 ---
 
-### 5. UI Elements
-
-![UI Elements](screenshots/004-ui-elements.png)
-
-**What this shows:**
-- Final validation of all UI elements
-- Page title verified
-- Drive section and CSV preview both present
-- Complete page structure validated
-
-**Programmatic verification:**
-- [ ] Page title contains "CSV Export"
-- [ ] Drive section exists
-- [ ] CSV preview section exists
-
-**Manual verification checklist:**
-- [ ] All major UI sections are present
-- [ ] Page title is correct
-- [ ] Drive integration UI is visible
-- [ ] CSV preview is accessible
-
----
-
 ## Test Scenarios
 
-The test includes two main scenarios:
+The test includes two comprehensive scenarios:
 
-1. **Complete CSV Export with Drive UI Workflow**
-   - Tests the full user journey from signed-out to viewing Drive integration
-   - Captures 4 screenshots showing the progression
-   - Validates UI elements and authentication states
+### 1. **Complete CSV Export with Drive UI Workflow**
+- Tests the full user journey from signed-out to viewing Drive integration
+- Captures 4 screenshots (000-003) showing the progression
+- Validates UI elements and authentication states
+- Shows the Drive UI with "Connect to Google Drive" button
 
-2. **CSV Export UI Elements Validation**
-   - Focuses on validating UI structure
-   - Checks for presence of all required elements
-   - Captures 1 screenshot for element verification
+### 2. **Complete Google Drive OAuth and Upload Flow**
+- Tests the full end-to-end Drive integration including OAuth and upload
+- Uses mocked Google Drive API responses (no real Drive credentials needed)
+- Demonstrates:
+  - User authentication with Firebase
+  - Drive OAuth connection (mocked)
+  - Filename input and CSV upload
+  - Upload success verification
+- Captures 4 additional screenshots (004-007) showing:
+  - 004-authenticated-drive-ui: Drive connection button visible
+  - 005-connected-to-drive: Connected state with export form
+  - 006-upload-complete: Successful CSV upload
+  - 007+ (if needed): Additional verification steps
+
+**Note:** The second test uses Playwright's route mocking to simulate Google Drive API responses, allowing complete flow testing without real Google credentials.
 
 ## Google Drive Configuration
 
@@ -157,7 +146,14 @@ In the test environment (without Drive configuration):
 
 ## Test Data
 
-The test uses data loaded from `test-data/firestore-export.json` into the Firebase emulator. The CSV export reflects the current inventory state, though the Google Drive upload functionality is not tested (requires actual Drive API credentials).
+The test uses data loaded from `test-data/firestore-export.json` into the Firebase emulator. The CSV export reflects the current inventory state.
+
+**Google Drive API Mocking:**
+The second test scenario uses Playwright's route mocking to intercept and mock Google Drive API calls:
+- `GET /drive/v3/files` - Returns mock file list
+- `POST /upload/drive/v3/files` - Returns mock upload success response
+
+This allows testing the complete upload flow without requiring real Google API credentials.
 
 ## Running This Test
 
