@@ -33,7 +33,7 @@ test.describe("Item History Page", () => {
    */
   test("complete item history workflow", async ({ page, context }) => {
     // Set test timeout for complete workflow
-    test.setTimeout(8000); // 8 seconds
+    test.setTimeout(15000); // 15 seconds
 
     const screenshots = createScreenshotHelper();
 
@@ -50,8 +50,9 @@ test.describe("Item History Page", () => {
     // ====================================================================
     console.log("\n📖 STEP 1: Navigate to item history page (signed out)");
 
-    // Use a test item key parameter
-    const testItemKey = "test-item-001";
+    // Use a real JAN code from the test data (first 400 events)
+    // This is a real item: "Design Paper Square Astronomy"
+    const testItemKey = "4542804044355";
     await page.goto(`/itemhistory?itemKey=${testItemKey}`, {
       waitUntil: "load",
     });

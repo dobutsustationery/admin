@@ -21,9 +21,9 @@ Screenshots are numbered sequentially to tell the story.
 ![Screenshot 000](screenshots/000-signed-out-state.png)
 
 **What this shows:**
-- User navigates to `/itemhistory?itemKey=test-item-001` while signed out
+- User navigates to `/itemhistory?itemKey=4542804044355` while signed out
 - Application displays the sign-in screen
-- Page heading shows "Item History for test-item-001"
+- Page heading shows "Item History for 4542804044355" (Design Paper Square Astronomy)
 
 **Programmatic verification:**
 - ✅ Sign-in button is visible
@@ -31,7 +31,7 @@ Screenshots are numbered sequentially to tell the story.
 
 **Manual verification checklist:**
 - [ ] Sign-in button is clearly visible
-- [ ] Page heading shows "Item History for test-item-001"
+- [ ] Page heading shows "Item History for 4542804044355"
 
 ---
 
@@ -61,20 +61,21 @@ Screenshots are numbered sequentially to tell the story.
 **What this shows:**
 - Item history page is fully loaded
 - History table displays with Date and Action columns
-- Heading shows the specific item key being viewed
-- Table may be empty if no history exists for the test item
+- Heading shows the specific item key being viewed (4542804044355 - Design Paper Square Astronomy)
+- Table shows actual history for the real item from test data
 
 **Programmatic verification:**
-- ✅ Page heading shows "Item History for test-item-001"
+- ✅ Page heading shows "Item History for 4542804044355"
 - ✅ History table is visible
 - ✅ Table headers show "Date" and "Action"
 - ✅ Redux store has inventory state with history tracking
 - ✅ No error messages displayed
 
 **Manual verification checklist:**
-- [ ] Heading shows correct item key
+- [ ] Heading shows correct item key (4542804044355)
 - [ ] Table structure is correct
 - [ ] Table headers are visible
+- [ ] History rows are visible for this item
 - [ ] Page layout is correct
 - [ ] No error messages shown
 
