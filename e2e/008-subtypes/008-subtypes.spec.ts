@@ -32,8 +32,8 @@ test.describe("Subtypes Page", () => {
    * Each step has both programmatic and visual verification.
    */
   test("complete subtypes workflow", async ({ page, context }) => {
-    // Set test timeout for complete workflow
-    test.setTimeout(30000); // 30 seconds
+    // Set test timeout for complete workflow - actual runtime ~3.7s, allowing 5s variance
+    test.setTimeout(9000); // 9 seconds
 
     const screenshots = createScreenshotHelper();
 
