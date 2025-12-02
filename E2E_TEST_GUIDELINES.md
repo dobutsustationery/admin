@@ -205,9 +205,17 @@ After writing your test, generate the baseline screenshots:
 # Start Firebase emulators (if needed)
 npm run emulators
 
+# Load test data with the same prefix used in CI (IMPORTANT!)
+node e2e/helpers/load-test-data.js --prefix=400
+
+# Build the application
+npm run build:local
+
 # Generate baselines for your new test
 npx playwright test <test-name>.spec.ts --update-snapshots
 ```
+
+**⚠️ CRITICAL**: Always use `--prefix=400` when loading test data for baseline generation. This must match the CI configuration to ensure consistent visual comparisons.
 
 ### Step 5: Verify and Commit Baselines
 
@@ -308,23 +316,39 @@ while (true) {
 
 When you change the UI and need to update baselines:
 
-1. **Run the test** to see the failure:
+1. **Ensure emulators are running and test data is loaded**:
+   ```bash
+   # Terminal 1: Start emulators
+   npm run emulators
+   
+   # Terminal 2: Load test data with correct prefix
+   node e2e/helpers/load-test-data.js --prefix=400
+   ```
+
+2. **Build the application**:
+   ```bash
+   npm run build:local
+   ```
+
+3. **Run the test** to see the failure:
    ```bash
    npx playwright test e2e/###-<testname>/###-<testname>.spec.ts
    ```
 
-2. **Review the diff** in `test-results/` directory
+4. **Review the diff** in `test-results/` directory
 
-3. **If the change is intentional**, update baselines:
+5. **If the change is intentional**, update baselines:
    ```bash
    npx playwright test e2e/###-<testname>/###-<testname>.spec.ts --update-snapshots
    ```
 
-4. **Verify and commit** the new baselines:
+6. **Verify and commit** the new baselines:
    ```bash
    git add e2e/###-<testname>/screenshots/
    git commit -m "Update baselines for <reason>"
    ```
+
+**⚠️ IMPORTANT**: Always use `--prefix=400` when loading test data. This matches the CI configuration.
 
 ## Test Structure
 
