@@ -5,6 +5,9 @@
 
 set -e  # Exit on error
 
+# Record start time
+START_TIME=$(date +%s)
+
 echo "🧪 E2E Test Runner"
 echo "=================="
 echo ""
@@ -54,9 +57,15 @@ npm run build:local
 
 echo ""
 echo "▶️  Running Playwright tests..."
-npx playwright test "$@"
 
+# Record test start time
+TEST_START_TIME=$(date +%s)
+npx playwright test "$@"
 TEST_EXIT_CODE=$?
+
+# Calculate test duration
+TEST_END_TIME=$(date +%s)
+TEST_DURATION=$((TEST_END_TIME - TEST_START_TIME))
 
 echo ""
 if [ $TEST_EXIT_CODE -eq 0 ]; then
@@ -67,6 +76,16 @@ else
   echo "📊 To view the test report, run:"
   echo "   npx playwright show-report e2e/reports/html"
 fi
+
+# Calculate and display total duration
+END_TIME=$(date +%s)
+TOTAL_DURATION=$((END_TIME - START_TIME))
+
+echo ""
+echo "⏱️  Timing Summary"
+echo "=================="
+echo "Test execution time: ${TEST_DURATION}s"
+echo "Total script time:   ${TOTAL_DURATION}s"
 
 # Clean up if we started the emulators
 if [ ! -z "$EMULATOR_PID" ]; then
