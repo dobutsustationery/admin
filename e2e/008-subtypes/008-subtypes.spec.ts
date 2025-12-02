@@ -146,7 +146,6 @@ test.describe("Subtypes Page", () => {
     
     // Wait for network activity to settle
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000); // Give images time to start loading
 
     console.log("   ✓ Page reloaded with authentication");
 
