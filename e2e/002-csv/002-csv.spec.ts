@@ -269,8 +269,8 @@ test.describe("CSV Export Page with Google Drive", () => {
     // ====================================================================
     console.log("\n📖 STEP 3: Verify Google Drive UI");
 
-    // Wait a moment for the page to fully render
-    await page.waitForTimeout(1000);
+    // Wait for page to be fully loaded by checking for specific elements
+    await page.locator('h1').waitFor({ state: 'visible', timeout: 5000 });
 
     await screenshots.capture(page, "drive-ui-visible", {
       programmaticCheck: async () => {
