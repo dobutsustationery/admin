@@ -1,0 +1,304 @@
+---
+# GitHub Copilot Workspace Setup Steps
+# This file provides step-by-step instructions for setting up the development environment
+# for the Dobutsu Stationery Admin application.
+
+setup_steps:
+  - step: "Install Nix package manager (if not already installed)"
+    description: |
+      Nix is used to provide a reproducible development environment with all required tools.
+      This project uses Nix flakes for dependency management.
+    commands:
+      - command: |
+          if ! command -v nix &> /dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
+          else
+            echo "✓ Nix is already installed"
+          fi
+        description: "Install Nix using the Determinate Systems installer (recommended)"
+      - command: "nix --version"
+        description: "Verify Nix installation"
+
+  - step: "Enable Nix flakes"
+    description: |
+      Ensure Nix flakes are enabled in your Nix configuration.
+      Flakes provide reproducible, hermetic builds.
+    commands:
+      - command: |
+          mkdir -p ~/.config/nix
+          if ! grep -q "experimental-features" ~/.config/nix/nix.conf 2>/dev/null; then
+            echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+            echo "✓ Enabled Nix flakes"
+          else
+            echo "✓ Nix flakes already enabled"
+          fi
+        description: "Enable experimental Nix features (flakes and nix-command)"
+
+  - step: "Enter Nix development shell"
+    description: |
+      The Nix flake provides a development shell with Bun and OpenJDK (for Firebase emulators).
+      This ensures consistent tooling across all developers.
+    commands:
+      - command: "nix develop"
+        description: "Enter the Nix development environment (provides Bun and Java)"
+    notes:
+      - "This shell includes Bun (fast JavaScript runtime) and OpenJDK (required for Firebase emulators)"
+      - "Alternatively, use 'direnv allow' if you have direnv installed to auto-load the environment"
+
+  - step: "Install project dependencies"
+    description: |
+      Install all Node.js dependencies using Bun (preferred) or npm.
+      The postinstall script will automatically install platform-specific Biome CLI.
+    commands:
+      - command: "bun install"
+        description: "Install dependencies using Bun (faster, recommended)"
+        alternative: "npm install"
+        alternative_description: "Install dependencies using npm (if Bun is not available)"
+
+  - step: "Configure environment variables"
+    description: |
+      Set up environment configuration for local development with Firebase emulators.
+      The .env.emulator file is pre-configured for emulator use.
+    commands:
+      - command: |
+          if [ ! -f .env ]; then
+            cp .env.emulator .env
+            echo "✓ Created .env from .env.emulator"
+          else
+            echo "✓ .env already exists"
+          fi
+        description: "Copy emulator configuration to .env (if not exists)"
+    notes:
+      - "The .env.emulator file is configured for local Firebase emulators"
+      - "For production/staging, see ENVIRONMENT_SETUP.md for detailed configuration"
+
+  - step: "Install Firebase CLI globally (if not already installed)"
+    description: |
+      The Firebase CLI is required to run the Firebase emulators locally.
+      This provides Firestore and Authentication emulators for offline development.
+    commands:
+      - command: |
+          if ! command -v firebase &> /dev/null; then
+            npm install -g firebase-tools
+          else
+            echo "✓ Firebase CLI is already installed ($(firebase --version))"
+          fi
+        description: "Install Firebase CLI globally"
+      - command: "firebase --version"
+        description: "Verify Firebase CLI installation"
+
+  - step: "Start Firebase emulators"
+    description: |
+      Start the Firebase emulators for local development.
+      This runs Firestore (database) and Auth (authentication) emulators.
+    commands:
+      - command: "firebase emulators:start &"
+        description: "Start Firebase emulators in the background"
+        notes:
+          - "Firestore emulator will run on http://localhost:8080"
+          - "Auth emulator will run on http://localhost:9099"
+          - "Emulator UI will be available at http://localhost:4000"
+    background_process: true
+    verification:
+      - command: |
+          echo "Waiting for Firestore emulator to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080 > /dev/null 2>&1; then
+              echo "✓ Firestore emulator is ready"
+              break
+            fi
+            sleep 1
+          done
+        description: "Wait for Firestore emulator to be ready"
+      - command: |
+          echo "Waiting for Auth emulator to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:9099 > /dev/null 2>&1; then
+              echo "✓ Auth emulator is ready"
+              break
+            fi
+            sleep 1
+          done
+        description: "Wait for Auth emulator to be ready"
+
+  - step: "Load test data into Firebase emulators"
+    description: |
+      Load pre-configured test data into the Firestore emulator.
+      This provides sample inventory, orders, and user data for development and testing.
+    commands:
+      - command: "node e2e/helpers/load-test-data.js --prefix=400"
+        description: "Load test data into Firestore emulator (first 400 broadcast events + all other collections)"
+        notes:
+          - "Using --prefix=400 loads a subset of data for faster setup"
+          - "Remove --prefix flag to load all test data if needed"
+          - "Test data is located in test-data/firestore-export.json"
+
+  - step: "Build the application"
+    description: |
+      Build the SvelteKit application for local development.
+      This compiles TypeScript and bundles the application.
+    commands:
+      - command: "npm run build:local"
+        description: "Build the application in local/emulator mode"
+        alternative: "bun run build:local"
+        alternative_description: "Build using Bun (faster)"
+    verification:
+      - command: "ls -la build/"
+        description: "Verify build output exists"
+
+  - step: "Start development server"
+    description: |
+      Start the Vite development server with hot module replacement.
+      The app will be available at http://localhost:5173
+    commands:
+      - command: "npm run dev:local &"
+        description: "Start development server in local/emulator mode"
+        alternative: "bun run dev:local &"
+        alternative_description: "Start dev server using Bun"
+    background_process: true
+    verification:
+      - command: |
+          echo "Waiting for dev server to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:5173 > /dev/null 2>&1; then
+              echo "✓ Dev server is ready at http://localhost:5173"
+              break
+            fi
+            sleep 1
+          done
+        description: "Wait for development server to be ready"
+
+  - step: "Run linter and type checker"
+    description: |
+      Verify code quality and type safety.
+      This ensures the codebase follows style guidelines and has no type errors.
+    commands:
+      - command: "npm run lint"
+        description: "Run Biome linter to check code style"
+      - command: "npm run check"
+        description: "Run Svelte type checker"
+    notes:
+      - "Use 'npm run lint:fix' to automatically fix linting issues"
+      - "Biome is used instead of ESLint/Prettier for faster linting and formatting"
+
+  - step: "Run unit tests"
+    description: |
+      Run the Vitest unit test suite to verify core functionality.
+    commands:
+      - command: "npm test"
+        description: "Run unit tests with coverage"
+        alternative: "bun test"
+        alternative_description: "Run tests using Bun (faster)"
+
+  - step: "Run E2E tests (optional)"
+    description: |
+      Run Playwright E2E tests to verify end-to-end functionality.
+      This requires the emulators and dev server to be running.
+    commands:
+      - command: "npm run test:e2e:simple"
+        description: "Run E2E tests (assuming emulators are already running)"
+        notes:
+          - "Use 'npm run test:e2e' to automatically manage emulators"
+          - "Use 'npm run test:e2e:headed' to see the browser during tests"
+          - "Use 'npm run test:e2e:ui' for interactive test debugging"
+
+environment_info:
+  nix_flake:
+    file: "flake.nix"
+    description: "Nix flake providing Bun and OpenJDK for reproducible development environment"
+    packages:
+      - "bun - Fast JavaScript runtime and package manager"
+      - "openjdk - Required for Firebase emulator execution"
+
+  firebase_emulators:
+    firestore:
+      host: "localhost"
+      port: 8080
+      description: "Firestore database emulator for local data storage"
+    auth:
+      host: "localhost"
+      port: 9099
+      description: "Firebase Authentication emulator for user management"
+    ui:
+      port: 4000
+      description: "Firebase Emulator UI for managing emulated services"
+
+  test_data:
+    location: "test-data/firestore-export.json"
+    description: "Pre-configured test data including inventory, orders, and user data"
+    loading_script: "e2e/helpers/load-test-data.js"
+
+  development_server:
+    url: "http://localhost:5173"
+    command: "npm run dev:local"
+    description: "Vite development server with hot module replacement"
+
+required_tools:
+  - name: "Nix"
+    purpose: "Package manager for reproducible development environment"
+    install_url: "https://install.determinate.systems/nix"
+    version_check: "nix --version"
+
+  - name: "Bun"
+    purpose: "Fast JavaScript runtime and package manager (provided by Nix flake)"
+    install_note: "Automatically available in 'nix develop' shell"
+    version_check: "bun --version"
+
+  - name: "OpenJDK"
+    purpose: "Java runtime required for Firebase emulators (provided by Nix flake)"
+    install_note: "Automatically available in 'nix develop' shell"
+    version_check: "java --version"
+
+  - name: "Firebase CLI"
+    purpose: "Command-line tool for Firebase emulators and deployment"
+    install: "npm install -g firebase-tools"
+    version_check: "firebase --version"
+
+  - name: "Node.js"
+    purpose: "JavaScript runtime (if not using Bun)"
+    version: "18+"
+    install_note: "Can be provided by Nix or installed separately"
+
+documentation:
+  - file: "README.md"
+    description: "Main project documentation with quick start guide"
+  - file: "ENVIRONMENT_SETUP.md"
+    description: "Comprehensive guide for environment configuration"
+  - file: "E2E_TEST_GUIDELINES.md"
+    description: "Guidelines for writing and running E2E tests"
+  - file: "DESIGN_OVERVIEW.md"
+    description: "Architecture, data models, and technical details"
+  - file: ".github/copilot-instructions.md"
+    description: "Code style guidelines for GitHub Copilot"
+
+common_issues:
+  - issue: "Firebase emulators fail to start"
+    solution: "Ensure Java is installed (provided by Nix flake). Check ports 8080 and 9099 are not in use."
+
+  - issue: "Bun command not found"
+    solution: "Enter the Nix development shell with 'nix develop' or use npm instead."
+
+  - issue: "Build fails with TypeScript errors"
+    solution: "Run 'npm run check' to see detailed type errors. Ensure dependencies are installed."
+
+  - issue: "Tests fail to connect to emulators"
+    solution: "Verify emulators are running on correct ports (8080 for Firestore, 9099 for Auth)."
+
+quick_start_summary: |
+  For a quick start, run these commands:
+  
+  1. nix develop                           # Enter Nix shell (provides Bun + Java)
+  2. bun install                           # Install dependencies
+  3. firebase emulators:start &            # Start Firebase emulators
+  4. node e2e/helpers/load-test-data.js --prefix=400  # Load test data
+  5. bun run dev:local                     # Start dev server
+  
+  Then open http://localhost:5173 in your browser.
+  Firebase Emulator UI available at http://localhost:4000
+
+notes:
+  - "This project uses Bun as the primary package manager, but npm is fully supported"
+  - "Firebase emulators provide offline development without needing cloud connectivity"
+  - "All test data is version controlled for reproducible testing"
+  - "E2E tests use zero-pixel tolerance screenshot comparison"
+  - "Use direnv for automatic Nix environment loading (optional but recommended)"
