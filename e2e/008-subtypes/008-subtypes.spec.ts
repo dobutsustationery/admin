@@ -153,6 +153,20 @@ test.describe("Subtypes Page", () => {
         console.log("   ⚠️  Sign-in button still visible, but continuing...");
       });
 
+    // Wait for any images on the page to load
+    await page.evaluate(() => {
+      return Promise.all(
+        Array.from(document.images).map((img) => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve) => {
+            img.addEventListener("load", resolve);
+            img.addEventListener("error", resolve); // Resolve on error too
+            setTimeout(resolve, 5000); // Timeout after 5 seconds
+          });
+        }),
+      );
+    });
+
     await screenshots.capture(page, "signed-in-state", {
       programmaticCheck: async () => {
         // Verify we're no longer seeing the sign-in button
@@ -194,6 +208,20 @@ test.describe("Subtypes Page", () => {
     const heading = page.locator("h1");
     await heading.waitFor({ state: "visible", timeout: 5000 });
     console.log("   ✓ Page heading found");
+
+    // Wait for all images to load before taking screenshot
+    await page.evaluate(() => {
+      return Promise.all(
+        Array.from(document.images).map((img) => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve) => {
+            img.addEventListener("load", resolve);
+            img.addEventListener("error", resolve); // Resolve on error too
+            setTimeout(resolve, 5000); // Timeout after 5 seconds
+          });
+        }),
+      );
+    });
 
     await screenshots.capture(page, "subtypes-loaded", {
       programmaticCheck: async () => {
