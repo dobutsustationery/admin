@@ -31,6 +31,8 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest watch --coverage",
     "test:e2e": "bash e2e/run-tests.sh",
+    "test:e2e:local-images": "bash e2e/run-tests-local-images.sh",
+    "test:download-images": "node e2e/helpers/download-test-images.js",
     "test:e2e:simple": "bash e2e/run-tests-simple.sh",
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:headed": "npx playwright test --headed",
