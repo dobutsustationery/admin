@@ -30,12 +30,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify TypeScript configuration
-        run: npm run check
-
-      - name: Verify linting configuration
-        run: npm run lint
-
       - name: Display environment info
         run: |
           echo "Node version: $(node --version)"
