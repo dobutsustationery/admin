@@ -89,33 +89,7 @@ jobs:
         run: npx playwright test
         env:
           CI: true
-        continue-on-error: true
         id: playwright_tests
-
-      - name: Check for visual regression failures
-        if: steps.playwright_tests.outcome == 'failure'
-        run: |
-          echo "⚠️ Tests failed - checking for visual regression issues"
-          
-          # Check if there are snapshot differences
-          if find test-results -name "*-diff.png" 2>/dev/null | grep -q .; then
-            echo "📸 Visual regression detected!"
-            echo "VISUAL_REGRESSION=true" >> $GITHUB_ENV
-          else
-            echo "No visual regression issues found"
-            # Re-run to get proper exit code if not visual regression
-            npx playwright test
-          fi
-
-      - name: Upload visual regression diffs
-        if: env.VISUAL_REGRESSION == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: visual-regression-diffs
-          path: |
-            test-results/**/*-diff.png
-            test-results/**/*-actual.png
-          retention-days: 30
 
       - name: Stop Firebase Emulators
         if: always()
