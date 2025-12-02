@@ -159,21 +159,40 @@ test.describe("Subtypes Page", () => {
 
     // Wait for any images on the page to load
     console.log("   ⏳ Waiting for images to load...");
-    await page.evaluate(() => {
+    
+    // Log all images on the page before waiting
+    const imageSrcs = await page.evaluate(() => {
+      return Array.from(document.images).map(img => img.src);
+    });
+    console.log(`   Found ${imageSrcs.length} images on page`);
+    
+    const imageLoadResults = await page.evaluate(() => {
       return Promise.all(
-        Array.from(document.images).map((img) => {
-          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+        Array.from(document.images).map((img, index) => {
+          if (img.complete && img.naturalWidth > 0) {
+            return Promise.resolve({ index, src: img.src, status: 'already-loaded', width: img.naturalWidth });
+          }
           return new Promise((resolve) => {
-            img.addEventListener("load", resolve);
-            img.addEventListener("error", () => {
-              console.log(`Image failed to load: ${img.src}`);
-              resolve();
+            img.addEventListener("load", () => {
+              resolve({ index, src: img.src, status: 'loaded', width: img.naturalWidth });
             });
-            setTimeout(resolve, 10000); // Increased timeout to 10 seconds
+            img.addEventListener("error", () => {
+              resolve({ index, src: img.src, status: 'failed', width: 0 });
+            });
+            setTimeout(() => {
+              resolve({ index, src: img.src, status: 'timeout', width: img.naturalWidth || 0 });
+            }, 10000);
           });
         }),
       );
     });
+    
+    // Log results
+    const failed = imageLoadResults.filter(r => r.status === 'failed' || r.status === 'timeout');
+    if (failed.length > 0) {
+      console.log(`   ⚠️  ${failed.length} images failed or timed out:`);
+      failed.forEach(f => console.log(`      - ${f.status}: ${f.src}`));
+    }
     console.log("   ✓ Images loaded");
 
     await screenshots.capture(page, "signed-in-state", {
@@ -220,22 +239,42 @@ test.describe("Subtypes Page", () => {
 
     // Wait for all images to load before taking screenshot
     console.log("   ⏳ Waiting for all images to load...");
-    await page.evaluate(() => {
+    
+    // Log all images on the page before waiting
+    const allImageSrcs = await page.evaluate(() => {
+      return Array.from(document.images).map(img => img.src);
+    });
+    console.log(`   Found ${allImageSrcs.length} images on page`);
+    
+    const allImageLoadResults = await page.evaluate(() => {
       return Promise.all(
-        Array.from(document.images).map((img) => {
-          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+        Array.from(document.images).map((img, index) => {
+          if (img.complete && img.naturalWidth > 0) {
+            return Promise.resolve({ index, src: img.src, status: 'already-loaded', width: img.naturalWidth });
+          }
           return new Promise((resolve) => {
-            img.addEventListener("load", resolve);
-            img.addEventListener("error", () => {
-              console.log(`Image failed to load: ${img.src}`);
-              resolve();
+            img.addEventListener("load", () => {
+              resolve({ index, src: img.src, status: 'loaded', width: img.naturalWidth });
             });
-            setTimeout(resolve, 30000); // Increased timeout to 30 seconds
+            img.addEventListener("error", () => {
+              resolve({ index, src: img.src, status: 'failed', width: 0 });
+            });
+            setTimeout(() => {
+              resolve({ index, src: img.src, status: 'timeout', width: img.naturalWidth || 0 });
+            }, 30000);
           });
         }),
       );
     });
-    console.log("   ✓ All images loaded");
+    
+    // Log results
+    const allFailed = allImageLoadResults.filter(r => r.status === 'failed' || (r.status === 'timeout' && r.width === 0));
+    if (allFailed.length > 0) {
+      console.log(`   ⚠️  ${allFailed.length} images failed or timed out:`);
+      allFailed.forEach(f => console.log(`      - ${f.status}: ${f.src}`));
+    }
+    const loaded = allImageLoadResults.filter(r => r.width > 0);
+    console.log(`   ✓ ${loaded.length}/${allImageLoadResults.length} images loaded successfully`);
 
     await screenshots.capture(page, "subtypes-loaded", {
       programmaticCheck: async () => {
