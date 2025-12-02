@@ -527,7 +527,7 @@ test.describe("CSV Export Page with Google Drive", () => {
     await page.reload({ waitUntil: "load" });
     console.log("   ✓ User authenticated");
 
-    await screenshots.capture(page, "authenticated-drive-ui", {
+    await screenshots.capture(page, "004-authenticated-drive-ui", {
       programmaticCheck: async () => {
         await page.locator('h1:has-text("CSV Export")').waitFor({ state: 'visible', timeout: 5000 });
         const connectButton = page.locator('button:has-text("Connect to Google Drive")');
@@ -556,7 +556,7 @@ test.describe("CSV Export Page with Google Drive", () => {
     await page.reload({ waitUntil: "load" });
     console.log("   ✓ Mock OAuth token injected");
 
-    await screenshots.capture(page, "connected-to-drive", {
+    await screenshots.capture(page, "005-connected-to-drive", {
       programmaticCheck: async () => {
         await page.locator('h1:has-text("CSV Export")').waitFor({ state: 'visible', timeout: 5000 });
         
@@ -609,7 +609,7 @@ test.describe("CSV Export Page with Google Drive", () => {
         // Wait for upload to complete
         await page.waitForTimeout(2000);
         
-        await screenshots.capture(page, "upload-complete", {
+        await screenshots.capture(page, "006-upload-complete", {
           programmaticCheck: async () => {
             // Check for success message or uploaded file in list
             const successIndicators = [
