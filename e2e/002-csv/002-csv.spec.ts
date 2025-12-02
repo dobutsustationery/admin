@@ -23,6 +23,18 @@ test.describe("CSV Export Page with Google Drive", () => {
     return errorText.includes("Component auth has not been registered yet");
   };
 
+  // Helper to check if error is expected from emulator/testing environment
+  const isExpectedTestEnvironmentError = (errorText: string): boolean => {
+    return (
+      errorText.includes("ERR_NAME_NOT_RESOLVED") ||
+      errorText.includes("Failed to load resource") ||
+      // Expected Drive API errors when Drive is not configured
+      (errorText.includes("googleapis.com") && errorText.includes("Failed to load")) ||
+      // Expected Firestore emulator connection messages
+      errorText.includes("Could not reach Cloud Firestore backend")
+    );
+  };
+
   /**
    * User Story: Admin views CSV export with Google Drive integration
    *
@@ -356,13 +368,7 @@ test.describe("CSV Export Page with Google Drive", () => {
     const significantErrors = consoleErrors.filter(
       (error) =>
         !isTransientAuthError(error) &&
-        !error.includes("ERR_NAME_NOT_RESOLVED") &&
-        !error.includes("Failed to load resource") &&
-        // Filter expected Drive API errors when Drive is not configured
-        // Note: This is filtering error messages, not validating URLs for security
-        !(error.includes("googleapis.com") && error.includes("Failed to load")) &&
-        // Filter expected Firestore emulator connection messages
-        !error.includes("Could not reach Cloud Firestore backend"),
+        !isExpectedTestEnvironmentError(error),
     );
 
     if (consoleErrors.length > 0) {
