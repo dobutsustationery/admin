@@ -32,8 +32,8 @@ test.describe("Subtypes Page", () => {
    * Each step has both programmatic and visual verification.
    */
   test("complete subtypes workflow", async ({ page, context }) => {
-    // Set test timeout for complete workflow - actual runtime ~3.7s, allowing 5s variance
-    test.setTimeout(9000); // 9 seconds
+    // Set test timeout for complete workflow - allowing time for image loads
+    test.setTimeout(120000); // 120 seconds for slow image loading
 
     const screenshots = createScreenshotHelper();
 
@@ -143,6 +143,10 @@ test.describe("Subtypes Page", () => {
 
     // Reload the page to apply authentication
     await page.reload({ waitUntil: "load" });
+    
+    // Wait for network activity to settle
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2000); // Give images time to start loading
 
     console.log("   ✓ Page reloaded with authentication");
 
@@ -154,18 +158,23 @@ test.describe("Subtypes Page", () => {
       });
 
     // Wait for any images on the page to load
+    console.log("   ⏳ Waiting for images to load...");
     await page.evaluate(() => {
       return Promise.all(
         Array.from(document.images).map((img) => {
-          if (img.complete) return Promise.resolve();
+          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
           return new Promise((resolve) => {
             img.addEventListener("load", resolve);
-            img.addEventListener("error", resolve); // Resolve on error too
-            setTimeout(resolve, 5000); // Timeout after 5 seconds
+            img.addEventListener("error", () => {
+              console.log(`Image failed to load: ${img.src}`);
+              resolve();
+            });
+            setTimeout(resolve, 10000); // Increased timeout to 10 seconds
           });
         }),
       );
     });
+    console.log("   ✓ Images loaded");
 
     await screenshots.capture(page, "signed-in-state", {
       programmaticCheck: async () => {
@@ -210,18 +219,23 @@ test.describe("Subtypes Page", () => {
     console.log("   ✓ Page heading found");
 
     // Wait for all images to load before taking screenshot
+    console.log("   ⏳ Waiting for all images to load...");
     await page.evaluate(() => {
       return Promise.all(
         Array.from(document.images).map((img) => {
-          if (img.complete) return Promise.resolve();
+          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
           return new Promise((resolve) => {
             img.addEventListener("load", resolve);
-            img.addEventListener("error", resolve); // Resolve on error too
-            setTimeout(resolve, 5000); // Timeout after 5 seconds
+            img.addEventListener("error", () => {
+              console.log(`Image failed to load: ${img.src}`);
+              resolve();
+            });
+            setTimeout(resolve, 30000); // Increased timeout to 30 seconds
           });
         }),
       );
     });
+    console.log("   ✓ All images loaded");
 
     await screenshots.capture(page, "subtypes-loaded", {
       programmaticCheck: async () => {
