@@ -32,8 +32,8 @@ test.describe("Orders Page", () => {
    * Each step has both programmatic and visual verification.
    */
   test("complete orders workflow", async ({ page, context }) => {
-    // Set test timeout for complete workflow
-    test.setTimeout(30000); // 30 seconds
+    // Set test timeout for complete workflow - actual runtime ~2.7s, allowing 5s variance
+    test.setTimeout(8000); // 8 seconds
 
     const screenshots = createScreenshotHelper();
 

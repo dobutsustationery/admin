@@ -32,8 +32,8 @@ test.describe("CSV Export Page", () => {
    * Each step has both programmatic and visual verification.
    */
   test("complete CSV export workflow", async ({ page, context }) => {
-    // Set test timeout for complete workflow
-    test.setTimeout(30000); // 30 seconds
+    // Set test timeout for complete workflow - actual runtime ~3.5s, allowing 5s variance
+    test.setTimeout(9000); // 9 seconds
 
     const screenshots = createScreenshotHelper();
 
