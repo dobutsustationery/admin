@@ -19,7 +19,7 @@
 
   let itemKeys: string[] = [];
   let csv = "";
-  let filename = `inventory-export-${new Date().toISOString().split('T')[0]}.csv`;
+  let filename = "";
   let driveConfigured = false;
   let authenticated = false;
   let driveFiles: DriveFile[] = [];
@@ -50,6 +50,9 @@
   }
 
   onMount(async () => {
+    // Set default filename with current date
+    filename = `inventory-export-${new Date().toISOString().split('T')[0]}.csv`;
+    
     // Check if Drive is configured
     driveConfigured = isDriveConfigured();
     
@@ -83,9 +86,12 @@
       driveFiles = await listFilesInFolder(token.access_token);
     } catch (e) {
       console.error('Error loading files:', e);
-      error = `Failed to load files: ${e instanceof Error ? e.message : String(e)}`;
-      // Token might be expired
-      if (error.includes('401')) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      error = `Failed to load files: ${errorMsg}`;
+      // Token might be expired - check for 401 or unauthorized errors
+      if (errorMsg.toLowerCase().includes('401') || 
+          errorMsg.toLowerCase().includes('unauthorized') ||
+          errorMsg.toLowerCase().includes('expired')) {
         clearToken();
         authenticated = false;
       }
@@ -141,10 +147,13 @@
       await loadFiles();
     } catch (e) {
       console.error('Error uploading file:', e);
-      error = `Failed to upload file: ${e instanceof Error ? e.message : String(e)}`;
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      error = `Failed to upload file: ${errorMsg}`;
       
-      // Token might be expired
-      if (error.includes('401')) {
+      // Token might be expired - check for 401 or unauthorized errors
+      if (errorMsg.toLowerCase().includes('401') || 
+          errorMsg.toLowerCase().includes('unauthorized') ||
+          errorMsg.toLowerCase().includes('expired')) {
         clearToken();
         authenticated = false;
       }

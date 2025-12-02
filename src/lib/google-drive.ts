@@ -63,7 +63,19 @@ export function getStoredToken(): GoogleDriveToken | null {
     const tokenJson = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!tokenJson) return null;
     
-    const token = JSON.parse(tokenJson) as GoogleDriveToken;
+    const parsed = JSON.parse(tokenJson);
+    
+    // Validate token structure
+    if (!parsed || typeof parsed !== 'object' ||
+        typeof parsed.access_token !== 'string' ||
+        typeof parsed.expires_in !== 'number' ||
+        typeof parsed.expires_at !== 'number') {
+      console.error('Invalid token structure in localStorage');
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return null;
+    }
+    
+    const token = parsed as GoogleDriveToken;
     
     // Check if token is expired
     if (token.expires_at && Date.now() > token.expires_at) {
@@ -74,6 +86,7 @@ export function getStoredToken(): GoogleDriveToken | null {
     return token;
   } catch (e) {
     console.error('Error retrieving stored token:', e);
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
     return null;
   }
 }
@@ -224,8 +237,8 @@ export async function uploadCSVToDrive(
     parents: [FOLDER_ID]
   };
   
-  // Create multipart request body
-  const boundary = '-------314159265358979323846';
+  // Create multipart request body with random boundary
+  const boundary = `----FormBoundary${Math.random().toString(36).substring(2)}`;
   const delimiter = `\r\n--${boundary}\r\n`;
   const closeDelimiter = `\r\n--${boundary}--`;
   

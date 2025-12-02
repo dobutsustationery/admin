@@ -358,7 +358,9 @@ test.describe("CSV Export Page with Google Drive", () => {
         !isTransientAuthError(error) &&
         !error.includes("ERR_NAME_NOT_RESOLVED") &&
         !error.includes("Failed to load resource") &&
-        !error.includes("googleapis.com"), // Expected when Drive is not configured
+        // Filter expected Drive API errors when Drive is not configured
+        // Note: This is filtering error messages, not validating URLs for security
+        !(error.includes("googleapis.com") && error.includes("Failed to load")),
     );
 
     if (consoleErrors.length > 0) {
