@@ -27,7 +27,7 @@ The application currently consists of the following routes:
 3. **Inconsistent Loading**: Each route reload triggers a full broadcast action replay, which is time-consuming
 4. **No Progress Indication**: Users don't know when the application has fully loaded and is ready to use
 5. **No Context Awareness**: Users can't easily see where they are in the application
-6. **Responsive Design Gaps**: Mobile and tablet experiences are not optimized
+6. **Responsive Design Gaps**: Mobile experience is not optimized
 
 ## Proposed Navigation Structure
 
@@ -60,7 +60,7 @@ The navigation menu will include the following primary items, organized logicall
 
 ### Navigation Behavior
 
-#### Desktop/Tablet (≥768px)
+#### Desktop (≥768px)
 - Horizontal navigation bar with text labels and icons
 - All menu items visible at once
 - Active route highlighted with different background color or underline
@@ -143,7 +143,7 @@ Small indicators showing:
 
 ### Dashboard Layout
 
-**Desktop (≥1024px)**:
+**Desktop (≥768px)**:
 ```
 +------------------------------------------+
 |          Navigation Header               |
@@ -154,23 +154,6 @@ Small indicators showing:
 +------------------------------------------+
 | Recent Activity          | System Status |  ← Activity Feed + Status
 |                          |               |
-+------------------------------------------+
-```
-
-**Tablet (768px - 1023px)**:
-```
-+------------------------------------------+
-|          Navigation Header               |
-+------------------------------------------+
-| [SKUs]   [Items]                        |  ← Metrics Cards (2 across, 2 rows)
-| [Low Stock] [Shipped]                   |
-+------------------------------------------+
-| [Add Inv]    [View Inv]                 |  ← Quick Actions (2 across, 2 rows)
-| [Orders]     [Export]                   |
-+------------------------------------------+
-| Recent Activity                          |  ← Activity Feed (full width)
-+------------------------------------------+
-| System Status                            |  ← Status (full width)
 +------------------------------------------+
 ```
 
@@ -298,8 +281,7 @@ All routes should:
 
 Define consistent breakpoints:
 - **Mobile**: 0px - 767px (single column, touch-optimized)
-- **Tablet**: 768px - 1023px (flexible columns, hybrid interaction)
-- **Desktop**: 1024px+ (multi-column, mouse-optimized)
+- **Desktop**: 768px+ (multi-column, mouse-optimized)
 
 ### Mobile Optimizations
 
@@ -327,13 +309,6 @@ Define consistent breakpoints:
    - Native input types for better mobile keyboards
    - Autofocus on relevant fields
    - Clear input validation
-
-### Tablet Optimizations
-
-- Two-column layouts where appropriate
-- Larger touch targets (but not as large as mobile)
-- Support both portrait and landscape orientations
-- Utilize available screen space without cramming
 
 ### Desktop Optimizations
 
@@ -514,7 +489,7 @@ The UI overhaul will be considered successful if it achieves:
 2. **Efficiency**: Experienced users can navigate to any feature in ≤2 clicks
 3. **Performance**: Route navigation feels instant (no visible loading)
 4. **Clarity**: Loading progress is visible and informative
-5. **Responsiveness**: Application is fully functional on mobile, tablet, and desktop
+5. **Responsiveness**: Application is fully functional on mobile and desktop
 6. **Accessibility**: Meets WCAG 2.1 Level AA standards
 
 ## Open Questions and Future Considerations
