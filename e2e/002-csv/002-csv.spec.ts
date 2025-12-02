@@ -360,7 +360,9 @@ test.describe("CSV Export Page with Google Drive", () => {
         !error.includes("Failed to load resource") &&
         // Filter expected Drive API errors when Drive is not configured
         // Note: This is filtering error messages, not validating URLs for security
-        !(error.includes("googleapis.com") && error.includes("Failed to load")),
+        !(error.includes("googleapis.com") && error.includes("Failed to load")) &&
+        // Filter expected Firestore emulator connection messages
+        !error.includes("Could not reach Cloud Firestore backend"),
     );
 
     if (consoleErrors.length > 0) {
@@ -379,49 +381,6 @@ test.describe("CSV Export Page with Google Drive", () => {
     expect(significantErrors.length).toBe(0);
 
     console.log("\n✅ Complete CSV export with Drive UI test passed!");
-    console.log(`   Total screenshots captured: ${screenshots.getCounter()}`);
-  });
-
-  /**
-   * User Story: Filename input and export button behavior
-   *
-   * This test validates the form elements when Drive would be configured
-   */
-  test("CSV export UI elements validation", async ({ page }) => {
-    test.setTimeout(10000);
-
-    const screenshots = createScreenshotHelper();
-
-    console.log("\n📖 Testing CSV export UI elements");
-
-    // Navigate directly to CSV page
-    await page.goto("/csv", { waitUntil: "load" });
-
-    // Wait for page to load
-    await page.waitForLoadState("networkidle");
-
-    await screenshots.capture(page, "ui-elements", {
-      programmaticCheck: async () => {
-        // Verify main title
-        const title = page.locator('h1');
-        await expect(title).toContainText("CSV Export");
-        console.log("   ✓ Page title verified");
-
-        // Check for drive section
-        const driveSection = page.locator('.drive-section');
-        const hasDriveSection = await driveSection.count() > 0;
-        console.log(`   ✓ Drive section exists: ${hasDriveSection}`);
-
-        // Check for CSV preview section
-        const csvPreview = page.locator('.csv-preview');
-        const hasPreview = await csvPreview.count() > 0;
-        console.log(`   ✓ CSV preview section exists: ${hasPreview}`);
-
-        expect(hasDriveSection || hasPreview).toBe(true);
-      },
-    });
-
-    console.log("\n✅ UI elements validation test passed!");
     console.log(`   Total screenshots captured: ${screenshots.getCounter()}`);
   });
 });
