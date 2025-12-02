@@ -225,9 +225,10 @@ All screenshots use Playwright's visual regression testing with **zero-pixel tol
 **⚠️ IMPORTANT: Baseline Screenshot Responsibility**
 
 - **Test authors** are responsible for generating initial baseline screenshots when creating new tests
-- **UI change PRs** must regenerate and commit updated baselines when visual changes occur
+- **Developers making UI/code changes** MUST regenerate and commit updated baselines when their changes cause visual differences
 - **CI will NOT regenerate baselines** - it only compares against existing baselines
-- If baselines don't exist, tests will fail in CI
+- If baselines don't exist or don't match, tests will fail in CI
+- **It is YOUR responsibility** to ensure baselines are updated when you make changes that affect them
 
 **Generating/Updating baselines:**
 ```bash

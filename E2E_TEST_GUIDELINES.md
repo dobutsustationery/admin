@@ -314,6 +314,14 @@ while (true) {
 
 ## Updating Existing Tests
 
+**⚠️ DEVELOPER RESPONSIBILITY**: When you make code changes that affect the visual appearance of the application, YOU are responsible for regenerating and committing the updated baseline screenshots. This includes:
+- UI component changes
+- CSS/styling modifications  
+- Data model changes that affect displayed content
+- Any other change that alters the visual output
+
+**DO NOT** commit code changes without updating baselines if visual changes occur. CI will fail if baselines don't match.
+
 When you change the UI and need to update baselines:
 
 1. **Ensure emulators are running and test data is loaded**:
@@ -421,13 +429,24 @@ Before submitting a PR with a new E2E test, verify:
 - [ ] **Every screenshot includes programmatic verification via `programmaticCheck`**
 - [ ] Test waits for specific conditions (no arbitrary delays)
 - [ ] Test does not rely on retries
-- [ ] Baseline screenshots generated with `--update-snapshots`
+- [ ] **Baseline screenshots generated with `--prefix=400`**
 - [ ] Baseline screenshots stored in `e2e/###-<testname>/screenshots/`
-- [ ] Baseline screenshots committed to git
+- [ ] **Baseline screenshots committed to git** (YOU are responsible for this)
 - [ ] Test documentation created in `e2e/###-<testname>/README.md`
 - [ ] **README includes direct links to screenshots** (e.g., `![Screenshot](screenshots/000-example.png)`)
 - [ ] Test passes consistently when run multiple times
 - [ ] Test passes with zero-pixel tolerance
+
+## Checklist for UI/Code Changes
+
+Before submitting a PR with code changes that affect visual output:
+
+- [ ] Run affected E2E tests to identify visual changes
+- [ ] Review visual diffs in `test-results/` to verify changes are intentional
+- [ ] **Regenerate baselines using `--prefix=400`** (see "Updating Existing Tests" section)
+- [ ] **Commit updated baseline screenshots** (YOU are responsible for this)
+- [ ] Verify all E2E tests pass with updated baselines
+- [ ] Update test documentation if the visual changes require explanation
 
 ## Example: Complete Test
 

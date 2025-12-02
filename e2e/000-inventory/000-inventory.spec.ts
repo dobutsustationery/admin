@@ -317,7 +317,8 @@ test.describe("Inventory Page", () => {
       (error) =>
         !isTransientAuthError(error) &&
         !error.includes("ERR_NAME_NOT_RESOLVED") &&
-        !error.includes("Failed to load resource"),
+        !error.includes("Failed to load resource") &&
+        !error.includes("Could not reach Cloud Firestore backend"),
     );
 
     if (consoleErrors.length > 0) {
