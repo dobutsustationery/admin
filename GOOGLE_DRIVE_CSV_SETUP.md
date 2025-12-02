@@ -95,12 +95,12 @@ For production deployment, set environment variables in your hosting platform (e
 
 ```env
 # Production Google Drive Integration (DO NOT COMMIT THESE VALUES)
-VITE_GOOGLE_DRIVE_CLIENT_ID=<your-real-client-id>.apps.googleusercontent.com
-VITE_GOOGLE_DRIVE_FOLDER_ID=<your-real-folder-id>
+VITE_GOOGLE_DRIVE_CLIENT_ID=your-real-client-id.apps.googleusercontent.com
+VITE_GOOGLE_DRIVE_FOLDER_ID=your-real-folder-id
 VITE_GOOGLE_DRIVE_SCOPES=https://www.googleapis.com/auth/drive.file
 ```
 
-Replace the values from steps 2 and 4 above.
+Replace `your-real-client-id` and `your-real-folder-id` with the values from steps 2 and 4 above.
 
 **For development/testing:** Use the mock credentials that are already configured in `.env.local` and `.env.emulator`. These show the UI without requiring real Google API access.
 
