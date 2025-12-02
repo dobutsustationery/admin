@@ -4,6 +4,35 @@
 
 This implementation provides an MVP (Minimal Viable Product) for exporting inventory data directly to Google Drive. Users can authenticate with Google, enter a filename, and upload CSV files to a designated Drive folder.
 
+## Testing vs Production
+
+### Test/Development Environment (Default)
+
+The repository includes **mock credentials** that are safe to commit and use for development/testing:
+
+```env
+VITE_GOOGLE_DRIVE_CLIENT_ID=test-client-id.apps.googleusercontent.com
+VITE_GOOGLE_DRIVE_FOLDER_ID=test-folder-id-12345
+VITE_GOOGLE_DRIVE_SCOPES=https://www.googleapis.com/auth/drive.file
+```
+
+**These mock credentials:**
+- ✅ Show the Google Drive UI in the application
+- ✅ Display "Connect to Google Drive" button and export interface
+- ✅ Allow E2E tests to verify UI components
+- ✅ Are safe to commit to the repository (not real API credentials)
+- ❌ Will not actually connect to Google Drive (OAuth will fail with real Google servers)
+
+This allows developers and CI to see and test the Drive integration UI without requiring actual Google API credentials.
+
+### Production Environment
+
+For production use with **real Google Drive functionality**, you need to:
+
+1. Create actual OAuth credentials in Google Cloud Console
+2. Replace the mock values with real credentials in production environment variables
+3. **Never commit real API credentials to the repository**
+
 ## Features
 
 - OAuth 2.0 authentication with Google Drive
@@ -13,7 +42,9 @@ This implementation provides an MVP (Minimal Viable Product) for exporting inven
 - Token management with automatic expiration handling
 - CSV preview retained for convenience
 
-## Setup Instructions
+## Setup Instructions for Production
+
+**Note:** The default mock credentials are already configured for development/testing. Follow these steps only if you need **actual Google Drive functionality** in production.
 
 ### 1. Enable Google Drive API
 
@@ -56,20 +87,22 @@ This implementation provides an MVP (Minimal Viable Product) for exporting inven
    - URL format: `https://drive.google.com/drive/folders/FOLDER_ID_HERE`
    - Copy the `FOLDER_ID_HERE` part
 
-### 5. Configure Environment Variables
+### 5. Configure Production Environment Variables
 
-Add the following to your environment files (`.env.local`, `.env.production`, etc.):
+**Important:** Never commit real API credentials to the repository.
+
+For production deployment, set environment variables in your hosting platform (e.g., Firebase Hosting, Vercel, Netlify):
 
 ```env
-# Google Drive Integration
-VITE_GOOGLE_DRIVE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-VITE_GOOGLE_DRIVE_FOLDER_ID=your-folder-id-from-drive-url
+# Production Google Drive Integration (DO NOT COMMIT THESE VALUES)
+VITE_GOOGLE_DRIVE_CLIENT_ID=<your-real-client-id>.apps.googleusercontent.com
+VITE_GOOGLE_DRIVE_FOLDER_ID=<your-real-folder-id>
 VITE_GOOGLE_DRIVE_SCOPES=https://www.googleapis.com/auth/drive.file
 ```
 
-Replace:
-- `your-client-id.apps.googleusercontent.com` with your OAuth Client ID
-- `your-folder-id-from-drive-url` with your Drive folder ID
+Replace the values from steps 2 and 4 above.
+
+**For development/testing:** Use the mock credentials that are already configured in `.env.local` and `.env.emulator`. These show the UI without requiring real Google API access.
 
 ## User Workflow
 

@@ -88,6 +88,12 @@ export default defineConfig({
       VITE_EMULATOR_FIRESTORE_PORT: "8080",
       VITE_EMULATOR_AUTH_HOST: "localhost",
       VITE_EMULATOR_AUTH_PORT: "9099",
+      // Mock Google Drive credentials for E2E testing
+      // These show the Drive UI in "configured but not authenticated" state
+      // No actual Drive API calls are made in tests
+      VITE_GOOGLE_DRIVE_CLIENT_ID: "test-client-id.apps.googleusercontent.com",
+      VITE_GOOGLE_DRIVE_FOLDER_ID: "test-folder-id-12345",
+      VITE_GOOGLE_DRIVE_SCOPES: "https://www.googleapis.com/auth/drive.file",
     },
   },
 });
