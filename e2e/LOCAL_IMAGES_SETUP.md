@@ -40,6 +40,8 @@ Use the special test runner that loads data with rewritten URLs:
 bash e2e/run-tests-local-images.sh
 ```
 
+The test runner automatically creates the necessary symlink.
+
 Or manually:
 
 ```bash
@@ -48,6 +50,9 @@ npm run emulators &
 
 # Load test data with local image URLs
 node e2e/helpers/load-test-data-with-local-images.js --prefix=400
+
+# Create symlink for serving images
+ln -sf ../e2e/test-images static/test-images
 
 # Build and run tests
 npm run build:local
@@ -74,10 +79,10 @@ npx playwright test
 
 - `e2e/helpers/download-test-images.js` - Image download script
 - `e2e/helpers/load-test-data-with-local-images.js` - Modified data loader
-- `e2e/run-tests-local-images.sh` - Test runner for local images
+- `e2e/run-tests-local-images.sh` - Test runner for local images (creates symlink automatically)
 - `e2e/test-images/` - Downloaded images (gitignored)
 - `e2e/test-images/url-mapping.json` - URL rewrite mapping
-- `static/test-images/` - Symlink for serving images
+- `static/test-images/` - Symlink for serving images (created dynamically, not in git)
 
 ## Maintenance
 
