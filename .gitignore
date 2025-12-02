@@ -38,3 +38,4 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 e2e/test-images/
+static/test-images

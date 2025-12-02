@@ -52,6 +52,14 @@ echo "📦 Loading test data into emulator with local images..."
 node e2e/helpers/load-test-data-with-local-images.js --prefix=400
 
 echo ""
+echo "🔗 Creating symlink for test images..."
+# Remove existing symlink if present
+rm -f static/test-images
+# Create symlink to serve downloaded images
+ln -s ../e2e/test-images static/test-images
+echo "   ✓ Symlink created: static/test-images -> e2e/test-images"
+
+echo ""
 echo "🏗️  Building application for emulator mode..."
 npm run build:local
 
