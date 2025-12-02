@@ -1,0 +1,49 @@
+---
+name: Copilot Setup Steps
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  setup-environment:
+    name: Setup Development Environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify TypeScript configuration
+        run: npm run check
+
+      - name: Verify linting configuration
+        run: npm run lint
+
+      - name: Display environment info
+        run: |
+          echo "Node version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+          echo "Working directory: $(pwd)"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref }}"
+
+      - name: Setup complete
+        run: echo "✓ Environment setup completed successfully"
