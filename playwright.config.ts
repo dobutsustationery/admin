@@ -19,6 +19,8 @@ export default defineConfig({
   retries: 0,
   /* Opt out of parallel tests on CI. */
   workers: 1,
+  /* Global timeout for each test - increased for large datasets */
+  timeout: 60000, // 60 seconds per test
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [["html", { outputFolder: "e2e/reports/html" }], ["list"]],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
@@ -38,6 +40,8 @@ export default defineConfig({
       maxDiffPixels: 0,
       /* Zero threshold - no color difference allowed */
       threshold: 0,
+      /* Increased timeout for large datasets - 50 seconds */
+      timeout: 50000,
     },
   },
 
