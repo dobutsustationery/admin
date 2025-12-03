@@ -12,19 +12,19 @@ This document presents timing comparison results for loading different amounts o
 
 | Configuration | Records | Loading Time |
 |--------------|---------|--------------|
-| Current (400 records) | 400 broadcast + 4 users + 73 dobutsu | **1.2 seconds** |
-| Maximum (3700 records) | 3700 broadcast + 4 users + 73 dobutsu | **4.3 seconds** |
+| Current (400 records) | 400 broadcast + 4 users + 73 dobutsu | **0.89 seconds** |
+| Maximum (3700 records) | 3700 broadcast + 4 users + 73 dobutsu | **2.02 seconds** |
 
 ### Key Findings
 
 1. **Data Loading Time Difference:** 
-   - 400 records: ~1.2 seconds
-   - 3700 records: ~4.3 seconds
-   - **Difference: ~3.1 seconds (3.5x slower)**
+   - 400 records: ~0.9 seconds
+   - 3700 records: ~2.0 seconds
+   - **Difference: ~1.1 seconds (2.2x slower)**
 
-2. **The time increase is modest:**
+2. **The time increase is very modest:**
    - 9.25x more data to load (3700 vs 400 records)
-   - Only 3.5x slower due to efficient batching
+   - Only 2.2x slower due to efficient batching
    - Network/emulator overhead is minimal with local emulator
 
 ## Evaluation
@@ -35,13 +35,13 @@ This document presents timing comparison results for loading different amounts o
 - Tests performance with larger datasets
 
 ### Cons of Using 3700 Records
-- Slightly slower test setup (~3 seconds additional time)
-- Minor impact on development iteration cycles
+- Slightly slower test setup (~1 second additional time)
+- Minimal impact on development iteration cycles
 - Most e2e tests don't require full historical data
 
 ## Recommendation
 
-The timing difference is **minimal** (~3 seconds), so either configuration is acceptable:
+The timing difference is **very minimal** (~1 second), so either configuration is acceptable:
 
 - **Use 400 records** for slightly faster iteration during active development
 - **Use 3700 records** when you need more comprehensive data coverage
