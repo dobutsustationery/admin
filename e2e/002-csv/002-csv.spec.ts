@@ -298,13 +298,13 @@ test.describe("CSV Export Page with Google Drive", () => {
         if (driveSectionVisible) {
           console.log("   ✓ Google Drive Export section is visible");
           
-          // Since Drive is not configured in test environment, 
-          // we should see a "not configured" message
-          const notConfigured = page.locator('.not-configured');
-          const notConfiguredVisible = await notConfigured.isVisible().catch(() => false);
+          // With mock credentials configured, we should see the auth prompt
+          // Check for the "Connect to Google Drive" button
+          const connectButton = page.locator('button:has-text("Connect to Google Drive")');
+          const connectButtonVisible = await connectButton.isVisible().catch(() => false);
           
-          if (notConfiguredVisible) {
-            console.log("   ✓ Drive not configured message shown (expected in test env)");
+          if (connectButtonVisible) {
+            console.log("   ✓ Connect to Google Drive button shown (Drive configured with mock credentials)");
           }
         } else {
           console.log("   ⚠️  Google Drive section not visible");
