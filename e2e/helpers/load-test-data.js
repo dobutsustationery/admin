@@ -7,12 +7,17 @@
  * before running E2E tests.
  * 
  * Usage:
- *   node e2e/helpers/load-test-data.js              # Load all data
- *   node e2e/helpers/load-test-data.js --prefix=400 # Load only first 400 broadcast events
+ *   node e2e/helpers/load-test-data.js                    # Load all data
+ *   node e2e/helpers/load-test-data.js --prefix=400       # Load only first 400 broadcast events
+ *   node e2e/helpers/load-test-data.js --match-jancodes=10 # Load records matching JAN codes from first 10 records
  * 
  * The --prefix flag is recommended for faster test data loading. It loads only the first N
  * broadcast events (which must be the oldest/first events chronologically) while still loading
  * all documents from other collections. Use --prefix=400 for typical E2E testing.
+ * 
+ * The --match-jancodes flag loads the first N records, extracts their JAN codes, then loads
+ * all records that reference those JAN codes. This ensures complete test coverage for the
+ * items in the first N records.
  */
 
 import { readFileSync } from "node:fs";
@@ -36,6 +41,45 @@ const db = getFirestore(app);
 console.log(`🔧 Connected to Firestore emulator at ${emulatorHost}`);
 
 /**
+ * Extract JAN code from a broadcast event payload
+ */
+function extractJanCode(broadcast) {
+  const payload = broadcast.data?.payload;
+  if (!payload) return null;
+  
+  // JAN code can be in different locations depending on action type
+  const janCode = payload.item?.janCode || payload.janCode;
+  
+  // Also check payload.id - it may contain the janCode (possibly with suffix)
+  // We need to extract just the numeric part
+  if (janCode) return janCode;
+  
+  // For update_field and other actions, payload.id might be the janCode (or janCode + suffix)
+  // Extract numeric prefix from payload.id
+  if (payload.id && typeof payload.id === 'string') {
+    const match = payload.id.match(/^(\d+)/);
+    if (match) return match[1];
+  }
+  
+  return null;
+}
+
+/**
+ * Filter broadcast events to include only those matching the given JAN codes
+ */
+function filterByJanCodes(broadcasts, janCodes) {
+  const janCodeSet = new Set(janCodes);
+  
+  return broadcasts.filter(broadcast => {
+    const janCode = extractJanCode(broadcast);
+    if (!janCode) return false;
+    
+    // Check if this JAN code is in our set
+    return janCodeSet.has(janCode);
+  });
+}
+
+/**
  * Load test data into Firestore emulator
  */
 async function loadTestData() {
@@ -49,25 +93,68 @@ async function loadTestData() {
   const prefixArg = process.argv.find(arg => arg.startsWith('--prefix='));
   const prefixLimit = prefixArg ? parseInt(prefixArg.split('=')[1], 10) : null;
 
+  // Parse --match-jancodes argument if provided
+  const matchJancodesArg = process.argv.find(arg => arg.startsWith('--match-jancodes='));
+  const matchJancodesLimit = matchJancodesArg ? parseInt(matchJancodesArg.split('=')[1], 10) : null;
+
   console.log(`\n📥 Loading test data from ${testDataPath}...`);
   if (prefixLimit) {
     console.log(`   ⚠️  Prefix mode: Loading only first ${prefixLimit} broadcast events`);
+  }
+  if (matchJancodesLimit) {
+    console.log(`   ⚠️  Match JAN codes mode: Loading records matching JAN codes from first ${matchJancodesLimit} records`);
   }
 
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
 
+  // If using --match-jancodes, extract JAN codes from first N records
+  let janCodesToMatch = null;
+  if (matchJancodesLimit && exportData.collections.broadcast) {
+    const firstNRecords = exportData.collections.broadcast.slice(0, matchJancodesLimit);
+    const janCodesSet = new Set();
+    
+    firstNRecords.forEach(broadcast => {
+      const janCode = extractJanCode(broadcast);
+      if (janCode) {
+        janCodesSet.add(janCode);
+      }
+    });
+    
+    janCodesToMatch = Array.from(janCodesSet);
+    console.log(`   Found ${janCodesToMatch.length} unique JAN codes in first ${matchJancodesLimit} records`);
+    console.log(`   JAN codes: ${janCodesToMatch.slice(0, 10).join(', ')}${janCodesToMatch.length > 10 ? '...' : ''}`);
+  }
+
   for (const [collectionName, documents] of Object.entries(
     exportData.collections,
   )) {
-    // Apply prefix limit only to broadcast collection (must be first events)
-    const docsToLoad = collectionName === 'broadcast' && prefixLimit 
-      ? documents.slice(0, prefixLimit)
-      : documents;
+    let docsToLoad;
+    
+    // Apply appropriate filtering based on mode
+    if (collectionName === 'broadcast') {
+      if (matchJancodesLimit && janCodesToMatch) {
+        // Filter by JAN codes
+        docsToLoad = filterByJanCodes(documents, janCodesToMatch);
+      } else if (prefixLimit) {
+        // Filter by prefix (first N records)
+        docsToLoad = documents.slice(0, prefixLimit);
+      } else {
+        // Load all
+        docsToLoad = documents;
+      }
+    } else {
+      // Non-broadcast collections are always loaded completely
+      docsToLoad = documents;
+    }
     
     console.log(`\n  Loading ${collectionName} (${docsToLoad.length} docs)...`);
-    if (collectionName === 'broadcast' && prefixLimit && documents.length > prefixLimit) {
-      console.log(`    (Skipped ${documents.length - prefixLimit} broadcast events due to --prefix=${prefixLimit})`);
+    if (collectionName === 'broadcast') {
+      if (matchJancodesLimit && janCodesToMatch) {
+        console.log(`    (Filtered ${documents.length} broadcast events to ${docsToLoad.length} matching JAN codes)`);
+      } else if (prefixLimit && documents.length > prefixLimit) {
+        console.log(`    (Skipped ${documents.length - prefixLimit} broadcast events due to --prefix=${prefixLimit})`);
+      }
     }
 
     let batch = db.batch();
