@@ -13,7 +13,7 @@ jobs:
   copilot-setup-steps:
     name: Setup Development Environment
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -76,17 +76,7 @@ jobs:
           done
 
       - name: Load test data into emulator
-        run: node e2e/helpers/load-test-data.js --prefix=400
-
-      - name: Stop Firebase Emulators
-        if: always()
-        run: |
-          if [ -n "$EMULATOR_PID" ]; then
-            kill $EMULATOR_PID 2>/dev/null || true
-          fi
-          # Also kill by port in case PID doesn't work
-          lsof -ti:8080 | xargs kill -9 2>/dev/null || true
-          lsof -ti:9099 | xargs kill -9 2>/dev/null || true
+        run: node e2e/helpers/load-test-data.js --prefix=3700
 
       - name: Display environment info
         run: |
