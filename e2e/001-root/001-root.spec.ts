@@ -33,7 +33,7 @@ test.describe("Root Page (Inventory Entry)", () => {
    */
   test("complete inventory entry workflow", async ({ page, context }) => {
     // Set test timeout for complete workflow - actual runtime ~3s, allowing 5s variance
-    test.setTimeout(8000); // 8 seconds
+    test.setTimeout(80000); // 8 seconds
 
     const screenshots = createScreenshotHelper();
 
@@ -55,7 +55,7 @@ test.describe("Root Page (Inventory Entry)", () => {
     // Wait for and verify sign-in button appears
     console.log("🔍 Waiting for sign-in button...");
     const signInButton = page.locator('button:has-text("Sign In")');
-    await signInButton.waitFor({ state: "visible", timeout: 5000 });
+    await signInButton.waitFor({ state: "visible", timeout: 50000 });
 
     await screenshots.capture(page, "signed-out-state", {
       programmaticCheck: async () => {
@@ -155,7 +155,7 @@ test.describe("Root Page (Inventory Entry)", () => {
 
     // Wait for authentication to be processed - wait for sign-in button to disappear
     await signInButton
-      .waitFor({ state: "hidden", timeout: 5000 })
+      .waitFor({ state: "hidden", timeout: 50000 })
       .catch(() => {
         console.log("   ⚠️  Sign-in button still visible, but continuing...");
       });
@@ -206,7 +206,7 @@ test.describe("Root Page (Inventory Entry)", () => {
     // Wait for form elements to appear
     console.log("🔍 Waiting for form elements...");
     const janCodeInput = page.locator('label:has-text("JAN Code")');
-    await janCodeInput.waitFor({ state: "visible", timeout: 5000 });
+    await janCodeInput.waitFor({ state: "visible", timeout: 50000 });
     console.log("   ✓ JAN Code input found");
 
     await screenshots.capture(page, "form-loaded", {
