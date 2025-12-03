@@ -40,13 +40,47 @@ function handleEnterKey(e: KeyboardEvent) {
     <tr>
         <td>{item.janCode}</td>
         <td>{item.subtype}</td>
-        <td><input class="description" type="text" on:blur={updateField(key, item, "description")} on:keyup={handleEnterKey} value={item.description}></td>
-        <td><img alt="snapshot" height="75" src="{item.image}"/></td>
-        <td><ComboBox label="" value={item.hsCode} id="HSCode" on:value={updateField(key, item, "hsCode")}/></td>
-        <td><input class="pieces" type="number" on:blur={updateField(key, item, "pieces")} on:keyup={handleEnterKey} value={item.pieces}></td>
-        <td><input class="qty" type="number" on:blur={updateField(key, item, "qty")} on:keyup={handleEnterKey} value={item.qty}></td>
+    <td
+      ><input
+        class="description"
+        type="text"
+        on:blur={updateField(key, item, "description")}
+        on:keyup={handleEnterKey}
+        value={item.description}
+      /></td
+    >
+    <td><img alt="snapshot" height="75" src={item.image} /></td>
+    <td
+      ><ComboBox
+        label=""
+        value={item.hsCode}
+        id="HSCode"
+        on:value={updateField(key, item, "hsCode")}
+      /></td
+    >
+    <td
+      ><input
+        class="pieces"
+        type="number"
+        on:blur={updateField(key, item, "pieces")}
+        on:keyup={handleEnterKey}
+        value={item.pieces}
+      /></td
+    >
+    <td
+      ><input
+        class="qty"
+        type="number"
+        on:blur={updateField(key, item, "qty")}
+        on:keyup={handleEnterKey}
+        value={item.qty}
+      /></td
+    >
         <td>{item.shipped}</td>
-        <td class="total">{(item.pieces > 0 ? item.pieces*item.qty : item.qty) - item.shipped}</td>
+    <td class="total"
+      >{(item.pieces > 0 ? item.pieces * item.qty : item.qty) -
+        item.shipped}</td
+    >
     </tr>
 {/if}
 

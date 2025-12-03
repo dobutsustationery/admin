@@ -72,14 +72,13 @@ e2e/
 ├── helpers/                       # Helper scripts and utilities
 │   ├── load-test-data.js         # Loads test data into emulator
 │   └── screenshot-helper.ts      # Helper for numbered screenshots
-├── inventory/                     # Inventory test documentation
-│   └── README.md                 # User story, screenshots, verification
-├── inventory.spec.ts             # Inventory page E2E test
-├── inventory.spec.ts-snapshots/  # Baseline screenshots for inventory test
-│   ├── 000-signed-out-state-chromium-linux.png
-│   ├── 001-signed-in-state-chromium-linux.png
-│   ├── 002-inventory-loaded-chromium-linux.png
-│   └── README.md                 # Snapshot documentation
+├── ###-<testname>/                # Test directory (e.g., 000-inventory)
+│   ├── ###-<testname>.spec.ts    # Test file
+│   ├── README.md                 # User story, screenshot gallery (with direct image links)
+│   └── screenshots/              # Baseline screenshots (committed)
+│       ├── 000-initial-state-chromium-linux.png
+│       ├── 001-after-action-chromium-linux.png
+│       └── ...
 ├── screenshots/                   # Runtime screenshots (gitignored)
 ├── reports/                       # Test reports (gitignored)
 ├── run-tests.sh                   # Full test runner with emulator management
@@ -87,9 +86,9 @@ e2e/
 ```
 
 Each test follows the pattern:
-- `<name>.spec.ts` - The test file with user story
-- `<name>/README.md` - Documentation with screenshot gallery
-- `<name>.spec.ts-snapshots/` - Baseline screenshots (checked into git)
+- `###-<testname>/###-<testname>.spec.ts` - The test file with user story
+- `###-<testname>/README.md` - Documentation with screenshot gallery and direct image links
+- `###-<testname>/screenshots/` - Baseline screenshots (checked into git)
 
 ## Writing Tests
 
@@ -110,8 +109,8 @@ See [e2e/inventory/README.md](inventory/README.md) for a complete example.
 ### Writing a User Story Test
 
 ```typescript
-import { test, expect } from './fixtures/auth';
-import { createScreenshotHelper } from './helpers/screenshot-helper';
+import { test, expect } from '../fixtures/auth';
+import { createScreenshotHelper } from '../helpers/screenshot-helper';
 
 test('complete user workflow', async ({ page }) => {
   const screenshots = createScreenshotHelper();
@@ -162,11 +161,11 @@ screenshots.reset(); // Reset counter to 0
 
 ### Creating Test Documentation
 
-Each test should have a README in `e2e/<test-name>/README.md` that includes:
+Each test should have a README in `e2e/###-<testname>/README.md` that includes:
 
 1. **User Story**: Who, what, why
 2. **Screenshot Gallery**: Each screenshot with:
-   - Image preview
+   - **Direct image link** (e.g., `![Screenshot](screenshots/000-example.png)`)
    - What it shows
    - Programmatic verification performed
    - Manual verification checklist
@@ -174,7 +173,9 @@ Each test should have a README in `e2e/<test-name>/README.md` that includes:
 4. **Running Instructions**: How to run the test
 5. **Troubleshooting**: Common issues
 
-See [e2e/inventory/README.md](inventory/README.md) as a template.
+The README must include direct links to screenshots so users can view them without navigating to other files.
+
+See [e2e/000-inventory/README.md](000-inventory/README.md) as a template.
 
 ### Basic Test Structure
 
@@ -224,29 +225,37 @@ All screenshots use Playwright's visual regression testing with **zero-pixel tol
 **⚠️ IMPORTANT: Baseline Screenshot Responsibility**
 
 - **Test authors** are responsible for generating initial baseline screenshots when creating new tests
-- **UI change PRs** must regenerate and commit updated baselines when visual changes occur
+- **Developers making UI/code changes** MUST regenerate and commit updated baselines when their changes cause visual differences
 - **CI will NOT regenerate baselines** - it only compares against existing baselines
-- If baselines don't exist, tests will fail in CI
+- If baselines don't exist or don't match, tests will fail in CI
+- **It is YOUR responsibility** to ensure baselines are updated when you make changes that affect them
 
 **Generating/Updating baselines:**
 ```bash
 # Generate initial baselines for new tests
+# IMPORTANT: Load test data with --prefix=400 first!
+node e2e/helpers/load-test-data.js --prefix=400
+npm run build:local
 npx playwright test --update-snapshots
 
 # Update baselines after intentional UI changes
+node e2e/helpers/load-test-data.js --prefix=400
+npm run build:local
 npx playwright test --update-snapshots
 
 # Commit the baseline screenshots with your PR
-git add e2e/<test-name>.spec.ts-snapshots/
+git add e2e/###-<testname>/screenshots/
 git commit -m "Add/Update baseline screenshots"
 ```
+
+**⚠️ CRITICAL**: Always use `--prefix=400` when loading test data for baseline generation. This must match the CI configuration to prevent false visual regression failures.
 
 **Reviewing failures:**
 - Check `test-results/` for diff images showing what changed
 - If intentional, update baseline with `--update-snapshots` and commit
 - If a bug, fix the code
 
-See individual test READMEs (e.g., `e2e/inventory/README.md`) for screenshot details.
+See individual test READMEs (e.g., `e2e/000-inventory/README.md`) for screenshot details.
 
 For comprehensive guidelines, see [E2E_TEST_GUIDELINES.md](../E2E_TEST_GUIDELINES.md).
 
@@ -368,29 +377,29 @@ When adding new E2E tests:
    - Screenshots provide visual regression testing
    
 4. **Create test documentation**
-   - Create `e2e/<test-name>/README.md` documenting the user story
-   - Include a screenshot gallery with descriptions
+   - Create `e2e/###-<testname>/README.md` documenting the user story
+   - Include a screenshot gallery with **direct image links** to `screenshots/` subdirectory
    - List what to verify in each screenshot (programmatic + manual)
-   - Use `e2e/inventory/README.md` as a template
+   - Use `e2e/000-inventory/README.md` as a template
    
 5. **Place files correctly**
-   - Test spec: `e2e/<test-name>.spec.ts`
-   - Documentation: `e2e/<test-name>/README.md`
-   - Snapshots auto-generated in: `e2e/<test-name>.spec.ts-snapshots/`
+   - Test spec: `e2e/###-<testname>/###-<testname>.spec.ts`
+   - Documentation: `e2e/###-<testname>/README.md`
+   - Snapshots in: `e2e/###-<testname>/screenshots/`
    
 6. **Baseline screenshots are tracked in git**
-   - Numbered screenshots in `*-snapshots/` directories are committed
+   - Screenshots in `screenshots/` directories are committed
    - These serve as visual regression baselines
    - **⚠️ Test authors must generate and commit initial baselines**
    - **⚠️ UI changes require regenerating and committing updated baselines**
    - **⚠️ CI will NOT regenerate baselines - tests will fail if baselines are missing**
    - Generate/update with `npx playwright test --update-snapshots`
-   - Commit baselines: `git add e2e/<test-name>.spec.ts-snapshots/`
+   - Commit baselines: `git add e2e/###-<testname>/screenshots/`
 
 Example test structure:
 ```typescript
-import { test, expect } from './fixtures/auth';
-import { createScreenshotHelper } from './helpers/screenshot-helper';
+import { test, expect } from '../fixtures/auth';
+import { createScreenshotHelper } from '../helpers/screenshot-helper';
 
 test('my user story', async ({ page }) => {
   const screenshots = createScreenshotHelper();

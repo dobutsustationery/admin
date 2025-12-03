@@ -7,6 +7,7 @@ import { user } from "$lib/globals";
 import {
   type LineItem,
   package_item,
+	delete_empty_order,
   quantify_item,
   retype_item,
 } from "$lib/inventory";
@@ -55,8 +56,23 @@ function updateQuantity(itemKey: string) {
       broadcast(firestore, $user.uid, quantify_item({ orderID, itemKey, qty }));
     }
   };
-}
-function updateSubtype(lineItem: LineItem) {
+  }
+  function deleteOrder() {
+    if (orderID !== null) {
+      // set quantity of all items to zero
+      for (const item of state.inventory.orderIdToOrder[orderID].items) {
+        const qty = 0;
+        const itemKey = item.itemKey;
+        broadcast(
+          firestore,
+          $user.uid,
+          quantify_item({ orderID, itemKey, qty }),
+        );
+      }
+      broadcast(firestore, $user.uid, delete_empty_order({ orderID }));
+    }
+  }
+  function updateSubtype(lineItem: LineItem) {
   return (e: CustomEvent) => {
     const subtype = e.detail as string;
     const itemKey = lineItem.itemKey;
@@ -96,3 +112,5 @@ $: orderItemsR = [...orderItems].reverse();
     />
   {/each}
 </table>
+
+<button on:click={deleteOrder}> Delete Order </button>

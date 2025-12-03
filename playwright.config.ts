@@ -41,6 +41,13 @@ export default defineConfig({
     },
   },
 
+  /* Custom snapshot path template to support new folder structure */
+  /* This places screenshots in e2e/###-testname/screenshots/ alongside the test file */
+  /* Format: {testDir}/{testFileDir}/screenshots/{arg}{ext} */
+  /* We omit {snapshotSuffix} to avoid platform-specific duplicates since we only test on one platform */
+  /* Example: e2e/000-inventory/screenshots/000-initial-state.png */
+  snapshotPathTemplate: "{testDir}/{testFileDir}/screenshots/{arg}{ext}",
+
   /* Configure projects for major browsers */
   projects: [
     {

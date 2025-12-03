@@ -20,23 +20,23 @@ Or manually:
 
 ```bash
 # With emulators already running
-npx playwright test inventory.spec.ts --grep "should match visual snapshot" --update-snapshots
+npx playwright test --update-snapshots
 ```
 
-This creates: `e2e/inventory.spec.ts-snapshots/inventory-Inventory-Page-should-match-visual-snapshot-chromium.png`
+This creates screenshots in `e2e/###-<testname>/screenshots/` for each test (e.g., `e2e/000-inventory/screenshots/`).
 
 ## Commit the Baseline
 
 After generating:
 
 ```bash
-git add e2e/inventory.spec.ts-snapshots/
-git commit -m "Add baseline screenshot for visual regression testing"
+git add e2e/###-<testname>/screenshots/
+git commit -m "Add baseline screenshots for visual regression testing"
 ```
 
 ## On CI/CD
 
-The baseline screenshot must exist in the repository before CI runs. The first PR with visual regression testing should include the baseline screenshot generated locally.
+The baseline screenshots must exist in the repository before CI runs. The first PR with visual regression testing should include the baseline screenshots generated locally.
 
 ## Workflow
 
