@@ -15,17 +15,36 @@ This document presents timing comparison results for loading different amounts o
 | Current (400 records) | 400 broadcast + 4 users + 73 dobutsu | **0.89 seconds** |
 | Maximum (3700 records) | 3700 broadcast + 4 users + 73 dobutsu | **2.02 seconds** |
 
+### Inventory E2E Test (Complete Test Suite Run)
+
+| Configuration | Data Load | Build | Test Execution | Total |
+|--------------|-----------|-------|----------------|-------|
+| 400 records | 0.87s | 9.84s | 15.37s | **26.08s** |
+| 3700 records | 17.26s | 10.10s | 20.50s | **47.86s** |
+
 ### Key Findings
 
 1. **Data Loading Time Difference:** 
    - 400 records: ~0.9 seconds
-   - 3700 records: ~2.0 seconds
-   - **Difference: ~1.1 seconds (2.2x slower)**
+   - 3700 records: ~2.0 seconds (standalone) or ~17.3 seconds (in test suite)
+   - **Difference: ~1.1 seconds (2.2x slower) for standalone loading**
+   - Note: The longer load time in the test suite (17.26s vs 2.02s) may be due to emulator state or other factors
 
-2. **The time increase is very modest:**
+2. **Test Execution Impact:**
+   - 400 records: 15.37 seconds
+   - 3700 records: 20.50 seconds
+   - **Difference: ~5.1 seconds (33% slower)**
+
+3. **Total Test Suite Impact:**
+   - 400 records: 26.08 seconds total
+   - 3700 records: 47.86 seconds total
+   - **Difference: ~21.8 seconds (84% slower)**
+
+4. **The time increase is modest for standalone loading:**
    - 9.25x more data to load (3700 vs 400 records)
-   - Only 2.2x slower due to efficient batching
+   - Only 2.2x slower due to efficient batching (standalone)
    - Network/emulator overhead is minimal with local emulator
+   - Test execution itself is only 33% slower with more data
 
 ## Evaluation
 
@@ -35,19 +54,21 @@ This document presents timing comparison results for loading different amounts o
 - Tests performance with larger datasets
 
 ### Cons of Using 3700 Records
-- Slightly slower test setup (~1 second additional time)
-- Minimal impact on development iteration cycles
+- Slower test setup (~16 seconds additional data loading in test suite)
+- Test execution is 33% slower (5 seconds additional time)
+- Total test suite time is 84% slower (22 seconds additional time)
 - Most e2e tests don't require full historical data
 
 ## Recommendation
 
-The timing difference is **very minimal** (~1 second), so either configuration is acceptable:
+Based on the timing results:
 
-- **Use 400 records** for slightly faster iteration during active development
-- **Use 3700 records** when you need more comprehensive data coverage
+- **Total time impact:** Using 3700 records adds ~22 seconds to each test run (26s → 48s)
+- **For development:** Use 400 records for faster iteration
+- **For comprehensive testing:** Use 3700 records when you need full data coverage
 - The `--prefix` parameter in `e2e/helpers/load-test-data.js` allows easy adjustment when needed
 
-**Current default: 400 records** - provides good balance of speed and coverage
+**Current default: 400 records** - provides good balance of speed and coverage for typical development workflows
 
 ## Usage
 
@@ -72,9 +93,13 @@ bash e2e/time-test-data-loading.sh
 
 # Time data loading + full test suite
 bash e2e/time-test-data-loading.sh --full-tests
+
+# Time just the inventory e2e test with different data sizes
+bash e2e/time-inventory-test.sh
 ```
 
 ## Files Modified
 
-- `e2e/time-test-data-loading.sh` - New script for timing comparisons
+- `e2e/time-test-data-loading.sh` - Script for timing data loading comparisons
+- `e2e/time-inventory-test.sh` - Script for timing the inventory e2e test with different data sizes
 - `E2E_TEST_DATA_TIMING_RESULTS.md` - This documentation file
