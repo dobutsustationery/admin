@@ -63,29 +63,29 @@ This document presents timing comparison results for loading different amounts o
 
 ## Recommendation
 
-Based on the timing results with a fresh emulator:
+Based on the timing results with a fresh emulator, **the default has been changed to use 3700 records** (all available data):
 
 - **Total time impact:** Using 3700 records adds ~4 seconds to each test run (28s → 32s)
-- **For development:** Use 400 records for faster iteration
-- **For comprehensive testing:** Use 3700 records when you need full data coverage
+- **Benefits:** More comprehensive test coverage with full data representation
+- **Tradeoff:** Slightly slower iteration (~14% slower) but more realistic testing
 - **Important:** Restart emulators periodically to avoid performance degradation
 - The `--prefix` parameter in `e2e/helpers/load-test-data.js` allows easy adjustment when needed
 
-**Current default: 400 records** - provides good balance of speed and coverage for typical development workflows
+**Current default: 3700 records** - provides comprehensive data coverage with acceptable performance impact
 
 ## Usage
 
-### Running with Current Configuration (400 records)
+### Running with Current Configuration (3700 records - all data)
 ```bash
 npm run test:e2e
 # or
 bash e2e/run-tests.sh
 ```
 
-### Running with Maximum Data (3700 records)
+### Running with Reduced Data (400 records for faster iteration)
 Edit `e2e/run-tests.sh` line 52 to change:
 ```bash
-node e2e/helpers/load-test-data.js --prefix=3700
+node e2e/helpers/load-test-data.js --prefix=400
 ```
 
 ### Timing Script

@@ -35,7 +35,7 @@ check_emulators() {
 
 if check_emulators; then
   echo "📦 Loading test data into emulator..."
-  node e2e/helpers/load-test-data.js --prefix=400
+  node e2e/helpers/load-test-data.js --prefix=3700
   
   echo ""
   echo "🏗️  Building application for emulator mode..."
