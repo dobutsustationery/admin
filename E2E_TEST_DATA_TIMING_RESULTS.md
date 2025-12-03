@@ -12,20 +12,20 @@ This document presents timing comparison results for loading different amounts o
 
 | Configuration | Records | Loading Time |
 |--------------|---------|--------------|
-| Current (400 records) | 400 broadcast + 4 users + 73 dobutsu | **3.01 seconds** |
-| Maximum (3700 records) | 3700 broadcast + 4 users + 73 dobutsu | **133.44 seconds** |
+| Current (400 records) | 400 broadcast + 4 users + 73 dobutsu | **1.2 seconds** |
+| Maximum (3700 records) | 3700 broadcast + 4 users + 73 dobutsu | **4.3 seconds** |
 
 ### Key Findings
 
 1. **Data Loading Time Difference:** 
-   - 400 records: ~3 seconds
-   - 3700 records: ~133 seconds
-   - **Difference: ~130 seconds (44x slower)**
+   - 400 records: ~1.2 seconds
+   - 3700 records: ~4.3 seconds
+   - **Difference: ~3.1 seconds (3.5x slower)**
 
-2. **The significant time increase is due to:**
+2. **The time increase is modest:**
    - 9.25x more data to load (3700 vs 400 records)
-   - Network/emulator overhead for each batch operation
-   - Serialization/deserialization of Firestore Timestamp objects
+   - Only 3.5x slower due to efficient batching
+   - Network/emulator overhead is minimal with local emulator
 
 ## Evaluation
 
@@ -35,17 +35,19 @@ This document presents timing comparison results for loading different amounts o
 - Tests performance with larger datasets
 
 ### Cons of Using 3700 Records
-- Significantly slower test setup (~130 seconds additional time)
-- May slow down development iteration cycles
+- Slightly slower test setup (~3 seconds additional time)
+- Minor impact on development iteration cycles
 - Most e2e tests don't require full historical data
 
 ## Recommendation
 
-**Keep the current 400 records configuration** for the following reasons:
+The timing difference is **minimal** (~3 seconds), so either configuration is acceptable:
 
-1. **Fast iteration:** 3 seconds vs 133 seconds makes a huge difference in developer productivity
-2. **Sufficient coverage:** The e2e tests are primarily UI/workflow tests, not data volume tests
-3. **Flexibility:** The `--prefix` parameter in `e2e/helpers/load-test-data.js` allows easy adjustment when needed
+- **Use 400 records** for slightly faster iteration during active development
+- **Use 3700 records** when you need more comprehensive data coverage
+- The `--prefix` parameter in `e2e/helpers/load-test-data.js` allows easy adjustment when needed
+
+**Current default: 400 records** - provides good balance of speed and coverage
 
 ## Usage
 
