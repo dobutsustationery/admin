@@ -21,8 +21,8 @@ echo "✓ Firestore emulator is running"
 # Load test data into emulator
 echo ""
 echo "📦 Loading test data into emulator..."
-node e2e/helpers/load-test-data.js --prefix=400
-echo "✓ Test data loaded (400 broadcast events)"
+node e2e/helpers/load-test-data.js --prefix=3700
+echo "✓ Test data loaded (3700 broadcast events)"
 
 # Check if preview server is running or build exists
 if [ ! -d "build" ]; then
