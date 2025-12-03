@@ -13,7 +13,7 @@ jobs:
   copilot-setup-steps:
     name: Setup Development Environment
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -29,6 +29,64 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Cache Firebase Emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: ${{ runner.os }}-firebase-emulators-${{ hashFiles('firebase.json') }}
+          restore-keys: |
+            ${{ runner.os }}-firebase-emulators-
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Firebase Emulators
+        run: |
+          # Start emulators in background
+          npx firebase-tools emulators:start --project demo-test-project &
+          EMULATOR_PID=$!
+          echo "EMULATOR_PID=$EMULATOR_PID" >> $GITHUB_ENV
+
+          # Wait for emulators to be ready
+          echo "Waiting for Firestore emulator..."
+          for i in {1..60}; do
+            if curl -s http://localhost:8080 > /dev/null 2>&1; then
+              echo "✓ Firestore emulator is ready"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "❌ Emulators failed to start after 60 seconds"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo "Waiting for Auth emulator..."
+          for i in {1..30}; do
+            if curl -s http://localhost:9099 > /dev/null 2>&1; then
+              echo "✓ Auth emulator is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "⚠️  Auth emulator not ready, but continuing"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Load test data into emulator
+        run: node e2e/helpers/load-test-data.js --prefix=400
+
+      - name: Stop Firebase Emulators
+        if: always()
+        run: |
+          if [ -n "$EMULATOR_PID" ]; then
+            kill $EMULATOR_PID 2>/dev/null || true
+          fi
+          # Also kill by port in case PID doesn't work
+          lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+          lsof -ti:9099 | xargs kill -9 2>/dev/null || true
 
       - name: Display environment info
         run: |
