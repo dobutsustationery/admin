@@ -18,7 +18,7 @@ Screenshots are numbered sequentially to tell the story.
 
 #### 000-signed-out-state.png
 
-![Screenshot 000](screenshots/000-signed-out-state-chromium-linux.png)
+![Screenshot 000](screenshots/000-signed-out-state.png)
 
 **What this shows:**
 - User navigates to `/jancodes` while signed out
@@ -37,7 +37,7 @@ Screenshots are numbered sequentially to tell the story.
 
 #### 001-signed-in-state.png
 
-![Screenshot 001](screenshots/001-signed-in-state-chromium-linux.png)
+![Screenshot 001](screenshots/001-signed-in-state.png)
 
 **What this shows:**
 - User has successfully signed in
@@ -55,7 +55,7 @@ Screenshots are numbered sequentially to tell the story.
 
 #### 002-jancodes-loaded.png
 
-![Screenshot 002](screenshots/002-jancodes-loaded-chromium-linux.png)
+![Screenshot 002](screenshots/002-jancodes-loaded.png)
 
 **What this shows:**
 - JAN codes page is fully loaded
