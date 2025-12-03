@@ -61,9 +61,9 @@ The test follows a complete user journey demonstrating the Google Drive integrat
 **What this shows:**
 - Google Drive Export section is visible
 - CSV Export page title is displayed
-- Google Drive section heading present
+- "Connect to Google Drive" button is visible (Drive is configured with mock credentials)
 - CSV Preview section is visible below Drive UI
-- Since Drive is not configured in test environment, shows "not configured" message
+- Drive UI shows authentication prompt with connection button
 
 **Programmatic verification:**
 - [ ] "CSV Export" page title is visible
@@ -74,8 +74,8 @@ The test follows a complete user journey demonstrating the Google Drive integrat
 **Manual verification checklist:**
 - [ ] Page title shows "CSV Export"
 - [ ] Google Drive Export section is present
+- [ ] "Connect to Google Drive" button is visible
 - [ ] CSV Preview section is below Drive UI
-- [ ] "Not configured" message shown (expected in test env)
 - [ ] Page layout is clean and organized
 
 ---
@@ -85,19 +85,19 @@ The test follows a complete user journey demonstrating the Google Drive integrat
 ![Drive UI Structure](screenshots/003-drive-ui-structure.png)
 
 **What this shows:**
-- Detailed view of Drive UI structure
-- Drive section element exists in DOM
-- Authentication prompt or "not configured" message is present
-- UI gracefully handles missing Drive configuration
+- Detailed view of Drive UI with mock credentials configured
+- "Connect to Google Drive" button is present in the auth prompt
+- Drive section is properly structured with connection controls
+- UI shows the authenticated/unauthenticated states correctly
 
 **Programmatic verification:**
 - [ ] Drive section element exists (.drive-section)
-- [ ] Either auth prompt or "not configured" message is present
+- [ ] Auth prompt with connection button is present
 - [ ] UI structure is valid
 
 **Manual verification checklist:**
 - [ ] Drive section is properly structured
-- [ ] Appropriate message shown based on configuration
+- [ ] "Connect to Google Drive" button is visible
 - [ ] No JavaScript errors in console
 - [ ] Layout remains stable
 
@@ -130,18 +130,18 @@ The test includes two comprehensive scenarios:
 
 ## Google Drive Configuration
 
-When Google Drive is properly configured (not in test environment), users would see:
+With the mock credentials configured in the test environment, users see:
 
-- "Connect to Google Drive" button (if not authenticated)
+- "Connect to Google Drive" button (when not authenticated to Drive)
+- This demonstrates the Drive integration UI is properly configured
+- Mock credentials (`test-client-id.apps.googleusercontent.com`) show UI without real API access
+
+When a user would connect in production (with real credentials):
 - Connection status indicator when authenticated
 - Filename input field (defaults to `inventory-export-YYYY-MM-DD.csv`)
 - "Export to Drive" button
 - Recent exports table showing files in Drive folder
 - "View Folder" link to open Drive folder
-
-In the test environment (without Drive configuration):
-- A "not configured" message is displayed
-- This is the expected behavior and validates graceful degradation
 
 ## Test Data
 
