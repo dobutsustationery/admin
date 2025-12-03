@@ -1,8 +1,12 @@
 import { configureStore } from "@reduxjs/toolkit";
+import { enableMapSet } from "immer";
 import type { Writable } from "svelte/store";
 import { history } from "./history";
 import { inventory } from "./inventory";
 import { names } from "./names";
+
+// Enable Immer support for Map and Set (required for optimizations #2 and #6)
+enableMapSet();
 
 function svelteStoreEnhancer(createStoreApi: (arg0: any, arg1: any) => any) {
   return (reducer: any, initialState: any) => {

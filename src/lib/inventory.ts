@@ -1,4 +1,8 @@
 import { createAction, createReducer } from "@reduxjs/toolkit";
+import { enableMapSet } from "immer";
+
+// Enable Immer support for Map and Set (required for optimizations #2 and #6)
+enableMapSet();
 
 // TODO hceck item history for 4542804115635Silver
 export interface Item {
@@ -22,6 +26,7 @@ export interface OrderInfo {
   product?: string;
   id: string;
   items: LineItem[];
+  itemsMap?: Map<string, LineItem>; // Optimization #2: Map for O(1) item lookup
 }
 export interface InventoryState {
   idToItem: { [key: string]: Item };
@@ -31,6 +36,7 @@ export interface InventoryState {
   hiddenInventoryState: { [key: string]: InventoryState };
   salesEvents: { [key: string]: OrderInfo };
   orderIdToOrder: { [key: string]: OrderInfo };
+  itemToOrders?: Map<string, Set<string>>; // Optimization #6: Reverse index itemKey -> orderIDs
 }
 
 export const update_item = createAction<{ id: string; item: Item }>(
@@ -113,6 +119,7 @@ export const initialState: InventoryState = {
   archivedInventoryDate: {},
   hiddenInventoryState: {},
   salesEvents: {},
+  itemToOrders: new Map(), // Optimization #6: Initialize reverse index
 };
 
 export const inventory = createReducer(initialState, (r) => {
@@ -187,12 +194,18 @@ export const inventory = createReducer(initialState, (r) => {
     const date = action.payload.date;
     const product = action.payload.product;
     let items: LineItem[] = [];
+    let itemsMap = new Map<string, LineItem>(); // Optimization #2
     if (state.orderIdToOrder[orderID]) {
       items = [...state.orderIdToOrder[orderID].items];
+      // Rebuild the map from existing items
+      for (const item of items) {
+        itemsMap.set(item.itemKey, item);
+      }
     }
     state.orderIdToOrder[orderID] = {
       id: orderID,
       items,
+      itemsMap, // Optimization #2
       email,
       product,
       date,
@@ -205,18 +218,37 @@ export const inventory = createReducer(initialState, (r) => {
       if (action.timestamp) {
         date = new Date(action.timestamp.seconds * 1000);
       }
-      state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
+      state.orderIdToOrder[orderID] = { 
+        id: orderID, 
+        items: [], 
+        itemsMap: new Map(), // Optimization #2
+        date 
+      };
     }
-    const existingItem = state.orderIdToOrder[orderID].items.filter(
-      (i) => i.itemKey === itemKey,
-    );
-    if (existingItem.length > 0) {
-      existingItem[0].qty += qty;
-      //console.log(`Package existing item ${existingItem[0].itemKey} to ${existingItem[0].qty} (of ${existingItem.length} items) for ${orderID}`)
+    
+    // Optimization #2: Use Map for O(1) lookup instead of O(n) filter
+    if (!state.orderIdToOrder[orderID].itemsMap) {
+      state.orderIdToOrder[orderID].itemsMap = new Map();
+    }
+    const existingItem = state.orderIdToOrder[orderID].itemsMap.get(itemKey);
+    
+    if (existingItem) {
+      existingItem.qty += qty;
     } else {
-      state.orderIdToOrder[orderID].items.push({ itemKey, qty });
-      //console.log(`Create item ${itemKey} to ${qty} for order ${orderID}`)
+      const newItem = { itemKey, qty };
+      state.orderIdToOrder[orderID].items.push(newItem);
+      state.orderIdToOrder[orderID].itemsMap.set(itemKey, newItem);
+      
+      // Optimization #6: Update reverse index
+      if (!state.itemToOrders) {
+        state.itemToOrders = new Map();
+      }
+      if (!state.itemToOrders.has(itemKey)) {
+        state.itemToOrders.set(itemKey, new Set());
+      }
+      state.itemToOrders.get(itemKey)!.add(orderID);
     }
+    
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty;
       state.idToHistory[itemKey].push({
@@ -233,16 +265,25 @@ export const inventory = createReducer(initialState, (r) => {
     const { itemKey, qty, orderID } = action.payload;
     if (state.orderIdToOrder[orderID] === undefined) {
       const date = new Date();
-      state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
+      state.orderIdToOrder[orderID] = { 
+        id: orderID, 
+        items: [], 
+        itemsMap: new Map(), // Optimization #2
+        date 
+      };
     }
-    const existingItem = state.orderIdToOrder[orderID].items.filter(
-      (i) => i.itemKey === itemKey,
-    );
+    
+    // Optimization #2: Use Map for O(1) lookup
+    if (!state.orderIdToOrder[orderID].itemsMap) {
+      state.orderIdToOrder[orderID].itemsMap = new Map();
+    }
+    const existingItem = state.orderIdToOrder[orderID].itemsMap.get(itemKey);
+    
     let priorQty = 0;
-    if (existingItem.length > 0) {
-      priorQty = existingItem[0].qty;
+    if (existingItem) {
+      priorQty = existingItem.qty;
       if (qty > 0) {
-        existingItem[0].qty = qty;
+        existingItem.qty = qty;
         state.idToHistory[itemKey].push({
           date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
             year: "numeric",
@@ -252,13 +293,35 @@ export const inventory = createReducer(initialState, (r) => {
           desc: `Existing item quantified ${qty} for ${orderID}`,
         });
       } else {
+        // Remove item from both array and map
         state.orderIdToOrder[orderID].items = state.orderIdToOrder[
           orderID
         ].items.filter((i) => i.itemKey !== itemKey);
+        state.orderIdToOrder[orderID].itemsMap.delete(itemKey);
+        
+        // Optimization #6: Update reverse index
+        if (state.itemToOrders?.has(itemKey)) {
+          state.itemToOrders.get(itemKey)!.delete(orderID);
+          if (state.itemToOrders.get(itemKey)!.size === 0) {
+            state.itemToOrders.delete(itemKey);
+          }
+        }
       }
     } else {
-      state.orderIdToOrder[orderID].items.push({ itemKey, qty });
+      const newItem = { itemKey, qty };
+      state.orderIdToOrder[orderID].items.push(newItem);
+      state.orderIdToOrder[orderID].itemsMap.set(itemKey, newItem);
+      
+      // Optimization #6: Update reverse index
+      if (!state.itemToOrders) {
+        state.itemToOrders = new Map();
+      }
+      if (!state.itemToOrders.has(itemKey)) {
+        state.itemToOrders.set(itemKey, new Set());
+      }
+      state.itemToOrders.get(itemKey)!.add(orderID);
     }
+    
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty - priorQty;
       state.idToHistory[itemKey].push({
@@ -275,20 +338,52 @@ export const inventory = createReducer(initialState, (r) => {
     const { itemKey, subtype, orderID, janCode, qty } = action.payload;
     if (state.orderIdToOrder[orderID] === undefined) {
       const date = new Date();
-      state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
+      state.orderIdToOrder[orderID] = { 
+        id: orderID, 
+        items: [], 
+        itemsMap: new Map(), // Optimization #2
+        date 
+      };
     }
+    
+    // Ensure itemsMap exists
+    if (!state.orderIdToOrder[orderID].itemsMap) {
+      state.orderIdToOrder[orderID].itemsMap = new Map();
+    }
+    
     const newItemKey = `${janCode}${subtype}`;
     if (newItemKey !== itemKey) {
+      // Remove old item from array and map
       state.orderIdToOrder[orderID].items = state.orderIdToOrder[
         orderID
       ].items.filter((i) => i.itemKey !== itemKey);
-      const existingItem = state.orderIdToOrder[orderID].items.filter(
-        (i) => i.itemKey === newItemKey,
-      );
-      if (existingItem.length > 0) {
-        existingItem[0].qty += qty;
+      state.orderIdToOrder[orderID].itemsMap.delete(itemKey);
+      
+      // Optimization #6: Update reverse index for old item
+      if (state.itemToOrders?.has(itemKey)) {
+        state.itemToOrders.get(itemKey)!.delete(orderID);
+        if (state.itemToOrders.get(itemKey)!.size === 0) {
+          state.itemToOrders.delete(itemKey);
+        }
+      }
+      
+      // Optimization #2: Use Map for O(1) lookup
+      const existingItem = state.orderIdToOrder[orderID].itemsMap.get(newItemKey);
+      if (existingItem) {
+        existingItem.qty += qty;
       } else {
-        state.orderIdToOrder[orderID].items.push({ itemKey: newItemKey, qty });
+        const newItem = { itemKey: newItemKey, qty };
+        state.orderIdToOrder[orderID].items.push(newItem);
+        state.orderIdToOrder[orderID].itemsMap.set(newItemKey, newItem);
+        
+        // Optimization #6: Update reverse index for new item
+        if (!state.itemToOrders) {
+          state.itemToOrders = new Map();
+        }
+        if (!state.itemToOrders.has(newItemKey)) {
+          state.itemToOrders.set(newItemKey, new Set());
+        }
+        state.itemToOrders.get(newItemKey)!.add(orderID);
       }
     } else {
       console.error(`${itemKey} vs ${newItemKey}`);
@@ -346,15 +441,40 @@ export const inventory = createReducer(initialState, (r) => {
           subtype,
         };
       }
-      // find all orders which refer to the itemKey and point at the new itemKey
-      for (const orderID in state.orderIdToOrder) {
-        const existingItem = state.orderIdToOrder[orderID].items.filter(
-          (i) => i.itemKey === itemKey,
-        );
-        for (let i = 0; i < existingItem.length; i++) {
-          existingItem[i].itemKey = mergeItemKey;
+      
+      // Optimization #6: Use reverse index instead of iterating all orders
+      if (state.itemToOrders?.has(itemKey)) {
+        const affectedOrders = state.itemToOrders.get(itemKey)!;
+        for (const orderID of affectedOrders) {
+          if (!state.orderIdToOrder[orderID]) continue;
+          
+          // Ensure itemsMap exists
+          if (!state.orderIdToOrder[orderID].itemsMap) {
+            state.orderIdToOrder[orderID].itemsMap = new Map();
+            for (const item of state.orderIdToOrder[orderID].items) {
+              state.orderIdToOrder[orderID].itemsMap.set(item.itemKey, item);
+            }
+          }
+          
+          // Update items in this order
+          const itemInOrder = state.orderIdToOrder[orderID].itemsMap.get(itemKey);
+          if (itemInOrder) {
+            itemInOrder.itemKey = mergeItemKey;
+            state.orderIdToOrder[orderID].itemsMap.delete(itemKey);
+            state.orderIdToOrder[orderID].itemsMap.set(mergeItemKey, itemInOrder);
+          }
         }
+        
+        // Update reverse index
+        if (!state.itemToOrders.has(mergeItemKey)) {
+          state.itemToOrders.set(mergeItemKey, new Set());
+        }
+        for (const orderID of affectedOrders) {
+          state.itemToOrders.get(mergeItemKey)!.add(orderID);
+        }
+        state.itemToOrders.delete(itemKey);
       }
+      
       //delete state.idToItem[itemKey];
       state.idToItem[itemKey].shipped = 0;
       state.idToItem[itemKey].qty = 0;
