@@ -10,10 +10,10 @@ echo "=================================================================="
 echo ""
 
 # Check if emulators are running
-if ! curl -s http://localhost:8080 > /dev/null 2>&1; then
-  echo "❌ Firebase emulators are not running on port 8080"
-  echo "   Please start them with: npm run emulators"
-  exit 1
+if ! curl -s http://localhost:8080 >/dev/null 2>&1; then
+	echo "❌ Firebase emulators are not running on port 8080"
+	echo "   Please start them with: npm run emulators"
+	exit 1
 fi
 
 echo "✓ Firestore emulator is running"
@@ -21,14 +21,14 @@ echo "✓ Firestore emulator is running"
 # Load test data into emulator
 echo ""
 echo "📦 Loading test data into emulator..."
-node e2e/helpers/load-test-data.js --prefix=3700
-echo "✓ Test data loaded (3700 broadcast events)"
+node e2e/helpers/load-test-data.js --match-jancodes=10
+echo "✓ Test data loaded (matching JAN codes from first 10 records)"
 
 # Check if preview server is running or build exists
 if [ ! -d "build" ]; then
-  echo ""
-  echo "📦 Building application for emulator mode..."
-  npm run build:local
+	echo ""
+	echo "📦 Building application for emulator mode..."
+	npm run build:local
 fi
 
 echo "✓ Build exists"
