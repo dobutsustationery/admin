@@ -105,21 +105,37 @@ The `programmaticCheck` callback runs **before** the screenshot is captured, ens
 
 ## Writing a New E2E Test
 
-### Step 1: Create the Test File
+### Step 1: Create the Test Directory and File
 
-Create a new test file in the `e2e/` directory following the naming convention:
+Create a new test directory following the naming convention `###-<testname>`:
 
 ```
-e2e/<feature-name>.spec.ts
+e2e/###-<testname>/
+├── ###-<testname>.spec.ts    # Test file
+├── README.md                  # Documentation with screenshot gallery
+└── screenshots/               # Baseline screenshots (committed)
 ```
+
+For example:
+```
+e2e/000-inventory/
+├── 000-inventory.spec.ts
+├── README.md
+└── screenshots/
+    ├── 000-signed-out-state-chromium-linux.png
+    ├── 001-signed-in-state-chromium-linux.png
+    └── 002-inventory-loaded-chromium-linux.png
+```
+
+The three-digit prefix (e.g., `000`, `001`) helps organize tests in a specific order.
 
 ### Step 2: Use the Screenshot Helper
 
-Import and use the screenshot helper for numbered screenshots:
+Import and use the screenshot helper for numbered screenshots. Note the relative path from the test subdirectory:
 
 ```typescript
-import { test, expect } from './fixtures/auth';
-import { createScreenshotHelper } from './helpers/screenshot-helper';
+import { test, expect } from '../fixtures/auth';
+import { createScreenshotHelper } from '../helpers/screenshot-helper';
 
 test.describe('Feature Name', () => {
   test('complete user workflow', async ({ page }) => {
@@ -189,32 +205,46 @@ After writing your test, generate the baseline screenshots:
 # Start Firebase emulators (if needed)
 npm run emulators
 
+# Load test data with the same prefix used in CI (IMPORTANT!)
+node e2e/helpers/load-test-data.js --prefix=400
+
+# Build the application
+npm run build:local
+
 # Generate baselines for your new test
 npx playwright test <test-name>.spec.ts --update-snapshots
 ```
 
+**⚠️ CRITICAL**: Always use `--prefix=400` when loading test data for baseline generation. This must match the CI configuration to ensure consistent visual comparisons.
+
 ### Step 5: Verify and Commit Baselines
 
 1. **Verify** the generated screenshots look correct
-2. **Check** that screenshots are in `e2e/<test-name>.spec.ts-snapshots/`
+2. **Check** that screenshots are in `e2e/###-<testname>/screenshots/`
 3. **Commit** the baseline screenshots with your test:
 
 ```bash
-git add e2e/<test-name>.spec.ts
-git add e2e/<test-name>.spec.ts-snapshots/
+git add e2e/###-<testname>/
 git commit -m "Add E2E test for <feature>"
 ```
 
 ### Step 6: Create Test Documentation
 
-Create `e2e/<test-name>/README.md` documenting:
+Create `e2e/###-<testname>/README.md` documenting:
 
 - User story description
-- Screenshot gallery with descriptions
+- Screenshot gallery with **direct links** to images in the `screenshots/` subdirectory
 - What each screenshot verifies
 - Manual verification checklist
 
-See `e2e/inventory/README.md` as a template.
+The README should include direct image links like:
+```markdown
+![Screenshot 000](screenshots/000-initial-state-chromium-linux.png)
+```
+
+This allows users to view all screenshots directly in the README without navigating to other files.
+
+See `e2e/000-inventory/README.md` as a template.
 
 ## Screenshot Helper API
 
@@ -284,25 +314,49 @@ while (true) {
 
 ## Updating Existing Tests
 
+**⚠️ DEVELOPER RESPONSIBILITY**: When you make code changes that affect the visual appearance of the application, YOU are responsible for regenerating and committing the updated baseline screenshots. This includes:
+- UI component changes
+- CSS/styling modifications  
+- Data model changes that affect displayed content
+- Any other change that alters the visual output
+
+**DO NOT** commit code changes without updating baselines if visual changes occur. CI will fail if baselines don't match.
+
 When you change the UI and need to update baselines:
 
-1. **Run the test** to see the failure:
+1. **Ensure emulators are running and test data is loaded**:
    ```bash
-   npx playwright test <test-name>.spec.ts
+   # Terminal 1: Start emulators
+   npm run emulators
+   
+   # Terminal 2: Load test data with correct prefix
+   node e2e/helpers/load-test-data.js --prefix=400
    ```
 
-2. **Review the diff** in `test-results/` directory
-
-3. **If the change is intentional**, update baselines:
+2. **Build the application**:
    ```bash
-   npx playwright test <test-name>.spec.ts --update-snapshots
+   npm run build:local
    ```
 
-4. **Verify and commit** the new baselines:
+3. **Run the test** to see the failure:
    ```bash
-   git add e2e/<test-name>.spec.ts-snapshots/
+   npx playwright test e2e/###-<testname>/###-<testname>.spec.ts
+   ```
+
+4. **Review the diff** in `test-results/` directory
+
+5. **If the change is intentional**, update baselines:
+   ```bash
+   npx playwright test e2e/###-<testname>/###-<testname>.spec.ts --update-snapshots
+   ```
+
+6. **Verify and commit** the new baselines:
+   ```bash
+   git add e2e/###-<testname>/screenshots/
    git commit -m "Update baselines for <reason>"
    ```
+
+**⚠️ IMPORTANT**: Always use `--prefix=400` when loading test data. This matches the CI configuration.
 
 ## Test Structure
 
@@ -313,13 +367,13 @@ e2e/
 ├── helpers/                       # Helper utilities
 │   ├── load-test-data.js         # Loads test data into emulator
 │   └── screenshot-helper.ts      # Numbered screenshot helper
-├── <test-name>/                   # Test documentation
-│   └── README.md                 # User story, screenshot gallery
-├── <test-name>.spec.ts           # Test file
-├── <test-name>.spec.ts-snapshots/ # Baseline screenshots (committed)
-│   ├── 000-initial-state-chromium-linux.png
-│   ├── 001-after-action-chromium-linux.png
-│   └── README.md                 # Snapshot documentation
+├── ###-<testname>/                # Test directory (e.g., 000-inventory)
+│   ├── ###-<testname>.spec.ts    # Test file
+│   ├── README.md                 # User story, screenshot gallery (with direct image links)
+│   └── screenshots/              # Baseline screenshots (committed)
+│       ├── 000-initial-state-chromium-linux.png
+│       ├── 001-after-action-chromium-linux.png
+│       └── ...
 ├── screenshots/                   # Runtime screenshots (gitignored)
 └── README.md                     # E2E overview documentation
 ```
@@ -369,24 +423,38 @@ npx playwright test --update-snapshots
 
 Before submitting a PR with a new E2E test, verify:
 
-- [ ] Test file created in `e2e/<name>.spec.ts`
+- [ ] Test directory created as `e2e/###-<testname>/`
+- [ ] Test file named `e2e/###-<testname>/###-<testname>.spec.ts`
 - [ ] Test uses `createScreenshotHelper()` for screenshots
 - [ ] **Every screenshot includes programmatic verification via `programmaticCheck`**
 - [ ] Test waits for specific conditions (no arbitrary delays)
 - [ ] Test does not rely on retries
-- [ ] Baseline screenshots generated with `--update-snapshots`
-- [ ] Baseline screenshots committed to git
-- [ ] Test documentation created in `e2e/<name>/README.md`
+- [ ] **Baseline screenshots generated with `--prefix=400`**
+- [ ] Baseline screenshots stored in `e2e/###-<testname>/screenshots/`
+- [ ] **Baseline screenshots committed to git** (YOU are responsible for this)
+- [ ] Test documentation created in `e2e/###-<testname>/README.md`
+- [ ] **README includes direct links to screenshots** (e.g., `![Screenshot](screenshots/000-example.png)`)
 - [ ] Test passes consistently when run multiple times
 - [ ] Test passes with zero-pixel tolerance
 
+## Checklist for UI/Code Changes
+
+Before submitting a PR with code changes that affect visual output:
+
+- [ ] Run affected E2E tests to identify visual changes
+- [ ] Review visual diffs in `test-results/` to verify changes are intentional
+- [ ] **Regenerate baselines using `--prefix=400`** (see "Updating Existing Tests" section)
+- [ ] **Commit updated baseline screenshots** (YOU are responsible for this)
+- [ ] Verify all E2E tests pass with updated baselines
+- [ ] Update test documentation if the visual changes require explanation
+
 ## Example: Complete Test
 
-See `e2e/inventory.spec.ts` for a complete example following these guidelines.
+See `e2e/000-inventory/000-inventory.spec.ts` for a complete example following these guidelines.
 
 ```typescript
-import { test, expect } from "./fixtures/auth";
-import { createScreenshotHelper } from "./helpers/screenshot-helper";
+import { test, expect } from "../fixtures/auth";
+import { createScreenshotHelper } from "../helpers/screenshot-helper";
 
 test.describe("Inventory Page", () => {
   test("complete inventory workflow", async ({ page }) => {

@@ -339,6 +339,9 @@ admin/
 - **[DATA_TRANSFER.md](DATA_TRANSFER.md)**: Guide for transferring data between environments
 - **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
 - **[SHOPIFY_INTEGRATION.md](SHOPIFY_INTEGRATION.md)**: Design document for Shopify integration and two-way sync
+- **[PRODUCT_IMPORT_DESIGN.md](PRODUCT_IMPORT_DESIGN.md)**: Design for photo-based product import process with LLM assistance
+- **[GOOGLE_DRIVE_AND_SHEETS_INTEGRATION.md](GOOGLE_DRIVE_AND_SHEETS_INTEGRATION.md)**: Design for integrating Google Drive and Google Sheets for file exports, logging, and collaborative data management
+- **[PHOTOS_INTEGRATION.md](PHOTOS_INTEGRATION.md)**: Google Photos API integration specification for product import workflow
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
 - **[EXTRACTION_GUIDE.md](EXTRACTION_GUIDE.md)**: How this repository was extracted from the monorepo
 

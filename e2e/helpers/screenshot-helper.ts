@@ -1,11 +1,15 @@
-import { Page, expect } from "@playwright/test";
+import { type Page, expect } from "@playwright/test";
 
 /**
  * Helper for creating numbered screenshots in E2E tests
- * 
+ *
  * This helper creates screenshots in the format: NNN-description.png
  * where NNN is a zero-padded number (000, 001, 002, etc.)
- * 
+ *
+ * Screenshots default to viewport-size (fullPage: false) to ensure
+ * consistent dimensions across all screenshots. This is important for
+ * visual regression testing with zero-pixel tolerance.
+ *
  * Usage:
  * const screenshots = createScreenshotHelper();
  * await screenshots.capture(page, "signed-out-state");
@@ -25,7 +29,7 @@ export interface ScreenshotHelper {
     options?: {
       fullPage?: boolean;
       programmaticCheck?: () => Promise<void>;
-    }
+    },
   ): Promise<void>;
 
   /**
@@ -47,27 +51,27 @@ export function createScreenshotHelper(): ScreenshotHelper {
 
   return {
     async capture(page, description, options = {}) {
-      const { fullPage = true, programmaticCheck } = options;
-      
+      const { fullPage = false, programmaticCheck } = options;
+
       // Format: 000-description.png
       const paddedNumber = String(counter).padStart(3, "0");
       const filename = `${paddedNumber}-${description}.png`;
-      
+
       console.log(`📸 Capturing screenshot ${counter}: ${filename}`);
-      
+
       // Execute programmatic check if provided
       if (programmaticCheck) {
         console.log(`   ✓ Running programmatic verification...`);
         await programmaticCheck();
       }
-      
+
       // Take the screenshot
       await expect(page).toHaveScreenshot(filename, {
         fullPage,
       });
-      
+
       console.log(`   ✓ Screenshot saved: ${filename}`);
-      
+
       // Increment counter for next screenshot
       counter++;
     },

@@ -14,11 +14,13 @@ The test follows a complete user journey from signed-out state through viewing i
 
 ### Screenshots
 
-Screenshots are numbered sequentially to tell the story:
+Screenshots are numbered sequentially to tell the story.
+
+**Note:** Screenshot filenames include the browser and platform (e.g., `-chromium-linux.png`) as part of Playwright's naming convention. These tests run on Chromium on Linux in CI, so all baseline screenshots use this suffix.
 
 #### 000-signed-out-state.png
 
-![Screenshot 000](../inventory.spec.ts-snapshots/000-signed-out-state-chromium-linux.png)
+![Screenshot 000](screenshots/000-signed-out-state-chromium-linux.png)
 
 **What this shows:**
 - User navigates to `/inventory` while signed out
@@ -38,7 +40,7 @@ Screenshots are numbered sequentially to tell the story:
 
 #### 001-signed-in-state.png
 
-![Screenshot 001](../inventory.spec.ts-snapshots/001-signed-in-state-chromium-linux.png)
+![Screenshot 001](screenshots/001-signed-in-state-chromium-linux.png)
 
 **What this shows:**
 - User has successfully signed in
@@ -58,7 +60,7 @@ Screenshots are numbered sequentially to tell the story:
 
 #### 002-inventory-loaded.png
 
-![Screenshot 002](../inventory.spec.ts-snapshots/002-inventory-loaded-chromium-linux.png)
+![Screenshot 002](screenshots/002-inventory-loaded-chromium-linux.png)
 
 **What this shows:**
 - Inventory table is fully loaded with data
@@ -127,7 +129,7 @@ npx playwright test --update-snapshots
 
 # Verify the screenshots look correct
 # Then commit them with your PR
-git add e2e/inventory.spec.ts-snapshots/
+git add e2e/000-inventory/screenshots/
 git commit -m "Update inventory baseline screenshots"
 ```
 

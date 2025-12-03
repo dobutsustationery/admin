@@ -1,3 +1,14 @@
+<script context="module" lang="ts">
+export interface User {
+  signedIn: boolean;
+  uid?: string;
+  email?: string;
+  name?: string;
+  photo?: string;
+  last?: number;
+}
+</script>
+
 <script lang="ts">
 import { createEventDispatcher } from "svelte";
 import {
@@ -8,15 +19,6 @@ import {
   type AuthProvider,
   type User as FirebaseUser,
 } from "firebase/auth";
-
-export interface User {
-  signedIn: boolean;
-  uid?: string;
-  email?: string;
-  name?: string;
-  photo?: string;
-  last?: number;
-}
 
 let me: User = { signedIn: false };
 export let auth: Auth;
