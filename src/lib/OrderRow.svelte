@@ -1,44 +1,44 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import { createEventDispatcher } from "svelte";
-  import SelectBox from "./SelectBox.svelte";
-  import type { Item } from "./inventory";
-  import { store } from "./store";
+import { goto } from "$app/navigation";
+import { createEventDispatcher } from "svelte";
+import SelectBox from "./SelectBox.svelte";
+import type { Item } from "./inventory";
+import { store } from "./store";
 
-  export let key: string = "";
-  export let row: number = -1;
-  export let qty: number = -1;
-  export let immutable: boolean = false;
-  export let showdates: boolean = false;
+export const key = "";
+export const row = -1;
+export const qty = -1;
+export const immutable = false;
+export const showdates = false;
 
-  let state = store.getState();
-  let item: Item | null = null;
-  $: if ($store) {
-    state = store.getState();
-    item = { ...state.inventory.idToItem[key] };
-  }
+let state = store.getState();
+let item: Item | null = null;
+$: if ($store) {
+  state = store.getState();
+  item = { ...state.inventory.idToItem[key] };
+}
 
-  const dispatchEvent = createEventDispatcher();
-  function updateQty() {
-    dispatchEvent("qty", qty);
+const dispatchEvent = createEventDispatcher();
+function updateQty() {
+  dispatchEvent("qty", qty);
+}
+function handleEnterKey(e: KeyboardEvent) {
+  if (e.key === "Enter") {
+    const target = e.target as HTMLInputElement;
+    target.blur();
   }
-  function handleEnterKey(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      const target = e.target as HTMLInputElement;
-      target.blur();
-    }
-  }
+}
 
-  function updateSubtype(key: string) {
-    return (e: CustomEvent) => {
-      const subtype = e.detail;
-      dispatchEvent("subtype", subtype);
-    };
-  }
+function updateSubtype(key: string) {
+  return (e: CustomEvent) => {
+    const subtype = e.detail;
+    dispatchEvent("subtype", subtype);
+  };
+}
 
-  function itemHistory(itemKey: string) {
-    goto(`/itemhistory?itemKey=${itemKey}`);
-  }
+function itemHistory(itemKey: string) {
+  goto(`/itemhistory?itemKey=${itemKey}`);
+}
 </script>
 
 {#if key && item !== null}
