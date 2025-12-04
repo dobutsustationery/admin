@@ -48,24 +48,32 @@ function extractJanCode(broadcast) {
 }
 
 /**
- * Filter broadcast events by scanning for JAN codes in the JSON
- * - Include if the action's JSON contains any of the target JAN codes as a substring
- * - Exclude if the action contains an itemKey field (will be filtered separately)
+ * Filter broadcast events using three-step logic:
+ * 1. If JAN code occurs anywhere in stringified JSON → include
+ * 2. Else if no match but action has itemKey or janCode field → exclude
+ * 3. Else → include (actions unrelated to JAN codes)
  */
 function filterByJanCodes(broadcasts, janCodes) {
   return broadcasts.filter(broadcast => {
-    // Check if this action has an itemKey field
-    const hasItemKey = broadcast.data?.payload?.itemKey !== undefined;
+    // Step 1: Check if any target JAN code appears in the JSON
+    const jsonStr = JSON.stringify(broadcast);
+    const hasMatchingJanCode = janCodes.some(janCode => jsonStr.includes(janCode));
     
-    if (hasItemKey) {
-      // For actions with itemKey, check if itemKey contains any target JAN code
-      const itemKey = broadcast.data.payload.itemKey;
-      return janCodes.some(janCode => itemKey.includes(janCode));
+    if (hasMatchingJanCode) {
+      return true;  // Include: action involves target JAN codes
     }
     
-    // For actions without itemKey, scan the entire JSON for JAN codes
-    const jsonStr = JSON.stringify(broadcast);
-    return janCodes.some(janCode => jsonStr.includes(janCode));
+    // Step 2: Check if action has itemKey or janCode field
+    const payload = broadcast.data?.payload;
+    const hasItemKey = payload?.itemKey !== undefined;
+    const hasJanCode = payload?.janCode !== undefined || payload?.item?.janCode !== undefined;
+    
+    if (hasItemKey || hasJanCode) {
+      return false;  // Exclude: action references OTHER JAN codes
+    }
+    
+    // Step 3: Include actions unrelated to JAN codes
+    return true;
   });
 }
 
