@@ -257,7 +257,7 @@ describe("reducer immutability", () => {
      * This test verifies immutability by:
      * 1. Keeping references to state objects every 10 actions
      * 2. Every 100 actions, re-stringify those state objects and compare to original
-     * 
+     *
      * If reducers mutate prior states, the re-stringified version will differ
      * from the original snapshot, proving the mutation occurred.
      */
@@ -329,7 +329,7 @@ describe("reducer immutability", () => {
       const stateObject = savedStateObjects[snapshotIndex];
       const originalSnapshot = originalSnapshots[snapshotIndex];
       const finalSnapshot = JSON.stringify(stateObject);
-      
+
       // If reducers maintained immutability, these must match
       expect(finalSnapshot).toBe(originalSnapshot);
     }
@@ -368,7 +368,9 @@ describe("reducer immutability", () => {
 
     // Save initial state object and snapshot
     stateObjects.push(store.getState());
-    originalSnapshots.push(JSON.stringify(stateObjects[stateObjects.length - 1]));
+    originalSnapshots.push(
+      JSON.stringify(stateObjects[stateObjects.length - 1]),
+    );
 
     // Run actions and save every 10th state object
     for (let i = 1; i <= totalActions; i++) {
@@ -381,7 +383,9 @@ describe("reducer immutability", () => {
 
       if (i % 10 === 0) {
         stateObjects.push(store.getState());
-        originalSnapshots.push(JSON.stringify(stateObjects[stateObjects.length - 1]));
+        originalSnapshots.push(
+          JSON.stringify(stateObjects[stateObjects.length - 1]),
+        );
       }
     }
 
@@ -497,7 +501,9 @@ describe("reducer immutability", () => {
 
       if ((i + 1) % 10 === 0 || i === testActions.length - 1) {
         stateObjects.push(store.getState());
-        originalSnapshots.push(JSON.stringify(stateObjects[stateObjects.length - 1]));
+        originalSnapshots.push(
+          JSON.stringify(stateObjects[stateObjects.length - 1]),
+        );
       }
     }
 

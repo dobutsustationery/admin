@@ -1,45 +1,45 @@
 <script lang="ts">
-import ComboBox from "./ComboBox.svelte";
-import { firestore } from "./firebase";
-import { user } from "./globals";
-import { type Item, update_field } from "./inventory";
-import { broadcast } from "./redux-firestore";
-import { store } from "./store";
+  import ComboBox from "./ComboBox.svelte";
+  import { firestore } from "./firebase";
+  import { user } from "./globals";
+  import { type Item, update_field } from "./inventory";
+  import { broadcast } from "./redux-firestore";
+  import { store } from "./store";
 
-export let key = "";
+  export let key = "";
 
-let state = store.getState();
-let item: Item | null = null;
-$: if ($store) {
-  state = store.getState();
-  item = { ...state.inventory.idToItem[key] };
-}
-
-function updateField(key: string, item: Item, field: keyof Item) {
-  return (e: any) => {
-    const to = e.detail || e.target.value;
-    const from = item[field];
-    if (to !== null) {
-      broadcast(
-        firestore,
-        $user.uid,
-        update_field({ id: key, field, to, from }),
-      );
-    }
-  };
-}
-function handleEnterKey(e: KeyboardEvent) {
-  if (e.key === "Enter") {
-    const target = e.target as HTMLInputElement;
-    target.blur();
+  let state = store.getState();
+  let item: Item | null = null;
+  $: if ($store) {
+    state = store.getState();
+    item = { ...state.inventory.idToItem[key] };
   }
-}
+
+  function updateField(key: string, item: Item, field: keyof Item) {
+    return (e: any) => {
+      const to = e.detail || e.target.value;
+      const from = item[field];
+      if (to !== null) {
+        broadcast(
+          firestore,
+          $user.uid,
+          update_field({ id: key, field, to, from }),
+        );
+      }
+    };
+  }
+  function handleEnterKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      const target = e.target as HTMLInputElement;
+      target.blur();
+    }
+  }
 </script>
 
 {#if key && item !== null}
-    <tr>
-        <td>{item.janCode}</td>
-        <td>{item.subtype}</td>
+  <tr>
+    <td>{item.janCode}</td>
+    <td>{item.subtype}</td>
     <td
       ><input
         class="description"
@@ -76,38 +76,38 @@ function handleEnterKey(e: KeyboardEvent) {
         value={item.qty}
       /></td
     >
-        <td>{item.shipped}</td>
+    <td>{item.shipped}</td>
     <td class="total"
       >{(item.pieces > 0 ? item.pieces * item.qty : item.qty) -
         item.shipped}</td
     >
-    </tr>
+  </tr>
 {/if}
 
 <style>
-    tr:nth-child(odd) {
-        background-color: bisque;
-    }
+  tr:nth-child(odd) {
+    background-color: bisque;
+  }
 
-    .total {
-        text-align: right;
-    }
+  .total {
+    text-align: right;
+  }
 
-    td {
-        padding: 0.3em;
-    }
+  td {
+    padding: 0.3em;
+  }
 
-    input[type="number"] {
-        width: 4em;
-        text-align: right;
-        background-color: #fff0;
-        border: none;
-    }
+  input[type="number"] {
+    width: 4em;
+    text-align: right;
+    background-color: #fff0;
+    border: none;
+  }
 
-    .description {
-        width: 40vw;
-        border: none;
-        padding: 0.4em;
-        background-color: #fff0;
-    }
+  .description {
+    width: 40vw;
+    border: none;
+    padding: 0.4em;
+    background-color: #fff0;
+  }
 </style>
