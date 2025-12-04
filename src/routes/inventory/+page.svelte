@@ -1,14 +1,14 @@
 <script lang="ts">
-import InventoryRow from "$lib/InventoryRow.svelte";
-import { store } from "$lib/store";
+  import InventoryRow from "$lib/InventoryRow.svelte";
+  import { store } from "$lib/store";
 
-let state = store.getState();
+  let state = store.getState();
 
-let itemKeys: string[] = [];
-$: if ($store) {
-  state = store.getState();
-  itemKeys = Object.keys(state.inventory.idToItem);
-}
+  let itemKeys: string[] = [];
+  $: if ($store) {
+    state = store.getState();
+    itemKeys = Object.keys(state.inventory.idToItem);
+  }
 </script>
 
 <table>
