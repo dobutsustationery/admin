@@ -191,7 +191,9 @@ test.describe("Names Page", () => {
 
     // Wait for form elements to appear
     console.log("🔍 Waiting for form elements...");
-    const idInput = page.locator('label:has-text("ID")');
+    // Use more specific selector to avoid matching ComboBox labels that might contain "ID"
+    // We want the first label in the form, which has "ID:" text
+    const idInput = page.locator('h1 + label').first();
     await idInput.waitFor({ state: "visible", timeout: 50000 });
     console.log("   ✓ ID input found");
 

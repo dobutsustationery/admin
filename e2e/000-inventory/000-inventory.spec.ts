@@ -227,15 +227,16 @@ test.describe("Inventory Page", () => {
     console.log("🔍 Waiting for inventory data rows...");
 
     // Wait for at least one data row to appear by checking that rows exist
+    // Note: Browsers auto-insert <tbody> around table rows, so we use "table tbody > tr"
     await page.waitForFunction(
       () => {
-        const rows = document.querySelectorAll("table > tr");
+        const rows = document.querySelectorAll("table tbody > tr");
         return rows.length > 0;
       },
       { timeout: 60000 },
     );
 
-    const rowCount = await page.locator("table > tr").count();
+    const rowCount = await page.locator("table tbody > tr").count();
     console.log(`   ✓ Found ${rowCount} rows`);
 
     await screenshots.capture(page, "inventory-loaded", {
@@ -248,8 +249,8 @@ test.describe("Inventory Page", () => {
         expect(headers.join(" ")).toContain("JAN Code");
         expect(headers.join(" ")).toContain("Quantity");
 
-        // Verify we have inventory rows (rows directly under table, not in thead)
-        const finalRowCount = await page.locator("table > tr").count();
+        // Verify we have inventory rows (rows in tbody, not in thead)
+        const finalRowCount = await page.locator("table tbody > tr").count();
         console.log(`   ✓ Found ${finalRowCount} inventory items displayed`);
         expect(finalRowCount).toBeGreaterThan(0);
 
@@ -285,7 +286,7 @@ test.describe("Inventory Page", () => {
             `   📊 Sample inventory data (first ${sampleRows} rows):`,
           );
           for (let i = 0; i < sampleRows; i++) {
-            const row = page.locator("table > tr").nth(i);
+            const row = page.locator("table tbody > tr").nth(i);
             const cells = await row.locator("td").allTextContents();
 
             // Verify row has cells with data
