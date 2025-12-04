@@ -35,6 +35,10 @@ describe("inventory reducer", () => {
       expect(nextState.idToItem[id]).toBeDefined();
       expect(nextState.idToItem[id].qty).toBe(10);
       expect(nextState.idToItem[id].shipped).toBe(0);
+      
+      // Test immutability: modifying the original item shouldn't affect state
+      item.qty = 5;
+      expect(nextState.idToItem[id].qty).toBe(10);
     });
 
     it("accumulates quantities when updating existing item", () => {
@@ -79,7 +83,7 @@ describe("inventory reducer", () => {
       expect(nextState.idToItem[id].shipped).toBe(5);
     });
 
-    it("initializes shipped to 0 if undefined", () => {
+    it("ensures shipped is defined in state", () => {
       const item: Item = {
         janCode: "4901234567890",
         subtype: "Yellow",
@@ -93,6 +97,7 @@ describe("inventory reducer", () => {
       };
       const id = `${item.janCode}${item.subtype}`;
       const nextState = inventory(initialState, update_item({ id, item }));
+      expect(nextState.idToItem[id].shipped).toBeDefined();
       expect(nextState.idToItem[id].shipped).toBe(0);
     });
 
@@ -111,7 +116,7 @@ describe("inventory reducer", () => {
       const id = `${item.janCode}${item.subtype}`;
       const nextState = inventory(initialState, update_item({ id, item }));
       expect(nextState.idToHistory[id]).toBeDefined();
-      expect(nextState.idToHistory[id].length).toBeGreaterThan(0);
+      expect(nextState.idToHistory[id].length).toBe(1);
     });
   });
 
