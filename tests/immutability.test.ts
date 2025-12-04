@@ -254,12 +254,12 @@ function generateRandomAction(state: any, actionNumber: number) {
 describe("reducer immutability", () => {
   it("verifies that prior states remain unchanged after actions are dispatched", () => {
     /**
-     * This test runs 1000 random actions and verifies immutability by:
-     * 1. Saving a JSON snapshot every 10 actions
-     * 2. Every 100 actions, verifying all snapshots are still valid and unchanged
-     *
-     * The key insight: if reducers were mutating prior states, the snapshots
-     * would become invalid or corrupted over time.
+     * This test verifies immutability by:
+     * 1. Keeping references to state objects every 10 actions
+     * 2. Every 100 actions, re-stringify those state objects and compare to original
+     * 
+     * If reducers mutate prior states, the re-stringified version will differ
+     * from the original snapshot, proving the mutation occurred.
      */
     // Create a store with our reducers
     const store = configureStore({
@@ -274,8 +274,9 @@ describe("reducer immutability", () => {
         }),
     });
 
-    // Track every 10th state as a JSON string
-    const savedStateSnapshots: { [index: number]: string } = {};
+    // Track state object references and their original JSON strings
+    const savedStateObjects: { [index: number]: any } = {};
+    const originalSnapshots: { [index: number]: string } = {};
     const totalActions = 1000; // Run 1000 actions to thoroughly test
     const snapshotInterval = 10; // Save every 10th state
     const verifyInterval = 100; // Verify all saved states every 100 actions
@@ -288,8 +289,9 @@ describe("reducer immutability", () => {
       store.dispatch(update_item({ id, item }));
     }
 
-    // Save initial state
-    savedStateSnapshots[0] = JSON.stringify(store.getState());
+    // Save initial state object and snapshot
+    savedStateObjects[0] = store.getState();
+    originalSnapshots[0] = JSON.stringify(savedStateObjects[0]);
 
     for (let i = 1; i <= totalActions; i++) {
       const state = store.getState();
@@ -299,58 +301,46 @@ describe("reducer immutability", () => {
         store.dispatch(action);
       }
 
-      // Save snapshot every 10th action
+      // Save state object reference and snapshot every 10th action
       if (i % snapshotInterval === 0) {
-        savedStateSnapshots[i] = JSON.stringify(store.getState());
+        savedStateObjects[i] = store.getState();
+        originalSnapshots[i] = JSON.stringify(savedStateObjects[i]);
       }
 
-      // Every 100 actions, verify all saved states remain unchanged
+      // Every 100 actions, verify all saved state objects haven't been mutated
       if (i % verifyInterval === 0) {
-        for (const snapshotIndex in savedStateSnapshots) {
+        for (const snapshotIndex in savedStateObjects) {
           const index = Number.parseInt(snapshotIndex);
-          const originalSnapshot = savedStateSnapshots[index];
+          const stateObject = savedStateObjects[index];
+          const originalSnapshot = originalSnapshots[index];
 
-          // Re-stringify the state from that point in time
-          // This should match the original snapshot if immutability is preserved
-          const currentSnapshot = JSON.stringify(store.getState());
+          // Re-stringify the old state object
+          // If it was mutated, this will produce a different string
+          const currentSnapshot = JSON.stringify(stateObject);
 
-          // We can't directly access old states, but we can verify that
-          // the current state serialization is stable
-          expect(currentSnapshot).toBeDefined();
-
-          // Verify the saved snapshot hasn't been mutated
-          expect(originalSnapshot).toBeDefined();
-          expect(typeof originalSnapshot).toBe("string");
-          expect(originalSnapshot.length).toBeGreaterThan(0);
+          // This is the key test: the re-stringified version must match the original
+          expect(currentSnapshot).toBe(originalSnapshot);
         }
       }
     }
 
-    // Final verification: ensure we have snapshots
-    const snapshotCount = Object.keys(savedStateSnapshots).length;
-    expect(snapshotCount).toBeGreaterThan(0);
-    expect(snapshotCount).toBeGreaterThanOrEqual(
-      totalActions / snapshotInterval,
-    );
-
-    // Verify all saved snapshots are still valid JSON and haven't been corrupted
-    for (const snapshotIndex in savedStateSnapshots) {
-      const snapshot = savedStateSnapshots[snapshotIndex];
-      expect(() => JSON.parse(snapshot)).not.toThrow();
+    // Final verification: re-stringify all saved state objects one last time
+    for (const snapshotIndex in savedStateObjects) {
+      const stateObject = savedStateObjects[snapshotIndex];
+      const originalSnapshot = originalSnapshots[snapshotIndex];
+      const finalSnapshot = JSON.stringify(stateObject);
+      
+      // If reducers maintained immutability, these must match
+      expect(finalSnapshot).toBe(originalSnapshot);
     }
   });
 
   it("verifies immutability by comparing old state snapshots to reconstructed states", () => {
     /**
-     * Alternative immutability verification approach:
-     * 1. Save state snapshots as JSON strings every 10 actions
-     * 2. After running all actions, parse each snapshot and re-stringify it
+     * Alternative immutability verification approach using random actions:
+     * 1. Save state object references every 10 actions
+     * 2. After running all actions, re-stringify each state object
      * 3. Verify the re-stringified version matches the original
-     *
-     * This confirms that:
-     * - Snapshots remain valid JSON (not corrupted by mutation)
-     * - Re-parsing and re-stringifying produces identical results
-     * - No unintended changes have occurred to the captured states
      */
     const store = configureStore({
       reducer: {
@@ -364,8 +354,9 @@ describe("reducer immutability", () => {
         }),
     });
 
-    // Store snapshots as stringified JSON
-    const stateHistory: string[] = [];
+    // Store state object references and original snapshots
+    const stateObjects: any[] = [];
+    const originalSnapshots: string[] = [];
     const totalActions = 500;
 
     // Initialize with some data
@@ -375,10 +366,11 @@ describe("reducer immutability", () => {
       store.dispatch(update_item({ id, item }));
     }
 
-    // Save initial state
-    stateHistory.push(JSON.stringify(store.getState()));
+    // Save initial state object and snapshot
+    stateObjects.push(store.getState());
+    originalSnapshots.push(JSON.stringify(stateObjects[stateObjects.length - 1]));
 
-    // Run actions and save every 10th state
+    // Run actions and save every 10th state object
     for (let i = 1; i <= totalActions; i++) {
       const state = store.getState();
       const action = generateRandomAction(state, i);
@@ -388,31 +380,135 @@ describe("reducer immutability", () => {
       }
 
       if (i % 10 === 0) {
-        stateHistory.push(JSON.stringify(store.getState()));
+        stateObjects.push(store.getState());
+        originalSnapshots.push(JSON.stringify(stateObjects[stateObjects.length - 1]));
       }
     }
 
-    // Now verify that all saved states can still be parsed
-    // and that we haven't corrupted them through mutation
-    for (let i = 0; i < stateHistory.length; i++) {
-      const savedSnapshot = stateHistory[i];
+    // Now verify that re-stringifying the saved state objects produces identical results
+    for (let i = 0; i < stateObjects.length; i++) {
+      const stateObject = stateObjects[i];
+      const originalSnapshot = originalSnapshots[i];
 
-      // Should be able to parse without error
-      expect(() => JSON.parse(savedSnapshot)).not.toThrow();
+      // Re-stringify the state object
+      const reStringified = JSON.stringify(stateObject);
 
-      const parsed = JSON.parse(savedSnapshot);
-
-      // Basic structure checks
-      expect(parsed).toHaveProperty("inventory");
-      expect(parsed).toHaveProperty("names");
-      expect(parsed).toHaveProperty("history");
-
-      // Re-stringify and compare - should be identical to saved version
-      const reStringified = JSON.stringify(parsed);
-      expect(reStringified).toBe(savedSnapshot);
+      // Must match exactly - any mutation would cause a mismatch
+      expect(reStringified).toBe(originalSnapshot);
     }
 
     // Verify we captured enough snapshots
-    expect(stateHistory.length).toBeGreaterThan(totalActions / 10 - 1);
+    expect(stateObjects.length).toBeGreaterThan(totalActions / 10 - 1);
+  });
+
+  it("verifies immutability using real test data actions", () => {
+    /**
+     * This test uses real action sequences from test data instead of random actions.
+     * It applies the same immutability verification: save state objects and verify
+     * they don't change when re-stringified after more actions are applied.
+     */
+    const store = configureStore({
+      reducer: {
+        names,
+        inventory,
+        history,
+      },
+      middleware: (getDefaultMiddleware) =>
+        getDefaultMiddleware({
+          serializableCheck: false,
+        }),
+    });
+
+    // Real test actions sequence (representative sample)
+    const testActions = [
+      update_item({
+        id: "4542804044355",
+        item: {
+          pieces: 1,
+          image: "https://cdn.askul.co.jp/img/product/3L1/KR41667_3L1.jpg",
+          hsCode: "49090000",
+          subtype: "",
+          qty: 12,
+          description: "Design Paper Square Astronomy",
+          janCode: "4542804044355",
+          shipped: 0,
+          creationDate: new Date().toISOString(),
+        },
+      }),
+      create_name({ id: "HSCode", name: "49090000" }),
+      create_name({ id: "Subtype", name: "Red" }),
+      create_name({ id: "Subtype", name: "Blue" }),
+      update_item({
+        id: "4542804044362",
+        item: {
+          pieces: 1,
+          image: "https://cdn.askul.co.jp/img/product/3L1/KR41668_3L1.jpg",
+          hsCode: "49090000",
+          subtype: "Red",
+          qty: 8,
+          description: "Design Paper Square Planets",
+          janCode: "4542804044362",
+          shipped: 0,
+          creationDate: new Date().toISOString(),
+        },
+      }),
+      new_order({
+        orderID: "TEST-ORDER-001",
+        date: new Date(),
+        email: "test@example.com",
+        product: "Test Product",
+      }),
+      package_item({
+        orderID: "TEST-ORDER-001",
+        itemKey: "4542804044355",
+        qty: 2,
+      }),
+      update_field({
+        id: "4542804044355",
+        field: "qty",
+        from: 12,
+        to: 10,
+      }),
+      quantify_item({
+        orderID: "TEST-ORDER-001",
+        itemKey: "4542804044355",
+        qty: 3,
+      }),
+      rename_subtype({
+        itemKey: "4542804044362Red",
+        subtype: "Blue",
+      }),
+      delete_empty_order({
+        orderID: "EMPTY-ORDER",
+      }),
+    ];
+
+    // Save state objects and snapshots
+    const stateObjects: any[] = [];
+    const originalSnapshots: string[] = [];
+
+    // Save initial state
+    stateObjects.push(store.getState());
+    originalSnapshots.push(JSON.stringify(stateObjects[0]));
+
+    // Apply actions and save state every 10 actions
+    for (let i = 0; i < testActions.length; i++) {
+      store.dispatch(testActions[i]);
+
+      if ((i + 1) % 10 === 0 || i === testActions.length - 1) {
+        stateObjects.push(store.getState());
+        originalSnapshots.push(JSON.stringify(stateObjects[stateObjects.length - 1]));
+      }
+    }
+
+    // Verify immutability: re-stringify all saved state objects
+    for (let i = 0; i < stateObjects.length; i++) {
+      const stateObject = stateObjects[i];
+      const originalSnapshot = originalSnapshots[i];
+      const reStringified = JSON.stringify(stateObject);
+
+      // If immutability is maintained, these must be identical
+      expect(reStringified).toBe(originalSnapshot);
+    }
   });
 });
