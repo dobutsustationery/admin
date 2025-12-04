@@ -1,7 +1,6 @@
 <script lang="ts">
-  
   import substrings from "common-substrings";
-import BarcodeScanner from "$lib/BarcodeScanner.svelte";
+  import BarcodeScanner from "$lib/BarcodeScanner.svelte";
   import ComboBox from "$lib/ComboBox.svelte";
   import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { user } from "$lib/globals";

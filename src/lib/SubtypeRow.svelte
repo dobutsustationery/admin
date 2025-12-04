@@ -1,11 +1,15 @@
 <script lang="ts">
-  
   import substrings from "common-substrings";
   import { get } from "$lib/http";
-import ComboBox from "./ComboBox.svelte";
+  import ComboBox from "./ComboBox.svelte";
   import { firestore } from "./firebase";
   import { user } from "./globals";
-  import { type Item, itemsLookIdentical, rename_subtype, update_field } from "./inventory";
+  import {
+    type Item,
+    itemsLookIdentical,
+    rename_subtype,
+    update_field,
+  } from "./inventory";
   import { broadcast } from "./redux-firestore";
   import { store } from "./store";
 
