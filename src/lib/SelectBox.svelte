@@ -2,10 +2,10 @@
 import { createEventDispatcher } from "svelte";
 import { store } from "./store";
 
-export let id = "";
-export let label: string | null = null;
-export let value: string | null = "";
-export let barcode: string | null = null;
+export const id = "";
+export const label: string | null = null;
+export const value: string | null = "";
+export const barcode: string | null = null;
 let state = store.getState();
 
 const dispatchEvent = createEventDispatcher();
