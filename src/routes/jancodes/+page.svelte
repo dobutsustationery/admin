@@ -1,38 +1,38 @@
 <script lang="ts">
-import Signin from "$lib/Signin.svelte";
-import type { User } from "$lib/Signin.svelte";
-import SubtypeRow from "$lib/SubtypeRow.svelte";
-import { auth, googleAuthProvider } from "$lib/firebase";
-import { store } from "$lib/store";
+  import { auth, googleAuthProvider } from "$lib/firebase";
+  import { store } from "$lib/store";
+  import Signin from "$lib/Signin.svelte";
+  import type { User } from "$lib/Signin.svelte";
+  import SubtypeRow from "$lib/SubtypeRow.svelte";
 
-let ids: string[] = [];
-let codes: string[] = [];
-let state = store.getState();
+  let ids: string[] = [];
+  let codes: string[] = [];
+  let state = store.getState();
 
-let janCodesToSubtypes: { [key: string]: string[] } = {};
+  let janCodesToSubtypes: { [key: string]: string[] } = {};
 
-$: if ($store) {
-  console.log("State upated; refresh...");
-  state = store.getState();
-  ids = Object.keys(state.inventory.idToItem).filter(
-    (x) => state.inventory.idToItem[x].subtype === "",
-  );
-  janCodesToSubtypes = {};
-  for (const code of ids) {
-    const janCode = state.inventory.idToItem[code].janCode;
-    if (janCodesToSubtypes[janCode] === undefined) {
-      janCodesToSubtypes[janCode] = [];
+  $: if ($store) {
+    console.log("State upated; refresh...");
+    state = store.getState();
+    ids = Object.keys(state.inventory.idToItem).filter(
+      (x) => state.inventory.idToItem[x].subtype === "",
+    );
+    janCodesToSubtypes = {};
+    for (const code of ids) {
+      const janCode = state.inventory.idToItem[code].janCode;
+      if (janCodesToSubtypes[janCode] === undefined) {
+        janCodesToSubtypes[janCode] = [];
+      }
+      janCodesToSubtypes[janCode].push(state.inventory.idToItem[code].subtype);
     }
-    janCodesToSubtypes[janCode].push(state.inventory.idToItem[code].subtype);
+    codes = Object.keys(janCodesToSubtypes);
   }
-  codes = Object.keys(janCodesToSubtypes);
-}
 
-let me: User = { signedIn: false };
+  let me: User = { signedIn: false };
 
-function user(e: CustomEvent) {
-  me = e.detail;
-}
+  function user(e: CustomEvent) {
+    me = e.detail;
+  }
 </script>
 
 <h1>Items with a blank subtype</h1>

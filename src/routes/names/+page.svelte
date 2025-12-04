@@ -1,14 +1,14 @@
 <script lang="ts">
 import ComboBox from "$lib/ComboBox.svelte";
-import Signin, { type User } from "$lib/Signin.svelte";
 import { auth, firestore, googleAuthProvider } from "$lib/firebase";
 import { create_name, remove_name } from "$lib/names";
 import { broadcast, watchBroadcastActions } from "$lib/redux-firestore";
 import { store } from "$lib/store";
+import Signin, { type User } from "$lib/Signin.svelte";
 import type { AnyAction } from "@reduxjs/toolkit";
 
-const id = "";
-const name = "";
+let id = "";
+let name = "";
 let ids: string[] = [];
 let state = store.getState();
 
