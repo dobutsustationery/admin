@@ -20,7 +20,7 @@
  * items in the first N records.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cert, initializeApp } from "firebase-admin/app";
 import { Timestamp, getFirestore } from "firebase-admin/firestore";
@@ -107,6 +107,19 @@ async function loadTestData() {
 
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
+  
+  // Load URL mapping if available
+  const mappingPath = resolve(
+    process.cwd(),
+    "e2e",
+    "test-images",
+    "url-mapping.json"
+  );
+  let urlMapping = {};
+  if (existsSync(mappingPath)) {
+    urlMapping = JSON.parse(readFileSync(mappingPath, "utf8"));
+    console.log(`   📍 Loaded ${Object.keys(urlMapping).length} image URL mappings`);
+  }
 
   // If using --match-jancodes, extract JAN codes from first N records
   let janCodesToMatch = null;
@@ -159,6 +172,7 @@ async function loadTestData() {
 
     let batch = db.batch();
     let batchCount = 0;
+    let rewrittenCount = 0;
     // Reduced batch size to avoid gRPC message size limit (4MB)
     // The emulator enforces a 4MB limit per gRPC message. With the test data
     // averaging ~6.5KB per document, 500 documents (~3.25MB) was approaching
@@ -168,9 +182,18 @@ async function loadTestData() {
     for (const { id, data } of docsToLoad) {
       const docRef = db.collection(collectionName).doc(id);
 
+      // Rewrite image URLs to local paths if mapping exists
+      let modifiedData = data;
+      if (data?.payload?.item?.image && urlMapping[data.payload.item.image]) {
+        modifiedData = JSON.parse(JSON.stringify(data));
+        const originalUrl = modifiedData.payload.item.image;
+        modifiedData.payload.item.image = `http://localhost:4173${urlMapping[originalUrl]}`;
+        rewrittenCount++;
+      }
+
       // Restore Firestore Timestamps from stored _seconds and _nanoseconds
       const deserializedData = JSON.parse(
-        JSON.stringify(data),
+        JSON.stringify(modifiedData),
         (key, value) => {
           if (
             value &&
@@ -207,6 +230,9 @@ async function loadTestData() {
     console.log(
       `    ✓ Loaded ${docsToLoad.length} documents to ${collectionName}`,
     );
+    if (rewrittenCount > 0) {
+      console.log(`    ✓ Rewrote ${rewrittenCount} image URLs to local paths`);
+    }
   }
 
   console.log("\n✅ Test data loaded successfully\n");

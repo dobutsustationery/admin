@@ -4,13 +4,15 @@
  * Download all external images referenced in test data and save them locally
  * 
  * This script:
- * 1. Extracts all unique image URLs from the first 400 broadcast records
+ * 1. Extracts all unique image URLs from broadcast records (filtered by --prefix or --match-jancodes)
  * 2. Downloads each image using curl
  * 3. Saves them to e2e/test-images/ directory
  * 4. Creates a mapping file for URL rewriting
  * 
  * Usage:
- *   node e2e/helpers/download-test-images.js
+ *   node e2e/helpers/download-test-images.js                    # All records
+ *   node e2e/helpers/download-test-images.js --prefix=400       # First 400 records
+ *   node e2e/helpers/download-test-images.js --match-jancodes=10 # Match JAN codes from first 10
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
@@ -27,12 +29,75 @@ if (!existsSync(IMAGES_DIR)) {
   mkdirSync(IMAGES_DIR, { recursive: true });
 }
 
+/**
+ * Extract JAN code from a broadcast event payload
+ */
+function extractJanCode(broadcast) {
+  const payload = broadcast.data?.payload;
+  if (!payload) return null;
+  
+  const janCode = payload.item?.janCode || payload.janCode;
+  if (janCode) return janCode;
+  
+  if (payload.id && typeof payload.id === 'string') {
+    const match = payload.id.match(/^(\d+)/);
+    if (match) return match[1];
+  }
+  
+  return null;
+}
+
+/**
+ * Filter broadcast events to include only those matching the given JAN codes
+ */
+function filterByJanCodes(broadcasts, janCodes) {
+  const janCodeSet = new Set(janCodes);
+  
+  return broadcasts.filter(broadcast => {
+    const janCode = extractJanCode(broadcast);
+    if (!janCode) return false;
+    return janCodeSet.has(janCode);
+  });
+}
+
 console.log("📥 Loading test data...");
 const exportData = JSON.parse(readFileSync(TEST_DATA_PATH, "utf8"));
 
-console.log("🔍 Extracting image URLs from first 400 broadcast records...");
+// Parse arguments
+const prefixArg = process.argv.find(arg => arg.startsWith('--prefix='));
+const prefixLimit = prefixArg ? parseInt(prefixArg.split('=')[1], 10) : null;
+
+const matchJancodesArg = process.argv.find(arg => arg.startsWith('--match-jancodes='));
+const matchJancodesLimit = matchJancodesArg ? parseInt(matchJancodesArg.split('=')[1], 10) : null;
+
 const broadcastDocs = exportData.collections.broadcast || [];
-const recordsToProcess = broadcastDocs.slice(0, 400);
+let recordsToProcess;
+
+if (matchJancodesLimit) {
+  console.log(`🔍 Extracting JAN codes from first ${matchJancodesLimit} records...`);
+  const firstNRecords = broadcastDocs.slice(0, matchJancodesLimit);
+  const janCodesSet = new Set();
+  
+  firstNRecords.forEach(broadcast => {
+    const janCode = extractJanCode(broadcast);
+    if (janCode) {
+      janCodesSet.add(janCode);
+    }
+  });
+  
+  const janCodesToMatch = Array.from(janCodesSet);
+  console.log(`   Found ${janCodesToMatch.length} unique JAN codes`);
+  console.log(`   Filtering ${broadcastDocs.length} records by these JAN codes...`);
+  
+  recordsToProcess = filterByJanCodes(broadcastDocs, janCodesToMatch);
+  console.log(`   Will process ${recordsToProcess.length} matching records`);
+} else if (prefixLimit) {
+  console.log(`🔍 Extracting image URLs from first ${prefixLimit} broadcast records...`);
+  recordsToProcess = broadcastDocs.slice(0, prefixLimit);
+} else {
+  console.log(`🔍 Extracting image URLs from all ${broadcastDocs.length} broadcast records...`);
+  recordsToProcess = broadcastDocs;
+}
 
 const imageUrls = new Set();
 
