@@ -1,20 +1,20 @@
 <script lang="ts">
-import { page } from "$app/stores";
-import OrderRow from "$lib/OrderRow.svelte";
-import Signin, { type User } from "$lib/Signin.svelte";
-import { auth, googleAuthProvider } from "$lib/firebase";
-import { firestore } from "$lib/firebase";
-import { type OrderInfo, hide_archive, make_sales } from "$lib/inventory";
-import { broadcast } from "$lib/redux-firestore";
-import { store } from "$lib/store";
+  import { page } from "$app/stores";
+  import { auth, googleAuthProvider } from "$lib/firebase";
+  import { store } from "$lib/store";
+  import Signin, { type User } from "$lib/Signin.svelte";
+  import OrderRow from "$lib/OrderRow.svelte";
+  import { hide_archive, make_sales, type OrderInfo } from "$lib/inventory";
+  import { broadcast } from "$lib/redux-firestore";
+  import { firestore } from "$lib/firebase";
 
-let me: User = { signedIn: false };
+  let me: User = { signedIn: false };
 
-$: itemKey = $page.url.searchParams.get("itemKey");
+  $: itemKey = $page.url.searchParams.get("itemKey");
 
-function user(e: CustomEvent) {
-  me = e.detail;
-}
+  function user(e: CustomEvent) {
+    me = e.detail;
+  }
 </script>
 
 {#if itemKey}
