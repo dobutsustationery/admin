@@ -5,7 +5,7 @@
   "author": "Alex Nicolaou",
   "license": "UNLICENSED",
   "scripts": {
-    "postinstall": "node scripts/install-biome-cli.cjs && node scripts/patch-playwright.cjs",
+    "postinstall": "node scripts/patch-playwright.cjs",
     "dev": "vite dev",
     "dev:local": "vite dev --mode emulator",
     "dev:staging": "vite dev --mode staging",
@@ -38,16 +38,10 @@
     "test:e2e:headed": "npx playwright test --headed",
     "test:e2e:report": "npx playwright show-report e2e/reports/html",
     "precommit": "node scripts/check-no-wait-for-timeout.js",
-    "format": "npm run format:biome && npm run format:svelte",
-    "format:biome": "biome format --write src tests",
-    "format:svelte": "prettier --write \"src/**/*.svelte\"",
-    "lint": "npm run lint:biome && npm run lint:svelte",
-    "lint:biome": "biome check src tests",
-    "lint:svelte": "prettier --check \"src/**/*.svelte\"",
-    "lint:fix": "npm run lint:fix:biome && npm run lint:fix:svelte",
-    "lint:fix:biome": "biome check --write src tests",
-    "lint:fix:svelte": "prettier --write \"src/**/*.svelte\"",
-    "ci": "biome ci src tests",
+    "format": "prettier --write \"src/**/*.{ts,js,svelte}\" \"tests/**/*.{ts,js}\"",
+    "lint": "prettier --check \"src/**/*.{ts,js,svelte}\" \"tests/**/*.{ts,js}\"",
+    "lint:fix": "prettier --write \"src/**/*.{ts,js,svelte}\" \"tests/**/*.{ts,js}\"",
+    "ci": "prettier --check \"src/**/*.{ts,js,svelte}\" \"tests/**/*.{ts,js}\"",
     "data:export": "node scripts/transfer-data.js",
     "data:import": "node scripts/transfer-data.js",
     "data:transfer": "node scripts/transfer-data.js"
@@ -61,7 +55,6 @@
     "svelte": "^4.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.9.4",
     "@google-cloud/firestore": "^7.11.6",
     "@playwright/test": "^1.56.1",
     "@sveltejs/adapter-auto": "^2.0.0",

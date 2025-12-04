@@ -1,7 +1,6 @@
 <script lang="ts">
-  
   import type { AnyAction } from "@reduxjs/toolkit";
-import ComboBox from "$lib/ComboBox.svelte";
+  import ComboBox from "$lib/ComboBox.svelte";
   import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { create_name, remove_name } from "$lib/names";
   import { broadcast, watchBroadcastActions } from "$lib/redux-firestore";

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { auth, firestore, googleAuthProvider } from "$lib/firebase";
+  import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { hide_archive, make_sales, type OrderInfo } from "$lib/inventory";
   import OrderRow from "$lib/OrderRow.svelte";
   import { broadcast } from "$lib/redux-firestore";

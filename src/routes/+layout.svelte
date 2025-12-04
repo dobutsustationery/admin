@@ -1,5 +1,4 @@
 <script lang="ts">
-  
   import type { AnyAction } from "@reduxjs/toolkit";
   import {
     addDoc,
@@ -8,7 +7,7 @@
     doc,
     setDoc,
   } from "firebase/firestore";
-import { onMount } from "svelte";
+  import { onMount } from "svelte";
   import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { user } from "$lib/globals";
   import { watchBroadcastActions } from "$lib/redux-firestore";

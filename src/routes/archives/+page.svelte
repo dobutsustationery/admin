@@ -1,5 +1,5 @@
 <script lang="ts">
-import { auth, firestore, googleAuthProvider } from "$lib/firebase";
+  import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { archive_inventory } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
   import Signin, { type User } from "$lib/Signin.svelte";
