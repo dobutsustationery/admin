@@ -66,15 +66,17 @@ function extractJanCode(broadcast) {
 
 /**
  * Filter broadcast events to include only those matching the given JAN codes
+ * OR those that don't contain any JAN code at all
  */
 function filterByJanCodes(broadcasts, janCodes) {
   const janCodeSet = new Set(janCodes);
   
   return broadcasts.filter(broadcast => {
     const janCode = extractJanCode(broadcast);
-    if (!janCode) return false;
+    // Include if no JAN code found (e.g., create_name, package_item actions)
+    if (!janCode) return true;
     
-    // Check if this JAN code is in our set
+    // Include if this JAN code is in our set
     return janCodeSet.has(janCode);
   });
 }
