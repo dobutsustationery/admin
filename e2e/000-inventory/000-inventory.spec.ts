@@ -37,8 +37,9 @@ test.describe("Inventory Page", () => {
    * Each step has both programmatic and visual verification.
    */
   test("complete inventory workflow", async ({ page, context }) => {
-    // Set test timeout for complete workflow - actual runtime ~5s, allowing 5s variance
-    test.setTimeout(10000); // 10 seconds
+    // Set test timeout for complete workflow
+    // Increased to allow time for auth initialization, data loading, and screenshots
+    test.setTimeout(120000); // 120 seconds
 
     const screenshots = createScreenshotHelper();
 
@@ -158,16 +159,13 @@ test.describe("Inventory Page", () => {
     console.log("   ✓ Auth state injected into localStorage");
 
     // Reload the page to apply authentication
-    await page.reload({ waitUntil: "load" });
+    await page.reload({ waitUntil: "networkidle" });
 
     console.log("   ✓ Page reloaded with authentication");
 
     // Wait for authentication to be processed - wait for sign-in button to disappear
-    await signInButton
-      .waitFor({ state: "hidden", timeout: 10000 })
-      .catch(() => {
-        console.log("   ⚠️  Sign-in button still visible, but continuing...");
-      });
+    // This indicates the layout has recognized the authenticated state
+    await signInButton.waitFor({ state: "hidden", timeout: 30000 });
 
     await screenshots.capture(page, "signed-in-state", {
       programmaticCheck: async () => {
