@@ -29,4 +29,22 @@ describe("names reducer", () => {
     nextState = names(nextState, remove_name({ id, name: "first" }));
     expect(nextState.nameIdToNames[id].length).to.equal(1);
   });
+  it("does nothing when removing a name from non-existent id", () => {
+    const id = "nonExistent";
+    const nextState = names(
+      initialState,
+      remove_name({ id, name: "someName" }),
+    );
+    expect(nextState.nameIdToNames[id]).toBeUndefined();
+  });
+  it("sorts names after removal", () => {
+    const id = "sortTest";
+    let nextState = initialState;
+    nextState = names(nextState, create_name({ id, name: "zebra" }));
+    nextState = names(nextState, create_name({ id, name: "apple" }));
+    nextState = names(nextState, create_name({ id, name: "middle" }));
+    expect(nextState.nameIdToNames[id]).toEqual(["apple", "middle", "zebra"]);
+    nextState = names(nextState, remove_name({ id, name: "middle" }));
+    expect(nextState.nameIdToNames[id]).toEqual(["apple", "zebra"]);
+  });
 });
