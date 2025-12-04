@@ -1,13 +1,13 @@
+import { configureStore } from "@reduxjs/toolkit";
+import { describe, expect, it } from "vitest";
 import { history } from "$lib/history";
-import {
-  inventory,
-  initialState as inventoryInitialState,
-} from "$lib/inventory";
 import type { Item } from "$lib/inventory";
 import {
   archive_inventory,
   delete_empty_order,
   hide_archive,
+  inventory,
+  initialState as inventoryInitialState,
   make_sales,
   new_order,
   package_item,
@@ -17,10 +17,12 @@ import {
   update_field,
   update_item,
 } from "$lib/inventory";
-import { names, initialState as namesInitialState } from "$lib/names";
-import { create_name, remove_name } from "$lib/names";
-import { configureStore } from "@reduxjs/toolkit";
-import { describe, expect, it } from "vitest";
+import {
+  create_name,
+  names,
+  initialState as namesInitialState,
+  remove_name,
+} from "$lib/names";
 
 /**
  * Immutability Test Suite

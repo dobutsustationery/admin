@@ -1,13 +1,13 @@
 <script lang="ts">
-  import ComboBox from "./ComboBox.svelte";
-  import { firestore } from "./firebase";
+  
   import substrings from "common-substrings";
   import { get } from "$lib/http";
+import ComboBox from "./ComboBox.svelte";
+  import { firestore } from "./firebase";
   import { user } from "./globals";
-  import { type Item, update_field, rename_subtype } from "./inventory";
+  import { type Item, itemsLookIdentical, rename_subtype, update_field } from "./inventory";
   import { broadcast } from "./redux-firestore";
   import { store } from "./store";
-  import { itemsLookIdentical } from "./inventory";
 
   export let code: string = "";
   export let subtype: string = "";

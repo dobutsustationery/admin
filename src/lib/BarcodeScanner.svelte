@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { get } from "$lib/http";
+  
   import {
     BarcodeFormat,
     BrowserMultiFormatReader,
@@ -7,6 +7,7 @@
     NotFoundException,
   } from "@zxing/library";
   import { createEventDispatcher } from "svelte";
+import { get } from "$lib/http";
 
   const hints = new Map();
   const formats = [BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX];
