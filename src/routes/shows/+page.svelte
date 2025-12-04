@@ -1,104 +1,108 @@
 <script lang="ts">
-import OrderRow from "$lib/OrderRow.svelte";
-import Signin, { type User } from "$lib/Signin.svelte";
-import { auth, googleAuthProvider } from "$lib/firebase";
-import { firestore } from "$lib/firebase";
-import { type OrderInfo, hide_archive, make_sales } from "$lib/inventory";
-import { broadcast } from "$lib/redux-firestore";
-import { store } from "$lib/store";
+  import { auth, googleAuthProvider } from "$lib/firebase";
+  import { store } from "$lib/store";
+  import Signin, { type User } from "$lib/Signin.svelte";
+  import OrderRow from "$lib/OrderRow.svelte";
+  import { hide_archive, make_sales, type OrderInfo } from "$lib/inventory";
+  import { broadcast } from "$lib/redux-firestore";
+  import { firestore } from "$lib/firebase";
 
-let ids: string[] = [];
-let sales: string[] = [];
-const hidden: string[] = [];
-let excludedDates: { [k: string]: boolean } = {};
-let uniqueDates: string[] = [];
+  let ids: string[] = [];
+  let sales: string[] = [];
+  let hidden: string[] = [];
+  let excludedDates: { [k: string]: boolean } = {};
+  let uniqueDates: string[] = [];
 
-$: if ($store) {
-  ids = Object.keys($store.inventory.archivedInventoryState);
-  sales = Object.keys($store.inventory.salesEvents);
-}
-
-let me: User = { signedIn: false };
-
-let salesData: OrderInfo | undefined = undefined;
-
-function viewSales(id: string) {
-  // Logic to view sales for the given archive ID
-  console.log(`Viewing sales for archive: ${id}`);
-  salesData = $store.inventory.salesEvents[id];
-  const creationDates: { [k: string]: boolean } = {};
-  for (const item in salesData.items) {
-    const itemKey = salesData.items[item].itemKey;
-    const seenDate =
-      $store.inventory.archivedInventoryState[id].idToItem[itemKey]
-        .creationDate;
-    creationDates[seenDate] = true;
+  $: if ($store) {
+    ids = Object.keys($store.inventory.archivedInventoryState);
+    sales = Object.keys($store.inventory.salesEvents);
   }
-  uniqueDates = Object.keys(creationDates);
-  excludedDates = {};
-}
 
-function createSales(archiveName: string) {
-  // Logic to create sales for the given archive ID
-  console.log(`Creating sales for archive: ${archiveName}`);
-  if (archiveName && me.signedIn) {
-    broadcast(firestore, me.uid, make_sales({ archiveName, date: new Date() }));
+  let me: User = { signedIn: false };
+
+  let salesData: OrderInfo | undefined = undefined;
+
+  function viewSales(id: string) {
+    // Logic to view sales for the given archive ID
+    console.log(`Viewing sales for archive: ${id}`);
+    salesData = $store.inventory.salesEvents[id];
+    const creationDates: { [k: string]: boolean } = {};
+    for (const item in salesData.items) {
+      const itemKey = salesData.items[item].itemKey;
+      const seenDate =
+        $store.inventory.archivedInventoryState[id].idToItem[itemKey]
+          .creationDate;
+      creationDates[seenDate] = true;
+    }
+    uniqueDates = Object.keys(creationDates);
+    excludedDates = {};
   }
-}
 
-function hideArchive(archiveName: string) {
-  if (archiveName && me.signedIn) {
-    broadcast(firestore, me.uid, hide_archive({ archiveName }));
+  function createSales(archiveName: string) {
+    // Logic to create sales for the given archive ID
+    console.log(`Creating sales for archive: ${archiveName}`);
+    if (archiveName && me.signedIn) {
+      broadcast(
+        firestore,
+        me.uid,
+        make_sales({ archiveName, date: new Date() }),
+      );
+    }
   }
-}
 
-function makeCSV() {
-  const header = [
-    "Creation Dates",
-    "Snapshot",
-    "Description",
-    "JAN Code",
-    "Subtype",
-    "Quantity Sold",
-  ].join(",");
-  const rows = salesData?.items
-    .filter((k) => {
-      const item =
-        $store.inventory.archivedInventoryState[salesData?.product || ""]
-          .idToItem[k.itemKey];
-      return !excludedDates[item.creationDate];
-    })
-    .map((k) => {
-      const item =
-        $store.inventory.archivedInventoryState[salesData?.product || ""]
-          .idToItem[k.itemKey];
-      return [
-        `"${item.creationDate}"`,
-        `"${item.image}"`,
-        `"${item.description}"`,
-        `"${item.janCode}"`,
-        `"${item.subtype}"`,
-        k.qty,
-      ].join(",");
-    })
-    .join("\n");
-  return `${header}\n${rows}`;
-}
-function downloadCSV() {
-  if (salesData) {
-    const csvContent = "data:text/csv;charset=utf-8," + makeCSV();
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${salesData.product}.csv`);
-    document.body.appendChild(link);
-    link.click();
+  function hideArchive(archiveName: string) {
+    if (archiveName && me.signedIn) {
+      broadcast(firestore, me.uid, hide_archive({ archiveName }));
+    }
   }
-}
 
-function user(e: CustomEvent) {
-  me = e.detail;
-}
+  function makeCSV() {
+    const header = [
+      "Creation Dates",
+      "Snapshot",
+      "Description",
+      "JAN Code",
+      "Subtype",
+      "Quantity Sold",
+    ].join(",");
+    const rows = salesData?.items
+      .filter((k) => {
+        const item =
+          $store.inventory.archivedInventoryState[salesData?.product || ""]
+            .idToItem[k.itemKey];
+        return !excludedDates[item.creationDate];
+      })
+      .map((k) => {
+        const item =
+          $store.inventory.archivedInventoryState[salesData?.product || ""]
+            .idToItem[k.itemKey];
+        return [
+          `"${item.creationDate}"`,
+          `"${item.image}"`,
+          `"${item.description}"`,
+          `"${item.janCode}"`,
+          `"${item.subtype}"`,
+          k.qty,
+        ].join(",");
+      })
+      .join("\n");
+    return `${header}\n${rows}`;
+  }
+  function downloadCSV() {
+    if (salesData) {
+      const csvContent = "data:text/csv;charset=utf-8," + makeCSV();
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `${salesData.product}.csv`);
+      document.body.appendChild(link);
+      link.click();
+    }
+  }
+
+  function user(e: CustomEvent) {
+    me = e.detail;
+  }
 </script>
 
 <h1>Create and view event sales</h1>

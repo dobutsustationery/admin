@@ -1,32 +1,32 @@
 <script lang="ts">
-import Signin, { type User } from "$lib/Signin.svelte";
-import { auth, googleAuthProvider } from "$lib/firebase";
-import { firestore } from "$lib/firebase";
-import { archive_inventory } from "$lib/inventory";
-import { broadcast } from "$lib/redux-firestore";
-import { store } from "$lib/store";
+  import { auth, googleAuthProvider } from "$lib/firebase";
+  import { store } from "$lib/store";
+  import Signin, { type User } from "$lib/Signin.svelte";
+  import { archive_inventory } from "$lib/inventory";
+  import { broadcast } from "$lib/redux-firestore";
+  import { firestore } from "$lib/firebase";
 
-let ids: string[] = [];
-let state = store.getState();
+  let ids: string[] = [];
+  let state = store.getState();
 
-$: if ($store) {
-  state = store.getState();
-  ids = Object.keys(state.inventory.archivedInventoryState);
-}
-
-let me: User = { signedIn: false };
-
-function user(e: CustomEvent) {
-  me = e.detail;
-}
-
-let archiveName = "";
-function archive() {
-  if (archiveName && me.signedIn) {
-    broadcast(firestore, me.uid, archive_inventory({ archiveName }));
-    archiveName = "";
+  $: if ($store) {
+    state = store.getState();
+    ids = Object.keys(state.inventory.archivedInventoryState);
   }
-}
+
+  let me: User = { signedIn: false };
+
+  function user(e: CustomEvent) {
+    me = e.detail;
+  }
+
+  let archiveName = "";
+  function archive() {
+    if (archiveName && me.signedIn) {
+      broadcast(firestore, me.uid, archive_inventory({ archiveName }));
+      archiveName = "";
+    }
+  }
 </script>
 
 <h1>Archives</h1>
