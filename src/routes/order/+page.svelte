@@ -1,16 +1,16 @@
 <script lang="ts">
   import { page } from "$app/stores";
   import BarcodeScanner from "$lib/BarcodeScanner.svelte";
-  import OrderRow from "$lib/OrderRow.svelte";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/globals";
   import {
+    delete_empty_order,
     type LineItem,
     package_item,
-    delete_empty_order,
     quantify_item,
     retype_item,
   } from "$lib/inventory";
+  import OrderRow from "$lib/OrderRow.svelte";
   import { broadcast } from "$lib/redux-firestore";
   import { store } from "$lib/store";
 

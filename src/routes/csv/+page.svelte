@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { store } from "$lib/store";
+  
   import { Parser } from "@json2csv/plainjs";
+import { store } from "$lib/store";
 
   let state = store.getState();
 

@@ -1,12 +1,11 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { auth, googleAuthProvider } from "$lib/firebase";
-  import { store } from "$lib/store";
-  import Signin, { type User } from "$lib/Signin.svelte";
-  import OrderRow from "$lib/OrderRow.svelte";
+  import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { hide_archive, make_sales, type OrderInfo } from "$lib/inventory";
+  import OrderRow from "$lib/OrderRow.svelte";
   import { broadcast } from "$lib/redux-firestore";
-  import { firestore } from "$lib/firebase";
+  import Signin, { type User } from "$lib/Signin.svelte";
+  import { store } from "$lib/store";
 
   let me: User = { signedIn: false };
 

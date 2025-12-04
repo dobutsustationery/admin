@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
+  
   import { createEventDispatcher } from "svelte";
-  import SelectBox from "./SelectBox.svelte";
+import { goto } from "$app/navigation";
   import type { Item } from "./inventory";
+  import SelectBox from "./SelectBox.svelte";
   import { store } from "./store";
 
   export let key: string = "";

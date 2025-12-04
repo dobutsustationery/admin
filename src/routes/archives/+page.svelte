@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { auth, googleAuthProvider } from "$lib/firebase";
-  import { store } from "$lib/store";
-  import Signin, { type User } from "$lib/Signin.svelte";
+import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { archive_inventory } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
-  import { firestore } from "$lib/firebase";
+  import Signin, { type User } from "$lib/Signin.svelte";
+  import { store } from "$lib/store";
 
   let ids: string[] = [];
   let state = store.getState();

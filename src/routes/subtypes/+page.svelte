@@ -1,8 +1,8 @@
 <script lang="ts">
   import { auth, googleAuthProvider } from "$lib/firebase";
-  import { store } from "$lib/store";
   import Signin, { type User } from "$lib/Signin.svelte";
   import SubtypeRow from "$lib/SubtypeRow.svelte";
+  import { store } from "$lib/store";
 
   let ids: string[] = [];
   let codes: string[] = [];

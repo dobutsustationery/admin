@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
+  
+  import { collection, onSnapshot, query } from "firebase/firestore";
+import { goto } from "$app/navigation";
   import { firestore } from "$lib/firebase";
   import { new_order } from "$lib/inventory";
   import { store } from "$lib/store";
-  import { collection, onSnapshot, query } from "firebase/firestore";
 
   interface PaymentInfo {
     id: string;
