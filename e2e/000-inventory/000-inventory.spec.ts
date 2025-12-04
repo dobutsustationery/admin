@@ -227,16 +227,20 @@ test.describe("Inventory Page", () => {
     console.log("🔍 Waiting for inventory data rows...");
 
     // Wait for at least one data row to appear by checking that rows exist
-    // Note: Browsers auto-insert <tbody> around table rows, so we use "table tbody > tr"
+    // We use "table tr" but exclude the header row in thead
     await page.waitForFunction(
       () => {
-        const rows = document.querySelectorAll("table tbody > tr");
-        return rows.length > 0;
+        const allRows = document.querySelectorAll("table tr");
+        const headerRows = document.querySelectorAll("table thead tr");
+        return allRows.length > headerRows.length;
       },
       { timeout: 60000 },
     );
 
-    const rowCount = await page.locator("table tbody > tr").count();
+    // Count data rows (all rows minus header rows)
+    const allRowCount = await page.locator("table tr").count();
+    const headerRowCount = await page.locator("table thead tr").count();
+    const rowCount = allRowCount - headerRowCount;
     console.log(`   ✓ Found ${rowCount} rows`);
 
     await screenshots.capture(page, "inventory-loaded", {
@@ -249,8 +253,10 @@ test.describe("Inventory Page", () => {
         expect(headers.join(" ")).toContain("JAN Code");
         expect(headers.join(" ")).toContain("Quantity");
 
-        // Verify we have inventory rows (rows in tbody, not in thead)
-        const finalRowCount = await page.locator("table tbody > tr").count();
+        // Verify we have inventory rows (excluding header rows in thead)
+        const allRows = await page.locator("table tr").count();
+        const headerRows = await page.locator("table thead tr").count();
+        const finalRowCount = allRows - headerRows;
         console.log(`   ✓ Found ${finalRowCount} inventory items displayed`);
         expect(finalRowCount).toBeGreaterThan(0);
 
@@ -286,7 +292,8 @@ test.describe("Inventory Page", () => {
             `   📊 Sample inventory data (first ${sampleRows} rows):`,
           );
           for (let i = 0; i < sampleRows; i++) {
-            const row = page.locator("table tbody > tr").nth(i);
+            // Skip header rows, get data rows only
+            const row = page.locator("table tr").nth(headerRows + i);
             const cells = await row.locator("td").allTextContents();
 
             // Verify row has cells with data
