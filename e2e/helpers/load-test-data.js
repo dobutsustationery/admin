@@ -65,19 +65,26 @@ function extractJanCode(broadcast) {
 }
 
 /**
- * Filter broadcast events to include only those matching the given JAN codes
- * OR those that don't contain any JAN code at all
+ * Filter broadcast events by scanning for JAN codes in the JSON
+ * - Include if the action's JSON contains any of the target JAN codes as a substring
+ * - Exclude if the action contains an itemKey field (will be filtered separately)
  */
 function filterByJanCodes(broadcasts, janCodes) {
   const janCodeSet = new Set(janCodes);
   
   return broadcasts.filter(broadcast => {
-    const janCode = extractJanCode(broadcast);
-    // Include if no JAN code found (e.g., create_name, package_item actions)
-    if (!janCode) return true;
+    // Check if this action has an itemKey field
+    const hasItemKey = broadcast.data?.payload?.itemKey !== undefined;
     
-    // Include if this JAN code is in our set
-    return janCodeSet.has(janCode);
+    if (hasItemKey) {
+      // For actions with itemKey, check if itemKey contains any target JAN code
+      const itemKey = broadcast.data.payload.itemKey;
+      return janCodes.some(janCode => itemKey.includes(janCode));
+    }
+    
+    // For actions without itemKey, scan the entire JSON for JAN codes
+    const jsonStr = JSON.stringify(broadcast);
+    return janCodes.some(janCode => jsonStr.includes(janCode));
   });
 }
 
