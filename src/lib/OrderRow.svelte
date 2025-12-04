@@ -1,7 +1,6 @@
 <script lang="ts">
-  
   import { createEventDispatcher } from "svelte";
-import { goto } from "$app/navigation";
+  import { goto } from "$app/navigation";
   import type { Item } from "./inventory";
   import SelectBox from "./SelectBox.svelte";
   import { store } from "./store";
