@@ -1,14 +1,14 @@
 <script lang="ts">
-  import BarcodeScanner from "$lib/BarcodeScanner.svelte";
-  import Signin from "$lib/Signin.svelte";
+  
   import substrings from "common-substrings";
-
+import BarcodeScanner from "$lib/BarcodeScanner.svelte";
   import ComboBox from "$lib/ComboBox.svelte";
   import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { user } from "$lib/globals";
   import { get } from "$lib/http";
   import { update_item } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
+  import Signin from "$lib/Signin.svelte";
   import { store } from "$lib/store";
 
   let janCode = "No scan yet";

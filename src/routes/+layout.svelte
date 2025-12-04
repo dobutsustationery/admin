@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { firestore } from "$lib/firebase";
-  import { user } from "$lib/globals";
+  
+  import type { AnyAction } from "@reduxjs/toolkit";
   import {
     addDoc,
     collection,
@@ -9,11 +8,11 @@
     doc,
     setDoc,
   } from "firebase/firestore";
-
-  import { auth, googleAuthProvider } from "$lib/firebase";
-  import type { User } from "$lib/Signin.svelte";
-  import type { AnyAction } from "@reduxjs/toolkit";
+import { onMount } from "svelte";
+  import { auth, firestore, googleAuthProvider } from "$lib/firebase";
+  import { user } from "$lib/globals";
   import { watchBroadcastActions } from "$lib/redux-firestore";
+  import type { User } from "$lib/Signin.svelte";
   import { store } from "$lib/store";
   import { logTime } from "$lib/timing";
 
