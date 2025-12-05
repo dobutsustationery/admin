@@ -162,64 +162,62 @@ test.describe("Inventory Page", () => {
 
     console.log("   ✓ Page reloaded with authentication");
 
-    // Wait for authentication to be processed - wait for sign-in button to disappear
-    await signInButton
-      .waitFor({ state: "hidden", timeout: 10000 })
-      .catch(() => {
-        console.log("   ⚠️  Sign-in button still visible, but continuing...");
-      });
+    // ====================================================================
+    // STEP 2.5: Wait for authentication to be fully processed
+    // ====================================================================
+    // The page needs time to:
+    // 1. Initialize Firebase Auth (authStateReady())
+    // 2. Load the Signin component dynamically
+    // 3. Detect auth state from localStorage (onAuthStateChanged)
+    // 4. Emit user_changed event to layout
+    // 5. Re-render to show authenticated content
+    //
+    // Rather than trying to detect intermediate states, we wait for
+    // concrete evidence that auth completed: the inventory table appearing
 
+    // ====================================================================
+    // STEP 3: Wait for inventory data to load
+    // ====================================================================
+    console.log("\n📖 STEP 3: Wait for inventory data and authenticated content to load");
+
+    // Wait for inventory table to appear - this proves auth succeeded
+    console.log("🔍 Waiting for inventory table (proof of successful authentication)...");
+    const inventoryTable = page.locator("table");
+    await inventoryTable.waitFor({ state: "visible", timeout: 30000 });
+    console.log("   ✓ Inventory table found - authentication successful");
+
+    // Now that we know auth succeeded, capture the signed-in state
     await screenshots.capture(page, "signed-in-state", {
       programmaticCheck: async () => {
-        // Verify we're no longer seeing the sign-in button
+        // Verify sign-in button is no longer visible
         const signInStillVisible = await signInButton
           .isVisible()
           .catch(() => false);
         expect(signInStillVisible).toBe(false);
         console.log("   ✓ Sign-in button no longer visible");
 
-        // Verify user is authenticated by checking for user-specific UI elements
-        // The page should show the main content area
-        const mainContent = page
-          .locator('main, [role="main"], .main-content')
-          .first();
-        const mainVisible = await mainContent.isVisible().catch(() => false);
-        if (mainVisible) {
-          console.log("   ✓ Main content area is visible");
-        }
+        // Verify table is visible (we already waited for it above)
+        await expect(inventoryTable).toBeVisible();
+        console.log("   ✓ Inventory table is visible");
 
-        // Check if Redux store has user state
-        const hasAuthState = await page
-          .evaluate(() => {
-            try {
-              const store = (window as any).__REDUX_STORE__;
-              if (store) {
-                const state = store.getState();
-                return state.user?.uid;
-              }
-              return false;
-            } catch (e) {
-              return false;
+        // Verify Redux store has user state
+        const hasAuthState = await page.evaluate(() => {
+          try {
+            const store = (window as any).__REDUX_STORE__;
+            if (store) {
+              const state = store.getState();
+              return state.user?.uid;
             }
-          })
-          .catch(() => false);
+            return false;
+          } catch (e) {
+            return false;
+          }
+        });
 
-        if (hasAuthState) {
-          console.log("   ✓ Redux store contains authenticated user state");
-        }
+        expect(hasAuthState).toBeTruthy();
+        console.log("   ✓ Redux store contains authenticated user state");
       },
     });
-
-    // ====================================================================
-    // STEP 3: Wait for inventory data to load
-    // ====================================================================
-    console.log("\n📖 STEP 3: Wait for inventory data to load");
-
-    // Wait for inventory table to appear
-    console.log("🔍 Waiting for inventory table...");
-    const inventoryTable = page.locator("table");
-    await inventoryTable.waitFor({ state: "visible", timeout: 30000 });
-    console.log("   ✓ Inventory table found");
 
     // Wait for inventory data rows to appear
     // Note: table rows are direct children of <table>, not in <tbody>
