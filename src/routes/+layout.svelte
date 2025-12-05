@@ -63,19 +63,10 @@
       originalConsoleError.apply(console, args);
     };
 
-    // Wait for Firebase Auth to be fully initialized and ready
-    // This is critical for emulator mode where auth connection takes time
-    try {
-      await auth.authStateReady();
-      console.log("✓ Firebase Auth is ready");
-    } catch (error) {
-      console.error("Auth ready error:", error);
-    }
-
-    // Give a small additional delay for safety
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    // Dynamically import Signin component after auth is ready
+    // Dynamically import Signin component
+    // We don't wait for authStateReady() because it can be slow in emulator mode (4-9s)
+    // Instead, we load the component immediately and let onAuthStateChanged handle auth state
+    // Any transient auth errors during initialization are suppressed above
     try {
       const module = await import("$lib/Signin.svelte");
       SigninComponent = module.default;
