@@ -123,6 +123,22 @@ async function loadTestData() {
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
   
+  // Clear existing data from collections to ensure clean state
+  // This prevents data accumulation from multiple test runs
+  console.log(`\n🧹 Clearing existing data from emulator...`);
+  const collectionsToC lear = Object.keys(exportData.collections);
+  for (const collectionName of collectionsToC lear) {
+    const collectionRef = db.collection(collectionName);
+    const snapshot = await collectionRef.get();
+    if (snapshot.size > 0) {
+      console.log(`   Deleting ${snapshot.size} existing documents from ${collectionName}...`);
+      const batch = db.batch();
+      snapshot.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+    }
+  }
+  console.log(`   ✓ Emulator data cleared`);
+  
   // Load URL mapping if available
   const mappingPath = resolve(
     process.cwd(),
