@@ -126,8 +126,8 @@ async function loadTestData() {
   // Clear existing data from collections to ensure clean state
   // This prevents data accumulation from multiple test runs
   console.log(`\n🧹 Clearing existing data from emulator...`);
-  const collectionsToC lear = Object.keys(exportData.collections);
-  for (const collectionName of collectionsToC lear) {
+  const collectionsToClear = Object.keys(exportData.collections);
+  for (const collectionName of collectionsToClear) {
     const collectionRef = db.collection(collectionName);
     const snapshot = await collectionRef.get();
     if (snapshot.size > 0) {
