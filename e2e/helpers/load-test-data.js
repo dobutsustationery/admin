@@ -8,12 +8,12 @@
  * 
  * Usage:
  *   node e2e/helpers/load-test-data.js                    # Load all data
- *   node e2e/helpers/load-test-data.js --prefix=400       # Load only first 400 broadcast events
+ *   node e2e/helpers/load-test-data.js --match-jancodes=10  # Load data for first 10 JAN codes
  *   node e2e/helpers/load-test-data.js --match-jancodes=10 # Load records matching JAN codes from first 10 records
  * 
  * The --prefix flag is recommended for faster test data loading. It loads only the first N
  * broadcast events (which must be the oldest/first events chronologically) while still loading
- * all documents from other collections. Use --prefix=400 for typical E2E testing.
+ * all documents from other collections. Use --match-jancodes=10 for typical E2E testing.
  * 
  * The --match-jancodes flag loads the first N records, extracts their JAN codes, then loads
  * all records that reference those JAN codes. This ensures complete test coverage for the

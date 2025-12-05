@@ -85,7 +85,7 @@ bash e2e/run-tests.sh
 ### Running with Reduced Data (400 records for faster iteration)
 Edit `e2e/run-tests.sh` line 52 to change:
 ```bash
-node e2e/helpers/load-test-data.js --prefix=400
+node e2e/helpers/load-test-data.js --match-jancodes=10
 ```
 
 ### Timing Script

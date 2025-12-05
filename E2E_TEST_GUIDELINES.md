@@ -205,8 +205,8 @@ After writing your test, generate the baseline screenshots:
 # Start Firebase emulators (if needed)
 npm run emulators
 
-# Load test data with the same prefix used in CI (IMPORTANT!)
-node e2e/helpers/load-test-data.js --prefix=400
+# Load test data with the same parameters used in CI (IMPORTANT!)
+node e2e/helpers/load-test-data.js --match-jancodes=10
 
 # Build the application
 npm run build:local
@@ -215,7 +215,7 @@ npm run build:local
 npx playwright test <test-name>.spec.ts --update-snapshots
 ```
 
-**⚠️ CRITICAL**: Always use `--prefix=400` when loading test data for baseline generation. This must match the CI configuration to ensure consistent visual comparisons.
+**⚠️ CRITICAL**: Always use `--match-jancodes=10` when loading test data for baseline generation. This must match the CI configuration to ensure consistent visual comparisons.
 
 ### Step 5: Verify and Commit Baselines
 
@@ -330,7 +330,7 @@ When you change the UI and need to update baselines:
    npm run emulators
    
    # Terminal 2: Load test data with correct prefix
-   node e2e/helpers/load-test-data.js --prefix=400
+   node e2e/helpers/load-test-data.js --match-jancodes=10
    ```
 
 2. **Build the application**:
@@ -356,7 +356,7 @@ When you change the UI and need to update baselines:
    git commit -m "Update baselines for <reason>"
    ```
 
-**⚠️ IMPORTANT**: Always use `--prefix=400` when loading test data. This matches the CI configuration.
+**⚠️ IMPORTANT**: Always use `--match-jancodes=10` when loading test data. This matches the CI configuration.
 
 ## Test Structure
 
@@ -429,7 +429,7 @@ Before submitting a PR with a new E2E test, verify:
 - [ ] **Every screenshot includes programmatic verification via `programmaticCheck`**
 - [ ] Test waits for specific conditions (no arbitrary delays)
 - [ ] Test does not rely on retries
-- [ ] **Baseline screenshots generated with `--prefix=400`**
+- [ ] **Baseline screenshots generated with `--match-jancodes=10`**
 - [ ] Baseline screenshots stored in `e2e/###-<testname>/screenshots/`
 - [ ] **Baseline screenshots committed to git** (YOU are responsible for this)
 - [ ] Test documentation created in `e2e/###-<testname>/README.md`
@@ -443,7 +443,7 @@ Before submitting a PR with code changes that affect visual output:
 
 - [ ] Run affected E2E tests to identify visual changes
 - [ ] Review visual diffs in `test-results/` to verify changes are intentional
-- [ ] **Regenerate baselines using `--prefix=400`** (see "Updating Existing Tests" section)
+- [ ] **Regenerate baselines using `--match-jancodes=10`** (see "Updating Existing Tests" section)
 - [ ] **Commit updated baseline screenshots** (YOU are responsible for this)
 - [ ] Verify all E2E tests pass with updated baselines
 - [ ] Update test documentation if the visual changes require explanation

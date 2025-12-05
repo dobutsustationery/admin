@@ -93,7 +93,7 @@ The test uses data loaded from `test-data/firestore-export.json` into the Fireba
 - **users collection**: Admin user data
 - **Inventory items**: Created through broadcast actions
 
-The test loads 400 broadcast events using the `--prefix=400` flag.
+The test loads broadcast events for the first 10 JAN codes using the `--match-jancodes=10` flag.
 
 ## Running This Test
 
@@ -147,7 +147,7 @@ git commit -m "Update inventory baseline screenshots"
 ### Data not loading
 
 1. Verify emulators are running: `curl http://localhost:8080`
-2. Check test data is loaded: `node e2e/helpers/load-test-data.js --prefix=400`
+2. Check test data is loaded: `node e2e/helpers/load-test-data.js --match-jancodes=10`
 3. Rebuild application: `npm run build:local`
 
 ### Test timeout
