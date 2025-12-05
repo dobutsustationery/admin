@@ -233,13 +233,13 @@ All screenshots use Playwright's visual regression testing with **zero-pixel tol
 **Generating/Updating baselines:**
 ```bash
 # Generate initial baselines for new tests
-# IMPORTANT: Load test data with --prefix=400 first!
-node e2e/helpers/load-test-data.js --prefix=400
+# IMPORTANT: Load test data with --match-jancodes=10 first!
+node e2e/helpers/load-test-data.js --match-jancodes=10
 npm run build:local
 npx playwright test --update-snapshots
 
 # Update baselines after intentional UI changes
-node e2e/helpers/load-test-data.js --prefix=400
+node e2e/helpers/load-test-data.js --match-jancodes=10
 npm run build:local
 npx playwright test --update-snapshots
 
@@ -248,7 +248,7 @@ git add e2e/###-<testname>/screenshots/
 git commit -m "Add/Update baseline screenshots"
 ```
 
-**⚠️ CRITICAL**: Always use `--prefix=400` when loading test data for baseline generation. This must match the CI configuration to prevent false visual regression failures.
+**⚠️ CRITICAL**: Always use `--match-jancodes=10` when loading test data for baseline generation. This must match the CI configuration to prevent false visual regression failures.
 
 **Reviewing failures:**
 - Check `test-results/` for diff images showing what changed

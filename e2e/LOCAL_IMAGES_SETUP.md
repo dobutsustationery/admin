@@ -49,7 +49,7 @@ Or manually:
 npm run emulators &
 
 # Load test data with local image URLs
-node e2e/helpers/load-test-data-with-local-images.js --prefix=400
+node e2e/helpers/load-test-data-with-local-images.js --match-jancodes=10
 
 # Create symlink for serving images
 ln -sf ../e2e/test-images static/test-images
