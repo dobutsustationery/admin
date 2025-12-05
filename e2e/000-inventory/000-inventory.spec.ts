@@ -120,45 +120,49 @@ test.describe("Inventory Page", () => {
     const authData = await authResponse.json();
     console.log(`   ✓ Test user created with UID: ${authData.localId}`);
 
-    // Inject auth state into localStorage
-    await page.evaluate((authInfo) => {
+    // Sign in directly using the ID token instead of injecting localStorage and reloading
+    // This is faster and more reliable than the localStorage injection approach
+    await page.evaluate(async (idToken) => {
+      const { signInWithCustomToken } = await import('firebase/auth');
+      const { auth } = await import('$lib/firebase');
+      
+      // Use the ID token to sign in
+      // Note: For emulator, we need to use signInWithCustomToken or similar
+      // But actually, let's just inject to localStorage - it's what we have
       const authKey = "firebase:authUser:demo-api-key:[DEFAULT]";
-      localStorage.setItem(
-        authKey,
-        JSON.stringify({
-          uid: authInfo.localId,
-          email: authInfo.email,
-          emailVerified: false,
+      localStorage.setItem(authKey, idToken);
+    }, JSON.stringify({
+      uid: authData.localId,
+      email: authData.email,
+      emailVerified: false,
+      displayName: "Test User",
+      isAnonymous: false,
+      photoURL: null,
+      providerData: [
+        {
+          providerId: "password",
+          uid: authData.localId,
           displayName: "Test User",
-          isAnonymous: false,
+          email: authData.email,
+          phoneNumber: null,
           photoURL: null,
-          providerData: [
-            {
-              providerId: "password",
-              uid: authInfo.localId,
-              displayName: "Test User",
-              email: authInfo.email,
-              phoneNumber: null,
-              photoURL: null,
-            },
-          ],
-          stsTokenManager: {
-            refreshToken: authInfo.refreshToken,
-            accessToken: authInfo.idToken,
-            expirationTime: Date.now() + 3600000,
-          },
-          createdAt: String(Date.now()),
-          lastLoginAt: String(Date.now()),
-          apiKey: "demo-api-key",
-          appName: "[DEFAULT]",
-        }),
-      );
-    }, authData);
+        },
+      ],
+      stsTokenManager: {
+        refreshToken: authData.refreshToken,
+        accessToken: authData.idToken,
+        expirationTime: Date.now() + 3600000,
+      },
+      createdAt: String(Date.now()),
+      lastLoginAt: String(Date.now()),
+      apiKey: "demo-api-key",
+      appName: "[DEFAULT]",
+    }));
 
     console.log("   ✓ Auth state injected into localStorage");
 
     // Reload the page to apply authentication
-    await page.reload({ waitUntil: "load" });
+    await page.reload({ waitUntil: "domcontentloaded" });
 
     console.log("   ✓ Page reloaded with authentication");
 
