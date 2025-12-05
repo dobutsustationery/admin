@@ -11,7 +11,7 @@
  * 
  * Usage:
  *   node e2e/helpers/download-test-images.js                    # All records
- *   node e2e/helpers/download-test-images.js --prefix=400       # First 400 records
+ *   node e2e/helpers/download-test-images.js --match-jancodes=10  # First 10 JAN codes
  *   node e2e/helpers/download-test-images.js --match-jancodes=10 # Match JAN codes from first 10
  */
 

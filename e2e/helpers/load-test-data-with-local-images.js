@@ -7,7 +7,7 @@
  * for reliable e2e testing without external dependencies.
  * 
  * Usage:
- *   node e2e/helpers/load-test-data-with-local-images.js --prefix=400
+ *   node e2e/helpers/load-test-data-with-local-images.js --match-jancodes=10
  */
 
 import { readFileSync, existsSync } from "node:fs";
