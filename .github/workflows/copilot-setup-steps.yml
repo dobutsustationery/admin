@@ -2,7 +2,7 @@
 name: Copilot Setup Steps
 
 # This workflow demonstrates the environment setup steps and can be triggered manually.
-# It does NOT run on pull requests to avoid unnecessary resource usage.
+# It does not run on pull requests to avoid unnecessary resource usage.
 # For actual E2E testing on PRs, see e2e-tests.yml
 
 on:
