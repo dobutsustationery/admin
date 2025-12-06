@@ -39,3 +39,17 @@ We use a **Strict Design-First Workflow** in this repository.
 ## 4. Specific "Gotchas"
 - **Imports**: Use `$lib/` aliases.
 - **Strict Verification**: User relies on E2E `README.md` files to validate functionality. Ensure your tests align with these descriptions.
+
+## 5. Multi-Tasking & Context Switching
+Use the GitHub CLI (`gh`) to manage context between different tasks/PRs.
+
+### Switching Contexts
+When the user asks to switch to a different PR (e.g., "Switch to PR #123"):
+1.  **Checkout**: `gh pr checkout 123`
+2.  **Read Context**: `gh pr view --comments` (This is your source of truth for the task status).
+3.  **Resume**: Continue work based on the PR description and latest comments.
+
+### creating a New Task
+1.  Create a branch: `git checkout -b feature/name`
+2.  Follow the **Strict Design-First Workflow** (Design -> Milestones -> Code).
+3.  Push and create PR: `gh pr create --draft` (to track your own progress if helpful).
