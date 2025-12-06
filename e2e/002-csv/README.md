@@ -18,5 +18,6 @@
 
 **Programmatic Verification:**
 - [ ] Validated sign-in button is no longer visible
+- [ ] Verified CSV content is displayed
 - [ ] Verified Redux store contains authenticated user state
 
