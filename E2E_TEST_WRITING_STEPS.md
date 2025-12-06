@@ -11,24 +11,48 @@ Create a new directory `e2e/###-<name>/`:
 
 ## 2. Writing the Test
 
-### Use `createScreenshotHelper`
-**Always** use the helper to ensure programmatic verification runs before capture.
+### Use `TestDocumentationHelper`
+**Always** use the helper to ensure programmatic verification is documented and runs before capture.
 
 ```typescript
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
+import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
+import * as path from "path";
 
-test("example workflow", async ({ page }) => {
+test("example workflow", async ({ page }, testInfo) => {
   const screenshots = createScreenshotHelper();
+  const docHelper = new TestDocumentationHelper(path.dirname(testInfo.file));
   
+  docHelper.setMetadata(
+    "Example Verification",
+    "**As a** user..."
+  );
+
   // Navigate
   await page.goto("/page");
   
-  // Capture
+  // Define checks
+  const verifications = [
+    {
+      description: 'Validated header is visible',
+      check: async () => {
+        await expect(page.locator("h1")).toBeVisible();
+      }
+    }
+  ];
+
+  // Register step
+  docHelper.addStep("Initial State", "000-initial-state.png", verifications);
+  
+  // Capture & Verify
   await screenshots.capture(page, "initial-state", {
     programmaticCheck: async () => {
-      await expect(page.locator("h1")).toBeVisible();
+       for (const v of verifications) await v.check();
     }
   });
+  
+  // Generate Documentation
+  docHelper.writeReadme();
 });
 ```
 

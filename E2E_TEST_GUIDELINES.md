@@ -7,7 +7,7 @@ For instructions on HOW to implement tests, see **[How to Write E2E Tests](E2E_T
 
 ## The Verification Document Standard
 
-Each `e2e/###-<name>/README.md` MUST follow this structure:
+Each `e2e/###-<name>/README.md` is **generated automatically** by the test verification steps. Run the test to update the documentation. The structure generated is:
 
 ### 1. Header & User Story
 Concise description of the user value.

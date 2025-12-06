@@ -10,11 +10,13 @@
 
 **Programmatic Verification:**
 - [ ] Validated "Sign In" button is visible
+- [ ] Verified CSV content area is empty (user not authenticated)
 
 ### 2. Signed In State (Export Page)
 
-![Signed In State](screenshots/001-signed-in-state.png)
+![Signed In State (Export Page)](screenshots/001-signed-in-state.png)
 
 **Programmatic Verification:**
-- [ ] Validated CSV export buttons are visible
-- [ ] Verified "Export Inventory" option is available
+- [ ] Validated sign-in button is no longer visible
+- [ ] Verified Redux store contains authenticated user state
+
