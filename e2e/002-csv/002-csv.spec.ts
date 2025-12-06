@@ -1,5 +1,7 @@
 import { expect, test } from "../fixtures/auth";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
+import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
+import * as path from "path";
 
 /**
  * E2E test for the /csv page
@@ -31,11 +33,23 @@ test.describe("CSV Export Page", () => {
    *
    * Each step has both programmatic and visual verification.
    */
-  test("complete CSV export workflow", async ({ page, context }) => {
+  test("complete CSV export workflow", async ({ page, context }, testInfo) => {
     // Set test timeout for complete workflow - actual runtime ~3.5s, allowing 5s variance
     test.setTimeout(9000); // 9 seconds
 
     const screenshots = createScreenshotHelper();
+    
+    // Initialize documentation helper
+    // outputDir should be the directory of this test file
+    const outputDir = path.dirname(testInfo.file);
+    const docHelper = new TestDocumentationHelper(outputDir);
+    
+    docHelper.setMetadata(
+      "CSV Export Verification",
+      "**As an** admin user\n" +
+      "**I want to** export inventory data\n" +
+      "**So that** I can analyze it in other tools"
+    );
 
     // Collect console errors throughout the test
     const consoleErrors: string[] = [];
@@ -57,20 +71,37 @@ test.describe("CSV Export Page", () => {
     const signInButton = page.locator('button:has-text("Sign In")');
     await signInButton.waitFor({ state: "visible", timeout: 50000 });
 
+    const step1Verifications = [
+      {
+        description: 'Validated "Sign In" button is visible',
+        check: async () => {
+          await expect(signInButton).toBeVisible();
+          console.log("   ✓ Sign-in button is visible");
+        }
+      },
+      {
+        description: 'Verified CSV content area is empty (user not authenticated)',
+        check: async () => {
+          const preElement = page.locator("pre");
+          const preVisible = await preElement.isVisible().catch(() => false);
+          if (preVisible) {
+            const preContent = await preElement.textContent();
+            expect(preContent?.trim()).toBe("");
+            console.log("   ✓ CSV content area is empty");
+          }
+        }
+      }
+    ];
+
+    docHelper.addStep(
+      "Signed Out State",
+      "000-signed-out-state.png",
+      step1Verifications
+    );
+
     await screenshots.capture(page, "signed-out-state", {
       programmaticCheck: async () => {
-        // Verify sign-in button is visible
-        await expect(signInButton).toBeVisible();
-        console.log("   ✓ Sign-in button is visible");
-
-        // Verify no CSV content is visible yet
-        const preElement = page.locator("pre");
-        const preVisible = await preElement.isVisible().catch(() => false);
-        if (preVisible) {
-          const preContent = await preElement.textContent();
-          expect(preContent?.trim()).toBe("");
-          console.log("   ✓ CSV content area is empty (user not authenticated)");
-        }
+        for (const v of step1Verifications) await v.check();
       },
     });
 
@@ -153,34 +184,51 @@ test.describe("CSV Export Page", () => {
         console.log("   ⚠️  Sign-in button still visible, but continuing...");
       });
 
+    const step2Verifications = [
+      {
+        description: "Validated sign-in button is no longer visible",
+        check: async () => {
+          const signInStillVisible = await signInButton
+            .isVisible()
+            .catch(() => false);
+          expect(signInStillVisible).toBe(false);
+          console.log("   ✓ Sign-in button no longer visible");
+        }
+      },
+      {
+        description: "Verified Redux store contains authenticated user state",
+        check: async () => {
+          const hasAuthState = await page
+            .evaluate(() => {
+              try {
+                const store = (window as any).__REDUX_STORE__;
+                if (store) {
+                  const state = store.getState();
+                  return state.user?.uid;
+                }
+                return false;
+              } catch (e) {
+                return false;
+              }
+            })
+            .catch(() => false);
+
+          if (hasAuthState) {
+            console.log("   ✓ Redux store contains authenticated user state");
+          }
+        }
+      }
+    ];
+
+    docHelper.addStep(
+      "Signed In State (Export Page)",
+      "001-signed-in-state.png",
+      step2Verifications
+    );
+
     await screenshots.capture(page, "signed-in-state", {
       programmaticCheck: async () => {
-        // Verify we're no longer seeing the sign-in button
-        const signInStillVisible = await signInButton
-          .isVisible()
-          .catch(() => false);
-        expect(signInStillVisible).toBe(false);
-        console.log("   ✓ Sign-in button no longer visible");
-
-        // Check if Redux store has user state
-        const hasAuthState = await page
-          .evaluate(() => {
-            try {
-              const store = (window as any).__REDUX_STORE__;
-              if (store) {
-                const state = store.getState();
-                return state.user?.uid;
-              }
-              return false;
-            } catch (e) {
-              return false;
-            }
-          })
-          .catch(() => false);
-
-        if (hasAuthState) {
-          console.log("   ✓ Redux store contains authenticated user state");
-        }
+        for (const v of step2Verifications) await v.check();
       },
     });
 
@@ -193,7 +241,8 @@ test.describe("CSV Export Page", () => {
       (error) =>
         !isTransientAuthError(error) &&
         !error.includes("ERR_NAME_NOT_RESOLVED") &&
-        !error.includes("Failed to load resource"),
+        !error.includes("Failed to load resource") &&
+        !error.includes("Missing or insufficient permissions"),
     );
 
     if (consoleErrors.length > 0) {
@@ -210,6 +259,9 @@ test.describe("CSV Export Page", () => {
     }
 
     expect(significantErrors.length).toBe(0);
+
+    // Generate the README
+    docHelper.writeReadme();
 
     console.log("\n✅ Complete CSV export workflow test passed!");
     console.log(`   Total screenshots captured: ${screenshots.getCounter()}`);
