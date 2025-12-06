@@ -76,7 +76,7 @@ jobs:
           done
 
       - name: Load test data into emulator
-        run: node e2e/helpers/load-test-data.js --prefix=3700
+        run: node e2e/helpers/load-test-data.js --match-jancodes=10
 
       - name: Display environment info
         run: |
