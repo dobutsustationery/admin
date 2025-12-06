@@ -4,6 +4,15 @@ This guide explains how to create the initial baseline screenshot for visual reg
 
 ## Prerequisites
 
+**Note:** When running in GitHub Copilot or GitHub Actions environments, all prerequisites are automatically set up by the `copilot-setup-steps.yml` workflow. This includes:
+- Node.js 20
+- npm dependencies installed
+- Firebase emulators cached and ready
+- Playwright browsers installed with dependencies
+- Emulators started and test data loaded
+
+For local development, you'll need:
+
 1. Firebase emulators running (`npm run emulators`)
 2. Application built for emulator mode (`npm run build:local`)
 3. Playwright installed (`npm install`)
