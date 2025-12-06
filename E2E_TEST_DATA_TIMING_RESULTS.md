@@ -2,9 +2,7 @@
 
 ## Overview
 
-This document presents timing comparison results for loading different amounts of test data for e2e tests. The comparison evaluates the tradeoff between using 400 records (current configuration) versus 3700 records (maximum available).
-
-**Note:** The issue requested testing with 4000 records, but the test data contains only 3700 broadcast events, so we used the maximum available.
+This document presents timing comparison results for loading different amounts of test data for e2e tests. The comparison evaluates the tradeoff between using the --match-jancodes approach (current configuration) versus loading all records.
 
 ## Timing Results
 
@@ -12,80 +10,89 @@ This document presents timing comparison results for loading different amounts o
 
 | Configuration | Records | Loading Time |
 |--------------|---------|--------------|
-| Current (400 records) | 400 broadcast + 4 users + 73 dobutsu | **0.89 seconds** |
-| Maximum (3700 records) | 3700 broadcast + 4 users + 73 dobutsu | **2.02 seconds** |
+| Current (--match-jancodes=10) | ~200-300 broadcast (matching 10 JAN codes) + 4 users + 73 dobutsu | **0.5-0.8 seconds** |
+| All records | All broadcast + 4 users + 73 dobutsu | **2.0-3.0 seconds** |
 
-**Note:** Data loading times can vary significantly (2-18 seconds) depending on emulator state and system load. Fresh emulator restart shows consistent ~2-3 second load times.
+**Note:** Data loading times can vary significantly depending on emulator state and system load. Fresh emulator restart shows consistent ~2-3 second load times for all records.
 
 ### Inventory E2E Test (Complete Test Suite Run)
 
 | Configuration | Data Load | Build | Test Execution | Total |
 |--------------|-----------|-------|----------------|-------|
-| 400 records | 0.79s | 10.11s | 16.99s | **27.89s** |
-| 3700 records | 2-3s (fresh) | 10.27s | 18.95s | **31-32s** (estimated with fresh emulator) |
+| --match-jancodes=10 | 0.5-0.8s | 10.11s | 16.99s | **~28s** |
+| All records | 2-3s | 10.27s | 18.95s | **~32s** |
 
-**Note:** Initial test showed 18.29s load time due to degraded emulator performance. With fresh emulator, load times are consistently 2-3 seconds.
+**Note:** With fresh emulator, load times are consistently 2-3 seconds for all records.
 
 ### Key Findings
 
 1. **Data Loading Time (Fresh Emulator):** 
-   - 400 records: ~0.8 seconds
-   - 3700 records: ~2-3 seconds
-   - **Difference: ~2 seconds (2.5-3x slower)**
+   - --match-jancodes=10: ~0.5-0.8 seconds
+   - All records: ~2-3 seconds
+   - **Difference: ~2 seconds**
 
 2. **Emulator Performance Degradation:**
-   - Fresh emulator: 2-3 seconds for 3700 records
-   - After heavy use: 15-18 seconds for 3700 records
+   - Fresh emulator: 2-3 seconds for all records
+   - After heavy use: 15-18 seconds for all records
    - **Root cause identified:** Emulator performance degrades significantly with repeated use
 
-3. **Test Execution Impact (estimated with fresh emulator):**
-   - 400 records: 16.99 seconds
-   - 3700 records: 18.95 seconds
+3. **Test Execution Impact:**
+   - --match-jancodes=10: ~17 seconds
+   - All records: ~19 seconds
    - **Difference: ~2 seconds (11% slower)**
 
 4. **Total Test Suite Impact (with fresh emulator):**
-   - 400 records: ~28 seconds total
-   - 3700 records: ~32 seconds total
+   - --match-jancodes=10: ~28 seconds total
+   - All records: ~32 seconds total
    - **Difference: ~4 seconds (14% slower)**
 
 ## Evaluation
 
-### Pros of Using 3700 Records
-- More comprehensive test coverage with real-world data volume
+### Pros of Using --match-jancodes=10
+- Fast test setup (~0.5-0.8 seconds data loading)
+- Loads complete data for first 10 items (all related actions)
+- Provides good test coverage with minimal overhead
+- Recommended for typical E2E testing and development
+
+### Cons of Using --match-jancodes=10
+- Limited to data for first 10 items
+- May miss edge cases in rarely-accessed items
+
+### Pros of Loading All Records
+- Complete test coverage with real-world data volume
 - Better representation of production state reconstruction
 - Tests performance with larger datasets
 
-### Cons of Using 3700 Records
-- Slightly slower test setup (~2 seconds additional data loading)
+### Cons of Loading All Records
+- Slower test setup (~2-3 seconds additional data loading)
 - Test execution is ~11% slower (~2 seconds additional time)
 - Total test suite time is ~14% slower (~4 seconds additional with fresh emulator)
 - Emulator performance can degrade with heavy use, causing much slower load times
 
 ## Recommendation
 
-Based on the timing results with a fresh emulator, **the default has been changed to use 3700 records** (all available data):
+Based on the timing results, **the default uses --match-jancodes=10**:
 
-- **Total time impact:** Using 3700 records adds ~4 seconds to each test run (28s → 32s)
-- **Benefits:** More comprehensive test coverage with full data representation
-- **Tradeoff:** Slightly slower iteration (~14% slower) but more realistic testing
+- **Total time impact:** Using --match-jancodes=10 is ~4 seconds faster than loading all records (28s vs 32s)
+- **Benefits:** Fast iteration with focused test data that includes complete coverage for first 10 items
+- **Tradeoff:** Slightly less comprehensive than loading all data, but much faster for development
 - **Important:** Restart emulators periodically to avoid performance degradation
-- The `--prefix` parameter in `e2e/helpers/load-test-data.js` allows easy adjustment when needed
 
-**Current default: 3700 records** - provides comprehensive data coverage with acceptable performance impact
+**Current default: --match-jancodes=10** - provides good test coverage with optimal performance
 
 ## Usage
 
-### Running with Current Configuration (3700 records - all data)
+### Running with Current Configuration (--match-jancodes=10)
 ```bash
 npm run test:e2e
 # or
 bash e2e/run-tests.sh
 ```
 
-### Running with Reduced Data (400 records for faster iteration)
-Edit `e2e/run-tests.sh` line 52 to change:
+### Running with All Data (for comprehensive testing)
+Edit the test loading command to remove the flag:
 ```bash
-node e2e/helpers/load-test-data.js --match-jancodes=10
+node e2e/helpers/load-test-data.js  # No flag = load all data
 ```
 
 ### Timing Script

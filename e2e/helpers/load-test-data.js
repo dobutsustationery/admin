@@ -8,16 +8,11 @@
  * 
  * Usage:
  *   node e2e/helpers/load-test-data.js                    # Load all data
- *   node e2e/helpers/load-test-data.js --match-jancodes=10  # Load data for first 10 JAN codes
  *   node e2e/helpers/load-test-data.js --match-jancodes=10 # Load records matching JAN codes from first 10 records
- * 
- * The --prefix flag is recommended for faster test data loading. It loads only the first N
- * broadcast events (which must be the oldest/first events chronologically) while still loading
- * all documents from other collections. Use --match-jancodes=10 for typical E2E testing.
  * 
  * The --match-jancodes flag loads the first N records, extracts their JAN codes, then loads
  * all records that reference those JAN codes. This ensures complete test coverage for the
- * items in the first N records.
+ * items in the first N records while keeping test data loading fast.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -104,18 +99,11 @@ async function loadTestData() {
     "firestore-export.json",
   );
 
-  // Parse --prefix argument if provided
-  const prefixArg = process.argv.find(arg => arg.startsWith('--prefix='));
-  const prefixLimit = prefixArg ? parseInt(prefixArg.split('=')[1], 10) : null;
-
   // Parse --match-jancodes argument if provided
   const matchJancodesArg = process.argv.find(arg => arg.startsWith('--match-jancodes='));
   const matchJancodesLimit = matchJancodesArg ? parseInt(matchJancodesArg.split('=')[1], 10) : null;
 
   console.log(`\n📥 Loading test data from ${testDataPath}...`);
-  if (prefixLimit) {
-    console.log(`   ⚠️  Prefix mode: Loading only first ${prefixLimit} broadcast events`);
-  }
   if (matchJancodesLimit) {
     console.log(`   ⚠️  Match JAN codes mode: Loading records matching JAN codes from first ${matchJancodesLimit} records`);
   }
@@ -180,9 +168,6 @@ async function loadTestData() {
       if (matchJancodesLimit && janCodesToMatch) {
         // Filter by JAN codes
         docsToLoad = filterByJanCodes(documents, janCodesToMatch);
-      } else if (prefixLimit) {
-        // Filter by prefix (first N records)
-        docsToLoad = documents.slice(0, prefixLimit);
       } else {
         // Load all
         docsToLoad = documents;
@@ -196,8 +181,6 @@ async function loadTestData() {
     if (collectionName === 'broadcast') {
       if (matchJancodesLimit && janCodesToMatch) {
         console.log(`    (Filtered ${documents.length} broadcast events to ${docsToLoad.length} matching JAN codes)`);
-      } else if (prefixLimit && documents.length > prefixLimit) {
-        console.log(`    (Skipped ${documents.length - prefixLimit} broadcast events due to --prefix=${prefixLimit})`);
       }
     }
 

@@ -154,7 +154,6 @@ git commit -m "Update inventory baseline screenshots"
 
 1. Increase timeout in test file (currently 120 seconds)
 2. Check network/emulator performance
-3. Reduce test data size with lower `--prefix` value
 
 ## Related Documentation
 

@@ -329,7 +329,7 @@ When you change the UI and need to update baselines:
    # Terminal 1: Start emulators
    npm run emulators
    
-   # Terminal 2: Load test data with correct prefix
+   # Terminal 2: Load test data
    node e2e/helpers/load-test-data.js --match-jancodes=10
    ```
 

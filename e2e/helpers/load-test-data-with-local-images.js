@@ -45,14 +45,7 @@ async function loadTestData() {
     "url-mapping.json"
   );
 
-  // Parse --prefix argument if provided
-  const prefixArg = process.argv.find(arg => arg.startsWith('--prefix='));
-  const prefixLimit = prefixArg ? parseInt(prefixArg.split('=')[1], 10) : null;
-
   console.log(`\n📥 Loading test data from ${testDataPath}...`);
-  if (prefixLimit) {
-    console.log(`   ⚠️  Prefix mode: Loading only first ${prefixLimit} broadcast events`);
-  }
 
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
@@ -70,15 +63,10 @@ async function loadTestData() {
   for (const [collectionName, documents] of Object.entries(
     exportData.collections,
   )) {
-    // Apply prefix limit only to broadcast collection
-    const docsToLoad = collectionName === 'broadcast' && prefixLimit 
-      ? documents.slice(0, prefixLimit)
-      : documents;
+    // All collections are loaded completely
+    const docsToLoad = documents;
     
     console.log(`\n  Loading ${collectionName} (${docsToLoad.length} docs)...`);
-    if (collectionName === 'broadcast' && prefixLimit && documents.length > prefixLimit) {
-      console.log(`    (Skipped ${documents.length - prefixLimit} broadcast events due to --prefix=${prefixLimit})`);
-    }
 
     let batch = db.batch();
     let batchCount = 0;
