@@ -37,5 +37,5 @@ data-export
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
-e2e/test-images/
+# Keep static/test-images symlink out of git (it's created at test time)
 static/test-images
