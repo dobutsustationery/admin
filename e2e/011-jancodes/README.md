@@ -1,93 +1,27 @@
-# JAN Codes Page E2E Test
+# JAN Codes Verification
 
-This directory contains documentation for the JAN codes page E2E test user story.
+**As an** admin user
+**I want to** lookup JAN codes
+**So that** I can identify products
 
-## User Story
+### 1. Signed Out State
 
-**As an** admin user  
-**I want to** view items that have blank subtypes organized by JAN code  
-**So that** I can identify and fix items that need subtype categorization
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-## Test Flow
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
 
-The test follows a complete user journey from signed-out state through viewing the JAN codes page.
+### 2. Signed In State
 
-### Screenshots
+![Signed In State](screenshots/001-signed-in-state.png)
 
-Screenshots are numbered sequentially to tell the story.
+**Programmatic Verification:**
+- [ ] Validated user is authenticated
 
-#### 000-signed-out-state.png
+### 3. JAN Codes Loaded
 
-![Screenshot 000](screenshots/000-signed-out-state.png)
+![JAN Codes Loaded](screenshots/002-jancodes-loaded.png)
 
-**What this shows:**
-- User navigates to `/jancodes` while signed out
-- Application displays the sign-in screen
-- Page heading shows "Items with a blank subtype"
-
-**Programmatic verification:**
-- ✅ Sign-in button is visible
-- ✅ Page heading is correct
-
-**Manual verification checklist:**
-- [ ] Sign-in button is clearly visible
-- [ ] Page heading shows "Items with a blank subtype"
-
----
-
-#### 001-signed-in-state.png
-
-![Screenshot 001](screenshots/001-signed-in-state.png)
-
-**What this shows:**
-- User has successfully signed in
-- Page has reloaded with authentication applied
-
-**Programmatic verification:**
-- ✅ Sign-in button is no longer visible
-- ✅ User is authenticated
-
-**Manual verification checklist:**
-- [ ] Sign-in button is gone
-- [ ] Page shows JAN codes interface
-
----
-
-#### 002-jancodes-loaded.png
-
-![Screenshot 002](screenshots/002-jancodes-loaded.png)
-
-**What this shows:**
-- JAN codes page is fully loaded
-- Tables showing items grouped by JAN code
-- Each table has columns for Image, Subtype, HS Code, and Description
-
-**Programmatic verification:**
-- ✅ Page heading shows "Items with a blank subtype"
-- ✅ Tables are displayed (if items exist)
-- ✅ Table headers include: Image, Subtype, HS Code, Description
-- ✅ Redux store has inventory state
-
-**Manual verification checklist:**
-- [ ] Heading is correct
-- [ ] Tables are organized by JAN code
-- [ ] Table headers are correct
-- [ ] Page layout is correct
-- [ ] If no items with blank subtypes exist, page is empty (expected)
-
----
-
-## Running This Test
-
-```bash
-# Run only this test
-npx playwright test e2e/011-jancodes
-
-# Interactive UI mode
-npx playwright test e2e/011-jancodes --ui
-```
-
-## Related Documentation
-
-- [E2E Test Overview](../README.md)
-- [E2E Test Guidelines](../../E2E_TEST_GUIDELINES.md)
+**Programmatic Verification:**
+- [ ] Validated JAN code list is visible
+- [ ] Checked that product details match the code
