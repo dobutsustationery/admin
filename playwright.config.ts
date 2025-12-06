@@ -57,7 +57,17 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Ensure consistent font rendering across environments
+        // This prevents column width differences due to font variations
+        launchOptions: {
+          args: [
+            '--font-render-hinting=none',
+            '--disable-font-subpixel-positioning',
+          ],
+        },
+      },
     },
   ],
 
