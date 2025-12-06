@@ -35,7 +35,7 @@ describe("inventory reducer", () => {
       expect(nextState.idToItem[id]).toBeDefined();
       expect(nextState.idToItem[id].qty).toBe(10);
       expect(nextState.idToItem[id].shipped).toBe(0);
-      
+
       // Test immutability: modifying the original item shouldn't affect state
       item.qty = 5;
       expect(nextState.idToItem[id].qty).toBe(10);
@@ -583,7 +583,10 @@ describe("inventory reducer", () => {
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
 
-      let nextState = inventory(initialState, update_item({ id: id1, item: item1 }));
+      let nextState = inventory(
+        initialState,
+        update_item({ id: id1, item: item1 }),
+      );
       nextState = inventory(nextState, update_item({ id: id2, item: item2 }));
 
       const orderID = "ORDER-001";
@@ -639,7 +642,10 @@ describe("inventory reducer", () => {
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
 
-      let nextState = inventory(initialState, update_item({ id: id1, item: item1 }));
+      let nextState = inventory(
+        initialState,
+        update_item({ id: id1, item: item1 }),
+      );
       nextState = inventory(nextState, update_item({ id: id2, item: item2 }));
 
       const orderID = "ORDER-001";
@@ -695,7 +701,10 @@ describe("inventory reducer", () => {
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
 
-      let nextState = inventory(initialState, update_item({ id: id1, item: item1 }));
+      let nextState = inventory(
+        initialState,
+        update_item({ id: id1, item: item1 }),
+      );
       nextState = inventory(nextState, update_item({ id: id2, item: item2 }));
 
       const orderID = "ORDER-001";
@@ -748,7 +757,10 @@ describe("inventory reducer", () => {
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
 
-      let nextState = inventory(initialState, update_item({ id: id1, item: item1 }));
+      let nextState = inventory(
+        initialState,
+        update_item({ id: id1, item: item1 }),
+      );
       nextState = inventory(nextState, update_item({ id: id2, item: item2 }));
 
       const orderID = "NEW-ORDER";
@@ -861,7 +873,10 @@ describe("inventory reducer", () => {
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
 
-      let nextState = inventory(initialState, update_item({ id: id1, item: item1 }));
+      let nextState = inventory(
+        initialState,
+        update_item({ id: id1, item: item1 }),
+      );
       nextState = inventory(nextState, update_item({ id: id2, item: item2 }));
 
       nextState = inventory(
@@ -901,7 +916,10 @@ describe("inventory reducer", () => {
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
 
-      let nextState = inventory(initialState, update_item({ id: id1, item: item1 }));
+      let nextState = inventory(
+        initialState,
+        update_item({ id: id1, item: item1 }),
+      );
       nextState = inventory(nextState, update_item({ id: id2, item: item2 }));
 
       nextState = inventory(
@@ -1017,10 +1035,7 @@ describe("inventory reducer", () => {
         }),
       );
 
-      nextState = inventory(
-        nextState,
-        delete_empty_order({ orderID }),
-      );
+      nextState = inventory(nextState, delete_empty_order({ orderID }));
 
       expect(nextState.orderIdToOrder[orderID]).toBeUndefined();
     });
@@ -1046,10 +1061,7 @@ describe("inventory reducer", () => {
         package_item({ orderID, itemKey: id, qty: 2 }),
       );
 
-      nextState = inventory(
-        nextState,
-        delete_empty_order({ orderID }),
-      );
+      nextState = inventory(nextState, delete_empty_order({ orderID }));
 
       expect(nextState.orderIdToOrder[orderID]).toBeDefined();
     });
@@ -1081,10 +1093,7 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       expect(nextState.archivedInventoryState[archiveName]).toBeDefined();
       expect(
@@ -1109,10 +1118,7 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       expect(nextState.idToItem[id].qty).toBe(0);
       expect(nextState.idToItem[id].shipped).toBe(0);
@@ -1141,10 +1147,7 @@ describe("inventory reducer", () => {
       const initialHistoryLength = nextState.idToHistory[id].length;
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       expect(nextState.idToHistory[id].length).toBe(initialHistoryLength + 1);
     });
@@ -1163,7 +1166,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
       };
       const id = `${item.janCode}${item.subtype}`;
-      
+
       // Create state with item but no history
       const stateWithoutHistory = {
         ...initialState,
@@ -1199,10 +1202,7 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       nextState = inventory(nextState, hide_archive({ archiveName }));
 
@@ -1237,10 +1237,7 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       // Add some more inventory after archiving
       const item2 = { ...item, qty: 3 };
@@ -1254,7 +1251,9 @@ describe("inventory reducer", () => {
 
       expect(nextState.salesEvents[archiveName]).toBeDefined();
       expect(nextState.salesEvents[archiveName].id).toBe(archiveName);
-      expect(nextState.salesEvents[archiveName].items.length).toBeGreaterThan(0);
+      expect(nextState.salesEvents[archiveName].items.length).toBeGreaterThan(
+        0,
+      );
     });
 
     it("calculates sales quantities correctly", () => {
@@ -1273,10 +1272,7 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       // Remaining inventory is 3
       const item2 = { ...item, qty: 3 };
@@ -1311,10 +1307,7 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       // Add back the same quantity (no sales)
       const item2 = { ...item, qty: 10 };
@@ -1348,10 +1341,7 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       // Add some inventory back
       const item2 = { ...item, qty: 3 };
@@ -1363,7 +1353,9 @@ describe("inventory reducer", () => {
         make_sales({ archiveName, date: saleDate }),
       );
 
-      expect(nextState.salesEvents[archiveName].items.length).toBeGreaterThan(0);
+      expect(nextState.salesEvents[archiveName].items.length).toBeGreaterThan(
+        0,
+      );
     });
 
     it("handles specific debug case for item 4542804104370", () => {
@@ -1382,10 +1374,7 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
-      nextState = inventory(
-        nextState,
-        archive_inventory({ archiveName }),
-      );
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
 
       // Add some inventory back
       const item2 = { ...item, qty: 3 };
