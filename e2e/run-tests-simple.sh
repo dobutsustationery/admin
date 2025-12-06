@@ -34,6 +34,17 @@ check_emulators() {
 }
 
 if check_emulators; then
+  echo "📥 Downloading test images..."
+  node e2e/helpers/download-test-images.js
+  
+  echo ""
+  echo "🔗 Creating symlink for test images..."
+  if [ -L "static/test-images" ] || [ -e "static/test-images" ]; then
+    rm -f static/test-images
+  fi
+  ln -sf ../e2e/test-images static/test-images
+  
+  echo ""
   echo "📦 Loading test data into emulator..."
   node e2e/helpers/load-test-data.js --match-jancodes=10
   

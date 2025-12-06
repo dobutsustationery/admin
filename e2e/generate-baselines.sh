@@ -26,6 +26,21 @@ fi
 
 echo "✓ Firestore emulator is running"
 
+# Download test images for local serving (ensures consistent image loading)
+echo ""
+echo "📥 Downloading test images..."
+node e2e/helpers/download-test-images.js
+echo "✓ Test images downloaded"
+
+# Create symlink for serving test images
+echo ""
+echo "🔗 Creating symlink for test images..."
+if [ -L "static/test-images" ] || [ -e "static/test-images" ]; then
+	rm -f static/test-images
+fi
+ln -sf ../e2e/test-images static/test-images
+echo "✓ Symlink created: static/test-images -> e2e/test-images"
+
 # Load test data into emulator
 echo ""
 echo "📦 Loading test data into emulator..."
