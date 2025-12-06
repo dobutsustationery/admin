@@ -52,4 +52,6 @@ When the user asks to switch to a different PR (e.g., "Switch to PR #123"):
 ### creating a New Task
 1.  Create a branch: `git checkout -b feature/name`
 2.  Follow the **Strict Design-First Workflow** (Design -> Milestones -> Code).
-3.  Push and create PR: `gh pr create --draft` (to track your own progress if helpful).
+3.  **Push and create PR**: `gh pr create --draft`.
+    - You MUST create a PR for every new task/branch. 
+    - This allows you to track progress and gives the user a place to review.
