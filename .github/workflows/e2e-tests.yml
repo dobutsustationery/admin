@@ -72,6 +72,18 @@ jobs:
             sleep 1
           done
 
+      - name: Download test images for local serving
+        run: |
+          echo "📥 Downloading test images..."
+          node e2e/helpers/download-test-images.js
+          echo "✓ Test images downloaded"
+
+      - name: Create symlink for serving test images
+        run: |
+          echo "🔗 Creating symlink for test images..."
+          ln -sf ../e2e/test-images static/test-images
+          echo "✓ Symlink created: static/test-images -> e2e/test-images"
+
       - name: Load test data into emulator
         run: node e2e/helpers/load-test-data.js --match-jancodes=10
 
