@@ -59,7 +59,7 @@ echo ""
 
 # Function to time data loading and optionally run tests
 time_configuration() {
-  local PREFIX=$1
+  local MATCH_JANCODES=$1
   local DESCRIPTION=$2
   
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | tee -a "$RESULTS_FILE"
@@ -74,10 +74,17 @@ time_configuration() {
     > /dev/null 2>&1 || true
   
   # Time data loading
-  echo "📦 Loading test data with --prefix=$PREFIX..." | tee -a "$RESULTS_FILE"
-  LOAD_START=$(date +%s.%N)
-  node e2e/helpers/load-test-data.js --prefix=$PREFIX 2>&1 | tee -a "$RESULTS_FILE"
-  LOAD_END=$(date +%s.%N)
+  if [ -z "$MATCH_JANCODES" ]; then
+    echo "📦 Loading all test data..." | tee -a "$RESULTS_FILE"
+    LOAD_START=$(date +%s.%N)
+    node e2e/helpers/load-test-data.js 2>&1 | tee -a "$RESULTS_FILE"
+    LOAD_END=$(date +%s.%N)
+  else
+    echo "📦 Loading test data with --match-jancodes=$MATCH_JANCODES..." | tee -a "$RESULTS_FILE"
+    LOAD_START=$(date +%s.%N)
+    node e2e/helpers/load-test-data.js --match-jancodes=$MATCH_JANCODES 2>&1 | tee -a "$RESULTS_FILE"
+    LOAD_END=$(date +%s.%N)
+  fi
   LOAD_TIME=$(echo "$LOAD_END - $LOAD_START" | bc)
   
   echo "" | tee -a "$RESULTS_FILE"
@@ -120,27 +127,24 @@ time_configuration() {
   echo "" | tee -a "$RESULTS_FILE"
 }
 
-# Test with 400 records (current configuration)
-time_configuration 400 "First 400 broadcast events (current)"
+# Test with 10 JAN codes (current configuration)
+time_configuration 10 "First 10 JAN codes (current)"
 
 echo ""
 echo "⏸️  Pausing 5 seconds before next test..."
 sleep 5
 echo ""
 
-# Test with 3700 records (maximum available - note: issue asked for 4000 but we only have 3700)
-time_configuration 3700 "All 3700 broadcast events (maximum available)"
+# Test with all records (no filtering)
+time_configuration "" "All broadcast events (no filtering)"
 
 # Summary
 echo "" | tee -a "$RESULTS_FILE"
 echo "📈 SUMMARY" | tee -a "$RESULTS_FILE"
 echo "==========" | tee -a "$RESULTS_FILE"
 echo "This timing comparison helps evaluate the tradeoff between:" | tee -a "$RESULTS_FILE"
-echo "  • Faster test setup with 400 records" | tee -a "$RESULTS_FILE"
-echo "  • More comprehensive testing with 3700 records" | tee -a "$RESULTS_FILE"
-echo "" | tee -a "$RESULTS_FILE"
-echo "Note: The issue requested 4000 records, but the test data contains" | tee -a "$RESULTS_FILE"
-echo "      only 3700 broadcast events, so we used the maximum available." | tee -a "$RESULTS_FILE"
+echo "  • Faster test setup with --match-jancodes=10" | tee -a "$RESULTS_FILE"
+echo "  • More comprehensive testing with all records" | tee -a "$RESULTS_FILE"
 echo "" | tee -a "$RESULTS_FILE"
 
 # Clean up if we started the emulators

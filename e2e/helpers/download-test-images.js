@@ -4,14 +4,13 @@
  * Download all external images referenced in test data and save them locally
  * 
  * This script:
- * 1. Extracts all unique image URLs from broadcast records (filtered by --prefix or --match-jancodes)
+ * 1. Extracts all unique image URLs from broadcast records (filtered by --match-jancodes)
  * 2. Downloads each image using curl
  * 3. Saves them to e2e/test-images/ directory
  * 4. Creates a mapping file for URL rewriting
  * 
  * Usage:
  *   node e2e/helpers/download-test-images.js                    # All records
- *   node e2e/helpers/download-test-images.js --match-jancodes=10  # First 10 JAN codes
  *   node e2e/helpers/download-test-images.js --match-jancodes=10 # Match JAN codes from first 10
  */
 
@@ -81,9 +80,6 @@ console.log("📥 Loading test data...");
 const exportData = JSON.parse(readFileSync(TEST_DATA_PATH, "utf8"));
 
 // Parse arguments
-const prefixArg = process.argv.find(arg => arg.startsWith('--prefix='));
-const prefixLimit = prefixArg ? parseInt(prefixArg.split('=')[1], 10) : null;
-
 const matchJancodesArg = process.argv.find(arg => arg.startsWith('--match-jancodes='));
 const matchJancodesLimit = matchJancodesArg ? parseInt(matchJancodesArg.split('=')[1], 10) : null;
 
@@ -108,9 +104,6 @@ if (matchJancodesLimit) {
   
   recordsToProcess = filterByJanCodes(broadcastDocs, janCodesToMatch);
   console.log(`   Will process ${recordsToProcess.length} matching records`);
-} else if (prefixLimit) {
-  console.log(`🔍 Extracting image URLs from first ${prefixLimit} broadcast records...`);
-  recordsToProcess = broadcastDocs.slice(0, prefixLimit);
 } else {
   console.log(`🔍 Extracting image URLs from all ${broadcastDocs.length} broadcast records...`);
   recordsToProcess = broadcastDocs;
