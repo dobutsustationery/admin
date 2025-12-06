@@ -48,8 +48,8 @@ if ! check_emulators; then
 fi
 
 echo ""
-echo "📥 Downloading test images..."
-node e2e/helpers/download-test-images.js
+echo "📥 Downloading test images (cached images will be skipped)..."
+node e2e/helpers/download-test-images.js --match-jancodes=10
 
 echo ""
 echo "🔗 Creating symlink for test images..."
@@ -59,8 +59,8 @@ fi
 ln -sf ../e2e/test-images static/test-images
 
 echo ""
-echo "📦 Loading test data into emulator..."
-node e2e/helpers/load-test-data.js --match-jancodes=10
+echo "📦 Loading test data into emulator with local images..."
+node e2e/helpers/load-test-data-with-local-images.js --match-jancodes=10
 
 echo ""
 echo "🏗️  Building application for emulator mode..."
