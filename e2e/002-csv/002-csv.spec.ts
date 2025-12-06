@@ -35,7 +35,7 @@ test.describe("CSV Export Page", () => {
    */
   test("complete CSV export workflow", async ({ page, context }, testInfo) => {
     // Set test timeout for complete workflow - actual runtime ~3.5s, allowing 5s variance
-    test.setTimeout(9000); // 9 seconds
+    test.setTimeout(30000); // 30 seconds
 
     const screenshots = createScreenshotHelper();
     
@@ -184,6 +184,13 @@ test.describe("CSV Export Page", () => {
         console.log("   ⚠️  Sign-in button still visible, but continuing...");
       });
 
+    // Wait for CSV content to load
+    const preElement = page.locator("pre");
+    await preElement.waitFor({ state: "visible", timeout: 10000 });
+    const content = await preElement.textContent();
+    expect(content?.length).toBeGreaterThan(50); // Ensure we have some data
+    console.log("   ✓ CSV content loaded");
+
     const step2Verifications = [
       {
         description: "Validated sign-in button is no longer visible",
@@ -193,6 +200,14 @@ test.describe("CSV Export Page", () => {
             .catch(() => false);
           expect(signInStillVisible).toBe(false);
           console.log("   ✓ Sign-in button no longer visible");
+        }
+      },
+      {
+        description: "Verified CSV content is displayed",
+        check: async () => {
+          await expect(preElement).toBeVisible();
+          const text = await preElement.textContent();
+          expect(text).toContain('"janCode","subtype","description"'); // Header check
         }
       },
       {
@@ -241,8 +256,7 @@ test.describe("CSV Export Page", () => {
       (error) =>
         !isTransientAuthError(error) &&
         !error.includes("ERR_NAME_NOT_RESOLVED") &&
-        !error.includes("Failed to load resource") &&
-        !error.includes("Missing or insufficient permissions"),
+        !error.includes("Failed to load resource"),
     );
 
     if (consoleErrors.length > 0) {
