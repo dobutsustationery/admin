@@ -2,6 +2,14 @@
 
 # Script to generate initial baseline screenshots for visual regression testing
 # This should be run once to establish the baseline, then checked into git
+#
+# Prerequisites (automatically set up in Copilot/GitHub Actions via copilot-setup-steps.yml):
+# - Node.js 20+
+# - npm dependencies installed (npm ci)
+# - Firebase emulators available and cached
+# - Playwright browsers installed (npx playwright install --with-deps chromium)
+# - Firebase emulators running on port 8080 (Firestore) and 9099 (Auth)
+# - Test data loaded with --match-jancodes=10
 
 set -e
 
