@@ -3,6 +3,8 @@
 This repository uses E2E tests as the primary verification mechanism for features.
 The `README.md` in each test directory is not "documentation"—it is a **Verification Document** used to validate the feature.
 
+For instructions on HOW to implement tests, see **[How to Write E2E Tests](E2E_TEST_WRITING_STEPS.md)**.
+
 ## The Verification Document Standard
 
 Each `e2e/###-<name>/README.md` MUST follow this structure:
