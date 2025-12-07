@@ -208,11 +208,12 @@ test.describe("CSV Export Page with Google Drive", () => {
         console.log("   ⚠️  Sign-in button still visible, but continuing...");
       });
 
-    // Wait for CSV content to load
+    // Wait for CSV content to load (wait for header to appear)
     const preElement = page.locator("pre");
-    await preElement.waitFor({ state: "visible", timeout: 10000 });
+    await expect(preElement).toContainText('"janCode"', { timeout: 20000 });
+    
     const content = await preElement.textContent();
-    expect(content?.length).toBeGreaterThan(50); // Ensure we have some data
+    expect(content?.length).toBeGreaterThan(50); // Now satisfied that we have data
     console.log("   ✓ CSV content loaded");
 
     const step2Verifications = [
