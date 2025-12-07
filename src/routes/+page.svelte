@@ -229,4 +229,14 @@
   .fullheight {
     height: 100%;
   }
+
+  textarea {
+      width: 300px;
+      height: 100px;
+      box-sizing: border-box;
+      /* Enforce consistent rendering */
+      font-family: inherit;
+      padding: 4px;
+      border: 1px solid #ccc;
+  }
 </style>
