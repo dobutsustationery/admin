@@ -31,18 +31,14 @@ echo "✓ Auth emulator is running"
 # Load test data into emulator
 echo ""
 echo "📦 Loading test data into emulator..."
-node e2e/helpers/load-test-data.js --prefix=400
+node e2e/helpers/load-test-data.js --match-jancodes=10
 echo "✓ Test data loaded"
 
-# Build application if needed
-if [ ! -d "build" ]; then
-  echo ""
-  echo "📦 Building application for emulator mode..."
-  npm run build:local
-  echo "✓ Build complete"
-else
-  echo "✓ Build exists"
-fi
+# Build application
+echo ""
+echo "📦 Building application for emulator mode..."
+npm run build:local
+echo "✓ Build complete"
 
 # Generate baselines for CSV test
 echo ""
