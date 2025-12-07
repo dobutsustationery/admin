@@ -46,8 +46,8 @@ export interface ScreenshotHelper {
 /**
  * Create a new screenshot helper with independent counter
  */
-export function createScreenshotHelper(): ScreenshotHelper {
-  let counter = 0;
+export function createScreenshotHelper(startIndex = 0): ScreenshotHelper {
+  let counter = startIndex;
 
   return {
     async capture(page, description, options = {}) {
