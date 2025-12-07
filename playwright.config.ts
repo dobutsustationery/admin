@@ -41,8 +41,6 @@ export default defineConfig({
       maxDiffPixels: 0,
       /* Zero threshold - no color difference allowed */
       threshold: 0,
-      /* Increased timeout for large datasets - 50 seconds */
-      timeout: 50000,
       /* Hide blinking caret to prevent visual regression failure */
       caret: "hide",
     },
@@ -62,6 +60,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         deviceScaleFactor: 1, // Ensure standard pixel density
+        timezoneId: 'UTC', // Ensure consistent date rendering across environments
         // Ensure consistent font rendering across environments
         // This prevents column width differences due to font variations
         launchOptions: {
