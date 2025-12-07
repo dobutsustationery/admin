@@ -43,6 +43,8 @@ export default defineConfig({
       threshold: 0,
       /* Increased timeout for large datasets - 50 seconds */
       timeout: 50000,
+      /* Hide blinking caret to prevent visual regression failure */
+      caret: "hide",
     },
   },
 
@@ -65,11 +67,6 @@ export default defineConfig({
           args: [
             '--font-render-hinting=none',
             '--disable-font-subpixel-positioning',
-            '--disable-skia-runtime-opts',
-            '--disable-gpu-rasterization',
-            '--disable-lcd-text',
-            '--force-color-profile=srgb',
-
           ],
         },
       },
