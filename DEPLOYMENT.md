@@ -64,17 +64,16 @@ For the Drive integration to work in production, you must configure the OAuth Cl
     npm ci
     ```
 
-2.  **Build**:
-    This compiles the SvelteKit app into a static site in the `build/` directory, injecting the production environment variables.
+2.  **Build and Deploy**:
+    The project includes convenience scripts to handle environment variable injection and deployment.
     ```bash
-    npm run build
+    # Standard Production Deployment
+    # Builds with .env.production variables and deploys to Firebase
+    npm run deploy
     ```
-    *Note: Ensure your `.env` or CI environment variables are set correctly before running this.*
-
-3.  **Deploy**:
-    Uploads the `build/` directory to Firebase Hosting.
+    Alternatively, you can be explicit:
     ```bash
-    firebase deploy --only hosting
+    npm run deploy:production
     ```
 
 ## Verification
