@@ -67,6 +67,9 @@ export default defineConfig({
             '--disable-font-subpixel-positioning',
             '--disable-skia-runtime-opts',
             '--disable-gpu-rasterization',
+            '--disable-lcd-text',
+            '--force-color-profile=srgb',
+
           ],
         },
       },
