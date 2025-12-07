@@ -432,7 +432,7 @@ test.describe("CSV Export Page with Google Drive", () => {
                 id: 'mock-file-123',
                 name: 'inventory-export-2025-12-02.csv',
                 mimeType: 'text/csv',
-                modifiedTime: new Date().toISOString(),
+                modifiedTime: '2025-12-01T12:00:00.000Z',
                 size: '12345',
                 webViewLink: 'https://drive.google.com/file/d/mock-file-123/view'
               }
@@ -555,6 +555,10 @@ test.describe("CSV Export Page with Google Drive", () => {
 
     await page.reload({ waitUntil: "load" });
     console.log("   ✓ Mock OAuth token injected");
+
+    // Force strict filename for visual consistency (prevent daily diffs)
+    await page.fill('input#filename', 'inventory-export-2025-12-01.csv');
+
 
     await screenshots.capture(page, "connected-to-drive", {
       programmaticCheck: async () => {
