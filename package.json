@@ -44,7 +44,10 @@
     "ci": "prettier --check \"src/**/*.{ts,js,svelte}\" \"tests/**/*.{ts,js}\"",
     "data:export": "node scripts/transfer-data.js",
     "data:import": "node scripts/transfer-data.js",
-    "data:transfer": "node scripts/transfer-data.js"
+    "data:transfer": "node scripts/transfer-data.js",
+    "deploy": "npm run deploy:production",
+    "deploy:production": "vite build --mode production && firebase deploy --only hosting",
+    "deploy:staging": "vite build --mode staging && firebase deploy --only hosting"
   },
   "files": [
     "dist",
