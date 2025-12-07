@@ -65,6 +65,8 @@ export default defineConfig({
           args: [
             '--font-render-hinting=none',
             '--disable-font-subpixel-positioning',
+            '--disable-skia-runtime-opts',
+            '--disable-gpu-rasterization',
           ],
         },
       },
