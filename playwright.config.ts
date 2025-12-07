@@ -61,12 +61,14 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
+        deviceScaleFactor: 1, // Ensure standard pixel density
         // Ensure consistent font rendering across environments
         // This prevents column width differences due to font variations
         launchOptions: {
           args: [
             '--font-render-hinting=none',
             '--disable-font-subpixel-positioning',
+            '--force-color-profile=srgb',
           ],
         },
       },
