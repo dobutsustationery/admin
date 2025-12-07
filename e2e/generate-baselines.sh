@@ -48,11 +48,9 @@ node e2e/helpers/load-test-data.js --match-jancodes=10
 echo "✓ Test data loaded (matching JAN codes from first 10 records)"
 
 # Check if preview server is running or build exists
-if [ ! -d "build" ]; then
-	echo ""
-	echo "📦 Building application for emulator mode..."
-	npm run build:local
-fi
+echo ""
+echo "📦 Building application for emulator mode..."
+npm run build:local
 
 echo "✓ Build exists"
 
