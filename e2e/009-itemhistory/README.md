@@ -1,24 +1,31 @@
-# Item History Page
+# Item History Verification
 
-**Spec File**: [`009-itemhistory.spec.ts`](./009-itemhistory.spec.ts)
+**As an** admin user
+**I want to** view item history
+**So that** I can track changes
 
-## User Story
-User Story: Admin views item history
-This test tells a complete story:
-1. User starts signed out
-2. User signs in
-3. User views item history for a specific item
-Each step has both programmatic and visual verification.
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to item history page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
+- [ ] Validated heading contains "Item History"
 
-### STEP 3: Wait for item history page to load
-<!-- Add screenshot here if available -->
+### 2. Signed In State
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+![Signed In State](screenshots/001-signed-in-state.png)
+
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is hidden
+- [ ] Validated Redux store has user state
+
+### 3. Item History Loaded
+
+![Item History Loaded](screenshots/002-itemhistory-loaded.png)
+
+**Programmatic Verification:**
+- [ ] Validated heading contains item key
+- [ ] Validated history table (if visible)
+- [ ] Validated Redux store has history state
+

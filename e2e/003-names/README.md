@@ -1,24 +1,33 @@
-# Names Page
+# Names Verification
 
-**Spec File**: [`003-names.spec.ts`](./003-names.spec.ts)
+**As an** admin user
+**I want to** manage recently used names
+**So that** I can ensure data consistency
 
-## User Story
-User Story: Admin manages recently used names
-This test tells a complete story:
-1. User starts signed out
-2. User signs in
-3. User views the names management page
-Each step has both programmatic and visual verification.
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to names page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
+- [ ] Validated heading contains "Recently Used Names"
 
-### STEP 3: Wait for names page to load
-<!-- Add screenshot here if available -->
+### 2. Signed In State
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+![Signed In State](screenshots/001-signed-in-state.png)
+
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is hidden
+- [ ] Validated Redux store has user state
+
+### 3. Names Page Loaded
+
+![Names Page Loaded](screenshots/002-names-loaded.png)
+
+**Programmatic Verification:**
+- [ ] Validated heading is "Recently Used Names"
+- [ ] Validated ID input is visible
+- [ ] Validated Value input is visible
+- [ ] Validated Add button is visible
+- [ ] Validated Redux store has names state
+

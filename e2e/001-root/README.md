@@ -1,19 +1,30 @@
-# Root Page (Dashboard)
+# Dashboard Verification
 
-**Spec File**: [`001-root.spec.ts`](./001-root.spec.ts)
+**As an** admin user
+**I want to** See key metrics and navigate to tasks
+**So that** I can efficiently manage inventory
 
-## User Story
-User Story: Admin lands on Dashboard and navigates to entry
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to root page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
+- [ ] Validated heading is "Dobutsu Admin"
 
-### STEP 3: Navigate to Inventory Entry
-<!-- Add screenshot here if available -->
+### 2. Dashboard Loaded
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+![Dashboard Loaded](screenshots/001-dashboard-loaded.png)
+
+**Programmatic Verification:**
+- [ ] Validated Dashboard heading is visible
+- [ ] Validated metrics are displayed
+
+### 3. Inventory Entry Form
+
+![Inventory Entry Form](screenshots/002-entry-form-loaded.png)
+
+**Programmatic Verification:**
+- [ ] Validated JAN Code input is visible
+- [ ] Validated URL is /entry
+

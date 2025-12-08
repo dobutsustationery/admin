@@ -1,24 +1,31 @@
-# JAN Codes Page
+# JAN Codes Verification
 
-**Spec File**: [`011-jancodes.spec.ts`](./011-jancodes.spec.ts)
+**As an** admin user
+**I want to** view items with blank subtypes
+**So that** I can categorize them
 
-## User Story
-User Story: Admin views items with blank subtype by JAN code
-This test tells a complete story:
-1. User starts signed out
-2. User signs in
-3. User views the JAN codes page showing items with blank subtypes
-Each step has both programmatic and visual verification.
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to jancodes page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
+- [ ] Validated heading contains "Items with a blank subtype"
 
-### STEP 3: Wait for JAN codes page to load
-<!-- Add screenshot here if available -->
+### 2. Signed In State
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+![Signed In State](screenshots/001-signed-in-state.png)
+
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is hidden
+- [ ] Validated Redux store has user state
+
+### 3. JAN Codes Loaded
+
+![JAN Codes Loaded](screenshots/002-jancodes-loaded.png)
+
+**Programmatic Verification:**
+- [ ] Validated heading contains "Items with a blank subtype"
+- [ ] Validated table headers (if visible)
+- [ ] Validated Redux inventory state
+

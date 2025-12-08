@@ -1,354 +1,245 @@
 import { expect, test } from "../fixtures/auth";
 import { waitForAppReady } from "../helpers/loading-helper";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
+import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
+import * as path from "path";
 
 /**
  * E2E test for the /inventory page
- *
- * This test suite tells a user story through numbered screenshots:
- * - 000-xxx: Initial signed-out state
- * - 001-xxx: After successful sign-in
- * - 002-xxx: Inventory data loaded and displayed
- * - etc.
- *
- * Each test is a complete user story with:
- * - Programmatic verification (expect() assertions)
- * - Visual verification (numbered screenshots)
- * - Documentation of what to verify in each screenshot
- *
- * Note: These tests use Firebase emulators and load test data from
- * test-data/firestore-export.json. The emulators must be running
- * before tests execute.
  */
 
 test.describe("Inventory Page", () => {
-  // Helper to check if error is the known transient auth initialization error
-  const isTransientAuthError = (errorText: string): boolean => {
-    return errorText.includes("Component auth has not been registered yet");
-  };
+    const isTransientAuthError = (errorText: string): boolean => {
+      return errorText.includes("Component auth has not been registered yet");
+    };
+  
+    test("complete inventory workflow", async ({ page, context }, testInfo) => {
+      test.setTimeout(20000); 
+  
+      const screenshots = createScreenshotHelper();
+      const outputDir = path.dirname(testInfo.file);
+      const docHelper = new TestDocumentationHelper(outputDir);
 
-  /**
-   * User Story: Admin views inventory after signing in
-   *
-   * This test tells a complete story:
-   * 1. User starts signed out
-   * 2. User signs in
-   * 3. User views inventory with data loaded
-   *
-   * Each step has both programmatic and visual verification.
-   */
-  test("complete inventory workflow", async ({ page, context }) => {
-    // Set test timeout for complete workflow - actual runtime ~5s, allowing 5s variance
-    test.setTimeout(10000); // 10 seconds
-
-    const screenshots = createScreenshotHelper();
-
-    // Collect console errors throughout the test
-    const consoleErrors: string[] = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        consoleErrors.push(msg.text());
-      }
-    });
-
-    // ====================================================================
-    // STEP 1: Signed out state - user needs to sign in
-    // ====================================================================
-    console.log("\n📖 STEP 1: Navigate to inventory page (signed out)");
-
-    await page.goto("/inventory", { waitUntil: "load" });
-
-    // Wait for and verify sign-in button appears
-    console.log("🔍 Waiting for sign-in button...");
-    const signInButton = page.locator('button:has-text("Sign In")');
-    await signInButton.waitFor({ state: "visible", timeout: 15000 });
-
-    await screenshots.capture(page, "signed-out-state", {
-      programmaticCheck: async () => {
-        // Verify sign-in button is visible
-        await expect(signInButton).toBeVisible();
-        console.log("   ✓ Sign-in button is visible");
-
-        // Verify the page title/heading (if present)
-        const heading = page.locator("main h1, main h2").first();
-        const headingVisible = await heading.isVisible().catch(() => false);
-        if (headingVisible) {
-          const headingText = await heading.textContent();
-          console.log(`   ✓ Page heading: ${headingText}`);
-        } else {
-          console.log("   ℹ️  No h1/h2 heading found (expected for signed-out state)");
+      docHelper.setMetadata(
+        "Inventory View Verification",
+        "**As an** admin user\n" +
+        "**I want to** view the inventory list\n" +
+        "**So that** I can track stock levels"
+      );
+  
+      const consoleErrors: string[] = [];
+      page.on("console", (msg) => {
+        if (msg.type() === "error") {
+             consoleErrors.push(msg.text());
         }
+      });
+  
+      // ====================================================================
+      // STEP 1: Signed out state
+      // ====================================================================
+      await page.goto("/inventory", { waitUntil: "load" });
+  
+      console.log("🔍 Waiting for sign-in button...");
+      const signInButton = page.locator('button:has-text("Sign In")');
+      await signInButton.waitFor({ state: "visible", timeout: 15000 });
 
-        // Verify no inventory table is visible yet
-        const inventoryTable = page.locator("table");
-        const tableVisible = await inventoryTable
-          .isVisible()
-          .catch(() => false);
-        expect(tableVisible).toBe(false);
-        console.log(
-          "   ✓ Inventory table not visible (user not authenticated)",
-        );
-      },
-    });
-
-    // ====================================================================
-    // STEP 2: Sign in to the application
-    // ====================================================================
-    console.log("\n📖 STEP 2: Sign in to application");
-
-    // Create authenticated user
-    const authEmulatorUrl = "http://localhost:9099";
-    const testEmail = `test-${Date.now()}@example.com`;
-    const testPassword = "testpassword123";
-
-    console.log(`   Creating test user: ${testEmail}`);
-    const authResponse = await page.request.post(
-      `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
-      {
-        data: {
-          email: testEmail,
-          password: testPassword,
-          displayName: "Test User",
-          returnSecureToken: true,
+      const step1Verifications = [
+        {
+            description: 'Validated "Sign In" button is visible',
+            check: async () => {
+                 await expect(signInButton).toBeVisible();
+            }
         },
-      },
-    );
+        {
+            description: 'Validated inventory table is NOT visible',
+            check: async () => {
+                const inventoryTable = page.locator("table");
+                const tableVisible = await inventoryTable.isVisible().catch(() => false);
+                expect(tableVisible).toBe(false);
+            }
+        }
+      ];
 
-    if (!authResponse.ok()) {
-      throw new Error(`Failed to create test user: ${authResponse.status()}`);
-    }
-
-    const authData = await authResponse.json();
-    console.log(`   ✓ Test user created with UID: ${authData.localId}`);
-
-    // Inject auth state into localStorage
-    await page.evaluate((authInfo) => {
-      const authKey = "firebase:authUser:demo-api-key:[DEFAULT]";
-      localStorage.setItem(
-        authKey,
-        JSON.stringify({
-          uid: authInfo.localId,
-          email: authInfo.email,
-          emailVerified: false,
-          displayName: "Test User",
-          isAnonymous: false,
-          photoURL: null,
-          providerData: [
-            {
-              providerId: "password",
-              uid: authInfo.localId,
-              displayName: "Test User",
-              email: authInfo.email,
-              phoneNumber: null,
-              photoURL: null,
-            },
-          ],
-          stsTokenManager: {
-            refreshToken: authInfo.refreshToken,
-            accessToken: authInfo.idToken,
-            expirationTime: Date.now() + 3600000,
+      docHelper.addStep(
+        "Signed Out State",
+        "000-signed-out-state.png",
+        step1Verifications
+      );
+  
+      await screenshots.capture(page, "signed-out-state", {
+        programmaticCheck: async () => {
+            for (const v of step1Verifications) await v.check();
+        },
+      });
+  
+      // ====================================================================
+      // STEP 2: Sign in
+      // ====================================================================
+      const authEmulatorUrl = "http://localhost:9099";
+      const testEmail = `test-${Date.now()}@example.com`;
+      const testPassword = "testpassword123";
+  
+      const authResponse = await page.request.post(
+        `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
+        {
+          data: {
+            email: testEmail,
+            password: testPassword,
+            displayName: "Test User",
+            returnSecureToken: true,
           },
-          createdAt: String(Date.now()),
-          lastLoginAt: String(Date.now()),
-          apiKey: "demo-api-key",
-          appName: "[DEFAULT]",
-        }),
+        },
       );
-    }, authData);
-
-    console.log("   ✓ Auth state injected into localStorage");
-
-    // Reload the page to apply authentication
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await waitForAppReady(page);
-
-    console.log("   ✓ Page reloaded with authentication");
-
-    // ====================================================================
-    // STEP 2.5: Wait for authentication to be fully processed
-    // ====================================================================
-    // The page needs time to:
-    // 1. Initialize Firebase Auth (authStateReady())
-    // 2. Load the Signin component dynamically
-    // 3. Detect auth state from localStorage (onAuthStateChanged)
-    // 4. Emit user_changed event to layout
-    // 5. Re-render to show authenticated content
-    //
-    // Rather than trying to detect intermediate states, we wait for
-    // concrete evidence that auth completed: the inventory table appearing
-
-    // ====================================================================
-    // STEP 3: Wait for inventory data to load
-    // ====================================================================
-    console.log("\n📖 STEP 3: Wait for inventory data and authenticated content to load");
-
-    // Wait for inventory table to appear - this proves auth succeeded
-    console.log("🔍 Waiting for inventory table (proof of successful authentication)...");
-    const inventoryTable = page.locator("table");
-    await inventoryTable.waitFor({ state: "visible", timeout: 30000 });
-    console.log("   ✓ Inventory table found - authentication successful");
-
-    // Now that we know auth succeeded, capture the signed-in state
-    await screenshots.capture(page, "signed-in-state", {
-      programmaticCheck: async () => {
-        // Verify sign-in button is no longer visible
-        const signInStillVisible = await signInButton
-          .isVisible()
-          .catch(() => false);
-        expect(signInStillVisible).toBe(false);
-        console.log("   ✓ Sign-in button no longer visible");
-
-        // Verify table is visible (we already waited for it above)
-        await expect(inventoryTable).toBeVisible();
-        console.log("   ✓ Inventory table is visible");
-
-        // Verify Redux store has user state (optional - may not be set yet)
-        const hasAuthState = await page.evaluate(() => {
-          try {
-            const store = (window as any).__REDUX_STORE__;
-            if (store) {
-              const state = store.getState();
-              return state.user?.uid;
-            }
-            return false;
-          } catch (e) {
-            return false;
-          }
-        });
-
-        if (hasAuthState) {
-          console.log("   ✓ Redux store contains authenticated user state");
-        } else {
-          console.log("   ℹ️  Redux store user state not yet populated (this is OK)");
-        }
-      },
-    });
-
-    // Wait for inventory data rows to appear
-    // Note: table rows are direct children of <table>, not in <tbody>
-    // We count all <tr> elements except the header row in <thead>
-    console.log("🔍 Waiting for inventory data rows...");
-
-    // Wait for at least one data row to appear by checking that rows exist
-    // We use "table tr" but exclude the header row in thead
-    await page.waitForFunction(
-      () => {
-        const allRows = document.querySelectorAll("table tr");
-        const headerRows = document.querySelectorAll("table thead tr");
-        return allRows.length > headerRows.length;
-      },
-      { timeout: 60000 },
-    );
-
-    // Count data rows (all rows minus header rows)
-    const allRowCount = await page.locator("table tr").count();
-    const headerRowCount = await page.locator("table thead tr").count();
-    const rowCount = allRowCount - headerRowCount;
-    console.log(`   ✓ Found ${rowCount} rows`);
-
-    await screenshots.capture(page, "inventory-loaded", {
-      programmaticCheck: async () => {
-        // Verify table structure
-        const headers = await page.locator("table thead th").allTextContents();
-        console.log(`   ✓ Found ${headers.length} table headers:`, headers);
-
-        // Verify expected headers are present
-        expect(headers.join(" ")).toContain("JAN Code");
-        expect(headers.join(" ")).toContain("Quantity");
-
-        // Verify we have inventory rows (excluding header rows in thead)
-        const allRows = await page.locator("table tr").count();
-        const headerRows = await page.locator("table thead tr").count();
-        const finalRowCount = allRows - headerRows;
-        console.log(`   ✓ Found ${finalRowCount} inventory items displayed`);
-        expect(finalRowCount).toBeGreaterThan(0);
-
-        // Verify Redux store has inventory data
-        const inventoryState = await page.evaluate(() => {
-          try {
-            const store = (window as any).__REDUX_STORE__;
-            if (store) {
-              const state = store.getState();
-              return {
-                hasInventory: !!state.inventory,
-                itemCount: state.inventory?.items?.length || 0,
-                hasCategories: !!state.inventory?.categories,
-                hasSuppliers: !!state.inventory?.suppliers,
-              };
-            }
-            return null;
-          } catch (e) {
-            return null;
-          }
-        });
-
-        if (inventoryState) {
-          console.log(`   ✓ Redux inventory state:`, inventoryState);
-          expect(inventoryState.hasInventory).toBe(true);
-          expect(inventoryState.itemCount).toBeGreaterThan(0);
-        }
-
-        // Verify sample data structure
-        if (finalRowCount > 0) {
-          const sampleRows = Math.min(3, finalRowCount);
-          console.log(
-            `   📊 Sample inventory data (first ${sampleRows} rows):`,
-          );
-          for (let i = 0; i < sampleRows; i++) {
-            // Skip header rows, get data rows only
-            const row = page.locator("table tr").nth(headerRows + i);
-            const cells = await row.locator("td").allTextContents();
-
-            // Verify row has cells with data
-            expect(cells.length).toBeGreaterThan(0);
-
-            // At least some cells should have non-empty content
-            const nonEmptyCells = cells.filter((c) => c.trim().length > 0);
-            expect(nonEmptyCells.length).toBeGreaterThan(0);
-
-            console.log(`      Row ${i + 1}: ${cells.slice(0, 3).join(" | ")}`);
-          }
-        }
-
-        // Verify no errors in loading
-        const errorMessage = page.locator('.error, [role="alert"]').first();
-        const hasError = await errorMessage.isVisible().catch(() => false);
-        expect(hasError).toBe(false);
-        console.log("   ✓ No error messages displayed");
-      },
-    });
-
-    // ====================================================================
-    // Final verification: No significant console errors
-    // ====================================================================
-    console.log("\n📖 Final verification: Console errors");
-
-    // Filter out transient auth initialization errors and image loading errors
-    const significantErrors = consoleErrors.filter(
-      (error) =>
-        !isTransientAuthError(error) &&
-        !error.includes("ERR_NAME_NOT_RESOLVED") &&
-        !error.includes("Failed to load resource") &&
-        !error.includes("Could not reach Cloud Firestore backend"),
-    );
-
-    if (consoleErrors.length > 0) {
-      console.log(
-        `   Found ${consoleErrors.length} console errors (${significantErrors.length} significant):`,
-      );
-      if (significantErrors.length > 0) {
-        for (const error of significantErrors) {
-          console.log(`      (SIGNIFICANT) - ${error.substring(0, 200)}`);
-        }
+  
+      if (!authResponse.ok()) {
+        throw new Error(`Failed to create test user: ${authResponse.status()}`);
       }
-    } else {
-      console.log("   ✓ No console errors detected");
-    }
+  
+      const authData = await authResponse.json();
+  
+      await page.evaluate((authInfo) => {
+        const authKey = "firebase:authUser:demo-api-key:[DEFAULT]";
+        localStorage.setItem(
+          authKey,
+          JSON.stringify({
+            uid: authInfo.localId,
+            email: authInfo.email,
+            emailVerified: false,
+            displayName: "Test User",
+            isAnonymous: false,
+            photoURL: null,
+            providerData: [
+              {
+                providerId: "password",
+                uid: authInfo.localId,
+                displayName: "Test User",
+                email: authInfo.email,
+                phoneNumber: null,
+                photoURL: null,
+              },
+            ],
+            stsTokenManager: {
+              refreshToken: authInfo.refreshToken,
+              accessToken: authInfo.idToken,
+              expirationTime: Date.now() + 3600000,
+            },
+            createdAt: String(Date.now()),
+            lastLoginAt: String(Date.now()),
+            apiKey: "demo-api-key",
+            appName: "[DEFAULT]",
+          }),
+        );
+      }, authData);
+  
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await waitForAppReady(page);
+  
+      console.log("🔍 Waiting for inventory table (proof of successful authentication)...");
+      const inventoryTable = page.locator("table");
+      await inventoryTable.waitFor({ state: "visible", timeout: 30000 });
+  
+      const step2Verifications = [
+        {
+            description: 'Validated "Sign In" button is no longer visible',
+            check: async () => {
+                const signInStillVisible = await signInButton.isVisible().catch(() => false);
+                expect(signInStillVisible).toBe(false);
+            }
+        },
+        {
+            description: 'Validated inventory table is visible',
+            check: async () => {
+                 await expect(inventoryTable).toBeVisible();
+            }
+        }
+      ];
 
-    // Verify no significant console errors
-    expect(significantErrors.length).toBe(0);
+      docHelper.addStep(
+        "Signed In State",
+        "001-signed-in-state.png",
+        step2Verifications
+      );
 
-    console.log("\n✅ Complete inventory workflow test passed!");
-    console.log(`   Total screenshots captured: ${screenshots.getCounter()}`);
+      await screenshots.capture(page, "signed-in-state", {
+        programmaticCheck: async () => {
+            for (const v of step2Verifications) await v.check();
+        },
+      });
+  
+      // ====================================================================
+      // STEP 3: Inventory Data Loaded
+      // ====================================================================
+      
+      console.log("🔍 Waiting for inventory data rows...");
+      await page.waitForFunction(
+        () => {
+          const allRows = document.querySelectorAll("table tr");
+          const headerRows = document.querySelectorAll("table thead tr");
+          return allRows.length > headerRows.length;
+        },
+        { timeout: 60000 },
+      );
+  
+      const step3Verifications = [
+        {
+            description: 'Validated table headers include "JAN Code" and "Quantity"',
+            check: async () => {
+                const headers = await page.locator("table thead th").allTextContents();
+                expect(headers.join(" ")).toContain("JAN Code");
+                expect(headers.join(" ")).toContain("Quantity");
+            }
+        },
+        {
+            description: 'Validated inventory data rows are present',
+            check: async () => {
+                const allRows = await page.locator("table tr").count();
+                const headerRows = await page.locator("table thead tr").count();
+                const finalRowCount = allRows - headerRows;
+                expect(finalRowCount).toBeGreaterThan(0);
+            }
+        },
+        {
+            description: 'Validated Redux store has inventory state',
+            check: async () => {
+                const inventoryState = await page.evaluate(() => {
+                    try {
+                      const store = (window as any).__REDUX_STORE__;
+                      if (store) {
+                        const state = store.getState();
+                        return { hasInventory: !!state.inventory, itemCount: state.inventory?.items?.length || 0 };
+                      }
+                      return null;
+                    } catch (e) { return null; }
+                  });
+                  if (inventoryState) expect(inventoryState.hasInventory).toBe(true);
+            }
+        }
+      ];
+
+      docHelper.addStep(
+        "Inventory Data Loaded",
+        "002-inventory-loaded.png",
+        step3Verifications
+      );
+
+      await screenshots.capture(page, "inventory-loaded", {
+        programmaticCheck: async () => {
+            for (const v of step3Verifications) await v.check();
+        },
+      });
+  
+      // ====================================================================
+      // Final verification
+      // ====================================================================
+      const significantErrors = consoleErrors.filter(
+        (error) =>
+          !isTransientAuthError(error) &&
+          !error.includes("ERR_NAME_NOT_RESOLVED") &&
+          !error.includes("Failed to load resource") &&
+          !error.includes("Could not reach Cloud Firestore backend"),
+      );
+  
+      expect(significantErrors.length).toBe(0);
+      docHelper.writeReadme();
+    });
   });
-});

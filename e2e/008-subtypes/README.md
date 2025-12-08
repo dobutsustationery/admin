@@ -1,24 +1,30 @@
-# Subtypes Page
+# Subtypes Verification
 
-**Spec File**: [`008-subtypes.spec.ts`](./008-subtypes.spec.ts)
+**As an** admin user
+**I want to** view items with subtypes
+**So that** I can manage product variations
 
-## User Story
-User Story: Admin views items with subtypes
-This test tells a complete story:
-1. User starts signed out
-2. User signs in
-3. User views the subtypes page with item categorization
-Each step has both programmatic and visual verification.
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to subtypes page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
+- [ ] Validated heading contains "Items with Subtypes"
 
-### STEP 3: Wait for subtypes page to load
-<!-- Add screenshot here if available -->
+### 2. Signed In State
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+![Signed In State](screenshots/001-signed-in-state.png)
+
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is hidden
+- [ ] Validated Redux store has user state
+
+### 3. Subtypes Loaded
+
+![Subtypes Loaded](screenshots/002-subtypes-loaded.png)
+
+**Programmatic Verification:**
+- [ ] Validated heading contains "Items with Subtypes"
+- [ ] Validated Redux inventory state
+
