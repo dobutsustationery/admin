@@ -46,8 +46,8 @@
     "data:import": "node scripts/transfer-data.js",
     "data:transfer": "node scripts/transfer-data.js",
     "deploy": "npm run deploy:production",
-    "deploy:production": "vite build --mode production && firebase deploy --only hosting",
-    "deploy:staging": "vite build --mode staging && firebase deploy --only hosting"
+    "deploy:production": "vite build --mode production && firebase deploy --only hosting --project production",
+    "deploy:staging": "vite build --mode staging && firebase deploy --only hosting --project staging"
   },
   "files": [
     "dist",
