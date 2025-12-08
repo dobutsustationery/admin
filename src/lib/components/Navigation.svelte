@@ -2,19 +2,31 @@
   import { page } from "$app/stores";
   import { user } from "$lib/globals";
 
+  import {
+    LayoutDashboard,
+    PlusCircle,
+    List,
+    Package,
+    Grid,
+    CreditCard,
+    Download,
+    Tag,
+    Archive
+  } from "lucide-svelte";
+
   export let unsyncedActions = 0;
   export let isOpen = false;
 
   const links = [
-    { href: "/", label: "Dashboard", icon: "dashboard" },
-    { href: "/entry", label: "Add Inventory", icon: "add" },
-    { href: "/inventory", label: "View Inventory", icon: "list" },
-    { href: "/orders", label: "Orders", icon: "package" },
-    { href: "/subtypes", label: "Subtypes", icon: "grid" },
-    { href: "/payments", label: "Payments", icon: "payments" },
-    { href: "/csv", label: "Export CSV", icon: "download" },
-    { href: "/names", label: "Manage Names", icon: "label" },
-    { href: "/archives", label: "Archives", icon: "folder" },
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/entry", label: "Add Inventory", icon: PlusCircle },
+    { href: "/inventory", label: "View Inventory", icon: List },
+    { href: "/orders", label: "Orders", icon: Package },
+    { href: "/subtypes", label: "Subtypes", icon: Grid },
+    { href: "/payments", label: "Payments", icon: CreditCard },
+    { href: "/csv", label: "Export CSV", icon: Download },
+    { href: "/names", label: "Manage Names", icon: Tag },
+    { href: "/archives", label: "Archives", icon: Archive },
   ];
 
   function toggleMenu() {
@@ -35,7 +47,9 @@
       {#each links as link}
         <li class:active={$page.url.pathname === link.href}>
           <a href={link.href} on:click={() => (isOpen = false)}>
-            <span class="icon">{link.icon}</span>
+            <span class="icon">
+              <svelte:component this={link.icon} size={20} />
+            </span>
             <span class="label">{link.label}</span>
           </a>
         </li>
@@ -131,8 +145,8 @@
 
   .icon {
     margin-right: 0.75rem;
-    /* Basic placeholder for icons */
-    font-family: monospace; 
+    display: flex;
+    align-items: center;
   }
 
   .nav-footer {
