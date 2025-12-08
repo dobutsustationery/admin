@@ -14,7 +14,16 @@ This guide describes how to deploy the Antigravity Admin application to producti
 - Node.js (v18+)
 - npm
 - Firebase CLI (`npm install -g firebase-tools`)
-- Access to the `dobutsu-stationery-6b227` Firebase project.
+- Access to the `dobutsu-stationery-6b227` Firebase project (for Auth/Firestore).
+- Access to the `dobutsu-admin` Firebase project (for Hosting).
+
+## Multi-Project Configuration
+
+The application uses a split configuration:
+- **Data (Firestore/Auth)**: Managed by `dobutsu-stationery-6b227` (Project A). This is configured via `VITE_` environment variables.
+- **Hosting**: Deployed to `dobutsu-admin` (Project B). This is configured via `.firebaserc` aliases.
+
+This means you build against the Production Data project, but deploy the resulting static files to the Admin Hosting project.
 
 ## Environment Variables
 
