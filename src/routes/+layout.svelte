@@ -10,6 +10,7 @@
   import { onMount } from "svelte";
   import { auth, firestore, googleAuthProvider } from "$lib/firebase";
   import { user } from "$lib/globals";
+  import { inventory_synced } from "$lib/inventory";
   import { watchBroadcastActions } from "$lib/redux-firestore";
   import type { User } from "$lib/Signin.svelte";
   import { store } from "$lib/store";
@@ -142,7 +143,13 @@
           Object.keys(executedActions).length -
           Object.keys(confirmedActions).length;
       });
+      store.dispatch(inventory_synced());
     });
+
+    // Fallback: If no sync happens (e.g. empty collection/emulator issues), force sync state
+    setTimeout(() => {
+      store.dispatch(inventory_synced());
+    }, 3000);
   });
   /*
   const delayLimit = 100000000;

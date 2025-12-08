@@ -29,6 +29,60 @@ const db = getFirestore(app);
 console.log(`🔧 Connected to Firestore emulator at ${emulatorHost}`);
 
 /**
+ * Extract JAN code from a broadcast event payload
+ */
+function extractJanCode(broadcast) {
+  const payload = broadcast.data?.payload;
+  if (!payload) return null;
+
+  // JAN code can be in different locations depending on action type
+  const janCode = payload.item?.janCode || payload.janCode;
+
+  // Also check payload.id - it may contain the janCode (possibly with suffix)
+  // We need to extract just the numeric part
+  if (janCode) return janCode;
+
+  // For update_field and other actions, payload.id might be the janCode (or janCode + suffix)
+  // Extract numeric prefix from payload.id
+  if (payload.id && typeof payload.id === 'string') {
+    const match = payload.id.match(/^(\d+)/);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+/**
+ * Filter broadcast events using three-step logic:
+ * 1. If JAN code occurs anywhere in stringified JSON → include
+ * 2. Else if no match but action has itemKey or janCode field → exclude
+ * 3. Else → include (actions unrelated to JAN codes)
+ */
+function filterByJanCodes(broadcasts, janCodes) {
+  return broadcasts.filter(broadcast => {
+    // Step 1: Check if any target JAN code appears in the JSON
+    const jsonStr = JSON.stringify(broadcast);
+    const hasMatchingJanCode = janCodes.some(janCode => jsonStr.includes(janCode));
+
+    if (hasMatchingJanCode) {
+      return true;  // Include: action involves target JAN codes
+    }
+
+    // Step 2: Check if action has itemKey or janCode field
+    const payload = broadcast.data?.payload;
+    const hasItemKey = payload?.itemKey !== undefined;
+    const hasJanCode = payload?.janCode !== undefined || payload?.item?.janCode !== undefined;
+
+    if (hasItemKey || hasJanCode) {
+      return false;  // Exclude: action references OTHER JAN codes
+    }
+
+    // Step 3: Include actions unrelated to JAN codes
+    return true;
+  });
+}
+
+/**
  * Load test data into Firestore emulator with local image URLs
  */
 async function loadTestData() {
@@ -37,7 +91,7 @@ async function loadTestData() {
     "test-data",
     "firestore-export.json",
   );
-  
+
   const mappingPath = resolve(
     process.cwd(),
     "e2e",
@@ -49,7 +103,7 @@ async function loadTestData() {
 
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
-  
+
   // Load URL mapping if available
   let urlMapping = {};
   if (existsSync(mappingPath)) {
@@ -60,13 +114,51 @@ async function loadTestData() {
     console.log(`      Run: node e2e/helpers/download-test-images.js first`);
   }
 
+  // Parse --match-jancodes argument if provided
+  const matchJancodesArg = process.argv.find(arg => arg.startsWith('--match-jancodes='));
+  const matchJancodesLimit = matchJancodesArg ? parseInt(matchJancodesArg.split('=')[1], 10) : null;
+
+  if (matchJancodesLimit) {
+    console.log(`   ⚠️  Match JAN codes mode: Loading records matching JAN codes from first ${matchJancodesLimit} records`);
+  }
+
+  // If using --match-jancodes, extract JAN codes from first N records
+  let janCodesToMatch = null;
+  if (matchJancodesLimit && exportData.collections.broadcast) {
+    const firstNRecords = exportData.collections.broadcast.slice(0, matchJancodesLimit);
+    const janCodesSet = new Set();
+
+    firstNRecords.forEach(broadcast => {
+      const janCode = extractJanCode(broadcast);
+      if (janCode) {
+        janCodesSet.add(janCode);
+      }
+    });
+
+    janCodesToMatch = Array.from(janCodesSet);
+    console.log(`   Found ${janCodesToMatch.length} unique JAN codes in first ${matchJancodesLimit} records`);
+  }
+
   for (const [collectionName, documents] of Object.entries(
     exportData.collections,
   )) {
-    // All collections are loaded completely
-    const docsToLoad = documents;
-    
+    // Determine docs to load based on filtering
+    let docsToLoad;
+
+    if (collectionName === 'broadcast') {
+      if (matchJancodesLimit && janCodesToMatch) {
+        docsToLoad = filterByJanCodes(documents, janCodesToMatch);
+      } else {
+        docsToLoad = documents;
+      }
+    } else {
+      docsToLoad = documents;
+    }
+
     console.log(`\n  Loading ${collectionName} (${docsToLoad.length} docs)...`);
+    if (collectionName === 'broadcast' && matchJancodesLimit) {
+      console.log(`    (Filtered ${documents.length} broadcast events to ${docsToLoad.length} matching JAN codes)`);
+    }
 
     let batch = db.batch();
     let batchCount = 0;

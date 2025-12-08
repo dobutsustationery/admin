@@ -70,6 +70,9 @@ test.describe("CSV Export Page with Google Drive", () => {
       if (msg.type() === "error") {
         consoleErrors.push(msg.text());
       }
+      if (msg.text().includes("DEBUG:")) {
+        console.log(`BROWSER: ${msg.text()}`);
+      }
     });
 
     // ====================================================================
@@ -95,7 +98,7 @@ test.describe("CSV Export Page with Google Drive", () => {
       {
         description: 'Verified CSV content area is empty (user not authenticated)',
         check: async () => {
-          const preElement = page.locator("pre");
+          const preElement = page.locator(".csv-preview pre");
           const preVisible = await preElement.isVisible().catch(() => false);
           if (preVisible) {
             const preContent = await preElement.textContent();
@@ -208,8 +211,15 @@ test.describe("CSV Export Page with Google Drive", () => {
         console.log("   ⚠️  Sign-in button still visible, but continuing...");
       });
 
+    // Verify loading state appears
+    const loadingElement = page.locator(".loading-preview");
+    if (await loadingElement.isVisible()) {
+      console.log("   ✓ Loading state passed");
+    }
+
     // Wait for CSV content to load (wait for header to appear)
-    const preElement = page.locator("pre");
+    // The pre element re-appears after loading is done
+    const preElement = page.locator(".csv-preview pre");
     await expect(preElement).toContainText('"janCode"', { timeout: 20000 });
     
     const content = await preElement.textContent();
