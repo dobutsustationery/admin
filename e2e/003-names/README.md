@@ -1,27 +1,24 @@
-# Names Management Verification
+# Names Page
 
-**As an** admin user
-**I want to** manage product names/subtypes
-**So that** I can categorize inventory items
+**Spec File**: [`003-names.spec.ts`](./003-names.spec.ts)
 
-### 1. Signed Out State
+## User Story
+User Story: Admin manages recently used names
+This test tells a complete story:
+1. User starts signed out
+2. User signs in
+3. User views the names management page
+Each step has both programmatic and visual verification.
 
-![Signed Out State](screenshots/000-signed-out-state.png)
+## Test Steps
+### STEP 1: Navigate to names page (signed out)
+<!-- Add screenshot here if available -->
 
-**Programmatic Verification:**
-- [ ] Validated "Sign In" button is visible
+### STEP 2: Sign in to application
+<!-- Add screenshot here if available -->
 
-### 2. Signed In State
+### STEP 3: Wait for names page to load
+<!-- Add screenshot here if available -->
 
-![Signed In State](screenshots/001-signed-in-state.png)
-
-**Programmatic Verification:**
-- [ ] Validated user is authenticated
-
-### 3. Names Loaded
-
-![Names Loaded](screenshots/002-names-loaded.png)
-
-**Programmatic Verification:**
-- [ ] Validated names list is visible
-- [ ] Checked that existing names are displayed
+## Verification
+This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).

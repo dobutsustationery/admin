@@ -1,27 +1,24 @@
-# Shows Verification
+# Shows Page
 
-**As an** admin user
-**I want to** view upcoming shows/events
-**So that** I can plan inventory for them
+**Spec File**: [`010-shows.spec.ts`](./010-shows.spec.ts)
 
-### 1. Signed Out State
+## User Story
+User Story: Admin manages event sales
+This test tells a complete story:
+1. User starts signed out
+2. User signs in
+3. User views shows page with available archives and sales management
+Each step has both programmatic and visual verification.
 
-![Signed Out State](screenshots/000-signed-out-state.png)
+## Test Steps
+### STEP 1: Navigate to shows page (signed out)
+<!-- Add screenshot here if available -->
 
-**Programmatic Verification:**
-- [ ] Validated "Sign In" button is visible
+### STEP 2: Sign in to application
+<!-- Add screenshot here if available -->
 
-### 2. Signed In State
+### STEP 3: Wait for shows page to load
+<!-- Add screenshot here if available -->
 
-![Signed In State](screenshots/001-signed-in-state.png)
-
-**Programmatic Verification:**
-- [ ] Validated user is authenticated
-
-### 3. Shows Loaded
-
-![Shows Loaded](screenshots/002-shows-loaded.png)
-
-**Programmatic Verification:**
-- [ ] Validated shows list is visible
-- [ ] Checked that event details are accurate
+## Verification
+This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).

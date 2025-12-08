@@ -1,20 +1,21 @@
-# Order List Verification
+# Orders Page
 
-**As an** admin user
-**I want to** view all orders
-**So that** I can track fulfillment status
+**Spec File**: [`005-orders.spec.ts`](./005-orders.spec.ts)
 
-### 1. Signed Out State
+## User Story
+User Story: Admin views orders list
+This test tells a complete story:
+1. User starts signed out
+2. User signs in
+3. User views the orders list page
+Each step has both programmatic and visual verification.
 
-![Signed Out State](screenshots/000-signed-out-state.png)
+## Test Steps
+### STEP 1: Navigate to orders page (signed out)
+<!-- Add screenshot here if available -->
 
-**Programmatic Verification:**
-- [ ] Validated "Sign In" button is visible
+### STEP 2: Sign in to application
+<!-- Add screenshot here if available -->
 
-### 2. Orders List
-
-![Orders List](screenshots/001-signed-in-state.png)
-
-**Programmatic Verification:**
-- [ ] Validated orders table is visible
-- [ ] Checked that sample orders are displayed correctly
+## Verification
+This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).

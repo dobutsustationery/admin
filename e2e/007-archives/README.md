@@ -1,27 +1,24 @@
-# Archives Verification
+# Archives Page
 
-**As an** admin user
-**I want to** view sales archives
-**So that** I can access historical data
+**Spec File**: [`007-archives.spec.ts`](./007-archives.spec.ts)
 
-### 1. Signed Out State
+## User Story
+User Story: Admin manages inventory archives
+This test tells a complete story:
+1. User starts signed out
+2. User signs in
+3. User views the archives page with archive list and form
+Each step has both programmatic and visual verification.
 
-![Signed Out State](screenshots/000-signed-out-state.png)
+## Test Steps
+### STEP 1: Navigate to archives page (signed out)
+<!-- Add screenshot here if available -->
 
-**Programmatic Verification:**
-- [ ] Validated "Sign In" button is visible
+### STEP 2: Sign in to application
+<!-- Add screenshot here if available -->
 
-### 2. Signed In State
+### STEP 3: Wait for archives page to load
+<!-- Add screenshot here if available -->
 
-![Signed In State](screenshots/001-signed-in-state.png)
-
-**Programmatic Verification:**
-- [ ] Validated user is authenticated
-
-### 3. Archives Loaded
-
-![Archives Loaded](screenshots/002-archives-loaded.png)
-
-**Programmatic Verification:**
-- [ ] Validated archives list is visible
-- [ ] Checked for presence of historical archives
+## Verification
+This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).

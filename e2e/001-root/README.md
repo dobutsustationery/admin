@@ -1,29 +1,19 @@
-# Root Page (Inventory Entry) Verification
+# Root Page (Dashboard)
 
-**As an** admin user
-**I want to** enter new inventory items
-**So that** I can add stock to the system
+**Spec File**: [`001-root.spec.ts`](./001-root.spec.ts)
 
-### 1. Signed Out State
+## User Story
+User Story: Admin lands on Dashboard and navigates to entry
 
-![Signed Out State](screenshots/000-signed-out-state.png)
+## Test Steps
+### STEP 1: Navigate to root page (signed out)
+<!-- Add screenshot here if available -->
 
-**Programmatic Verification:**
-- [ ] Validated "Sign In" button is visible
-- [ ] Verified no console errors
+### STEP 2: Sign in to application
+<!-- Add screenshot here if available -->
 
-### 2. Signed In State
+### STEP 3: Navigate to Inventory Entry
+<!-- Add screenshot here if available -->
 
-![Signed In State](screenshots/001-signed-in-state.png)
-
-**Programmatic Verification:**
-- [ ] Validated "Sign In" button is hidden
-- [ ] Verified user is authenticated
-
-### 3. Form Loaded
-
-![Form Loaded](screenshots/002-form-loaded.png)
-
-**Programmatic Verification:**
-- [ ] Validated inventory entry form is visible
-- [ ] Checked for "JAN Code" input field
+## Verification
+This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
