@@ -1,21 +1,21 @@
-# Payments Page
+# Payments Verification
 
-**Spec File**: [`006-payments.spec.ts`](./006-payments.spec.ts)
+**As an** admin user
+**I want to** view payments
+**So that** I can track financial status
 
-## User Story
-User Story: Admin views payments
-This test tells a complete story:
-1. User starts signed out
-2. User signs in
-3. User views the payments page
-Each step has both programmatic and visual verification.
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to payments page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+### 2. Signed In State
+
+![Signed In State](screenshots/001-signed-in-state.png)
+
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is hidden
+- [ ] Validated Redux store has user state
+

@@ -1,24 +1,31 @@
-# Inventory Page
+# Inventory View Verification
 
-**Spec File**: [`000-inventory.spec.ts`](./000-inventory.spec.ts)
+**As an** admin user
+**I want to** view the inventory list
+**So that** I can track stock levels
 
-## User Story
-User Story: Admin views inventory after signing in
-This test tells a complete story:
-1. User starts signed out
-2. User signs in
-3. User views inventory with data loaded
-Each step has both programmatic and visual verification.
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to inventory page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
+- [ ] Validated inventory table is NOT visible
 
-### STEP 3: Wait for inventory data and authenticated content to load
-<!-- Add screenshot here if available -->
+### 2. Signed In State
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+![Signed In State](screenshots/001-signed-in-state.png)
+
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is no longer visible
+- [ ] Validated inventory table is visible
+
+### 3. Inventory Data Loaded
+
+![Inventory Data Loaded](screenshots/002-inventory-loaded.png)
+
+**Programmatic Verification:**
+- [ ] Validated table headers include "JAN Code" and "Quantity"
+- [ ] Validated inventory data rows are present
+- [ ] Validated Redux store has inventory state
+
