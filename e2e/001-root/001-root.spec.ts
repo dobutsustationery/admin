@@ -1,4 +1,5 @@
 import { expect, test } from "../fixtures/auth";
+import { waitForAppReady } from "../helpers/loading-helper";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 
 /**
@@ -133,6 +134,7 @@ test.describe("Root Page (Dashboard)", () => {
   
       // Reload the page to apply authentication
       await page.reload({ waitUntil: "load" });
+    await waitForAppReady(page);
   
       console.log("   ✓ Page reloaded with authentication");
   

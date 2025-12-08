@@ -1,4 +1,5 @@
 import { expect, test } from "../fixtures/auth";
+import { waitForAppReady } from "../helpers/loading-helper";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 
 /**
@@ -159,6 +160,7 @@ test.describe("Inventory Page", () => {
 
     // Reload the page to apply authentication
     await page.reload({ waitUntil: "domcontentloaded" });
+    await waitForAppReady(page);
 
     console.log("   ✓ Page reloaded with authentication");
 

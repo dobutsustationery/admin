@@ -1,20 +1,21 @@
-# Order Packing Verification
+# Order Detail Page
 
-**As an** admin user
-**I want to** pack a specific order
-**So that** I can fulfill customer purchases
+**Spec File**: [`004-order.spec.ts`](./004-order.spec.ts)
 
-### 1. Signed Out State
+## User Story
+User Story: Admin views order detail page
+This test tells a complete story:
+1. User starts signed out
+2. User signs in
+3. User views the order detail page (without specific order)
+Each step has both programmatic and visual verification.
 
-![Signed Out State](screenshots/000-signed-out-state.png)
+## Test Steps
+### STEP 1: Navigate to order page (signed out)
+<!-- Add screenshot here if available -->
 
-**Programmatic Verification:**
-- [ ] Validated "Sign In" button is visible
+### STEP 2: Sign in to application
+<!-- Add screenshot here if available -->
 
-### 2. Order Packing Page
-
-![Signed In State](screenshots/001-signed-in-state.png)
-
-**Programmatic Verification:**
-- [ ] Validated order items table is visible
-- [ ] Checked that expected order details are shown
+## Verification
+This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).

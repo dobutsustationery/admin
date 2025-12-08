@@ -1,27 +1,24 @@
-# Item History Verification
+# Item History Page
 
-**As an** admin user
-**I want to** view item history
-**So that** I can track changes to inventory items
+**Spec File**: [`009-itemhistory.spec.ts`](./009-itemhistory.spec.ts)
 
-### 1. Signed Out State
+## User Story
+User Story: Admin views item history
+This test tells a complete story:
+1. User starts signed out
+2. User signs in
+3. User views item history for a specific item
+Each step has both programmatic and visual verification.
 
-![Signed Out State](screenshots/000-signed-out-state.png)
+## Test Steps
+### STEP 1: Navigate to item history page (signed out)
+<!-- Add screenshot here if available -->
 
-**Programmatic Verification:**
-- [ ] Validated "Sign In" button is visible
+### STEP 2: Sign in to application
+<!-- Add screenshot here if available -->
 
-### 2. Signed In State
+### STEP 3: Wait for item history page to load
+<!-- Add screenshot here if available -->
 
-![Signed In State](screenshots/001-signed-in-state.png)
-
-**Programmatic Verification:**
-- [ ] Validated user is authenticated
-
-### 3. History Loaded
-
-![History Loaded](screenshots/002-itemhistory-loaded.png)
-
-**Programmatic Verification:**
-- [ ] Validated history list is visible
-- [ ] Checked that recent changes are displayed
+## Verification
+This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
