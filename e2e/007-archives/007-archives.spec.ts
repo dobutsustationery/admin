@@ -64,7 +64,7 @@ test.describe("Archives Page", () => {
         console.log("   ✓ Sign-in button is visible");
 
         // Verify the page heading
-        const heading = page.locator("h1").first();
+        const heading = page.locator("main h1").first();
         const headingVisible = await heading.isVisible().catch(() => false);
         if (headingVisible) {
           const headingText = await heading.textContent();
