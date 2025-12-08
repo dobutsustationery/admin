@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { store } from "$lib/store";
+  import { user } from "$lib/globals";
   import { Parser } from "@json2csv/plainjs";
   import { 
     isDriveConfigured,
@@ -288,7 +289,11 @@
   
   <div class="csv-preview">
     <h2>CSV Preview</h2>
-    <pre>{csv || 'No data to preview'}</pre>
+    {#if $user && !$store.inventory.initialized}
+      <div class="loading-preview">Loading CSV data...</div>
+    {:else}
+      <pre>{csv || 'No data to preview'}</pre>
+    {/if}
   </div>
 </div>
 
@@ -509,6 +514,16 @@
     border-radius: 4px;
     overflow-x: auto;
     max-height: 500px;
+    max-height: 500px;
     font-size: 12px;
+  }
+
+  .loading-preview {
+    padding: 40px;
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    background: #f5f5f5;
+    border-radius: 4px;
   }
 </style>
