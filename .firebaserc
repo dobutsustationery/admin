@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "dobutsu-admin"
+    "default": "dobutsu-admin",
+    "staging": "dobutsu-admin-staging",
+    "production": "dobutsu-stationery-6b227"
   }
 }
