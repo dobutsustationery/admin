@@ -63,7 +63,7 @@ echo ""
 
 # Generate baselines for all tests
 # To update a specific test only: npx playwright test e2e/000-inventory/000-inventory.spec.ts --update-snapshots
-npx playwright test --update-snapshots
+npx playwright test "$@" --update-snapshots
 
 echo ""
 echo "✅ Baseline screenshots generated!"
