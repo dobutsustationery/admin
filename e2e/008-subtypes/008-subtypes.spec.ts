@@ -1,4 +1,5 @@
 import { expect, test } from "../fixtures/auth";
+import { waitForAppReady } from "../helpers/loading-helper";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 
 /**
@@ -143,6 +144,7 @@ test.describe("Subtypes Page", () => {
 
     // Reload the page to apply authentication
     await page.reload({ waitUntil: "load" });
+    await waitForAppReady(page);
     
     // Wait for network activity to settle
     await page.waitForLoadState("domcontentloaded");

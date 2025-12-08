@@ -1,4 +1,5 @@
 import { expect, test } from "../fixtures/auth";
+import { waitForAppReady } from "../helpers/loading-helper";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import * as path from "path";
@@ -201,6 +202,7 @@ test.describe("CSV Export Page with Google Drive", () => {
 
     // Reload the page to apply authentication
     await page.reload({ waitUntil: "load" });
+    await waitForAppReady(page);
 
     console.log("   ✓ Page reloaded with authentication");
 
@@ -536,6 +538,7 @@ test.describe("CSV Export Page with Google Drive", () => {
     }, authData);
 
     await page.reload({ waitUntil: "load" });
+    await waitForAppReady(page);
     console.log("   ✓ User authenticated");
 
     await screenshots.capture(page, "authenticated-drive-ui", {
@@ -565,6 +568,7 @@ test.describe("CSV Export Page with Google Drive", () => {
     });
 
     await page.reload({ waitUntil: "load" });
+    await waitForAppReady(page);
     console.log("   ✓ Mock OAuth token injected");
 
     // Force strict filename for visual consistency (prevent daily diffs)
