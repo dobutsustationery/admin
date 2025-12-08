@@ -68,12 +68,18 @@ For the Drive integration to work in production, you must configure the OAuth Cl
 
 ## Build and Deploy
 
-1.  **Install Dependencies**:
+1.  **Authentication**:
+    Ensure you are logged into the correct Firebase account that has access to both projects.
+    ```bash
+    npm run auth
+    ```
+
+2.  **Install Dependencies**:
     ```bash
     npm ci
     ```
 
-2.  **Build and Deploy**:
+3.  **Build and Deploy**:
     The project includes convenience scripts to handle environment variable injection and deployment.
     ```bash
     # Standard Production Deployment
