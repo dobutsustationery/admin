@@ -1,24 +1,32 @@
-# Shows Page
+# Shows Verification
 
-**Spec File**: [`010-shows.spec.ts`](./010-shows.spec.ts)
+**As an** admin user
+**I want to** manage event sales
+**So that** I can track sales performance
 
-## User Story
-User Story: Admin manages event sales
-This test tells a complete story:
-1. User starts signed out
-2. User signs in
-3. User views shows page with available archives and sales management
-Each step has both programmatic and visual verification.
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to shows page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
+- [ ] Validated heading contains "Create and view event sales"
 
-### STEP 3: Wait for shows page to load
-<!-- Add screenshot here if available -->
+### 2. Signed In State
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+![Signed In State](screenshots/001-signed-in-state.png)
+
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is hidden
+- [ ] Validated Redux store has user state
+
+### 3. Shows Loaded
+
+![Shows Loaded](screenshots/002-shows-loaded.png)
+
+**Programmatic Verification:**
+- [ ] Validated heading contains "Create and view event sales"
+- [ ] Validated "Available Archives" heading (if visible)
+- [ ] Validated table exists (if visible)
+- [ ] Validated Redux store has sales events state
+
