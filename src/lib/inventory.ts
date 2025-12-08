@@ -31,7 +31,10 @@ export interface InventoryState {
   hiddenInventoryState: { [key: string]: InventoryState };
   salesEvents: { [key: string]: OrderInfo };
   orderIdToOrder: { [key: string]: OrderInfo };
+  initialized: boolean;
 }
+
+export const inventory_synced = createAction("inventory_synced");
 
 export const update_item = createAction<{ id: string; item: Item }>(
   "update_item",
@@ -113,9 +116,13 @@ export const initialState: InventoryState = {
   archivedInventoryDate: {},
   hiddenInventoryState: {},
   salesEvents: {},
+  initialized: false,
 };
 
 export const inventory = createReducer(initialState, (r) => {
+  r.addCase(inventory_synced, (state) => {
+    state.initialized = true;
+  });
   r.addCase(update_item, (state, action) => {
     const id = action.payload.id;
     const timestamp = action.timestamp;
