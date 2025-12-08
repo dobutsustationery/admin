@@ -30,8 +30,12 @@ data-export
 /e2e/*-actual.png
 /e2e/*-diff.png
 
+
+# Firebase cache
+.firebase/
+
 # Firebase debug logs
-firebase-debug.log
+*.log
 firestore-debug.log
 ui-debug.log
 # Keep static/test-images symlink out of git (it's created at test time)

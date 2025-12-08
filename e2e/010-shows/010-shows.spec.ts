@@ -64,7 +64,7 @@ test.describe("Shows Page", () => {
         console.log("   ✓ Sign-in button is visible");
 
         // Verify the page heading
-        const heading = page.locator("h1").first();
+        const heading = page.locator("main h1").first();
         const headingVisible = await heading.isVisible().catch(() => false);
         if (headingVisible) {
           const headingText = await heading.textContent();
@@ -191,7 +191,7 @@ test.describe("Shows Page", () => {
 
     // Wait for page headings to appear
     console.log("🔍 Waiting for shows page elements...");
-    const heading = page.locator("h1").first();
+    const heading = page.locator("main h1").first();
     await heading.waitFor({ state: "visible", timeout: 50000 });
     console.log("   ✓ Page heading found");
 
