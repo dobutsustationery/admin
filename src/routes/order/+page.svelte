@@ -40,7 +40,7 @@
         itemKey = possibleKeys[0];
       }
     }
-    if (state.inventory.idToItem[itemKey] && orderID !== null) {
+    if (state.inventory.idToItem[itemKey] && orderID !== null && $user.uid) {
       const qty = 1;
       broadcast(firestore, $user.uid, package_item({ orderID, itemKey, qty }));
     }
@@ -52,7 +52,7 @@
   function updateQuantity(itemKey: string) {
     return (e: CustomEvent) => {
       const qty = +e.detail;
-      if (state.inventory.idToItem[itemKey] && orderID !== null) {
+      if (state.inventory.idToItem[itemKey] && orderID !== null && $user.uid) {
         broadcast(
           firestore,
           $user.uid,
@@ -67,13 +67,17 @@
       for (const item of state.inventory.orderIdToOrder[orderID].items) {
         const qty = 0;
         const itemKey = item.itemKey;
-        broadcast(
-          firestore,
-          $user.uid,
-          quantify_item({ orderID, itemKey, qty }),
-        );
+        if ($user.uid) {
+          broadcast(
+            firestore,
+            $user.uid,
+            quantify_item({ orderID, itemKey, qty }),
+          );
+        }
       }
-      broadcast(firestore, $user.uid, delete_empty_order({ orderID }));
+      if ($user.uid) {
+        broadcast(firestore, $user.uid, delete_empty_order({ orderID }));
+      }
     }
   }
   function updateSubtype(lineItem: LineItem) {
@@ -81,7 +85,7 @@
       const subtype = e.detail as string;
       const itemKey = lineItem.itemKey;
       const qty = lineItem.qty;
-      if (state.inventory.idToItem[itemKey] && orderID !== null) {
+      if (state.inventory.idToItem[itemKey] && orderID !== null && $user.uid) {
         const janCode = state.inventory.idToItem[itemKey].janCode;
         broadcast(
           firestore,

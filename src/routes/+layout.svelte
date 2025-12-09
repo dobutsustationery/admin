@@ -32,34 +32,36 @@
 
   function handleUserChange(firebaseUser: any) {
     if (firebaseUser && firebaseUser.email) {
-       const { uid, email, displayName, photoURL } = firebaseUser;
-       me = { 
-         signedIn: true, 
-         uid, 
-         email, 
-         name: displayName || "Unknown", 
-         photo: photoURL || "",
-         last: new Date().getTime()
-       };
-       $user = me;
-       loadingState = "loading";
-       
-       // Update user record
-       setDoc(doc(firestore, "users", me.email), {
-        uid: me.uid,
-        name: me.name,
-        email: me.email,
-        photo: me.photo,
-        activity_timestamp: new Date().getTime(),
-      }).catch(console.error);
+      const { uid, email, displayName, photoURL } = firebaseUser;
+      me = {
+        signedIn: true,
+        uid,
+        email,
+        name: displayName || "Unknown",
+        photo: photoURL || "",
+        last: new Date().getTime(),
+      };
+      $user = me;
+      loadingState = "loading";
 
+      // Update user record
+      if (me.email) {
+        setDoc(doc(firestore, "users", me.email), {
+          uid: me.uid,
+          name: me.name,
+          email: me.email,
+          photo: me.photo,
+          activity_timestamp: new Date().getTime(),
+        }).catch(console.error);
+      }
     } else {
-       me = { signedIn: false };
-       loadingState = "ready"; // Show Sign in
+      me = { signedIn: false };
+      loadingState = "ready"; // Show Sign in
     }
   }
 
   // Original broadcast logic variables
+  let nullAuthProvider: any = null;
   const executedActions: { [k: string]: AnyAction } = {};
   const confirmedActions: { [k: string]: AnyAction } = {};
   let unsyncedActions = 0;
@@ -68,14 +70,17 @@
   onMount(() => {
     // Auth Listener
     const unsubscribe = onAuthStateChanged(auth, (u) => {
-        handleUserChange(u);
+      handleUserChange(u);
     });
 
     // Console suppression for tests
     const originalConsoleError = console.error;
     console.error = (...args: any[]) => {
-       if (String(args[0]).includes("Component auth has not been registered yet")) return;
-       originalConsoleError.apply(console, args);
+      if (
+        String(args[0]).includes("Component auth has not been registered yet")
+      )
+        return;
+      originalConsoleError.apply(console, args);
     };
 
     // Initialize broadcast watcher
@@ -86,12 +91,12 @@
         const id = change.doc.id;
         if (executedActions[id] === undefined) {
           executedActions[id] = action;
-           if (action.type === "retype_item") {
+          if (action.type === "retype_item") {
             const itemKey = action.payload.itemKey;
             const newItemKey = action.payload.janCode + action.payload.subtype;
             if (itemKey == newItemKey) {
-               console.error("bad retype item detected", id);
-               deleteDoc(change.doc.ref);
+              console.error("bad retype item detected", id);
+              deleteDoc(change.doc.ref);
             }
           }
           store.dispatch(action);
@@ -104,10 +109,10 @@
           Object.keys(confirmedActions).length;
       });
       store.dispatch(inventory_synced());
-      
+
       // If we are signed in and receiving actions, we are ready
       if (me.signedIn) {
-          loadingState = "ready";
+        loadingState = "ready";
       }
     });
 
@@ -124,25 +129,38 @@
 {#if me.signedIn}
   <div class="app-shell">
     <Navigation {unsyncedActions} bind:isOpen={navigationOpen} />
-    
+
     <main class="main-content" class:nav-open={navigationOpen}>
       <slot />
     </main>
   </div>
-  
-  {#if loadingState !== "ready"}
-     <LoadingScreen status={loadingState} progress={0} message="Syncing data..." />
-  {/if}
 
-{:else}
-  {#if loadingState === "initializing"}
-    <LoadingScreen status="initializing" message="Initializing authentication..." />
-  {:else}
-     <div class="signin-container">
-        <h1>Dobutsu Admin</h1>
-        <Signin {auth} googleAuthProvider={null} on:user_changed={(e) => handleUserChange(e.detail.signedIn ? {email: e.detail.email, uid: e.detail.uid} : null)} />
-     </div>
+  {#if loadingState !== "ready"}
+    <LoadingScreen
+      status={loadingState}
+      progress={0}
+      message="Syncing data..."
+    />
   {/if}
+{:else if loadingState === "initializing"}
+  <LoadingScreen
+    status="initializing"
+    message="Initializing authentication..."
+  />
+{:else}
+  <div class="signin-container">
+    <h1>Dobutsu Admin</h1>
+    <Signin
+      {auth}
+      googleAuthProvider={nullAuthProvider}
+      on:user_changed={(e) =>
+        handleUserChange(
+          e.detail.signedIn
+            ? { email: e.detail.email, uid: e.detail.uid }
+            : null,
+        )}
+    />
+  </div>
 {/if}
 
 <style>
@@ -157,7 +175,7 @@
     padding-left: 250px; /* Width of nav */
     transition: padding-left 0.3s ease-in-out;
   }
-  
+
   /* Mobile: Nav is hidden/overlay, so no padding */
   @media (max-width: 768px) {
     .main-content {
@@ -166,10 +184,10 @@
   }
 
   .signin-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
   }
 </style>

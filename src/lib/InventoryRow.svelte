@@ -19,7 +19,7 @@
     return (e: any) => {
       const to = e.detail || e.target.value;
       const from = item[field];
-      if (to !== null) {
+      if (to !== null && $user.uid) {
         broadcast(
           firestore,
           $user.uid,

@@ -57,7 +57,5 @@
   th {
     background-color: #f2f2f2;
   }
-  label {
-    white-space: nowrap;
-  }
+
 </style>

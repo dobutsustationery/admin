@@ -84,43 +84,43 @@ describe("Firebase Config to .env Converter", () => {
     });
 
     it("should throw error if apiKey is missing", () => {
-      const invalid = { ...sampleConfig };
+      const invalid: any = { ...sampleConfig };
       delete invalid.apiKey;
       expect(() => validateConfig(invalid)).toThrow(/apiKey/);
     });
 
     it("should throw error if authDomain is missing", () => {
-      const invalid = { ...sampleConfig };
+      const invalid: any = { ...sampleConfig };
       delete invalid.authDomain;
       expect(() => validateConfig(invalid)).toThrow(/authDomain/);
     });
 
     it("should throw error if projectId is missing", () => {
-      const invalid = { ...sampleConfig };
+      const invalid: any = { ...sampleConfig };
       delete invalid.projectId;
       expect(() => validateConfig(invalid)).toThrow(/projectId/);
     });
 
     it("should throw error if storageBucket is missing", () => {
-      const invalid = { ...sampleConfig };
+      const invalid: any = { ...sampleConfig };
       delete invalid.storageBucket;
       expect(() => validateConfig(invalid)).toThrow(/storageBucket/);
     });
 
     it("should throw error if messagingSenderId is missing", () => {
-      const invalid = { ...sampleConfig };
+      const invalid: any = { ...sampleConfig };
       delete invalid.messagingSenderId;
       expect(() => validateConfig(invalid)).toThrow(/messagingSenderId/);
     });
 
     it("should throw error if appId is missing", () => {
-      const invalid = { ...sampleConfig };
+      const invalid: any = { ...sampleConfig };
       delete invalid.appId;
       expect(() => validateConfig(invalid)).toThrow(/appId/);
     });
 
     it("should allow missing measurementId (optional)", () => {
-      const configWithoutMeasurement = { ...sampleConfig };
+      const configWithoutMeasurement: any = { ...sampleConfig };
       delete configWithoutMeasurement.measurementId;
       expect(validateConfig(configWithoutMeasurement)).toBe(true);
     });
@@ -182,7 +182,7 @@ describe("Firebase Config to .env Converter", () => {
     });
 
     it("should handle config without measurementId", () => {
-      const configWithoutMeasurement = { ...sampleConfig };
+      const configWithoutMeasurement: any = { ...sampleConfig };
       delete configWithoutMeasurement.measurementId;
 
       const result = convertToEnv(configWithoutMeasurement, "production");

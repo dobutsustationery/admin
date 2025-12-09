@@ -119,7 +119,9 @@
       qty: +qty,
       pieces: +pieces,
     };
-    broadcast(firestore, $user.uid, update_item({ id, item }));
+    if ($user.uid) {
+      broadcast(firestore, $user.uid, update_item({ id, item: item as any }));
+    }
   }
 </script>
 
@@ -232,12 +234,12 @@
   }
 
   textarea {
-      width: 300px;
-      height: 100px;
-      box-sizing: border-box;
-      /* Enforce consistent rendering */
-      font-family: inherit;
-      padding: 4px;
-      border: 1px solid #ccc;
+    width: 300px;
+    height: 100px;
+    box-sizing: border-box;
+    /* Enforce consistent rendering */
+    font-family: inherit;
+    padding: 4px;
+    border: 1px solid #ccc;
   }
 </style>

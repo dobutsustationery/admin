@@ -23,8 +23,9 @@
   function recordValue() {
     if (value !== null) {
       if (
-        !state.names.nameIdToNames[id] ||
-        state.names.nameIdToNames[id].indexOf(value) === -1
+        (!state.names.nameIdToNames[id] ||
+          state.names.nameIdToNames[id].indexOf(value) === -1) &&
+        $user.uid
       ) {
         broadcast(firestore, $user.uid, create_name({ id, name: value }));
       }

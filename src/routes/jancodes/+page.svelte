@@ -67,8 +67,7 @@
     margin: 2em;
   }
 
-  th,
-  td {
+  th {
     border: 1px solid black;
     padding: 5px;
   }

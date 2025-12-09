@@ -2,20 +2,27 @@
   import { store } from "$lib/store";
 
   // Dashboard Metrics
-  $: totalItems = $store.inventory ? Object.keys($store.inventory.items || {}).length : 0;
+  $: totalItems = $store.inventory
+    ? Object.keys($store.inventory.idToItem || {}).length
+    : 0;
   // Calculate total quantity roughly (sum of all quantities)
-  $: totalQuantity = $store.inventory ? Object.values($store.inventory.items || {}).reduce((acc: number, item: any) => acc + (item.quantity || 0), 0) : 0;
-  
+  $: totalQuantity = $store.inventory
+    ? Object.values($store.inventory.idToItem || {}).reduce(
+        (acc: number, item: any) => acc + (item.quantity || 0),
+        0,
+      )
+    : 0;
+
   // Recent activity mock
   let recentActivity = [
     { type: "order", text: "Order #1234 packed", time: "5m ago" },
-    { type: "inventory", text: "Added 50 pens", time: "1h ago" }
+    { type: "inventory", text: "Added 50 pens", time: "1h ago" },
   ];
 </script>
 
 <div class="dashboard">
   <h1>Dashboard</h1>
-  
+
   <div class="metrics-grid">
     <div class="card metric">
       <div class="metric-value">{totalItems}</div>
@@ -62,16 +69,16 @@
     <div class="card activity-list">
       {#each recentActivity as activity}
         <div class="activity-item">
-          <span class="activity-icon">{activity.type === 'order' ? '📦' : '📝'}</span>
+          <span class="activity-icon"
+            >{activity.type === "order" ? "📦" : "📝"}</span
+          >
           <div class="activity-details">
             <span class="activity-text">{activity.text}</span>
             <span class="activity-time">{activity.time}</span>
           </div>
         </div>
       {/each}
-      <div class="activity-placeholder">
-        (Real activity feed coming soon)
-      </div>
+      <div class="activity-placeholder">(Real activity feed coming soon)</div>
     </div>
   </div>
 </div>
@@ -99,7 +106,7 @@
     background: white;
     border-radius: 8px;
     padding: 1.5rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     border: 1px solid #eee;
     text-decoration: none; /* Ensure links look like cards */
   }
@@ -140,12 +147,14 @@
     align-items: center;
     text-align: center;
     color: inherit;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition:
+      transform 0.2s,
+      box-shadow 0.2s;
   }
 
   .action:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     background-color: #f8f9fa;
   }
 
@@ -187,11 +196,11 @@
     font-size: 0.8rem;
     color: #999;
   }
-  
+
   .activity-placeholder {
-     padding: 1rem;
-     text-align: center;
-     font-style: italic;
-     color: #999;
+    padding: 1rem;
+    text-align: center;
+    font-style: italic;
+    color: #999;
   }
 </style>

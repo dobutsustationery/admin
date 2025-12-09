@@ -40,7 +40,7 @@
   function createSales(archiveName: string) {
     // Logic to create sales for the given archive ID
     console.log(`Creating sales for archive: ${archiveName}`);
-    if (archiveName && me.signedIn) {
+    if (archiveName && me.signedIn && me.uid) {
       broadcast(
         firestore,
         me.uid,
@@ -50,7 +50,7 @@
   }
 
   function hideArchive(archiveName: string) {
-    if (archiveName && me.signedIn) {
+    if (archiveName && me.signedIn && me.uid) {
       broadcast(firestore, me.uid, hide_archive({ archiveName }));
     }
   }
