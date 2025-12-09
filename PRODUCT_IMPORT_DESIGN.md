@@ -14,6 +14,7 @@ When new orders are delivered to Dobutsu, employees need an efficient way to pro
 
 When a new order arrives at Dobutsu:
 - The order includes a packing list or invoice enumerating items with JAN (Japanese Article Number) codes
+- **New Workflow**: Users can optionally start by importing this invoice using the [Order Import Workflow](ORDER_IMPORT_DESIGN.md) to pre-populate expected new items and update known quantities.
 - Employees prepare to photograph each received item
 - Photos are organized in a dedicated Google Photos album for processing
 
