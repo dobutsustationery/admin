@@ -76,7 +76,7 @@ export default defineConfig({
 
   /* Run preview server with built application */
   webServer: {
-    command: "vite preview --port 4173",
+    command: "vite --mode emulator --port 4173",
     url: "http://localhost:4173",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

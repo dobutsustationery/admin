@@ -11,7 +11,9 @@
     CreditCard,
     Download,
     Tag,
-    Archive
+    Archive,
+    Camera,
+    FileText
   } from "lucide-svelte";
 
   export let unsyncedActions = 0;
@@ -20,12 +22,13 @@
   /* Navigation Items */
   const links = [
     { href: "/", label: "Dashboard", icon: Home },
-    { href: "/scanner", label: "Add Inventory", icon: PlusCircle },
+    { href: "/scanner", label: "Add Inventory", icon: Camera },
     { href: "/inventory", label: "View Inventory", icon: ClipboardList },
     { href: "/orders", label: "Process Orders", icon: Package },
     { href: "/subtypes", label: "Subtypes", icon: Grid },
     { href: "/payments", label: "Payments", icon: CreditCard },
-    { href: "/csv", label: "Export CSV", icon: Download },
+    { href: "/csv", label: "CSV Export", icon: FileText },
+    { href: "/order-import", label: "Order Import", icon: FileText },
     { href: "/names", label: "Manage Names", icon: Tag },
     { href: "/archives", label: "Archives", icon: Archive },
   ];

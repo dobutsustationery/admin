@@ -59,33 +59,25 @@ export function isDriveConfigured(): boolean {
  * Get stored access token if it exists and is not expired
  */
 export function getStoredToken(): GoogleDriveToken | null {
+  if (typeof localStorage === 'undefined') return null;
+  const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+  console.log('DEBUG: getStoredToken content:', stored);
+  
+  if (!stored) return null;
+  
   try {
-    const tokenJson = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (!tokenJson) return null;
-    
-    const parsed = JSON.parse(tokenJson);
-    
-    // Validate token structure
-    if (!parsed || typeof parsed !== 'object' ||
-        typeof parsed.access_token !== 'string' ||
-        typeof parsed.expires_in !== 'number' ||
-        typeof parsed.expires_at !== 'number') {
-      console.error('Invalid token structure in localStorage');
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      return null;
-    }
-    
-    const token = parsed as GoogleDriveToken;
+    const token = JSON.parse(stored) as GoogleDriveToken;
     
     // Check if token is expired
     if (token.expires_at && Date.now() > token.expires_at) {
+      console.log('DEBUG: Token expired');
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       return null;
     }
     
     return token;
   } catch (e) {
-    console.error('Error retrieving stored token:', e);
+    console.error('DEBUG: Token parse error:', e);
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     return null;
   }
@@ -271,6 +263,39 @@ export async function uploadCSVToDrive(
   
   const fileInfo = await response.json() as DriveFileInfo;
   return fileInfo;
+}
+
+/**
+ * Fetch spreadsheet data (CSV) from Google Drive
+ * Handles both standard CSV files and Google Sheets (via export)
+ */
+export async function fetchSpreadsheetData(
+  fileId: string, 
+  mimeType: string,
+  accessToken: string
+): Promise<string> {
+  let url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+  
+  // If it's a Google Sheet, export it as CSV
+  if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+    url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/csv`;
+  }
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+       clearToken(); // Force re-auth on next check
+       throw new Error("Token expired");
+    }
+    throw new Error(`Failed to fetch file content: ${response.statusText}`);
+  }
+
+  return await response.text();
 }
 
 /**

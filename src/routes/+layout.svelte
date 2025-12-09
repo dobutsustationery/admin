@@ -71,6 +71,12 @@
         handleUserChange(u);
     });
 
+    // Expose store for E2E tests
+    if (typeof window !== 'undefined') {
+        (window as any).store = store;
+        (window as any).handleUserChange = handleUserChange;
+    }
+
     // Console suppression for tests
     const originalConsoleError = console.error;
     console.error = (...args: any[]) => {

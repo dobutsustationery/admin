@@ -161,6 +161,70 @@ export const inventory = createReducer(initialState, (r) => {
       desc: `${action.payload.item.description}, +${action.payload.item.qty} plus ${qty}; ${state.idToItem[id].shipped} shipped`,
     });
   });
+
+  // Action for importing multiple items at once
+  // Used by Order Import flow
+  r.addCase(createAction<{
+    updates: { id: string; qty: number; }[], 
+    newItems: { janCode: string; qty: number; }[],
+    timestamp?: any
+  }>("batch_update_inventory"), (state, action) => {
+      const timestamp = action.payload.timestamp; // Use passed timestamp if available (or generate)
+      let dateStr = "Imported";
+      if (timestamp) {
+         dateStr = new Date(timestamp.seconds * 1000).toLocaleString();
+      }
+
+      // 1. Process Updates
+      action.payload.updates.forEach(update => {
+          if (state.idToItem[update.id]) {
+              const oldQty = state.idToItem[update.id].qty;
+              state.idToItem[update.id].qty += update.qty;
+              
+              if (!state.idToHistory[update.id]) state.idToHistory[update.id] = [];
+              state.idToHistory[update.id].push({
+                  date: dateStr,
+                  desc: `Import: Added ${update.qty} (Total: ${state.idToItem[update.id].qty})`
+              });
+          }
+      });
+
+      // 2. Process New Items
+      // For new items, we create a basic placeholder using JAN as ID (if no subtype)
+      // or we might need to handle them differently. 
+      // The design says "Create Draft Item".
+      // For now, let's create them as items with minimal info.
+      action.payload.newItems.forEach(newItem => {
+           const id = newItem.janCode; // Default to JAN as ID for new items
+           
+           if (!state.idToItem[id]) {
+               // Totally new
+               state.idToItem[id] = {
+                   janCode: newItem.janCode,
+                   subtype: "",
+                   description: "New Import Item",
+                   hsCode: "",
+                   image: "",
+                   qty: newItem.qty,
+                   pieces: 1,
+                   shipped: 0,
+                   creationDate: dateStr
+               };
+               state.idToHistory[id] = [{
+                   date: dateStr,
+                   desc: `Import: Created with ${newItem.qty}`
+               }];
+           } else {
+               // If somehow it exists (race condition?), treat as update
+               state.idToItem[id].qty += newItem.qty;
+               state.idToHistory[id].push({
+                   date: dateStr,
+                   desc: `Import: Added ${newItem.qty}`
+               });
+           }
+      });
+  });
+
   r.addCase(update_field, (state, action) => {
     if (state.idToItem[action.payload.id]) {
         state.idToItem[action.payload.id][action.payload.field] = action.payload.to;
@@ -189,7 +253,7 @@ export const inventory = createReducer(initialState, (r) => {
           }
         }
     } else {
-        console.warn(`Skipping update_field for missing item: ${action.payload.id}`);
+        // console.warn(`Skipping update_field for missing item: ${action.payload.id}`);
     }
   });
   r.addCase(new_order, (state, action) => {
