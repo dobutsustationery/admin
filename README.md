@@ -25,18 +25,29 @@ This is a SvelteKit-based admin application with Firebase backend providing tool
 - Node.js 18+ or Bun 1.0+
 - Firebase CLI: `npm install -g firebase-tools`
 - Git
+- [Nix](https://nixos.org/download.html) and [Direnv](https://direnv.net/)
 
 ### Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/dobutsustationery/admin.git
-cd admin
+1.  **Clone the repository**
+    ```bash
+    git clone https://github.com/dobutsustationery/admin.git
+    cd admin
+    ```
 
-# Install dependencies (choose one)
-bun install  # Recommended for speed
-npm install  # Alternative (automatically installs platform-specific Biome CLI for your OS)
-```
+2.  **Activate the Environment**
+    This project uses Nix and Direnv to manage dependencies (Node.js, Bun, Java/OpenJDK, etc.) deterministically.
+    ```bash
+    direnv allow
+    ```
+    *Note: If you need to add system-level tools (like a specific CLI or language runtime), update `flake.nix` and run `direnv allow` again.*
+
+3.  **Install dependencies**
+    ```bash
+    bun install  # Recommended
+    # or
+    npm install
+    ```
 
 > **Note for npm users**: 
 > - A postinstall script automatically installs the correct Biome CLI package for your platform (Linux, macOS, or Windows)
