@@ -34,7 +34,7 @@ The analysis phase produces an "Import Plan" consisting of the following categor
 *   **`NEW_ITEM`**: JAN code does not exist in the database.
     *   *Action*: `CREATE_DRAFT_ITEM(janCode, quantity)`
 *   **`SUBTYPE_CONFLICT`**: JAN code maps to a parent product with multiple subtypes.
-    *   *Action*: `PROMPT_ALLOCATION(parentId, totalQuantity)`
+    *   *Action*: `PROMPT_ALLOCATION(parentId, totalQuantity)` (Defaults to even split)
 
 ### 2. Redux Actions
 To standardize the process and allow for "undo" or "retry" capabilities, the import implementation should leverage standard Redux patterns.
@@ -59,7 +59,7 @@ To standardize the process and allow for "undo" or "retry" capabilities, the imp
 
 ### 3. Conflict Resolver
 *   **UI**: A list of resolving items.
-*   **Input**: For a JAN code like `4902778123456` (Pen Family), show all known subtypes (Red, Blue, Black).
+*   **Input**: For a JAN code like `4902778123456` (Pen Family), show all known subtypes (Red, Blue, Black). The interface defaults to an even split of the total quantity (e.g., if total is 30, each gets 10).
 *   **Constraint**: Ensure the sum of user-entered quantities matches the total from the invoice.
 
 ## Integration Points
