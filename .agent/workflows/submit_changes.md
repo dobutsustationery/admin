@@ -3,6 +3,7 @@ description: How to submit changes via Pull Request
 ---
 
 1.  **Preparation & Clean Up (CRITICAL)**
+    *   **Branch Check**: Ensure you are NOT on `main`. Run `git checkout -b feature/name` if you are.
     *   **Git Status**: Run `git status` to see what files are changed/untracked.
     *   **Format**: Run `npm run format` (or equivalent) to fix style issues.
     *   **Check/Lint**: Run `npm run check` (or `npm run lint`) to ensure no errors.
