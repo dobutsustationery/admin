@@ -19,7 +19,7 @@ To enable users to import inventory quantities directly from supplier invoices/p
 4.  **Confirmation/Action**:
     *   For **Known Items**, the user confirms the quantity update.
     *   For **New Items**, the system creates a "pending" entry for later completion (e.g., photo scanning flow).
-    *   For **Subtype Conflicts**, the user manually allocates the total quantity across the specific subtypes.
+    *   For **Subtype Conflicts**, the system automatically divides the total quantity evenly among all subtypes. The user can review and adjust this allocation if necessary.
 5.  **Execution**: Upon confirmation, the system updates the inventory records.
 
 ## Data Analysis & Actions
