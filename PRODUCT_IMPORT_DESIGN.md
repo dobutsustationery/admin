@@ -13,7 +13,7 @@ When new orders are delivered to Dobutsu, employees need an efficient way to pro
 ### 1. Physical Receipt
 
 When a new order arrives at Dobutsu:
-- The order includes a packing list or invoice enumerating items with JAN (Japanese Article Number) codes (see unrelated [Order Import Design](ORDER_IMPORT_DESIGN.md))
+- The order includes a packing list or invoice enumerating items with JAN (Japanese Article Number) codes (see [Order Import Design](ORDER_IMPORT_DESIGN.md))
 - Employees prepare to photograph each received item
 - Photos are organized in a dedicated Google Photos album for processing
 
@@ -135,6 +135,4 @@ After automated scanning, employees review each imported item and make classific
 ## Summary
 
 This design introduces an efficient, photo-based workflow for importing new inventory into the Dobutsu Stationery system. By combining structured photography, automated LLM processing, and human review for classification decisions, the process significantly reduces manual data entry while maintaining accuracy and brand consistency. The clear separation between automated extraction and human decision-making ensures both efficiency and quality control.
-
-## Related Documents
 
