@@ -21,7 +21,7 @@
 
   let archiveName = "";
   function archive() {
-    if (archiveName && me.signedIn) {
+    if (archiveName && me.signedIn && me.uid) {
       broadcast(firestore, me.uid, archive_inventory({ archiveName }));
       archiveName = "";
     }
@@ -43,20 +43,4 @@
   <Signin {auth} {googleAuthProvider} on:user_changed={user} />
 </div>
 
-<style>
-  table {
-    border: 1px solid black;
-    border-collapse: collapse;
-    margin: 2em;
-  }
 
-  th,
-  td {
-    border: 1px solid black;
-    padding: 5px;
-  }
-
-  th {
-    background-color: #f2f2f2;
-  }
-</style>

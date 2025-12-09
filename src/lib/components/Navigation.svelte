@@ -11,7 +11,7 @@
     CreditCard,
     Download,
     Tag,
-    Archive
+    Archive,
   } from "lucide-svelte";
 
   export let unsyncedActions = 0;
@@ -38,7 +38,11 @@
 <nav class:open={isOpen}>
   <div class="nav-header">
     <div class="brand">Dobutsu Admin</div>
-    <button class="menu-toggle" on:click={toggleMenu} aria-label="Toggle Navigation">
+    <button
+      class="menu-toggle"
+      on:click={toggleMenu}
+      aria-label="Toggle Navigation"
+    >
       ☰
     </button>
   </div>
@@ -193,7 +197,7 @@
     .menu-toggle {
       display: block; /* Show toggle inside drawer (or handle externally) */
     }
-    
+
     /* We need an external toggle for mobile when closed, handled by Layout usually */
   }
 </style>

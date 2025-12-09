@@ -42,7 +42,9 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
     env: "production",
+    /** @type {string|null} */
     input: null,
+    /** @type {string|null} */
     output: null,
     help: false,
   };
@@ -111,6 +113,9 @@ Or paste the JavaScript config directly:
 }
 
 // Extract Firebase config from various input formats
+/**
+ * @param {string} input
+ */
 function extractConfig(input) {
   // Remove JavaScript variable declarations and comments
   const cleaned = input
@@ -143,6 +148,9 @@ function extractConfig(input) {
 }
 
 // Validate Firebase config
+/**
+ * @param {any} config
+ */
 function validateConfig(config) {
   const requiredFields = [
     "apiKey",
@@ -158,8 +166,8 @@ function validateConfig(config) {
   if (missingFields.length > 0) {
     throw new Error(
       `Missing required fields: ${missingFields.join(", ")}\n` +
-        "A valid Firebase config must include: " +
-        requiredFields.join(", "),
+      "A valid Firebase config must include: " +
+      requiredFields.join(", "),
     );
   }
 
@@ -167,6 +175,10 @@ function validateConfig(config) {
 }
 
 // Convert Firebase config to .env format
+/**
+ * @param {any} config
+ * @param {string} env
+ */
 function convertToEnv(config, env) {
   const lines = [];
 
@@ -295,6 +307,7 @@ async function main() {
       );
     }
   } catch (error) {
+    // @ts-ignore
     console.error(`❌ Error: ${error.message}`);
     process.exit(1);
   }

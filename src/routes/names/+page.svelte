@@ -19,14 +19,14 @@
 
   let me: User = { signedIn: false };
   function newName() {
-    if (me.signedIn) {
+    if (me.signedIn && me.uid) {
       broadcast(firestore, me.uid, create_name({ id, name }));
     }
   }
 
   function removeName(id: string, name: string) {
     return () => {
-      if (me.signedIn) {
+      if (me.signedIn && me.uid) {
         broadcast(firestore, me.uid, remove_name({ id, name }));
       }
     };

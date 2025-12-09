@@ -78,7 +78,7 @@
     return (e: any) => {
       const to = e.detail || e.target.value;
       const from = item[field];
-      if (to !== null) {
+      if (to !== null && $user.uid) {
         for (const otherType of otherTypes) {
           const otherKey = `${code}${otherType}`;
           broadcast(
@@ -100,7 +100,9 @@
     return (e: any) => {
       const itemKey = `${code}${item.subtype}`;
       const subtype = e.detail || e.target.value;
-      broadcast(firestore, $user.uid, rename_subtype({ itemKey, subtype }));
+      if ($user.uid) {
+        broadcast(firestore, $user.uid, rename_subtype({ itemKey, subtype }));
+      }
     };
   }
 
@@ -116,11 +118,13 @@
         const to = imageItems[selectedPic].link;
         for (const otherType of otherTypes) {
           const otherKey = `${code}${otherType}`;
-          broadcast(
-            firestore,
-            $user.uid,
-            update_field({ id: otherKey, field: "image", to, from }),
-          );
+          if ($user.uid) {
+            broadcast(
+              firestore,
+              $user.uid,
+              update_field({ id: otherKey, field: "image", to, from }),
+            );
+          }
         }
       }
       dropdownOpen = "";

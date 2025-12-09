@@ -39,12 +39,12 @@ export type SvelteStore = Writable<GlobalState>;
 export const store = reduxStore as ReduxStore & SvelteStore;
 
 export const user = writable<{
-   signedIn: boolean;
-   uid?: string;
-   email?: string;
-   name?: string;
-   photo?: string;
-   last?: number;
+  signedIn: boolean;
+  uid?: string;
+  email?: string;
+  name?: string;
+  photo?: string;
+  last?: number;
 }>({ signedIn: false });
 
 export { inventory_synced } from "./inventory";
