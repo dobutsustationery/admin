@@ -135,3 +135,7 @@ After automated scanning, employees review each imported item and make classific
 ## Summary
 
 This design introduces an efficient, photo-based workflow for importing new inventory into the Dobutsu Stationery system. By combining structured photography, automated LLM processing, and human review for classification decisions, the process significantly reduces manual data entry while maintaining accuracy and brand consistency. The clear separation between automated extraction and human decision-making ensures both efficiency and quality control.
+
+## Related Documents
+
+*   [Order Import Design](ORDER_IMPORT_DESIGN.md): Design for importing inventory quantities from spreadsheets (invoices/packing lists).
