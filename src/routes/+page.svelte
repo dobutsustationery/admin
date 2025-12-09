@@ -38,7 +38,7 @@
   <div class="quick-actions">
     <h2>Quick Actions</h2>
     <div class="actions-grid">
-      <a href="/entry" class="card action">
+      <a href="/scanner" class="card action">
         <span class="icon">➕</span>
         Add Inventory
       </a>

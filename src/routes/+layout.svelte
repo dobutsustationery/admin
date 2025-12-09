@@ -115,7 +115,7 @@
     setTimeout(() => {
       store.dispatch(inventory_synced());
       if (me.signedIn) loadingState = "ready";
-    }, 3000);
+    }, 10000);
 
     return () => unsubscribe();
   });

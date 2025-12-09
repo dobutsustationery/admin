@@ -5,26 +5,26 @@ import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import * as path from "path";
 
 /**
- * E2E test for the / (root) page, which is now the Dashboard
+ * E2E test for the /scanner page
  */
 
-test.describe("Root Page (Dashboard)", () => {
+test.describe("Scanner Page", () => {
     const isTransientAuthError = (errorText: string): boolean => {
       return errorText.includes("Component auth has not been registered yet");
     };
   
-    test("complete dashboard loading workflow", async ({ page, context }, testInfo) => {
+    test("complete scanner verification", async ({ page, context }, testInfo) => {
       test.setTimeout(80000); 
   
       const screenshots = createScreenshotHelper();
       const outputDir = path.dirname(testInfo.file);
       const docHelper = new TestDocumentationHelper(outputDir);
-
+  
       docHelper.setMetadata(
-        "Dashboard Verification",
+        "Scanner Verification",
         "**As an** admin user\n" +
-        "**I want to** see an overview of key metrics and quick actions at the root\n" +
-        "**So that** I can navigate to the right section efficiently"
+        "**I want to** Access the inventory scanner\n" +
+        "**So that** I can add items using my barcode scanner"
       );
   
       const consoleErrors: string[] = [];
@@ -35,44 +35,14 @@ test.describe("Root Page (Dashboard)", () => {
       });
   
       // ====================================================================
-      // STEP 1: Signed Out
+      // STEP 1: Sign In & Navigate
       // ====================================================================
-      await page.goto("/", { waitUntil: "load" });
+      // We can use the generic navigate-after-login pattern or just go direct
+      await page.goto("/scanner", { waitUntil: "load" });
   
       const signInButton = page.locator('button:has-text("Sign In")'); 
       await signInButton.waitFor({ state: "visible", timeout: 50000 });
-
-      const step1Verifications = [
-        {
-            description: 'Validated "Sign In" button is visible',
-            check: async () => {
-                 await expect(signInButton).toBeVisible();
-            }
-        },
-        {
-            description: 'Validated heading contains "Dobutsu Admin"',
-            check: async () => {
-                const heading = page.locator("h1");
-                await expect(heading).toContainText("Dobutsu Admin");
-            }
-        }
-      ];
-
-      docHelper.addStep(
-        "Signed Out State",
-        "000-signed-out-state.png",
-        step1Verifications
-      );
   
-      await screenshots.capture(page, "signed-out-state", {
-        programmaticCheck: async () => {
-             for (const v of step1Verifications) await v.check();
-        },
-      });
-  
-      // ====================================================================
-      // STEP 2: Sign In
-      // ====================================================================
       const authEmulatorUrl = "http://localhost:9099";
       const testEmail = `test-${Date.now()}@example.com`;
       const testPassword = "testpassword123";
@@ -83,7 +53,7 @@ test.describe("Root Page (Dashboard)", () => {
           data: {
             email: testEmail,
             password: testPassword,
-            displayName: "Test User",
+            displayName: "Scanner User",
             returnSecureToken: true,
           },
         },
@@ -103,14 +73,14 @@ test.describe("Root Page (Dashboard)", () => {
             uid: authInfo.localId,
             email: authInfo.email,
             emailVerified: false,
-            displayName: "Test User",
+            displayName: "Scanner User",
             isAnonymous: false,
             photoURL: null,
             providerData: [
               {
                 providerId: "password",
                 uid: authInfo.localId,
-                displayName: "Test User",
+                displayName: "Scanner User",
                 email: authInfo.email,
                 phoneNumber: null,
                 photoURL: null,
@@ -129,50 +99,44 @@ test.describe("Root Page (Dashboard)", () => {
         );
       }, authData);
   
+      // Reload on scanner page
       await page.reload({ waitUntil: "load" });
       await waitForAppReady(page);
   
       // Wait for authentication to be processed
       await signInButton
         .waitFor({ state: "hidden", timeout: 20000 })
-        .catch(() => console.log("Sign-in button still visible, might be intentional if redirect failed"));
+        .catch(() => console.log("Sign-in button check timeout - proceeding"));
 
-      // Wait for Dashboard specific elements
-      const dashboardHeader = page.locator('h1:has-text("Dashboard")');
-      await dashboardHeader.waitFor({ state: "visible", timeout: 50000 });
+      // Wait for Scanner specific element
+      const janLabel = page.locator('label:has-text("JAN Code:")');
+      await janLabel.waitFor({ state: "visible", timeout: 50000 });
       
-      const step2Verifications = [
+      const verifications = [
         {
-            description: 'Validated heading contains "Dashboard"',
+            description: 'Validated heading contains "Inventory"',
             check: async () => {
-                await expect(dashboardHeader).toBeVisible();
+                const heading = page.locator("h1");
+                await expect(heading).toContainText("Inventory");
             }
         },
         {
-             description: 'Validated Quick Actions are visible',
-             check: async () => {
-                  const quickActions = page.locator('.quick-actions');
-                  await expect(quickActions).toBeVisible();
-             }
-        },
-        {
-             description: 'Validated Metrics Grid is visible',
-             check: async () => {
-                  const metrics = page.locator('.metrics-grid');
-                  await expect(metrics).toBeVisible();
-             }
+            description: 'Validated JAN Code input is visible',
+            check: async () => {
+                 await expect(janLabel).toBeVisible();
+            }
         }
       ];
-
+  
       docHelper.addStep(
-        "Dashboard Loaded",
-        "001-dashboard-loaded.png",
-        step2Verifications
+        "Scanner Loaded",
+        "012-scanner-loaded.png",
+        verifications
       );
-
-      await screenshots.capture(page, "dashboard-loaded", {
+  
+      await screenshots.capture(page, "scanner-loaded", {
         programmaticCheck: async () => {
-             for (const v of step2Verifications) await v.check();
+             for (const v of verifications) await v.check();
         }
       });
   

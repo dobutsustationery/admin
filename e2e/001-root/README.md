@@ -1,8 +1,8 @@
 # Dashboard Verification
 
 **As an** admin user
-**I want to** See key metrics and navigate to tasks
-**So that** I can efficiently manage inventory
+**I want to** see an overview of key metrics and quick actions at the root
+**So that** I can navigate to the right section efficiently
 
 ### 1. Signed Out State
 
@@ -10,21 +10,14 @@
 
 **Programmatic Verification:**
 - [ ] Validated "Sign In" button is visible
-- [ ] Validated heading is "Dobutsu Admin"
+- [ ] Validated heading contains "Dobutsu Admin"
 
 ### 2. Dashboard Loaded
 
 ![Dashboard Loaded](screenshots/001-dashboard-loaded.png)
 
 **Programmatic Verification:**
-- [ ] Validated Dashboard heading is visible
-- [ ] Validated metrics are displayed
-
-### 3. Inventory Entry Form
-
-![Inventory Entry Form](screenshots/002-entry-form-loaded.png)
-
-**Programmatic Verification:**
-- [ ] Validated JAN Code input is visible
-- [ ] Validated URL is /entry
+- [ ] Validated heading contains "Dashboard"
+- [ ] Validated Quick Actions are visible
+- [ ] Validated Metrics Grid is visible
 
