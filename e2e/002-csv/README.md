@@ -1,40 +1,44 @@
-# CSV Export Page with Google Drive
+# CSV Export Verification
 
-**Spec File**: [`002-csv.spec.ts`](./002-csv.spec.ts)
+**As an** admin user
+**I want to** export inventory data to Google Drive
+**So that** I can analyze it in other tools
 
-## User Story
-User Story: Admin views CSV export with Google Drive integration
-This test tells a complete story:
-1. User starts signed out
-2. User signs in
-3. User views CSV export page with Google Drive UI
-4. User can see filename input and export button
-Each step has both programmatic and visual verification.
+### 1. Signed Out State
 
-## Test Steps
-### STEP 1: Navigate to CSV page (signed out)
-<!-- Add screenshot here if available -->
+![Signed Out State](screenshots/000-signed-out-state.png)
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated "Sign In" button is visible
 
-### STEP 3: Verify Google Drive UI
-<!-- Add screenshot here if available -->
+### 2. Signed In State
 
-### STEP 4: Simulate Drive configured environment
-<!-- Add screenshot here if available -->
+![Signed In State](screenshots/001-signed-in-state.png)
 
-### STEP 1: Setting up Google Drive API mocks
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated sign-in button is no longer visible
+- [ ] Verified CSV content is displayed
 
-### STEP 2: Sign in to application
-<!-- Add screenshot here if available -->
+### 3. Drive UI Visible
 
-### STEP 3: Connecting to Google Drive (mocked OAuth)
-<!-- Add screenshot here if available -->
+![Drive UI Visible](screenshots/002-drive-ui-visible.png)
 
-### STEP 4: Uploading CSV to Drive
-<!-- Add screenshot here if available -->
+**Programmatic Verification:**
+- [ ] Validated Drive Export section is visible
+- [ ] Validated Connect button is visible
 
-## Verification
-This test verifies the workflow through both programmatic assertions (checking visibility, text content) and visual regression testing (screenshots).
+### 4. Connected to Drive
+
+![Connected to Drive](screenshots/003-connected-to-drive.png)
+
+**Programmatic Verification:**
+- [ ] Validated Connected status is visible
+- [ ] Validated Export button is visible
+
+### 5. Upload Complete
+
+![Upload Complete](screenshots/004-upload-complete.png)
+
+**Programmatic Verification:**
+- [ ] Validated upload triggered successfully
+
