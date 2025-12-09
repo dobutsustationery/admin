@@ -3,9 +3,9 @@
   import { user } from "$lib/globals";
 
   import {
-    LayoutDashboard,
+    Home,
     PlusCircle,
-    List,
+    ClipboardList,
     Package,
     Grid,
     CreditCard,
@@ -17,11 +17,12 @@
   export let unsyncedActions = 0;
   export let isOpen = false;
 
+  /* Navigation Items */
   const links = [
-    { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/entry", label: "Add Inventory", icon: PlusCircle },
-    { href: "/inventory", label: "View Inventory", icon: List },
-    { href: "/orders", label: "Orders", icon: Package },
+    { href: "/", label: "Dashboard", icon: Home },
+    { href: "/scanner", label: "Add Inventory", icon: PlusCircle },
+    { href: "/inventory", label: "View Inventory", icon: ClipboardList },
+    { href: "/orders", label: "Process Orders", icon: Package },
     { href: "/subtypes", label: "Subtypes", icon: Grid },
     { href: "/payments", label: "Payments", icon: CreditCard },
     { href: "/csv", label: "Export CSV", icon: Download },

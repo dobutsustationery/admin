@@ -162,30 +162,34 @@ export const inventory = createReducer(initialState, (r) => {
     });
   });
   r.addCase(update_field, (state, action) => {
-    state.idToItem[action.payload.id][action.payload.field] = action.payload.to;
-    const timestamp = action.timestamp;
-    let creationDate = "Unknown";
-    if (timestamp) {
-      const tsDate = new Date(timestamp.seconds * 1000);
-      creationDate = tsDate.toLocaleString("en", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-    }
-    state.idToHistory[action.payload.id].push({
-      date: creationDate,
-      desc: `${action.payload.field} changed from ${action.payload.from} to ${action.payload.to}`,
-    });
-    if (action.payload.field === "qty") {
-      const q = state.idToItem[action.payload.id][action.payload.field];
-      // type mismatch issue TODO
-      if (q == 0) {
-        // remove item from inventory
-        // TODO: don't delete the item, instead verify that it
-        // is removed from the display by the shipped vs qty check
-        //delete state.idToItem[action.payload.id];
-      }
+    if (state.idToItem[action.payload.id]) {
+        state.idToItem[action.payload.id][action.payload.field] = action.payload.to;
+        const timestamp = action.timestamp;
+        let creationDate = "Unknown";
+        if (timestamp) {
+          const tsDate = new Date(timestamp.seconds * 1000);
+          creationDate = tsDate.toLocaleString("en", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          });
+        }
+        state.idToHistory[action.payload.id].push({
+          date: creationDate,
+          desc: `${action.payload.field} changed from ${action.payload.from} to ${action.payload.to}`,
+        });
+        if (action.payload.field === "qty") {
+          const q = state.idToItem[action.payload.id][action.payload.field];
+          // type mismatch issue TODO
+          if (q == 0) {
+            // remove item from inventory
+            // TODO: don't delete the item, instead verify that it
+            // is removed from the display by the shipped vs qty check
+            //delete state.idToItem[action.payload.id];
+          }
+        }
+    } else {
+        console.warn(`Skipping update_field for missing item: ${action.payload.id}`);
     }
   });
   r.addCase(new_order, (state, action) => {
