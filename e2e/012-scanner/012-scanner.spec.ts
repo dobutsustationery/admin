@@ -130,7 +130,7 @@ test.describe("Scanner Page", () => {
   
       docHelper.addStep(
         "Scanner Loaded",
-        "012-scanner-loaded.png",
+        "000-scanner-loaded.png",
         verifications
       );
   

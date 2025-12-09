@@ -6,7 +6,7 @@
 
 ### 1. Scanner Loaded
 
-![Scanner Loaded](screenshots/012-scanner-loaded.png)
+![Scanner Loaded](screenshots/000-scanner-loaded.png)
 
 **Programmatic Verification:**
 - [ ] Validated heading contains "Inventory"
