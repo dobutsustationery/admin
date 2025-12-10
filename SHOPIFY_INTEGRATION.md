@@ -25,71 +25,49 @@ The integration should:
 5. **Provide Conflict Resolution**: Handle concurrent updates gracefully
 6. **Ensure Security**: Protect API credentials and validate all data transfers
 
-## Integration Approaches
+## Integration Approach: REST API
 
-### Option 1: Shopify Admin API
+### Selected Approach: Shopify REST Admin API
 
-Use Shopify's REST Admin API or GraphQL Admin API for programmatic access.
+We will use Shopify's REST Admin API as the primary integration method for programmatic access to product and inventory data.
 
-**Pros:**
-- Real-time synchronization
+**Why REST API:**
+- Real-time synchronization capabilities
 - Granular control over data
 - Supports webhooks for instant notifications
 - Can handle complex workflows
 - Official, well-documented APIs
-- Rate limiting is reasonable (2 requests/second for REST, 50 points/second for GraphQL)
+- Reasonable rate limiting (2 requests/second for REST API)
+- Simpler to implement and debug than GraphQL
+- More familiar to most developers
+- Better suited for straightforward CRUD operations
 
-**Cons:**
-- Requires API credentials and authentication management
-- More complex implementation
-- Need to handle API rate limits
-- Requires error handling and retry logic
-- API versioning concerns (Shopify deprecates old versions)
-
-**Key APIs:**
+**Key Capabilities:**
 - **Products API**: Create, read, update, delete products
 - **Inventory API**: Manage inventory levels at specific locations
 - **Webhooks**: Receive notifications for inventory changes, orders, etc.
 - **Orders API**: Access order data for fulfillment tracking
 
-### Option 2: CSV Import/Export
+**Considerations:**
+- Requires API credentials and authentication management
+- Need to handle API rate limits (2 requests/second)
+- Requires error handling and retry logic
+- API versioning concerns (Shopify deprecates old versions quarterly)
+- Must stay updated with API version changes
 
-Use Shopify's bulk import/export functionality with CSV files.
+### Complementary: CSV for Bulk Operations
 
-**Pros:**
-- Simple to implement
-- No API credentials needed (can use Shopify admin UI)
-- Batch processing is straightforward
-- Easy to review changes before applying
-- Built-in Shopify validation
+While REST API is the primary approach, CSV import/export will be used for:
+- Initial bulk import of existing inventory
+- Periodic full reconciliation and auditing
+- Manual backup and restore operations
+- Review and validation before applying large changes
 
-**Cons:**
-- Manual process (requires downloading/uploading files)
-- No real-time sync
-- Limited automation potential
-- Prone to human error
-- No conflict detection
-- Cannot receive instant notifications of changes
-
-### Option 3: Hybrid Approach
-
-Combine both methods based on use case.
-
-**Implementation:**
-- Use **CSV** for initial bulk import and periodic full reconciliation
-- Use **API** for ongoing real-time inventory updates
-- Use **Webhooks** to receive notifications of Shopify-side changes
-
-**Pros:**
-- Best of both worlds
-- Reduced API usage for bulk operations
-- Real-time sync for critical inventory updates
-- CSV provides backup/audit trail
-
-**Cons:**
-- More complex implementation
-- Two systems to maintain
-- Potential for confusion about which method to use
+This hybrid strategy provides:
+- **Primary automation** via REST API for day-to-day operations
+- **Bulk processing** via CSV when appropriate
+- **Audit trail** through CSV exports
+- **Flexibility** to choose the best tool for each task
 
 ## Data Mapping
 
@@ -153,7 +131,7 @@ Additional Shopify fields we may want to populate:
 └──────────────────────────────────────────────────────────────┘
                                                ↕
                                     ┌──────────────────┐
-                                    │ Shopify Admin API│
+                                    │ Shopify REST API │
                                     │   + Webhooks     │
                                     └──────────────────┘
                                                ↕
@@ -173,56 +151,34 @@ Additional Shopify fields we may want to populate:
 **Purpose:** Abstraction layer for Shopify API interactions
 
 **Responsibilities:**
-- Authenticate with Shopify using API credentials
+- Authenticate with Shopify using API credentials from environment configuration
 - Provide typed TypeScript interfaces for API responses
 - Handle rate limiting and retries
 - Log all API interactions for debugging
-- Support both REST and GraphQL APIs
+- Support REST API endpoints for products, inventory, and orders
 
-**Implementation:**
-```typescript
-// src/lib/shopify-client.ts
-
-interface ShopifyConfig {
-  shop: string;           // e.g., "dobutsu-stationery.myshopify.com"
-  accessToken: string;    // Private app or custom app access token
-  apiVersion: string;     // e.g., "2024-01"
-}
-
-class ShopifyClient {
-  async getProduct(productId: string): Promise<ShopifyProduct>
-  async updateInventory(sku: string, quantity: number): Promise<void>
-  async createProduct(data: ProductData): Promise<ShopifyProduct>
-  async syncInventoryLevels(items: InventoryUpdate[]): Promise<SyncResult>
-}
-```
+**Key Functionality:**
+- Get product information
+- Update inventory levels
+- Create and update products
+- Fetch order data
+- Sync inventory levels in batches
 
 #### Component 2: Data Transformation Layer
 
 **Purpose:** Convert between internal and Shopify data formats
 
 **Responsibilities:**
-- Map `Item` to Shopify `Product`/`Variant`
-- Handle composite keys (janCode + subtype)
+- Map internal `Item` structure to Shopify `Product`/`Variant` structure
+- Handle composite keys (janCode + subtype) → Shopify SKU
 - Validate data before sync
-- Apply business rules (e.g., minimum stock levels)
+- Apply business rules (e.g., minimum stock levels, required fields)
 
-**Implementation:**
-```typescript
-// src/lib/shopify-mapper.ts
-
-interface ItemToShopify {
-  toProduct(item: Item): ShopifyProductCreate;
-  toVariant(item: Item): ShopifyVariantCreate;
-  toInventoryUpdate(item: Item): InventoryLevelUpdate;
-}
-
-interface ShopifyToItem {
-  fromProduct(product: ShopifyProduct): Partial<Item>[];
-  fromVariant(variant: ShopifyVariant): Partial<Item>;
-  fromInventoryLevel(level: InventoryLevel): { sku: string; qty: number };
-}
-```
+**Key Transformations:**
+- Item to Shopify Product/Variant
+- Shopify Product/Variant to Item
+- Inventory level updates (bidirectional)
+- Order data from Shopify to internal format
 
 #### Component 3: Sync Coordinator
 
@@ -232,25 +188,14 @@ interface ShopifyToItem {
 - Determine what needs to sync (diff detection)
 - Coordinate sync operations in correct order
 - Handle conflicts (last-write-wins, manual review, etc.)
-- Maintain sync state and history
+- Maintain sync state and history in Firestore
 - Provide sync status/progress reporting
 
-**Implementation:**
-```typescript
-// src/lib/shopify-sync.ts
-
-interface SyncOptions {
-  direction: 'to-shopify' | 'from-shopify' | 'bidirectional';
-  dryRun: boolean;
-  conflictStrategy: 'ours' | 'theirs' | 'manual';
-}
-
-class ShopifySyncCoordinator {
-  async syncToShopify(items: Item[]): Promise<SyncReport>
-  async syncFromShopify(): Promise<SyncReport>
-  async reconcile(): Promise<ConflictReport>
-}
-```
+**Key Operations:**
+- Sync inventory to Shopify (admin → Shopify)
+- Sync from Shopify (Shopify → admin)
+- Full reconciliation (compare and resolve differences)
+- Scheduled sync (periodic updates)
 
 #### Component 4: Webhook Handler
 
@@ -261,17 +206,13 @@ class ShopifySyncCoordinator {
 - Process inventory updates from Shopify
 - Process order events for fulfillment tracking
 - Queue updates to Redux store via Firestore broadcast
+- Handle webhook failures and retries
 
-**Implementation:**
-```typescript
-// src/routes/api/shopify-webhook/+server.ts (SvelteKit endpoint)
-
-interface WebhookHandler {
-  handleInventoryUpdate(webhook: InventoryWebhook): Promise<void>
-  handleOrderCreated(webhook: OrderWebhook): Promise<void>
-  handleOrderFulfilled(webhook: FulfillmentWebhook): Promise<void>
-}
-```
+**Webhook Types to Handle:**
+- Inventory level updates
+- Order creation
+- Order fulfillment
+- Product updates
 
 ### Data Flow Scenarios
 
@@ -333,69 +274,81 @@ interface WebhookHandler {
 **Goal:** One-way sync from admin to Shopify (inventory levels only)
 
 **Tasks:**
-1. Set up Shopify API credentials (private/custom app)
-2. Implement ShopifyClient with basic inventory API
-3. Create data mapper for Item → InventoryLevelUpdate
-4. Build manual sync trigger in admin UI
-5. Add sync status/result display
-6. Document initial setup process
+1. Set up Shopify API credentials in staging and production environments
+2. Create Shopify development store for testing
+3. Implement REST API client for basic inventory operations
+4. Create data transformation layer for Item → Inventory update
+5. Build manual sync trigger in admin UI
+6. Add sync status/result display
+7. Implement error handling and logging to Firestore
 
-**Deliverables:**
-- `src/lib/shopify/client.ts` - API client
-- `src/lib/shopify/mapper.ts` - Data transformation
-- `src/lib/shopify/sync.ts` - Sync coordinator
-- `src/routes/shopify/+page.svelte` - Sync management UI
-- Environment variables for Shopify credentials
-- Basic error handling and logging
+**Key Components:**
+- Shopify API client module
+- Data transformation/mapping module
+- Sync coordinator service
+- Admin UI page for sync management
+- Environment configuration for credentials
+- Sync logging and error tracking
 
-**Testing:**
-- Unit tests for mapper functions
-- Integration test with Shopify test store
+**Testing Approach:**
+- Test data transformations with sample items
+- Integration test with development store
 - Manual verification of inventory sync
+- Error handling verification
 
 ### Phase 2: Automation & Webhooks
 
 **Goal:** Automatic sync and receive updates from Shopify
 
 **Tasks:**
-1. Implement webhook endpoint for Shopify
-2. Set up webhook subscriptions in Shopify
-3. Add automatic sync on inventory changes
-4. Implement retry logic for failed syncs
-5. Add sync history/audit log
+1. Create SvelteKit API endpoint for receiving webhooks
+2. Implement HMAC signature verification for webhook security
+3. Set up webhook subscriptions in Shopify admin (both stores)
+4. Add automatic sync trigger on inventory changes in admin
+5. Implement retry logic with exponential backoff for failed syncs
+6. Create Firestore collection for sync history and audit log
+7. Add monitoring and alerting for sync failures
 
-**Deliverables:**
-- `src/routes/api/shopify/webhook/+server.ts` - Webhook handler
-- Webhook verification (HMAC)
-- Firestore collection for sync logs
-- Automatic background sync service
+**Key Components:**
+- Webhook receiver endpoint
+- Webhook signature validation
+- Automatic sync triggers
+- Retry queue system
+- Sync history/audit logging
+- Admin dashboard for monitoring
 
-**Testing:**
+**Testing Approach:**
 - Webhook signature validation tests
-- End-to-end webhook processing tests
-- Failure/retry scenario tests
+- End-to-end webhook delivery tests
+- Failure and retry scenario testing
+- Sync monitoring verification
 
 ### Phase 3: Product Management
 
-**Goal:** Full product sync including descriptions, images, pricing
+**Goal:** Full product sync including descriptions, images, metadata
 
 **Tasks:**
-1. Extend mapper to handle full product data
-2. Implement product creation in Shopify
-3. Support product updates (description, images)
-4. Add support for variants and options
-5. Implement CSV export in Shopify format
+1. Extend data mapper to handle complete product data
+2. Implement product creation in Shopify via API
+3. Support product updates (descriptions, images, pricing)
+4. Add support for product variants and options
+5. Implement CSV export in Shopify-compatible format
+6. Add CSV import from Shopify exports
+7. Handle product lifecycle (creation, updates, archiving)
 
-**Deliverables:**
-- Full product CRUD operations
+**Key Components:**
+- Enhanced product data mapping
+- Product CRUD operations
 - Variant management
-- Shopify-format CSV exporter
-- Product import from Shopify
+- CSV export/import utilities
+- Product synchronization logic
+- Image handling and upload
 
-**Testing:**
-- Product creation/update tests
+**Testing Approach:**
+- Product creation and update tests
 - Variant handling tests
-- CSV export/import validation
+- CSV format validation
+- Round-trip sync testing
 
 ### Phase 4: Advanced Features
 
@@ -403,85 +356,420 @@ interface WebhookHandler {
 
 **Tasks:**
 1. Implement bidirectional sync with conflict detection
-2. Add sync analytics and reporting
-3. Optimize API usage (batch operations)
-4. Add scheduled reconciliation
-5. Implement manual conflict resolution UI
+2. Add conflict resolution strategies (manual, automatic)
+3. Create sync analytics dashboard
+4. Optimize API usage with batch operations
+5. Implement scheduled reconciliation (cron jobs)
+6. Build UI for reviewing and resolving conflicts manually
+7. Add inventory forecasting based on sync data
 
-**Deliverables:**
-- Conflict detection and resolution
-- Sync dashboard with metrics
-- Batch API operations
-- Scheduled jobs for reconciliation
-- Admin UI for reviewing conflicts
+**Key Components:**
+- Conflict detection engine
+- Resolution strategy framework
+- Analytics dashboard
+- Batch API optimization
+- Scheduled job system
+- Conflict resolution UI
+- Reporting and insights
 
-## Security Considerations
+**Testing Approach:**
+- Conflict detection scenarios
+- Resolution strategy validation
+- Performance testing with large datasets
+- Scheduled job reliability testing
 
-### API Credentials
+## Shopify API Credentials Setup
 
-**Storage:**
-- Store Shopify API credentials in environment variables
-- Never commit credentials to version control
-- Use separate credentials for staging vs. production
-- Rotate credentials periodically
+### Overview
 
-**Access Control:**
-- Use Shopify custom/private apps with minimal required scopes
-- Required scopes:
-  - `read_products` - Read product data
-  - `write_products` - Update products
-  - `read_inventory` - Read inventory levels
-  - `write_inventory` - Update inventory levels
-  - `read_orders` - Read order data (for fulfillment)
+To integrate with Shopify, you need API credentials that allow your admin system to authenticate and interact with the Shopify store. We'll set up separate credentials for staging (development stores) and production to ensure safe testing and deployment.
 
-### Webhook Security
+### Types of Shopify Apps
 
-**Verification:**
-- Validate HMAC signature on all webhook requests
-- Verify webhook origin (Shopify IP ranges if needed)
-- Rate limit webhook endpoint to prevent abuse
-- Log all webhook attempts for security auditing
+Shopify offers different types of apps for API access:
 
-**Implementation:**
-```typescript
-function verifyShopifyWebhook(
-  body: string,
-  hmacHeader: string,
-  secret: string
-): boolean {
-  const hash = crypto
-    .createHmac('sha256', secret)
-    .update(body, 'utf8')
-    .digest('base64');
-  return crypto.timingSafeEqual(
-    Buffer.from(hash),
-    Buffer.from(hmacHeader)
-  );
-}
+1. **Custom Apps (Recommended for this integration):**
+   - Created directly in the Shopify admin
+   - Simple setup process
+   - Private to your store
+   - Best for internal integrations
+   - Full control over API scopes
+   - Generate admin API access tokens
+
+2. **Private Apps (Legacy):**
+   - Being phased out by Shopify
+   - Not recommended for new integrations
+   - Use Custom Apps instead
+
+### Creating Custom Apps for API Access
+
+#### For Development/Staging Store:
+
+1. **Access Your Development Store:**
+   - Log into Shopify Partner Dashboard
+   - Navigate to your development store
+   - Click "Log in" to access the store admin
+
+2. **Enable Custom App Development:**
+   - In the store admin, go to "Settings" > "Apps and sales channels"
+   - Click "Develop apps" (or "Develop apps for your store")
+   - If prompted, click "Allow custom app development"
+
+3. **Create a Custom App:**
+   - Click "Create an app"
+   - Enter app name: "Dobutsu Admin Integration - Staging"
+   - Select an app developer (your partner account email)
+   - Click "Create app"
+
+4. **Configure API Scopes:**
+   - Click "Configure Admin API scopes"
+   - Select the following scopes:
+     - **Products:** `read_products`, `write_products`
+     - **Inventory:** `read_inventory`, `write_inventory`
+     - **Orders:** `read_orders` (for order fulfillment tracking)
+   - Click "Save"
+
+5. **Install the App:**
+   - Click "Install app"
+   - Review the permissions
+   - Click "Install" to confirm
+
+6. **Get API Credentials:**
+   - After installation, click "API credentials" tab
+   - You'll see:
+     - **Admin API access token** (starts with `shpat_`)
+     - **API key** and **API secret key**
+   - Copy the "Admin API access token" - this is your staging access token
+   - Store it securely (you won't be able to see it again)
+
+7. **Note Your Store URL:**
+   - Your development store URL (e.g., `your-dev-store.myshopify.com`)
+   - This is needed for API requests
+
+#### For Production Store:
+
+Follow the exact same steps as above in your production Shopify store, but:
+- Name the app: "Dobutsu Admin Integration - Production"
+- Use extra caution with permissions
+- Store credentials even more securely
+- Consider additional access controls
+
+**⚠️ Production Security Notes:**
+- Limit API scopes to only what's absolutely necessary
+- Regularly audit API access logs in Shopify
+- Rotate credentials periodically (e.g., every 90 days)
+- Never share production credentials
+- Use secure storage solutions
+
+### Credential Management in the Admin System
+
+Our admin system uses environment variables to manage configuration across different environments (local, staging, production). This aligns with the existing Firebase configuration pattern.
+
+#### Environment Variable Structure
+
+Following the pattern established for Firebase credentials, Shopify credentials will be stored in environment-specific configuration files:
+
+**`.env.example`** - Template and documentation (committed to git):
+```bash
+# Shopify Integration Configuration
+
+# Staging/Development Store Configuration
+# Get these from your Shopify Partner development store
+# VITE_SHOPIFY_STAGING_STORE_URL=your-dev-store.myshopify.com
+# SHOPIFY_STAGING_ACCESS_TOKEN=shpat_your_staging_token_here
+# VITE_SHOPIFY_STAGING_API_VERSION=2024-01
+
+# Production Store Configuration  
+# Get these from your production Shopify store
+# VITE_SHOPIFY_PRODUCTION_STORE_URL=dobutsu-stationery.myshopify.com
+# SHOPIFY_PRODUCTION_ACCESS_TOKEN=shpat_your_production_token_here
+# VITE_SHOPIFY_PRODUCTION_API_VERSION=2024-01
+
+# Webhook Configuration
+# Secret key for validating webhooks from Shopify
+# SHOPIFY_STAGING_WEBHOOK_SECRET=whsec_your_staging_webhook_secret
+# SHOPIFY_PRODUCTION_WEBHOOK_SECRET=whsec_your_production_webhook_secret
+
+# Sync Configuration
+# SHOPIFY_SYNC_ENABLED=true
+# SHOPIFY_SYNC_INTERVAL=300000  # 5 minutes in milliseconds
+# SHOPIFY_AUTO_SYNC=false  # Set to true for automatic background sync
 ```
 
-### Data Validation
+**`.env.staging`** - Staging environment configuration:
+```bash
+# Inherited from base configuration
+VITE_FIREBASE_ENV=staging
 
-**Input Validation:**
-- Validate all data received from Shopify before processing
-- Sanitize product descriptions and titles
-- Verify quantity values are non-negative integers
-- Validate SKUs match expected format
+# Shopify Staging Configuration
+VITE_SHOPIFY_STORE_URL=your-dev-store.myshopify.com
+SHOPIFY_ACCESS_TOKEN=shpat_your_staging_token_here
+VITE_SHOPIFY_API_VERSION=2024-01
+SHOPIFY_WEBHOOK_SECRET=whsec_your_staging_webhook_secret
 
-**Output Validation:**
-- Ensure inventory quantities are accurate before sending
-- Validate product data against Shopify schema
-- Check for required fields before API calls
-- Implement dry-run mode for testing
+# Shopify Sync Configuration
+SHOPIFY_SYNC_ENABLED=true
+SHOPIFY_SYNC_INTERVAL=300000
+SHOPIFY_AUTO_SYNC=false
+```
 
-### Error Handling
+**`.env.production`** - Production environment configuration:
+```bash
+# Inherited from base configuration
+VITE_FIREBASE_ENV=production
 
-**Strategies:**
-- Log all errors to Firestore for review
-- Implement retry logic with exponential backoff
-- Alert admins of repeated sync failures
-- Provide manual override for stuck syncs
-- Maintain rollback capability
+# Shopify Production Configuration
+VITE_SHOPIFY_STORE_URL=dobutsu-stationery.myshopify.com
+SHOPIFY_ACCESS_TOKEN=shpat_your_production_token_here
+VITE_SHOPIFY_API_VERSION=2024-01
+SHOPIFY_WEBHOOK_SECRET=whsec_your_production_webhook_secret
+
+# Shopify Sync Configuration
+SHOPIFY_SYNC_ENABLED=true
+SHOPIFY_SYNC_INTERVAL=600000  # 10 minutes for production (less frequent)
+SHOPIFY_AUTO_SYNC=true
+```
+
+**`.env.emulator`** - Local development configuration:
+```bash
+# Local development doesn't connect to real Shopify
+VITE_FIREBASE_ENV=local
+
+# Shopify configuration disabled for local emulator development
+SHOPIFY_SYNC_ENABLED=false
+SHOPIFY_AUTO_SYNC=false
+
+# Optional: Use staging credentials for local development if testing Shopify integration
+# VITE_SHOPIFY_STORE_URL=your-dev-store.myshopify.com
+# SHOPIFY_ACCESS_TOKEN=shpat_your_staging_token_here
+# VITE_SHOPIFY_API_VERSION=2024-01
+```
+
+#### Environment Variable Naming Convention
+
+Following the existing Firebase pattern:
+
+**Public variables** (safe to expose to client-side code):
+- Prefix with `VITE_` to make them available in the browser
+- Examples: `VITE_SHOPIFY_STORE_URL`, `VITE_SHOPIFY_API_VERSION`
+- These are included in the built application bundle
+
+**Private variables** (server-side only):
+- No `VITE_` prefix - only accessible in server-side code
+- Examples: `SHOPIFY_ACCESS_TOKEN`, `SHOPIFY_WEBHOOK_SECRET`
+- These are never exposed to the client/browser
+- Only available in SvelteKit server routes and endpoints
+
+**Environment-specific naming:**
+- For staging: Can use either environment-specific naming (e.g., `SHOPIFY_STAGING_ACCESS_TOKEN`) or generic naming in `.env.staging` (e.g., `SHOPIFY_ACCESS_TOKEN`)
+- For production: Same pattern as staging
+- Generic naming is recommended when using `.env.*` files as they're already environment-specific
+
+#### Setting Up Credentials
+
+**For Development/Testing:**
+
+1. Get your staging credentials from Shopify (as described above)
+2. Create or update `.env.staging`:
+   ```bash
+   cp .env.example .env.staging
+   # Edit .env.staging and add your staging credentials
+   ```
+3. Add your development store URL and access token
+4. Set API version to latest stable (check Shopify's API docs)
+
+**For Production:**
+
+1. Get your production credentials from Shopify (as described above)
+2. Verify `.env.production` exists or create it:
+   ```bash
+   cp .env.example .env.production
+   # Edit .env.production and add your production credentials
+   ```
+3. Add your production store URL and access token
+4. Use extra caution with these credentials
+
+**For Local Development:**
+
+Local development with emulators doesn't require Shopify credentials unless you're specifically testing the Shopify integration features. In that case:
+1. Use staging credentials in `.env.emulator`
+2. Set `SHOPIFY_SYNC_ENABLED=true` if testing sync
+3. Point to your development store, not production
+
+#### Running with Different Environments
+
+Using the existing npm scripts pattern:
+
+```bash
+# Development with staging Shopify credentials
+npm run dev:staging
+
+# Development with production Shopify credentials (use with caution)
+npm run dev:production
+
+# Local development with emulators (no Shopify connection)
+npm run dev:local
+
+# Build for specific environment
+npm run build:staging
+npm run build:production
+```
+
+### Security Best Practices
+
+#### Credential Storage
+
+1. **Never commit credentials to git:**
+   - `.env`, `.env.staging`, `.env.production` are already in `.gitignore`
+   - Only `.env.example` (template) should be committed
+   - Production credentials in `.env.production` should be managed carefully
+
+2. **Use secure credential management:**
+   - For deployed production app, consider using Firebase Functions environment config
+   - Or use a secrets management service (Google Secret Manager, etc.)
+   - For local development, `.env` files are acceptable
+
+3. **Rotate credentials regularly:**
+   - Change access tokens every 90 days minimum
+   - Rotate immediately if credentials are compromised
+   - Update webhook secrets when rotating tokens
+
+4. **Limit credential access:**
+   - Only developers who need them should have access
+   - Document who has access to production credentials
+   - Use Shopify's staff permissions to audit API usage
+
+#### API Scope Management
+
+**Principle of Least Privilege:**
+- Only request the minimum scopes needed
+- Review scopes before installation
+- Remove unused scopes if requirements change
+
+**Current Required Scopes:**
+- `read_products` - Read product information
+- `write_products` - Update product information and create new products
+- `read_inventory` - Read inventory levels
+- `write_inventory` - Update inventory quantities
+- `read_orders` - Read order information for fulfillment tracking
+
+**Future Scopes (as features are added):**
+- `write_orders` - If we need to create or modify orders from the admin
+- `read_fulfillments` / `write_fulfillments` - For advanced fulfillment features
+- `read_locations` - For multi-location inventory support
+
+#### Webhook Security
+
+Webhook secrets are used to verify that webhooks actually came from Shopify:
+
+1. **Generate webhook secret:**
+   - Automatically provided when creating webhooks in Shopify
+   - Each webhook can have its own secret or share one
+
+2. **Store securely:**
+   - Add to `SHOPIFY_WEBHOOK_SECRET` in environment config
+   - Treat as sensitive as the access token
+
+3. **Validate all webhooks:**
+   - Use HMAC signature verification
+   - Reject webhooks that fail validation
+   - Log validation failures for security monitoring
+
+### Credential Verification
+
+After setting up credentials, verify they work:
+
+**Manual Verification:**
+1. Use a tool like Postman or curl to test API access
+2. Make a simple API call (e.g., GET products)
+3. Verify you receive a valid response
+
+**Example test request:**
+```bash
+curl -X GET \
+  'https://your-store.myshopify.com/admin/api/2024-01/products.json?limit=1' \
+  -H 'X-Shopify-Access-Token: your_access_token'
+```
+
+**Expected response:**
+- HTTP 200 status
+- JSON response with products array
+- No authentication errors
+
+**Common issues:**
+- **401 Unauthorized:** Invalid access token
+- **403 Forbidden:** Missing required API scope
+- **404 Not Found:** Wrong store URL or API version
+- **429 Too Many Requests:** Rate limit exceeded (wait and retry)
+
+### Environment Configuration Reference
+
+#### When to Use Each Environment
+
+**Local (Emulator):**
+- Daily development of admin features
+- Testing non-Shopify functionality
+- When working offline
+- Fast iteration without external dependencies
+
+**Staging (Development Store):**
+- Testing Shopify integration features
+- QA and user acceptance testing
+- Verifying API interactions
+- Safe experimentation with Shopify features
+
+**Production:**
+- Final verification before deployment
+- Live operations
+- Production deployments only
+- Real customer data
+
+#### Configuration Summary
+
+| Environment | Firebase | Shopify Store | Shopify Sync | Use Case |
+|-------------|----------|---------------|--------------|----------|
+| Local | Emulators | None (or staging) | Disabled | Daily development |
+| Staging | Staging project | Development store | Enabled | Integration testing |
+| Production | Production project | Production store | Enabled | Live operations |
+
+### Troubleshooting Credentials
+
+**"Invalid API token" errors:**
+- Verify token was copied correctly (no extra spaces)
+- Check token starts with `shpat_`
+- Ensure app is installed in the store
+- Confirm you're using the right token for the right environment
+
+**"Missing required scope" errors:**
+- Review configured API scopes in Shopify
+- Add missing scopes in the custom app configuration
+- Reinstall the app after adding scopes
+- Wait a few minutes for changes to propagate
+
+**Webhook validation failures:**
+- Verify webhook secret matches Shopify configuration
+- Check HMAC validation implementation
+- Ensure using the raw request body for validation
+- Confirm webhook is coming from Shopify's IP ranges
+
+**Environment variable not loading:**
+- Verify correct `.env.*` file for the environment
+- Check file is in project root directory
+- Restart development server after changing environment files
+- Verify variable naming (VITE_ prefix for client-side variables)
+
+### Next Steps
+
+After setting up credentials:
+
+1. **Verify credentials work** in both staging and production
+2. **Test basic API operations** (read products, update inventory)
+3. **Configure webhooks** in Shopify admin
+4. **Implement sync functionality** using the credentials
+5. **Set up monitoring** to track API usage and errors
+6. **Document any environment-specific configuration** needed
+
+For implementation details, refer to the relevant sections of this document.
 
 ## Data Consistency Strategies
 
@@ -566,40 +854,17 @@ Generate CSV in Shopify's product import format:
 Handle,Title,Body (HTML),Vendor,Product Category,Type,Tags,Published,Option1 Name,Option1 Value,Variant SKU,Variant Grams,Variant Inventory Tracker,Variant Inventory Qty,Variant Inventory Policy,Variant Fulfillment Service,Variant Price,Variant Compare At Price,Variant Requires Shipping,Variant Taxable,Variant Barcode,Image Src,Image Position,Image Alt Text,Gift Card,SEO Title,SEO Description,Google Shopping / Google Product Category,Google Shopping / Gender,Google Shopping / Age Group,Google Shopping / MPN,Google Shopping / AdWords Grouping,Google Shopping / AdWords Labels,Google Shopping / Condition,Google Shopping / Custom Product,Google Shopping / Custom Label 0,Google Shopping / Custom Label 1,Google Shopping / Custom Label 2,Google Shopping / Custom Label 3,Google Shopping / Custom Label 4,Variant Image,Variant Weight Unit,Variant Tax Code,Cost per item,Included / Japan,Status,HS Code
 ```
 
-**Mapper Function:**
-```typescript
-function itemToShopifyCSV(item: Item): string[] {
-  return [
-    item.janCode,                    // Handle (product identifier)
-    item.description,                // Title
-    '',                              // Body (HTML)
-    'Dobutsu Stationery',           // Vendor
-    '',                              // Product Category
-    '',                              // Type
-    '',                              // Tags
-    'TRUE',                          // Published
-    'Style',                         // Option1 Name
-    item.subtype,                    // Option1 Value
-    `${item.janCode}${item.subtype}`, // Variant SKU
-    '',                              // Variant Grams
-    'shopify',                       // Variant Inventory Tracker
-    item.qty.toString(),             // Variant Inventory Qty
-    'deny',                          // Variant Inventory Policy
-    'manual',                        // Variant Fulfillment Service
-    '',                              // Variant Price (TODO)
-    '',                              // Variant Compare At Price
-    'TRUE',                          // Variant Requires Shipping
-    'TRUE',                          // Variant Taxable
-    item.janCode,                    // Variant Barcode
-    item.image,                      // Image Src
-    '1',                             // Image Position
-    item.description,                // Image Alt Text
-    'FALSE',                         // Gift Card
-    // ... SEO and Google Shopping fields
-    item.hsCode,                     // HS Code
-  ];
-}
-```
+**Field Mapping Strategy:**
+- **Handle:** Use janCode as product identifier
+- **Title:** Map from description field
+- **Vendor:** Default to "Dobutsu Stationery"
+- **Option1 Name/Value:** Use "Style" for option name, subtype for value
+- **Variant SKU:** Combine janCode + subtype for unique identifier
+- **Variant Inventory Qty:** Map from qty field
+- **Variant Inventory Policy:** Set to "deny" to prevent overselling
+- **Variant Barcode:** Use janCode
+- **Image Src:** Map from image field
+- **HS Code:** Map from hsCode field for customs/tariff codes
 
 ### Import Format (Shopify → Admin)
 
@@ -615,79 +880,197 @@ Parse Shopify's product export CSV:
 
 ### CSV Utilities
 
-```typescript
-// src/lib/shopify/csv.ts
+**CSV Export Functionality:**
+- Export inventory items to Shopify-compatible CSV format
+- Transform internal data structure to Shopify's product import schema
+- Download CSV file for manual import to Shopify
 
-interface ShopifyCSVExporter {
-  exportProducts(items: Item[]): Promise<string>;
-  downloadCSV(csv: string, filename: string): void;
-}
+**CSV Import Functionality:**
+- Parse Shopify product export CSV files
+- Validate CSV structure and data
+- Import product data back into inventory system
+- Handle errors and data validation
 
-interface ShopifyCSVImporter {
-  parseCSV(csv: string): Promise<ShopifyProduct[]>;
-  validateCSV(csv: string): ValidationResult;
-  importToInventory(products: ShopifyProduct[]): Promise<ImportResult>;
-}
-```
+## Shopify Testing and Staging Environments
 
-## Alternative: Shopify GraphQL API
+### Development Stores for Testing
 
-For more efficient operations, consider using GraphQL instead of REST:
+Shopify provides **Development Stores** (also called Partner Development Stores) that serve as staging/testing environments. These allow you to test the integration without impacting the real production store.
 
-**Advantages:**
-- Fetch exactly the data needed (no over-fetching)
-- Batch mutations in single request
-- Better performance for complex queries
-- More modern and actively developed
+**Key Benefits:**
+- **Free to create and use** - No monthly subscription fees for development stores
+- **Full Shopify functionality** - Nearly identical to production stores
+- **Isolated environment** - Completely separate from production data
+- **Safe testing** - Make mistakes without affecting real customers or orders
+- **Multiple stores** - Can create multiple development stores for different testing scenarios
 
-**Example Query:**
-```graphql
-query getProductInventory($first: Int!) {
-  products(first: $first) {
-    edges {
-      node {
-        id
-        title
-        variants(first: 100) {
-          edges {
-            node {
-              id
-              sku
-              inventoryQuantity
-              inventoryItem {
-                id
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
+**How to Get a Development Store:**
 
-**Example Mutation:**
-```graphql
-mutation inventoryAdjust($inventoryItemId: ID!, $delta: Int!) {
-  inventoryAdjustQuantity(
-    input: {
-      inventoryItemId: $inventoryItemId
-      availableDelta: $delta
-    }
-  ) {
-    inventoryLevel {
-      id
-      available
-    }
-    userErrors {
-      field
-      message
-    }
-  }
-}
-```
+1. **Create a Shopify Partner Account** (if you don't have one):
+   - Visit https://www.shopify.com/partners
+   - Sign up for a free Shopify Partner account
+   - No cost or commitment required
 
-## Monitoring & Observability
+2. **Create a Development Store:**
+   - Log into your Partner Dashboard
+   - Navigate to "Stores" in the left sidebar
+   - Click "Add store"
+   - Select "Create development store"
+   - Choose "Test store (for developers)" or "Development store"
+   - Fill in store details (can use test data)
+   - Click "Create development store"
+
+3. **Configure the Development Store:**
+   - Add test products manually or import via CSV
+   - Configure store settings to match production (or use simplified test settings)
+   - Set up inventory locations
+   - Install any apps needed for testing
+
+**Development Store Limitations:**
+
+- Cannot process real payments (test mode only)
+- Cannot transfer to a merchant (development stores are for testing only)
+- Some apps may not be available
+- Limited to partner accounts only
+- Checkout is restricted to test transactions
+
+**Best Practices:**
+
+1. **Create separate development stores for different purposes:**
+   - One for active development/integration testing
+   - One for QA/user acceptance testing
+   - One for experimenting with new features
+
+2. **Keep test data realistic:**
+   - Use similar product structures to production
+   - Create representative inventory levels
+   - Test with various product types and variants
+
+3. **Document your test store setup:**
+   - Record configuration differences from production
+   - Document test credentials separately
+   - Note any workarounds needed for testing
+
+4. **Sync test data periodically:**
+   - Export production catalog (without sensitive data)
+   - Import into development store
+   - Keeps testing environment realistic
+
+### Production Store
+
+Your production Shopify store is where real customers place orders and make purchases. This should only be used for:
+- Final integration verification (after thorough testing in development)
+- Live operations
+- Production deployments
+
+**⚠️ Important Production Considerations:**
+- Always test thoroughly in development stores first
+- Use read-only operations when possible during testing
+- Monitor API usage to avoid rate limits
+- Have rollback procedures ready
+- Schedule maintenance windows for significant changes
+- Implement comprehensive error handling and logging
+
+## Security Considerations
+
+### API Credentials Security
+
+**Storage Best Practices:**
+- Store all Shopify API credentials in environment variables
+- Never commit credentials to version control (already handled by .gitignore)
+- Use separate credentials for staging and production environments
+- Rotate credentials periodically (every 90 days minimum)
+- Store production credentials securely (consider using secret management services)
+
+**Access Control:**
+- Use Shopify custom apps with minimal required scopes
+- Only grant API permissions that are absolutely necessary
+- Review and audit API access regularly in Shopify admin
+- Limit who has access to production credentials
+- Document who has access and when credentials are rotated
+
+**Required API Scopes:**
+- `read_products` - Read product data
+- `write_products` - Create and update products
+- `read_inventory` - Read inventory levels
+- `write_inventory` - Update inventory quantities
+- `read_orders` - Read order data for fulfillment tracking
+
+**Future Scopes (as needed):**
+- `write_orders` - If creating/modifying orders from admin
+- `read_fulfillments` / `write_fulfillments` - For advanced fulfillment features
+- `read_locations` - For multi-location inventory support
+
+### Webhook Security
+
+**HMAC Signature Verification:**
+- Always validate HMAC signature on all incoming webhook requests
+- Use crypto.timingSafeEqual to prevent timing attacks
+- Reject any webhook that fails validation
+- Use the raw request body for HMAC calculation
+
+**Additional Protections:**
+- Verify webhook origin (can check Shopify IP ranges if needed)
+- Rate limit the webhook endpoint to prevent abuse
+- Log all webhook attempts for security auditing
+- Monitor for unusual webhook patterns
+- Alert on repeated validation failures
+
+**Webhook Secret Management:**
+- Store webhook secret in environment variables (never in code)
+- Treat webhook secret as sensitive as access token
+- Rotate webhook secrets when rotating API credentials
+- Use different secrets for staging and production
+
+### Data Validation and Sanitization
+
+**Input Validation (from Shopify):**
+- Validate all data received from Shopify before processing
+- Sanitize product descriptions and titles to prevent injection
+- Verify quantity values are non-negative integers
+- Validate SKUs match expected format (janCode + subtype pattern)
+- Check that required fields are present
+- Validate data types match expectations
+
+**Output Validation (to Shopify):**
+- Ensure inventory quantities are accurate before sending
+- Validate product data against Shopify schema requirements
+- Check for required fields before making API calls
+- Verify data format matches Shopify expectations
+- Implement dry-run mode for testing changes without applying them
+
+**Business Logic Validation:**
+- Enforce minimum/maximum quantity constraints
+- Validate price values if syncing pricing
+- Check inventory levels before allowing decreases
+- Validate product relationships (variants belong to products)
+
+### Error Handling and Monitoring
+
+**Error Handling Strategy:**
+- Log all errors to Firestore for review and auditing
+- Implement retry logic with exponential backoff for transient failures
+- Set maximum retry limits to prevent infinite loops
+- Alert administrators of repeated sync failures
+- Provide manual override capability for stuck syncs
+- Maintain ability to rollback changes if needed
+
+**Monitoring and Alerting:**
+- Track sync success/failure rates
+- Monitor API usage against rate limits
+- Alert when approaching rate limits (e.g., 80% threshold)
+- Log all API calls for debugging and auditing
+- Monitor webhook delivery success rates
+- Track sync duration and performance metrics
+- Alert on unusual patterns or errors
+
+**Security Monitoring:**
+- Log all authentication attempts
+- Monitor for invalid API tokens
+- Track failed webhook validations
+- Alert on suspicious activity patterns
+- Review security logs regularly
+- Maintain audit trail of all sync operations
 
 ### Metrics to Track
 
@@ -749,30 +1132,13 @@ mutation inventoryAdjust($inventoryItemId: ID!, $delta: Int!) {
 
 **Test Framework:** Vitest (existing in project)
 
-**Example:**
-```typescript
-// tests/shopify-mapper.test.ts
-describe('ShopifyMapper', () => {
-  it('converts Item to Shopify variant', () => {
-    const item: Item = {
-      janCode: '4901234567890',
-      subtype: 'pink',
-      description: 'Cute Cat Stickers',
-      hsCode: '4821.10',
-      image: 'https://example.com/cat.jpg',
-      qty: 100,
-      pieces: 5,
-      shipped: 20,
-    };
-    
-    const variant = itemToShopifyVariant(item);
-    
-    expect(variant.sku).toBe('4901234567890pink');
-    expect(variant.inventory_quantity).toBe(100);
-    expect(variant.barcode).toBe('4901234567890');
-  });
-});
-```
+**Test Principles:**
+- Test edge cases and error conditions
+- Verify data transformations are bidirectional and lossless
+- Test with various product configurations (variants, options, etc.)
+- Validate error messages are helpful and actionable
+- Mock Shopify API responses for isolation
+- Test boundary conditions (empty data, max values, etc.)
 
 ### Integration Tests
 
@@ -862,64 +1228,59 @@ describe('ShopifyMapper', () => {
 
 Based on the analysis above, the recommended implementation strategy is:
 
-### Immediate (Phase 1): Hybrid CSV + API
+### Immediate (Phase 1): REST API with CSV for Bulk Setup
 
 **Why:**
 1. **CSV for Initial Setup:**
-   - Use existing `/csv` export functionality
+   - Use existing admin CSV export functionality
    - Create Shopify CSV formatter
    - One-time bulk import to Shopify
-   - Manual process acceptable for setup
+   - Manual process acceptable for initial setup
+   - Easy to review before importing
 
-2. **API for Ongoing Sync:**
-   - Implement inventory-level sync only
-   - Real-time updates for stock changes
-   - Simple, focused scope
-   - Immediate value
+2. **REST API for Ongoing Sync:**
+   - Implement inventory-level sync via REST API
+   - Real-time or near-real-time updates for stock changes
+   - Simple, focused scope for initial implementation
+   - Immediate value from automated inventory sync
+   - Easier to implement and debug than GraphQL
 
-**Implementation:**
-```typescript
-// 1. Enhanced CSV export
-export async function exportShopifyCSV(items: Item[]): Promise<string> {
-  // Transform to Shopify format
-  // Add required headers
-  // Return formatted CSV
-}
+**Benefits:**
+- Quick initial setup via CSV
+- Automated ongoing operations via REST API
+- Lower implementation complexity
+- Clear separation of concerns
+- Proven, stable technology
 
-// 2. Simple inventory sync
-export async function syncInventoryToShopify(
-  items: Item[],
-  client: ShopifyClient
-): Promise<SyncResult> {
-  // For each item
-  // Update inventory level via API
-  // Log results
-}
-```
-
-### Near-Term (Phase 2): Webhooks
+### Near-Term (Phase 2): Webhooks for Shopify → Admin
 
 **Why:**
-- Enables automatic order import
-- Keeps admin system informed of Shopify changes
-- Foundation for bidirectional sync
+- Enables automatic order import from Shopify
+- Keeps admin system informed of Shopify-side changes
+- Foundation for bidirectional synchronization
+- Essential for real-time inventory accuracy
 
-**Implementation:**
-- SvelteKit API endpoint for webhooks
-- Process order events
-- Update shipped quantities automatically
+**Implementation Priorities:**
+- SvelteKit API endpoint for receiving webhooks
+- Process order creation events
+- Process inventory update events
+- Update shipped quantities automatically in admin
+- Secure webhook validation
 
-### Long-Term (Phases 3-4): Full Product Sync
+### Long-Term (Phases 3-4): Full Product Sync and Advanced Features
 
 **Why:**
-- Complete automation
-- Full product lifecycle management
+- Complete automation of product lifecycle
+- Full product information management
 - Reduces manual work significantly
+- Advanced conflict resolution
+- Analytics and insights
 
 **Deferred Because:**
-- More complex to implement
-- Initial value from inventory sync alone
-- Can be added incrementally
+- More complex to implement properly
+- Inventory sync alone provides immediate value
+- Can be added incrementally as needs arise
+- Allows time to learn from initial implementation
 
 ## Future Enhancements
 
@@ -1013,123 +1374,123 @@ Relevant webhooks for our integration:
 - `orders/fulfilled` - Order fulfilled
 - `fulfillments/create` - Fulfillment created
 
-## Appendix B: Example Implementations
+## Appendix B: Implementation Patterns
 
-### Example: Simple Inventory Sync
+### Inventory Sync Pattern
 
-```typescript
-// src/lib/shopify/simple-sync.ts
-import type { Item } from '$lib/inventory';
-import { ShopifyClient } from './client';
+**Conceptual Flow:**
+1. Collect items that need syncing from the inventory store
+2. Transform each item to Shopify's inventory update format
+3. For each item, construct the SKU (janCode + subtype)
+4. Make API call to update inventory level at the appropriate location
+5. Track success and failures in result object
+6. Log all operations to Firestore for audit trail
+7. Return comprehensive sync report with successes and failures
 
-export async function syncInventoryLevels(
-  items: Item[],
-  shopifyConfig: ShopifyConfig
-): Promise<SyncResult> {
-  const client = new ShopifyClient(shopifyConfig);
-  const results: SyncResult = {
-    success: [],
-    failed: [],
-    total: items.length,
-  };
+**Error Handling:**
+- Catch and log each individual item failure
+- Continue processing remaining items even if some fail
+- Include detailed error messages in the failure log
+- Retry transient failures with exponential backoff
+- Report overall sync status at completion
 
-  for (const item of items) {
-    try {
-      const sku = `${item.janCode}${item.subtype}`;
-      await client.updateInventory(sku, item.qty);
-      results.success.push(sku);
-    } catch (error) {
-      results.failed.push({
-        sku: `${item.janCode}${item.subtype}`,
-        error: error.message,
-      });
-    }
-  }
+### Webhook Handler Pattern
 
-  return results;
-}
-```
+**Conceptual Flow:**
+1. Receive POST request from Shopify webhook
+2. Extract raw request body (needed for HMAC verification)
+3. Extract HMAC signature from request header
+4. Extract webhook topic from request header
+5. Verify HMAC signature using webhook secret
+6. If verification fails, return 401 Unauthorized immediately
+7. Parse JSON payload
+8. Route to appropriate handler based on webhook topic
+9. Process the webhook data (update inventory, create orders, etc.)
+10. Return 200 OK to acknowledge receipt
+11. Log webhook processing result
 
-### Example: Webhook Handler
+**Security Measures:**
+- Always verify HMAC before processing
+- Use timing-safe comparison for HMAC validation
+- Log all webhook attempts for security monitoring
+- Rate limit the webhook endpoint
+- Return minimal information in error responses
 
-```typescript
-// src/routes/api/shopify/webhook/+server.ts
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { verifyWebhook } from '$lib/shopify/webhook-verify';
-import { processOrderCreated } from '$lib/shopify/webhook-handlers';
+### Sync Coordination Pattern
 
-export const POST: RequestHandler = async ({ request }) => {
-  const body = await request.text();
-  const hmac = request.headers.get('x-shopify-hmac-sha256');
-  const topic = request.headers.get('x-shopify-topic');
+**Conceptual Flow:**
+1. Determine sync direction (to Shopify, from Shopify, or bidirectional)
+2. If dry-run mode, prepare to simulate without actual changes
+3. Fetch current state from both systems
+4. Compare states to identify differences
+5. Apply conflict resolution strategy for conflicts
+6. Generate list of changes needed in each system
+7. Execute changes in dependency order
+8. Track progress and results
+9. Generate comprehensive sync report
+10. Store sync history in Firestore
 
-  // Verify webhook authenticity
-  if (!verifyWebhook(body, hmac, process.env.SHOPIFY_WEBHOOK_SECRET)) {
-    return json({ error: 'Invalid signature' }, { status: 401 });
-  }
+**Conflict Resolution:**
+- Detect when same item changed in both systems
+- Apply configured strategy (ours, theirs, manual)
+- Log all conflicts for review
+- Provide UI for manual conflict resolution
+- Maintain audit trail of conflict resolutions
 
-  const payload = JSON.parse(body);
+## Appendix C: Configuration Reference
 
-  // Route to appropriate handler
-  switch (topic) {
-    case 'orders/create':
-      await processOrderCreated(payload);
-      break;
-    case 'inventory_levels/update':
-      await processInventoryUpdate(payload);
-      break;
-    default:
-      console.log(`Unhandled webhook topic: ${topic}`);
-  }
+### Environment Variables Template
 
-  return json({ received: true });
-};
-```
+The Shopify integration uses environment variables following the same pattern as Firebase configuration. See the "Shopify API Credentials Setup" section earlier in this document for detailed configuration examples.
 
-## Appendix C: Configuration Example
+**Key Environment Variables:**
 
-### Environment Variables
+**For Staging:**
+- `VITE_SHOPIFY_STORE_URL` - Development store URL
+- `SHOPIFY_ACCESS_TOKEN` - API access token (keep secret)
+- `VITE_SHOPIFY_API_VERSION` - API version (e.g., 2024-01)
+- `SHOPIFY_WEBHOOK_SECRET` - Webhook validation secret
+- `SHOPIFY_SYNC_ENABLED` - Enable/disable sync
+- `SHOPIFY_SYNC_INTERVAL` - Sync frequency in milliseconds
+- `SHOPIFY_AUTO_SYNC` - Enable automatic background sync
 
-```bash
-# .env.production (add these)
+**For Production:**
+- Same variables as staging but with production values
+- More conservative sync interval recommended
+- Extra security precautions
 
-# Shopify API Configuration
-VITE_SHOPIFY_SHOP=dobutsu-stationery.myshopify.com
-SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxxxxxx  # Keep secret!
-SHOPIFY_API_VERSION=2024-01
-SHOPIFY_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxx   # Keep secret!
+**Variable Naming:**
+- `VITE_` prefix: Exposed to client-side code (public)
+- No prefix: Server-side only (private, secure)
 
-# Sync Configuration
-SHOPIFY_SYNC_ENABLED=true
-SHOPIFY_SYNC_INTERVAL=300000  # 5 minutes in ms
-SHOPIFY_AUTO_SYNC=true
-```
+### Shopify Custom App Configuration
 
-### Shopify App Configuration
+When creating a custom app in Shopify admin:
 
-```json
-{
-  "name": "Dobutsu Admin Inventory Sync",
-  "scopes": [
-    "read_products",
-    "write_products",
-    "read_inventory",
-    "write_inventory",
-    "read_orders"
-  ],
-  "webhooks": [
-    {
-      "topic": "orders/create",
-      "address": "https://admin.dobutsustationery.com/api/shopify/webhook"
-    },
-    {
-      "topic": "inventory_levels/update",
-      "address": "https://admin.dobutsustationery.com/api/shopify/webhook"
-    }
-  ]
-}
-```
+**Required Information:**
+- App name: "Dobutsu Admin Inventory Sync - [Staging|Production]"
+- API scopes (see Security Considerations section)
+- Webhook subscriptions (configured separately in Shopify admin)
+
+**API Scopes to Select:**
+- Products: read_products, write_products
+- Inventory: read_inventory, write_inventory
+- Orders: read_orders
+
+**Webhook Configuration:**
+- Configured in Shopify admin after app creation
+- Point to your webhook endpoint URL
+- Select webhook topics to subscribe to
+- Shopify provides webhook secret for HMAC validation
+
+**Webhook Endpoint URL Format:**
+- Staging: `https://your-staging-domain.com/api/shopify/webhook`
+- Production: `https://admin.dobutsustationery.com/api/shopify/webhook`
+
+**Webhook Topics to Subscribe:**
+- `orders/create` - New order notifications
+- `inventory_levels/update` - Inventory change notifications
+- Additional topics as features are added
 
 ## References
 
