@@ -303,3 +303,29 @@ export function getFolderLink(): string | undefined {
   if (!FOLDER_ID) return undefined;
   return `https://drive.google.com/drive/folders/${FOLDER_ID}`;
 }
+
+/**
+ * Download a file's content from Google Drive
+ */
+export async function downloadFile(
+  fileId: string,
+  accessToken: string,
+): Promise<string> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to download file: ${response.statusText} - ${errorText}`,
+    );
+  }
+
+  return await response.text();
+}
