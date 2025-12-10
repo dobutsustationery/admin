@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "$lib/store";
-  import { user } from "$lib/globals";
   import {
     isDriveConfigured,
     isAuthenticated,
@@ -14,8 +13,10 @@
     getFolderLink,
     type DriveFile,
   } from "$lib/google-drive";
-  import { new_order } from "$lib/inventory";
+  import { get } from "svelte/store";
+  import { user } from "$lib/user-store";
   import { firestore } from "$lib/firebase";
+  import { new_order } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
 
   let driveConfigured = false;
@@ -119,9 +120,13 @@
 
   async function handleImport(file: DriveFile) {
     const token = getStoredToken();
-    if (!token) return;
+    if (!token) {
+      return;
+    }
 
-    if (!confirm(`Import orders from ${file.name}?`)) return;
+    if (!confirm(`Import orders from ${file.name}?`)) {
+      return;
+    }
 
     processing = true;
     error = "";
@@ -148,12 +153,11 @@
           product: order.product || "",
         });
 
-        // Assuming we have a user logged in, which we should for the admin app
-        // But we need to check $user
         if ($user && $user.uid) {
           broadcast(firestore, $user.uid, action);
           count++;
         } else {
+          console.error("Import failed: User not authenticated with Firebase");
           throw new Error("User not authenticated with Firebase");
         }
       }
