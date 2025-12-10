@@ -5,6 +5,7 @@
   $: totalItems = $store.inventory
     ? Object.keys($store.inventory.idToItem || {}).length
     : 0;
+
   // Calculate total quantity roughly (sum of all quantities)
   $: totalQuantity = $store.inventory
     ? Object.values($store.inventory.idToItem || {}).reduce(
@@ -12,7 +13,6 @@
         0,
       )
     : 0;
-
   // Recent activity mock
   let recentActivity = [
     { type: "order", text: "Order #1234 packed", time: "5m ago" },

@@ -1,0 +1,318 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { store } from "$lib/store";
+  import { user } from "$lib/globals";
+  import {
+    isDriveConfigured,
+    isAuthenticated,
+    initiateOAuthFlow,
+    handleOAuthCallback,
+    listFilesInFolder,
+    downloadFile,
+    getStoredToken,
+    clearToken,
+    getFolderLink,
+    type DriveFile,
+  } from "$lib/google-drive";
+  import { new_order } from "$lib/inventory";
+  import { firestore } from "$lib/firebase";
+  import { broadcast } from "$lib/redux-firestore";
+
+  let driveConfigured = false;
+  let authenticated = false;
+  let driveFiles: DriveFile[] = [];
+  let loadingFiles = false;
+  let error = "";
+  let successMsg = "";
+  let processing = false;
+
+  onMount(async () => {
+    driveConfigured = isDriveConfigured();
+
+    if (driveConfigured) {
+      const token = handleOAuthCallback();
+      if (token) {
+        authenticated = true;
+        await loadFiles();
+      } else {
+        authenticated = isAuthenticated();
+        if (authenticated) {
+          await loadFiles();
+        }
+      }
+    }
+  });
+
+  async function loadFiles() {
+    const token = getStoredToken();
+    if (!token) {
+      authenticated = false;
+      return;
+    }
+
+    loadingFiles = true;
+    error = "";
+
+    try {
+      driveFiles = await listFilesInFolder(token.access_token);
+      // Filter for CSV files if possible, or just show all
+      driveFiles = driveFiles.filter(
+        (f) => f.mimeType === "text/csv" || f.name.endsWith(".csv"),
+      );
+    } catch (e) {
+      console.error("Error loading files:", e);
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      error = `Failed to load files: ${errorMsg}`;
+      if (
+        errorMsg.toLowerCase().includes("401") ||
+        errorMsg.toLowerCase().includes("unauthorized")
+      ) {
+        clearToken();
+        authenticated = false;
+      }
+    } finally {
+      loadingFiles = false;
+    }
+  }
+
+  function handleConnect() {
+    initiateOAuthFlow();
+  }
+
+  function handleDisconnect() {
+    clearToken();
+    authenticated = false;
+    driveFiles = [];
+  }
+
+  function parseCSV(content: string) {
+    const lines = content.split(/\r?\n/).filter((line) => line.trim() !== "");
+    // Simple parsing, assumes simple CSV without quoted newlines for now
+    // Header: Order ID, Email, Date, Product (based on assumption)
+    // Actually, let's try to detect headers or just use index
+
+    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const data = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(",").map((v) => v.trim());
+      if (values.length < 2) continue; // Skip empty/malformed rows
+
+      const row: any = {};
+      headers.forEach((h, idx) => {
+        row[h] = values[idx];
+      });
+
+      // Fallback if headers are missing or specific columns needed
+      // mapping common names
+      const id = row["order id"] || row["id"] || values[0]; // Access via index 0 as fallback
+      const email = row["email"] || values[1];
+      const dateStr = row["date"] || values[2];
+      const product = row["product"] || row["item"] || values[3];
+
+      if (id) {
+        data.push({ id, email, dateStr, product });
+      }
+    }
+    return data;
+  }
+
+  async function handleImport(file: DriveFile) {
+    const token = getStoredToken();
+    if (!token) return;
+
+    if (!confirm(`Import orders from ${file.name}?`)) return;
+
+    processing = true;
+    error = "";
+    successMsg = "";
+
+    try {
+      const content = await downloadFile(file.id, token.access_token);
+      const orders = parseCSV(content);
+
+      if (orders.length === 0) {
+        error = "No orders found in file.";
+        return;
+      }
+
+      let count = 0;
+      for (const order of orders) {
+        const date = order.dateStr ? new Date(order.dateStr) : new Date();
+        // Dispatch to redux/firestore
+        // We use broadcast to sync with other admins
+        const action = new_order({
+          orderID: order.id,
+          date: date,
+          email: order.email || "",
+          product: order.product || "",
+        });
+
+        // Assuming we have a user logged in, which we should for the admin app
+        // But we need to check $user
+        if ($user && $user.uid) {
+          broadcast(firestore, $user.uid, action);
+          count++;
+        } else {
+          throw new Error("User not authenticated with Firebase");
+        }
+      }
+      successMsg = `Successfully imported ${count} orders from ${file.name}`;
+    } catch (e) {
+      console.error("Import failed:", e);
+      error = `Import failed: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      processing = false;
+    }
+  }
+
+  function formatDate(dateString: string): string {
+    const date = new Date(dateString);
+    return date.toLocaleString();
+  }
+</script>
+
+<div class="import-page">
+  <h1>Order Import (Drive)</h1>
+
+  {#if driveConfigured}
+    {#if !authenticated}
+      <div class="auth-prompt">
+        <p>Connect to Google Drive to import order CSVs.</p>
+        <button on:click={handleConnect} class="connect-button">
+          Connect to Google Drive
+        </button>
+      </div>
+    {:else}
+      <div class="authenticated">
+        <div class="header-actions">
+          <span>Connected to Drive</span>
+          <button on:click={handleDisconnect} class="disconnect-button"
+            >Disconnect</button
+          >
+          {#if getFolderLink()}
+            <a href={getFolderLink()} target="_blank" class="folder-link"
+              >Open Folder</a
+            >
+          {/if}
+        </div>
+
+        {#if error}
+          <div class="error-message">{error}</div>
+        {/if}
+        {#if successMsg}
+          <div class="success-message">{successMsg}</div>
+        {/if}
+
+        <div class="file-list">
+          <h3>CSV Files</h3>
+          {#if loadingFiles}
+            <p>Loading...</p>
+          {:else if driveFiles.length === 0}
+            <p>No CSV files found in the configured folder.</p>
+          {:else}
+            <table class="files-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Date Modified</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each driveFiles as file}
+                  <tr>
+                    <td>{file.name}</td>
+                    <td>{formatDate(file.modifiedTime)}</td>
+                    <td>
+                      <button
+                        on:click={() => handleImport(file)}
+                        disabled={processing}
+                        class="import-button"
+                      >
+                        Import
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+        </div>
+      </div>
+    {/if}
+  {:else}
+    <div class="not-configured">Drive not configured.</div>
+  {/if}
+</div>
+
+<style>
+  .import-page {
+    padding: 20px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  .connect-button {
+    background: #4285f4;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .disconnect-button {
+    background: #f44336;
+    color: white;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 10px;
+  }
+  .import-button {
+    background: #4caf50;
+    color: white;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .import-button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+  .files-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+  .files-table th,
+  .files-table td {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+  }
+  .error-message {
+    background: #ffebee;
+    color: #c62828;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+  }
+  .success-message {
+    background: #e8f5e9;
+    color: #2e7d32;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .folder-link {
+    margin-left: auto;
+  }
+</style>
