@@ -85,12 +85,12 @@
         const id = change.doc.id;
         if (executedActions[id] === undefined) {
           executedActions[id] = action;
-           if (action.type === "retype_item") {
+          if (action.type === "retype_item") {
             const itemKey = action.payload.itemKey;
             const newItemKey = action.payload.janCode + action.payload.subtype;
             if (itemKey == newItemKey) {
-               console.error("bad retype item detected", id);
-               deleteDoc(change.doc.ref);
+              console.error("bad retype item detected", id);
+              deleteDoc(change.doc.ref);
             }
           }
           store.dispatch(action);
@@ -103,10 +103,10 @@
           Object.keys(confirmedActions).length;
       });
       store.dispatch(inventory_synced());
-      
+
       // If we are signed in and receiving actions, we are ready
       if (me.signedIn) {
-          loadingState = "ready";
+        loadingState = "ready";
       }
     });
   }
@@ -140,15 +140,11 @@
 {#if me.signedIn}
   <div class="app-shell">
     <Navigation {unsyncedActions} bind:isOpen={navigationOpen} />
-    
+
     <main class="main-content" class:nav-open={navigationOpen}>
       <slot />
     </main>
   </div>
-  
-  {#if loadingState !== "ready"}
-     <LoadingScreen status={loadingState} progress={0} message="Syncing data..." />
-  {/if}
 
 {:else}
   {#if loadingState === "initializing"}
@@ -173,7 +169,7 @@
     padding-left: 250px; /* Width of nav */
     transition: padding-left 0.3s ease-in-out;
   }
-  
+
   /* Mobile: Nav is hidden/overlay, so no padding */
   @media (max-width: 768px) {
     .main-content {
@@ -182,10 +178,10 @@
   }
 
   .signin-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
   }
 </style>
