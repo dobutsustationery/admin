@@ -55,6 +55,10 @@ export interface DriveFile {
  * Check if Google Drive is configured
  */
 export function isDriveConfigured(): boolean {
+  // Allow test bypass
+  if (typeof window !== "undefined" && (window as any).__MOCK_DRIVE_CONFIG__) {
+    return true;
+  }
   return !!(
     CLIENT_ID &&
     FOLDER_ID &&

@@ -7,7 +7,8 @@
   import { auth, firestore, googleAuthProvider } from "$lib/firebase"; // Ensure imports are correct based on file context
   import { doc, setDoc, deleteDoc, type Unsubscribe } from "firebase/firestore";
   import { onMount } from "svelte";
-  import { store, inventory_synced, user } from "$lib/store";
+  import { store, inventory_synced } from "$lib/store";
+  import { user } from "$lib/user-store";
   import type { AnyAction } from "$lib/store";
   import { watchBroadcastActions } from "$lib/redux-firestore";
 
