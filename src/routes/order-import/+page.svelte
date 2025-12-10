@@ -18,6 +18,7 @@
   import { firestore } from "$lib/firebase";
   import { new_order } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
+  import Papa from "papaparse";
 
   let driveConfigured = false;
   let authenticated = false;
@@ -86,35 +87,37 @@
     driveFiles = [];
   }
 
+
+
   function parseCSV(content: string) {
-    const lines = content.split(/\r?\n/).filter((line) => line.trim() !== "");
-    // Simple parsing, assumes simple CSV without quoted newlines for now
-    // Header: Order ID, Email, Date, Product (based on assumption)
-    // Actually, let's try to detect headers or just use index
+    // Robust parsing with PapaParse
+    const parsed = Papa.parse(content, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim().toLowerCase()
+    });
 
-    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-    const data = [];
+    if (parsed.errors && parsed.errors.length > 0) {
+      console.error("CSV Parse Errors:", parsed.errors);
+      // We could throw or return strict errors, but for now let's just use what data we have
+      // or filter out bad rows.
+    }
 
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(",").map((v) => v.trim());
-      if (values.length < 2) continue; // Skip empty/malformed rows
-
-      const row: any = {};
-      headers.forEach((h, idx) => {
-        row[h] = values[idx];
-      });
-
-      // Fallback if headers are missing or specific columns needed
-      // mapping common names
-      const id = row["order id"] || row["id"] || values[0]; // Access via index 0 as fallback
-      const email = row["email"] || values[1];
-      const dateStr = row["date"] || values[2];
-      const product = row["product"] || row["item"] || values[3];
+    const data: any[] = [];
+    
+    parsed.data.forEach((row: any) => {
+      // row is an object with keys from header
+      // Mapping common names
+      const id = row["order id"] || row["id"];
+      const email = row["email"];
+      const dateStr = row["date"];
+      const product = row["product"] || row["item"];
 
       if (id) {
-        data.push({ id, email, dateStr, product });
+         data.push({ id, email, dateStr, product });
       }
-    }
+    });
+
     return data;
   }
 
