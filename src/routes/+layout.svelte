@@ -7,7 +7,8 @@
   import { auth, firestore, googleAuthProvider } from "$lib/firebase"; // Ensure imports are correct based on file context
   import { doc, setDoc, deleteDoc, type Unsubscribe } from "firebase/firestore";
   import { onMount } from "svelte";
-  import { store, inventory_synced, user } from "$lib/store";
+  import { store, inventory_synced } from "$lib/store";
+  import { user } from "$lib/user-store";
   import type { AnyAction } from "$lib/store";
   import { watchBroadcastActions } from "$lib/redux-firestore";
 
@@ -55,18 +56,17 @@
 
       // Start syncing if not already
       if (!unsubscribeBroadcast) {
-          unsubscribeBroadcast = startBroadcastListener();
+        unsubscribeBroadcast = startBroadcastListener();
       }
-
     } else {
-       me = { signedIn: false };
-       loadingState = "ready"; // Show Sign in
-       
-       // Stop syncing
-       if (unsubscribeBroadcast) {
-           unsubscribeBroadcast();
-           unsubscribeBroadcast = undefined;
-       }
+      me = { signedIn: false };
+      loadingState = "ready"; // Show Sign in
+
+      // Stop syncing
+      if (unsubscribeBroadcast) {
+        unsubscribeBroadcast();
+        unsubscribeBroadcast = undefined;
+      }
     }
   }
 
@@ -114,14 +114,17 @@
   onMount(() => {
     // Auth Listener
     const unsubscribe = onAuthStateChanged(auth, (u) => {
-        handleUserChange(u);
+      handleUserChange(u);
     });
 
     // Console suppression for tests
     const originalConsoleError = console.error;
     console.error = (...args: any[]) => {
-       if (String(args[0]).includes("Component auth has not been registered yet")) return;
-       originalConsoleError.apply(console, args);
+      if (
+        String(args[0]).includes("Component auth has not been registered yet")
+      )
+        return;
+      originalConsoleError.apply(console, args);
     };
 
     // Fallback sync
@@ -131,8 +134,8 @@
     }, 10000);
 
     return () => {
-        unsubscribe();
-        if (unsubscribeBroadcast) unsubscribeBroadcast();
+      unsubscribe();
+      if (unsubscribeBroadcast) unsubscribeBroadcast();
     };
   });
 </script>
@@ -145,16 +148,25 @@
       <slot />
     </main>
   </div>
-
+{:else if loadingState === "initializing"}
+  <LoadingScreen
+    status="initializing"
+    message="Initializing authentication..."
+  />
 {:else}
-  {#if loadingState === "initializing"}
-    <LoadingScreen status="initializing" message="Initializing authentication..." />
-  {:else}
-     <div class="signin-container">
-        <h1>Dobutsu Admin</h1>
-        <Signin {auth} {googleAuthProvider} on:user_changed={(e) => handleUserChange(e.detail.signedIn ? {email: e.detail.email, uid: e.detail.uid} : null)} />
-     </div>
-  {/if}
+  <div class="signin-container">
+    <h1>Dobutsu Admin</h1>
+    <Signin
+      {auth}
+      {googleAuthProvider}
+      on:user_changed={(e) =>
+        handleUserChange(
+          e.detail.signedIn
+            ? { email: e.detail.email, uid: e.detail.uid }
+            : null,
+        )}
+    />
+  </div>
 {/if}
 
 <style>

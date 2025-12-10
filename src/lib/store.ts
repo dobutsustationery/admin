@@ -1,5 +1,6 @@
 import { configureStore } from "@reduxjs/toolkit";
-import { type Writable, writable } from "svelte/store";
+import { writable } from "svelte/store";
+import type { Writable } from "svelte/store";
 import { history } from "./history";
 import { inventory } from "./inventory";
 import { names } from "./names";
@@ -38,14 +39,7 @@ export type SvelteStore = Writable<GlobalState>;
 
 export const store = reduxStore as ReduxStore & SvelteStore;
 
-export const user = writable<{
-  signedIn: boolean;
-  uid?: string;
-  email?: string;
-  name?: string;
-  photo?: string;
-  last?: number;
-}>({ signedIn: false });
+export { user } from "./user-store";
 
 export { inventory_synced } from "./inventory";
 export type { AnyAction } from "@reduxjs/toolkit";
