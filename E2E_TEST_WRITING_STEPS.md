@@ -14,13 +14,15 @@ Create a new directory `e2e/###-<name>/`:
 ### Use `TestDocumentationHelper`
 **Always** use the helper to ensure programmatic verification is documented and runs before capture.
 
+**CRITICAL**: The `screenshots` helper auto-increments from 000. The filename passed to `docHelper.addStep()` must match the auto-generated number.
+
 ```typescript
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import * as path from "path";
 
 test("example workflow", async ({ page }, testInfo) => {
-  const screenshots = createScreenshotHelper();
+  const screenshots = createScreenshotHelper();  // Starts counter at 0
   const docHelper = new TestDocumentationHelper(path.dirname(testInfo.file));
   
   docHelper.setMetadata(
@@ -41,17 +43,21 @@ test("example workflow", async ({ page }, testInfo) => {
     }
   ];
 
-  // Register step
+  // Register step with filename 000-* (first screenshot)
   docHelper.addStep("Initial State", "000-initial-state.png", verifications);
   
-  // Capture & Verify
+  // Capture generates 000-initial-state.png (counter starts at 0)
   await screenshots.capture(page, "initial-state", {
     programmaticCheck: async () => {
        for (const v of verifications) await v.check();
     }
   });
+  // Counter is now 1
   
-  // Generate Documentation
+  // Next step would use "001-next-step.png" in addStep()
+  // and "next-step" in screenshots.capture()
+  
+  // Generate Documentation (creates README.md)
   docHelper.writeReadme();
 });
 ```

@@ -225,7 +225,7 @@ test.describe("Order Import Page with Google Drive", () => {
         await expect(page.locator('text=orders-2025.csv')).toBeVisible();
 
         const step1 = [{ description: "Page loaded with files", check: async () => await expect(page.locator('text=orders-2025.csv')).toBeVisible() }];
-        docHelper.addStep("View Files", "001-view-files.png", step1);
+        docHelper.addStep("View Files", "000-view-files.png", step1);
         await screenshots.capture(page, "view-files", { programmaticCheck: async () => { for(const v of step1) await v.check(); } });
 
         // 4. Analyze
@@ -240,7 +240,7 @@ test.describe("Order Import Page with Google Drive", () => {
         await expect(page.locator('text=Test Item')).toBeVisible(); // Description check
         
         const step2 = [{ description: "Preview loaded", check: async () => await expect(page.locator('h3:has-text("Preview: orders-2025.csv")')).toBeVisible() }];
-        docHelper.addStep("Preview Loaded", "002-preview.png", step2);
+        docHelper.addStep("Preview Loaded", "001-preview.png", step2);
         await screenshots.capture(page, "preview", { programmaticCheck: async () => { for(const v of step2) await v.check(); } });
 
         // 6. Confirm Import
@@ -279,7 +279,7 @@ test.describe("Order Import Page with Google Drive", () => {
         }
 
         const step3 = [{ description: "Import succesful", check: async () => await expect(page.locator('.success-message')).toContainText("Successfully processed") }];
-        docHelper.addStep("Import Complete", "003-import-complete.png", step3);
+        docHelper.addStep("Import Complete", "002-import-complete.png", step3);
         await screenshots.capture(page, "import-complete", { programmaticCheck: async () => { for(const v of step3) await v.check(); } });
         
         docHelper.writeReadme();
