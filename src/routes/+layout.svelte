@@ -4,8 +4,8 @@
   import LoadingScreen from "$lib/components/LoadingScreen.svelte";
   import Signin from "$lib/Signin.svelte"; // Static import
   import { onAuthStateChanged } from "firebase/auth";
-  import { auth, firestore } from "$lib/firebase"; // Ensure imports are correct based on file context
-  import { doc, setDoc, deleteDoc } from "firebase/firestore";
+  import { auth, firestore, googleAuthProvider } from "$lib/firebase"; // Ensure imports are correct based on file context
+  import { doc, setDoc, deleteDoc, type Unsubscribe } from "firebase/firestore";
   import { onMount } from "svelte";
   import { store, inventory_synced, user } from "$lib/store";
   import type { AnyAction } from "$lib/store";
@@ -45,58 +45,52 @@
       loadingState = "loading";
 
       // Update user record
-      if (me.email) {
-        setDoc(doc(firestore, "users", me.email), {
-          uid: me.uid,
-          name: me.name,
-          email: me.email,
-          photo: me.photo,
-          activity_timestamp: new Date().getTime(),
-        }).catch(console.error);
+      setDoc(doc(firestore, "users", me.email), {
+        uid: me.uid,
+        name: me.name,
+        email: me.email,
+        photo: me.photo,
+        activity_timestamp: new Date().getTime(),
+      }).catch(console.error);
+
+      // Start syncing if not already
+      if (!unsubscribeBroadcast) {
+          unsubscribeBroadcast = startBroadcastListener();
       }
+
     } else {
-      me = { signedIn: false };
-      loadingState = "ready"; // Show Sign in
+       me = { signedIn: false };
+       loadingState = "ready"; // Show Sign in
+       
+       // Stop syncing
+       if (unsubscribeBroadcast) {
+           unsubscribeBroadcast();
+           unsubscribeBroadcast = undefined;
+       }
     }
   }
 
   // Original broadcast logic variables
-  let nullAuthProvider: any = null;
   const executedActions: { [k: string]: AnyAction } = {};
   const confirmedActions: { [k: string]: AnyAction } = {};
   let unsyncedActions = 0;
   let loadedActionCount = 0;
+  let unsubscribeBroadcast: Unsubscribe | undefined;
 
-  onMount(() => {
-    // Auth Listener
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      handleUserChange(u);
-    });
-
-    // Console suppression for tests
-    const originalConsoleError = console.error;
-    console.error = (...args: any[]) => {
-      if (
-        String(args[0]).includes("Component auth has not been registered yet")
-      )
-        return;
-      originalConsoleError.apply(console, args);
-    };
-
-    // Initialize broadcast watcher
-    watchBroadcastActions(firestore, (changes) => {
+  function startBroadcastListener() {
+    return watchBroadcastActions(firestore, (changes) => {
       loadedActionCount += changes.length;
       changes.forEach((change) => {
         const action = change.doc.data() as AnyAction;
         const id = change.doc.id;
         if (executedActions[id] === undefined) {
           executedActions[id] = action;
-          if (action.type === "retype_item") {
+           if (action.type === "retype_item") {
             const itemKey = action.payload.itemKey;
             const newItemKey = action.payload.janCode + action.payload.subtype;
             if (itemKey == newItemKey) {
-              console.error("bad retype item detected", id);
-              deleteDoc(change.doc.ref);
+               console.error("bad retype item detected", id);
+               deleteDoc(change.doc.ref);
             }
           }
           store.dispatch(action);
@@ -109,12 +103,26 @@
           Object.keys(confirmedActions).length;
       });
       store.dispatch(inventory_synced());
-
+      
       // If we are signed in and receiving actions, we are ready
       if (me.signedIn) {
-        loadingState = "ready";
+          loadingState = "ready";
       }
     });
+  }
+
+  onMount(() => {
+    // Auth Listener
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+        handleUserChange(u);
+    });
+
+    // Console suppression for tests
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => {
+       if (String(args[0]).includes("Component auth has not been registered yet")) return;
+       originalConsoleError.apply(console, args);
+    };
 
     // Fallback sync
     setTimeout(() => {
@@ -122,45 +130,35 @@
       if (me.signedIn) loadingState = "ready";
     }, 10000);
 
-    return () => unsubscribe();
+    return () => {
+        unsubscribe();
+        if (unsubscribeBroadcast) unsubscribeBroadcast();
+    };
   });
 </script>
 
 {#if me.signedIn}
   <div class="app-shell">
     <Navigation {unsyncedActions} bind:isOpen={navigationOpen} />
-
+    
     <main class="main-content" class:nav-open={navigationOpen}>
       <slot />
     </main>
   </div>
-
+  
   {#if loadingState !== "ready"}
-    <LoadingScreen
-      status={loadingState}
-      progress={0}
-      message="Syncing data..."
-    />
+     <LoadingScreen status={loadingState} progress={0} message="Syncing data..." />
   {/if}
-{:else if loadingState === "initializing"}
-  <LoadingScreen
-    status="initializing"
-    message="Initializing authentication..."
-  />
+
 {:else}
-  <div class="signin-container">
-    <h1>Dobutsu Admin</h1>
-    <Signin
-      {auth}
-      googleAuthProvider={nullAuthProvider}
-      on:user_changed={(e) =>
-        handleUserChange(
-          e.detail.signedIn
-            ? { email: e.detail.email, uid: e.detail.uid }
-            : null,
-        )}
-    />
-  </div>
+  {#if loadingState === "initializing"}
+    <LoadingScreen status="initializing" message="Initializing authentication..." />
+  {:else}
+     <div class="signin-container">
+        <h1>Dobutsu Admin</h1>
+        <Signin {auth} {googleAuthProvider} on:user_changed={(e) => handleUserChange(e.detail.signedIn ? {email: e.detail.email, uid: e.detail.uid} : null)} />
+     </div>
+  {/if}
 {/if}
 
 <style>
@@ -175,7 +173,7 @@
     padding-left: 250px; /* Width of nav */
     transition: padding-left 0.3s ease-in-out;
   }
-
+  
   /* Mobile: Nav is hidden/overlay, so no padding */
   @media (max-width: 768px) {
     .main-content {
@@ -184,10 +182,10 @@
   }
 
   .signin-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
   }
 </style>
