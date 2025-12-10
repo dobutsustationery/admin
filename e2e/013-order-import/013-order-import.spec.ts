@@ -81,7 +81,7 @@ test.describe("Order Import Page with Google Drive", () => {
                         status: 200,
                         contentType: 'text/csv',
                         headers: { 'Access-Control-Allow-Origin': '*' },
-                        body: "Order ID,Email,Date,Product\nORD-001,customer@example.com,2025-12-10,Pen Set"
+                        body: "JAN CODE,TOTAL PCS,DESCRIPTION,Carton Number\n4902778123456,10,Test Item,1"
                     });
                     return;
                 }
@@ -185,7 +185,7 @@ test.describe("Order Import Page with Google Drive", () => {
 
         // 1. Check if we passed Layout Auth
         try {
-            await expect(page.locator('h1:has-text("Order Import (Drive)")')).toBeVisible({ timeout: 5000 });
+            await expect(page.locator('h1:has-text("Inventory Receipt (Drive)")')).toBeVisible({ timeout: 5000 });
         } catch (e) {
             console.log("TEST FAILURE: Header not found.");
              const bodyHtml = await page.content();
@@ -228,16 +228,31 @@ test.describe("Order Import Page with Google Drive", () => {
         docHelper.addStep("View Files", "001-view-files.png", step1);
         await screenshots.capture(page, "view-files", { programmaticCheck: async () => { for(const v of step1) await v.check(); } });
 
-        // 4. Import
+        // 4. Analyze
+        const analyzeBtn = page.locator('button:has-text("Analyze")');
+        await expect(analyzeBtn).toBeVisible();
+        await expect(analyzeBtn).toBeEnabled();
+        await analyzeBtn.click();
+
+        // 5. Preview
+        await expect(page.locator('h3:has-text("Preview: orders-2025.csv")')).toBeVisible();
+        await expect(page.locator('text=4902778123456')).toBeVisible(); // JAN Code check
+        await expect(page.locator('text=Test Item')).toBeVisible(); // Description check
+        
+        const step2 = [{ description: "Preview loaded", check: async () => await expect(page.locator('h3:has-text("Preview: orders-2025.csv")')).toBeVisible() }];
+        docHelper.addStep("Preview Loaded", "002-preview.png", step2);
+        await screenshots.capture(page, "preview", { programmaticCheck: async () => { for(const v of step2) await v.check(); } });
+
+        // 6. Confirm Import
         // Handle confirm dialog
         page.on('dialog', dialog => dialog.accept());
         
-        const importBtn = page.locator('button:has-text("Import")');
-        await expect(importBtn).toBeVisible();
-        await expect(importBtn).toBeEnabled();
-        await importBtn.click();
+        const confirmBtn = page.locator('button:has-text("Confirm Receipt")');
+        await expect(confirmBtn).toBeVisible();
+        await expect(confirmBtn).toBeEnabled();
+        await confirmBtn.click();
 
-        // 5. Verify Success Message (or Error)
+        // 7. Verify Success Message (or Error)
         await page.waitForTimeout(2000); // Wait for processing
 
         const successEl = page.locator('.success-message');
@@ -250,7 +265,7 @@ test.describe("Order Import Page with Google Drive", () => {
             if (await successEl.isVisible()) {
                 const text = await successEl.innerText();
                 console.log(`TEST DEBUG: Found success message: "${text}"`);
-                expect(text).toContain("Successfully imported");
+                expect(text).toContain("Successfully processed");
             } else if (await errorEl.isVisible()) {
                 const text = await errorEl.innerText();
                 console.log(`TEST FAILURE: Found error message: "${text}"`);
@@ -263,9 +278,9 @@ test.describe("Order Import Page with Google Drive", () => {
              throw e;
         }
 
-        const step2 = [{ description: "Import succesful", check: async () => await expect(page.locator('.success-message')).toContainText("Successfully imported") }];
-        docHelper.addStep("Import Complete", "002-import-complete.png", step2);
-        await screenshots.capture(page, "import-complete", { programmaticCheck: async () => { for(const v of step2) await v.check(); } });
+        const step3 = [{ description: "Import succesful", check: async () => await expect(page.locator('.success-message')).toContainText("Successfully processed") }];
+        docHelper.addStep("Import Complete", "003-import-complete.png", step3);
+        await screenshots.capture(page, "import-complete", { programmaticCheck: async () => { for(const v of step3) await v.check(); } });
         
         docHelper.writeReadme();
     });
