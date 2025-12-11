@@ -2,102 +2,121 @@
 
 ## Overview
 
-This document outlines the design for integrating the Dobutsu Stationery inventory management system with Shopify. 
+This document outlines the design for integrating the Dobutsu Stationery inventory management system with Shopify.
 
-**Core Philosophy: Inventory System is Master.**
-All product listings, inventory levels, and order records are mastered in the Dobutsu Admin system. Shopify is treated as a sales channel and storefront, not the primary system of record.
+**Architecture Philosophy: Event Sourcing & Immutability**
+The integration relies on **Immutable Actions** recorded in the `broadcast` collection. The state of Shopify connections and Product Listings is **derived in-memory** by reducing these actions. There are no mutable "Product Tables" in the database.
 
-## Data Architecture
+## 1. Inventory Calculation (The "Real" Stock)
 
-### 1. New Entity: `ShopifyProduct`
-To map our flat `Item` structure (SKUs) to Shopify's grouped conceptual model, we introduce a `ShopifyProduct` entity in Firestore.
+Inventory quantity is never "updated". It is calculated from two streams of actions:
 
-**Structure:**
+1.  **Incoming Stock**: Actions that add to the warehouse (e.g. `receive_stock`, `adjust_stock`).
+    *   `Total Stocked` = Sum of all additions.
+2.  **Outgoing Shipments**: Actions that mark items as shipped (e.g. `ship_item`).
+    *   `Total Shipped` = Sum of all shipments.
+
+**Available for Shopify** = `Total Stocked` - `Total Shipped`.
+
+## 2. Data Model: Actions & Reducers
+
+We introduce a new Redux slice: `shopify`.
+
+### A. New Actions
+
+These actions are dispatched to the `broadcast` collection to record changes to the Shopify integration state.
+
+#### 1. `shopify_link_product`
+Links a Shopify Handle and its Variants to internal Item Keys.
 ```typescript
-interface ShopifyProduct {
-  handle: string;       // Unique ID (e.g., "amifa-moon-stickers")
-  title: string;        // "Amifa Moon and Sky Wall Stickers"
-  bodyHtml: string;     // Description
-  vendor: string;       // "SPNSS Ltd."
-  productType: string;  // "Stickers"
-  tags: string[];       // ["sticker", "cute"]
-  options: {
-    name: string;       // e.g. "Design"
-    values: string[];   // ["Moon", "Sky"]
-  }[];
-  variants: {
-    sku: string;        // Links to Item.janCode (e.g. "4542804112443Moon")
-    option1: string;    // "Moon"
-    option2?: string;
-    price: number;
-    grams: number;
-    imageId?: string;   // Link to Shopify Image ID
-  }[];
-  images: {
-    id: string;
-    src: string;
-    altText?: string;
-  }[];
+interface ShopifyLinkProductAction {
+  type: 'shopify_link_product';
+  payload: {
+    handle: string;
+    variants: {
+      shopifyVariantId: string;
+      itemKey: string; // Links to our internal Item
+    }[];
+    timestamp: number;
+    user: string;
+  };
 }
 ```
 
-### 2. Relationship to `Item`
-*   **SKU is Key**: The `sku` in a Shopify Variant **MUST** match our `janCode` (for single items) or `janCode` + `subtype` (for variants).
-*   **Inventory Source**: `qty` for a variant is **ALWAYS** read directly from the linked `Item` in the Admin system.
+#### 2. `shopify_update_listing`
+Records a change to the display metadata of a listing.
+```typescript
+interface ShopifyUpdateListingAction {
+  type: 'shopify_update_listing';
+  payload: {
+    handle: string;
+    field: 'title' | 'body_html' | 'options' | 'tags';
+    value: any;
+    timestamp: number;
+  };
+}
+```
 
-## Workflows
+### B. Derived State (The Reducer)
+The client-side reducer listens to these actions to build the "Database":
 
-### 1. Import from Shopify (Urgent: Initial Setup)
-*Goal: Populate Admin with existing Shopify listings.*
+```typescript
+interface ShopifyState {
+  // Map Handle -> Listing Data
+  listings: Record<string, {
+    handle: string;
+    title: string;
+    body_html: string;
+    linkedVariants: Record<string, string>; // VariantID -> ItemKey
+  }>;
+}
+```
 
-1.  **Fetch**: Admin pulls all Products from Shopify API.
-2.  **Match**: For each Variant, try to match `sku` to an internal `Item`.
-3.  **Persist**: Create a `ShopifyProduct` record in Firestore.
-4.  **UI**: Show a "Linked Products" dashboard.
-    *   **Green**: All variants linked to existing Items.
-    *   **Red**: Variant SKU not found in Inventory (Needs Item creation).
+## 3. Workflows
 
-### 2. Create Listing from Inventory (Urgent: New Stock)
-*Goal: Turn new internal items into a Shopify page.*
+### A. Import from Shopify (Initial Setup)
+*Goal: Replay the "History" of Shopify into our Action Log.*
 
-1.  **Select**: User selects 1 or more `Items` in the Admin "Inventory" list.
-2.  **Group**: Click "Create Shopify Listing".
-3.  **Configure**:
-    *   **Handle**: Auto-suggested as `title-jancode` (kebab-case). User can edit.
-    *   **Title/Desc**: Input product details.
-    *   **Options**: Define Variant Options (e.g. "Color") and map values to selected Items.
-4.  **Push**: Admin creates the Product and Variants in Shopify via API.
+1.  **Fetch**: Admin tool fetches all active products from Shopify API.
+2.  **Diff**: Compare fetched data against current `ShopifyState`.
+3.  **Action Generation**: For each new/changed product:
+    *   Dispatch `shopify_link_product` (if new).
+    *   Dispatch `shopify_update_listing` (to set Title, Description, etc.).
+    *   **Result**: The system "learns" the current state of Shopify by recording it as a series of events.
 
-### 3. Sync Changes (Bidirectional)
+### B. Inventory Sync (Admin -> Shopify)
+*Goal: Keep Shopify inventory correct.*
 
-#### A. Inventory (Admin -> Shopify)
-*   **Trigger**: Real-time (on `qty` change in Admin).
-*   **Action**: Update `inventory_quantity` in Shopify.
-*   **Rule**: **Admin Wins**. Shopify inventory is overwritten.
+1.  **Reactive Listener**: The Sync Service subscribes to the Redux Store.
+2.  **Compute**: On every state change, calculate `Available Stock` (`Stocked` - `Shipped`) for every linked Item.
+3.  **Push**: If `Available Stock` != `Last Known Shopify Qty`, call Shopify API `inventory_levels/set`.
 
-#### B. Product Details (Shopify -> Admin)
-*   **Trigger**: Manual "Check for Updates" or Webhook `products/update`.
-*   **Action**: **Manual Merge UI**.
-    *   The system detects a difference (e.g. Title changed in Shopify).
-    *   User sees a "Diff" view.
-    *   User clicks "Accept" to update the Admin `ShopifyProduct` record, or "Reject" to overwrite Shopify with Admin data.
-*   **Rule**: **Explicit User Action**. No automatic overwrites of product data.
+### C. Order Import (Shopify -> Admin)
+*Goal: Record orders as actions.*
 
-### 4. Orders (Shopify -> Admin)
-*   **Trigger**: Webhook `orders/create`.
-*   **Action**:
-    1.  Parse Line Items. match SKUs to `Items`.
-    2.  Create internal `Order` record.
-    3.  **Deduct Stock**: Immediately reduce `qty` in Admin (which triggers Sync A to update Shopify, keeping them consistent).
-    4.  **Shipped Status**: Auto-mark standard items as "pending packing". Workers manually flag special items (extras/gifts) as shipped if needed.
+1.  **Webhook**: Receive `orders/create`.
+2.  **Translate**: Convert Shopify Line Items -> Internal Item Keys (using `ShopifyState`).
+3.  **Dispatch**:
+    *   Dispatch `create_order` action (standard formatting).
+    *   **Note**: This does NOT decrement stock. It creates a task for packing.
+4.  **Fulfillment**: When the packer scans the item and dispatches `ship_item`:
+    *   `Total Shipped` increases.
+    *   `Available Stock` decreases.
+    *   **Sync Listener** triggers (Step B) and updates Shopify.
 
-## Technical Implementation
+### D. Manual Content Merge
+*Goal: User controls product descriptions.*
 
-### API & Auth
-*   **Scopes**: `read_products`, `write_products`, `read_inventory`, `write_inventory`, `read_orders`.
-*   **Rate Limits**: strict leaky bucket queue to respect 2 req/s.
+1.  **Detection**: Webhook `products/update` received.
+2.  **UI Alert**: "Shopify Listing 'Moon Stickers' has changed."
+3.  **Approve**: User clicks "Accept Changes".
+4.  **Action**: System dispatches `shopify_update_listing` with the new text.
+5.  **State Update**: Reducer updates `ShopifyState`, making it the new truth.
 
-### Deployment Phases
-1.  **Phase 1 (Sync Existing)**: Build "Import" tool. Populate `ShopifyProduct` collection. Enable Inventory Level Sync.
-2.  **Phase 2 (Create New)**: Build "Listing Creator" UI.
-3.  **Phase 3 (Orders)**: Webhook listener and Order record creation.
+## 4. API & Technical Constraints
+*   **Rate Limits**: 2 requests/second (Leaky Bucket).
+*   **Immutability**: We never "edit" a record. We always append a new action that supersedes previous state.
+
+## 5. Security
+*   **Validation**: All actions must be signed/validated by the user before broadcast.
+*   **Webhooks**: HMAC signature verification required.
