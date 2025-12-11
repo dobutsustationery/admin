@@ -2,96 +2,102 @@
 
 ## Overview
 
-This document outlines the design for integrating the Dobutsu Stationery inventory management system with Shopify. The goal is to establish a robust, two-way synchronization of inventory levels and order data.
+This document outlines the design for integrating the Dobutsu Stationery inventory management system with Shopify. 
 
-## Core Design Principles
+**Core Philosophy: Inventory System is Master.**
+All product listings, inventory levels, and order records are mastered in the Dobutsu Admin system. Shopify is treated as a sales channel and storefront, not the primary system of record.
 
-1.  **Clear Source of Truth**:
-    *   **Admin System** is the master for **INVENTORY QUANTITIES**.
-    *   **Shopify** is the master for **PRODUCT METADATA** (images, descriptions) and **ORDERS**.
-2.  **Simplicity First**: Implement the minimum viable synchronization (Inventory Levels) first.
-3.  **Fail-Safe**: In case of conflict or failure, the system should default to "safe" states (e.g., preventing overselling) and alert humans.
+## Data Architecture
 
-## Data Mapping
+### 1. New Entity: `ShopifyProduct`
+To map our flat `Item` structure (SKUs) to Shopify's grouped conceptual model, we introduce a `ShopifyProduct` entity in Firestore.
 
-We use a composite key strategy to map internal items to Shopify Variants.
-
-| Dobutsu Field | Shopify Field | Notes |
-| :--- | :--- | :--- |
-| `janCode` + `subtype` | `sku` | **CRITICAL**: The Shopify Variant SKU must match our `janCode-subtype` format exactly. |
-| `qty` | `inventory_quantity` | The primary sync target. |
-| `description` | `title` | Managed in Shopify, imported for reference. |
-
-## Architecture
-
-### System Components
-
-```mermaid
-graph TD
-    Admin[Dobutsu Admin] <-->|Sync Service| ShopifyAPI[Shopify REST API]
-    ShopifyAPI <-->|Webhooks| Listener[Webhook Listener]
-    Listener -->|Queue| Admin
+**Structure:**
+```typescript
+interface ShopifyProduct {
+  handle: string;       // Unique ID (e.g., "amifa-moon-stickers")
+  title: string;        // "Amifa Moon and Sky Wall Stickers"
+  bodyHtml: string;     // Description
+  vendor: string;       // "SPNSS Ltd."
+  productType: string;  // "Stickers"
+  tags: string[];       // ["sticker", "cute"]
+  options: {
+    name: string;       // e.g. "Design"
+    values: string[];   // ["Moon", "Sky"]
+  }[];
+  variants: {
+    sku: string;        // Links to Item.janCode (e.g. "4542804112443Moon")
+    option1: string;    // "Moon"
+    option2?: string;
+    price: number;
+    grams: number;
+    imageId?: string;   // Link to Shopify Image ID
+  }[];
+  images: {
+    id: string;
+    src: string;
+    altText?: string;
+  }[];
+}
 ```
 
-1.  **Sync Service**: Handles outgoing updates (Admin -> Shopify). Triggered by inventory changes in Admin.
-2.  **Webhook Listener**: Handles incoming events (Shopify -> Admin). securely verifies HMAC signatures.
-3.  **Shopify API**: We use the **REST Admin API** for its simplicity and clear rate limiting (2 req/s).
+### 2. Relationship to `Item`
+*   **SKU is Key**: The `sku` in a Shopify Variant **MUST** match our `janCode` (for single items) or `janCode` + `subtype` (for variants).
+*   **Inventory Source**: `qty` for a variant is **ALWAYS** read directly from the linked `Item` in the Admin system.
 
-## Implementation Phases
+## Workflows
 
-### Phase 1: MVP (Inventory Sync)
-*Goal: Prevent overselling by keeping Shopify inventory up to date.*
+### 1. Import from Shopify (Urgent: Initial Setup)
+*Goal: Populate Admin with existing Shopify listings.*
 
-1.  **Credentials**: Configure `SHOPIFY_ACCESS_TOKEN` and `SHOPIFY_STORE_URL`.
-2.  **One-Way Sync**: When `qty` changes in Admin, call `inventory_levels/set.json` in Shopify.
-3.  **Manual Pull**: "Sync from Shopify" button to pull current stock levels (for initial setup/Audit).
+1.  **Fetch**: Admin pulls all Products from Shopify API.
+2.  **Match**: For each Variant, try to match `sku` to an internal `Item`.
+3.  **Persist**: Create a `ShopifyProduct` record in Firestore.
+4.  **UI**: Show a "Linked Products" dashboard.
+    *   **Green**: All variants linked to existing Items.
+    *   **Red**: Variant SKU not found in Inventory (Needs Item creation).
 
-### Phase 2: Order Import (Automation)
-*Goal: Automatically track shipments.*
+### 2. Create Listing from Inventory (Urgent: New Stock)
+*Goal: Turn new internal items into a Shopify page.*
 
-1.  **Webhooks**: Listen for `orders/create`.
-2.  **Processing**: When an order arrives:
-    *   Match line items by SKU to our `Items`.
-    *   Create an internal "Order" record.
-    *   Deduct `shipped` quantities (if applicable) or reserve stock.
+1.  **Select**: User selects 1 or more `Items` in the Admin "Inventory" list.
+2.  **Group**: Click "Create Shopify Listing".
+3.  **Configure**:
+    *   **Handle**: Auto-suggested as `title-jancode` (kebab-case). User can edit.
+    *   **Title/Desc**: Input product details.
+    *   **Options**: Define Variant Options (e.g. "Color") and map values to selected Items.
+4.  **Push**: Admin creates the Product and Variants in Shopify via API.
 
-### Phase 3: Future/Advanced
-*   **Product Creation**: Creating new items in Admin pushes them to Shopify.
-*   **Multi-Location**: Support multiple warehouses.
-*   **Price Sync**: managing prices from Admin.
+### 3. Sync Changes (Bidirectional)
 
-## Configuration & Security
+#### A. Inventory (Admin -> Shopify)
+*   **Trigger**: Real-time (on `qty` change in Admin).
+*   **Action**: Update `inventory_quantity` in Shopify.
+*   **Rule**: **Admin Wins**. Shopify inventory is overwritten.
 
-### Environment Variables
+#### B. Product Details (Shopify -> Admin)
+*   **Trigger**: Manual "Check for Updates" or Webhook `products/update`.
+*   **Action**: **Manual Merge UI**.
+    *   The system detects a difference (e.g. Title changed in Shopify).
+    *   User sees a "Diff" view.
+    *   User clicks "Accept" to update the Admin `ShopifyProduct` record, or "Reject" to overwrite Shopify with Admin data.
+*   **Rule**: **Explicit User Action**. No automatic overwrites of product data.
 
-Do **NOT** commit these to source control.
+### 4. Orders (Shopify -> Admin)
+*   **Trigger**: Webhook `orders/create`.
+*   **Action**:
+    1.  Parse Line Items. match SKUs to `Items`.
+    2.  Create internal `Order` record.
+    3.  **Deduct Stock**: Immediately reduce `qty` in Admin (which triggers Sync A to update Shopify, keeping them consistent).
+    4.  **Shipped Status**: Auto-mark standard items as "pending packing". Workers manually flag special items (extras/gifts) as shipped if needed.
 
-```bash
-# Public (Client-side)
-VITE_SHOPIFY_STORE_URL=your-store.myshopify.com
-VITE_SHOPIFY_API_VERSION=2024-01
+## Technical Implementation
 
-# Private (Server-side ONLY)
-SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxx
-SHOPIFY_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxx
-SHOPIFY_SYNC_ENABLED=true
-```
+### API & Auth
+*   **Scopes**: `read_products`, `write_products`, `read_inventory`, `write_inventory`, `read_orders`.
+*   **Rate Limits**: strict leaky bucket queue to respect 2 req/s.
 
-### Security Checklist
-- [ ] **HMAC Validation**: All webhooks must be verified against `SHOPIFY_WEBHOOK_SECRET`.
-- [ ] **Least Privilege**: Custom App scopes should be limited to `read_products`, `write_inventory`, `read_orders`.
-- [ ] **Rate Limiting**: The Sync Service must respect the 2 requests/second limit, implementing a queue or backoff if necessary.
-
-## Operations
-
-### Initial Setup (Bulk)
-For the first run, use the **CSV Export** feature:
-1.  Export Inventory as CSV.
-2.  Format to [Shopify Product CSV](https://help.shopify.com/en/manual/products/import-export/using-csv).
-3.  Upload to Shopify to create baseline products.
-4.  Enable Admin Sync.
-
-### Conflict Handling
-Since we defined clear Sources of Truth:
-*   **Inventory Conflict**: Admin overwrites Shopify.
-*   **Product Info Conflict**: Shopify overwrites Admin (during import/refresh).
+### Deployment Phases
+1.  **Phase 1 (Sync Existing)**: Build "Import" tool. Populate `ShopifyProduct` collection. Enable Inventory Level Sync.
+2.  **Phase 2 (Create New)**: Build "Listing Creator" UI.
+3.  **Phase 3 (Orders)**: Webhook listener and Order record creation.
