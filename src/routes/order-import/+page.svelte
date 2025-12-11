@@ -230,12 +230,20 @@
   function openConflictModal(item: any) {
     currentConflictItem = item;
     splitAllocations = {};
-    // Initialize allocations to 0
-    if (item.subtypes) {
-        item.subtypes.forEach((st: any) => {
-            splitAllocations[st.path] = 0; // path or key
+    
+    if (item.subtypes && item.subtypes.length > 0) {
+        const totalQty = item.qty;
+        const count = item.subtypes.length;
+        const perItem = Math.floor(totalQty / count);
+        const remainder = totalQty % count;
+
+        item.subtypes.forEach((st: any, index: number) => {
+            // Distribute remainder to first item(s)
+            const extra = index < remainder ? 1 : 0;
+            splitAllocations[st.key] = perItem + extra;
         });
     }
+    
     showConflictModal = true;
     splitError = "";
   }
@@ -544,8 +552,8 @@
             {#if currentConflictItem.subtypes}
                 {#each currentConflictItem.subtypes as subtype}
                 <div class="split-row">
-                    <label>{subtype.description || subtype.subtype || subtype.path}</label>
-                    <input type="number" min="0" bind:value={splitAllocations[subtype.path]} />
+                    <label>{subtype.description || subtype.subtype || subtype.janCode}</label>
+                    <input type="number" min="0" bind:value={splitAllocations[subtype.key]} />
                 </div>
                 {/each}
             {/if}
