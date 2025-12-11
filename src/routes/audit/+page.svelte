@@ -13,6 +13,7 @@
   import {
     getDateRange,
     shiftDateRange,
+    getAuditActionDescription,
     type DateRangeView,
   } from "$lib/audit-helpers";
   import { format } from "date-fns";
@@ -124,12 +125,21 @@
         <button on:click={() => shiftDate("back")}
           ><ChevronLeft size={20} /></button
         >
-        <span
-          >{format(dateRange.start, "MMM d, yyyy")} - {format(
-            dateRange.end,
-            "MMM d, yyyy",
-          )}</span
-        >
+        <div class="date-inputs">
+          <input 
+            type="date" 
+            value={startDateInput} 
+            on:change={(e) => currentDate = new Date(e.currentTarget.value + 'T12:00:00')}
+            aria-label="Start Date"
+          />
+          <span>-</span>
+          <input 
+            type="date" 
+            value={endDateInput} 
+            disabled 
+            aria-label="End Date"
+          />
+        </div>
         <button on:click={() => shiftDate("forward")}
           ><ChevronRight size={20} /></button
         >
@@ -153,7 +163,7 @@
             on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleExpand(action.id)}
           >
             <span class="timestamp">{action.displayTime}</span>
-            <span class="type">{action.type}</span>
+            <span class="description">{getAuditActionDescription(action)}</span>
             <span class="toggle">{expandedId === action.id ? '▼' : '▶'}</span>
           </div>
           {#if expandedId === action.id}
@@ -253,7 +263,7 @@
     min-width: 180px;
   }
 
-  .type {
+  .description {
     font-weight: bold;
     flex: 1;
   }

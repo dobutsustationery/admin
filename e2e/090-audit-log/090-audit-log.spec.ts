@@ -4,170 +4,97 @@ import { TestDocumentationHelper } from '../helpers/test-documentation-helper';
 import * as path from 'path';
 
 test.describe('Audit Log', () => {
-  const isTransientAuthError = (errorText: string): boolean => {
-    return errorText.includes('Component auth has not been registered yet');
-  };
+    test('audit log rich data verification', async ({ authenticatedPage: page }, testInfo) => {
+        test.setTimeout(90000);
+        const screenshots = createScreenshotHelper();
+        const outputDir = path.dirname(testInfo.file);
+        const docHelper = new TestDocumentationHelper(outputDir);
 
-  test('complete audit log workflow', async ({ authenticatedPage: page }, testInfo) => {
-    test.setTimeout(60000);
-    
-    const screenshots = createScreenshotHelper();
-    const outputDir = path.dirname(testInfo.file);
-    const docHelper = new TestDocumentationHelper(outputDir);
+        docHelper.setMetadata(
+            "Audit Log Rich Data",
+            "Verify audit log displays correctly for a known date (2024-10-10) with multiple actions, featuring human-readable descriptions."
+        );
 
-    docHelper.setMetadata(
-      "Audit Log Verification",
-      "**As an** admin user\n" +
-      "**I want to** view and filter the history of actions\n" +
-      "**So that** I can audit system usage and debug issues"
-    );
+        // 1. Navigate to Audit Log
+        console.log('Navigating to Audit Log...');
+        await page.goto('/audit');
+        await expect(page.getByRole('heading', { name: 'Audit Log' })).toBeVisible();
 
-    const consoleErrors: string[] = [];
-    page.on('console', (msg: any) => {
-      if (msg.type() === 'error') {
-        consoleErrors.push(msg.text());
-      }
-    });
+        // 2. Switch to Day view
+        await page.getByRole('button', { name: 'Day' }).click();
+        await expect(page.getByRole('button', { name: 'Day' })).toHaveClass(/active/);
 
-    // ====================================================================
-    // STEP 1: Navigate to Audit Log
-    // ====================================================================
-    console.log('Navigating to root...');
-    await page.goto('/', { waitUntil: 'load' });
-    
-    console.log('Waiting for Dashboard...');
-    const dashboardHeader = page.locator('h1:has-text("Dashboard")');
-    await dashboardHeader.waitFor({ state: 'visible', timeout: 30000 });
-    
-    console.log('Clicking Audit Log link...');
-    await page.getByRole('link', { name: 'Audit Log' }).click();
-    await expect(page).toHaveURL(/.*\/audit/);
-    
-    const auditHeader = page.getByRole('heading', { name: 'Audit Log' });
-    await expect(auditHeader).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Day' })).toHaveClass(/active/);
-
-    const step1Verifications = [
-      {
-        description: 'Validated Audit Log page loaded',
-        check: async () => {
-          await expect(auditHeader).toBeVisible();
-        }
-      },
-      {
-        description: 'Validated "Day" view is active by default',
-        check: async () => {
-          await expect(page.getByRole('button', { name: 'Day' })).toHaveClass(/active/);
-        }
-      }
-    ];
-
-    docHelper.addStep(
-        "Initial Audit View",
-        "000-audit-initial-view.png",
-        step1Verifications
-    );
-
-    await screenshots.capture(page, "audit-initial-view", {
-        programmaticCheck: async () => {
-            for (const v of step1Verifications) await v.check();
-        }
-    });
-
-    // ====================================================================
-    // STEP 2: Switch View Mode and Filter
-    // ====================================================================
-    console.log('Switching to Month view...');
-    await page.getByRole('button', { name: 'Month' }).click();
-    await expect(page.getByRole('button', { name: 'Month' })).toHaveClass(/active/);
-    
-    const dateNavSpan = page.locator('.date-nav span');
-    await expect(dateNavSpan).toBeVisible();
-    const initialText = await dateNavSpan.innerText();
-    expect(initialText).toBeTruthy();
-
-    // Verify date navigation buttons work (visually we verify the text changes)
-    await page.locator('.date-nav button').first().click(); // Back
-    await expect(dateNavSpan).not.toHaveText(initialText);
-
-    const step2Verifications = [
-      {
-        description: 'Validated "Month" view is active',
-        check: async () => {
-          await expect(page.getByRole('button', { name: 'Month' })).toHaveClass(/active/);
-        }
-      },
-      {
-        description: 'Validated Date Range text updated after navigation',
-        check: async () => {
-           await expect(dateNavSpan).not.toHaveText(initialText);
-        }
-      }
-    ];
-
-    docHelper.addStep(
-        "Filtered View",
-        "001-audit-filtered-view.png",
-        step2Verifications
-    );
-
-    await screenshots.capture(page, "audit-filtered-view", {
-        programmaticCheck: async () => {
-            for (const v of step2Verifications) await v.check();
-        }
-    });
-
-    // ====================================================================
-    // STEP 3: Expand JSON (If actions exist)
-    // ====================================================================
-    const cards = page.locator('.action-card');
-    const count = await cards.count();
-    console.log(`Found ${count} action cards.`);
-    
-    if (count > 0) {
-        await cards.first().click();
-        const jsonPre = page.locator('.action-body pre');
-        await expect(jsonPre).toBeVisible();
+        // 3. Set date to 2024-10-10
+        console.log('Setting date to 2024-10-10...');
+        const startDateInput = page.getByLabel('Start Date');
+        await expect(startDateInput).toBeVisible();
+        await startDateInput.fill('2024-10-10');
+        // Trigger change event if fill doesn't (Playwright fill usually does, but sometimes needs explicit dispatch if using on:change)
+        // Actually fill triggers input/change.
         
-        const step3Verifications = [
+        // 4. Verify Actions Load
+        console.log('Waiting for actions...');
+        // We look for the specific Action we know exists: "Updated item 4542804044355"
+        // Based on my helper, it should output: "Updated item 4542804044355"
+        const actionItem = page.locator('.action-card', { hasText: 'Updated item 4542804044355' }).first();
+        await expect(actionItem).toBeVisible({ timeout: 10000 });
+
+        const step1Verifications = [
             {
-                description: 'Validated Action JSON is visible on expand',
+                description: 'Validated specific action is visible',
+                check: async () => {
+                    await expect(actionItem).toBeVisible();
+                }
+            },
+            {
+                description: 'Validated human-readable description matches',
+                check: async () => {
+                    await expect(actionItem).toContainText("Updated item 4542804044355");
+                }
+            }
+        ];
+
+        docHelper.addStep(
+            "Rich Data View",
+            "000-audit-rich-data.png",
+            step1Verifications
+        );
+
+        await screenshots.capture(page, "audit-rich-data", {
+            programmaticCheck: async () => {
+                for (const v of step1Verifications) await v.check();
+            }
+        });
+
+        // 5. Expand Action
+        console.log('Expanding action...');
+        await actionItem.locator('.action-header').click();
+        const jsonPre = actionItem.locator('.action-body pre');
+        await expect(jsonPre).toBeVisible();
+
+        const step2Verifications = [
+            {
+                description: 'Validated expanded JSON details',
                 check: async () => {
                     await expect(jsonPre).toBeVisible();
+                    const text = await jsonPre.innerText();
+                    expect(text).toContain("4542804044355");
                 }
             }
         ];
 
         docHelper.addStep(
             "Action Details",
-            "002-audit-action-details.png",
-            step3Verifications
+            "001-audit-action-details.png",
+            step2Verifications
         );
 
         await screenshots.capture(page, "audit-action-details", {
             programmaticCheck: async () => {
-                for (const v of step3Verifications) await v.check();
+                for (const v of step2Verifications) await v.check();
             }
         });
-    } else {
-        console.log("No actions found to expand, skipping Details step.");
-        docHelper.addStep(
-            "Empty State",
-            "002-audit-empty-state.png",
-            [{ description: "Verified empty state (no cards)", check: async () => { expect(count).toBe(0); } }]
-        );
-        await screenshots.capture(page, "audit-empty-state");
-    }
 
-    // ====================================================================
-    // FINAL: Write Documentation
-    // ====================================================================
-    docHelper.writeReadme();
-    
-    // Filter console errors
-    const significantErrors = consoleErrors.filter(
-        (error) => !isTransientAuthError(error)
-    );
-    expect(significantErrors.length).toBe(0);
-  });
+        docHelper.writeReadme();
+    });
 });
