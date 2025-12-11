@@ -38,7 +38,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
         const MOCK_CSV = 
 `JAN CODE,TOTAL PCS,DESCRIPTION,Carton Number
 4902778123456,10,Existing Pen,1
-7777777777777,5,New Mystery Item,2
+5555555555555,5,New Mystery Item,2
 4542804104370,20,Conflict Item,3`;
 
         // --- Mock Drive API ---
@@ -162,8 +162,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
                 }
             },
             {
-                description: "Row 1: New Item (7777...)",
-                check: async () => await expect(page.locator('tr:has-text("7777777777777")')).toContainText('NEW') 
+                description: "Row 1: New Item (5555...)",
+                check: async () => await expect(page.locator('tr:has-text("5555555555555")')).toContainText('NEW') 
             },
             {
                 description: "Row 2: Existing or Conflict",
@@ -211,10 +211,10 @@ test.describe("Inventory Receipt with Google Drive", () => {
             }
         ]);
 
-        // 4.3 Resolve Conflict
-        await flow.step("Resolve Conflict", "resolve-conflict", [
+        // 4.3 Open Conflict Modal
+        await flow.step("Open Conflict Modal", "004-conflict-modal", [
             {
-                description: "Resolve Conflict",
+                description: "Open Review Modal",
                 check: async () => {
                     const row = page.locator('tr:has-text("4542804104370")');
                     await expect(row).toContainText('CONFLICT');
@@ -226,12 +226,16 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     await expect(page.locator('.modal h3')).toContainText('Resolve Conflict');
                     
                     // Fill inputs
-                    // We expect 2 variant rows.
-                    // Total qty is 20 (from CSV) (Line 42 of mock CSV)
-                    // We split 10 and 10? Or 20 and 0.
-                    // Let's resolve to 20 on first variant.
                     await page.locator('.modal input[type="number"]').first().fill('20');
-                    
+                }
+            }
+        ]);
+
+        // 4.4 Confirm Resolution
+        await flow.step("Confirm Conflict Resolution", "005-conflict-resolved", [
+             {
+                description: "Confirm Split",
+                check: async () => {
                     // Click Confirm
                     await page.click('button:has-text("Confirm Split")');
                     
@@ -243,23 +247,18 @@ test.describe("Inventory Receipt with Google Drive", () => {
                      // And "Ready" in action column
                     await expect(page.locator('tr:has-text("4542804104370")').locator('td:last-child')).toContainText("Ready");
                 }
-            }
+             }
         ]);
-        
-        // 4.4 Process Resolved
-        await flow.step("Process Resolved", "process-resolved", [
-             {
+
+        // 4.5 Process Resolved
+        await flow.step("Process Resolved", "006-process-resolved", [
+            {
                 description: "Click Process Resolved button",
                 check: async () => {
                     await page.click('button:has-text("Process Resolved")');
                     await expect(page.locator('.success-message')).toBeVisible();
-                }
-            },
-            {
-                description: "Verify Conflict item is Done",
-                 check: async () => {
                     await expect(page.locator('tr:has-text("4542804104370")').locator('td:last-child')).toContainText("Done");
-                 }
+                }
             },
             {
                 description: "Success message displayed",
