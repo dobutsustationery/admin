@@ -28,6 +28,7 @@
     { href: "/csv", label: "Export CSV", icon: Download },
     { href: "/names", label: "Manage Names", icon: Tag },
     { href: "/archives", label: "Archives", icon: Archive },
+    { href: "/audit", label: "Audit Log", icon: ClipboardList },
   ];
 
   function toggleMenu() {
