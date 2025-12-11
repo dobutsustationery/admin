@@ -6,7 +6,7 @@
 
 ### 1. Initial Audit View
 
-![Initial Audit View](screenshots/001-audit-initial-view.png)
+![Initial Audit View](screenshots/000-audit-initial-view.png)
 
 **Programmatic Verification:**
 - [ ] Validated Audit Log page loaded
@@ -14,7 +14,7 @@
 
 ### 2. Filtered View
 
-![Filtered View](screenshots/002-audit-filtered-view.png)
+![Filtered View](screenshots/001-audit-filtered-view.png)
 
 **Programmatic Verification:**
 - [ ] Validated "Month" view is active
@@ -22,7 +22,7 @@
 
 ### 3. Empty State
 
-![Empty State](screenshots/003-audit-empty-state.png)
+![Empty State](screenshots/002-audit-empty-state.png)
 
 **Programmatic Verification:**
 - [ ] Verified empty state (no cards)

@@ -64,7 +64,7 @@ test.describe('Audit Log', () => {
 
     docHelper.addStep(
         "Initial Audit View",
-        "001-audit-initial-view.png",
+        "000-audit-initial-view.png",
         step1Verifications
     );
 
@@ -107,7 +107,7 @@ test.describe('Audit Log', () => {
 
     docHelper.addStep(
         "Filtered View",
-        "002-audit-filtered-view.png",
+        "001-audit-filtered-view.png",
         step2Verifications
     );
 
@@ -140,7 +140,7 @@ test.describe('Audit Log', () => {
 
         docHelper.addStep(
             "Action Details",
-            "003-audit-action-details.png",
+            "002-audit-action-details.png",
             step3Verifications
         );
 
@@ -153,7 +153,7 @@ test.describe('Audit Log', () => {
         console.log("No actions found to expand, skipping Details step.");
         docHelper.addStep(
             "Empty State",
-            "003-audit-empty-state.png",
+            "002-audit-empty-state.png",
             [{ description: "Verified empty state (no cards)", check: async () => { expect(count).toBe(0); } }]
         );
         await screenshots.capture(page, "audit-empty-state");
