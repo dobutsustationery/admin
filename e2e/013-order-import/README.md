@@ -19,7 +19,7 @@
 **Programmatic Verification:**
 - [ ] Preview Header Visible
 - [ ] Batch Actions Visible
-- [ ] Row 1: New Item (7777...)
+- [ ] Row 1: New Item (5555...)
 - [ ] Row 2: Existing or Conflict
 - [ ] Row 3: Existing Pen (490...)
 
@@ -37,19 +37,25 @@
 **Programmatic Verification:**
 - [ ] Click Create New Button
 
-### 5. Resolve Conflict
+### 5. Open Conflict Modal
 
-![Resolve Conflict](screenshots/004-resolve-conflict.png)
+![Open Conflict Modal](screenshots/004-004-conflict-modal.png)
 
 **Programmatic Verification:**
-- [ ] Resolve Conflict
+- [ ] Open Review Modal
 
-### 6. Process Resolved
+### 6. Confirm Conflict Resolution
 
-![Process Resolved](screenshots/005-process-resolved.png)
+![Confirm Conflict Resolution](screenshots/005-005-conflict-resolved.png)
+
+**Programmatic Verification:**
+- [ ] Confirm Split
+
+### 7. Process Resolved
+
+![Process Resolved](screenshots/006-006-process-resolved.png)
 
 **Programmatic Verification:**
 - [ ] Click Process Resolved button
-- [ ] Verify Conflict item is Done
 - [ ] Success message displayed
 
