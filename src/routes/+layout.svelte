@@ -45,7 +45,7 @@
       loadingState = "loading";
 
       // Update user record
-      setDoc(doc(firestore, "users", me.email), {
+      setDoc(doc(firestore as any, "users", email), {
         uid: me.uid,
         name: me.name,
         email: me.email,
