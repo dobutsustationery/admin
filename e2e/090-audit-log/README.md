@@ -1,29 +1,19 @@
-# Audit Log Verification
+# Audit Log Rich Data
 
-**As an** admin user
-**I want to** view and filter the history of actions
-**So that** I can audit system usage and debug issues
+Verify audit log displays correctly for a known date (2024-10-10) with multiple actions, featuring human-readable descriptions.
 
-### 1. Initial Audit View
+### 1. Rich Data View
 
-![Initial Audit View](screenshots/000-audit-initial-view.png)
+![Rich Data View](screenshots/000-audit-rich-data.png)
 
 **Programmatic Verification:**
-- [ ] Validated Audit Log page loaded
-- [ ] Validated "Day" view is active by default
+- [ ] Validated specific action is visible
+- [ ] Validated human-readable description matches
 
-### 2. Filtered View
+### 2. Action Details
 
-![Filtered View](screenshots/001-audit-filtered-view.png)
-
-**Programmatic Verification:**
-- [ ] Validated "Month" view is active
-- [ ] Validated Date Range text updated after navigation
-
-### 3. Empty State
-
-![Empty State](screenshots/002-audit-empty-state.png)
+![Action Details](screenshots/001-audit-action-details.png)
 
 **Programmatic Verification:**
-- [ ] Verified empty state (no cards)
+- [ ] Validated expanded JSON details
 
