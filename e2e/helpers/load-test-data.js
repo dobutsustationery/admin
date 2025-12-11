@@ -41,21 +41,21 @@ console.log(`🔧 Connected to Firestore emulator at ${emulatorHost}`);
 function extractJanCode(broadcast) {
   const payload = broadcast.data?.payload;
   if (!payload) return null;
-  
+
   // JAN code can be in different locations depending on action type
   const janCode = payload.item?.janCode || payload.janCode;
-  
+
   // Also check payload.id - it may contain the janCode (possibly with suffix)
   // We need to extract just the numeric part
   if (janCode) return janCode;
-  
+
   // For update_field and other actions, payload.id might be the janCode (or janCode + suffix)
   // Extract numeric prefix from payload.id
   if (payload.id && typeof payload.id === 'string') {
     const match = payload.id.match(/^(\d+)/);
     if (match) return match[1];
   }
-  
+
   return null;
 }
 
@@ -70,20 +70,20 @@ function filterByJanCodes(broadcasts, janCodes) {
     // Step 1: Check if any target JAN code appears in the JSON
     const jsonStr = JSON.stringify(broadcast);
     const hasMatchingJanCode = janCodes.some(janCode => jsonStr.includes(janCode));
-    
+
     if (hasMatchingJanCode) {
       return true;  // Include: action involves target JAN codes
     }
-    
+
     // Step 2: Check if action has itemKey or janCode field
     const payload = broadcast.data?.payload;
     const hasItemKey = payload?.itemKey !== undefined;
     const hasJanCode = payload?.janCode !== undefined || payload?.item?.janCode !== undefined;
-    
+
     if (hasItemKey || hasJanCode) {
       return false;  // Exclude: action references OTHER JAN codes
     }
-    
+
     // Step 3: Include actions unrelated to JAN codes
     return true;
   });
@@ -110,7 +110,7 @@ async function loadTestData() {
 
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
-  
+
   // Clear existing data from collections to ensure clean state
   // This prevents data accumulation from multiple test runs
   console.log(`\n🧹 Clearing existing data from emulator...`);
@@ -120,13 +120,23 @@ async function loadTestData() {
     const snapshot = await collectionRef.get();
     if (snapshot.size > 0) {
       console.log(`   Deleting ${snapshot.size} existing documents from ${collectionName}...`);
-      const batch = db.batch();
-      snapshot.docs.forEach(doc => batch.delete(doc.ref));
-      await batch.commit();
+      console.log(`   Deleting ${snapshot.size} existing documents from ${collectionName}...`);
+      const DELETE_BATCH_SIZE = 400;
+      const chunks = [];
+      const docs = snapshot.docs;
+      for (let i = 0; i < docs.length; i += DELETE_BATCH_SIZE) {
+        chunks.push(docs.slice(i, i + DELETE_BATCH_SIZE));
+      }
+
+      for (const chunk of chunks) {
+        const batch = db.batch();
+        chunk.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+      }
     }
   }
   console.log(`   ✓ Emulator data cleared`);
-  
+
   // Load URL mapping if available
   const mappingPath = resolve(
     process.cwd(),
@@ -145,14 +155,14 @@ async function loadTestData() {
   if (matchJancodesLimit && exportData.collections.broadcast) {
     const firstNRecords = exportData.collections.broadcast.slice(0, matchJancodesLimit);
     const janCodesSet = new Set();
-    
+
     firstNRecords.forEach(broadcast => {
       const janCode = extractJanCode(broadcast);
       if (janCode) {
         janCodesSet.add(janCode);
       }
     });
-    
+
     janCodesToMatch = Array.from(janCodesSet);
     console.log(`   Found ${janCodesToMatch.length} unique JAN codes in first ${matchJancodesLimit} records`);
     console.log(`   JAN codes: ${janCodesToMatch.slice(0, 10).join(', ')}${janCodesToMatch.length > 10 ? '...' : ''}`);
@@ -162,7 +172,7 @@ async function loadTestData() {
     exportData.collections,
   )) {
     let docsToLoad;
-    
+
     // Apply appropriate filtering based on mode
     if (collectionName === 'broadcast') {
       if (matchJancodesLimit && janCodesToMatch) {
@@ -176,7 +186,7 @@ async function loadTestData() {
       // Non-broadcast collections are always loaded completely
       docsToLoad = documents;
     }
-    
+
     console.log(`\n  Loading ${collectionName} (${docsToLoad.length} docs)...`);
     if (collectionName === 'broadcast') {
       if (matchJancodesLimit && janCodesToMatch) {
@@ -248,6 +258,47 @@ async function loadTestData() {
       console.log(`    ✓ Rewrote ${rewrittenCount} image URLs to local paths`);
     }
   }
+
+  // Manual injection of Broadcast Actions for E2E tests (Event Sourcing)
+  console.log("\n💉 Injecting Conflict Items via Broadcast (4542804104370)...");
+
+  const createBroadcastDoc = (id, jan, subtype, desc, qty) => {
+    return {
+      type: "update_item",
+      payload: {
+        id: id,
+        item: {
+          janCode: jan,
+          subtype: subtype,
+          description: desc,
+          hsCode: '',
+          image: '',
+          qty: qty,
+          pieces: 1,
+          shipped: 0,
+          creationDate: new Date().toISOString()
+        }
+      },
+      timestamp: Timestamp.now(),
+      creator: "system_test_seed"
+    };
+  };
+
+  const broadcasts = [
+    createBroadcastDoc('4542804104370', '4542804104370', '', 'Conflict Item Base', 10),
+    createBroadcastDoc('4542804104370VariantA', '4542804104370', 'VariantA', 'Conflict Item Variant A', 5),
+    createBroadcastDoc('4902778123456', '4902778123456', '', 'Existing Pen', 100)
+  ];
+
+  const broadcastCollection = db.collection('broadcast');
+
+  // Use sequential IDs ensures order if queried by ID, but query is by timestamp.
+  // We'll just generate random IDs or use a prefix.
+  for (let i = 0; i < broadcasts.length; i++) {
+    await broadcastCollection.add(broadcasts[i]);
+  }
+
+  console.log("   ✓ Injected 3 broadcast events (Conflict + Existing)");
 
   console.log("\n✅ Test data loaded successfully\n");
 }

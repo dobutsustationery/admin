@@ -43,10 +43,20 @@
   let successMsg = "";
   let processing = false;
 
-  // Analysis State
   let selectedFile: DriveFile | null = null;
   let importPlan: ImportItem[] = [];
   let showPreview = false;
+  let analysisStatus: 'idle' | 'analyzing' = 'idle'; // Added
+  
+  // Interactive State
+  let showConflictModal = false;
+  let currentConflictItem: any = null;
+  let splitAllocations: { [subtypePath: string]: number } = {};
+  let splitError = "";
+  
+  // Resolution State
+  let importStatus: 'idle' | 'success' | 'error' = 'idle';
+  let importMessage = "";
 
   onMount(async () => {
     driveConfigured = isDriveConfigured();
@@ -115,6 +125,14 @@
     error = "";
     // Do not clear successMsg here, as we might want to show it after success
   }
+  function selectFile(file: DriveFile) {
+    console.log('Selecting file:', file.name);
+    selectedFile = file;
+    importPlan = [];
+    showPreview = false;
+    error = "";
+    successMsg = "";
+  }
 
   // --- Analysis Logic ---
 
@@ -123,6 +141,7 @@
     if (!token) return;
 
     processing = true;
+    analysisStatus = 'analyzing'; // Updated
     error = "";
     successMsg = "";
     selectedFile = file;
@@ -137,6 +156,7 @@
       selectedFile = null;
     } finally {
       processing = false;
+      analysisStatus = 'idle'; // Updated
     }
   }
 
@@ -207,114 +227,171 @@
 
   // --- Execution Logic ---
 
-  async function confirmImport() {
-    if (!selectedFile) return;
-    if (!confirm(`Confirm import of ${importPlan.length} items from ${selectedFile.name}?`)) return;
+  function openConflictModal(item: any) {
+    currentConflictItem = item;
+    splitAllocations = {};
+    // Initialize allocations to 0
+    if (item.subtypes) {
+        item.subtypes.forEach((st: any) => {
+            splitAllocations[st.path] = 0; // path or key
+        });
+    }
+    showConflictModal = true;
+    splitError = "";
+  }
+
+  function closeConflictModal() {
+    showConflictModal = false;
+    currentConflictItem = null;
+  }
+
+  function confirmSplit() {
+    if (!currentConflictItem) return;
+
+    // Validate Total
+    const totalAllocated = Object.values(splitAllocations).reduce((a, b) => a + b, 0);
+    if (totalAllocated !== currentConflictItem.qty) {
+        splitError = `Total allocated (${totalAllocated}) must equal CSV Quantity (${currentConflictItem.qty})`;
+        return;
+    }
+
+    // Apply Resolution
+    // We transform this Conflict item into a "Resolved" state
+    // We will store the ready-to-execute actions directly on the item
+    currentConflictItem.status = 'RESOLVED';
+    currentConflictItem.resolvedActions = Object.entries(splitAllocations)
+        .filter(([_, qty]) => qty > 0)
+        .map(([path, qty]) => ({
+            type: 'update_item',
+            payload: {
+                itemKey: path,
+                qty: qty
+            }
+        }));
+    
+    // Force reactivity
+    importPlan = [...importPlan];
+    closeConflictModal();
+  }
+
+  async function processBatch(targetStatus: 'MATCH' | 'NEW') {
+    if (!importPlan.length) return;
+
+    const itemsToProcess = importPlan.filter(i => i.status === targetStatus);
+    if (itemsToProcess.length === 0) return;
 
     processing = true;
-    error = "";
-    successMsg = "";
+    let count = 0;
 
     try {
-        let count = 0;
-        
-        // Dispatch actions for each item in the plan
-        for (const item of importPlan) {
-            if (item.qty === 0) continue;
-
-            // TODO: Group by Carton? For now, we update item directly as per design doc goal "Receipt"
-            // The Design Doc mentions "UPDATE_INVENTORY(id, quantity)" -> update_item
-
-            if (item.status === "MATCH" && item.existingItem) {
-                // Update existing
-                // update_item expects { id, item }
-                // We need to construct the full item object. 
-                // Wait, update_item REPLACES the item or updates fields? 
-                // Checking reducer: `state.idToItem[id] = { ...action.payload.item ... qty: action.payload.item.qty + qty }`
-                // It ADDS the payload qty to existing qty.
-                
-                // We shouldn't need to pass the whole item if we just want to add qty, 
-                // but the reducer implementation of `update_item` seems to merge/add.
-                // It says: `qty = action.payload.item.qty + qty`.
-                // So if we pass an item with qty=X, it adds X to existing.
-                
+        // Dispatch loops
+        for (const item of itemsToProcess) {
+            if (item.status === 'MATCH' && item.existingItem) {
+                // Determine item ID. In analysis we used `key`.
+                const itemKey = item.existingItem.key;
                 const payloadItem = {
                     ...item.existingItem,
-                    qty: item.qty, // This is the DELTA to add
-                    // Preserve other fields? The reducer merges `...action.payload.item`.
-                    // It overwrites fields present in payload.
+                    qty: item.qty // Delta
                 };
 
-                // We must be careful not to overwrite description/etc with CSV data if it's worse.
-                // But for "Receipt", likely we want to add qty.
-                // Ideally we'd have a specific `add_stock` action, but `update_item` seems to be the one used.
-                
                 if ($user && $user.uid) {
                     broadcast(firestore, $user.uid, update_item({
-                        id: item.existingItem.key,
+                        id: itemKey,
                         item: payloadItem
                     }));
                     count++;
                 }
 
-            } else if (item.status === "NEW") {
-                // Create new draft
-                // We need a key. usually JAN + subtype. Subtype is empty for new?
-                const newItemKey = item.janCode; // Assuming no subtype for raw import
-                
-                const newItem = {
+            } else if (item.status === 'NEW') {
+                 // Create New Item logic
+                 const newItemKey = item.janCode;
+                 const newItem = {
                     janCode: item.janCode,
                     subtype: "",
                     description: item.description,
-                    hsCode: "", // Unknown
+                    hsCode: "",
                     image: "",
-                    qty: item.qty, // Initial qty
+                    qty: item.qty,
                     pieces: 1,
                     shipped: 0,
                     creationDate: new Date().toISOString()
-                };
+                 };
 
-                if ($user && $user.uid) {
-                    broadcast(firestore, $user.uid, update_item({
-                        id: newItemKey,
-                        item: newItem
-                    }));
-                    count++;
-                }
-
-            } else if (item.status === "CONFLICT" && item.subtypes) {
-                // Split qty logic
-                const countSub = item.subtypes.length;
-                const splitQty = Math.floor(item.qty / countSub);
-                const remainder = item.qty % countSub;
-
-                // Distribute
-                item.subtypes.forEach((sub: any, idx: number) => {
-                    const add = splitQty + (idx < remainder ? 1 : 0);
-                    if (add > 0 && $user && $user.uid) {
-                        const payloadItem = {
-                            ...sub,
-                            qty: add
-                        };
-                         broadcast(firestore, $user.uid, update_item({
-                            id: sub.key,
-                            item: payloadItem
-                        }));
-                    }
-                });
-                count++;
+                 if ($user && $user.uid) {
+                     broadcast(firestore, $user.uid, update_item({
+                         id: newItemKey,
+                         item: newItem
+                     }));
+                     count++;
+                 }
             }
+            item.status = 'DONE'; // Mark as processed
         }
+        
+        importPlan = [...importPlan];
+        successMsg = `Successfully processed ${count} items.`;
+        importStatus = 'success';
+        
+        setTimeout(() => {
+            importStatus = 'idle';
+            successMsg = '';
+        }, 3000);
 
-        successMsg = `Successfully processed ${count} entries.`;
-        resetPreview(); // Clear preview on success
-        await loadFiles(); // Refresh file list? Or just stay
-    } catch(e) {
-        console.error("Import failed:", e);
-        error = `Import failed: ${e instanceof Error ? e.message : String(e)}`;
+    } catch (e) {
+        console.error("Batch processing failed:", e);
+        error = `Batch processing failed: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
         processing = false;
     }
+  }
+
+  async function processResolvedConflicts() {
+      const resolved = importPlan.filter(i => i.status === 'RESOLVED');
+      if (resolved.length === 0) return;
+      
+      processing = true;
+      let count = 0;
+
+      try {
+          for (const item of resolved) {
+              if (item.resolvedActions && $user && $user.uid) {
+                  item.resolvedActions.forEach((action: any) => {
+                      // action.payload has itemKey and qty
+                      // We need the full item? Wait, update_item in reducer needs full item structure if simple update?
+                      // The reducer: state.idToItem[id] = { ...action.payload.item ... qty: action.payload.item.qty + qty }
+                      // So we need to fetch the existing item again or store it?
+                      // We have the path (key) in the payload. We can look it up in $store.inventory.
+                      
+                      const currentInvItem = $store.inventory.idToItem[action.payload.itemKey];
+                      if (currentInvItem) {
+                             const payloadItem = {
+                                ...currentInvItem,
+                                qty: action.payload.qty
+                            };
+                             broadcast(firestore, $user.uid!, update_item({
+                                id: action.payload.itemKey,
+                                item: payloadItem
+                            }));
+                      }
+                  });
+              }
+              item.status = 'DONE';
+              count++;
+          }
+          importPlan = [...importPlan];
+           successMsg = `Successfully processed ${count} resolved conflicts.`;
+            importStatus = 'success';
+            
+            setTimeout(() => {
+                importStatus = 'idle';
+                successMsg = '';
+            }, 3000);
+      } catch (e) {
+          console.error("Conflict processing failed:", e);
+          error = `Conflict processing failed: ${e}`;
+      } finally {
+          processing = false;
+      }
   }
 
   function formatDate(dateString: string): string {
@@ -355,197 +432,179 @@
           <div class="success-message">{successMsg}</div>
         {/if}
 
-        {#if !showPreview}
-            <!-- File List -->
-            <div class="file-list">
-            <h3>Select Invoice/Packing List</h3>
-            {#if loadingFiles}
-                <p>Loading...</p>
-            {:else if driveFiles.length === 0}
-                <p>No CSV files found in the configured folder.</p>
-            {:else}
-                <table class="files-table">
-                <thead>
-                    <tr>
-                    <th>Name</th>
-                    <th>Date Modified</th>
-                    <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {#each driveFiles as file}
-                    <tr>
-                        <td>{file.name}</td>
-                        <td>{formatDate(file.modifiedTime)}</td>
-                        <td>
-                        <button
-                            on:click={() => handleAnalyze(file)}
-                            disabled={processing}
-                            class="import-button"
-                        >
-                            Analyze
-                        </button>
-                        </td>
-                    </tr>
-                    {/each}
-                </tbody>
-                </table>
-            {/if}
-            </div>
+    <div class="layout-grid">
+      <!-- 1. File List -->
+      <div class="panel file-list">
+        <h2>Select Receipt CSV</h2>
+        {#if loadingFiles}
+           <div class="loading">Loading files...</div>
+        {:else if driveFiles.length === 0}
+           <div class="empty">No CSV files found in 'receipts' folder.</div>
         {:else}
-            <!-- Preview UI -->
-            <div class="preview-section">
-                <div class="preview-header">
-                    <h3>Preview: {selectedFile?.name}</h3>
-                    <div class="preview-actions">
-                        <button class="cancel-button" on:click={resetPreview} disabled={processing}>Cancel</button>
-                        <button class="confirm-button" on:click={confirmImport} disabled={processing}>
-                            {processing ? 'Importing...' : 'Confirm Receipt'}
-                        </button>
-                    </div>
-                </div>
-
-                <div class="preview-summary">
-                    <span>Total Rows: {importPlan.length}</span>
-                    <span>Total Qty: {importPlan.reduce((acc, i) => acc + i.qty, 0)}</span>
-                </div>
-
-                <table class="preview-table">
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th>JAN</th>
-                            <th>Description</th>
-                            <th>Qty</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each importPlan as item}
-                            <tr class="row-{item.status.toLowerCase()}">
-                                <td>
-                                    <span class="status-badge status-{item.status.toLowerCase()}">
-                                        {item.status}
-                                    </span>
-                                </td>
-                                <td>{item.janCode}</td>
-                                <td>{item.description}</td>
-                                <td>{item.qty}</td>
-                                <td>{item.actionLabel}</td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
+           <ul>
+             {#each driveFiles as file}
+               <li>
+                 <button 
+                    class:selected={selectedFile?.id === file.id}
+                    on:click={() => selectFile(file)}
+                 >
+                   <span class="icon">📄</span>
+                   {file.name} 
+                   <span class="date">{new Date(file.modifiedTime || Date.now()).toLocaleDateString()}</span>
+                 </button>
+               </li>
+             {/each}
+           </ul>
         {/if}
       </div>
-    {/if}
+
+      <!-- 2. Preview Panel -->
+      <div class="panel preview-panel">
+         {#if !selectedFile}
+            <div class="placeholder">Select a file from the list to preview</div>
+         {:else if analysisStatus === 'analyzing'}
+           <div class="loading">Analyzing {selectedFile.name}...</div>
+        {:else if importPlan.length > 0}
+           <div class="preview-header">
+             <h2>Preview: {selectedFile.name}</h2>
+             <div class="batch-actions">
+                 <button class="btn-secondary" on:click={() => processBatch('MATCH')} disabled={processing}>
+                    Process Matches ({importPlan.filter(i => i.status === 'MATCH').length})
+                 </button>
+                 <button class="btn-secondary" on:click={() => processBatch('NEW')} disabled={processing}>
+                    Create New ({importPlan.filter(i => i.status === 'NEW').length})
+                 </button>
+                 <button class="btn-secondary" on:click={processResolvedConflicts} disabled={processing}>
+                    Process Resolved ({importPlan.filter(i => i.status === 'RESOLVED').length})
+                 </button>
+             </div>
+           </div>
+
+           <div class="table-container">
+             <table>
+               <thead>
+                 <tr>
+                   <th>Status</th>
+                   <th>JAN</th>
+                   <th>Description</th>
+                   <th>Qty</th>
+                   <th>Action</th>
+                 </tr>
+               </thead>
+               <tbody>
+                 {#each importPlan as item}
+                   <tr class:done={item.status === 'DONE'}>
+                     <td>
+                        <span class="badge {item.status.toLowerCase()}">{item.status}</span>
+                     </td>
+                     <td>{item.janCode}</td>
+                     <td>{item.description}</td>
+                     <td>{item.qty}</td>
+                     <td>
+                       {#if item.status === 'CONFLICT'}
+                         <button class="btn-small" on:click={() => openConflictModal(item)}>Review</button>
+                       {:else if item.status === 'RESOLVED'}
+                         <span class="text-success">Ready</span>
+                       {:else if item.status === 'DONE'}
+                         <span class="text-muted">Done</span>
+                       {:else}
+                         <!-- Standard items processed via batch -->
+                         <span class="text-muted">-</span>
+                       {/if}
+                     </td>
+                   </tr>
+                 {/each}
+               </tbody>
+             </table>
+           </div>
+
+        {:else}
+            <div class="actions-panel">
+                <h3>{selectedFile.name}</h3>
+                <button class="btn-primary" on:click={() => selectedFile && handleAnalyze(selectedFile)}>Analyze File</button>
+            </div>
+         {/if}
+      </div>
+    </div>
+    </div>
+  {/if}
   {:else}
     <div class="not-configured">Drive not configured.</div>
+  {/if}
+
+  <!-- Modal -->
+  {#if showConflictModal && currentConflictItem}
+  <div class="modal-overlay">
+    <div class="modal">
+        <h3>Resolve Conflict</h3>
+        <p>JAN: <strong>{currentConflictItem.janCode}</strong> maps to multiple items.</p>
+        <p>Total Qty from CSV: <strong>{currentConflictItem.qty}</strong></p>
+
+        <div class="split-list">
+            {#if currentConflictItem.subtypes}
+                {#each currentConflictItem.subtypes as subtype}
+                <div class="split-row">
+                    <label>{subtype.description || subtype.subtype || subtype.path}</label>
+                    <input type="number" min="0" bind:value={splitAllocations[subtype.path]} />
+                </div>
+                {/each}
+            {/if}
+        </div>
+        
+        {#if splitError}
+            <p class="error">{splitError}</p>
+        {/if}
+
+        <div class="modal-actions">
+            <button class="btn-secondary" on:click={closeConflictModal}>Cancel</button>
+            <button class="btn-primary" on:click={confirmSplit}>Confirm Split</button>
+        </div>
+    </div>
+  </div>
   {/if}
 </div>
 
 <style>
-  .import-page {
-    padding: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  .connect-button {
-    background: #4285f4;
-    color: white;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .disconnect-button {
-    background: #f44336;
-    color: white;
-    padding: 5px 10px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-left: 10px;
-  }
-  .import-button, .confirm-button {
-    background: #4caf50;
-    color: white;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-  }
-  .cancel-button {
-    background: #9e9e9e;
-    color: white;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    margin-right: 10px;
-  }
-  .import-button:disabled, .confirm-button:disabled, .cancel-button:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-  }
-  .files-table, .preview-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-  }
-  .files-table th, .files-table td, .preview-table th, .preview-table td {
-    padding: 12px;
-    border-bottom: 1px solid #ddd;
-    text-align: left;
-  }
-  .files-table th, .preview-table th {
-    background-color: #f5f5f5;
-  }
-  .error-message {
-    background: #ffebee;
-    color: #c62828;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 4px;
-  }
-  .success-message {
-    background: #e8f5e9;
-    color: #2e7d32;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 4px;
-  }
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-  .folder-link {
-    margin-left: auto;
-  }
+  .page-container { padding: 2rem; }
+  .actions-bar { margin-bottom: 2rem; display: flex; align-items: center; gap: 1rem; }
+  .layout-grid { display: grid; grid-template-columns: 300px 1fr; gap: 2rem; align-items: start; }
   
-  /* Preview Styles */
-  .preview-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-  }
-  .status-badge {
-      padding: 4px 8px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: bold;
-      color: white;
-  }
-  .status-match { background-color: #4caf50; }
-  .status-new { background-color: #2196f3; }
-  .status-conflict { background-color: #ff9800; }
+  .panel { background: white; border: 1px solid #eee; border-radius: 8px; padding: 1rem; }
+  .file-list ul { list-style: none; padding: 0; }
+  .file-list button { width: 100%; text-align: left; padding: 0.75rem; border: none; background: none; cursor: pointer; display: flex; justify-content: space-between; border-bottom: 1px solid #eee;}
+  .file-list button:hover { background: #f9f9f9; }
+  .file-list button.selected { background: #eef2ff; color: #4f46e5; font-weight: 500; }
   
-  .row-new { background-color: #e3f2fd; }
-  .row-conflict { background-color: #fff3e0; }
+  .table-container { margin-top: 1rem; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #eee; }
+  
+  .badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+  .badge.match { background: #dcfce7; color: #166534; }
+  .badge.new { background: #dbeafe; color: #1e40af; }
+  .badge.conflict { background: #fee2e2; color: #991b1b; }
+  .badge.resolved { background: #fef3c7; color: #92400e; }
+  .badge.done { background: #f3f4f6; color: #6b7280; }
+  
+  .btn-primary { background: #4f46e5; color: white; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; }
+  .btn-secondary { background: white; border: 1px solid #ccc; color: #333; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; margin-right: 0.5rem; }
+  .btn-small { padding: 0.25rem 0.5rem; font-size: 0.8rem; background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; }
+  
+  .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+  .modal { background: white; padding: 2rem; border-radius: 8px; width: 100%; max-width: 500px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+  .split-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem; }
+  .error { color: #dc2626; margin-top: 1rem; font-size: 0.9rem; }
+  
+  .done { opacity: 0.5; }
+  .text-muted { color: #9ca3af; }
+  .text-success { color: #166534; font-weight: 500; }
+  
+  /* Auth styles moved here */
+  .auth-section { display: flex; gap: 1rem; }
+  .status-badge { display: inline-block; background: #e0e7ff; color: #4338ca; padding: 0.5rem 1rem; border-radius: 999px; font-size: 0.9rem; }
+  .message { padding: 1rem; border-radius: 6px; margin-bottom: 1rem; }
+  .message.success { background: #dcfce7; color: #166534; }
+  .message.error { background: #fee2e2; color: #991b1b; }
+
 </style>
