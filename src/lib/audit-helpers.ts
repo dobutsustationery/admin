@@ -59,16 +59,36 @@ export function shiftDateRange(
   }
 }
 
+export function formatField(field: string): string {
+  if (!field) return "Unknown Field";
+  switch (field) {
+    case "janCode":
+      return "JAN Code";
+    case "hsCode":
+      return "HS Code";
+    case "qty":
+      return "Quantity";
+    case "creationDate":
+      return "Creation Date";
+    default:
+      return field.charAt(0).toUpperCase() + field.slice(1);
+  }
+}
+
 export function getAuditActionDescription(action: any): string {
   const p = action.payload;
   if (!p) return action.type;
-  
+
   switch (action.type) {
+    case "create_name":
+      return `Created name "${p.name}" for ID "${p.id}"`;
+    case "remove_name":
+      return `Removed name "${p.name}" from ID "${p.id}"`;
     case "update_item":
       // Safe access in case item is partial or missing
       return `Updated item ${p.item?.janCode ?? p.id}`;
     case "update_field":
-      return `Updated ${p.field} from "${p.from}" to "${p.to}" for item ${p.id}`;
+      return `Updated ${formatField(p.field)} from "${p.from}" to "${p.to}" for item ${p.id}`;
     case "new_order":
       return `Created new order ${p.orderID} for ${p.email}`;
     case "package_item":

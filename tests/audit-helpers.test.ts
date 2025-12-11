@@ -57,3 +57,62 @@ describe("audit-helpers", () => {
     });
   });
 });
+
+import { getAuditActionDescription, formatField } from "../src/lib/audit-helpers";
+
+describe("formatField", () => {
+  it("should format janCode", () => {
+    expect(formatField("janCode")).toBe("JAN Code");
+  });
+  it("should format hsCode", () => {
+    expect(formatField("hsCode")).toBe("HS Code");
+  });
+  it("should format qty", () => {
+    expect(formatField("qty")).toBe("Quantity");
+  });
+  it("should format creationDate", () => {
+    expect(formatField("creationDate")).toBe("Creation Date");
+  });
+  it("should capitalize other fields", () => {
+    expect(formatField("description")).toBe("Description");
+    expect(formatField("subtype")).toBe("Subtype");
+  });
+});
+
+describe("getAuditActionDescription", () => {
+  it("should handle create_name", () => {
+    const action = {
+      type: "create_name",
+      payload: { id: "123", name: "foo" }
+    };
+    expect(getAuditActionDescription(action)).toBe('Created name "foo" for ID "123"');
+  });
+
+  it("should handle remove_name", () => {
+    const action = {
+      type: "remove_name",
+      payload: { id: "123", name: "foo" }
+    };
+    expect(getAuditActionDescription(action)).toBe('Removed name "foo" from ID "123"');
+  });
+
+  it("should handle update_field", () => {
+    const action = {
+      type: "update_field",
+      payload: { id: "123", field: "janCode", from: "old", to: "new" }
+    };
+    expect(getAuditActionDescription(action)).toBe('Updated JAN Code from "old" to "new" for item 123');
+  });
+  
+  it("should handle update_field with other field", () => {
+    const action = {
+      type: "update_field",
+      payload: { id: "123", field: "description", from: "desc1", to: "desc2" }
+    };
+    expect(getAuditActionDescription(action)).toBe('Updated Description from "desc1" to "desc2" for item 123');
+  });
+
+  it("should fallback to type if no payload", () => {
+    expect(getAuditActionDescription({ type: "some_action" })).toBe("some_action");
+  });
+});
