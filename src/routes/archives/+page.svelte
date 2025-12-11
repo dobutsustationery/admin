@@ -42,5 +42,3 @@
 <div>
   <Signin {auth} {googleAuthProvider} on:user_changed={user} />
 </div>
-
-
