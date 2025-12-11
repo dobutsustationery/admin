@@ -38,7 +38,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
         const MOCK_CSV = 
 `JAN CODE,TOTAL PCS,DESCRIPTION,Carton Number
 4902778123456,10,Existing Pen,1
-9999999999999,5,New Mystery Item,2
+7777777777777,5,New Mystery Item,2
 4542804104370,20,Conflict Item,3`;
 
         // --- Mock Drive API ---
@@ -102,6 +102,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
              localStorage.setItem('__TEST_DRIVE_CONFIGURED__', 'true');
         });
         
+        // Seed Conflict Data step removed.
+        
         // --- 2. View Files ---
         // Navigate to target page
         await page.goto("/order-import");
@@ -129,60 +131,143 @@ test.describe("Inventory Receipt with Google Drive", () => {
         ]);
 
         // --- 3. Analyze & Preview ---
-        const analyzeBtn = page.locator('button:has-text("Analyze")');
+        // Verify preview panel exists
+        await expect(page.locator('.preview-panel')).toBeVisible();
+
+        // New flow: Select file first
+        await page.locator('.file-list button').first().click();
+        
+        // Verify button gets selected class
+        await expect(page.locator('.file-list button').first()).toHaveClass(/selected/);
+        
+        // Verify placeholder disappears
+        await expect(page.locator('.placeholder')).toBeHidden();
+        
+        // Then click Analyze File in the panel
+        const analyzeBtn = page.locator('button:has-text("Analyze File")');
         await expect(analyzeBtn).toBeVisible();
         await analyzeBtn.click();
 
-        await expect(page.locator('h3:has-text("Preview: receipt-2025.csv")')).toBeVisible();
-
-        // Verify Analysis Results
-        await flow.step("Analysis Preview", "preview", [
-            { 
-                description: "Preview Header Visible", 
-                check: async () => await expect(page.locator('h3:has-text("Preview: receipt-2025.csv")')).toBeVisible() 
+        // 3a. Verify Preview Content
+        await flow.step("Verify Preview", "verify-preview", [
+            {
+                description: "Preview Header Visible",
+                check: async () => await expect(page.locator('h2:has-text("Preview: receipt-2025.csv")')).toBeVisible()
             },
-            { 
-                description: "Row 1: New Item (9999...)", 
+            {
+                description: "Batch Actions Visible",
                 check: async () => {
-                   // Depending on seed data, 9999... is likely NEW
-                   const row = page.locator('tr:has-text("9999999999999")');
-                   await expect(row).toBeVisible();
-                   await expect(row).toContainText("New Mystery Item");
-                   // We don't strictly enforce "NEW" status just in case seed changes, but ideally we should.
-                   // Assuming clean seed data:
-                   // await expect(row).toContainText("NEW"); 
-                } 
+                   await expect(page.locator('button:has-text("Process Matches")')).toBeVisible();
+                   await expect(page.locator('button:has-text("Create New")')).toBeVisible();
+                }
             },
             {
-                 description: "Row 2: Existing or Conflict",
-                 check: async () => {
-                     // Just verify the rows exist from CSV
-                     await expect(page.locator('text=4902778123456')).toBeVisible();
-                     await expect(page.locator('text=4542804104370')).toBeVisible();
-                 }
+                description: "Row 1: New Item (7777...)",
+                check: async () => await expect(page.locator('tr:has-text("7777777777777")')).toContainText('NEW') 
             },
             {
-                description: "Total Qty Summary",
-                check: async () => await expect(page.locator('text=Total Qty: 35')).toBeVisible() // 10+5+20
+                description: "Row 2: Existing or Conflict",
+                check: async () => {
+                    // Conflict item
+                    await expect(page.locator('tr:has-text("4542804104370")')).toContainText('CONFLICT');
+                }
+            },
+            {
+                description: "Row 3: Existing Pen (490...)",
+                check: async () => {
+                     // Should be MATCH
+                     await expect(page.locator('tr:has-text("4902778123456")')).toContainText('MATCH');
+                }
             }
         ]);
 
-        // --- 4. Confirm Receipt ---
-        page.on('dialog', dialog => dialog.accept());
-        const confirmBtn = page.locator('button:has-text("Confirm Receipt")');
-        await expect(confirmBtn).toBeEnabled();
-        await confirmBtn.click();
+        // Analysis Preview block (Legacy) removed.
 
-        // --- 5. Success ---
-        await page.waitForTimeout(2000);
+        // --- 4. Interactive Resolution ---
+        
+        // 4.1 Process Matches
+        await flow.step("Process Matches", "process-matches", [
+            {
+                description: "Click Match Button",
+                check: async () => {
+                    await page.click('button:has-text("Process Matches")');
+                    await expect(page.locator('.success-message')).toBeVisible();
+                    // Verify Match item (490...) is DONE
+                    await expect(page.locator('tr:has-text("4902778123456")').locator('td:last-child')).toContainText("Done");
+                }
+            }
+        ]);
 
-        await flow.step("Import Complete", "import-complete", [
-            { 
-                description: "Success message displayed", 
-                check: async () => await expect(page.locator('.success-message')).toContainText("Successfully processed 3 entries") 
+        // 4.2 Process New
+        await flow.step("Process New Items", "process-new", [
+             {
+                description: "Click Create New Button",
+                check: async () => {
+                    await page.click('button:has-text("Create New")');
+                    await expect(page.locator('.success-message')).toBeVisible();
+                    // Verify New item is Done
+                    await expect(page.locator('tr:has-text("New Mystery Item")').locator('td:last-child')).toContainText("Done");
+                }
+            }
+        ]);
+
+        // 4.3 Resolve Conflict
+        await flow.step("Resolve Conflict", "resolve-conflict", [
+            {
+                description: "Resolve Conflict",
+                check: async () => {
+                    const row = page.locator('tr:has-text("4542804104370")');
+                    await expect(row).toContainText('CONFLICT');
+                    // Click Review IN THE ACTION COLUMN
+                    await row.locator('button:has-text("Review")').click();
+                    
+                    // Modal should appear
+                    await expect(page.locator('.modal')).toBeVisible();
+                    await expect(page.locator('.modal h3')).toContainText('Resolve Conflict');
+                    
+                    // Fill inputs
+                    // We expect 2 variant rows.
+                    // Total qty is 20 (from CSV) (Line 42 of mock CSV)
+                    // We split 10 and 10? Or 20 and 0.
+                    // Let's resolve to 20 on first variant.
+                    await page.locator('.modal input[type="number"]').first().fill('20');
+                    
+                    // Click Confirm
+                    await page.click('button:has-text("Confirm Split")');
+                    
+                    // Modal closed
+                    await expect(page.locator('.modal')).not.toBeVisible();
+                    
+                    // Row status should be RESOLVED
+                    await expect(page.locator('tr:has-text("4542804104370")')).toContainText('RESOLVED');
+                     // And "Ready" in action column
+                    await expect(page.locator('tr:has-text("4542804104370")').locator('td:last-child')).toContainText("Ready");
+                }
+            }
+        ]);
+        
+        // 4.4 Process Resolved
+        await flow.step("Process Resolved", "process-resolved", [
+             {
+                description: "Click Process Resolved button",
+                check: async () => {
+                    await page.click('button:has-text("Process Resolved")');
+                    await expect(page.locator('.success-message')).toBeVisible();
+                }
+            },
+            {
+                description: "Verify Conflict item is Done",
+                 check: async () => {
+                    await expect(page.locator('tr:has-text("4542804104370")').locator('td:last-child')).toContainText("Done");
+                 }
+            },
+            {
+                description: "Success message displayed",
+                check: async () => await expect(page.locator('.success-message')).toContainText("Successfully processed")
             }
         ]);
         
         docHelper.writeReadme();
     });
 });
+
