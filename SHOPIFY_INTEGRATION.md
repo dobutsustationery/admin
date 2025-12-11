@@ -35,7 +35,9 @@ interface ShopifyLinkProductAction {
     handle: string;
     variants: {
       shopifyVariantId: string;
-      itemKey: string; // Links to our internal Item
+      sku: string; // Internal ItemKey
+      // Defines the specific combination of options for this variant
+      options: Record<string, string>; // e.g. { "Color": "Blue", "Style": "Retro" }
     }[];
     timestamp: number;
     user: string;
@@ -50,12 +52,34 @@ interface ShopifyUpdateListingAction {
   type: 'shopify_update_listing';
   payload: {
     handle: string;
-    field: 'title' | 'body_html' | 'options' | 'tags';
+    field: 'title' | 'body_html' | 'options'; // Tags removed
     value: any;
     timestamp: number;
   };
 }
 ```
+
+#### 3. `shopify_api_log` (Audit & Sync State)
+Records the result of *every* external API call to Shopify. This serves as the audit trail and the source of truth for "Last Known Synced State".
+
+```typescript
+interface ShopifyApiLogAction {
+  type: 'shopify_api_log';
+  payload: {
+    requestType: 'inventory_sync' | 'product_update' | 'fetch_listings' | 'order_import';
+    endpoint: string;
+    success: boolean;
+    response: any; // The JSON response or error details
+    context: {
+      handle?: string;
+      sku?: string;
+      targetQty?: number; // For inventory syncs
+    };
+    timestamp: number;
+  };
+}
+```
+**Sync Logic**: To determine if an inventory update is needed, the Sync Service compares the calculated "Available Stock" against the `targetQty` of the most recent successful `shopify_api_log` for that SKU.
 
 ### B. Derived State (The Reducer)
 The client-side reducer listens to these actions to build the "Database":
@@ -67,7 +91,8 @@ interface ShopifyState {
     handle: string;
     title: string;
     body_html: string;
-    linkedVariants: Record<string, string>; // VariantID -> ItemKey
+    // Map VariantID -> { SKU, OptionMap }
+    linkedVariants: Record<string, { sku: string; options: Record<string, string> }>;
   }>;
 }
 ```
@@ -79,17 +104,19 @@ interface ShopifyState {
 
 1.  **Fetch**: Admin tool fetches all active products from Shopify API.
 2.  **Diff**: Compare fetched data against current `ShopifyState`.
-3.  **Action Generation**: For each new/changed product:
-    *   Dispatch `shopify_link_product` (if new).
-    *   Dispatch `shopify_update_listing` (to set Title, Description, etc.).
-    *   **Result**: The system "learns" the current state of Shopify by recording it as a series of events.
+3.  **Action Generation**: For each new product:
+    *   Dispatch `shopify_link_product` mapping Handles/Options to SKUs.
+    *   Dispatch `shopify_update_listing` to capture titles/desc.
+    *   Dispatch `shopify_api_log` to record the fetch operation.
 
 ### B. Inventory Sync (Admin -> Shopify)
 *Goal: Keep Shopify inventory correct.*
 
 1.  **Reactive Listener**: The Sync Service subscribes to the Redux Store.
-2.  **Compute**: On every state change, calculate `Available Stock` (`Stocked` - `Shipped`) for every linked Item.
-3.  **Push**: If `Available Stock` != `Last Known Shopify Qty`, call Shopify API `inventory_levels/set`.
+2.  **Compute**: Calculate `Available Stock` for every linked Item.
+3.  **Check**: Find last `shopify_api_log` for this SKU. Is `targetQty` == `Available Stock`?
+4.  **Push**: If different, call Shopify API `inventory_levels/set`.
+5.  **Log**: Dispatch `shopify_api_log` with the result.
 
 ### C. Order Import (Shopify -> Admin)
 *Goal: Record orders as actions.*
@@ -97,26 +124,55 @@ interface ShopifyState {
 1.  **Webhook**: Receive `orders/create`.
 2.  **Translate**: Convert Shopify Line Items -> Internal Item Keys (using `ShopifyState`).
 3.  **Dispatch**:
-    *   Dispatch `create_order` action (standard formatting).
-    *   **Note**: This does NOT decrement stock. It creates a task for packing.
-4.  **Fulfillment**: When the packer scans the item and dispatches `ship_item`:
-    *   `Total Shipped` increases.
-    *   `Available Stock` decreases.
-    *   **Sync Listener** triggers (Step B) and updates Shopify.
+    *   Dispatch `create_order` action.
+    *   Dispatch `shopify_api_log` recording the webhook receipt.
+4.  **Fulfillment**: When items are shipped, `Available Stock` decreases, automatically triggering Workflow B.
 
 ### D. Manual Content Merge
 *Goal: User controls product descriptions.*
 
-1.  **Detection**: Webhook `products/update` received.
-2.  **UI Alert**: "Shopify Listing 'Moon Stickers' has changed."
+1.  **Detection**: Webhook `products/update`.
+2.  **UI Alert**: User sees diff.
 3.  **Approve**: User clicks "Accept Changes".
 4.  **Action**: System dispatches `shopify_update_listing` with the new text.
-5.  **State Update**: Reducer updates `ShopifyState`, making it the new truth.
 
-## 4. API & Technical Constraints
-*   **Rate Limits**: 2 requests/second (Leaky Bucket).
-*   **Immutability**: We never "edit" a record. We always append a new action that supersedes previous state.
+## 4. Credentials & Setup
 
-## 5. Security
-*   **Validation**: All actions must be signed/validated by the user before broadcast.
-*   **Webhooks**: HMAC signature verification required.
+### Environment Configuration
+
+Credentials are managed via `.env` files. **Do not commit these to git.**
+
+**`.env.example`**
+```bash
+# Public (Client)
+VITE_SHOPIFY_STORE_URL=your-store.myshopify.com
+VITE_SHOPIFY_API_VERSION=2024-01
+
+# Private (Server)
+SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxx
+SHOPIFY_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxx
+SHOPIFY_SYNC_ENABLED=true
+```
+
+### Creating Shopify Credentials (Custom App)
+
+1.  **Shopify Admin** -> **Settings** -> **Apps and sales channels**.
+2.  **Develop apps** -> **Create an app**.
+3.  **Scopes**:
+    *   `read_products`, `write_products`
+    *   `read_inventory`, `write_inventory`
+    *   `read_orders`
+4.  **Install App**: This generates the `Admin API access token` (`shpat_...`).
+5.  **Webhooks**:
+    *   Register `orders/create` and `products/update`.
+    *   Copy the `Client secret` to `SHOPIFY_WEBHOOK_SECRET`.
+
+### Development Environments
+*   **Local**: Use `npm run dev:local`. No real sync (unless configured to a Dev Store).
+*   **Staging**: Use a **Shopify Partner Development Store**. These are free and isolated.
+*   **Production**: Connects to the live store.
+
+## 5. Security & Constraints
+*   **Rate Limits**: 2 requests/second. Sync Service must use a queue.
+*   **Immutability**: We never "edit" a record. We always append a new action.
+*   **Validation**: HMAC signature verification required for all webhooks.
