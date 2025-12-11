@@ -38,7 +38,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
         const MOCK_CSV = 
 `JAN CODE,TOTAL PCS,DESCRIPTION,Carton Number
 4902778123456,10,Existing Pen,1
-5555555555555,5,New Mystery Item,2
+6666666666666,5,New Mystery Item,2
 4542804104370,20,Conflict Item,3`;
 
         // --- Mock Drive API ---
@@ -162,8 +162,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
                 }
             },
             {
-                description: "Row 1: New Item (5555...)",
-                check: async () => await expect(page.locator('tr:has-text("5555555555555")')).toContainText('NEW') 
+                description: "Row 1: New Item (6666...)",
+                check: async () => await expect(page.locator('tr:has-text("6666666666666")')).toContainText('NEW') 
             },
             {
                 description: "Row 2: Existing or Conflict",
@@ -225,8 +225,12 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     await expect(page.locator('.modal')).toBeVisible();
                     await expect(page.locator('.modal h3')).toContainText('Resolve Conflict');
                     
-                    // Fill inputs
-                    await page.locator('.modal input[type="number"]').first().fill('20');
+                    // Verify Even Split Defaults (20 qty / 2 items = 10 each)
+                    // We expect 2 inputs, both with value 10.
+                    const inputs = page.locator('.modal input[type="number"]');
+                    await expect(inputs).toHaveCount(2);
+                    await expect(inputs.nth(0)).toHaveValue('10');
+                    await expect(inputs.nth(1)).toHaveValue('10');
                 }
             }
         ]);
