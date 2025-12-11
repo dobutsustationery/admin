@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
-interface VerificationStep {
+export interface VerificationStep {
   description: string;
   check: () => Promise<void> | void;
 }
