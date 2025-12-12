@@ -19,7 +19,7 @@
 **Programmatic Verification:**
 - [ ] Preview Header Visible
 - [ ] Batch Actions Visible
-- [ ] Row 1: New Item (5555...)
+- [ ] Row 1: New Item (6666...)
 - [ ] Row 2: Existing or Conflict
 - [ ] Row 3: Existing Pen (490...)
 
@@ -39,7 +39,7 @@
 
 ### 5. Open Conflict Modal
 
-![Open Conflict Modal](screenshots/004-004-conflict-modal.png)
+![Open Conflict Modal](screenshots/004-004-conflict-modal-v2.png)
 
 **Programmatic Verification:**
 - [ ] Open Review Modal

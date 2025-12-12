@@ -5,6 +5,7 @@ import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import { FlowHelper } from "../helpers/flow-helper";
 import * as path from "path";
+import { execSync } from "child_process";
 
 /**
  * E2E test for the /order-import page with Google Drive integration
@@ -16,6 +17,17 @@ import * as path from "path";
  */
 
 test.describe("Inventory Receipt with Google Drive", () => {
+
+    test.beforeAll(() => {
+        console.log("TEST SETUP: Seeding Test Data...");
+        try {
+            execSync("node e2e/helpers/load-test-data.js --match-jancodes=1", { stdio: 'inherit' });
+            console.log("TEST SETUP: Data Seeded Successfully.");
+        } catch (error) {
+            console.error("TEST SETUP ERROR: Failed to seed data.", error);
+            throw error;
+        }
+    });
 
     test("complete Inventory Receipt workflow (Match, Conflict, New)", async ({ page, authenticatedPage }, testInfo) => {
         test.setTimeout(60000);
@@ -38,8 +50,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
         const MOCK_CSV = 
 `JAN CODE,TOTAL PCS,DESCRIPTION,Carton Number
 4902778123456,10,Existing Pen,1
-6666666666666,5,New Mystery Item,2
-4542804104370,20,Conflict Item,3`;
+1010101010101,5,New Mystery Item,2
+4542804104370,30,Conflict Item,3`;
 
         // --- Mock Drive API ---
         await page.route('**/*googleapis.com/**', async (route) => {
@@ -86,23 +98,20 @@ test.describe("Inventory Receipt with Google Drive", () => {
             }
             await route.continue();
         });
-
-        // --- 1. Additional Setup ---
-        // Inject Drive Token and Config (Auth is handled by authenticatedPage fixture)
-        // We use addInitScript to ensure they are present on reload/nav
-        await page.addInitScript(() => { 
-            (window as any).__MOCK_DRIVE_CONFIG__ = true; 
-             localStorage.setItem('google_drive_access_token', JSON.stringify({
+        
+        // Inject Drive Token
+        await authenticatedPage.addInitScript(() => {
+            (window as any).__MOCK_DRIVE_CONFIG__ = true;
+            localStorage.setItem('google_drive_access_token', JSON.stringify({
                 access_token: 'mock-access-token',
                 expires_in: 3600,
                 expires_at: Date.now() + 3600000,
                 scope: 'https://www.googleapis.com/auth/drive.file',
                 token_type: 'Bearer'
-             }));
-             localStorage.setItem('__TEST_DRIVE_CONFIGURED__', 'true');
+            }));
         });
         
-        // Seed Conflict Data step removed.
+        authenticatedPage.on('console', msg => console.log(`BROWSER LOG: ${msg.text()}`));
         
         // --- 2. View Files ---
         // Navigate to target page
@@ -163,7 +172,10 @@ test.describe("Inventory Receipt with Google Drive", () => {
             },
             {
                 description: "Row 1: New Item (6666...)",
-                check: async () => await expect(page.locator('tr:has-text("6666666666666")')).toContainText('NEW') 
+                check: async () => {
+                    await expect(page.locator('tr:has-text("1010101010101")')).toBeVisible({ timeout: 10000 });
+                    await expect(page.locator('tr:has-text("1010101010101")')).toContainText('NEW');
+                }
             },
             {
                 description: "Row 2: Existing or Conflict",
@@ -212,7 +224,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
         ]);
 
         // 4.3 Open Conflict Modal
-        await flow.step("Open Conflict Modal", "004-conflict-modal", [
+        await flow.step("Open Conflict Modal", "004-conflict-modal-v2", [
             {
                 description: "Open Review Modal",
                 check: async () => {
@@ -225,12 +237,12 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     await expect(page.locator('.modal')).toBeVisible();
                     await expect(page.locator('.modal h3')).toContainText('Resolve Conflict');
                     
-                    // Verify Even Split Defaults (20 qty / 2 items = 10 each)
-                    // We expect 2 inputs, both with value 10.
+                    // Verify Even Split Defaults (30 qty / 2 items = 15 each)
+                    // We expect 2 inputs, both with value 15.
                     const inputs = page.locator('.modal input[type="number"]');
                     await expect(inputs).toHaveCount(2);
-                    await expect(inputs.nth(0)).toHaveValue('10');
-                    await expect(inputs.nth(1)).toHaveValue('10');
+                    await expect(inputs.nth(0)).toHaveValue('15');
+                    await expect(inputs.nth(1)).toHaveValue('15');
                 }
             }
         ]);

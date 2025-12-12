@@ -191,6 +191,7 @@
       for (const key in invState.idToItem) {
         const item = invState.idToItem[key];
         if (item.janCode === janCode) {
+          console.log("DEBUG MATCH FOUND:", janCode, "matched with", item.janCode, "ID:", key);
           matches.push({ key, ...item });
         }
       }
@@ -236,7 +237,7 @@
         const count = item.subtypes.length;
         const perItem = Math.floor(totalQty / count);
         const remainder = totalQty % count;
-
+        
         item.subtypes.forEach((st: any, index: number) => {
             // Distribute remainder to first item(s)
             const extra = index < remainder ? 1 : 0;
