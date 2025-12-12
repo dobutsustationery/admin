@@ -1,5 +1,8 @@
 
 import { expect, test } from "../fixtures/auth";
+import { request } from "@playwright/test";
+
+// ... existing imports ...
 import { waitForAppReady } from "../helpers/loading-helper";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
@@ -9,20 +12,55 @@ import { execSync } from "child_process";
 
 /**
  * E2E test for the /order-import page with Google Drive integration
- * 
- * Verifies:
- * 1. File Listing (Drive API)
- * 2. Analysis Logic (Match, Conflict, New)
- * 3. Import Execution (Redux actions)
  */
 
 test.describe("Inventory Receipt with Google Drive", () => {
 
-    test.beforeAll(() => {
+    test.beforeAll(async () => {
         console.log("TEST SETUP: Seeding Test Data...");
         try {
-            execSync("node e2e/helpers/load-test-data.js --match-jancodes=1", { stdio: 'inherit' });
-            console.log("TEST SETUP: Data Seeded Successfully.");
+            // 1. Standard Data Load (Clean Base)
+            execSync("node e2e/helpers/load-test-data.js --match-jancodes=10", { stdio: 'inherit' });
+            
+            // 2. Inject Conflict: Create a duplicate item via Emulator REST API
+            // JAN: 4510085530713 (Exists in export, we add a second variant)
+            const apiContext = await request.newContext({ baseURL: 'http://localhost:8080' });
+            
+            // Create a second "update_item" event for the same JAN to simulate a conflict
+            await apiContext.post('/emulator/v1/projects/demo-test-project/databases/(default)/documents/broadcast', {
+                data: {
+                    fields: {
+                        type: { stringValue: "update_item" },
+                        timestamp: { timestampValue: new Date().toISOString() },
+                        creator: { stringValue: "test_conflict_injector" },
+                        payload: {
+                            mapValue: {
+                                fields: {
+                                    id: { stringValue: "4510085530713-duplicate" }, // Unique ID, same JAN
+                                    item: {
+                                        mapValue: {
+                                            fields: {
+                                                janCode: { stringValue: "4510085530713" },
+                                                subtype: { stringValue: "VariantB" },
+                                                description: { stringValue: "Conflict Variant Injected" },
+                                                qty: { integerValue: "5" },
+                                                pieces: { integerValue: "1" },
+                                                shipped: { integerValue: "0" },
+                                                creationDate: { stringValue: new Date().toISOString() },
+                                                hsCode: { stringValue: "" },
+                                                image: { stringValue: "" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            await apiContext.dispose();
+            
+            console.log("TEST SETUP: Data Seeded & Conflict Injected Successfully.");
         } catch (error) {
             console.error("TEST SETUP ERROR: Failed to seed data.", error);
             throw error;
@@ -32,8 +70,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
     test.afterAll(() => {
         console.log("TEST TEARDOWN: Restoring Standard Test Data...");
         try {
-            // Restore standard dataset (match-jancodes=10 matches playwright.config.ts)
-            execSync("node e2e/helpers/load-test-data.js --match-jancodes=10", { stdio: 'inherit' });
+            // Restore standard dataset (Full) to ensure other tests (like 000) match their snapshots
+            execSync("node e2e/helpers/load-test-data.js", { stdio: 'inherit' });
             console.log("TEST TEARDOWN: Standard Data Restored Successfully.");
         } catch (error) {
             console.error("TEST TEARDOWN ERROR: Failed to restore data.", error);
@@ -42,8 +80,6 @@ test.describe("Inventory Receipt with Google Drive", () => {
     });
 
     test("complete Inventory Receipt workflow (Match, Conflict, New)", async ({ page, authenticatedPage }, testInfo) => {
-        test.setTimeout(60000);
-        
         // --- Setup Helpers ---
         const outputDir = path.dirname(testInfo.file);
         const screenshots = createScreenshotHelper();
@@ -58,12 +94,14 @@ test.describe("Inventory Receipt with Google Drive", () => {
         );
 
         // --- Mock Data ---
-        // Mock CSV Content
+        // Mock CSV Content using Standard JANs
+        // 4542804044355: Existing Item (from export)
+        // 4510085530713: Conflict Item (from export + injected duplicate)
         const MOCK_CSV = 
 `JAN CODE,TOTAL PCS,DESCRIPTION,Carton Number
-4902778123456,10,Existing Pen,1
+4542804044355,10,Existing Real Item,1
 1010101010101,5,New Mystery Item,2
-4542804104370,30,Conflict Item,3`;
+4510085530713,30,Conflict Real Item,3`;
 
         // --- Mock Drive API ---
         await page.route('**/*googleapis.com/**', async (route) => {
@@ -193,14 +231,14 @@ test.describe("Inventory Receipt with Google Drive", () => {
                 description: "Row 2: Existing or Conflict",
                 check: async () => {
                     // Conflict item
-                    await expect(page.locator('tr:has-text("4542804104370")')).toContainText('CONFLICT');
+                    await expect(page.locator('tr:has-text("4510085530713")')).toContainText('CONFLICT');
                 }
             },
             {
                 description: "Row 3: Existing Pen (490...)",
                 check: async () => {
                      // Should be MATCH
-                     await expect(page.locator('tr:has-text("4902778123456")')).toContainText('MATCH');
+                     await expect(page.locator('tr:has-text("4542804044355")')).toContainText('MATCH');
                 }
             }
         ]);
@@ -217,7 +255,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     await page.click('button:has-text("Process Matches")');
                     await expect(page.locator('.success-message')).toBeVisible();
                     // Verify Match item (490...) is DONE
-                    await expect(page.locator('tr:has-text("4902778123456")').locator('td:last-child')).toContainText("Done");
+                    await expect(page.locator('tr:has-text("4542804044355")').locator('td:last-child')).toContainText("Done");
                 }
             }
         ]);
@@ -240,7 +278,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
             {
                 description: "Open Review Modal",
                 check: async () => {
-                    const row = page.locator('tr:has-text("4542804104370")');
+                    const row = page.locator('tr:has-text("4510085530713")');
                     await expect(row).toContainText('CONFLICT');
                     // Click Review IN THE ACTION COLUMN
                     await row.locator('button:has-text("Review")').click();
@@ -271,9 +309,9 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     await expect(page.locator('.modal')).not.toBeVisible();
                     
                     // Row status should be RESOLVED
-                    await expect(page.locator('tr:has-text("4542804104370")')).toContainText('RESOLVED');
+                    await expect(page.locator('tr:has-text("4510085530713")')).toContainText('RESOLVED');
                      // And "Ready" in action column
-                    await expect(page.locator('tr:has-text("4542804104370")').locator('td:last-child')).toContainText("Ready");
+                    await expect(page.locator('tr:has-text("4510085530713")').locator('td:last-child')).toContainText("Ready");
                 }
              }
         ]);
@@ -285,7 +323,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
                 check: async () => {
                     await page.click('button:has-text("Process Resolved")');
                     await expect(page.locator('.success-message')).toBeVisible();
-                    await expect(page.locator('tr:has-text("4542804104370")').locator('td:last-child')).toContainText("Done");
+                    await expect(page.locator('tr:has-text("4510085530713")').locator('td:last-child')).toContainText("Done");
                 }
             },
             {

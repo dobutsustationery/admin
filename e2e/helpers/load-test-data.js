@@ -250,47 +250,6 @@ async function loadTestData() {
     }
   }
 
-  // Manual injection of Broadcast Actions for E2E tests (Event Sourcing)
-  console.log("\n💉 Injecting Conflict Items via Broadcast (4542804104370)...");
-
-  const createBroadcastDoc = (id, jan, subtype, desc, qty) => {
-    return {
-      type: "update_item",
-      payload: {
-        id: id,
-        item: {
-          janCode: jan,
-          subtype: subtype,
-          description: desc,
-          hsCode: '',
-          image: '',
-          qty: qty,
-          pieces: 1,
-          shipped: 0,
-          creationDate: new Date().toISOString()
-        }
-      },
-      timestamp: Timestamp.now(),
-      creator: "system_test_seed"
-    };
-  };
-
-  const broadcasts = [
-    createBroadcastDoc('4542804104370', '4542804104370', '', 'Conflict Item Base', 10),
-    createBroadcastDoc('4542804104370VariantA', '4542804104370', 'VariantA', 'Conflict Item Variant A', 5),
-    createBroadcastDoc('4902778123456', '4902778123456', '', 'Existing Pen', 100)
-  ];
-
-  const broadcastCollection = db.collection('broadcast');
-
-  // Use sequential IDs ensures order if queried by ID, but query is by timestamp.
-  // We'll just generate random IDs or use a prefix.
-  for (let i = 0; i < broadcasts.length; i++) {
-    await broadcastCollection.add(broadcasts[i]);
-  }
-
-  console.log("   ✓ Injected 3 broadcast events (Conflict + Existing)");
-
   console.log("\n✅ Test data loaded successfully\n");
 }
 
