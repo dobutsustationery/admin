@@ -111,31 +111,22 @@ async function loadTestData() {
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
 
-  // Clear existing data from collections to ensure clean state
-  // This prevents data accumulation from multiple test runs
+  // Clear existing data from emulator using the REST API
+  // This is much faster and more reliable than deleting documents one by one
   console.log(`\n🧹 Clearing existing data from emulator...`);
-  const collectionsToClear = new Set([...Object.keys(exportData.collections), "broadcast", "inventory"]);
-  for (const collectionName of collectionsToClear) {
-    const collectionRef = db.collection(collectionName);
-    const snapshot = await collectionRef.get();
-    if (snapshot.size > 0) {
-      console.log(`   Deleting ${snapshot.size} existing documents from ${collectionName}...`);
-      console.log(`   Deleting ${snapshot.size} existing documents from ${collectionName}...`);
-      const DELETE_BATCH_SIZE = 400;
-      const chunks = [];
-      const docs = snapshot.docs;
-      for (let i = 0; i < docs.length; i += DELETE_BATCH_SIZE) {
-        chunks.push(docs.slice(i, i + DELETE_BATCH_SIZE));
-      }
+  try {
+    const clearUrl = `http://${emulatorHost}/emulator/v1/projects/demo-test-project/databases/(default)/documents`;
+    const response = await fetch(clearUrl, { method: 'DELETE' });
 
-      for (const chunk of chunks) {
-        const batch = db.batch();
-        chunk.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
-      }
+    if (response.ok) {
+      console.log(`   ✓ Emulator data cleared via REST API`);
+    } else {
+      console.warn(`   ⚠️  Failed to clear data via REST API: ${response.status} ${response.statusText}`);
+      console.warn(`       Falling back to standard loading (data might persist)`);
     }
+  } catch (error) {
+    console.warn(`   ⚠️  Error calling clear endpoint: ${error.message}`);
   }
-  console.log(`   ✓ Emulator data cleared`);
 
   // Load URL mapping if available
   const mappingPath = resolve(
