@@ -29,6 +29,18 @@ test.describe("Inventory Receipt with Google Drive", () => {
         }
     });
 
+    test.afterAll(() => {
+        console.log("TEST TEARDOWN: Restoring Standard Test Data...");
+        try {
+            // Restore standard dataset (match-jancodes=10 matches playwright.config.ts)
+            execSync("node e2e/helpers/load-test-data.js --match-jancodes=10", { stdio: 'inherit' });
+            console.log("TEST TEARDOWN: Standard Data Restored Successfully.");
+        } catch (error) {
+            console.error("TEST TEARDOWN ERROR: Failed to restore data.", error);
+            // Don't throw here to ensure test result is preserving, but log error.
+        }
+    });
+
     test("complete Inventory Receipt workflow (Match, Conflict, New)", async ({ page, authenticatedPage }, testInfo) => {
         test.setTimeout(60000);
         
