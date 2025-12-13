@@ -17,6 +17,7 @@
 ![Verify Preview](screenshots/001-verify-preview.png)
 
 **Programmatic Verification:**
+- [ ] Wait for Sync to Settle
 - [ ] Preview Header Visible
 - [ ] Batch Actions Visible
 - [ ] Row 1: New Item (6666...)
