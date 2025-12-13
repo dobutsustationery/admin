@@ -19,8 +19,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
     test.beforeAll(async () => {
         console.log("TEST SETUP: Seeding Test Data...");
         try {
-            // 1. Standard Data Load (Clean Base)
-            execSync("node e2e/helpers/load-test-data.js --match-jancodes=10", { stdio: 'inherit' });
+            // 1. Standard Data Load (Clean Base) - MATCHING GLOBAL SETUP
+            execSync("node e2e/helpers/load-test-data-with-local-images.js --match-jancodes=10", { stdio: 'inherit' });
             
             // 2. Inject Conflict: Create a duplicate item via Emulator REST API
             // JAN: 4510085530713 (Exists in export, we add a second variant)
@@ -70,12 +70,12 @@ test.describe("Inventory Receipt with Google Drive", () => {
     test.afterAll(() => {
         console.log("TEST TEARDOWN: Restoring Standard Test Data...");
         try {
-            // Restore standard dataset (Full) to ensure other tests (like 000) match their snapshots
-            execSync("node e2e/helpers/load-test-data.js", { stdio: 'inherit' });
+            // Restore standard dataset (MATCHING GLOBAL SETUP)
+            execSync("node e2e/helpers/load-test-data-with-local-images.js --match-jancodes=10", { stdio: 'inherit' });
             console.log("TEST TEARDOWN: Standard Data Restored Successfully.");
         } catch (error) {
             console.error("TEST TEARDOWN ERROR: Failed to restore data.", error);
-            // Don't throw here to ensure test result is preserving, but log error.
+            // Don't throw here to ensure test result is preserved
         }
     });
 
