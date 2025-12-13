@@ -71,9 +71,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
         console.log("TEST TEARDOWN: Restoring Standard Test Data...");
         try {
             // Restore standard dataset (Full) to ensure other tests (like 000) match their snapshots
-            // TODO: Investigate why this makes e2e tests fail (user request)
-            // execSync("node e2e/helpers/load-test-data.js", { stdio: 'inherit' });
-            console.log("TEST TEARDOWN: Standard Data Restored Successfully (SKIPPED).");
+            execSync("node e2e/helpers/load-test-data.js", { stdio: 'inherit' });
+            console.log("TEST TEARDOWN: Standard Data Restored Successfully.");
         } catch (error) {
             console.error("TEST TEARDOWN ERROR: Failed to restore data.", error);
             // Don't throw here to ensure test result is preserving, but log error.

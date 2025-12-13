@@ -98,6 +98,17 @@ test.describe("CSV Export Page with Google Drive", () => {
       // Handle Drive API
       if (url.includes('/drive/v3/files')) {
         if (method === 'GET') {
+          // Check if it's a download request (alt=media) or specific file get
+          if (url.includes('alt=media') || /\/files\/[^/?]+/.test(url)) {
+             await route.fulfill({
+              status: 200,
+              contentType: 'text/csv',
+              headers: { 'Access-Control-Allow-Origin': '*' },
+              body: '"janCode","itemName"\n"1234567890123","Test Item"'
+            });
+            return;
+          }
+
           // Mock list files response
           await route.fulfill({
             status: 200,
@@ -256,7 +267,8 @@ test.describe("CSV Export Page with Google Drive", () => {
         check: async () => {
           const preElement = page.locator(".csv-preview pre");
           await expect(preElement).toBeVisible();
-          await expect(preElement).toContainText('"janCode"');
+          // Data sync might take time (3700+ items), so wait longer than default 5s
+          await expect(preElement).toContainText('"janCode"', { timeout: 30000 });
         }
       }
     ];
@@ -366,6 +378,8 @@ test.describe("CSV Export Page with Google Drive", () => {
 
     await screenshots.capture(page, "connected-to-drive", {
       programmaticCheck: async () => {
+        // Increase timeout for stability during screenshot
+        await expect(connectedStatus).toBeVisible({ timeout: 10000 });
         for (const v of step4Verifications) await v.check();
       },
     });
