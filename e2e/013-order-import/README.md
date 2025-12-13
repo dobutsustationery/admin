@@ -58,5 +58,4 @@
 
 **Programmatic Verification:**
 - [ ] Click Process Resolved button
-- [ ] Success message displayed
 
