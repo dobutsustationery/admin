@@ -104,6 +104,22 @@ async function loadTestData() {
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
 
+  // Clear existing data from collections to ensure clean state
+  // This prevents data accumulation from multiple test runs
+  console.log(`\n🧹 Clearing existing data from emulator...`);
+  const collectionsToClear = Object.keys(exportData.collections);
+  for (const collectionName of collectionsToClear) {
+    const collectionRef = db.collection(collectionName);
+    const snapshot = await collectionRef.get();
+    if (snapshot.size > 0) {
+      console.log(`   Deleting ${snapshot.size} existing documents from ${collectionName}...`);
+      const batch = db.batch();
+      snapshot.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+    }
+  }
+  console.log(`   ✓ Emulator data cleared`);
+
   // Load URL mapping if available
   let urlMapping = {};
   if (existsSync(mappingPath)) {
@@ -163,7 +179,7 @@ async function loadTestData() {
     let batch = db.batch();
     let batchCount = 0;
     let rewrittenCount = 0;
-    const BATCH_SIZE = 100;
+    const BATCH_SIZE = 20;
 
     for (const { id, data } of docsToLoad) {
       const docRef = db.collection(collectionName).doc(id);
