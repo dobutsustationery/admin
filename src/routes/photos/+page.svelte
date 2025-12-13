@@ -97,6 +97,9 @@
     }, 2000);
   }
 
+  let isGenerating = false;
+  let generationResults: any[] = [];
+
   async function loadSelectedPhotos(sessionId: string) {
     try {
       // Fetch the items
@@ -109,6 +112,41 @@
       error = "Failed to load photos: " + e.message;
     } finally {
       loading = false;
+    }
+  }
+
+  async function handleGenerate() {
+    if (photos.length === 0) return;
+    
+    isGenerating = true;
+    error = "";
+    generationResults = [];
+
+    try {
+        const token = await import('$lib/google-photos').then(m => m.getStoredToken());
+        if (!token) throw new Error("Not authenticated");
+
+        const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                items: photos.map(p => ({ baseUrl: p.baseUrl, id: p.id })),
+                accessToken: token.access_token
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Generation failed');
+        }
+
+        const data = await response.json();
+        generationResults = data.results;
+
+    } catch (e: any) {
+        error = e.message;
+    } finally {
+        isGenerating = false;
     }
   }
 </script>
@@ -164,6 +202,21 @@
             <span>Photos Library</span>
           {/if}
         </button>
+
+        {#if photos.length > 0}
+            <button
+              on:click={handleGenerate}
+              disabled={isGenerating}
+              class="bg-purple-600 text-white px-6 py-3 rounded-md font-medium hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-2"
+            >
+              {#if isGenerating}
+                <span class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                Generating...
+              {:else}
+                <span>Generate Descriptions</span>
+              {/if}
+            </button>
+        {/if}
       </div>
 
       <!-- content -->
@@ -172,6 +225,26 @@
           <div class="p-4 bg-red-50 text-red-700 rounded mb-4">
             {error}
           </div>
+        {/if}
+
+        {#if generationResults.length > 0}
+            <div class="mb-8 p-6 bg-purple-50 rounded-lg border border-purple-100">
+                <h3 class="text-xl font-bold mb-4 text-purple-900">Generated Products ({generationResults.length})</h3>
+                <div class="space-y-6">
+                    {#each generationResults as result}
+                        <div class="bg-white p-4 rounded border border-purple-200 shadow-sm">
+                            <div class="flex flex-wrap gap-2 mb-3">
+                                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded">JAN: {result.janCode}</span>
+                                <span class="bg-green-100 text-green-800 text-xs font-semibold px-2 py-1 rounded">Images: {result.imageUrls.length}</span>
+                                <span class="bg-gray-100 text-gray-800 text-xs font-semibold px-2 py-1 rounded">Categories: {result.categories}</span>
+                            </div>
+                            <div class="prose prose-sm max-w-none">
+                                {@html result.description}
+                            </div>
+                        </div>
+                    {/each}
+                </div>
+            </div>
         {/if}
 
         {#if loading && !isPolling}
