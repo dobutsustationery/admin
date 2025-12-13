@@ -210,6 +210,10 @@ test.describe("Inventory Receipt with Google Drive", () => {
         // 3a. Verify Preview Content
         await flow.step("Verify Preview", "verify-preview", [
             {
+                description: "Wait for Sync to Settle",
+                check: async () => await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 10000 })
+            },
+            {
                 description: "Preview Header Visible",
                 check: async () => await expect(page.locator('h2:has-text("Preview: receipt-2025.csv")')).toBeVisible()
             },
