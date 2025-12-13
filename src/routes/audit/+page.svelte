@@ -47,7 +47,7 @@
         ...doc.data(),
         // Helper to format timestamp for display
         displayTime:
-          doc.data().timestamp?.toDate()?.toLocaleString() ?? "Unknown",
+          doc.data().timestamp?.toDate() ? format(doc.data().timestamp.toDate(), "yyyy-MM-dd") : "Unknown",
       }));
     } catch (e) {
       console.error("Error fetching audit logs:", e);
