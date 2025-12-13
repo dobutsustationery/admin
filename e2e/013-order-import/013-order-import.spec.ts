@@ -258,6 +258,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
                 check: async () => {
                     await page.click('button:has-text("Process Matches")');
                     await expect(page.locator('.success-message')).toBeVisible();
+                    // Wait for sync to complete
+                    await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 10000 });
                     // Verify Match item (490...) is DONE
                     await expect(page.locator('tr:has-text("4542804044355")').locator('td:last-child')).toContainText("Done");
                 }
@@ -271,6 +273,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
                 check: async () => {
                     await page.click('button:has-text("Create New")');
                     await expect(page.locator('.success-message')).toBeVisible();
+                    // Wait for sync to complete
+                    await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 10000 });
                     // Verify New item is Done
                     await expect(page.locator('tr:has-text("New Mystery Item")').locator('td:last-child')).toContainText("Done");
                 }
@@ -327,6 +331,8 @@ test.describe("Inventory Receipt with Google Drive", () => {
                 check: async () => {
                     await page.click('button:has-text("Process Resolved")');
                     await expect(page.locator('.success-message')).toBeVisible();
+                    // Wait for sync to complete
+                    await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 10000 });
                     await expect(page.locator('tr:has-text("4510085530713")').locator('td:last-child')).toContainText("Done");
                 }
             },
