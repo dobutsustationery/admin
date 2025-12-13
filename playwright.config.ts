@@ -61,7 +61,6 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         deviceScaleFactor: 1, // Ensure standard pixel density
         timezoneId: 'UTC', // Ensure consistent date rendering across environments
-        locale: 'en-CA', // Ensure consistent YYYY-MM-DD date formatting
         // Ensure consistent font rendering across environments
         // This prevents column width differences due to font variations
         launchOptions: {
