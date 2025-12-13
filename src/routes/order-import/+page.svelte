@@ -616,4 +616,15 @@
   .message.success { background: #dcfce7; color: #166534; }
   .message.error { background: #fee2e2; color: #991b1b; }
 
+  .disconnect-button {
+    background: white;
+    border: 1px solid #ccc;
+    color: #dc2626;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .disconnect-button:hover { background: #fee2e2; }
+
 </style>
