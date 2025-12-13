@@ -2,16 +2,16 @@
 
 ## Overview
 
-This document specifies the technical implementation details for integrating Google Photos into the Dobutsu Stationery product import workflow. It describes how to use Google Photos shared albums as the source for product photography, enabling automated retrieval and processing of product images in chronological order.
+This document specifies the technical implementation details for integrating **Google Photos Picker API** into the Dobutsu Stationery product import workflow. It describes how to securely select product photos from a user's Google Photos library using the picker session flow.
 
 ## Background
 
-As described in [PRODUCT_IMPORT_DESIGN.md](PRODUCT_IMPORT_DESIGN.md), the product import workflow relies on employees photographing new inventory items in a structured sequence (JAN barcode first, followed by detail shots). These photos are uploaded to a shared Google Photos album for automated processing. This document details the Google Photos API integration required to implement this workflow.
+The previous integration used the Google Photos Library API to access shared albums. However, due to scope deprecation in March 2025, that approach is no longer supported. The new implementation uses the **Google Photos Picker API**, which offers better privacy and security by allowing users to select specific photos to share with the application.
 
-## Google Photos API Overview
+## Google Photos Picker API Overview
 
 ### API Service
-- **Name**: Google Photos Library API
+- **Name**: Google Photos Picker API
 - **Version**: v1
 - **Documentation**: https://developers.google.com/photos
 - **Base URL**: `https://photoslibrary.googleapis.com/v1`
@@ -59,8 +59,8 @@ The Google Photos API requires OAuth 2.0 for authentication. The application mus
      - `http://localhost:5173` (for development)
      - `https://admin.dobutsustationery.com` (for production)
    - Authorized redirect URIs:
-     - `http://localhost:5173/auth/callback` (for development)
-     - `https://admin.dobutsustationery.com/auth/callback` (for production)
+     - `http://localhost:5173/photos` (for development)
+     - `https://admin.dobutsustationery.com/photos` (for production)
    - Save and download the client ID and client secret
 
 ### Required OAuth Scopes

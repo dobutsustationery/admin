@@ -1,28 +1,34 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import {
     initiateOAuthFlow,
     handleOAuthCallback,
     isAuthenticated,
-    joinSharedAlbum,
-    listMediaItems,
-    getStoredToken,
+    createPickerSession,
+    pollPickerSession,
+    listSessionMediaItems,
     clearToken,
   } from "$lib/google-photos";
-  import type { Album, MediaItem } from "$lib/google-photos";
+  import type { MediaItem } from "$lib/google-photos";
+  import SecureImage from "$lib/components/SecureImage.svelte";
 
   let isConnected = false;
-  let shareUrl = "";
-  let albums: Album[] = [];
-  let selectedAlbum: Album | null = null;
   let photos: MediaItem[] = [];
   let loading = false;
   let error = "";
+  let isPolling = false;
+  let pollInterval: ReturnType<typeof setInterval>;
+  let pollAttempts = 0;
+  const MAX_POLL_ATTEMPTS = 60; // 2 minutes (approx)
 
   onMount(() => {
     // Check for OAuth callback
     handleOAuthCallback();
     isConnected = isAuthenticated();
+  });
+
+  onDestroy(() => {
+    stopPolling();
   });
 
   function handleConnect() {
@@ -32,55 +38,75 @@
   function handleDisconnect() {
     clearToken();
     isConnected = false;
-    albums = [];
-    selectedAlbum = null;
     photos = [];
+    stopPolling();
   }
 
-  function extractShareToken(url: string): string | null {
-    // Example: https://photos.google.com/share/AF1QipP9...
-    // The token is the part after /share/ and before any ? or /
-    const match = url.match(/photos\.google\.com\/share\/([^/?]+)/);
-    return match ? match[1] : null;
-  }
-
-  async function handleAddAlbum() {
-    error = "";
-    const token = extractShareToken(shareUrl);
-
-    if (!token) {
-      error = "Invalid Google Photos shared album URL";
-      return;
+  function stopPolling() {
+    if (pollInterval) {
+      clearInterval(pollInterval);
     }
+    isPolling = false;
+    pollAttempts = 0;
+  }
 
+  async function handleSelectPhotos() {
+    error = "";
     loading = true;
-    try {
-      const album = await joinSharedAlbum(token);
-      // Check if already exists
-      if (!albums.find((a) => a.id === album.id)) {
-        albums = [...albums, album];
-      }
-      shareUrl = "";
 
-      // Select the newly added album
-      selectAlbum(album);
+    try {
+      const session = await createPickerSession();
+      // The picker URI needs to be opened in a way the user can interact.
+      // It's a Google-hosted page.
+      // Since we need to poll concurrently, we should open it in a new window/tab.
+      window.open(session.pickerUri, "_blank", "width=800,height=600");
+
+      startPolling(session.id);
     } catch (e: any) {
       error = e.message;
-    } finally {
       loading = false;
     }
   }
 
-  async function selectAlbum(album: Album) {
-    selectedAlbum = album;
-    loading = true;
-    error = "";
-    photos = [];
+  function startPolling(sessionId: string) {
+    stopPolling();
+    isPolling = true;
+    loading = true; // Still loading from user perspective until photos appear
 
+    // Poll every 2 seconds
+    pollInterval = setInterval(async () => {
+      pollAttempts++;
+      if (pollAttempts > MAX_POLL_ATTEMPTS) {
+        stopPolling();
+        error = "Selection timed out. Please try again.";
+        loading = false;
+        return;
+      }
+
+      try {
+        const session = await pollPickerSession(sessionId);
+        if (session.mediaItemsSet) {
+          // User finished selection
+          stopPolling();
+          await loadSelectedPhotos(sessionId);
+        }
+      } catch (e: any) {
+        console.error("Polling error:", e);
+        // Don't stop polling on transient errors, but maybe count them?
+      }
+    }, 2000);
+  }
+
+  async function loadSelectedPhotos(sessionId: string) {
     try {
-      photos = await listMediaItems(album.id);
+      // Fetch the items
+      // Note: Pagination could be needed for large selections, implementing basic listing for now
+      const items = await listSessionMediaItems(sessionId);
+      // Prepend new photos to existing ones, or replace?
+      // Replaces seems cleaner for a "session" concept.
+      photos = items;
     } catch (e: any) {
-      error = e.message;
+      error = "Failed to load photos: " + e.message;
     } finally {
       loading = false;
     }
@@ -88,12 +114,22 @@
 </script>
 
 <div class="p-8 max-w-6xl mx-auto">
-  <h1 class="text-3xl font-bold mb-8">Google Photos Integration</h1>
+  <div class="flex justify-between items-center mb-8">
+    <h1 class="text-3xl font-bold">Google Photos Picker</h1>
+    {#if isConnected}
+      <button
+        on:click={handleDisconnect}
+        class="text-sm text-red-600 hover:text-red-800"
+      >
+        Disconnect
+      </button>
+    {/if}
+  </div>
 
   {#if !isConnected}
     <div class="bg-white p-8 rounded-lg shadow-md text-center">
       <p class="mb-6 text-gray-600">
-        Connect to Google Photos to access your shared albums.
+        Connect to Google Photos to select product images.
       </p>
       <button
         on:click={handleConnect}
@@ -103,111 +139,79 @@
       </button>
     </div>
   {:else}
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-      <!-- Sidebar / Album List -->
-      <div class="md:col-span-1 space-y-6">
-        <div class="bg-white p-6 rounded-lg shadow-md">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-semibold">Albums</h2>
-            <button
-              on:click={handleDisconnect}
-              class="text-sm text-red-600 hover:text-red-800"
-            >
-              Disconnect
-            </button>
-          </div>
-
-          <div class="mb-4">
-            <input
-              type="text"
-              bind:value={shareUrl}
-              placeholder="Paste shared album URL"
-              class="w-full border rounded px-3 py-2 mb-2"
-            />
-            <button
-              on:click={handleAddAlbum}
-              disabled={!shareUrl || loading}
-              class="w-full bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-            >
-              Add Album
-            </button>
-          </div>
-
-          {#if error && !selectedAlbum}
-            <div class="text-red-500 text-sm mb-4">{error}</div>
-          {/if}
-
-          <div class="space-y-2">
-            {#each albums as album}
-              <button
-                on:click={() => selectAlbum(album)}
-                class="w-full text-left p-3 rounded border transition {selectedAlbum?.id ===
-                album.id
-                  ? 'bg-blue-50 border-blue-500'
-                  : 'hover:bg-gray-50 border-gray-200'}"
-              >
-                <div class="font-medium truncate">{album.title}</div>
-                <div class="text-xs text-gray-500">
-                  {album.mediaItemsCount} items
-                </div>
-              </button>
-            {/each}
-            {#if albums.length === 0}
-              <p class="text-gray-400 text-sm italic text-center py-4">
-                No albums added yet
-              </p>
-            {/if}
-          </div>
+    <div class="space-y-6">
+      <!-- Actions -->
+      <div
+        class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between"
+      >
+        <div>
+          <h2 class="text-xl font-semibold mb-2">Select Photos</h2>
+          <p class="text-gray-500 text-sm">
+            Open the Google Photos picker to choose images.
+          </p>
         </div>
+        <button
+          on:click={handleSelectPhotos}
+          disabled={loading || isPolling}
+          class="bg-green-600 text-white px-6 py-3 rounded-md font-medium hover:bg-green-700 transition disabled:opacity-50 flex items-center gap-2"
+        >
+          {#if isPolling}
+            <span
+              class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"
+            ></span>
+            Waiting for selection...
+          {:else}
+            <span>Photos Library</span>
+          {/if}
+        </button>
       </div>
 
-      <!-- Main Content / Photo Grid -->
-      <div class="md:col-span-2">
-        {#if selectedAlbum}
-          <div class="bg-white p-6 rounded-lg shadow-md">
-            <h2 class="text-xl font-semibold mb-4">{selectedAlbum.title}</h2>
+      <!-- content -->
+      <div class="bg-white p-6 rounded-lg shadow-md min-h-[400px]">
+        {#if error}
+          <div class="p-4 bg-red-50 text-red-700 rounded mb-4">
+            {error}
+          </div>
+        {/if}
 
-            {#if error}
-              <div class="p-4 bg-red-50 text-red-700 rounded mb-4">
-                {error}
-              </div>
-            {/if}
-
-            {#if loading}
-              <div class="flex justify-center p-12">
+        {#if loading && !isPolling}
+          <div class="flex justify-center p-12">
+            <div
+              class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"
+            ></div>
+          </div>
+        {:else if photos.length > 0}
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="font-medium text-gray-700">
+              Selected Photos ({photos.length})
+            </h3>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {#each photos as photo}
+              <div
+                class="aspect-square bg-gray-100 rounded overflow-hidden relative group"
+              >
+                <SecureImage
+                  src="{photo.baseUrl}=w400-h400-c"
+                  alt="Thumbnail"
+                  className="w-full h-full object-cover"
+                />
                 <div
-                  class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"
+                  class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all"
                 ></div>
               </div>
-            {:else if photos.length > 0}
-              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {#each photos as photo}
-                  <div
-                    class="aspect-square bg-gray-100 rounded overflow-hidden relative group"
-                  >
-                    <img
-                      src="{photo.baseUrl}=w400-h400-c"
-                      alt="Thumbnail"
-                      class="w-full h-full object-cover"
-                      referrerpolicy="no-referrer"
-                    />
-                    <div
-                      class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all"
-                    ></div>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <div class="text-center py-12 text-gray-500">
-                No photos found in this album.
-              </div>
-            {/if}
+            {/each}
+          </div>
+        {:else if isPolling}
+          <div class="text-center py-20 text-gray-500">
+            <p class="text-lg">Please select photos in the popup window...</p>
+            <p class="text-sm mt-2">
+              The photos will appear here once you click "Done".
+            </p>
           </div>
         {:else}
-          <div
-            class="bg-white p-12 rounded-lg shadow-md text-center text-gray-400"
-          >
-            Select an album to view photos
+          <div class="text-center py-20 text-gray-400">
+            No photos selected yet.
           </div>
         {/if}
       </div>

@@ -1,15 +1,15 @@
 /**
- * Google Photos Integration Service
+ * Google Photos Integration Service (Picker API)
  *
  * This module provides OAuth authentication and API functionality
- * for Google Photos integration in the Dobutsu Admin application.
+ * for Google Photos integration using the Picker API.
  */
 
 // Environment configuration
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_PHOTOS_CLIENT_ID;
 const SCOPES = (
   import.meta.env.VITE_GOOGLE_PHOTOS_SCOPES ||
-  "https://www.googleapis.com/auth/photoslibrary.readonly,https://www.googleapis.com/auth/photoslibrary.sharing"
+  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
 ).split(",");
 
 // OAuth token storage key
@@ -27,15 +27,12 @@ export interface GooglePhotosToken {
 }
 
 /**
- * Album information
+ * Picker Session information
  */
-export interface Album {
+export interface PickerSession {
   id: string;
-  title: string;
-  productUrl: string;
-  mediaItemsCount: string;
-  coverPhotoBaseUrl?: string;
-  coverPhotoMediaItemId?: string;
+  pickerUri: string;
+  mediaItemsSet?: boolean;
 }
 
 /**
@@ -109,6 +106,14 @@ export function getStoredToken(): GooglePhotosToken | null {
 
     // Check if token is expired
     if (token.expires_at && Date.now() > token.expires_at) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return null;
+    }
+
+    // Check if token has required scopes
+    const requiredScope = SCOPES[0]; // We only have one now
+    if (!token.scope || !token.scope.includes(requiredScope)) {
+      console.warn("Token missing required scope, invalidating.");
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       return null;
     }
@@ -226,45 +231,49 @@ export function handleOAuthCallback(): GooglePhotosToken | null {
 }
 
 /**
- * Join a shared album using its share token
+ * Create a new Picker session
  */
-export async function joinSharedAlbum(shareToken: string): Promise<Album> {
+export async function createPickerSession(): Promise<PickerSession> {
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");
 
   const response = await fetch(
-    `https://photoslibrary.googleapis.com/v1/sharedAlbums:join`,
+    `https://photospicker.googleapis.com/v1/sessions`,
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token.access_token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ shareToken }),
+      // Note: No body needed for simple session unless validTimeRanges is specified
+      body: JSON.stringify({}),
     },
   );
 
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(
-      `Failed to join album: ${response.statusText} - ${errorText}`,
+      `Failed to create picker session: ${response.statusText} - ${errorText}`,
     );
   }
 
   const data = await response.json();
-  return data.album as Album;
+  return data as PickerSession;
 }
 
 /**
- * List shared albums
+ * Poll a Picker session to check status
  */
-export async function listSharedAlbums(): Promise<Album[]> {
+export async function pollPickerSession(
+  sessionId: string,
+): Promise<PickerSession> {
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");
 
   const response = await fetch(
-    `https://photoslibrary.googleapis.com/v1/sharedAlbums`,
+    `https://photospicker.googleapis.com/v1/sessions/${sessionId}`,
     {
+      method: "GET",
       headers: {
         Authorization: `Bearer ${token.access_token}`,
       },
@@ -272,46 +281,70 @@ export async function listSharedAlbums(): Promise<Album[]> {
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to list shared albums: ${response.statusText}`);
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to poll picker session: ${response.statusText} - ${errorText}`,
+    );
   }
-
   const data = await response.json();
-  return data.sharedAlbums || [];
+  return data as PickerSession;
 }
 
 /**
- * List media items in an album
+ * List media items from a completed session
  */
-export async function listMediaItems(
-  albumId: string,
-  pageSize = 50,
+export async function listSessionMediaItems(
+  sessionId: string,
+  pageSize = 100,
 ): Promise<MediaItem[]> {
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");
 
-  const response = await fetch(
-    `https://photoslibrary.googleapis.com/v1/mediaItems:search`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token.access_token}`,
-        "Content-Type": "application/json",
+  let allItems: MediaItem[] = [];
+  let pageToken: string | null = null;
+
+  do {
+    const params = new URLSearchParams({
+      sessionId: sessionId,
+      pageSize: pageSize.toString(),
+    });
+    if (pageToken) {
+      params.append("pageToken", pageToken);
+    }
+
+    const response = await fetch(
+      `https://photospicker.googleapis.com/v1/mediaItems?${params.toString()}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+        },
       },
-      body: JSON.stringify({
-        albumId,
-        pageSize,
-        orderBy: "MediaMetadata.creation_time",
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Failed to list media items: ${response.statusText} - ${errorText}`,
     );
-  }
 
-  const data = await response.json();
-  return (data.mediaItems || []) as MediaItem[];
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Failed to list session media items: ${response.statusText} - ${errorText}`,
+      );
+    }
+
+    const data = await response.json();
+    if (data.mediaItems) {
+      // Map Picker API structure (nested mediaFile) to our flat interface
+      const mappedItems = data.mediaItems.map((item: any) => ({
+        id: item.id,
+        productUrl: item.productUrl, // Note: Picker API might not return this, but we use baseUrl
+        baseUrl: item.mediaFile?.baseUrl,
+        mimeType: item.mediaFile?.mimeType,
+        filename: item.mediaFile?.filename,
+        mediaMetadata: item.mediaFile?.mediaFileMetadata,
+        description: item.description,
+      }));
+      allItems = allItems.concat(mappedItems);
+    }
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+
+  return allItems;
 }
