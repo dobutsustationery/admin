@@ -1,5 +1,4 @@
 
-
 import { test, expect } from '../fixtures/auth';
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
@@ -7,6 +6,7 @@ import { FlowHelper } from "../helpers/flow-helper";
 import * as path from "path";
 
 test.describe('Google Photos Integration', () => {
+    
   test('should allow connecting to Google Photos (mocked)', async ({ authenticatedPage: page }, testInfo) => {
     const outputDir = path.dirname(testInfo.file);
     const screenshots = createScreenshotHelper();
@@ -15,7 +15,7 @@ test.describe('Google Photos Integration', () => {
 
     docHelper.setMetadata(
         "Google Photos Connection",
-        "**As an** admin\n**I want to** connect Google Photos\n**So that** I can access shared albums."
+        "**As an** admin\n**I want to** connect Google Photos\n**So that** I can select photos via the Picker."
     );
 
     // Inject mock config to bypass env var checks
@@ -28,7 +28,8 @@ test.describe('Google Photos Integration', () => {
             description: "Navigate to Photos page",
             check: async () => {
                 await page.goto('/photos');
-                await expect(page.locator('h1')).toContainText('Google Photos Integration');
+                await expect(page.locator('h1')).toContainText('Google Photos Picker');
+                // Wait for any disconnected state to resolve
             }
         },
         {
@@ -38,6 +39,7 @@ test.describe('Google Photos Integration', () => {
         {
             description: "Simulate OAuth Callback",
             check: async () => {
+                // Navigate away and back with token
                 await page.goto('about:blank');
                 await page.goto('/photos#access_token=mock_access_token&expires_in=3600&state=photos_auth');
             }
@@ -46,7 +48,8 @@ test.describe('Google Photos Integration', () => {
             description: "Verify Connected State",
             check: async () => {
                  await expect(page.locator('button', { hasText: 'Disconnect' })).toBeVisible();
-                 await expect(page.locator('input[placeholder="Paste shared album URL"]')).toBeVisible();
+                 // New UI elements
+                 await expect(page.locator('button', { hasText: 'Photos Library' })).toBeVisible();
             }
         }
     ]);
@@ -54,18 +57,18 @@ test.describe('Google Photos Integration', () => {
     docHelper.writeReadme();
   });
 
-  test('should allow adding an album and viewing photos', async ({ authenticatedPage: page }, testInfo) => {
+  test('should allow selecting photos via Picker flow', async ({ authenticatedPage: page }, testInfo) => {
      const outputDir = path.dirname(testInfo.file);
      const screenshots = createScreenshotHelper();
      const docHelper = new TestDocumentationHelper(outputDir);
      const flow = new FlowHelper(page, screenshots, docHelper);
 
      docHelper.setMetadata(
-        "Google Photos Album View",
-        "**As an** admin\n**I want to** add an album\n**So that** I can view photos."
+        "Google Photos Picker Flow",
+        "**As an** admin\n**I want to** select photos from the Picker\n**So that** I can import them."
      );
 
-     // Config
+     // Config: Start Authenticated
      await page.addInitScript(() => {
         window.__MOCK_PHOTOS_CONFIG__ = true;
         localStorage.setItem('google_photos_access_token', JSON.stringify({
@@ -75,56 +78,105 @@ test.describe('Google Photos Integration', () => {
             scope: 'scope',
             token_type: 'Bearer'
         }));
+        window.open = () => null; // Mock window.open    
     });
 
     // Mock API calls
-    await page.route('https://photoslibrary.googleapis.com/v1/sharedAlbums:join', async (route: any) => {
+    
+    // 1. Create Session
+    await page.route('https://photospicker.googleapis.com/v1/sessions', async (route: any) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify({
-                album: { id: 'album_123', title: 'Test Album', productUrl: 'http://google.com', mediaItemsCount: '2' }
+                id: 'sess_123',
+                pickerUri: 'http://example.com/picker'
             })
         });
     });
 
-    await page.route('https://photoslibrary.googleapis.com/v1/mediaItems:search', async (route: any) => {
+    // 2. Poll Session (First call: waiting, Second call: done)
+    let pollCount = 0;
+    await page.route('https://photospicker.googleapis.com/v1/sessions/sess_123', async (route: any) => {
+        pollCount++;
+        const mediaItemsSet = pollCount >= 2;
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                id: 'sess_123',
+                pickerUri: 'http://example.com/picker',
+                mediaItemsSet: mediaItemsSet
+            })
+        });
+    });
+
+    // 3. List Media Items
+    await page.route('https://photospicker.googleapis.com/v1/mediaItems?sessionId=sess_123&pageSize=100', async (route: any) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify({
                 mediaItems: [
-                    { id: 'photo1', baseUrl: 'http://via.placeholder.com/400', filename: 'photo1.jpg', mimeType: 'image/jpeg', mediaMetadata: { creationTime: '2023-01-01' } },
-                    { id: 'photo2', baseUrl: 'http://via.placeholder.com/400', filename: 'photo2.jpg', mimeType: 'image/jpeg', mediaMetadata: { creationTime: '2023-01-02' } }
+                    {
+                        id: '1',
+                        mediaFile: {
+                            baseUrl: 'http://via.placeholder.com/150',
+                            filename: 'photo1.jpg',
+                            mimeType: 'image/jpeg'
+                        }
+                    },
+                    {
+                        id: '2',
+                        mediaFile: {
+                            baseUrl: 'http://via.placeholder.com/150',
+                            filename: 'photo2.jpg',
+                            mimeType: 'image/jpeg'
+                        }
+                    }
                 ]
             })
         });
     });
 
-    await flow.step("View Album", "001-view-album", [
+    // 4. Mock Image Requests for SecureImage
+    await page.route('http://via.placeholder.com/**', async (route: any) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'image/jpeg',
+            body: Buffer.from('failed to load', 'base64') // Just dummy content, SecureImage checks response.ok
+        });
+    });
+
+    await flow.step("Open Picker", "001-open-picker", [
         {
             description: "Navigate to Photos",
             check: async () => await page.goto('/photos')
         },
         {
-            description: "Add Album",
+            description: "Start Selection",
             check: async () => {
-                const shareUrl = 'https://photos.google.com/share/AF1QipP9mocktoken';
-                await page.fill('input[placeholder="Paste shared album URL"]', shareUrl);
-                await page.click('button:has-text("Add Album")');
+                // We mock the popup behavior by just verifying polling starts.
+                await page.click('button:has-text("Photos Library")', { force: true });
+                // We mock the popup content or just let it close/ignore since test is fast
+                // Actually, in test environment window.open might be blocked or handled differently.
+                // But let's proceed. The button click triggers polling.
             }
         },
         {
-            description: "Verify Album List",
+            description: "Wait for Polling (Mocked)",
             check: async () => {
-                await expect(page.locator('button', { hasText: 'Test Album' })).toBeVisible();
-                await expect(page.locator('text=2 items')).toBeVisible();
+                // The polling is mocked to succeed on 2nd try (approx 2-4 seconds)
+                // We verify the spinning state then done state
+                await expect(page.locator('text=Waiting for selection')).toBeVisible();
+                
+                // Eventually items should appear
+                await expect(page.locator('h3', { hasText: 'Selected Photos (2)' })).toBeVisible({ timeout: 10000 });
             }
         },
         {
-            description: "Verify Photo Grid",
+            description: "Verify Photos",
             check: async () => {
-                await expect(page.locator('h2', { hasText: 'Test Album' })).toBeVisible();
                 const photos = page.locator('img[alt="Thumbnail"]');
                 await expect(photos).toHaveCount(2);
             }
@@ -141,5 +193,3 @@ declare global {
     originalLocation: string;
   }
 }
-
-

@@ -1,16 +1,16 @@
-# Google Photos Album View
+# Google Photos Picker Flow
 
 **As an** admin
-**I want to** add an album
-**So that** I can view photos.
+**I want to** select photos from the Picker
+**So that** I can import them.
 
-### 1. View Album
+### 1. Open Picker
 
-![View Album](screenshots/000-001-view-album.png)
+![Open Picker](screenshots/000-001-open-picker.png)
 
 **Programmatic Verification:**
 - [ ] Navigate to Photos
-- [ ] Add Album
-- [ ] Verify Album List
-- [ ] Verify Photo Grid
+- [ ] Start Selection
+- [ ] Wait for Polling (Mocked)
+- [ ] Verify Photos
 
