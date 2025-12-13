@@ -4,6 +4,8 @@ import { TestDocumentationHelper } from '../helpers/test-documentation-helper';
 import * as path from 'path';
 
 test.describe('Audit Log', () => {
+    test.use({ locale: 'en-CA' }); // Enforce YYYY-MM-DD for date inputs
+
     test('audit log rich data verification', async ({ authenticatedPage: page }, testInfo) => {
         test.setTimeout(90000);
         const screenshots = createScreenshotHelper();
