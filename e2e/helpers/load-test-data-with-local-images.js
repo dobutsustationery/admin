@@ -179,7 +179,7 @@ async function loadTestData() {
     let batch = db.batch();
     let batchCount = 0;
     let rewrittenCount = 0;
-    const BATCH_SIZE = 20;
+    const BATCH_SIZE = 100;
 
     for (const { id, data } of docsToLoad) {
       const docRef = db.collection(collectionName).doc(id);

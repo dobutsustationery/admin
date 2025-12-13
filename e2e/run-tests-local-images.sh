@@ -49,7 +49,7 @@ fi
 
 echo ""
 echo "📦 Loading test data into emulator with local images..."
-node e2e/helpers/load-test-data-with-local-images.js
+node e2e/helpers/load-test-data-with-local-images.js --match-jancodes=10
 
 echo ""
 echo "🔗 Creating symlink for test images..."

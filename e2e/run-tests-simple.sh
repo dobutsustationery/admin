@@ -46,7 +46,7 @@ if check_emulators; then
   
   echo ""
   echo "📦 Loading test data into emulator..."
-  node e2e/helpers/load-test-data.js
+  node e2e/helpers/load-test-data.js --match-jancodes=10
   
   echo ""
   echo "🏗️  Building application for emulator mode..."
