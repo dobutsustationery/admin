@@ -60,7 +60,7 @@ ln -sf ../e2e/test-images static/test-images
 
 echo ""
 echo "📦 Loading test data into emulator with local images..."
-node e2e/helpers/load-test-data-with-local-images.js --match-jancodes=10
+node e2e/helpers/load-test-data-with-local-images.js
 
 echo ""
 echo "🏗️  Building application for emulator mode..."
