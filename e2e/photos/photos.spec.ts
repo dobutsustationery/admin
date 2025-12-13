@@ -39,9 +39,9 @@ test.describe('Google Photos Integration', () => {
         {
             description: "Simulate OAuth Callback",
             check: async () => {
-                // Navigate away and back with token
+                // Simulate return from Google with hash params
                 await page.goto('about:blank');
-                await page.goto('/photos#access_token=mock_access_token&expires_in=3600&state=photos_auth');
+                await page.goto('/photos#access_token=mock_token&expires_in=3600&scope=https://www.googleapis.com/auth/photospicker.mediaitems.readonly&token_type=Bearer&state=photos_auth');
             }
         },
         {
@@ -75,7 +75,7 @@ test.describe('Google Photos Integration', () => {
             access_token: 'mock_token',
             expires_in: 3600,
             expires_at: Date.now() + 3600000,
-            scope: 'scope',
+            scope: 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
             token_type: 'Bearer'
         }));
         window.open = () => null; // Mock window.open    
@@ -157,10 +157,10 @@ test.describe('Google Photos Integration', () => {
             description: "Start Selection",
             check: async () => {
                 // We mock the popup behavior by just verifying polling starts.
-                await page.click('button:has-text("Photos Library")', { force: true });
-                // We mock the popup content or just let it close/ignore since test is fast
-                // Actually, in test environment window.open might be blocked or handled differently.
-                // But let's proceed. The button click triggers polling.
+                // Use DOM click to avoid Playwright stability strictness which might be flaky with standard buttons in mocks
+                const btn = page.locator('button:has-text("Photos Library")');
+                await btn.waitFor({ state: 'visible', timeout: 5000 });
+                await btn.evaluate((node: any) => node.click());
             }
         },
         {
