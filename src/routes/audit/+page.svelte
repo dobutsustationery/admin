@@ -46,8 +46,9 @@
         id: doc.id,
         ...doc.data(),
         // Helper to format timestamp for display
-        displayTime:
-          doc.data().timestamp?.toDate() ? format(doc.data().timestamp.toDate(), "yyyy-MM-dd") : "Unknown",
+        displayTime: doc.data().timestamp?.toDate()
+          ? format(doc.data().timestamp.toDate(), "yyyy-MM-dd")
+          : "Unknown",
       }));
     } catch (e) {
       console.error("Error fetching audit logs:", e);
@@ -126,17 +127,18 @@
           ><ChevronLeft size={20} /></button
         >
         <div class="date-inputs">
-          <input 
-            type="date" 
-            value={startDateInput} 
-            on:change={(e) => currentDate = new Date(e.currentTarget.value + 'T12:00:00')}
+          <input
+            type="date"
+            value={startDateInput}
+            on:change={(e) =>
+              (currentDate = new Date(e.currentTarget.value + "T12:00:00"))}
             aria-label="Start Date"
           />
           <span>-</span>
-          <input 
-            type="date" 
-            value={endDateInput} 
-            disabled 
+          <input
+            type="date"
+            value={endDateInput}
+            disabled
             aria-label="End Date"
           />
         </div>
@@ -155,16 +157,17 @@
     <div class="action-list">
       {#each actions as action (action.id)}
         <div class="action-card">
-          <div 
-            class="action-header" 
-            role="button" 
-            tabindex="0" 
+          <div
+            class="action-header"
+            role="button"
+            tabindex="0"
             on:click={() => toggleExpand(action.id)}
-            on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleExpand(action.id)}
+            on:keydown={(e) =>
+              (e.key === "Enter" || e.key === " ") && toggleExpand(action.id)}
           >
             <span class="timestamp">{action.displayTime}</span>
             <span class="description">{getAuditActionDescription(action)}</span>
-            <span class="toggle">{expandedId === action.id ? '▼' : '▶'}</span>
+            <span class="toggle">{expandedId === action.id ? "▼" : "▶"}</span>
           </div>
           {#if expandedId === action.id}
             <div class="action-body">
