@@ -29,6 +29,8 @@ export interface ScreenshotHelper {
     options?: {
       fullPage?: boolean;
       programmaticCheck?: () => Promise<void>;
+      mask?: Array<any>; // Allow Playwright locators for masking
+      [key: string]: any; // Allow other Playwright snapshot options
     },
   ): Promise<void>;
 
@@ -51,7 +53,7 @@ export function createScreenshotHelper(startIndex = 0): ScreenshotHelper {
 
   return {
     async capture(page, description, options = {}) {
-      const { fullPage = false, programmaticCheck } = options;
+      const { fullPage = false, programmaticCheck, ...rest } = options;
 
       // Format: 000-description.png
       const paddedNumber = String(counter).padStart(3, "0");
@@ -68,6 +70,7 @@ export function createScreenshotHelper(startIndex = 0): ScreenshotHelper {
       // Take the screenshot
       await expect(page).toHaveScreenshot(filename, {
         fullPage,
+        ...rest,
       });
 
       console.log(`   ✓ Screenshot saved: ${filename}`);
