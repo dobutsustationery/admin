@@ -251,6 +251,19 @@ test.describe("Inventory Receipt with Google Drive", () => {
 
         // --- 4. Interactive Resolution ---
         
+        async function waitForSync(page: any) {
+             // Attempt to wait for Sync to start (Sync > 0)
+             // This handles the race where we check for Sync: 0 too early (before it increments)
+             try {
+                // Using regex to match Sync: 1, 2, etc.
+                await expect(page.locator('text=/Sync: [1-9]/')).toBeVisible({ timeout: 2000 });
+             } catch (e) {
+                // Ignore timeout - implies sync was too fast or didn't trigger UI update yet? 
+                // Or maybe we missed it. Proceed to wait for 0.
+             }
+             await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 10000 });
+        }
+
         // 4.1 Process Matches
         await flow.step("Process Matches", "process-matches", [
             {
@@ -259,9 +272,11 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     await page.click('button:has-text("Process Matches")');
                     await expect(page.locator('.success-message')).toBeVisible();
                     // Wait for sync to complete
-                    await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 10000 });
+                    await waitForSync(page);
                     // Verify Match item (490...) is DONE
                     await expect(page.locator('tr:has-text("4542804044355")').locator('td:last-child')).toContainText("Done");
+                    // Wait for success message to disappear for consistent screenshots
+                    await expect(page.locator('.success-message')).toBeHidden();
                 }
             }
         ]);
@@ -274,9 +289,11 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     await page.click('button:has-text("Create New")');
                     await expect(page.locator('.success-message')).toBeVisible();
                     // Wait for sync to complete
-                    await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 10000 });
+                    await waitForSync(page);
                     // Verify New item is Done
                     await expect(page.locator('tr:has-text("New Mystery Item")').locator('td:last-child')).toContainText("Done");
+                    // Wait for success message to disappear for consistent screenshots
+                    await expect(page.locator('.success-message')).toBeHidden();
                 }
             }
         ]);
@@ -332,13 +349,11 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     await page.click('button:has-text("Process Resolved")');
                     await expect(page.locator('.success-message')).toBeVisible();
                     // Wait for sync to complete
-                    await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 10000 });
+                    await waitForSync(page);
                     await expect(page.locator('tr:has-text("4510085530713")').locator('td:last-child')).toContainText("Done");
+                    // Wait for success message to disappear for consistent screenshots
+                    await expect(page.locator('.success-message')).toBeHidden();
                 }
-            },
-            {
-                description: "Success message displayed",
-                check: async () => await expect(page.locator('.success-message')).toContainText("Successfully processed")
             }
         ]);
         
