@@ -99,9 +99,9 @@ test.describe("Inventory Receipt with Google Drive", () => {
         // 4510085530713: Conflict Item (from export + injected duplicate)
         const MOCK_CSV = 
 `JAN CODE,TOTAL PCS,DESCRIPTION,Carton Number
-4542804044355,10,Existing Real Item,1
+4542804044355,10,Design Paper Square Astronomy,1
 1010101010101,5,New Mystery Item,2
-4510085530713,30,Conflict Real Item,3`;
+4510085530713,30,Stickers Urusei and Yatsura,3`;
 
         // --- Mock Drive API ---
         await page.route('**/*googleapis.com/**', async (route) => {
