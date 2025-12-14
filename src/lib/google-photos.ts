@@ -349,5 +349,12 @@ export async function listSessionMediaItems(
     pageToken = data.nextPageToken || null;
   } while (pageToken);
 
+  // Sort by creationTime ascending to ensure sequence (Barcode -> Product)
+  allItems.sort((a, b) => {
+    const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
+    const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
+    return tA - tB;
+  });
+
   return allItems;
 }
