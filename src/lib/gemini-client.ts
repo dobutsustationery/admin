@@ -225,20 +225,32 @@ export async function processMediaItems(
             }
 
             description = await imagePrompt(
-                `Write a playful product description for these images, prefacing each one with the one-word type of product, chosen from (${categories}), formatted with HTML tags.`,
+                `Write a playful product description for these images, prefacing each one with the one-word type of product, chosen from (${categories}), formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.`,
                 groupImagesData,
                 accessToken,
                 apiKey
             );
         } else {
             description = await imagePrompt(
-                "Write a playful product description for this image, formatted with HTML tags.",
+                "Write a playful product description for this image, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.",
                 groupImagesData,
                 accessToken,
                 apiKey
             );
         }
         
+        // Clean up response if it contains markdown or preamble
+        if (description) {
+            // Remove markdown code blocks
+            description = description.replace(/```html/g, '').replace(/```/g, '');
+            // Remove common preambles (heuristic)
+            const htmlStart = description.indexOf('<');
+            if (htmlStart > -1) {
+                description = description.substring(htmlStart);
+            }
+            description = description.trim();
+        }
+
         // Update live group
         const liveGroup = liveGroups.find(g => g.janCode === group.janCode);
         if (liveGroup) {
