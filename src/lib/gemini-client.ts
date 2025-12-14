@@ -122,25 +122,33 @@ export interface ProcessingResult {
 export async function processMediaItems(
     items: { baseUrl: string; id: string }[], 
     accessToken: string,
-    apiKey?: string
+    apiKey?: string,
+    onProgress?: (msg: string) => void
 ): Promise<ProcessingResult[]> {
     
     const groups: { janCode: string; images: { baseUrl: string; dataPromise: Promise<{ data: string; mimeType: string }> }[] }[] = [];
     let currentGroup: typeof groups[0] | null = null;
 
+    onProgress?.(`Starting analysis of ${items.length} items...`);
     console.log(`Processing ${items.length} items...`);
 
     // 1. Group images by JAN code
+    let processedCount = 0;
     for (const item of items) {
+        processedCount++;
+        onProgress?.(`Processing image ${processedCount}/${items.length}...`);
         try {
             const imageDataPromise = fetchImage(item.baseUrl, accessToken); 
             const imgData = await imageDataPromise;
 
+            onProgress?.(`Scanning barcode for image ${processedCount}...`);
             const janCheck = await imagePrompt("Find the JAN code in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.", [imgData], accessToken, apiKey);
             const janCode = janCheck?.replace(/[^0-9]/g, "");
 
             if (janCode && janCode.length > 5 && janCode !== 'NONE') {
-                console.log(`Found JAN: ${janCode}`);
+                const msg = `Found JAN: ${janCode}`;
+                console.log(msg);
+                onProgress?.(msg);
                 currentGroup = {
                     janCode: janCode,
                     images: []
@@ -148,7 +156,9 @@ export async function processMediaItems(
                 groups.push(currentGroup);
                 currentGroup.images.push({ baseUrl: item.baseUrl, dataPromise: imageDataPromise });
             } else {
-                console.log(`No JAN found (result: ${janCheck}), adding to current group.`);
+                const msg = `No JAN found, adding to current group (Previous: ${currentGroup?.janCode || "None"}).`;
+                console.log(msg);
+                onProgress?.(msg);
                 if (!currentGroup) {
                     currentGroup = { janCode: "UNKNOWN", images: [] };
                     groups.push(currentGroup);
@@ -167,9 +177,13 @@ export async function processMediaItems(
 
     // 2. Generate descriptions
     const results: ProcessingResult[] = [];
-
+    
+    let groupIndex = 0;
     for (const group of groups) {
-        console.log(`Generating description for JAN ${group.janCode} with ${group.images.length} images...`);
+        groupIndex++;
+        const msg = `Generating description for product ${groupIndex}/${groups.length} (JAN: ${group.janCode})...`;
+        console.log(msg);
+        onProgress?.(msg);
         
         const groupImagesData = await Promise.all(group.images.map(i => i.dataPromise));
         
