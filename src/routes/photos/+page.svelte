@@ -91,17 +91,11 @@
         if (session.mediaItemsSet) {
           // User finished selection
           if (pickerWindow) {
-              console.log("Attempting close. Closed?", pickerWindow.closed);
+              // Try to close
               pickerWindow.close();
-              
-              // Force check
-              setTimeout(() => {
-                  if (pickerWindow && !pickerWindow.closed) { 
-                      console.log("Force closing...");
-                      pickerWindow.close(); 
-                  }
-                  pickerWindow = null;
-              }, 500);
+              // Focus parent window to bring it forward if closure fails
+              window.focus();
+              pickerWindow = null;
           }
           stopPolling();
           await loadSelectedPhotos(sessionId);
@@ -272,7 +266,7 @@
                 {#each analysisGroups as group}
                     <!-- Card with nice rounded border -->
                     <!-- FORCED STYLES to ensure appearance -->
-                    <div class="bg-slate-50 relative mt-6 p-6" style="border: 2px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+                    <div class="bg-slate-50 relative" style="margin: 1em; padding: 0.5em; border: 2px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
                         <!-- JAN Badge -->
                         <div class="absolute -top-4 left-6">
                             <span class="bg-blue-600 text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-2">
