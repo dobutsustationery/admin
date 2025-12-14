@@ -57,5 +57,5 @@
     <span class="text-xs text-red-500">Error</span>
   </div>
 {:else}
-  <img src={objectUrl} {alt} class={className} />
+  <img src={objectUrl} {alt} class={className} style="width: 100%; height: 100%; object-fit: cover; display: block;" />
 {/if}
