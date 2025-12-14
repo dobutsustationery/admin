@@ -91,9 +91,17 @@
         if (session.mediaItemsSet) {
           // User finished selection
           if (pickerWindow) {
-              console.log("Closing picker window", pickerWindow);
+              console.log("Attempting close. Closed?", pickerWindow.closed);
               pickerWindow.close();
-              pickerWindow = null;
+              
+              // Force check
+              setTimeout(() => {
+                  if (pickerWindow && !pickerWindow.closed) { 
+                      console.log("Force closing...");
+                      pickerWindow.close(); 
+                  }
+                  pickerWindow = null;
+              }, 500);
           }
           stopPolling();
           await loadSelectedPhotos(sessionId);
@@ -175,11 +183,31 @@
 </script>
 
 <div class="p-8 max-w-6xl mx-auto">
-  <!-- ... (header code remains same, skipping for brevity in replacement) ... -->
+  <div class="flex justify-between items-center mb-8">
+    <h1 class="text-3xl font-bold">Google Photos Picker</h1>
+    {#if isConnected}
+      <button
+        on:click={handleDisconnect}
+        class="text-sm text-red-600 hover:text-red-800"
+      >
+        Disconnect
+      </button>
+    {/if}
+  </div>
 
-  <!-- ... (connect button code remains same) ... -->
-
-  {#if isConnected}
+  {#if !isConnected}
+    <div class="bg-white p-8 rounded-lg shadow-md text-center">
+      <p class="mb-6 text-gray-600">
+        Connect to Google Photos to select product images.
+      </p>
+      <button
+        on:click={handleConnect}
+        class="bg-blue-600 text-white px-6 py-3 rounded-md font-medium hover:bg-blue-700 transition"
+      >
+        Connect Google Photos
+      </button>
+    </div>
+  {:else}
     <div class="space-y-6">
 
       <!-- Actions -->
@@ -243,8 +271,9 @@
             <div class="space-y-8">
                 {#each analysisGroups as group}
                     <!-- Card with nice rounded border -->
-                    <div class="bg-slate-50 border border-gray-300 rounded-xl p-6 relative shadow-sm mt-6">
-                        <!-- JAN Badge embedded in top border -->
+                    <!-- FORCED STYLES to ensure appearance -->
+                    <div class="bg-slate-50 relative mt-6 p-6" style="border: 2px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+                        <!-- JAN Badge -->
                         <div class="absolute -top-4 left-6">
                             <span class="bg-blue-600 text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-2">
                                 <span>JAN: {group.janCode}</span>
@@ -259,9 +288,10 @@
                         </div>
 
                         <!-- Thumbnails Row -->
-                        <div class="flex flex-row flex-wrap gap-3 mt-4 mb-6">
+                        <div class="flex flex-row flex-wrap gap-4 mt-4 mb-6" style="display: flex; flex-direction: row; flex-wrap: wrap;">
                             {#each group.imageUrls as url}
-                                <div class="w-[148px] h-[148px] flex-shrink-0 bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative">
+                                <!-- FORCED SIZE to 148px -->
+                                <div class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative" style="width: 148px; height: 148px; flex-shrink: 0;">
                                      <SecureImage
                                       src="{url}=w296-h296-c"
                                       alt="Product Thumbnail"
