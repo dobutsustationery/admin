@@ -331,17 +331,19 @@ export async function listSessionMediaItems(
         `Failed to list session media items: ${response.statusText} - ${errorText}`,
       );
     }
-
+    
     const data = await response.json();
     if (data.mediaItems) {
-      // Map Picker API structure (nested mediaFile) to our flat interface
       const mappedItems = data.mediaItems.map((item: any) => ({
         id: item.id,
         productUrl: item.productUrl, // Note: Picker API might not return this, but we use baseUrl
         baseUrl: item.mediaFile?.baseUrl,
         mimeType: item.mediaFile?.mimeType,
         filename: item.mediaFile?.filename,
-        mediaMetadata: item.mediaFile?.mediaFileMetadata,
+        mediaMetadata: {
+            ...item.mediaFile?.mediaFileMetadata,
+            creationTime: item.createTime
+        },
         description: item.description,
       }));
       allItems = allItems.concat(mappedItems);
@@ -350,11 +352,17 @@ export async function listSessionMediaItems(
   } while (pageToken);
 
   // Sort by creationTime ascending to ensure sequence (Barcode -> Product)
+  console.log("Sorting", allItems.length, "items by creationTime...");
   allItems.sort((a, b) => {
     const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
     const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
-    return tA - tB;
+    return tA - tB; // Ascending: Oldest (Barcode) first
   });
+  
+  if (allItems.length > 0) {
+      console.log("First item:", allItems[0].filename, allItems[0].mediaMetadata?.creationTime);
+      console.log("Last item:", allItems[allItems.length-1].filename, allItems[allItems.length-1].mediaMetadata?.creationTime);
+  }
 
   return allItems;
 }
