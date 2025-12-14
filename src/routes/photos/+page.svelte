@@ -136,7 +136,19 @@
         generationResults = results;
 
     } catch (e: any) {
+        console.error("Generation error:", e);
         error = e.message;
+
+        // Auto-disconnect on auth errors
+        if (
+            e.message === "Not authenticated" || 
+            e.message.includes("403") || 
+            e.message.includes("401") ||
+            e.message.includes("insufficient permissions")
+        ) {
+            handleDisconnect();
+            error = "Authentication expired or insufficient permissions. Please connect again to grant access.";
+        }
     } finally {
         isGenerating = false;
     }
