@@ -41,7 +41,7 @@ async function fetchImage(url: string, token: string): Promise<{ data: string; m
 /**
  * Send a prompt with images to Gemini via REST API.
  */
-async function imagePrompt(text: string, images: { data: string; mimeType: string }[], accessToken: string): Promise<string | null> {
+async function imagePrompt(text: string, images: { data: string; mimeType: string }[], accessToken: string, apiKey?: string): Promise<string | null> {
   let countRetries = 0;
   while (true) {
     try {
@@ -57,13 +57,19 @@ async function imagePrompt(text: string, images: { data: string; mimeType: strin
         });
       }
 
-      const response = await fetch(GEMINI_API_URL, {
+      const url = apiKey ? `${GEMINI_API_URL}?key=${apiKey}` : GEMINI_API_URL;
+      const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "x-goog-user-project": import.meta.env.VITE_FIREBASE_PROJECT_ID || ""
+      };
+      
+      if (!apiKey) {
+          headers["Authorization"] = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(url, {
         method: "POST",
-        headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-            "x-goog-user-project": import.meta.env.VITE_FIREBASE_PROJECT_ID || ""
-        },
+        headers,
         body: JSON.stringify({ contents })
       });
 
@@ -115,7 +121,8 @@ export interface ProcessingResult {
  */
 export async function processMediaItems(
     items: { baseUrl: string; id: string }[], 
-    accessToken: string
+    accessToken: string,
+    apiKey?: string
 ): Promise<ProcessingResult[]> {
     
     const groups: { janCode: string; images: { baseUrl: string; dataPromise: Promise<{ data: string; mimeType: string }> }[] }[] = [];
@@ -129,7 +136,7 @@ export async function processMediaItems(
             const imageDataPromise = fetchImage(item.baseUrl, accessToken); 
             const imgData = await imageDataPromise;
 
-            const janCheck = await imagePrompt("Find the JAN code in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.", [imgData], accessToken);
+            const janCheck = await imagePrompt("Find the JAN code in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.", [imgData], accessToken, apiKey);
             const janCode = janCheck?.replace(/[^0-9]/g, "");
 
             if (janCode && janCode.length > 5 && janCode !== 'NONE') {
@@ -173,7 +180,8 @@ export async function processMediaItems(
             const categoriesRaw = await imagePrompt(
                 "Make simple one word descriptions for each related product in these images, emphasizing the style or product differences, separated by a vertical bar (|).",
                 groupImagesData,
-                accessToken
+                accessToken,
+                apiKey
             );
              if (categoriesRaw) {
                 const splits = categoriesRaw.split("\n").map(s => s.trim()).filter(s => s);
@@ -183,13 +191,15 @@ export async function processMediaItems(
             description = await imagePrompt(
                 `Write a playful product description for these images, prefacing each one with the one-word type of product, chosen from (${categories}), formatted with HTML tags.`,
                 groupImagesData,
-                accessToken
+                accessToken,
+                apiKey
             );
         } else {
             description = await imagePrompt(
                 "Write a playful product description for this image, formatted with HTML tags.",
                 groupImagesData,
-                accessToken
+                accessToken,
+                apiKey
             );
         }
 
