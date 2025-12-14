@@ -91,6 +91,7 @@
         if (session.mediaItemsSet) {
           // User finished selection
           if (pickerWindow) {
+              console.log("Closing picker window", pickerWindow);
               pickerWindow.close();
               pickerWindow = null;
           }
@@ -241,23 +242,26 @@
         {#if analysisGroups.length > 0}
             <div class="space-y-8">
                 {#each analysisGroups as group}
-                    <div class="border-2 border-gray-200 rounded-lg p-6 relative">
+                    <!-- Card with nice rounded border -->
+                    <div class="bg-slate-50 border border-gray-300 rounded-xl p-6 relative shadow-sm mt-6">
                         <!-- JAN Badge embedded in top border -->
-                        <div class="absolute -top-3 left-4 bg-white px-2">
-                            <span class="bg-blue-100 text-blue-800 text-sm font-bold px-3 py-1 rounded-full border border-blue-200 shadow-sm">
-                                JAN: {group.janCode}
+                        <div class="absolute -top-4 left-6">
+                            <span class="bg-blue-600 text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-2">
+                                <span>JAN: {group.janCode}</span>
+                                {#if group.status === 'collecting'}
+                                    <span class="w-2 h-2 bg-yellow-300 rounded-full animate-pulse" title="Collecting images"></span>
+                                {:else if group.status === 'generating'}
+                                    <span class="w-2 h-2 bg-purple-300 rounded-full animate-pulse" title="Generating"></span>
+                                {:else if group.status === 'done'}
+                                    <span class="w-2 h-2 bg-green-300 rounded-full" title="Done"></span>
+                                {/if}
                             </span>
-                             {#if group.status === 'collecting'}
-                                <span class="ml-2 text-xs text-gray-500 animate-pulse">Collecting images...</span>
-                             {:else if group.status === 'generating'}
-                                <span class="ml-2 text-xs text-purple-600 animate-pulse">Generating description...</span>
-                             {/if}
                         </div>
 
-                        <!-- Thumbnails -->
-                        <div class="flex flex-wrap gap-4 mt-2 mb-4">
+                        <!-- Thumbnails Row -->
+                        <div class="flex flex-row flex-wrap gap-3 mt-4 mb-6">
                             {#each group.imageUrls as url}
-                                <div class="w-[148px] h-[148px] bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm">
+                                <div class="w-[148px] h-[148px] flex-shrink-0 bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative">
                                      <SecureImage
                                       src="{url}=w296-h296-c"
                                       alt="Product Thumbnail"
@@ -269,12 +273,12 @@
 
                         <!-- Description -->
                         {#if group.description}
-                            <div class="prose prose-sm max-w-none bg-gray-50 p-4 rounded border border-gray-100">
+                            <div class="prose prose-sm max-w-none bg-white p-5 rounded-lg border border-gray-200 shadow-inner">
                                 {@html group.description}
                             </div>
                         {:else}
-                             <div class="h-24 flex items-center justify-center bg-gray-50 rounded border border-dashed border-gray-300 text-gray-400 text-sm italic">
-                                Description pending...
+                             <div class="h-24 flex items-center justify-center bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 text-gray-400 text-sm italic">
+                                <span class="animate-pulse">Waiting for AI description...</span>
                              </div>
                         {/if}
                     </div>
