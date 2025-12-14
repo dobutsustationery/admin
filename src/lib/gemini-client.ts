@@ -119,52 +119,72 @@ export interface ProcessingResult {
 /**
  * Process a list of media items to group by JAN code and generate descriptions.
  */
+export interface LiveGroup {
+    janCode: string;
+    imageUrls: string[];
+    description?: string;
+    categories?: string;
+    status: 'collecting' | 'generating' | 'done';
+}
+
 export async function processMediaItems(
     items: { baseUrl: string; id: string }[], 
     accessToken: string,
     apiKey?: string,
-    onProgress?: (msg: string) => void
+    onStateChange?: (groups: LiveGroup[], progress: { current: number, total: number, message: string }) => void
 ): Promise<ProcessingResult[]> {
     
     const groups: { janCode: string; images: { baseUrl: string; dataPromise: Promise<{ data: string; mimeType: string }> }[] }[] = [];
-    let currentGroup: typeof groups[0] | null = null;
+    // We maintain a "live" version for the UI
+    const liveGroups: LiveGroup[] = [];
+    
+    const notify = (msg: string, current = 0) => {
+        onStateChange?.([...liveGroups], { current, total: items.length, message: msg });
+    };
 
-    onProgress?.(`Starting analysis of ${items.length} items...`);
+    notify("Starting analysis...", 0);
     console.log(`Processing ${items.length} items...`);
 
     // 1. Group images by JAN code
     let processedCount = 0;
     for (const item of items) {
         processedCount++;
-        onProgress?.(`Processing image ${processedCount}/${items.length}...`);
+        notify(`Analyzing image ${processedCount}/${items.length}...`, processedCount);
+        
         try {
             const imageDataPromise = fetchImage(item.baseUrl, accessToken); 
             const imgData = await imageDataPromise;
 
-            onProgress?.(`Scanning barcode for image ${processedCount}...`);
             const janCheck = await imagePrompt("Find the JAN code in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.", [imgData], accessToken, apiKey);
             const janCode = janCheck?.replace(/[^0-9]/g, "");
+            
+            let targetGroupIdx = -1;
 
             if (janCode && janCode.length > 5 && janCode !== 'NONE') {
-                const msg = `Found JAN: ${janCode}`;
-                console.log(msg);
-                onProgress?.(msg);
-                currentGroup = {
-                    janCode: janCode,
-                    images: []
-                };
-                groups.push(currentGroup);
-                currentGroup.images.push({ baseUrl: item.baseUrl, dataPromise: imageDataPromise });
-            } else {
-                const msg = `No JAN found, adding to current group (Previous: ${currentGroup?.janCode || "None"}).`;
-                console.log(msg);
-                onProgress?.(msg);
-                if (!currentGroup) {
-                    currentGroup = { janCode: "UNKNOWN", images: [] };
-                    groups.push(currentGroup);
+                console.log(`Found JAN: ${janCode}`);
+                
+                // Find or create group
+                targetGroupIdx = groups.findIndex(g => g.janCode === janCode);
+                if (targetGroupIdx === -1) {
+                    groups.push({ janCode, images: [] });
+                    liveGroups.push({ janCode, imageUrls: [], status: 'collecting' });
+                    targetGroupIdx = groups.length - 1;
                 }
-                currentGroup.images.push({ baseUrl: item.baseUrl, dataPromise: imageDataPromise });
+            } else {
+                console.log(`No JAN found, adding to current/last group.`);
+                // Add to last group or create UNKNOWN
+                if (groups.length === 0) {
+                     groups.push({ janCode: "UNKNOWN", images: [] });
+                     liveGroups.push({ janCode: "UNKNOWN", imageUrls: [], status: 'collecting' });
+                }
+                targetGroupIdx = groups.length - 1;
             }
+            
+            // Add image to group
+            groups[targetGroupIdx].images.push({ baseUrl: item.baseUrl, dataPromise: imageDataPromise });
+            liveGroups[targetGroupIdx].imageUrls.push(item.baseUrl);
+            
+            notify(`Added to ${liveGroups[targetGroupIdx].janCode}`, processedCount);
 
         } catch (e: any) {
             console.error("Error processing item for grouping:", e);
@@ -178,12 +198,14 @@ export async function processMediaItems(
     // 2. Generate descriptions
     const results: ProcessingResult[] = [];
     
+    // Mark all as generating
+    liveGroups.forEach(g => g.status = 'generating');
+    notify("Starting generation...", items.length);
+
     let groupIndex = 0;
     for (const group of groups) {
         groupIndex++;
-        const msg = `Generating description for product ${groupIndex}/${groups.length} (JAN: ${group.janCode})...`;
-        console.log(msg);
-        onProgress?.(msg);
+        notify(`Generating description for ${group.janCode}...`, items.length);
         
         const groupImagesData = await Promise.all(group.images.map(i => i.dataPromise));
         
@@ -215,6 +237,15 @@ export async function processMediaItems(
                 accessToken,
                 apiKey
             );
+        }
+        
+        // Update live group
+        const liveGroup = liveGroups.find(g => g.janCode === group.janCode);
+        if (liveGroup) {
+            liveGroup.description = description || "Failed";
+            liveGroup.categories = categories;
+            liveGroup.status = 'done';
+            notify(`Finished ${group.janCode}`, items.length);
         }
 
         results.push({
