@@ -11,6 +11,13 @@
   let loading = true;
 
   onMount(async () => {
+    // Handle local/generated images directly
+    if (src.startsWith('data:') || src.startsWith('blob:')) {
+        objectUrl = src;
+        loading = false;
+        return;
+    }
+
     try {
       const token = getStoredToken();
       if (!token) {

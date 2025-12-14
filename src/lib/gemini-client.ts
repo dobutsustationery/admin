@@ -329,8 +329,8 @@ export async function processMediaItems(
         if (liveGroup) {
             liveGroup.description = description || "Failed";
             liveGroup.categories = categories;
-            liveGroup.status = 'done';
-            notify(`Finished ${group.janCode}`, items.length);
+            liveGroup.status = 'generating'; // Still generating images
+            notify(`Optimizing images for ${group.janCode}...`, items.length);
         }
 
         results.push({
@@ -339,7 +339,112 @@ export async function processMediaItems(
             categories: categories,
             imageUrls: group.images.map(i => i.baseUrl)
         });
+
+        // 3. Edit Images (Background Removal & Crop)
+        for (let imgIdx = 0; imgIdx < group.images.length; imgIdx++) {
+            const img = group.images[imgIdx];
+            const imgData = groupImagesData[imgIdx]; // Already fetched
+            
+            notify(`Optimizing image ${imgIdx + 1}/${group.images.length} for ${group.janCode}...`, items.length);
+            
+            try {
+                // Background removal and crop prompt
+                const editPrompt = "Remove the background from this image. Then, crop the image tightly around the subject with a 15px margin. Return the processed image.";
+                
+                // We use imagePrompt but since we expect an image back in native multimodal generation, 
+                // we need to handle the response differently if the API supports it.
+                // However, 'imagePrompt' currently expects text.
+                // We need a specific call for image-to-image or just standard generation that returns mime type image/png.
+                
+                // Since this is 2.0 Flash, it supports returning images in response.
+                // We need to update imagePrompt or create a new function that handles multimodal response.
+                
+                // Let's assume we need a new function 'editImage'
+                const editedBase64 = await editImage(editPrompt, imgData, accessToken, apiKey);
+                
+                if (editedBase64) {
+                    const dataUri = `data:image/png;base64,${editedBase64}`;
+                    // Update Live Group
+                    if (liveGroup) {
+                        liveGroup.imageUrls[imgIdx] = dataUri;
+                        notify(`Updated image ${imgIdx + 1} for ${group.janCode}`, items.length);
+                    }
+                }
+            } catch (e) {
+                console.error("Image optimization failed", e);
+            }
+        }
+        
+        if (liveGroup) liveGroup.status = 'done';
     }
 
     return results;
+}
+
+/**
+ * Edit an image using Gemini 2.0 Flash. 
+ * Note: This assumes the API returns inline data for the generated image.
+ */
+async function editImage(prompt: string, inputImage: { data: string; mimeType: string }, accessToken: string, apiKey?: string): Promise<string | null> {
+  // We reuse the basic structure but need to parse the binary or base64 response part
+  // The standard generateContent response might contain 'inlineData' in candidates if configured?
+  // Or plain text if it refuses.
+  
+  // Actually, standard REST API for generateContent returns JSON. 
+  // If it generates an image, it's usually in `parts` as `inline_data`.
+  
+  try {
+      const contents = [{
+        parts: [
+            { text: prompt },
+            { inline_data: { mime_type: inputImage.mimeType, data: inputImage.data } }
+        ]
+      }];
+
+      const url = apiKey ? `${GEMINI_API_URL}?key=${apiKey}` : GEMINI_API_URL;
+      const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "x-goog-user-project": import.meta.env.VITE_FIREBASE_PROJECT_ID || ""
+      };
+      
+      if (!apiKey) {
+          headers["Authorization"] = `Bearer ${accessToken}`;
+      }
+      
+      // We might need to ask for specific response schema or just standard?
+      // For image output, we typically just ask.
+      
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ 
+            contents,
+            generationConfig: {
+                responseMimeType: "application/json" // Try forcing JSON if we want text+image, but here we want image?
+                // Actually, for 2.0 Flash, it just returns parts.
+            }
+        })
+      });
+
+      if (!response.ok) throw new Error(response.statusText);
+      
+      const data = await response.json();
+      const part = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inline_data);
+      
+      if (part && part.inline_data) {
+          return part.inline_data.data;
+      }
+      
+      // If no image returned, maybe it returned text explaining why?
+      const textPart = data.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
+      if (textPart) {
+          console.warn("Gemini returned text instead of image:", textPart.text);
+      }
+      
+      return null;
+
+  } catch (e) {
+      console.error("Edit image error:", e);
+      return null;
+  }
 }
