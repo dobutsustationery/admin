@@ -202,42 +202,115 @@ export async function processMediaItems(
     liveGroups.forEach(g => g.status = 'generating');
     notify("Starting generation...", items.length);
 
-    let groupIndex = 0;
-    for (const group of groups) {
-        groupIndex++;
+
+
+    // Use standard for loop so we can modify 'groups' array if we split variants
+    for (let i = 0; i < groups.length; i++) {
+        const group = groups[i];
         notify(`Generating description for ${group.janCode}...`, items.length);
         
-        const groupImagesData = await Promise.all(group.images.map(i => i.dataPromise));
+        const groupImagesData = await Promise.all(group.images.map(img => img.dataPromise));
         
         let categories = "";
         let description: string | null = "";
+        let splitOccurred = false;
 
+        // Check for variants if multiple images
         if (group.images.length > 1) {
-            const categoriesRaw = await imagePrompt(
-                "Make simple one word descriptions for each related product in these images, emphasizing the style or product differences, separated by a vertical bar (|).",
-                groupImagesData,
-                accessToken,
-                apiKey
-            );
-             if (categoriesRaw) {
-                const splits = categoriesRaw.split("\n").map(s => s.trim()).filter(s => s);
-                categories = splits[splits.length - 1] || "";
-            }
+            try {
+                // Ask AI if these are variants
+                const identificationPrompt = `
+                    Look at these ${group.images.length} images. Do they show different variants of a product (e.g. different colors, flavors, or types) sharing the same packaging style?
+                    
+                    If NO (they are all the same product just different angles), return: {"variants": []}
+                    
+                    If YES, group them by variant. Return valid JSON:
+                    {
+                        "variants": [
+                            { "name": "Red", "indices": [0, 1] },
+                            { "name": "Blue", "indices": [2] }
+                        ]
+                    }
+                    Indices are 0-based.
+                `;
+                
+                const variantJsonRaw = await imagePrompt(identificationPrompt, groupImagesData, accessToken, apiKey);
+                
+                let variants: { name: string, indices: number[] }[] = [];
+                if (variantJsonRaw) {
+                    try {
+                        const cleanJson = variantJsonRaw.replace(/```json/g, '').replace(/```/g, '').trim();
+                        const parsed = JSON.parse(cleanJson);
+                        if (parsed.variants && Array.isArray(parsed.variants)) {
+                            variants = parsed.variants;
+                        }
+                    } catch (e) {
+                         console.warn("Failed to parse variant JSON", e);
+                    }
+                }
 
-            description = await imagePrompt(
-                `Write a playful product description for these images, prefacing each one with the one-word type of product, chosen from (${categories}), formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.`,
-                groupImagesData,
-                accessToken,
-                apiKey
-            );
-        } else {
-            description = await imagePrompt(
-                "Write a playful product description for this image, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.",
-                groupImagesData,
-                accessToken,
-                apiKey
-            );
+                if (variants.length > 1) {
+                   console.log(`Splitting ${group.janCode} into ${variants.length} variants.`);
+                   
+                   // Remove current group/liveGroup
+                   groups.splice(i, 1);
+                   const oldLiveIndex = liveGroups.findIndex(g => g.janCode === group.janCode);
+                   if (oldLiveIndex !== -1) liveGroups.splice(oldLiveIndex, 1);
+                   
+                   // Create new groups
+                   // We insert them at 'i' so they are processed next
+                   // We process them in reverse order so they land in correct order when unshifted/spliced? 
+                   // No, splice inserts at index.
+                   
+                   const newGroupsToAdd = [];
+                   const newLiveGroupsToAdd: LiveGroup[] = [];
+
+                   for (const v of variants) {
+                       const newJan = `${group.janCode}:${v.name}`;
+                       const newImages = v.indices.map(idx => group.images[idx]).filter(x => x);
+                       
+                       if (newImages.length > 0) {
+                           newGroupsToAdd.push({ janCode: newJan, images: newImages });
+                           newLiveGroupsToAdd.push({ 
+                               janCode: newJan, 
+                               imageUrls: newImages.map(img => img.baseUrl), 
+                               status: 'generating' 
+                           });
+                       }
+                   }
+                   
+                   // Insert into arrays
+                   // Note: We need to splice them in.
+                   groups.splice(i, 0, ...newGroupsToAdd);
+                   if (oldLiveIndex !== -1) {
+                        liveGroups.splice(oldLiveIndex, 0, ...newLiveGroupsToAdd);
+                   } else {
+                        // Should not happen, but push if missing
+                        liveGroups.push(...newLiveGroupsToAdd);
+                   }
+                   
+                   // Notify UI of split
+                   notify(`Split ${group.janCode} into ${variants.length} variants..`, items.length);
+                   
+                   // Decrement i so we process these new groups in next iteration
+                   i--; 
+                   splitOccurred = true; 
+                }
+
+            } catch (e) {
+                console.error("Variant detection error", e);
+            }
         }
+        
+        if (splitOccurred) continue;
+
+        // Normal Generation (Single product or failed split)
+        description = await imagePrompt(
+            "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.",
+            groupImagesData,
+            accessToken,
+            apiKey
+        );
         
         // Clean up response if it contains markdown or preamble
         if (description) {
