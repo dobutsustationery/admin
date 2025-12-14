@@ -60,9 +60,12 @@
     try {
       const session = await createPickerSession();
       // The picker URI needs to be opened in a way the user can interact.
-      // It's a Google-hosted page.
-      // Since we need to poll concurrently, we should open it in a new window/tab.
-      pickerWindow = window.open(session.pickerUri, "_blank", "width=800,height=600");
+      // We append /autoclose to let Google handle the window closing after selection.
+      let uri = session.pickerUri;
+      if (!uri.endsWith('/autoclose')) {
+          uri = uri.endsWith('/') ? `${uri}autoclose` : `${uri}/autoclose`;
+      }
+      pickerWindow = window.open(uri, "_blank", "width=800,height=600");
 
       startPolling(session.id);
     } catch (e: any) {
