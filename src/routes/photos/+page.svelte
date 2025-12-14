@@ -10,6 +10,7 @@
     clearToken,
   } from "$lib/google-photos";
   import type { MediaItem } from "$lib/google-photos";
+  import { processMediaItems } from "$lib/gemini-client";
   import SecureImage from "$lib/components/SecureImage.svelte";
 
   let isConnected = false;
@@ -115,14 +116,15 @@
     }
   }
 
-  import { processMediaItems } from "$lib/gemini-client";
-
+  let progressLog: string[] = [];
+  
   async function handleGenerate() {
     if (photos.length === 0) return;
     
     isGenerating = true;
     error = "";
     generationResults = [];
+    progressLog = ["Checking authentication..."];
 
     try {
         const token = await import('$lib/google-photos').then(m => m.getStoredToken());
@@ -134,13 +136,20 @@
         const results = await processMediaItems(
             photos.map(p => ({ baseUrl: p.baseUrl, id: p.id })),
             token.access_token,
-            apiKey
+            apiKey,
+            (msg) => {
+                progressLog = [...progressLog, msg];
+                // Keep only last 5 messages to avoid clutter
+                if (progressLog.length > 5) progressLog = progressLog.slice(progressLog.length - 5);
+            }
         );
         generationResults = results;
+        progressLog = [...progressLog, "Generation complete!"];
 
     } catch (e: any) {
         console.error("Generation error:", e);
         error = e.message;
+        progressLog = [...progressLog, `Error: ${e.message}`];
 
         // Auto-disconnect on auth errors
         if (
@@ -228,6 +237,24 @@
 
       <!-- content -->
       <div class="bg-white p-6 rounded-lg shadow-md min-h-[400px]">
+        {#if progressLog.length > 0 && (isGenerating || !generationResults.length)}
+            <div class="bg-gray-900 text-gray-200 p-4 rounded mb-6 font-mono text-sm">
+                <div class="flex items-center gap-2 mb-2 border-b border-gray-700 pb-2">
+                    {#if isGenerating}
+                        <span class="animate-spin h-3 w-3 border-2 border-green-500 border-t-transparent rounded-full"></span>
+                    {/if}
+                    <span class="font-bold text-gray-400 uppercase tracking-wider text-xs">Analysis Status</span>
+                </div>
+                <div class="space-y-1">
+                    {#each progressLog as log, i}
+                        <div class="opacity-{i === progressLog.length - 1 ? '100' : '60'}">
+                            <span class="text-green-500 mr-2">➜</span>{log}
+                        </div>
+                    {/each}
+                </div>
+            </div>
+        {/if}
+
         {#if error}
           <div class="p-4 bg-red-50 text-red-700 rounded mb-4">
             {error}
