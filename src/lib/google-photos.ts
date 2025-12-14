@@ -11,6 +11,7 @@ const SCOPES = (
   import.meta.env.VITE_GOOGLE_PHOTOS_SCOPES ||
   "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
 ).split(",").map((s: string) => s.trim());
+console.log("Configured Google Photos Scopes:", SCOPES.join(", "));
 
 // OAuth token storage key
 const TOKEN_STORAGE_KEY = "google_photos_access_token";
