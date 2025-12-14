@@ -61,29 +61,44 @@ async function imagePrompt(text: string, images: { data: string; mimeType: strin
         method: "POST",
         headers: {
             "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-goog-user-project": import.meta.env.VITE_FIREBASE_PROJECT_ID || ""
         },
         body: JSON.stringify({ contents })
       });
 
       if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        let errorMessage = `Gemini API error: ${response.status} ${response.statusText}`;
+        try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.error && errorJson.error.message) {
+                errorMessage += ` - ${errorJson.error.message}`;
+            }
+        } catch (e) {
+            errorMessage += ` - ${errorText}`;
+        }
+        
+        // Don't retry on auth/permission errors
+        if (response.status === 401 || response.status === 403) {
+            throw new Error(errorMessage);
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
-      // Extract text from response
-      // Structure: candidates[0].content.parts[0].text
       return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
 
     } catch (error: any) {
       console.error(`Error checking Gemini: ${error.message}`);
-      if (countRetries < 3) {
-        countRetries++;
-        console.warn(`Retrying (${countRetries})...`);
-        await new Promise((resolve) => setTimeout(resolve, 2000 * countRetries));
-        continue;
+      // Re-throw if it's a 403/401 or if we ran out of retries
+      if (error.message.includes("403") || error.message.includes("401") || countRetries >= 3) {
+        throw error;
       }
-      return null;
+      
+      countRetries++;
+      console.warn(`Retrying (${countRetries})...`);
+      await new Promise((resolve) => setTimeout(resolve, 2000 * countRetries));
     }
   }
 }
@@ -134,8 +149,12 @@ export async function processMediaItems(
                 currentGroup.images.push({ baseUrl: item.baseUrl, dataPromise: imageDataPromise });
             }
 
-        } catch (e) {
+        } catch (e: any) {
             console.error("Error processing item for grouping:", e);
+             // Rethrow fatal auth errors
+             if (e.message.includes("Gemini API error: 403") || e.message.includes("Gemini API error: 401")) {
+                throw e;
+            }
         }
     }
 
