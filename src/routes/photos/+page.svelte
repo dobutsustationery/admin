@@ -20,7 +20,9 @@
   let isPolling = false;
   let pollInterval: ReturnType<typeof setInterval>;
   let pollAttempts = 0;
+
   const MAX_POLL_ATTEMPTS = 60; // 2 minutes (approx)
+  let pickerWindow: Window | null = null;
 
   onMount(() => {
     // Check for OAuth callback
@@ -60,7 +62,7 @@
       // The picker URI needs to be opened in a way the user can interact.
       // It's a Google-hosted page.
       // Since we need to poll concurrently, we should open it in a new window/tab.
-      window.open(session.pickerUri, "_blank", "width=800,height=600");
+      pickerWindow = window.open(session.pickerUri, "_blank", "width=800,height=600");
 
       startPolling(session.id);
     } catch (e: any) {
@@ -88,6 +90,10 @@
         const session = await pollPickerSession(sessionId);
         if (session.mediaItemsSet) {
           // User finished selection
+          if (pickerWindow) {
+              pickerWindow.close();
+              pickerWindow = null;
+          }
           stopPolling();
           await loadSelectedPhotos(sessionId);
         }
@@ -174,7 +180,43 @@
 
   {#if isConnected}
     <div class="space-y-6">
-       <!-- ... (selection buttons remain same) ... -->
+
+      <!-- Actions -->
+      <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-semibold mb-2">Select Photos</h2>
+          <p class="text-gray-500 text-sm">Open the Google Photos picker to choose images.</p>
+        </div>
+        <div class="flex gap-4">
+            <button
+              on:click={handleSelectPhotos}
+              disabled={loading || isPolling}
+              class="bg-green-600 text-white px-6 py-3 rounded-md font-medium hover:bg-green-700 transition disabled:opacity-50 flex items-center gap-2"
+            >
+              {#if isPolling}
+                <span class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                Waiting...
+              {:else}
+                <span>Photos Library</span>
+              {/if}
+            </button>
+
+            {#if photos.length > 0}
+                <button
+                  on:click={handleGenerate}
+                  disabled={isGenerating}
+                  class="bg-purple-600 text-white px-6 py-3 rounded-md font-medium hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-2"
+                >
+                  {#if isGenerating}
+                    <span class="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                    Generating...
+                  {:else}
+                    <span>Generate Descriptions</span>
+                  {/if}
+                </button>
+            {/if}
+        </div>
+      </div>
        
        <!-- CONTENT AREA -->
        <div class="bg-white p-6 rounded-lg shadow-md min-h-[400px]">
