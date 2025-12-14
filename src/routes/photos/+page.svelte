@@ -115,6 +115,8 @@
     }
   }
 
+  import { processMediaItems } from "$lib/gemini-client";
+
   async function handleGenerate() {
     if (photos.length === 0) return;
     
@@ -126,22 +128,12 @@
         const token = await import('$lib/google-photos').then(m => m.getStoredToken());
         if (!token) throw new Error("Not authenticated");
 
-        const response = await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                items: photos.map(p => ({ baseUrl: p.baseUrl, id: p.id })),
-                accessToken: token.access_token
-            })
-        });
-
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Generation failed');
-        }
-
-        const data = await response.json();
-        generationResults = data.results;
+        // Client-side processing
+        const results = await processMediaItems(
+            photos.map(p => ({ baseUrl: p.baseUrl, id: p.id })),
+            token.access_token
+        );
+        generationResults = results;
 
     } catch (e: any) {
         error = e.message;

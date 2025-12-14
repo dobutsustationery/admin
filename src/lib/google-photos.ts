@@ -111,9 +111,10 @@ export function getStoredToken(): GooglePhotosToken | null {
     }
 
     // Check if token has required scopes
-    const requiredScope = SCOPES[0]; // We only have one now
-    if (!token.scope || !token.scope.includes(requiredScope)) {
-      console.warn("Token missing required scope, invalidating.");
+    // We check if all configured scopes are present in the token's scope string
+    const missingScopes = SCOPES.filter((scope: string) => !token.scope.includes(scope));
+    if (missingScopes.length > 0) {
+      console.warn("Token missing required scopes:", missingScopes, "invalidating.");
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       return null;
     }
