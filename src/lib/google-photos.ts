@@ -10,7 +10,7 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_PHOTOS_CLIENT_ID;
 const SCOPES = (
   import.meta.env.VITE_GOOGLE_PHOTOS_SCOPES ||
   "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
-).split(",");
+).split(",").map((s: string) => s.trim());
 
 // OAuth token storage key
 const TOKEN_STORAGE_KEY = "google_photos_access_token";
@@ -172,6 +172,7 @@ export function initiateOAuthFlow(): void {
     scope: SCOPES.join(" "),
     include_granted_scopes: "true",
     state: "photos_auth",
+    prompt: "consent",
   });
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
