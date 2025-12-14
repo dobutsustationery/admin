@@ -1,16 +1,14 @@
-import { GoogleGenAI } from "@google/genai";
-import { env } from "$env/dynamic/private";
+/**
+ * Client-side Gemini Integration using OAuth
+ */
 
-const ai = new GoogleGenAI({
-  apiKey: env.GOOGLE_API_KEY,
-});
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 /**
  * Fetch image data from a URL using the user's OAuth token.
  */
 async function fetchImage(url: string, token: string): Promise<{ data: string; mimeType: string }> {
-  // Append modifiers to get a reasonable size for analysis/generation
-  // e.g. w1024-h1024 to ensure legibility of barcodes but not massive
+  // Append modifiers for reasonable size
   const fetchUrl = `${url}=w1024-h1024`; 
   
   const response = await fetch(fetchUrl, {
@@ -23,42 +21,60 @@ async function fetchImage(url: string, token: string): Promise<{ data: string; m
     throw new Error(`Failed to fetch image: ${response.statusText}`);
   }
 
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  const base64 = buffer.toString("base64");
-  const mimeType = response.headers.get("content-type") || "image/jpeg";
+  const blob = await response.blob();
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        const result = reader.result as string;
+        // Result is "data:image/jpeg;base64,....."
+        // We need just the base64 part
+        const base64Data = result.split(',')[1];
+        resolve(base64Data);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 
-  return { data: base64, mimeType };
+  return { data: base64, mimeType: blob.type || "image/jpeg" };
 }
 
 /**
- * Send a prompt with images to Gemini.
+ * Send a prompt with images to Gemini via REST API.
  */
-async function imagePrompt(text: string, images: { data: string; mimeType: string }[]): Promise<string | null> {
+async function imagePrompt(text: string, images: { data: string; mimeType: string }[], accessToken: string): Promise<string | null> {
   let countRetries = 0;
   while (true) {
     try {
-      const contents: any[] = [{ text }];
+      const contents: any[] = [{ parts: [{ text }] }];
+      const parts = contents[0].parts;
+      
       for (const img of images) {
-        contents.push({
-          inlineData: {
-            data: img.data,
-            mimeType: img.mimeType,
-          },
+        parts.push({
+          inline_data: {
+            mime_type: img.mimeType,
+            data: img.data
+          }
         });
       }
 
-      // Using gemini-2.0-flash as requested/implied by user script "gemini-2.0-flash"
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash", 
-        contents: contents,
+      const response = await fetch(GEMINI_API_URL, {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ contents })
       });
-      
-      // Adaptation for @google/genai SDK response structure
-      // If response.text is a getter/function or property
-      // We'll try strictly checking what the new SDK offers.
-      // Easiest safe bet if types are confusing:
-      return (response as any).text || ((response as any).text && typeof (response as any).text === 'function' ? (response as any).text() : null) || JSON.stringify((response as any).candidates) || null;
+
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      // Extract text from response
+      // Structure: candidates[0].content.parts[0].text
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+
     } catch (error: any) {
       console.error(`Error checking Gemini: ${error.message}`);
       if (countRetries < 3) {
@@ -87,48 +103,31 @@ export async function processMediaItems(
     accessToken: string
 ): Promise<ProcessingResult[]> {
     
-    // 1. Group images by JAN code
-    // Strategy: Iterate. Check if image has JAN. 
-    // If YES -> Start new group.
-    // If NO -> Add to current group. 
-    // (Assumption: First image MUST have JAN, or we have an "unknown" group)
-
     const groups: { janCode: string; images: { baseUrl: string; dataPromise: Promise<{ data: string; mimeType: string }> }[] }[] = [];
     let currentGroup: typeof groups[0] | null = null;
 
     console.log(`Processing ${items.length} items...`);
 
-    // We process sequentially to maintain order and context
+    // 1. Group images by JAN code
     for (const item of items) {
         try {
-            // Helper to get image data (lazy/cached)
             const imageDataPromise = fetchImage(item.baseUrl, accessToken); 
-            // We await immediately for JAN check
             const imgData = await imageDataPromise;
 
-            // Ask Gemini for JAN code
-            // "Find the JAN code in this image."
-            // Optimization: Maybe only check if it looks like a barcode? 
-            // For now, we ask Gemini every time or check user heuristic?
-            // User script: "Find the JAN code in this image." -> if null, it's a product image?
-            // Actually user script implies: "images being chosen... have a barcode on the first of a group, then a series of images with no barcode..."
-            
-            const janCheck = await imagePrompt("Find the JAN code in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.", [imgData]);
+            const janCheck = await imagePrompt("Find the JAN code in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.", [imgData], accessToken);
             const janCode = janCheck?.replace(/[^0-9]/g, "");
 
-            if (janCode && janCode.length > 5 && janCode !== 'NONE') { // valid-ish JAN
+            if (janCode && janCode.length > 5 && janCode !== 'NONE') {
                 console.log(`Found JAN: ${janCode}`);
                 currentGroup = {
                     janCode: janCode,
                     images: []
                 };
                 groups.push(currentGroup);
-                // We typically include the barcode image in the group context for description too
                 currentGroup.images.push({ baseUrl: item.baseUrl, dataPromise: imageDataPromise });
             } else {
                 console.log(`No JAN found (result: ${janCheck}), adding to current group.`);
                 if (!currentGroup) {
-                    // Create a fallback group if the first image has no barcode
                     currentGroup = { janCode: "UNKNOWN", images: [] };
                     groups.push(currentGroup);
                 }
@@ -140,39 +139,38 @@ export async function processMediaItems(
         }
     }
 
-    // 2. Generate descriptions for each group
+    // 2. Generate descriptions
     const results: ProcessingResult[] = [];
 
     for (const group of groups) {
         console.log(`Generating description for JAN ${group.janCode} with ${group.images.length} images...`);
         
-        // Resolve all image data for this group
         const groupImagesData = await Promise.all(group.images.map(i => i.dataPromise));
         
         let categories = "";
         let description: string | null = "";
 
-        // Logic from user script
         if (group.images.length > 1) {
             const categoriesRaw = await imagePrompt(
                 "Make simple one word descriptions for each related product in these images, emphasizing the style or product differences, separated by a vertical bar (|).",
-                groupImagesData
+                groupImagesData,
+                accessToken
             );
-            // logic to cleanup
              if (categoriesRaw) {
-                // Heuristic from script: "splits[splits.length - 1]" - maybe it returns reasoning?
                 const splits = categoriesRaw.split("\n").map(s => s.trim()).filter(s => s);
                 categories = splits[splits.length - 1] || "";
             }
 
             description = await imagePrompt(
                 `Write a playful product description for these images, prefacing each one with the one-word type of product, chosen from (${categories}), formatted with HTML tags.`,
-                groupImagesData
+                groupImagesData,
+                accessToken
             );
         } else {
             description = await imagePrompt(
                 "Write a playful product description for this image, formatted with HTML tags.",
-                groupImagesData
+                groupImagesData,
+                accessToken
             );
         }
 
