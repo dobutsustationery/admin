@@ -129,6 +129,7 @@
         if (!token) throw new Error("Not authenticated");
 
         // Client-side processing
+        console.log("Using token scopes:", token.scope);
         const results = await processMediaItems(
             photos.map(p => ({ baseUrl: p.baseUrl, id: p.id })),
             token.access_token
