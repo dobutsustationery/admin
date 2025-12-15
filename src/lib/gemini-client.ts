@@ -122,6 +122,7 @@ export interface ProcessingResult {
 export interface LiveGroup {
     janCode: string;
     imageUrls: string[];
+    imageStatuses: ('pending' | 'optimizing' | 'done')[];
     description?: string;
     categories?: string;
     status: 'collecting' | 'generating' | 'done';
@@ -167,7 +168,7 @@ export async function processMediaItems(
                 targetGroupIdx = groups.findIndex(g => g.janCode === janCode);
                 if (targetGroupIdx === -1) {
                     groups.push({ janCode, images: [] });
-                    liveGroups.push({ janCode, imageUrls: [], status: 'collecting' });
+                    liveGroups.push({ janCode, imageUrls: [], imageStatuses: [], status: 'collecting' });
                     targetGroupIdx = groups.length - 1;
                 }
             } else {
@@ -175,7 +176,7 @@ export async function processMediaItems(
                 // Add to last group or create UNKNOWN
                 if (groups.length === 0) {
                      groups.push({ janCode: "UNKNOWN", images: [] });
-                     liveGroups.push({ janCode: "UNKNOWN", imageUrls: [], status: 'collecting' });
+                     liveGroups.push({ janCode: "UNKNOWN", imageUrls: [], imageStatuses: [], status: 'collecting' });
                 }
                 targetGroupIdx = groups.length - 1;
             }
@@ -183,6 +184,7 @@ export async function processMediaItems(
             // Add image to group
             groups[targetGroupIdx].images.push({ baseUrl: item.baseUrl, dataPromise: imageDataPromise });
             liveGroups[targetGroupIdx].imageUrls.push(item.baseUrl);
+            liveGroups[targetGroupIdx].imageStatuses.push('pending');
             
             notify(`Added to ${liveGroups[targetGroupIdx].janCode}`, processedCount);
 
@@ -202,8 +204,6 @@ export async function processMediaItems(
     liveGroups.forEach(g => g.status = 'generating');
     notify("Starting generation...", items.length);
 
-
-
     // Use standard for loop so we can modify 'groups' array if we split variants
     for (let i = 0; i < groups.length; i++) {
         const group = groups[i];
@@ -222,7 +222,10 @@ export async function processMediaItems(
                 const identificationPrompt = `
                     Look at these ${group.images.length} images. Do they show different variants of a product (e.g. different colors, flavors, or types) sharing the same packaging style?
                     
-                    If NO (they are all the same product just different angles), return: {"variants": []}
+                    CRITICAL: Ignore "Back of package" or "Ingredient Label" or "Nutrition Facts" images. If one image is the front and another is the back, they are SAMME product. 
+                    Only return YES if there are multiple DIFFERENT FRONT FACES.
+
+                    If NO (same product, just different angles/sides), return: {"variants": []}
                     
                     If YES, group them by variant. Return valid JSON:
                     {
@@ -274,6 +277,7 @@ export async function processMediaItems(
                            newLiveGroupsToAdd.push({ 
                                janCode: newJan, 
                                imageUrls: newImages.map(img => img.baseUrl), 
+                               imageStatuses: newImages.map(() => 'pending'),
                                status: 'generating' 
                            });
                        }
@@ -345,21 +349,18 @@ export async function processMediaItems(
             const img = group.images[imgIdx];
             const imgData = groupImagesData[imgIdx]; // Already fetched
             
-            notify(`Optimizing image ${imgIdx + 1}/${group.images.length} for ${group.janCode}...`, items.length);
+            // Mark as optimizing
+            if (liveGroup) {
+                liveGroup.imageStatuses[imgIdx] = 'optimizing';
+                notify(`Optimizing image ${imgIdx + 1}/${group.images.length} for ${group.janCode}...`, items.length);
+            }
             
+            console.log(`[Image Optimization] Starting optimization for ${group.janCode} image ${imgIdx + 1}`);
+
             try {
                 // Background removal and crop prompt
                 const editPrompt = "Remove the background from this image. Then, crop the image tightly around the subject with a 15px margin. Return the processed image.";
                 
-                // We use imagePrompt but since we expect an image back in native multimodal generation, 
-                // we need to handle the response differently if the API supports it.
-                // However, 'imagePrompt' currently expects text.
-                // We need a specific call for image-to-image or just standard generation that returns mime type image/png.
-                
-                // Since this is 2.0 Flash, it supports returning images in response.
-                // We need to update imagePrompt or create a new function that handles multimodal response.
-                
-                // Let's assume we need a new function 'editImage'
                 const editedBase64 = await editImage(editPrompt, imgData, accessToken, apiKey);
                 
                 if (editedBase64) {
@@ -367,11 +368,16 @@ export async function processMediaItems(
                     // Update Live Group
                     if (liveGroup) {
                         liveGroup.imageUrls[imgIdx] = dataUri;
+                        liveGroup.imageStatuses[imgIdx] = 'done';
                         notify(`Updated image ${imgIdx + 1} for ${group.janCode}`, items.length);
+                        console.log(`[Image Optimization] Finished optimization for ${group.janCode} image ${imgIdx + 1}`);
                     }
+                } else {
+                     if (liveGroup) liveGroup.imageStatuses[imgIdx] = 'done'; // Done but failed to change
                 }
             } catch (e) {
                 console.error("Image optimization failed", e);
+                if (liveGroup) liveGroup.imageStatuses[imgIdx] = 'done';
             }
         }
         
