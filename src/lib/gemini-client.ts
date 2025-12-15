@@ -427,16 +427,12 @@ async function editImage(prompt: string, inputImage: { data: string; mimeType: s
       // We might need to ask for specific response schema or just standard?
       // For image output, we typically just ask.
       
-      // Restore forced JSON as it was proven to yield results (wrapped in JSON)
+      // Remove forced JSON/Mime to allow native image response
       const response = await fetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({ 
-            contents,
-            generationConfig: {
-                responseMimeType: "image/png",
-                maxOutputTokens: 65536
-            }
+            contents
         })
       });
 
