@@ -411,23 +411,60 @@ export async function processMediaItems(
     return results;
 }
 
+// Helper to downscale image for token efficiency
+async function resizeImage(base64Str: string, maxWidth = 200): Promise<{ data: string, mimeType: string }> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.src = `data:image/jpeg;base64,${base64Str}`; // Assume jpeg input or detect
+        img.onload = () => {
+            const scale = maxWidth / Math.max(img.width, img.height);
+            // If already small, return original
+            if (scale >= 1) {
+                resolve({ data: base64Str, mimeType: "image/jpeg" });
+                return;
+            }
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { reject(new Error("No canvas context")); return; }
+            
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            // Low quality jpeg for input to save tokens
+            const newDataUrl = canvas.toDataURL("image/jpeg", 0.8);
+            resolve({ 
+                data: newDataUrl.split(',')[1], 
+                mimeType: "image/jpeg" 
+            });
+        };
+        img.onerror = reject;
+    });
+}
+
 /**
  * Edit an image using Gemini 2.0 Flash. 
  * Note: This assumes the API returns inline data for the generated image.
  */
 async function editImage(prompt: string, inputImage: { data: string; mimeType: string }, accessToken: string, apiKey?: string): Promise<string | null> {
-  // We reuse the basic structure but need to parse the binary or base64 response part
-  // The standard generateContent response might contain 'inlineData' in candidates if configured?
-  // Or plain text if it refuses.
-  
-  // Actually, standard REST API for generateContent returns JSON. 
-  // If it generates an image, it's usually in `parts` as `inline_data`.
-  
   try {
+      // 1. Resize Input to ensure Output is small enough for Flash Token Limit (8k tokens ~= 32KB)
+      let processedInput = inputImage;
+      if (typeof window !== 'undefined') { // Client-side check
+          try {
+             processedInput = await resizeImage(inputImage.data, 200);
+             console.log(`[EditImage] Resized input to fits token limits. New len: ${processedInput.data.length}`);
+          } catch (e) {
+             console.warn("Resize failed, using original", e);
+          }
+      }
+
       const contents = [{
         parts: [
             { text: prompt },
-            { inline_data: { mime_type: inputImage.mimeType, data: inputImage.data } }
+            { inline_data: { mime_type: processedInput.mimeType, data: processedInput.data } }
         ]
       }];
 
