@@ -370,14 +370,21 @@ export async function processMediaItems(
                         liveGroup.imageUrls[imgIdx] = dataUri;
                         liveGroup.imageStatuses[imgIdx] = 'done';
                         notify(`Updated image ${imgIdx + 1} for ${group.janCode}`, items.length);
-                        console.log(`[Image Optimization] Finished optimization for ${group.janCode} image ${imgIdx + 1}`);
+                        console.log(`[Image Optimization] Finished optimization for ${group.janCode} image ${imgIdx + 1} (Success)`);
                     }
                 } else {
-                     if (liveGroup) liveGroup.imageStatuses[imgIdx] = 'done'; // Done but failed to change
+                     console.warn(`[Image Optimization] Failed optimization for ${group.janCode} image ${imgIdx + 1} (No data returned)`);
+                     if (liveGroup) {
+                        liveGroup.imageStatuses[imgIdx] = 'done'; // Done but failed to change
+                        notify(`Optimization failed for image ${imgIdx + 1} of ${group.janCode}`, items.length);
+                     }
                 }
             } catch (e) {
                 console.error("Image optimization failed", e);
-                if (liveGroup) liveGroup.imageStatuses[imgIdx] = 'done';
+                if (liveGroup) {
+                    liveGroup.imageStatuses[imgIdx] = 'done';
+                    notify(`Optimization error for image ${imgIdx + 1}`, items.length);
+                }
             }
         }
         
