@@ -291,7 +291,7 @@
                                 <!-- FORCED SIZE to 148px -->
                                 <div class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative" style="width: 148px; height: 148px; flex-shrink: 0;">
                                      <SecureImage
-                                      src="{url}=w296-h296-c"
+                                      src="{url.startsWith('data:') ? url : `${url}=w296-h296-c`}"
                                       alt="Product Thumbnail"
                                       className="w-full h-full object-cover"
                                     />
