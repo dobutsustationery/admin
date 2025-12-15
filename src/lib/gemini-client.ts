@@ -414,16 +414,11 @@ async function editImage(prompt: string, inputImage: { data: string; mimeType: s
       // We might need to ask for specific response schema or just standard?
       // For image output, we typically just ask.
       
+      // Remove forced JSON to encourage native inline_data, but handle JSON if it persists
       const response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({ 
-            contents,
-            generationConfig: {
-                responseMimeType: "application/json" // Try forcing JSON if we want text+image, but here we want image?
-                // Actually, for 2.0 Flash, it just returns parts.
-            }
-        })
+        body: JSON.stringify({ contents })
       });
 
       if (!response.ok) throw new Error(response.statusText);
@@ -435,10 +430,34 @@ async function editImage(prompt: string, inputImage: { data: string; mimeType: s
           return part.inline_data.data;
       }
       
-      // If no image returned, maybe it returned text explaining why?
+      // Fallback: Check for text with embedded JSON (common in 2.0 Flash)
       const textPart = data.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
-      if (textPart) {
-          console.warn("Gemini returned text instead of image:", textPart.text);
+      if (textPart && textPart.text) {
+          const text = textPart.text.trim();
+          console.log("Gemini edit response text:", text.substring(0, 100) + "...");
+          
+          try {
+              // Try to parse as JSON
+              const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+              if (cleanText.startsWith('{')) {
+                  const json = JSON.parse(cleanText);
+                  // Look for common keys
+                  const imgSrc = json.edited_image || json.processed_image || json.image || json.data;
+                  
+                  if (imgSrc && typeof imgSrc === 'string') {
+                      if (imgSrc.startsWith('data:image')) {
+                          return imgSrc.split(',')[1];
+                      }
+                      // If it's a raw base64 string (rare but possible)
+                      if (imgSrc.length > 100 && !imgSrc.startsWith('http')) {
+                          return imgSrc;
+                      }
+                  }
+              }
+          } catch (e) {
+              // Not JSON
+          }
+           console.warn("Gemini returned text instead of image:", text);
       }
       
       return null;
