@@ -427,54 +427,65 @@ async function editImage(prompt: string, inputImage: { data: string; mimeType: s
       // We might need to ask for specific response schema or just standard?
       // For image output, we typically just ask.
       
-      // Remove forced JSON to encourage native inline_data, but handle JSON if it persists
+      // Restore forced JSON as it was proven to yield results (wrapped in JSON)
       const response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({ contents })
+        body: JSON.stringify({ 
+            contents,
+            generationConfig: {
+                responseMimeType: "application/json"
+            }
+        })
       });
 
-      if (!response.ok) throw new Error(response.statusText);
+      if (!response.ok) {
+          const txt = await response.text();
+          throw new Error(`${response.status} ${response.statusText}: ${txt}`);
+      }
       
       const data = await response.json();
-      const part = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inline_data);
       
+      // Check for inline data (native)
+      const part = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inline_data);
       if (part && part.inline_data) {
           return part.inline_data.data;
       }
       
-      // Fallback: Check for text with embedded JSON (common in 2.0 Flash)
+      // Check for text (JSON)
       const textPart = data.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
       if (textPart && textPart.text) {
           const text = textPart.text.trim();
-          console.log("Gemini edit response text:", text.substring(0, 100) + "...");
+          console.log("Gemini edit response text (First 200 chars):", text.substring(0, 200));
           
           try {
               // Try to parse as JSON
               const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
               if (cleanText.startsWith('{')) {
                   const json = JSON.parse(cleanText);
-                  // Look for common keys
-                  const imgSrc = json.edited_image || json.processed_image || json.image || json.data;
+                  // Look for common keys, user saw "processed_image" earlier
+                  // Also check "bytes", "b64", etc.
+                  const imgSrc = json.edited_image || json.processed_image || json.image || json.data || json.image_data;
                   
                   if (imgSrc && typeof imgSrc === 'string') {
                       if (imgSrc.startsWith('data:image')) {
                           return imgSrc.split(',')[1];
                       }
-                      // If it's a raw base64 string (rare but possible)
+                      // If it's a raw base64 string
                       if (imgSrc.length > 100 && !imgSrc.startsWith('http')) {
-                          return imgSrc;
+                          return imgSrc; // This is likely the base64
                       }
                   }
               }
           } catch (e) {
-              // Not JSON
+              console.warn("Failed to parse JSON from text:", e);
           }
-           console.warn("Gemini returned text instead of image:", text);
       }
       
+      // If we got here, we failed. Dump response for debugging.
+      console.warn("Edit Image Failed. Full Response dump:", JSON.stringify(data, null, 2));
+      
       return null;
-
   } catch (e) {
       console.error("Edit image error:", e);
       return null;
