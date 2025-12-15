@@ -351,7 +351,9 @@ export async function processMediaItems(
             
             // Mark as optimizing
             if (liveGroup) {
-                liveGroup.imageStatuses[imgIdx] = 'optimizing';
+                // Clone the group to trigger reactivity
+                liveGroups[i] = { ...liveGroup, imageStatuses: [...liveGroup.imageStatuses] };
+                liveGroups[i].imageStatuses[imgIdx] = 'optimizing';
                 notify(`Optimizing image ${imgIdx + 1}/${group.images.length} for ${group.janCode}...`, items.length);
             }
             
@@ -366,23 +368,38 @@ export async function processMediaItems(
                 if (editedBase64) {
                     const dataUri = `data:image/png;base64,${editedBase64}`;
                     // Update Live Group
-                    if (liveGroup) {
-                        liveGroup.imageUrls[imgIdx] = dataUri;
-                        liveGroup.imageStatuses[imgIdx] = 'done';
+                    // Re-fetch current live group (it might have been replaced in previous iteration if mixed)
+                    const updatedLiveGroup = liveGroups.find(g => g.janCode === group.janCode);
+                    if (updatedLiveGroup) {
+                        const idx = liveGroups.indexOf(updatedLiveGroup);
+                        liveGroups[idx] = { 
+                            ...updatedLiveGroup, 
+                            imageUrls: [...updatedLiveGroup.imageUrls],
+                            imageStatuses: [...updatedLiveGroup.imageStatuses]
+                        };
+                        liveGroups[idx].imageUrls[imgIdx] = dataUri;
+                        liveGroups[idx].imageStatuses[imgIdx] = 'done';
+                        
                         notify(`Updated image ${imgIdx + 1} for ${group.janCode}`, items.length);
                         console.log(`[Image Optimization] Finished optimization for ${group.janCode} image ${imgIdx + 1} (Success)`);
                     }
                 } else {
                      console.warn(`[Image Optimization] Failed optimization for ${group.janCode} image ${imgIdx + 1} (No data returned)`);
-                     if (liveGroup) {
-                        liveGroup.imageStatuses[imgIdx] = 'done'; // Done but failed to change
+                     const updatedLiveGroup = liveGroups.find(g => g.janCode === group.janCode);
+                     if (updatedLiveGroup) {
+                        const idx = liveGroups.indexOf(updatedLiveGroup);
+                        liveGroups[idx] = { ...updatedLiveGroup, imageStatuses: [...updatedLiveGroup.imageStatuses] };
+                        liveGroups[idx].imageStatuses[imgIdx] = 'done'; 
                         notify(`Optimization failed for image ${imgIdx + 1} of ${group.janCode}`, items.length);
                      }
                 }
             } catch (e) {
                 console.error("Image optimization failed", e);
-                if (liveGroup) {
-                    liveGroup.imageStatuses[imgIdx] = 'done';
+                const updatedLiveGroup = liveGroups.find(g => g.janCode === group.janCode);
+                if (updatedLiveGroup) {
+                    const idx = liveGroups.indexOf(updatedLiveGroup);
+                    liveGroups[idx] = { ...updatedLiveGroup, imageStatuses: [...updatedLiveGroup.imageStatuses] };
+                    liveGroups[idx].imageStatuses[imgIdx] = 'done';
                     notify(`Optimization error for image ${imgIdx + 1}`, items.length);
                 }
             }
