@@ -434,7 +434,8 @@ async function editImage(prompt: string, inputImage: { data: string; mimeType: s
         body: JSON.stringify({ 
             contents,
             generationConfig: {
-                responseMimeType: "application/json"
+                responseMimeType: "image/png",
+                maxOutputTokens: 65536
             }
         })
       });
