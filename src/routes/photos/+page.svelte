@@ -285,8 +285,9 @@
                         </div>
 
                         <!-- Thumbnails Row -->
+                        <!-- Thumbnails Row -->
                         <div class="flex flex-row flex-wrap gap-4 mt-4 mb-6" style="display: flex; flex-direction: row; flex-wrap: wrap;">
-                            {#each group.imageUrls as url}
+                            {#each group.imageUrls as url, i}
                                 <!-- FORCED SIZE to 148px -->
                                 <div class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative" style="width: 148px; height: 148px; flex-shrink: 0;">
                                      <SecureImage
@@ -294,6 +295,13 @@
                                       alt="Product Thumbnail"
                                       className="w-full h-full object-cover"
                                     />
+                                    
+                                    <!-- Spinner Overlay -->
+                                    {#if group.imageStatuses && group.imageStatuses[i] === 'optimizing'}
+                                        <div class="absolute inset-0 bg-white/70 flex items-center justify-center z-10 transition-opacity duration-300">
+                                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                        </div>
+                                    {/if}
                                 </div>
                             {/each}
                         </div>
