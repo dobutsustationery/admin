@@ -358,8 +358,8 @@ export async function processMediaItems(
             console.log(`[Image Optimization] Starting optimization for ${group.janCode} image ${imgIdx + 1}`);
 
             try {
-                // Background removal and crop prompt
-                const editPrompt = "Remove the background from this image. Then, crop the image tightly around the subject with a 15px margin. Return the processed image.";
+                // Background removal and crop prompt - Explicit text instruction
+                const editPrompt = "Remove the background from this image. Then, crop the image tightly around the subject with a 15px margin. Return ONLY the raw Base64 encoded string of the resulting PNG image. Do not use Markdown formatting. Do not wrap in JSON.";
                 
                 const editedBase64 = await editImage(editPrompt, imgData, accessToken, apiKey);
                 
@@ -427,12 +427,16 @@ async function editImage(prompt: string, inputImage: { data: string; mimeType: s
       // We might need to ask for specific response schema or just standard?
       // For image output, we typically just ask.
       
-      // Remove forced JSON/Mime to allow native image response
+      // Use text/plain with high token limit to accommodate base64 string
       const response = await fetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({ 
-            contents
+            contents,
+            generationConfig: {
+                responseMimeType: "text/plain",
+                maxOutputTokens: 65536
+            }
         })
       });
 
@@ -443,40 +447,39 @@ async function editImage(prompt: string, inputImage: { data: string; mimeType: s
       
       const data = await response.json();
       
-      // Check for inline data (native)
+      // Check for inline data (native - unlikely with text/plain but possible)
       const part = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inline_data);
       if (part && part.inline_data) {
           return part.inline_data.data;
       }
       
-      // Check for text (JSON)
+      // Check for text
       const textPart = data.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
       if (textPart && textPart.text) {
-          const text = textPart.text.trim();
+          let text = textPart.text.trim();
+          // Remove potential markdown code blocks if the model ignored instructions
+          text = text.replace(/```\w*/g, '').replace(/```/g, '').trim();
+          
           console.log("Gemini edit response text (First 200 chars):", text.substring(0, 200));
           
-          try {
-              // Try to parse as JSON
-              const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-              if (cleanText.startsWith('{')) {
-                  const json = JSON.parse(cleanText);
-                  // Look for common keys, user saw "processed_image" earlier
-                  // Also check "bytes", "b64", etc.
-                  const imgSrc = json.edited_image || json.processed_image || json.image || json.data || json.image_data;
-                  
-                  if (imgSrc && typeof imgSrc === 'string') {
-                      if (imgSrc.startsWith('data:image')) {
-                          return imgSrc.split(',')[1];
-                      }
-                      // If it's a raw base64 string
-                      if (imgSrc.length > 100 && !imgSrc.startsWith('http')) {
-                          return imgSrc; // This is likely the base64
-                      }
-                  }
-              }
-          } catch (e) {
-              console.warn("Failed to parse JSON from text:", e);
+          // Verify it looks like base64 (alphanumeric + +/=)
+          // Simple check: no spaces, long length
+          if (text.length > 100 && !text.includes(" ")) {
+              return text;
           }
+           
+          // Fallback: Try JSON parse just in case
+           try {
+              if (text.startsWith('{')) {
+                  const json = JSON.parse(text);
+                  const imgSrc = json.edited_image || json.processed_image || json.image || json.data || json.image_data;
+                   if (imgSrc && typeof imgSrc === 'string' && imgSrc.length > 100) {
+                          return imgSrc.startsWith('data:') ? imgSrc.split(',')[1] : imgSrc;
+                   }
+              }
+           } catch (e) {}
+           
+           console.warn("Gemini returned text but it doesn't look like a raw base64 image or valid JSON.");
       }
       
       // If we got here, we failed. Dump response for debugging.
