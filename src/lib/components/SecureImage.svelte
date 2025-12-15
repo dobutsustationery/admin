@@ -10,7 +10,13 @@
   let error = "";
   let loading = true;
 
-  onMount(async () => {
+  async function loadImage() {
+    // Reset state
+    loading = true;
+    error = "";
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = "";
+
     // Handle local/generated images directly
     if (src.startsWith('data:') || src.startsWith('blob:')) {
         objectUrl = src;
@@ -42,10 +48,14 @@
     } finally {
       loading = false;
     }
-  });
+  }
+
+  $: if (src) {
+      loadImage();
+  }
 
   onDestroy(() => {
-    if (objectUrl) {
+    if (objectUrl && !objectUrl.startsWith('data:')) {
       URL.revokeObjectURL(objectUrl);
     }
   });
