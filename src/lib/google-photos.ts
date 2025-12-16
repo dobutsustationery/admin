@@ -10,7 +10,9 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_PHOTOS_CLIENT_ID;
 const SCOPES = (
   import.meta.env.VITE_GOOGLE_PHOTOS_SCOPES ||
   "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
-).split(",").map((s: string) => s.trim());
+)
+  .split(",")
+  .map((s: string) => s.trim());
 console.log("Configured Google Photos Scopes:", SCOPES.join(", "));
 
 // OAuth token storage key
@@ -113,9 +115,15 @@ export function getStoredToken(): GooglePhotosToken | null {
 
     // Check if token has required scopes
     // We check if all configured scopes are present in the token's scope string
-    const missingScopes = SCOPES.filter((scope: string) => !token.scope.includes(scope));
+    const missingScopes = SCOPES.filter(
+      (scope: string) => !token.scope.includes(scope),
+    );
     if (missingScopes.length > 0) {
-      console.warn("Token missing required scopes:", missingScopes, "invalidating.");
+      console.warn(
+        "Token missing required scopes:",
+        missingScopes,
+        "invalidating.",
+      );
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       return null;
     }
@@ -331,7 +339,7 @@ export async function listSessionMediaItems(
         `Failed to list session media items: ${response.statusText} - ${errorText}`,
       );
     }
-    
+
     const data = await response.json();
     if (data.mediaItems) {
       const mappedItems = data.mediaItems.map((item: any) => ({
@@ -341,8 +349,8 @@ export async function listSessionMediaItems(
         mimeType: item.mediaFile?.mimeType,
         filename: item.mediaFile?.filename,
         mediaMetadata: {
-            ...item.mediaFile?.mediaFileMetadata,
-            creationTime: item.createTime
+          ...item.mediaFile?.mediaFileMetadata,
+          creationTime: item.createTime,
         },
         description: item.description,
       }));
@@ -358,10 +366,18 @@ export async function listSessionMediaItems(
     const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
     return tA - tB; // Ascending: Oldest (Barcode) first
   });
-  
+
   if (allItems.length > 0) {
-      console.log("First item:", allItems[0].filename, allItems[0].mediaMetadata?.creationTime);
-      console.log("Last item:", allItems[allItems.length-1].filename, allItems[allItems.length-1].mediaMetadata?.creationTime);
+    console.log(
+      "First item:",
+      allItems[0].filename,
+      allItems[0].mediaMetadata?.creationTime,
+    );
+    console.log(
+      "Last item:",
+      allItems[allItems.length - 1].filename,
+      allItems[allItems.length - 1].mediaMetadata?.creationTime,
+    );
   }
 
   return allItems;
