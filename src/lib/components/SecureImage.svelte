@@ -18,10 +18,10 @@
     objectUrl = "";
 
     // Handle local/generated images directly
-    if (src.startsWith('data:') || src.startsWith('blob:')) {
-        objectUrl = src;
-        loading = false;
-        return;
+    if (src.startsWith("data:") || src.startsWith("blob:")) {
+      objectUrl = src;
+      loading = false;
+      return;
     }
 
     try {
@@ -51,11 +51,11 @@
   }
 
   $: if (src) {
-      loadImage();
+    loadImage();
   }
 
   onDestroy(() => {
-    if (objectUrl && !objectUrl.startsWith('data:')) {
+    if (objectUrl && !objectUrl.startsWith("data:")) {
       URL.revokeObjectURL(objectUrl);
     }
   });
@@ -74,5 +74,10 @@
     <span class="text-xs text-red-500">Error</span>
   </div>
 {:else}
-  <img src={objectUrl} {alt} class={className} style="width: 100%; height: 100%; object-fit: cover; display: block;" />
+  <img
+    src={objectUrl}
+    {alt}
+    class={className}
+    style="width: 100%; height: 100%; object-fit: cover; display: block;"
+  />
 {/if}
