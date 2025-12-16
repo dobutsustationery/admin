@@ -48,6 +48,14 @@ test.describe('Google Photos Integration', () => {
         });
     });
 
+    await page.route('https://lh3.googleusercontent.com/**', async (route: any) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'image/jpeg',
+            body: Buffer.from('dummy image content', 'base64')
+        });
+    });
+
     await page.route('https://photospicker.googleapis.com/v1/mediaItems?sessionId=sess_123&pageSize=100', async (route: any) => {
         await route.fulfill({
             status: 200,
@@ -57,7 +65,7 @@ test.describe('Google Photos Integration', () => {
                     {
                         id: '1',
                         mediaFile: {
-                             baseUrl: 'http://via.placeholder.com/150',
+                             baseUrl: 'https://lh3.googleusercontent.com/photo1',
                              filename: 'photo1.jpg',
                              mimeType: 'image/jpeg'
                         }
@@ -65,21 +73,13 @@ test.describe('Google Photos Integration', () => {
                     {
                         id: '2',
                         mediaFile: {
-                            baseUrl: 'http://via.placeholder.com/150',
+                            baseUrl: 'https://lh3.googleusercontent.com/photo2',
                             filename: 'photo2.jpg',
                             mimeType: 'image/jpeg'
                         }
                     }
                 ]
             })
-        });
-    });
-
-    await page.route('http://via.placeholder.com/**', async (route: any) => {
-        await route.fulfill({
-            status: 200,
-            contentType: 'image/jpeg',
-            body: Buffer.from('dummy image content', 'base64')
         });
     });
 
@@ -101,7 +101,7 @@ test.describe('Google Photos Integration', () => {
             check: async () => {
                 // Simulate return from Google with hash params
                 await page.goto('about:blank');
-                await page.goto('/photos#access_token=mock_token&expires_in=3600&scope=https://www.googleapis.com/auth/photospicker.mediaitems.readonly&token_type=Bearer&state=photos_auth');
+                await page.goto('/photos#access_token=mock_token&expires_in=3600&scope=https://www.googleapis.com/auth/photospicker.mediaitems.readonly%20https://www.googleapis.com/auth/generative-language&token_type=Bearer&state=photos_auth');
             }
         },
         {
@@ -126,7 +126,7 @@ test.describe('Google Photos Integration', () => {
         {
             description: "Wait for Polling (Mocked)",
             check: async () => {
-                await expect(page.locator('text=Waiting for selection')).toBeVisible();
+                await expect(page.locator('text=Please select photos')).toBeVisible();
                 await expect(page.locator('h3', { hasText: 'Selected Photos (2)' })).toBeVisible({ timeout: 10000 });
             }
         },
