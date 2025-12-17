@@ -343,16 +343,16 @@ export async function listSessionMediaItems(
     const data = await response.json();
     if (data.mediaItems) {
       const mappedItems = data.mediaItems.map((item: any) => ({
-        id: item.id,
-        productUrl: item.productUrl, // Note: Picker API might not return this, but we use baseUrl
-        baseUrl: item.mediaFile?.baseUrl,
-        mimeType: item.mediaFile?.mimeType,
-        filename: item.mediaFile?.filename,
+        id: item.id || "",
+        productUrl: item.productUrl || "", // Note: Picker API might not return this, but we use baseUrl
+        baseUrl: item.mediaFile?.baseUrl || "",
+        mimeType: item.mediaFile?.mimeType || "",
+        filename: item.mediaFile?.filename || "",
         mediaMetadata: {
           ...item.mediaFile?.mediaFileMetadata,
-          creationTime: item.createTime,
+          creationTime: item.createTime || "",
         },
-        description: item.description,
+        description: item.description || "",
       }));
       allItems = allItems.concat(mappedItems);
     }

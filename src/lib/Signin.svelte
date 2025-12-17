@@ -26,6 +26,8 @@
 
   const dispatchEvent = createEventDispatcher();
 
+  import { REQUIRED_SCOPES } from "$lib/firebase";
+
   onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
     if (user && user.email) {
       const uid = user.uid;
@@ -40,12 +42,30 @@
     dispatchEvent("user_changed", me);
   });
 
+  import { GoogleAuthProvider } from "firebase/auth";
+
   function login() {
     signInWithPopup(auth, googleAuthProvider)
       .then((result) => {
+        // Extract OAuth Access Token for Google APIs
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential && credential.accessToken) {
+          // Save token for Drive/Photos API usage
+          const tokenData = {
+            access_token: credential.accessToken,
+            expires_in: 3600, // Required by google-photos.ts validation
+            expires_at: Date.now() + 3600 * 1000, 
+            // Use granted scopes from credential or fallback to our required scopes joined by space
+            scope: (credential as any).scope || REQUIRED_SCOPES.join(" ")
+          };
+          localStorage.setItem("google_drive_access_token", JSON.stringify(tokenData));
+          localStorage.setItem("google_photos_access_token", JSON.stringify(tokenData));
+        }
+        
         dispatchEvent("sign_in", result);
       })
       .catch((message) => {
+        console.error("Login failed:", message);
         dispatchEvent("error", message);
       });
   }

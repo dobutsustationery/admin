@@ -67,6 +67,18 @@ console.log(`📦 Firebase Project: ${firebaseConfig.projectId}`);
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleAuthProvider = new GoogleAuthProvider();
+
+export const REQUIRED_SCOPES = [
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+  "https://www.googleapis.com/auth/generative-language.retriever",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/userinfo.profile",
+  "openid",
+];
+
+// Add scopes to the provider
+REQUIRED_SCOPES.forEach((scope) => googleAuthProvider.addScope(scope));
 export const firestore = getFirestore(app);
 
 // Connect to emulators if in local environment
