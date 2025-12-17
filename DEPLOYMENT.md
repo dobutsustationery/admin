@@ -38,7 +38,7 @@ Create a `.env.production` file (or set these in your CI pipeline):
 ```env
 # Firebase Configuration (Production)
 VITE_FIREBASE_ENV=production
-VITE_FIREBASE_API_KEY=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q
+VITE_FIREBASE_API_KEY=your-api-key
 VITE_FIREBASE_AUTH_DOMAIN=dobutsu-stationery-6b227.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=dobutsu-stationery-6b227
 VITE_FIREBASE_STORAGE_BUCKET=dobutsu-stationery-6b227.appspot.com
