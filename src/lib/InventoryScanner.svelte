@@ -49,7 +49,7 @@
       description = item.description;
     } else {
       janCode = r;
-      const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
+      const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=${import.meta.env.VITE_FIREBASE_API_KEY}&cx=b57eec92c05d54096`;
 
       const images = await get(imgSearch);
       console.log({ images });
@@ -73,7 +73,7 @@
     dataURL = e.detail;
   }
 
-  const imageSearchKey = "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q";
+  const imageSearchKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const picWidth = 140;
   let selectedPic = 0;
   function chooseImage(i: number) {

@@ -39,9 +39,7 @@ function getFirebaseConfig() {
   } else {
     // Production environment configuration (fallback to hardcoded values if env vars not set)
     return {
-      apiKey:
-        import.meta.env.VITE_FIREBASE_API_KEY ||
-        "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q",
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
       authDomain:
         import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
         "dobutsu-stationery-6b227.firebaseapp.com",

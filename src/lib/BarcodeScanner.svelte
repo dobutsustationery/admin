@@ -55,11 +55,7 @@
             //scanner.src = "/scanner-beep.mp3";
             //scanner.play();
             /*
-  const imageSearchKey = "AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q";
-            const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${result}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
-            const images = await get(imgSearch);
-            console.log({images});
-            imageItems = images.items;
+             FIXME: implement image search
             */
           }
         }

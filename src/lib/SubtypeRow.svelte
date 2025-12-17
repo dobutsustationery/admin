@@ -59,7 +59,7 @@
 
   let imageSearchDone = false;
   async function newResult(janCode: string) {
-    const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=AIzaSyCSTJm9VL7MBNP6gfScxv7mvuAz2OFoh-Q&cx=b57eec92c05d54096`;
+    const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=${import.meta.env.VITE_FIREBASE_API_KEY}&cx=b57eec92c05d54096`;
     console.log("imgSearch", imgSearch);
 
     const images = await get(imgSearch);
