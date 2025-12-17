@@ -31,33 +31,107 @@
   let loadingState: "initializing" | "loading" | "ready" = "initializing";
   let navigationOpen = false;
 
+  import { signOut } from "firebase/auth";
+
   function handleUserChange(firebaseUser: any) {
     if (firebaseUser && firebaseUser.email) {
-      const { uid, email, displayName, photoURL } = firebaseUser;
-      me = {
-        signedIn: true,
-        uid,
-        email,
-        name: displayName || "Unknown",
-        photo: photoURL || "",
-        last: new Date().getTime(),
-      };
-      $user = me;
-      loadingState = "loading";
+      // Validate Scopes globally
+      // Need to be cautious about SSR context if localStorage is accessed
+      if (typeof window !== "undefined") {
+        const checkScopes = async () => {
+          let attempts = 0;
+          const maxAttempts = 3;
 
-      // Update user record
-      setDoc(doc(firestore as any, "users", email), {
-        uid: me.uid,
-        name: me.name,
-        email: me.email,
-        photo: me.photo,
-        activity_timestamp: new Date().getTime(),
-      }).catch(console.error);
+          while (attempts < maxAttempts) {
+            const storedTokenString = localStorage.getItem(
+              "google_photos_access_token",
+            );
+            let hasAllScopes = false;
 
-      // Start syncing if not already
-      if (!unsubscribeBroadcast) {
-        unsubscribeBroadcast = startBroadcastListener();
+            if (storedTokenString) {
+              try {
+                const token = JSON.parse(storedTokenString);
+                if (token && token.scope) {
+                  // Check only for the critical API scopes
+                  const criticalScopes = [
+                    "https://www.googleapis.com/auth/drive.file",
+                    "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+                    "https://www.googleapis.com/auth/generative-language.retriever",
+                  ];
+                  const missing = criticalScopes.filter(
+                    (s) => !token.scope.includes(s),
+                  );
+                  hasAllScopes = missing.length === 0;
+
+                  if (!hasAllScopes && attempts === maxAttempts - 1) {
+                    console.warn(
+                      `[Layout] Scope mismatch! Missing: ${missing.join(", ")}`,
+                    );
+                  }
+                }
+              } catch (e) {
+                // Silent catch
+              }
+            }
+
+            if (hasAllScopes) {
+              return true; // Success!
+            }
+
+            attempts++;
+            await new Promise((r) => setTimeout(r, 200)); // Wait 200ms
+          }
+          return false; // Failed after retries
+        };
+
+        // Don't block UI immediately, check potentially in background but quickly
+        checkScopes().then((valid) => {
+          if (!valid) {
+            console.error(
+              "[Layout] User signed in but missing required scopes or token after retries. Signing out.",
+            );
+            // Debug scope of failure
+            const stored = localStorage.getItem("google_photos_access_token");
+            console.warn("Final Token State:", stored);
+
+            signOut(auth).then(() => {
+              me = { signedIn: false };
+              loadingState = "ready";
+            });
+          } else {
+            // VALIDATION SUCCESS: Now we proceed to sign in the app
+            const { uid, email, displayName, photoURL } = firebaseUser;
+            me = {
+              signedIn: true,
+              uid,
+              email,
+              name: displayName || "Unknown",
+              photo: photoURL || "",
+              last: new Date().getTime(),
+            };
+            $user = me;
+            loadingState = "loading"; // This will transition to "ready" when sync completes
+
+            // Update user record
+            setDoc(doc(firestore as any, "users", email), {
+              uid: me.uid,
+              name: me.name,
+              email: me.email,
+              photo: me.photo,
+              activity_timestamp: new Date().getTime(),
+            }).catch(console.error);
+
+            // Start syncing if not already
+            if (!unsubscribeBroadcast) {
+              unsubscribeBroadcast = startBroadcastListener();
+            }
+          }
+        });
+        return; // Exit here, let the promise handle the state update
       }
+
+      // Fallback for SSR or non-window (shouldn't happen for auth, but good practice)
+      // Original logic would go here if needed, but we returned above.
     } else {
       me = { signedIn: false };
       loadingState = "ready"; // Show Sign in
