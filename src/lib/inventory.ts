@@ -399,7 +399,18 @@ export const inventory = createReducer(initialState, (r) => {
   });
   r.addCase(archive_inventory, (state, action) => {
     const archiveName = action.payload.archiveName;
-    const archive = (state.archivedInventoryState[archiveName] = { ...state });
+    // Prevent circular reference by picking only relevant state
+    const archive = (state.archivedInventoryState[archiveName] = {
+        idToItem: { ...state.idToItem },
+        idToHistory: { ...state.idToHistory },
+        orderIdToOrder: { ...state.orderIdToOrder },
+        salesEvents: { ...state.salesEvents },
+        archivedInventoryDate: { ...state.archivedInventoryDate },
+        // Do NOT include archivedInventoryState or hiddenInventoryState to avoid recursion
+        archivedInventoryState: {},
+        hiddenInventoryState: {},
+        initialized: state.initialized
+    });
     const timestamp = (action as any).timestamp;
     let creationDate = "Unknown";
     if (timestamp) {
