@@ -27,7 +27,8 @@ test.describe("CSV Export Page with Google Drive", () => {
       errorText.includes("ERR_NAME_NOT_RESOLVED") ||
       errorText.includes("Failed to load resource") ||
       // Expected Drive API errors when Drive is not configured
-      (errorText.includes("googleapis.com") && errorText.includes("Failed to load")) ||
+      (errorText.includes("googleapis.com") &&
+        errorText.includes("Failed to load")) ||
       // Expected Firestore emulator connection messages
       errorText.includes("Could not reach Cloud Firestore backend")
     );
@@ -43,21 +44,27 @@ test.describe("CSV Export Page with Google Drive", () => {
    * 4. User connects to Drive (mocked OAuth)
    * 5. User uploads CSV to Drive (mocked API)
    */
-  test("complete CSV export & Google Drive workflow", async ({ page, context }, testInfo) => {
+  test("complete CSV export & Google Drive workflow", async ({
+    page,
+    context,
+  }, testInfo) => {
     // Set test timeout for complete workflow
-    test.setTimeout(60000);
+    test.setTimeout(3000);
+
+    // Mock system time to ensure consistent default filename (inventory-export-2025-12-02.csv)
+    await page.clock.install({ time: new Date("2025-12-02T12:00:00.000Z") });
 
     const screenshots = createScreenshotHelper();
-    
+
     // Initialize documentation helper
     const outputDir = path.dirname(testInfo.file);
     const docHelper = new TestDocumentationHelper(outputDir);
-    
+
     docHelper.setMetadata(
       "CSV Export Verification",
       "**As an** admin user\n" +
-      "**I want to** export inventory data to Google Drive\n" +
-      "**So that** I can analyze it in other tools"
+        "**I want to** export inventory data to Google Drive\n" +
+        "**So that** I can analyze it in other tools",
     );
 
     // Collect console errors throughout the test
@@ -75,68 +82,70 @@ test.describe("CSV Export Page with Google Drive", () => {
     // PREPARE: Mock API Routes
     // ====================================================================
     console.log("\n🔧 Setting up Google Drive API mocks");
-    
+
     // Intercept all Google API requests
-    await page.route('**/*googleapis.com/**', async (route) => {
+    await page.route("**/*googleapis.com/**", async (route) => {
       const url = route.request().url();
       const method = route.request().method();
       console.log(`Intercepted request: ${method} ${url}`);
-      
+
       // Handle CORS preflight
-      if (method === 'OPTIONS') {
+      if (method === "OPTIONS") {
         await route.fulfill({
           status: 204,
           headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-          }
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          },
         });
         return;
       }
-      
+
       // Handle Drive API
-      if (url.includes('/drive/v3/files')) {
-        if (method === 'GET') {
+      if (url.includes("/drive/v3/files")) {
+        if (method === "GET") {
           // Mock list files response
           await route.fulfill({
             status: 200,
-            contentType: 'application/json',
-            headers: { 'Access-Control-Allow-Origin': '*' },
+            contentType: "application/json",
+            headers: { "Access-Control-Allow-Origin": "*" },
             body: JSON.stringify({
               files: [
                 {
-                  id: 'mock-file-123',
-                  name: 'inventory-export-2025-12-02.csv',
-                  mimeType: 'text/csv',
-                  modifiedTime: '2025-12-01T12:00:00.000Z',
-                  size: '12345',
-                  webViewLink: 'https://drive.google.com/file/d/mock-file-123/view'
-                }
-              ]
-            })
+                  id: "mock-file-123",
+                  name: "inventory-export-2025-12-02.csv",
+                  mimeType: "text/csv",
+                  modifiedTime: "2025-12-01T12:00:00.000Z",
+                  size: "12345",
+                  webViewLink:
+                    "https://drive.google.com/file/d/mock-file-123/view",
+                },
+              ],
+            }),
           });
           return;
-        } 
-        
-        if (method === 'POST') {
+        }
+
+        if (method === "POST") {
           // Mock file upload response
           await route.fulfill({
-              status: 200,
-              contentType: 'application/json',
-              headers: { 'Access-Control-Allow-Origin': '*' },
-              body: JSON.stringify({
-                id: 'mock-file-456',
-                name: 'test-export.csv',
-                mimeType: 'text/csv',
-                webViewLink: 'https://drive.google.com/file/d/mock-file-456/view',
-                webContentLink: 'https://drive.google.com/uc?id=mock-file-456&export=download'
-              })
-            });
+            status: 200,
+            contentType: "application/json",
+            headers: { "Access-Control-Allow-Origin": "*" },
+            body: JSON.stringify({
+              id: "mock-file-456",
+              name: "test-export.csv",
+              mimeType: "text/csv",
+              webViewLink: "https://drive.google.com/file/d/mock-file-456/view",
+              webContentLink:
+                "https://drive.google.com/uc?id=mock-file-456&export=download",
+            }),
+          });
           return;
         }
       }
-      
+
       await route.continue();
     });
 
@@ -155,14 +164,14 @@ test.describe("CSV Export Page with Google Drive", () => {
         description: 'Validated "Sign In" button is visible',
         check: async () => {
           await expect(signInButton).toBeVisible();
-        }
-      }
+        },
+      },
     ];
 
     docHelper.addStep(
       "Signed Out State",
       "000-signed-out-state.png",
-      step1Verifications
+      step1Verifications,
     );
 
     await screenshots.capture(page, "signed-out-state", {
@@ -175,7 +184,7 @@ test.describe("CSV Export Page with Google Drive", () => {
     // STEP 2: Sign in
     // ====================================================================
     console.log("\n📖 STEP 2: Sign in to application");
-    
+
     // Create authenticated user
     const authEmulatorUrl = "http://localhost:9099";
     const testEmail = `test-${Date.now()}@example.com`;
@@ -237,11 +246,11 @@ test.describe("CSV Export Page with Google Drive", () => {
     await waitForAppReady(page);
 
     await signInButton.waitFor({ state: "hidden", timeout: 50000 });
-    
+
     // Inject mock Drive configuration for UI to show up
     await page.evaluate(() => {
       (window as any).__MOCK_DRIVE_CONFIG__ = true;
-      localStorage.setItem('__TEST_DRIVE_CONFIGURED__', 'true');
+      localStorage.setItem("__TEST_DRIVE_CONFIGURED__", "true");
     });
 
     const step2Verifications = [
@@ -249,7 +258,7 @@ test.describe("CSV Export Page with Google Drive", () => {
         description: "Validated sign-in button is no longer visible",
         check: async () => {
           await expect(signInButton).not.toBeVisible();
-        }
+        },
       },
       {
         description: "Verified CSV content is displayed",
@@ -257,14 +266,14 @@ test.describe("CSV Export Page with Google Drive", () => {
           const preElement = page.locator(".csv-preview pre");
           await expect(preElement).toBeVisible();
           await expect(preElement).toContainText('"janCode"');
-        }
-      }
+        },
+      },
     ];
 
     docHelper.addStep(
       "Signed In State",
       "001-signed-in-state.png",
-      step2Verifications
+      step2Verifications,
     );
 
     await screenshots.capture(page, "signed-in-state", {
@@ -277,12 +286,14 @@ test.describe("CSV Export Page with Google Drive", () => {
     // STEP 3: Verify Drive UI
     // ====================================================================
     console.log("\n📖 STEP 3: Verify Drive UI visibility");
-    
+
     // Check for Google Drive section heading
     const driveSection = page.locator('h2:has-text("Google Drive Export")');
     await expect(driveSection).toBeVisible();
-    
-    const connectButton = page.locator('button:has-text("Connect to Google Drive")');
+
+    const connectButton = page.locator(
+      'button:has-text("Connect to Google Drive")',
+    );
     await expect(connectButton).toBeVisible();
 
     const step3Verifications = [
@@ -290,20 +301,20 @@ test.describe("CSV Export Page with Google Drive", () => {
         description: "Validated Drive Export section is visible",
         check: async () => {
           await expect(driveSection).toBeVisible();
-        }
+        },
       },
       {
         description: "Validated Connect button is visible",
         check: async () => {
           await expect(connectButton).toBeVisible();
-        }
-      }
+        },
+      },
     ];
 
     docHelper.addStep(
       "Drive UI Visible",
       "002-drive-ui-visible.png",
-      step3Verifications
+      step3Verifications,
     );
 
     await screenshots.capture(page, "drive-ui-visible", {
@@ -320,24 +331,27 @@ test.describe("CSV Export Page with Google Drive", () => {
     // Inject mock token
     await page.evaluate(() => {
       const mockToken = {
-        access_token: 'mock-access-token-12345',
+        access_token: "mock-access-token-12345",
         expires_in: 3600,
         expires_at: Date.now() + 3600000,
-        scope: 'https://www.googleapis.com/auth/drive.file',
-        token_type: 'Bearer'
+        scope: "https://www.googleapis.com/auth/drive.file",
+        token_type: "Bearer",
       };
-      localStorage.setItem('google_drive_access_token', JSON.stringify(mockToken));
+      localStorage.setItem(
+        "google_drive_access_token",
+        JSON.stringify(mockToken),
+      );
     });
 
     await page.reload({ waitUntil: "load" });
     await waitForAppReady(page);
-    
+
     // Ensure mock config is still there (re-inject if lost on reload, though localStorage persists)
     await page.evaluate(() => {
-        (window as any).__MOCK_DRIVE_CONFIG__ = true;
+      (window as any).__MOCK_DRIVE_CONFIG__ = true;
     });
 
-    const connectedStatus = page.locator('text=Connected to Google Drive');
+    const connectedStatus = page.locator("text=Connected to Google Drive");
     await expect(connectedStatus).toBeVisible();
 
     const exportButton = page.locator('button:has-text("Export to Drive")');
@@ -348,20 +362,20 @@ test.describe("CSV Export Page with Google Drive", () => {
         description: "Validated Connected status is visible",
         check: async () => {
           await expect(connectedStatus).toBeVisible();
-        }
+        },
       },
       {
         description: "Validated Export button is visible",
         check: async () => {
           await expect(exportButton).toBeVisible();
-        }
-      }
+        },
+      },
     ];
 
     docHelper.addStep(
       "Connected to Drive",
       "003-connected-to-drive.png",
-      step4Verifications
+      step4Verifications,
     );
 
     await screenshots.capture(page, "connected-to-drive", {
@@ -375,39 +389,39 @@ test.describe("CSV Export Page with Google Drive", () => {
     // ====================================================================
     console.log("\n📖 STEP 5: Upload CSV");
 
-    const filenameInput = page.locator('input#filename');
-    await filenameInput.fill('test-export.csv');
-    
+    const filenameInput = page.locator("input#filename");
+    await filenameInput.fill("test-export.csv");
+
     await exportButton.click();
-    
+
     // Wait for upload success message or file in list
-    // Assuming the UI updates to show "Last export: test-export.csv" or similar, 
+    // Assuming the UI updates to show "Last export: test-export.csv" or similar,
     // or checks the mock file list response
-    
+
     // Wait a bit for the async operation
-    await page.waitForTimeout(1000); 
+    await page.waitForTimeout(1000);
 
     const step5Verifications = [
       {
         description: "Validated upload triggered successfully",
         check: async () => {
-             // In a real test we might check for specific success toast or UI update
-             // For now, ensuring no error appeared is a good check
-             const errorMsg = page.locator('.error-message');
-             await expect(errorMsg).not.toBeVisible();
-        }
-      }
+          // In a real test we might check for specific success toast or UI update
+          // For now, ensuring no error appeared is a good check
+          const errorMsg = page.locator(".error-message");
+          await expect(errorMsg).not.toBeVisible();
+        },
+      },
     ];
 
     docHelper.addStep(
       "Upload Complete",
       "004-upload-complete.png",
-      step5Verifications
+      step5Verifications,
     );
 
     await screenshots.capture(page, "upload-complete", {
       programmaticCheck: async () => {
-         for (const v of step5Verifications) await v.check();
+        for (const v of step5Verifications) await v.check();
       },
     });
 
@@ -419,14 +433,15 @@ test.describe("CSV Export Page with Google Drive", () => {
 
     // Filter console errors
     const significantErrors = consoleErrors.filter(
-      (error) => !isTransientAuthError(error) && !isExpectedTestEnvironmentError(error)
+      (error) =>
+        !isTransientAuthError(error) && !isExpectedTestEnvironmentError(error),
     );
-    
+
     if (significantErrors.length > 0) {
-        console.log("\n❌ SIGNIFICANT CONSOLE ERRORS FOUND:");
-        significantErrors.forEach(e => console.log(`   - ${e}`));
+      console.log("\n❌ SIGNIFICANT CONSOLE ERRORS FOUND:");
+      significantErrors.forEach((e) => console.log(`   - ${e}`));
     }
-    
+
     expect(significantErrors.length).toBe(0);
   });
 });
