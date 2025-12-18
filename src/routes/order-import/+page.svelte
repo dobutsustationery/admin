@@ -602,7 +602,11 @@
   {#if showConflictModal && currentConflictItem}
     <div class="modal-overlay">
       <div class="modal">
-        <h3>Resolve Conflict</h3>
+        <h3>
+          Resolve {currentConflictItem.subtypes?.[0]?.description ||
+            currentConflictItem.description ||
+            "Conflict"}
+        </h3>
         <p>
           JAN: <strong>{currentConflictItem.janCode}</strong> maps to multiple items.
         </p>
@@ -612,11 +616,7 @@
           {#if currentConflictItem.subtypes}
             {#each currentConflictItem.subtypes as subtype}
               <div class="split-row">
-                <span
-                  >{subtype.description ||
-                    subtype.subtype ||
-                    subtype.janCode}</span
-                >
+                <span>{subtype.key}</span>
                 <input
                   type="number"
                   min="0"
