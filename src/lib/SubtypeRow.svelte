@@ -3,7 +3,7 @@
   import { get } from "$lib/http";
   import ComboBox from "./ComboBox.svelte";
   import { firestore } from "./firebase";
-  import { user } from "./globals";
+  import { user } from "$lib/user-store";
   import {
     type Item,
     itemsLookIdentical,
@@ -78,7 +78,7 @@
     return (e: any) => {
       const to = e.detail || e.target.value;
       const from = item[field];
-      if (to !== null && $user.uid) {
+      if (to !== null && $user?.uid) {
         for (const otherType of otherTypes) {
           const otherKey = `${code}${otherType}`;
           broadcast(
@@ -100,7 +100,7 @@
     return (e: any) => {
       const itemKey = `${code}${item.subtype}`;
       const subtype = e.detail || e.target.value;
-      if ($user.uid) {
+      if ($user?.uid) {
         broadcast(firestore, $user.uid, rename_subtype({ itemKey, subtype }));
       }
     };
@@ -118,7 +118,7 @@
         const to = imageItems[selectedPic].link;
         for (const otherType of otherTypes) {
           const otherKey = `${code}${otherType}`;
-          if ($user.uid) {
+          if ($user?.uid) {
             broadcast(
               firestore,
               $user.uid,
