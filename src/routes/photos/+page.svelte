@@ -18,9 +18,71 @@
   // State from Redux Store
   $: photos = $store.photos.selected;
   $: uploads = $store.photos.uploads || {};
-  $: console.log("DEBUG: Store photos updated:", photos?.length);
+  $: janCodeToPhotos = $store.photos.janCodeToPhotos || {};
   $: isGenerating = $store.photos.generating;
+  $: isCategorizing = $store.photos.categorizing;
 
+  import { 
+    begin_categorize, 
+    end_categorize, 
+    merge_jan_groups 
+  } from "$lib/photos-slice";
+
+  import { categorizeMediaItems } from "$lib/gemini-client"; 
+  let catProgress = { current: 0, total: 0, message: "" };
+
+  async function handleCategorize() {
+    if (photos.length === 0) return;
+    
+    // Broadcast begin (Sets flag)
+    if ($user.uid) {
+         broadcast(firestore, $user.uid, { type: "photos/begin_categorize" });
+    }
+    
+    catProgress = { current: 0, total: photos.length, message: "Starting..." };
+    
+    try {
+        const token = getStoredToken();
+        if (!token) throw new Error("Not authenticated");
+        const apiKey = import.meta.env.VITE_GOOGLE_API_KEY; // Optional
+        
+        // Pass a copy of photos to avoid mutation race conditions if UI updates
+        const itemsToProcess = photos.map(p => ({ baseUrl: p.baseUrl, id: p.id }));
+        
+        await categorizeMediaItems(
+           itemsToProcess,
+           token.access_token,
+           apiKey,
+           (item, janCode) => {
+               // On Match -> Broadcast Action to move item
+               if ($user.uid) {
+                   // We need the full MediaItem. Find it in current state (or known uploads)
+                   const fullItem = photos.find(p => p.id === item.id) || { ...item }; // Fallback
+                   
+                   broadcast(firestore, $user.uid, {
+                       type: "photos/categorize_photo",
+                       payload: { janCode, photo: fullItem }
+                   });
+               }
+           },
+           (current, total, message) => {
+               catProgress = { current, total, message };
+           }
+        );
+        
+    } catch (e: any) {
+        checkAuthError(e);
+        console.error("Categorize Error:", e);
+        error = e.message;
+    } finally {
+        if ($user.uid) {
+             broadcast(firestore, $user.uid, { type: "photos/end_categorize" });
+             store.dispatch(end_categorize()); // Also dispatch locally to be sure
+        }
+    }
+  }
+
+  // State
   let error = "";
   let isPolling = false;
   let loading = false;
@@ -29,6 +91,15 @@
 
   const MAX_POLL_ATTEMPTS = 60; // 2 minutes (approx)
   let pickerWindow: Window | null = null;
+
+  // LIFECYCLE
+  onMount(() => {
+     // Safety: Reset categorization state if it was stuck from a previous session/reload
+     if ($store.photos.categorizing) {
+         console.log("Resetting stuck 'categorizing' state on mount.");
+         store.dispatch(end_categorize());
+     }
+  });
 
   onDestroy(() => {
     stopPolling();
@@ -218,6 +289,33 @@
       progress = { ...progress, message: "Done" };
     }
   }
+
+  // Hover state for table
+  import { fade } from 'svelte/transition';
+  import { merge_jan_groups } from "$lib/photos-slice";
+
+  let hoveredRowIndex: number | null = null;
+  let hoveredColumn: "jan" | "photos" | null = null;
+  
+  $: categorizedEntries = Object.entries(janCodeToPhotos);
+
+  function handleMergeUp(index: number) {
+      if (index <= 0) return;
+      
+      const [sourceJan] = categorizedEntries[index];
+      const [targetJan] = categorizedEntries[index - 1];
+      
+      if ($user.uid) {
+           broadcast(firestore, $user.uid, {
+               type: "photos/merge_jan_groups",
+               payload: { sourceJan, targetJan }
+           });
+      }
+      // Optimistic
+      store.dispatch(merge_jan_groups({ sourceJan, targetJan }));
+      
+      hoveredRowIndex = null;
+  }
 </script>
 
 <div class="p-8 max-w-6xl mx-auto">
@@ -381,23 +479,47 @@
             </button>
           </div>
 
-          {#if photos.length > 0}
-            <button
-              on:click={handleGenerate}
-              disabled={isGenerating}
-              class="bg-purple-600 text-white px-4 py-2 rounded-md font-medium hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
-            >
-              Generate Descriptions
-            </button>
-          {/if}
+          <div class="flex gap-2">
+             {#if photos.length > 0}
+                <button
+                on:click={handleCategorize}
+                disabled={isCategorizing || isGenerating}
+                class="bg-teal-600 text-white px-4 py-2 rounded-md font-medium hover:bg-teal-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+                >
+                Categorize Photos
+                </button>
+                
+                <button
+                on:click={handleGenerate}
+                disabled={isGenerating || isCategorizing}
+                class="bg-purple-600 text-white px-4 py-2 rounded-md font-medium hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+                >
+                Generate Descriptions
+                </button>
+             {/if}
+          </div>
         </div>
 
-        <!-- Thumbnails Row -->
+        <!-- Progress Bar for Categorization -->
+        {#if isCategorizing}
+            <div class="px-4 py-2">
+                <div class="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Categorizing... {catProgress.message}</span>
+                    <span>{catProgress.current} / {catProgress.total}</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div class="bg-teal-500 h-2 rounded-full transition-all duration-300" style="width: {(catProgress.current / catProgress.total) * 100}%"></div>
+                </div>
+            </div>
+        {/if}
+
+        <!-- Thumbnails Row (Selected / Uncategorized) -->
         <div
           class="flex flex-row flex-wrap gap-4 mt-2 mb-6 p-4 min-h-[160px]"
           style="display: flex; flex-direction: row; flex-wrap: wrap;"
         >
           {#if photos.length > 0}
+            <!-- EXISTING PHOTO LOOP -->
             {#each photos as photo (photo.id)}
               <div
                 class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group"
@@ -427,6 +549,9 @@
             <div class="w-full text-center py-10 text-gray-500">
               <p>Selection in progress...</p>
             </div>
+          {:else if isCategorizing}
+             <!-- While categorizing, list empties, so this might show temporarily. -->
+             <div class="w-full text-center py-10 text-gray-500 italic">Processing...</div>
           {:else}
             <div class="w-full text-center py-10 text-gray-400 italic">
               No photos queued. Select or Add photos to begin.
@@ -434,6 +559,109 @@
           {/if}
         </div>
       </div>
+      
+      <!-- CATEGORIZED RESULTS -->
+      {#if Object.keys(janCodeToPhotos).length > 0}
+        <div class="bg-white p-6 rounded-lg shadow-md mt-8 border-t-4 border-teal-500">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">Categorized Photos</h2>
+            <div class="border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
+                <!-- Header -->
+                <div class="flex flex-row bg-slate-200 border-b-2 border-slate-300 text-slate-700" style="display: flex; flex-direction: row;">
+                    <div class="w-48 flex-none p-4 font-bold text-center uppercase tracking-wide text-sm" style="width: 200px; flex: none;">JAN Code</div>
+                    <div class="flex-1 p-4 font-bold text-sm uppercase tracking-wide" style="flex: 1;">Photos</div>
+                </div>
+                
+                {#each categorizedEntries as [jan, items], index}
+                    <!-- 
+                        Highlight Logic:
+                        - Current Row Hover: Handled by .categorized-row:hover (CSS)
+                        - Previous Row (Highlight): IF `hoveredRowIndex` is `index + 1` (the row below this one), highlight THIS one.
+                        - AND `hoveredColumn` must be 'photos' as requested.
+                    -->
+                    <div 
+                        class="flex flex-row categorized-row group" 
+                        class:related-highlight={hoveredRowIndex === index + 1 && hoveredColumn === 'photos'}
+                        style="display: flex; flex-direction: row relative;"
+                        on:mouseleave={() => { hoveredRowIndex = null; hoveredColumn = null; }}
+                    >
+                        <!-- JAN Column -->
+                        <div 
+                            class="w-48 flex-none p-4 font-mono text-lg font-medium text-teal-700 break-all bg-gray-50/50 group-hover:bg-transparent transition-colors z-10"
+                            style="width: 200px; flex: none; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e2e8f0;"
+                            on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'jan'; }}
+                        >
+                            {jan}
+                        </div>
+                        
+                        <!-- Photos Column: The Merge Trigger Zone -->
+                        <div 
+                            class="flex-1 p-4 min-w-0 relative" 
+                            style="flex: 1; min-width: 0; position: relative;"
+                            on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'photos'; }}
+                        >
+                            <!-- Merge Trigger Button (Only if NOT the first row) -->
+                            {#if hoveredRowIndex === index && hoveredColumn === 'photos' && index > 0}
+                                <button 
+                                    class="absolute -top-3 right-4 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 border border-yellow-300 rounded-full px-3 py-1 text-xs font-bold shadow-sm z-50 flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                                    style="position: absolute; top: -12px; right: 16px;"
+                                    on:click|stopPropagation={() => handleMergeUp(index)}
+                                    title="Merge these photos into the previous group"
+                                    transition:fade={{ duration: 100 }}
+                                >
+                                    <span>↑ Merge Up</span>
+                                </button>
+                            {/if}
+
+                            <div class="flex flex-row flex-wrap gap-2 content-start w-full" style="display: flex; flex-direction: row; flex-wrap: wrap;">
+                                {#each items as item}
+                                    <div 
+                                        class="w-14 h-14 rounded border border-gray-200 overflow-hidden relative flex-none"
+                                        style="width: 56px; height: 56px;"
+                                    >
+                                        <SecureImage 
+                                            src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w128` : `${item.baseUrl}=w128-h128-c`}
+                                            className="w-full h-full object-cover"
+                                        />
+                                        <!-- Show upload status here too -->
+                                        {#if uploads[item.id]}
+                                            {#if uploads[item.id].status === 'uploading'}
+                                                <div class="absolute inset-0 bg-black/30 flex items-center justify-center">
+                                                    <span class="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></span>
+                                                </div>
+                                            {:else if uploads[item.id].status === 'failed'}
+                                                <div class="absolute inset-0 bg-red-500/30 flex items-center justify-center">!</div>
+                                            {/if}
+                                        {/if}
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        </div>
+      {/if}
+      
     {/if}
   </div>
 </div>
+
+<style>
+    .categorized-row {
+        border-bottom: 1px solid #e2e8f0;
+        transition: background-color 0.2s;
+    }
+    .categorized-row:hover {
+        background-color: #eff6ff; /* blue-50 */
+    }
+    /* Apply highlight to the Previous Row when current is hovered */
+    .categorized-row.related-highlight {
+        /* This class is applied to the ROW ABOVE (index-1) in the logic, OR we change logic? */
+        /* WAIT. The user said: "when we hover a row, show which row it would have gone into... highlighting the PREVIOUS row". */
+        /* So if I hover Row B, Row A should verify. */
+        /* My logic above in HTML: class:related-highlight={hoveredRowIndex === index && ...} applies to CURRENT row. That's wrong. */
+        /* I need to apply it to index === hoveredRowIndex - 1. */
+    }
+    
+    /* Let's fix the highlighting logic in the HTML block instead of CSS tricks */
+</style>
