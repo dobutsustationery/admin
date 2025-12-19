@@ -16,7 +16,7 @@
   import { signOut } from "firebase/auth";
 
   // State from Redux Store
-  $: photos = $store.photos.selected;
+  $: photos = $store.photos.selected as MediaItem[];
   $: uploads = $store.photos.uploads || {};
   $: janCodeToPhotos = $store.photos.janCodeToPhotos || {};
   $: isGenerating = $store.photos.generating;
@@ -25,7 +25,8 @@
   import { 
     begin_categorize, 
     end_categorize, 
-    merge_jan_groups 
+    merge_jan_groups,
+    rename_jan_group 
   } from "$lib/photos-slice";
 
   import { categorizeMediaItems } from "$lib/gemini-client"; 
@@ -292,11 +293,11 @@
 
   // Merge Logic
   import { fade } from 'svelte/transition';
-  import { merge_jan_groups, rename_jan_group } from "$lib/photos-slice";
+  import { goto } from "$app/navigation";
 
   let hoveredRowIndex: number | null = null;
   let hoveredColumn: "jan" | "photos" | null = null;
-  $: categorizedEntries = Object.entries(janCodeToPhotos);
+  $: categorizedEntries = Object.entries(janCodeToPhotos) as [string, MediaItem[]][];
 
   // JAN Validation (EAN-13 Checksum)
   function isValidJan(code: string): boolean {
@@ -614,8 +615,9 @@
             <!-- EXISTING PHOTO LOOP -->
             {#each photos as photo (photo.id)}
               <div
-                class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group"
+                class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
                 style="width: 148px; height: 148px; flex-shrink: 0;"
+                on:click={() => goto(`/photo-history?id=${photo.id}`)}
               >
                 <SecureImage
                   src={photo.baseUrl.includes("drive.google.com") ? `${photo.baseUrl}&sz=w800` : `${photo.baseUrl}=w400-h400-c`}
@@ -715,10 +717,11 @@
                             <div class="flex flex-row flex-wrap gap-2 content-start w-full" style="display: flex; flex-direction: row; flex-wrap: wrap;">
                                 {#each items as item}
                                     <div 
-                                        class="w-14 h-14 rounded border border-gray-200 overflow-hidden relative flex-none cursor-help"
+                                        class="w-14 h-14 rounded border border-gray-200 overflow-hidden relative flex-none cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
                                         style="width: 56px; height: 56px;"
                                         on:mouseenter={(e) => handleThumbnailEnter(e, item)}
                                         on:mouseleave={handleThumbnailLeave}
+                                        on:click={() => goto(`/photo-history?id=${item.id}`)}
                                     >
                                         <SecureImage 
                                             src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w128` : `${item.baseUrl}=w128-h128-c`}
