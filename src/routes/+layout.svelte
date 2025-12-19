@@ -165,7 +165,11 @@
         const action = actionItem as unknown as AnyAction;
         const id = actionItem.id;
         
-        if (executedActions[id] === undefined) {
+        // Check if locally executed OR already in Redux history (hydration)
+        const isAlreadyExecuted = executedActions[id] !== undefined || 
+                                  store.getState().history.executedActions?.[id];
+
+        if (!isAlreadyExecuted) {
           executedActions[id] = action;
           if (action.type === "retype_item") {
              // payload typing might be loose here, check properties safely

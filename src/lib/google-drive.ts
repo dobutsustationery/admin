@@ -549,7 +549,7 @@ export async function uploadImageToDrive(
   // We prefer the 'permanent' endpoint that redirects to a fresh thumbnail.
   // This ensures the URL stored in our DB works forever.
   if (fileData.id) {
-     details.thumbnailLink = `https://drive.google.com/thumbnail?id=${fileData.id}&sz=w4096`;
+     details.thumbnailLink = `https://drive.google.com/thumbnail?id=${fileData.id}`;
   }
 
   return details;

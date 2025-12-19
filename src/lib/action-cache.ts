@@ -147,3 +147,22 @@ export async function loadSnapshot(): Promise<{ state: any, lastAction: any } | 
         return undefined;
     }
 }
+export async function clearActionCache(): Promise<void> {
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction([ACTIONS_STORE, SNAPSHOT_STORE], "readwrite");
+            
+            const actionsStore = tx.objectStore(ACTIONS_STORE);
+            actionsStore.clear();
+
+            const snapshotStore = tx.objectStore(SNAPSHOT_STORE);
+            snapshotStore.clear();
+
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        console.warn("Failed to clear action cache", e);
+    }
+}
