@@ -12,11 +12,13 @@ import {
   serverTimestamp,
   startAt,
   Timestamp,
+  getCountFromServer,
 } from "firebase/firestore";
 import { 
     getAllCachedActions, 
     cacheActions, 
     getLatestTimestamp, 
+    clearActionCache,
     type ActionWithId 
 } from "$lib/action-cache";
 
@@ -141,6 +143,21 @@ export async function watchBroadcastActions(
           // Emit all (Pending + New Confirmed)
           // Note: Layout.svelte handles deduplication of execution, so emitting same ID twice (pending then confirmed) is safe/good.
           callback(newActions);
+      }
+      
+      // Safety Check: If server has FEWER items than cache, we must have had a server wipe.
+      // Invalidate cache and reload page to resync from scratch.
+      try {
+          const countSnapshot = await getCountFromServer(broadcasts);
+          const serverCount = countSnapshot.data().count;
+          if (serverCount < stats.fromCache) {
+              console.warn(`[Sync] Server count (${serverCount}) < Cache count (${stats.fromCache}). Invalidating cache and reloading.`);
+              await clearActionCache();
+              // Force reload to reset Redux store and re-init
+              window.location.reload();
+          }
+      } catch (e) {
+         console.error("Failed to verify server count:", e);
       }
 
       console.log(`[Broadcast] Stats: Cache=${stats.fromCache}, Server=${stats.fromServer}, Dupes=${stats.duplicates}`);

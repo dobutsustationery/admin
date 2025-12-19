@@ -93,10 +93,12 @@
           // But that's handled by retry limit.
           const fetchUrl = `${item.baseUrl}${HIGH_RES_SUFFIX}`;
           
-          // Use query param for auth to avoid CORS preflight while still authenticating.
-          const separator = fetchUrl.includes('?') ? '&' : '?';
-          const fetchUrlWithAuth = `${fetchUrl}${separator}access_token=${accessToken}`;
-          const resp = await fetch(fetchUrlWithAuth, { referrerPolicy: "no-referrer" });
+          // Experiment: User requested to try Header auth again.
+          // We keep referrerPolicy: "no-referrer" which may help.
+          const resp = await fetch(fetchUrl, { 
+              headers: { Authorization: `Bearer ${accessToken}` },
+              referrerPolicy: "no-referrer"
+          });
           
           if (!resp.ok) {
               throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);

@@ -30,18 +30,8 @@
     }
     
     // For Google Photos Picker URLs (lh3.googleusercontent...), we need authentication.
-    // We cannot use fetch+headers (CORS), so we append access_token to the URL.
-    if (src.includes("googleusercontent.com")) {
-        const token = getStoredToken();
-        if (token && token.access_token) {
-            const separator = src.includes('?') ? '&' : '?';
-            objectUrl = `${src}${separator}access_token=${token.access_token}`;
-        } else {
-            objectUrl = src;
-        }
-        loading = false;
-        return;
-    }
+    // Experiment: Try Header Auth again.
+    // Fall through to the fetch() block below.
 
     try {
       const token = getStoredToken();
@@ -53,6 +43,7 @@
         headers: {
           Authorization: `Bearer ${token.access_token}`,
         },
+        referrerPolicy: "no-referrer"
       });
 
       if (!response.ok) {
