@@ -290,13 +290,10 @@
     }
   }
 
-  // Hover state for table
+  // Merge Logic
   import { fade } from 'svelte/transition';
-  import { merge_jan_groups } from "$lib/photos-slice";
-
   let hoveredRowIndex: number | null = null;
   let hoveredColumn: "jan" | "photos" | null = null;
-  
   $: categorizedEntries = Object.entries(janCodeToPhotos);
 
   function handleMergeUp(index: number) {
@@ -316,10 +313,66 @@
       
       hoveredRowIndex = null;
   }
+
+  // --- PREVIEW LOGIC ---
+  let previewTimer: ReturnType<typeof setTimeout> | null = null;
+  let previewItem: MediaItem | null = null;
+  let previewStyle = ""; // For positioning
+
+  function handleThumbnailEnter(e: MouseEvent, item: MediaItem) {
+      if (previewTimer) clearTimeout(previewTimer);
+      
+      const target = e.currentTarget as HTMLElement;
+      const rect = target.getBoundingClientRect();
+      const mouseY = rect.top + (rect.height / 2); // Use center of thumbnail
+      
+      previewTimer = setTimeout(() => {
+          const winHeight = window.innerHeight;
+          const spaceAbove = mouseY;
+          const spaceBelow = winHeight - mouseY;
+          
+          let style = "left: 50%; transform: translateX(-50%); position: fixed; z-index: 100;";
+          
+          // Use space above if it's significantly larger or we are in bottom half
+          if (spaceAbove > spaceBelow) {
+              // Show ABOVE
+              style += ` bottom: ${winHeight - rect.top + 10}px; top: 20px;`;
+          } else {
+              // Show BELOW
+              style += ` top: ${rect.bottom + 10}px; bottom: 20px;`;
+          }
+          
+          previewStyle = style;
+          previewItem = item;
+      }, 200);
+  }
+
+  function handleThumbnailLeave() {
+      if (previewTimer) clearTimeout(previewTimer);
+      previewItem = null;
+  }
 </script>
 
-<div class="p-8 max-w-6xl mx-auto">
+<div class="p-8 max-w-6xl mx-auto relative">
+  <!-- PREVIEW OVERLAY -->
+  {#if previewItem}
+      <div 
+        class="fixed bg-white p-2 rounded shadow-2xl border border-gray-200 pointer-events-none flex flex-col items-center"
+        style={previewStyle}
+        transition:fade={{ duration: 200 }}
+      >
+        <!-- Large Image -->
+        <SecureImage 
+            src={previewItem.baseUrl.includes("drive.google.com") ? `${previewItem.baseUrl}&sz=w800` : `${previewItem.baseUrl}=w1024`}
+            className="w-auto h-full max-h-full object-contain rounded"
+        />
+        <!-- Optional Info -->
+        <div class="mt-2 text-xs text-gray-500 font-mono">{previewItem.filename}</div>
+      </div>
+  {/if}
+
   <div class="flex justify-between items-center mb-8">
+  <!-- ... existing content ... -->
     <h1 class="text-3xl font-bold">Google Photos Import</h1>
   </div>
 
@@ -615,8 +668,10 @@
                             <div class="flex flex-row flex-wrap gap-2 content-start w-full" style="display: flex; flex-direction: row; flex-wrap: wrap;">
                                 {#each items as item}
                                     <div 
-                                        class="w-14 h-14 rounded border border-gray-200 overflow-hidden relative flex-none"
+                                        class="w-14 h-14 rounded border border-gray-200 overflow-hidden relative flex-none cursor-help"
                                         style="width: 56px; height: 56px;"
+                                        on:mouseenter={(e) => handleThumbnailEnter(e, item)}
+                                        on:mouseleave={handleThumbnailLeave}
                                     >
                                         <SecureImage 
                                             src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w128` : `${item.baseUrl}=w128-h128-c`}
