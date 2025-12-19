@@ -129,6 +129,25 @@ export async function watchBroadcastActions(
                      actionsToCache.push(action);
                  }
              }
+        } else if (change.type === "modified") {
+            const data = change.doc.data();
+            const action = {
+                id: change.doc.id,
+                ...data
+            } as ActionWithId;
+
+            // This typically happens when a Pending write becomes Confirmed (server timestamp added).
+            // We DO want to cache this confirmed version.
+            // We DO want to include it in newActions so the safety check counts it.
+            // Layout.svelte will dedup execution, so it's safe to emit.
+            
+            // Check if we already have this EXACT version in cache? 
+            // The cached version has no timestamp or different timestamp?
+            // Actually, we just blindly update cache with the latest confirmed version.
+            
+            stats.fromServer++;
+            newActions.push(action);
+            actionsToCache.push(action);
         }
       });
 

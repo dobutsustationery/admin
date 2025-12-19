@@ -16,7 +16,7 @@ export interface KnownUpload {
 interface PhotosState {
   selected: MediaItem[];
   uploads: Record<string, UploadState>;
-  knownUploads: Record<string, KnownUpload>; // Permenant history of GP ID -> Drive URL
+  urlHistory: Record<string, string[]>; // Permanent history of URLs [current, ...old]
   janCodeToPhotos: Record<string, MediaItem[]>;
   generating: boolean;
   categorizing: boolean;
@@ -25,7 +25,7 @@ interface PhotosState {
 const initialState: PhotosState = {
   selected: [],
   uploads: {},
-  knownUploads: {},
+  urlHistory: {},
   janCodeToPhotos: {},
   generating: false,
   categorizing: false,
@@ -38,36 +38,40 @@ const photosSlice = createSlice({
     select_photos: (state, action: PayloadAction<{ photos: MediaItem[] }>) => {
       // Hydration safety
       if (!state.selected) state.selected = [];
-      if (!state.knownUploads) state.knownUploads = {};
+      if (!state.urlHistory) state.urlHistory = {};
       if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
 
-      console.log(`[Reducer] Select Photos: merging ${action.payload.photos.length} items. Checking knownUploads registry of size ${Object.keys(state.knownUploads).length}.`);
+      console.log(`[Reducer] Select Photos: merging ${action.payload.photos.length} items.`);
 
-      // Construct new list, preferring the KNOWN item if it has been uploaded previously
+      // Construct new list
       state.selected = action.payload.photos.map(newItem => {
-          // 1. Check Permanent Registry
-          const known = state.knownUploads[newItem.id];
-          if (known) {
-              console.log(`[Reducer] Found known Drive upload for ${newItem.id}`);
-              return {
-                  ...newItem,
-                  baseUrl: known.baseUrl,
-                  productUrl: known.productUrl || newItem.productUrl
-              };
+          // 1. Initialize History if new
+          if (!state.urlHistory[newItem.id]) {
+               // If item comes with a Drive URL initially (rare), trust it? Or just push whatever valid URL it has.
+               state.urlHistory[newItem.id] = [newItem.baseUrl];
+          } else {
+               // Ensure the picker URL is recorded if it's new/different?
+               // Usually picker URLs expire, so we might not want to rely on them too much if we have a stable Drive URL.
+               // For now, if we have history, we prefer the history[0] (Current Best URL).
+               
+               // Optional: Push the new picker URL to end of history if we want to keep it?
+               // Actually, if we have a Drive URL (permanent), we likely don't care about a temporary picker URL.
+               // So we just USE the history[0] as the baseUrl for the item in state.
           }
 
-          // 2. Fallback: Check if the item itself is already a Drive URL (unlikely via Picker, but safety)
-          if (newItem.baseUrl && newItem.baseUrl.includes("drive.google.com")) {
-               // Update registry while we are at it? Yes.
-               state.knownUploads[newItem.id] = { baseUrl: newItem.baseUrl, productUrl: newItem.productUrl };
-               return newItem;
-          }
-          
-          return newItem;
+          const currentBestUrl = state.urlHistory[newItem.id][0];
+
+          return {
+              ...newItem,
+              baseUrl: currentBestUrl,
+              // Keep original productUrl (WebViewLink) unless we store that in history too? 
+              // The requirement was id->URLs (strings). 
+              // So we keep productUrl as is from input or maybe we need to track that too? 
+              // For now, let's assume specific history is for the IMAGE SOURCE (baseUrl).
+          };
       });
       
       // Cleanup uploads map for items no longer present
-      // We do NOT clean up knownUploads - that is permanent.
       const newIds = new Set(state.selected.map(p => p.id));
       if (!state.uploads) state.uploads = {};
       for (const id in state.uploads) {
@@ -79,8 +83,9 @@ const photosSlice = createSlice({
     clear_photos: (state) => {
       state.selected = [];
       state.uploads = {};
-      // Do NOT clear knownUploads, janCodeToPhotos
+      // Do NOT clear urlHistory, janCodeToPhotos
     },
+    // ... merge_jan_groups, rename_jan_groups, etc remain unchanged ...
     merge_jan_groups: (state, action: PayloadAction<{ sourceJan: string, targetJan: string }>) => {
         const { sourceJan, targetJan } = action.payload;
         if (!state.janCodeToPhotos) return;
@@ -109,16 +114,13 @@ const photosSlice = createSlice({
         const sourcePhotos = state.janCodeToPhotos[oldJan] || [];
         if (sourcePhotos.length === 0) return;
 
-        // CASE 1: Empty New JAN -> Delete Group (Do not return to selected)
+        // CASE 1: Empty New JAN -> Delete Group
         if (!cleanNewJan) {
-            // User requested to simply ignore/delete these entries.
-            // "There are likely duplicates or will be found by Find Uncategorized later."
             delete state.janCodeToPhotos[oldJan];
             return;
         }
 
         // CASE 2: Rename / Merge
-        // Perform Merge or Move
         if (!state.janCodeToPhotos[cleanNewJan]) {
             state.janCodeToPhotos[cleanNewJan] = [];
         }
@@ -166,8 +168,8 @@ const photosSlice = createSlice({
     },
     complete_upload: (state, action: PayloadAction<{ id: string, permanentUrl: string, webViewLink?: string }>) => {
         const { id, permanentUrl, webViewLink } = action.payload;
-        if (!state.uploads) state.uploads = {}; // Hydration safety
-        if (!state.knownUploads) state.knownUploads = {};
+        if (!state.uploads) state.uploads = {}; 
+        if (!state.urlHistory) state.urlHistory = {};
         if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
         
         // Update Metadata
@@ -177,8 +179,12 @@ const photosSlice = createSlice({
             state.uploads[id] = { status: 'completed', retryCount: 0, lastAttempt: Date.now() };
         }
         
-        // SAVE TO REGISTRY
-        state.knownUploads[id] = { baseUrl: permanentUrl, productUrl: webViewLink };
+        // SAVE TO HISTORY
+        if (!state.urlHistory[id]) {
+             state.urlHistory[id] = []; 
+        }
+        // Unshift to front (Current Best)
+        state.urlHistory[id].unshift(permanentUrl);
 
         // Update the actual item in selected list
         const itemIndex = state.selected.findIndex(p => p.id === id);
@@ -189,9 +195,7 @@ const photosSlice = createSlice({
             }
         }
         
-        // Update item in janCodeToPhotos as well!
-        // This is important if an item is categorized efficiently after upload or during upload? 
-        // Or if we modify it in place.
+        // Update item in janCodeToPhotos as well
         for (const code in state.janCodeToPhotos) {
             const idx = state.janCodeToPhotos[code].findIndex(p => p.id === id);
             if (idx >= 0) {

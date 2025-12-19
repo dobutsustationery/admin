@@ -5,6 +5,7 @@
   export let src: string; // The base URL
   export let alt: string = "";
   export let className: string = "";
+  export let style: string = "";
 
   let objectUrl: string = "";
   let error = "";
@@ -81,14 +82,16 @@
   <div
     class="{className} bg-red-100 flex items-center justify-center p-2 text-center"
   >
-    <span class="text-xs text-red-500">Error</span>
+    <span class="text-xs text-red-500 font-medium overflow-hidden text-ellipsis px-1" title={error}>
+      {error === "Failed to load image: 403" ? "Access Expired" : "Error"}
+    </span>
   </div>
 {:else}
   <img
     src={objectUrl}
     {alt}
     class={className}
-    style="width: 100%; height: 100%; object-fit: cover; display: block;"
+    style="width: 100%; height: 100%; display: block; {style}"
     referrerpolicy="no-referrer"
     on:error={() => {
         console.error("Image failed to load:", objectUrl);
