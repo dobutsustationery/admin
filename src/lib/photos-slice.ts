@@ -8,16 +8,27 @@ export interface UploadState {
   error?: string;
 }
 
+export interface KnownUpload {
+  baseUrl: string;
+  productUrl?: string;
+}
+
 interface PhotosState {
   selected: MediaItem[];
   uploads: Record<string, UploadState>;
+  knownUploads: Record<string, KnownUpload>; // Permenant history of GP ID -> Drive URL
+  janCodeToPhotos: Record<string, MediaItem[]>;
   generating: boolean;
+  categorizing: boolean;
 }
 
 const initialState: PhotosState = {
   selected: [],
   uploads: {},
+  knownUploads: {},
+  janCodeToPhotos: {},
   generating: false,
+  categorizing: false,
 };
 
 const photosSlice = createSlice({
@@ -28,6 +39,7 @@ const photosSlice = createSlice({
       // Hydration safety
       if (!state.selected) state.selected = [];
       if (!state.knownUploads) state.knownUploads = {};
+      if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
 
       console.log(`[Reducer] Select Photos: merging ${action.payload.photos.length} items. Checking knownUploads registry of size ${Object.keys(state.knownUploads).length}.`);
 
@@ -67,10 +79,50 @@ const photosSlice = createSlice({
     clear_photos: (state) => {
       state.selected = [];
       state.uploads = {};
-      // Do NOT clear knownUploads
+      // Do NOT clear knownUploads, janCodeToPhotos
+    },
+    merge_jan_groups: (state, action: PayloadAction<{ sourceJan: string, targetJan: string }>) => {
+        const { sourceJan, targetJan } = action.payload;
+        if (!state.janCodeToPhotos) return;
+
+        const sourcePhotos = state.janCodeToPhotos[sourceJan] || [];
+        if (sourcePhotos.length === 0) return;
+
+        // Move photos to target
+        if (!state.janCodeToPhotos[targetJan]) {
+            state.janCodeToPhotos[targetJan] = [];
+        }
+        state.janCodeToPhotos[targetJan].push(...sourcePhotos);
+
+        // Remove source
+        delete state.janCodeToPhotos[sourceJan];
     },
     set_generating: (state, action: PayloadAction<boolean>) => {
       state.generating = action.payload;
+    },
+    begin_categorize: (state) => {
+        state.categorizing = true;
+    },
+    end_categorize: (state) => {
+        state.categorizing = false;
+    },
+    categorize_photo: (state, action: PayloadAction<{ janCode: string, photo: MediaItem }>) => {
+        const { janCode, photo } = action.payload;
+        if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
+        
+        // Add to mapped group
+        if (!state.janCodeToPhotos[janCode]) {
+            state.janCodeToPhotos[janCode] = [];
+        }
+        // Dedupe check
+        if (!state.janCodeToPhotos[janCode].find(p => p.id === photo.id)) {
+            state.janCodeToPhotos[janCode].push(photo);
+        }
+        
+        // Remove from selected list
+        if (state.selected) {
+            state.selected = state.selected.filter(p => p.id !== photo.id);
+        }
     },
     initiate_upload: (state, action: PayloadAction<{ id: string, timestamp: number }>) => {
         const { id, timestamp } = action.payload;
@@ -86,6 +138,7 @@ const photosSlice = createSlice({
         const { id, permanentUrl, webViewLink } = action.payload;
         if (!state.uploads) state.uploads = {}; // Hydration safety
         if (!state.knownUploads) state.knownUploads = {};
+        if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
         
         // Update Metadata
         if (state.uploads[id]) {
@@ -103,6 +156,19 @@ const photosSlice = createSlice({
             state.selected[itemIndex].baseUrl = permanentUrl;
             if (webViewLink) {
                 state.selected[itemIndex].productUrl = webViewLink;
+            }
+        }
+        
+        // Update item in janCodeToPhotos as well!
+        // This is important if an item is categorized efficiently after upload or during upload? 
+        // Or if we modify it in place.
+        for (const code in state.janCodeToPhotos) {
+            const idx = state.janCodeToPhotos[code].findIndex(p => p.id === id);
+            if (idx >= 0) {
+                state.janCodeToPhotos[code][idx].baseUrl = permanentUrl;
+                if (webViewLink) {
+                    state.janCodeToPhotos[code][idx].productUrl = webViewLink;
+                }
             }
         }
     },
@@ -124,8 +190,12 @@ export const {
     select_photos, 
     clear_photos, 
     set_generating,
+    begin_categorize,
+    end_categorize,
+    categorize_photo,
     initiate_upload,
     complete_upload,
-    fail_upload
+    fail_upload,
+    merge_jan_groups
 } = photosSlice.actions;
 export const photos = photosSlice.reducer;

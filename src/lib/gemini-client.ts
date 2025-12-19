@@ -11,20 +11,34 @@ async function fetchImage(
   url: string,
   token: string,
 ): Promise<{ data: string; mimeType: string }> {
-  // Append modifiers for reasonable size ONLY if it's a Google Photos URL
-  // Drive links (drive.google.com) do not support these modifiers in the same way (or might break)
-  // googleusercontent.com links (thumbnails) DO support them.
-  const isDriveLink = url.includes("drive.google.com");
-  const fetchUrl = isDriveLink ? url : `${url}=w1024-h1024`;
+  // Handle Google Drive Thumbnail URLs:
+  // These (drive.google.com/thumbnail?id=...) do NOT support CORS for fetch().
+  // We must convert them to the Drive API 'get media' endpoint:
+  // https://www.googleapis.com/drive/v3/files/{fileId}?alt=media
+  
+  let fetchUrl = url;
+  
+  // Extract ID from drive thumbnail link
+  const driveThumbnailMatch = url.match(/drive\.google\.com\/thumbnail\?id=([^&]+)/);
+  if (driveThumbnailMatch && driveThumbnailMatch[1]) {
+      const fileId = driveThumbnailMatch[1];
+      fetchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+      // Note: This requires the correct scope (drive.file or drive.readonly) which we have.
+  } else if (url.includes("googleusercontent.com")) {
+      // It's a Google Photos picker URL.
+      // Modifiers supported.
+      fetchUrl = `${url}=w1024-h1024`;
+  }
 
   const response = await fetch(fetchUrl, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
+    referrerPolicy: "no-referrer"
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch image: ${response.statusText}`);
+    throw new Error(`Failed to fetch image (${response.status}): ${response.statusText}`);
   }
 
   const blob = await response.blob();
@@ -32,8 +46,6 @@ async function fetchImage(
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = reader.result as string;
-      // Result is "data:image/jpeg;base64,....."
-      // We need just the base64 part
       const base64Data = result.split(",")[1];
       resolve(base64Data);
     };
@@ -552,4 +564,72 @@ export async function processMediaItems(
   return results;
 }
 
-// Remove editImage function completely
+// ... existing code ...
+
+const DEFAULT_UNCATEGORIZED_CODE = "UNCATEGORIZED";
+
+export async function categorizeMediaItems(
+  items: { baseUrl: string; id: string }[],
+  accessToken: string,
+  apiKey?: string,
+  onMatch?: (item: { baseUrl: string; id: string }, janCode: string) => void,
+  onProgress?: (current: number, total: number, message: string) => void
+): Promise<void> {
+    const total = items.length;
+    let current = 0;
+    
+    onProgress?.(0, total, "Starting categorization...");
+    
+    let lastSeenJanCode: string | null = null;
+
+    for (const item of items) {
+        current++;
+        onProgress?.(current, total, `Analyzing image ${current}/${total}...`);
+        
+        try {
+             // 1. Fetch
+             const imageData = await fetchImage(item.baseUrl, accessToken);
+             
+             // 2. Identify
+             const janCheck = await imagePrompt(
+                "Find the JAN code (Japanese Article Number, 8 or 13 digits) in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.",
+                [imageData],
+                accessToken,
+                apiKey
+             );
+             
+             let janCode = janCheck?.replace(/[^0-9]/g, "") || "";
+             
+             // Validate length
+             if (janCode.length >= 8 && janCode !== "NONE") {
+                 // FOUND A NEW JAN
+                 lastSeenJanCode = janCode;
+                 console.log(`[Categorize] ${item.id} -> Found JAN: ${janCode}`);
+             } else {
+                 // NO JAN FOUND
+                 if (lastSeenJanCode) {
+                     janCode = lastSeenJanCode; // Inherit
+                     console.log(`[Categorize] ${item.id} -> No JAN, inheriting: ${janCode}`);
+                 } else {
+                     janCode = DEFAULT_UNCATEGORIZED_CODE;
+                     console.log(`[Categorize] ${item.id} -> No JAN, no history.`);
+                 }
+             }
+             
+             // 3. Notify
+             if (janCode !== DEFAULT_UNCATEGORIZED_CODE) {
+                onMatch?.(item, janCode);
+             } else {
+                 console.log(`[Categorize] Skipping ${item.id} (Uncategorized)`);
+             }
+             
+        } catch (e: any) {
+            console.error(`Error categorizing item ${item.id}:`, e);
+            // On error, do we inherit? Probably safer not to, or maybe yes?
+            // If fetch fails, we can't see the image.
+            // Let's NOT inherit on error to avoid grouping broken images blindly.
+        }
+    }
+    
+    onProgress?.(current, total, "Categorization complete.");
+}
