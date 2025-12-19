@@ -97,6 +97,36 @@ const photosSlice = createSlice({
         // Remove source
         delete state.janCodeToPhotos[sourceJan];
     },
+    rename_jan_group: (state, action: PayloadAction<{ oldJan: string, newJan: string }>) => {
+        const { oldJan, newJan } = action.payload;
+        if (!state.janCodeToPhotos) return;
+        
+        // Validation: Check content
+        const cleanNewJan = newJan ? newJan.trim() : "";
+
+        if (cleanNewJan === oldJan) return;
+
+        const sourcePhotos = state.janCodeToPhotos[oldJan] || [];
+        if (sourcePhotos.length === 0) return;
+
+        // CASE 1: Empty New JAN -> Delete Group (Do not return to selected)
+        if (!cleanNewJan) {
+            // User requested to simply ignore/delete these entries.
+            // "There are likely duplicates or will be found by Find Uncategorized later."
+            delete state.janCodeToPhotos[oldJan];
+            return;
+        }
+
+        // CASE 2: Rename / Merge
+        // Perform Merge or Move
+        if (!state.janCodeToPhotos[cleanNewJan]) {
+            state.janCodeToPhotos[cleanNewJan] = [];
+        }
+        state.janCodeToPhotos[cleanNewJan].push(...sourcePhotos);
+
+        // Delete old key
+        delete state.janCodeToPhotos[oldJan];
+    },
     set_generating: (state, action: PayloadAction<boolean>) => {
       state.generating = action.payload;
     },
@@ -196,6 +226,7 @@ export const {
     initiate_upload,
     complete_upload,
     fail_upload,
-    merge_jan_groups
+    merge_jan_groups,
+    rename_jan_group
 } = photosSlice.actions;
 export const photos = photosSlice.reducer;
