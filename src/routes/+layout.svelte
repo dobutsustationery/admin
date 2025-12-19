@@ -1,6 +1,7 @@
 <script lang="ts">
   import "../app.css"; // Import global styles
   import Navigation from "$lib/components/Navigation.svelte";
+  import PhotoUploadManager from "$lib/components/PhotoUploadManager.svelte";
   import LoadingScreen from "$lib/components/LoadingScreen.svelte";
   import Signin from "$lib/Signin.svelte"; // Static import
   import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -143,21 +144,13 @@
             const thisSeconds = thisTs.seconds || 0;
             const thisNanos = thisTs.nanoseconds || 0;
             
-            if (thisSeconds < snapSeconds) return false;
-            if (thisSeconds === snapSeconds && thisNanos < snapNanos) return false;
-            if (thisSeconds === snapSeconds && thisNanos === snapNanos) {
-                 // Tie: If ID matches, it's the exact same action -> Skip
-                 // If ID doesn't match, it's concurrent -> Keep (unless we want strict >)
-                 // But snapshot implies we processed everything UP TO that metadata.
-                 // So if ID matches, definitely skip.
-                 // If ID differs but same time, assume it might be missed? 
-                 // Safest is to skip strict equality of ID.
-                 if (action.id === snapshotMetadata?.id) return false;
-                 
-                 // If timestamps are exactly equal but IDs different, we should probably process it 
-                 // UNLESS we are sure snapshot covers "all events up to time X".
-                 // Given single threaded dispatch, likely safe.
-            }
+            const isBefore = thisSeconds < snapSeconds || (thisSeconds === snapSeconds && thisNanos < snapNanos);
+            const isSameId = action.id === snapshotMetadata?.id;
+            
+            if (isBefore) return false;
+            if (isSameId) return false;
+            
+            console.log(`[Snapshot Filter] KEEPING action ${action.id} (Ts: ${thisSeconds}.${thisNanos} >= Snap: ${snapSeconds}.${snapNanos})`);
             return true;
          });
          
@@ -241,6 +234,7 @@
 {#if me.signedIn}
   <div class="app-shell">
     <Navigation {unsyncedActions} bind:isOpen={navigationOpen} />
+    <PhotoUploadManager />
 
     <main class="main-content" class:nav-open={navigationOpen}>
       <slot />

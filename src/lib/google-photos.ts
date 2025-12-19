@@ -9,7 +9,7 @@
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_PHOTOS_CLIENT_ID;
 const SCOPES = (
   import.meta.env.VITE_GOOGLE_PHOTOS_SCOPES ||
-  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly,https://www.googleapis.com/auth/drive.file"
 )
   .split(",")
   .map((s: string) => s.trim());
