@@ -145,15 +145,21 @@ export async function watchBroadcastActions(
           callback(newActions);
       }
       
-      // Safety Check: If server has FEWER items than cache, we must have had a server wipe.
-      // Invalidate cache and reload page to resync from scratch.
+      // Safety Check: Verify synchronization with server
+      // 1. If Server < Cache: Server was wiped/reset.
+      // 2. If Server > Cache AND No new actions: We are desynced (stuck cache).
       try {
           const countSnapshot = await getCountFromServer(broadcasts);
           const serverCount = countSnapshot.data().count;
-          if (serverCount < stats.fromCache) {
-              console.warn(`[Sync] Server count (${serverCount}) < Cache count (${stats.fromCache}). Invalidating cache and reloading.`);
+          const clientCount = cachedActions.length; // Only confirmed, cached actions
+
+          if (serverCount < clientCount) {
+              console.warn(`[Sync] Server count (${serverCount}) < Client count (${clientCount}). Server reset detected. Invalidating cache.`);
               await clearActionCache();
-              // Force reload to reset Redux store and re-init
+              window.location.reload();
+          } else if (serverCount > clientCount && newActions.length === 0) {
+              console.warn(`[Sync] Server count (${serverCount}) > Client count (${clientCount}) with no new updates. Cache desync detected. Invalidating cache.`);
+              await clearActionCache();
               window.location.reload();
           }
       } catch (e) {
