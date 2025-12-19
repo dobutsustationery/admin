@@ -398,13 +398,13 @@
           style="display: flex; flex-direction: row; flex-wrap: wrap;"
         >
           {#if photos.length > 0}
-            {#each photos as photo}
+            {#each photos as photo (photo.id)}
               <div
                 class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group"
                 style="width: 148px; height: 148px; flex-shrink: 0;"
               >
                 <SecureImage
-                  src={photo.baseUrl.includes("drive.google.com") ? photo.baseUrl : `${photo.baseUrl}=w400-h400-c`}
+                  src={photo.baseUrl.includes("drive.google.com") ? `${photo.baseUrl}&sz=w800` : `${photo.baseUrl}=w400-h400-c`}
                   alt="Thumbnail"
                   className="w-full h-full object-cover"
                 />

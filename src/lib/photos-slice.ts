@@ -25,19 +25,39 @@ const photosSlice = createSlice({
   initialState,
   reducers: {
     select_photos: (state, action: PayloadAction<{ photos: MediaItem[] }>) => {
-      // Logic from Page was: Replace or Add.
-      // But typically this action REPLACES state.selected in current impl.
-      // If we want to support "Add", we should check previous behavior.
-      // Current impl: `state.selected = action.payload.photos;` -> This is REPLACE.
-      // To support ADD, we should change this or assume caller merges.
-      // Caller (Page) merges: `finalItems = [...old, ...new]`.
-      // So this action receives the FULL list.
-      state.selected = action.payload.photos;
+      // Hydration safety
+      if (!state.selected) state.selected = [];
+      if (!state.knownUploads) state.knownUploads = {};
+
+      console.log(`[Reducer] Select Photos: merging ${action.payload.photos.length} items. Checking knownUploads registry of size ${Object.keys(state.knownUploads).length}.`);
+
+      // Construct new list, preferring the KNOWN item if it has been uploaded previously
+      state.selected = action.payload.photos.map(newItem => {
+          // 1. Check Permanent Registry
+          const known = state.knownUploads[newItem.id];
+          if (known) {
+              console.log(`[Reducer] Found known Drive upload for ${newItem.id}`);
+              return {
+                  ...newItem,
+                  baseUrl: known.baseUrl,
+                  productUrl: known.productUrl || newItem.productUrl
+              };
+          }
+
+          // 2. Fallback: Check if the item itself is already a Drive URL (unlikely via Picker, but safety)
+          if (newItem.baseUrl && newItem.baseUrl.includes("drive.google.com")) {
+               // Update registry while we are at it? Yes.
+               state.knownUploads[newItem.id] = { baseUrl: newItem.baseUrl, productUrl: newItem.productUrl };
+               return newItem;
+          }
+          
+          return newItem;
+      });
       
-      // Cleanup uploads map for items no longer present?
-      // Or just keep it. Keeping it is safer for history, but might grow.
-      // Let's perform simple cleanup:
-      const newIds = new Set(action.payload.photos.map(p => p.id));
+      // Cleanup uploads map for items no longer present
+      // We do NOT clean up knownUploads - that is permanent.
+      const newIds = new Set(state.selected.map(p => p.id));
+      if (!state.uploads) state.uploads = {};
       for (const id in state.uploads) {
           if (!newIds.has(id)) {
               delete state.uploads[id];
@@ -47,6 +67,7 @@ const photosSlice = createSlice({
     clear_photos: (state) => {
       state.selected = [];
       state.uploads = {};
+      // Do NOT clear knownUploads
     },
     set_generating: (state, action: PayloadAction<boolean>) => {
       state.generating = action.payload;
@@ -64,6 +85,7 @@ const photosSlice = createSlice({
     complete_upload: (state, action: PayloadAction<{ id: string, permanentUrl: string, webViewLink?: string }>) => {
         const { id, permanentUrl, webViewLink } = action.payload;
         if (!state.uploads) state.uploads = {}; // Hydration safety
+        if (!state.knownUploads) state.knownUploads = {};
         
         // Update Metadata
         if (state.uploads[id]) {
@@ -71,6 +93,9 @@ const photosSlice = createSlice({
         } else {
             state.uploads[id] = { status: 'completed', retryCount: 0, lastAttempt: Date.now() };
         }
+        
+        // SAVE TO REGISTRY
+        state.knownUploads[id] = { baseUrl: permanentUrl, productUrl: webViewLink };
 
         // Update the actual item in selected list
         const itemIndex = state.selected.findIndex(p => p.id === id);
