@@ -17,6 +17,8 @@
 
   // State from Redux Store
   $: photos = $store.photos.selected;
+  $: uploads = $store.photos.uploads || {};
+  $: console.log("DEBUG: Store photos updated:", photos?.length);
   $: isGenerating = $store.photos.generating;
 
   let error = "";
@@ -115,40 +117,47 @@
     }, 2000);
   }
 
+
+  
+  // ... imports ...
+
   async function loadSelectedPhotos(sessionId: string) {
     try {
       const newItems = await listSessionMediaItems(sessionId);
-
+      
+      // Filter or Map items?
+      // Just pass raw items (with their ephemeral baseUrl).
+      // The background worker will pick them up and upload them.
+      
       let finalItems: MediaItem[] = [];
 
       if (selectionMode === "replace") {
         finalItems = newItems;
       } else {
         // ADD mode: Merge with existing photos
-        // Deduplicate based on ID
         const map = new Map<string, MediaItem>();
-        // Add existing photos first
         photos.forEach((p) => map.set(p.id, p));
-        // Add/Overwrite with new photos
         newItems.forEach((p) => map.set(p.id, p));
-
         finalItems = Array.from(map.values());
       }
-
-      // Sort by creationTime (oldest first)
+      
+      // Sort
       finalItems.sort((a, b) => {
-        const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
-        const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
-        return tA - tB;
+         const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
+         const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
+         return tA - tB;
       });
 
-      // Save to Broadcast for persistence/replay
       if ($user.uid) {
-        broadcast(firestore, $user.uid, {
-          type: "photos/select_photos",
-          payload: { photos: finalItems },
-        });
+         // Broadcast selection.
+         // This puts ephemeral URLs in the store.
+         // PhotoUploadManager will detect them and initiate upload.
+         broadcast(firestore, $user.uid, {
+           type: "photos/select_photos",
+           payload: { photos: finalItems },
+         });
       }
+      
     } catch (e: any) {
       checkAuthError(e);
       error = "Failed to load photos: " + e.message;
@@ -162,9 +171,22 @@
   let analysisGroups: LiveGroup[] = [];
   let progress = { current: 0, total: 0, message: "" };
 
+  function handleClearPhotos() {
+      if (confirm("Remove all selected photos?")) {
+          // Clear via broadcast
+          if ($user.uid) {
+            broadcast(firestore, $user.uid, {
+              type: "photos/select_photos",
+              payload: { photos: [] },
+            });
+          }
+      }
+  }
+
   async function handleGenerate() {
     if (photos.length === 0) return;
-
+    // ... rest of handleGenerate
+    
     //store.dispatch({ type: "photos/set_generating", payload: true });
     error = "";
     analysisGroups = [];
@@ -267,7 +289,7 @@
                   style="width: 148px; height: 148px; flex-shrink: 0;"
                 >
                   <SecureImage
-                    src={url.startsWith("data:") ? url : `${url}=w296-h296-c`}
+                    src={url.startsWith("data:") || url.includes("drive.google.com") ? url : `${url}=w296-h296-c`}
                     alt="Product Thumbnail"
                     className="w-full h-full object-cover"
                   />
@@ -304,6 +326,8 @@
       </div>
     {/if}
 
+
+
     {#if error}
       <div class="p-4 bg-red-50 text-red-700 rounded mb-4 mt-6">
         {error}
@@ -318,6 +342,14 @@
         <!-- Controls area inside card -->
         <div class="flex justify-between items-center px-4 pt-4 pb-2">
           <div class="flex gap-2">
+            <button 
+                on:click={handleClearPhotos}
+                class="bg-red-100 text-red-700 px-3 py-2 rounded-md font-medium hover:bg-red-200 transition text-sm mr-2"
+                title="Remove all photos"
+            >
+                Clear
+            </button>
+
             <button
               on:click={() => handleSelectPhotos("replace")}
               disabled={loading || isPolling}
@@ -372,10 +404,23 @@
                 style="width: 148px; height: 148px; flex-shrink: 0;"
               >
                 <SecureImage
-                  src="{photo.baseUrl}=w400-h400-c"
+                  src={photo.baseUrl.includes("drive.google.com") ? photo.baseUrl : `${photo.baseUrl}=w400-h400-c`}
                   alt="Thumbnail"
                   className="w-full h-full object-cover"
                 />
+                
+                <!-- Upload Status Overlay -->
+                {#if uploads[photo.id]}
+                    {#if uploads[photo.id].status === 'uploading'}
+                        <div class="absolute inset-0 bg-black/30 flex items-center justify-center">
+                            <span class="animate-spin h-6 w-6 border-2 border-white border-t-transparent rounded-full"></span>
+                        </div>
+                    {:else if uploads[photo.id].status === 'failed'}
+                         <div class="absolute inset-0 bg-red-500/30 flex items-center justify-center" title={uploads[photo.id].error}>
+                            <span class="text-white font-bold text-xl">!</span>
+                        </div>
+                    {/if}
+                {/if}
               </div>
             {/each}
           {:else if isPolling}

@@ -333,3 +333,224 @@ export async function downloadFile(
 
   return await response.text();
 }
+/**
+ * Find a folder by name within a parent folder
+ */
+export async function findFolder(
+  name: string,
+  parentId: string,
+  accessToken: string,
+): Promise<string | null> {
+  const query = `'${parentId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const params = new URLSearchParams({
+    q: query,
+    fields: "files(id, name)",
+    pageSize: "1",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to find folder '${name}': ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.files && data.files.length > 0 ? data.files[0].id : null;
+}
+
+/**
+ * Create a new folder
+ */
+export async function createFolder(
+  name: string,
+  parentId: string,
+  accessToken: string,
+): Promise<string> {
+  const metadata = {
+    name,
+    mimeType: "application/vnd.google-apps.folder",
+    parents: [parentId],
+  };
+
+  const response = await fetch("https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(metadata),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to create folder '${name}': ${response.statusText}`);
+  }
+
+  const file = await response.json();
+  return file.id;
+}
+
+/**
+ * Ensure the required folder structure exists: Root -> Images -> [Originals, Processed]
+ * Returns object with folder IDs
+ */
+export async function ensureFolderStructure(
+  accessToken: string,
+): Promise<{ originalsId: string; processedId: string }> {
+  if (!FOLDER_ID) throw new Error("Root folder ID not configured");
+
+  // 1. Find or Create "Images" folder
+  let imagesId = await findFolder("Images", FOLDER_ID, accessToken);
+  if (!imagesId) {
+    imagesId = await createFolder("Images", FOLDER_ID, accessToken);
+    // Make Images folder public/readable if needed? Or just files?
+    // Usually standard to make files readable.
+  }
+
+  // 2. Find or Create "Originals"
+  let originalsId = await findFolder("Originals", imagesId, accessToken);
+  if (!originalsId) {
+    originalsId = await createFolder("Originals", imagesId, accessToken);
+  }
+
+  // 3. Find or Create "Processed"
+  let processedId = await findFolder("Processed", imagesId, accessToken);
+  if (!processedId) {
+    processedId = await createFolder("Processed", imagesId, accessToken);
+  }
+
+  return { originalsId, processedId };
+}
+
+/**
+ * Set file permissions to be readable by anyone (or specific logic)
+ * For now: role=reader, type=anyone
+ */
+export async function setFilePermissions(
+  fileId: string,
+  accessToken: string,
+): Promise<void> {
+  const permission = {
+    role: "reader",
+    type: "anyone",
+  };
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(permission),
+    },
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    // Allow race condition where it's already public
+    console.warn(`Failed to set permissions for ${fileId}: ${err}`);
+  }
+}
+
+/**
+ * Upload a Blob/File to Drive
+ */
+export async function uploadImageToDrive(
+  blob: Blob,
+  filename: string,
+  folderId: string,
+  accessToken: string,
+): Promise<DriveFileInfo> {
+  const metadata = {
+    name: filename,
+    parents: [folderId],
+  };
+
+  const boundary = `----FormBoundary${Math.random().toString(36).substring(2)}`;
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
+  // Read blob as base64 or text? Mutipart expects the binary.
+  // Actually easiest way for binary upload in browser with metadata is strictly multipart
+  // But we need to construct the body carefully.
+  // Converting blob to string is tricky without FileReader.
+
+  // Let's use FileReader to get ArrayBuffer -> String
+  // OR just two separate requests if that's easier?
+  // Drive API supports resumable upload which is cleaner but more steps.
+  // Simple multipart:
+  
+  // Convert blob to string is the hard part for X HR body.
+  // Let's use the resumable upload flow for robustness with binary data.
+  // 1. Initiate Resumable Session
+  // 2. Upload bytes
+  
+  const initRes = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+         // We must specify X-Upload-Content-Type or Content-Type in body
+      },
+      body: JSON.stringify(metadata),
+    }
+  );
+  
+  if (!initRes.ok) throw new Error("Failed to initiate upload");
+  
+  const uploadUrl = initRes.headers.get("Location");
+  if (!uploadUrl) throw new Error("No upload location returned");
+  
+  // 2. Upload Data
+  const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+          // No Authorization header needed for the session URL usually, but can include
+      },
+      body: blob
+  });
+  
+  if (!uploadRes.ok) throw new Error("Failed to upload file data");
+  
+  const fileData = await uploadRes.json();
+  
+  // 3. Make public immediately
+  await setFilePermissions(fileData.id, accessToken);
+  
+  // 4. Get WebContentLink (might need a re-fetch if not in response)
+  // File resource is returned in fileData
+  // We need webContentLink or webViewLink.
+  // By default create returns minimal fields.
+  // We can fetch details.
+  
+  const detailsParam = new URLSearchParams({
+      fields: "id,name,webViewLink,webContentLink,thumbnailLink"
+  });
+  
+  const detailsRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileData.id}?${detailsParam}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  
+  const details = await detailsRes.json();
+  console.log("Drive Upload Details:", details);
+
+  // Optimize usage: thumbnailLink is usually better for embedding.
+  // The API-provided `thumbnailLink` can be ephemeral (drive-storage signed links).
+  // We prefer the 'permanent' endpoint that redirects to a fresh thumbnail.
+  // This ensures the URL stored in our DB works forever.
+  if (fileData.id) {
+     details.thumbnailLink = `https://drive.google.com/thumbnail?id=${fileData.id}&sz=w4096`;
+  }
+
+  return details;
+}

@@ -1,4 +1,5 @@
 import { removeBackground } from "./background-removal";
+import { ensureFolderStructure, uploadImageToDrive } from "$lib/google-drive";
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
@@ -10,8 +11,11 @@ async function fetchImage(
   url: string,
   token: string,
 ): Promise<{ data: string; mimeType: string }> {
-  // Append modifiers for reasonable size
-  const fetchUrl = `${url}=w1024-h1024`;
+  // Append modifiers for reasonable size ONLY if it's a Google Photos URL
+  // Drive links (drive.google.com) do not support these modifiers in the same way (or might break)
+  // googleusercontent.com links (thumbnails) DO support them.
+  const isDriveLink = url.includes("drive.google.com");
+  const fetchUrl = isDriveLink ? url : `${url}=w1024-h1024`;
 
   const response = await fetch(fetchUrl, {
     headers: {
@@ -40,9 +44,7 @@ async function fetchImage(
   return { data: base64, mimeType: blob.type || "image/jpeg" };
 }
 
-/**
- * Send a prompt with images to Gemini via REST API.
- */
+// ... imagePrompt function remains same ...
 async function imagePrompt(
   text: string,
   images: { data: string; mimeType: string }[],
@@ -167,6 +169,17 @@ export async function processMediaItems(
 
   notify("Starting analysis...", 0);
   console.log(`Processing ${items.length} items...`);
+
+  // Ensure 'Processed' folder exists
+  let processedFolderId = "";
+  try {
+      const folders = await ensureFolderStructure(accessToken);
+      processedFolderId = folders.processedId;
+  } catch(e) {
+      console.error("Failed to ensure folder structure", e);
+      // Continue locally? Or fail?
+      // Warn and try to continue, but upload will fail.
+  }
 
   // 1. Group images by JAN code
   let processedCount = 0;
@@ -453,6 +466,21 @@ export async function processMediaItems(
 
         if (editedBase64) {
           const dataUri = `data:image/png;base64,${editedBase64}`;
+          
+          // UPLOAD TO DRIVE
+          let driveUrl = dataUri; // Fallback
+          if (processedFolderId) {
+             try {
+                // Convert to blob
+                const processedBlob = await (await fetch(dataUri)).blob();
+                const filename = `processed_${group.janCode}_${imgIdx}_${Date.now()}.png`;
+                const driveFile = await uploadImageToDrive(processedBlob, filename, processedFolderId, accessToken);
+                driveUrl = driveFile.webContentLink || dataUri;
+             } catch(uploadErr) {
+                 console.error("Failed to upload processed image", uploadErr);
+             }
+          }
+
           // Update Live Group
           const updatedLiveGroup = liveGroups.find(
             (g) => g.janCode === group.janCode,
@@ -464,8 +492,14 @@ export async function processMediaItems(
               imageUrls: [...updatedLiveGroup.imageUrls],
               imageStatuses: [...updatedLiveGroup.imageStatuses],
             };
-            liveGroups[idx].imageUrls[imgIdx] = dataUri;
+            liveGroups[idx].imageUrls[imgIdx] = driveUrl; // LINK Update
             liveGroups[idx].imageStatuses[imgIdx] = "done";
+            
+            // Update Results as well!
+            const resIdx = results.findIndex(r => r.janCode === group.janCode);
+            if (resIdx !== -1) {
+                results[resIdx].imageUrls[imgIdx] = driveUrl;
+            }
 
             notify(
               `Updated image ${imgIdx + 1} for ${group.janCode}`,

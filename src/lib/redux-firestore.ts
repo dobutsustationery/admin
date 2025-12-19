@@ -100,6 +100,9 @@ export async function watchBroadcastActions(
       
       changes.forEach((change) => {
         if (change.type === "added") {
+             // Check if it's a pending write (local optimistic update)
+             const isPending = change.doc.metadata.hasPendingWrites;
+
              const data = change.doc.data();
              const action = {
                  id: change.doc.id,
@@ -107,27 +110,37 @@ export async function watchBroadcastActions(
              } as ActionWithId;
 
              // Dedupe against cache (simple ID check)
-             const isCached = cachedActions.some(c => c.id === action.id);
+             // CRITICAL: If it's pending, we ALWAYS emit it (so UI updates), but we NEVER cache it.
+             // If it's confirmed (server), we check if we already cached it.
              
-             if (isCached) {
-                 stats.duplicates++;
-             } else {
-                 stats.fromServer++;
+             if (isPending) {
+                 // Optimistic: Emit immediately, don't cache, don't mark as cached.
                  newActions.push(action);
-                 actionsToCache.push(action);
+             } else {
+                 // Confirmed: Check cache
+                 const isCached = cachedActions.some(c => c.id === action.id);
+                 if (isCached) {
+                     stats.duplicates++;
+                 } else {
+                     stats.fromServer++;
+                     newActions.push(action);
+                     actionsToCache.push(action);
+                 }
              }
         }
       });
 
       if (newActions.length > 0) {
-          // Persist to IDB
-          await cacheActions(actionsToCache);
+          // Only cache confirmed actions
+          if (actionsToCache.length > 0) {
+              await cacheActions(actionsToCache);
+              // Update local memory cache with legitimate confirmed actions
+              cachedActions = [...cachedActions, ...actionsToCache];
+          }
           
-          // Emit
+          // Emit all (Pending + New Confirmed)
+          // Note: Layout.svelte handles deduplication of execution, so emitting same ID twice (pending then confirmed) is safe/good.
           callback(newActions);
-          
-          // Add to local cache array to prevent future re-emission if snapshot re-fires
-          cachedActions = [...cachedActions, ...newActions];
       }
 
       console.log(`[Broadcast] Stats: Cache=${stats.fromCache}, Server=${stats.fromServer}, Dupes=${stats.duplicates}`);
