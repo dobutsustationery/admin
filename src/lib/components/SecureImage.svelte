@@ -18,10 +18,29 @@
     objectUrl = "";
 
     // Handle local/generated images directly
-    if (src.startsWith("data:") || src.startsWith("blob:")) {
+    // Also bypass fetch for Google and Drive URLs to avoid CORS (they don't need Auth header if public/token in URL)
+    if (
+        src.startsWith("data:") || 
+        src.startsWith("blob:") || 
+        src.includes("drive.google.com")
+    ) {
       objectUrl = src;
       loading = false;
       return;
+    }
+    
+    // For Google Photos Picker URLs (lh3.googleusercontent...), we need authentication.
+    // We cannot use fetch+headers (CORS), so we append access_token to the URL.
+    if (src.includes("googleusercontent.com")) {
+        const token = getStoredToken();
+        if (token && token.access_token) {
+            const separator = src.includes('?') ? '&' : '?';
+            objectUrl = `${src}${separator}access_token=${token.access_token}`;
+        } else {
+            objectUrl = src;
+        }
+        loading = false;
+        return;
     }
 
     try {
@@ -79,5 +98,15 @@
     {alt}
     class={className}
     style="width: 100%; height: 100%; object-fit: cover; display: block;"
+    referrerpolicy="no-referrer"
+    on:error={() => {
+        console.error("Image failed to load:", objectUrl);
+        error = "Failed to load image";
+        loading = false;
+    }}
+    on:load={() => {
+        loading = false;
+        error = "";
+    }}
   />
 {/if}
