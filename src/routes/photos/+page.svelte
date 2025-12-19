@@ -292,9 +292,48 @@
 
   // Merge Logic
   import { fade } from 'svelte/transition';
+  import { merge_jan_groups, rename_jan_group } from "$lib/photos-slice";
+
   let hoveredRowIndex: number | null = null;
   let hoveredColumn: "jan" | "photos" | null = null;
   $: categorizedEntries = Object.entries(janCodeToPhotos);
+
+  // JAN Validation (EAN-13 Checksum)
+  function isValidJan(code: string): boolean {
+      if (!/^\d{13}$/.test(code)) return false; // Must be 13 digits for standard JAN
+      
+      const digits = code.split('').map(Number);
+      const checksum = digits.pop()!;
+      
+      const sum = digits.reduce((acc, curr, idx) => {
+          // Even index (0, 2...) -> Odd Position (1st, 3rd...) -> x1
+          // Odd index (1, 3...) -> Even Position (2nd, 4th...) -> x3
+          const weight = (idx % 2 === 0) ? 1 : 3;
+          return acc + (curr * weight);
+      }, 0);
+      
+      const calcChecksum = (10 - (sum % 10)) % 10;
+      return calcChecksum === checksum;
+  }
+
+  function handleJanRename(oldJan: string, newJan: string) {
+      newJan = newJan.trim();
+      if (newJan === oldJan) return; // Allow empty!
+
+      if ($user.uid) {
+           broadcast(firestore, $user.uid, {
+               type: "photos/rename_jan_group",
+               payload: { oldJan, newJan }
+           });
+      }
+      store.dispatch(rename_jan_group({ oldJan, newJan }));
+  }
+
+  function handleInputKey(e: KeyboardEvent, oldJan: string) {
+      if (e.key === 'Enter') {
+          (e.target as HTMLInputElement).blur();
+      }
+  }
 
   function handleMergeUp(index: number) {
       if (index <= 0) return;
@@ -640,10 +679,18 @@
                         <!-- JAN Column -->
                         <div 
                             class="w-48 flex-none p-4 font-mono text-lg font-medium text-teal-700 break-all bg-gray-50/50 group-hover:bg-transparent transition-colors z-10"
-                            style="width: 200px; flex: none; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e2e8f0;"
+                            class:bg-red-100={!isValidJan(jan)} 
+                            class:text-red-800={!isValidJan(jan)}
+                            style="width: 200px; flex: none; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e2e8f0; { !isValidJan(jan) ? 'background-color: #fee2e2;' : '' }"
                             on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'jan'; }}
                         >
-                            {jan}
+                            <input 
+                                type="text" 
+                                value={jan} 
+                                class="editable-jan"
+                                on:blur={(e) => handleJanRename(jan, e.currentTarget.value)}
+                                on:keyup={(e) => handleInputKey(e, jan)}
+                            />
                         </div>
                         
                         <!-- Photos Column: The Merge Trigger Zone -->
@@ -704,19 +751,34 @@
 <style>
     .categorized-row {
         border-bottom: 1px solid #e2e8f0;
-        transition: background-color 0.2s;
+        transition: background-color 0.1s;
     }
     .categorized-row:hover {
         background-color: #eff6ff; /* blue-50 */
     }
-    /* Apply highlight to the Previous Row when current is hovered */
-    .categorized-row.related-highlight {
-        /* This class is applied to the ROW ABOVE (index-1) in the logic, OR we change logic? */
-        /* WAIT. The user said: "when we hover a row, show which row it would have gone into... highlighting the PREVIOUS row". */
-        /* So if I hover Row B, Row A should verify. */
-        /* My logic above in HTML: class:related-highlight={hoveredRowIndex === index && ...} applies to CURRENT row. That's wrong. */
-        /* I need to apply it to index === hoveredRowIndex - 1. */
+    .related-highlight {
+        background-color: #fef9c3 !important; /* yellow-100 */
+        border: 2px dashed #facc15 !important; /* yellow-400 */
     }
     
+    .editable-jan {
+        width: 100%;
+        text-align: center;
+        background-color: transparent;
+        border: 1px solid transparent; /* Reserve space for border */
+        border-radius: 4px;
+        padding: 2px 4px;
+        outline: none;
+        transition: all 0.2s;
+    }
+    .editable-jan:hover {
+        background-color: white;
+        border-color: #d1d5db; /* gray-300 */
+    }
+    .editable-jan:focus {
+        background-color: white;
+        border-color: #14b8a6; /* teal-500 */
+        box-shadow: 0 0 0 1px #14b8a6;
+    }
     /* Let's fix the highlighting logic in the HTML block instead of CSS tricks */
 </style>
