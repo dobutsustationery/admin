@@ -13,7 +13,7 @@
   $: if ($store) {
     state = store.getState();
     options = state.names.nameIdToNames[id].filter(
-      (n) => state.inventory.idToItem[`${barcode}${n}`] !== undefined,
+      (n: string) => state.inventory.idToItem[`${barcode}${n}`] !== undefined,
     );
   }
 

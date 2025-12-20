@@ -22,10 +22,28 @@ import {
     type ActionWithId 
 } from "$lib/action-cache";
 
+// Helper to recursively remove undefined values
+function stripUndefined(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(stripUndefined);
+  } else if (obj !== null && typeof obj === 'object') {
+    // Check for Firestore types or specific classes we want to preserve?
+    // For now, assume plain objects. Redux actions should be plain.
+    return Object.entries(obj).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = stripUndefined(value);
+      }
+      return acc;
+    }, {} as any);
+  }
+  return obj;
+}
+
 export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
   const broadcasts = collection(fs, "broadcast");
+  const cleanAction = stripUndefined(action);
   return addDoc(broadcasts, {
-    ...action,
+    ...cleanAction,
     timestamp: serverTimestamp(),
     creator: uid,
   });
@@ -83,8 +101,26 @@ export async function watchBroadcastActions(
       q = query(broadcasts, orderBy("timestamp"));
   }
 
-  // 3. Listen to Firestore
-  const unsubscribe = onSnapshot(
+  // 3. Initial Safety Check (Run once to detect server reset)
+  // We do not run this inside onSnapshot to avoid race conditions with optimistic writes.
+  try {
+      const countSnapshot = await getCountFromServer(broadcasts);
+      const serverCount = countSnapshot.data().count;
+      const clientCount = cachedActions.length; 
+
+      if (serverCount < clientCount) {
+          console.warn(`[Sync] Server count (${serverCount}) < Client count (${clientCount}). Server reset detected. Invalidating cache.`);
+          await clearActionCache();
+          window.location.reload();
+          // Stop here to prevent subscribing with invalid state
+          return () => {}; 
+      }
+  } catch (e) {
+      console.warn("Failed to check server count on startup", e);
+  }
+
+  // 4. Listen to Firestore
+      const unsubscribe = onSnapshot(
     q,
     async (querySnapshot) => {
       const changes = querySnapshot.docChanges();
@@ -164,27 +200,6 @@ export async function watchBroadcastActions(
           callback(newActions);
       }
       
-      // Safety Check: Verify synchronization with server
-      // 1. If Server < Cache: Server was wiped/reset.
-      // 2. If Server > Cache AND No new actions: We are desynced (stuck cache).
-      try {
-          const countSnapshot = await getCountFromServer(broadcasts);
-          const serverCount = countSnapshot.data().count;
-          const clientCount = cachedActions.length; // Only confirmed, cached actions
-
-          if (serverCount < clientCount) {
-              console.warn(`[Sync] Server count (${serverCount}) < Client count (${clientCount}). Server reset detected. Invalidating cache.`);
-              await clearActionCache();
-              window.location.reload();
-          } else if (serverCount > clientCount && newActions.length === 0) {
-              console.warn(`[Sync] Server count (${serverCount}) > Client count (${clientCount}) with no new updates. Cache desync detected. Invalidating cache.`);
-              await clearActionCache();
-              window.location.reload();
-          }
-      } catch (e) {
-         console.error("Failed to verify server count:", e);
-      }
-
       console.log(`[Broadcast] Stats: Cache=${stats.fromCache}, Server=${stats.fromServer}, Dupes=${stats.duplicates}`);
     },
     (error) => {

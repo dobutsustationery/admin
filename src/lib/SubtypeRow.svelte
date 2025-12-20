@@ -23,37 +23,44 @@
   let matched = true;
   $: if ($store) {
     state = store.getState();
-    item = { ...state.inventory.idToItem[key] };
-    const links: { [k: string]: boolean } = {};
-    imageItems = [];
-    imageItems.push({
-      link: item.image,
-      description: item.description,
-    });
-    links[item.image] = true;
-    matched = true;
-    for (const otherType of otherTypes) {
-      const otherKey = `${code}${otherType}`;
-      const otherItem = state.inventory.idToItem[otherKey];
-      if (!links[otherItem.image]) {
-        links[otherItem.image] = true;
+    const sourceItem = state.inventory.idToItem[key];
+    if (sourceItem) {
+        item = { ...sourceItem };
+        const links: { [k: string]: boolean } = {};
+        imageItems = [];
         imageItems.push({
-          link: otherItem.image,
-          description: otherItem.description,
+          link: item!.image,
+          description: item!.description,
         });
-      }
-      if (!itemsLookIdentical(item, otherItem)) {
-        matched = false;
-        console.log(`${key} and ${otherKey} do not match`, item, otherItem);
-      } else {
-        console.log(`${key} and ${otherKey} MATCH `, item, otherItem);
-      }
-    }
-    for (const newImage of newImageItems) {
-      if (!links[newImage.link]) {
-        links[newImage.link] = true;
-        imageItems.push(newImage);
-      }
+        links[item!.image] = true;
+        matched = true;
+        for (const otherType of otherTypes) {
+          const otherKey = `${code}${otherType}`;
+          const otherItem = state.inventory.idToItem[otherKey];
+          if (otherItem) {
+             if (!links[otherItem.image]) {
+                links[otherItem.image] = true;
+                imageItems.push({
+                  link: otherItem.image,
+                  description: otherItem.description,
+                });
+             }
+             if (!itemsLookIdentical(item!, otherItem)) {
+                matched = false;
+                console.log(`${key} and ${otherKey} do not match`, item, otherItem);
+             } else {
+                console.log(`${key} and ${otherKey} MATCH `, item, otherItem);
+             }
+          }
+        }
+        for (const newImage of newImageItems) {
+          if (!links[newImage.link]) {
+            links[newImage.link] = true;
+            imageItems.push(newImage);
+          }
+        }
+    } else {
+        item = null;
     }
   }
 

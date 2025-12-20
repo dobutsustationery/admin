@@ -25,16 +25,18 @@
     // Logic to view sales for the given archive ID
     console.log(`Viewing sales for archive: ${id}`);
     salesData = $store.inventory.salesEvents[id];
-    const creationDates: { [k: string]: boolean } = {};
-    for (const item in salesData.items) {
-      const itemKey = salesData.items[item].itemKey;
-      const seenDate =
-        $store.inventory.archivedInventoryState[id].idToItem[itemKey]
-          .creationDate;
-      creationDates[seenDate] = true;
+    if (salesData) {
+      const creationDates: { [k: string]: boolean } = {};
+      for (const item in salesData.items) {
+        const itemKey = salesData.items[item].itemKey;
+        const seenDate =
+          $store.inventory.archivedInventoryState[id].idToItem[itemKey]
+            .creationDate;
+        creationDates[seenDate] = true;
+      }
+      uniqueDates = Object.keys(creationDates);
+      excludedDates = {};
     }
-    uniqueDates = Object.keys(creationDates);
-    excludedDates = {};
   }
 
   function createSales(archiveName: string) {
