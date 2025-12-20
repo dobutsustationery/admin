@@ -37,6 +37,7 @@ export interface DriveFileInfo {
   name: string;
   webViewLink: string;
   webContentLink?: string;
+  thumbnailLink?: string;
 }
 
 /**
