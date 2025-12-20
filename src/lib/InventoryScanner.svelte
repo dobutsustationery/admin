@@ -15,7 +15,10 @@
   let pieces = "";
   let hsCode = "39199080";
   let description = "";
+  let description = "";
   let qty = "10";
+  let price = "";
+  let weight = "";
   let dirty = true;
   let imageItems: any[] = [];
   async function barcode(e: CustomEvent) {
@@ -46,7 +49,11 @@
       subtype = item.subtype;
       hsCode = item.hsCode;
       dataURL = item.image;
+      hsCode = item.hsCode;
+      dataURL = item.image;
       description = item.description;
+      price = item.price?.toString() || "";
+      weight = item.weight?.toString() || "";
     } else {
       janCode = r;
       const imgSearch = `https://customsearch.googleapis.com/customsearch/v1?q=${janCode}&searchType=image&key=${import.meta.env.VITE_FIREBASE_API_KEY}&cx=b57eec92c05d54096`;
@@ -105,6 +112,9 @@
   $: if (subtype) {
     dirty = true;
   }
+  $: if (price || weight) {
+    dirty = true;
+  }
 
   function save() {
     dirty = false;
@@ -118,6 +128,8 @@
       image,
       qty: +qty,
       pieces: +pieces,
+      price: price ? +price : undefined,
+      weight: weight ? +weight : undefined,
     };
     if ($user.uid) {
       broadcast(firestore, $user.uid, update_item({ id, item: item as any }));
@@ -180,6 +192,14 @@
   <label>
     Quantity:
     <input type="text" bind:value={qty} />
+  </label>
+  <label>
+    Price:
+    <input type="text" bind:value={price} />
+  </label>
+  <label>
+    Weight (g):
+    <input type="text" bind:value={weight} />
   </label>
   {#if dirty}
     <button on:click={save}>Add to Inventory</button>
