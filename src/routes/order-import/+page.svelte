@@ -500,11 +500,15 @@
             // AUTO-FILL Logic: If existing is blank and new is present, OVERWRITE.
             const useIncomingHS = !existHS && newHS;
             
-            const payloadItem = {
+            const payloadItem: any = {
                 ...item.existingItem,
                 qty: item.qty, // Delta for update_item logic (see inventory.ts)
                 hsCode: useIncomingHS ? newHS : existHS // Explicitly set it, though if it matches exisiting it's redundant but safe
             };
+
+            // Update price/weight if provided in CSV
+            if (item.price !== undefined) payloadItem.price = item.price;
+            if (item.weight !== undefined) payloadItem.weight = item.weight;
             
             bulkUpdates.push({
                 type: "update",
@@ -523,8 +527,10 @@
             image: "",
             qty: item.qty,
             pieces: 1,
-            shipped: 0,
+             shipped: 0,
             creationDate: new Date().toISOString(),
+            price: item.price,
+            weight: item.weight,
           };
           
           // Reuse update_item logic (it handles new creation if ID missing? 

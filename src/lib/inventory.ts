@@ -12,6 +12,8 @@ export interface Item {
   shipped: number;
   creationDate: string;
   timestamp: number;
+  price?: number;
+  weight?: number; // in grams
 }
 export interface LineItem {
   itemKey: string;
@@ -43,8 +45,8 @@ export const update_item = createAction<{ id: string; item: Item }>(
 export const update_field = createAction<{
   id: string;
   field: keyof Item;
-  from: string | number;
-  to: string | number;
+  from: string | number | undefined;
+  to: string | number | undefined;
 }>("update_field");
 export const new_order = createAction<{
   orderID: string;
