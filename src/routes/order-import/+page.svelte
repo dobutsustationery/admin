@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { slide, fade } from "svelte/transition";
   import { store } from "$lib/store";
   import {
     isDriveConfigured,
@@ -13,29 +14,175 @@
     getFolderLink,
     type DriveFile,
   } from "$lib/google-drive";
-  import { get } from "svelte/store";
+  import { 
+    start_session,
+    set_header,
+    append_raw_rows,
+    resolve_conflict, 
+    mark_items_done, 
+    clear_import,
+    finish_import,
+    type RawRow,
+    type ImportItem
+  } from "$lib/order-import-slice";
+  import { HS_CODE_DESCRIPTIONS } from "$lib/hscodes";
+  
   import { user } from "$lib/user-store";
   import { firestore } from "$lib/firebase";
-  import { new_order } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
+  import { update_item, bulk_import_items } from "$lib/inventory";
   import Papa from "papaparse";
-  import { update_item } from "$lib/inventory";
 
-  // --- Types ---
-  interface ImportItem {
-    janCode: string;
-    description: string;
-    qty: number;
-    carton: string;
-    // Analysis results
-    status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE";
-    existingItem?: any; // The Item from inventory if match
-    subtypes?: any[]; // List of items if conflict
-    actionLabel: string;
-    resolvedActions?: any[];
+  // --- State from Redux ---
+  $: activeFile = $store.orderImport.activeFile;
+  $: rawRows = $store.orderImport.rows;
+  $: step = $store.orderImport.step;
+  $: resolutions = $store.orderImport.resolutions || {};
+
+  // --- Derived Analysis ---
+  // We re-compute the "Plan" view dynamically based on current Inventory
+  // This replaces the static "status" field in ImportItem
+  
+  interface AnalyzedItem extends ImportItem {
+      status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE";
+      existingItem?: any;
+      subtypes?: any[];
+      actionLabel: string;
+      resolvedActions?: any[];
+      conflictType?: "HS_MISMATCH" | "SUBTYPES";
+      originalIndex: number; // For keying in #each
   }
 
-  // --- State ---
+  $: analyzedPlan = rawRows.map((rawRow: RawRow, index: number) => {
+      // Logic runs on parsed data found in the row
+      const item = rawRow.parsed;
+      
+      if (!item) {
+          // Parsing error row
+          return {
+             status: "DONE", // Treat error rows as inert/done for now or add ERROR status
+             janCode: "ERROR",
+             description: rawRow.error || "Parse Error",
+             qty: 0,
+             carton: "",
+             actionLabel: "Error",
+             originalIndex: index
+          } as AnalyzedItem;
+      }
+
+      // If processed, it's DONE
+      if (item.processed || rawRow.processed) {
+          return { ...item, status: "DONE", actionLabel: "Done", originalIndex: index } as AnalyzedItem;
+      }
+      
+      // If has resolution override, it's RESOLVED
+      if (resolutions[index]) {
+          return { 
+              ...item, 
+              status: "RESOLVED", 
+              resolvedActions: resolutions[index],
+              actionLabel: "Ready",
+              originalIndex: index
+          } as AnalyzedItem;
+      }
+
+      // Compute Match/New/Conflict against LIVE inventory
+      const JAN = item.janCode; 
+      
+      // 1. Check for exact matches (including subtypes if JAN implies them?)
+      // Actually the previous logic was complex. Let's look at how we find items.
+      // We search inventory for items starting with JAN?
+      
+      const candidates = Object.values($store.inventory.idToItem).filter((inv: any) => 
+          inv.janCode === JAN || inv.janCode === JAN + inv.subtype // Simplified logic assumption
+      );
+      
+      // Ideally we rely on the previous logic's finding mechanism.
+      // Let's implement a simple finder:
+      // Subtypes logic in this app seems to be: Key = JAN + Subtype.
+      
+      // Let's filter idToItem where keys start with JAN? or properties match?
+      // Reusing logic from previous analyzeCSV would be good but that was "run once".
+      // Here we run it reactive. Efficiency warning: Mapping over 1000 items on every store change is heavy.
+      // Optimization: Only re-run if inventory or plan changes. Svelte $: does this.
+      
+      // Let's replicate the "find" logic here.
+      
+      // Case A: Exact JAN match (no subtype)
+      // Case B: JAN match with subtypes existing
+      
+      // Find all items in inventory that share this JAN
+      const inventoryMatches = Object.entries($store.inventory.idToItem)
+          .filter(([k, i]: [string, any]) => i.janCode === JAN)
+          .map(([k, i]: [string, any]) => ({ ...i, key: k })); // Preserve key for modal usage
+
+      if (inventoryMatches.length === 0) {
+          return { ...item, status: "NEW", actionLabel: "Create", originalIndex: index } as AnalyzedItem;
+      }
+      
+      if (inventoryMatches.length === 1) {
+          // One match. Is it a simple item or one subtype? 
+          // If it matches perfectly?
+          // Check for HS Code Mismatch
+          const existingHS = (inventoryMatches[0] as any).hsCode;
+          const newHS = item.hsCode;
+          
+          if (existingHS && newHS && existingHS !== newHS) {
+               return {
+                  ...item,
+                  status: "CONFLICT",
+                  conflictType: "HS_MISMATCH",
+                  existingItem: inventoryMatches[0],
+                  actionLabel: "Resolve HS",
+                  originalIndex: index
+               } as AnalyzedItem;
+          }
+
+          return { 
+              ...item, 
+              status: "MATCH", 
+              existingItem: inventoryMatches[0], // Now has 'key'
+              actionLabel: "Add Qty",
+              originalIndex: index
+          } as AnalyzedItem;
+      }
+      
+      // Multiple matches -> Conflict (ambiguous target)
+      return {
+          ...item,
+          status: "CONFLICT",
+          subtypes: inventoryMatches, // Now has 'key'
+          actionLabel: "Resolve",
+          originalIndex: index
+      } as AnalyzedItem;
+  });
+
+  // Filter for display
+  $: visibleItems = analyzedPlan.filter((i: AnalyzedItem) => i.status !== "DONE");
+
+  // Auto-completion Logic
+  $: allDone = analyzedPlan.length > 0 && visibleItems.length === 0;
+
+  $: if (allDone && !processing && activeFile && $user && $user.uid) {
+       const u = $user.uid;
+       // Debounce slightly to let animations play
+       setTimeout(() => {
+           // Check again
+           if (analyzedPlan.length > 0 && visibleItems.length === 0) {
+               console.log("Auto-finishing import");
+               broadcast(firestore, u, finish_import());
+               successMsg = "All items processed. Session finished.";
+           }
+       }, 1000);
+  }
+  
+  // Derived State for UI
+  $: selectedFile = activeFile ? { ...activeFile, mimeType: 'text/csv' } as DriveFile : null;
+  $: showPreview = step === 'review';
+
+
+
+  // Local UI State
   let driveConfigured = false;
   let authenticated = false;
   let driveFiles: DriveFile[] = [];
@@ -43,21 +190,23 @@
   let error = "";
   let successMsg = "";
   let processing = false;
+  let analysisStatus: "idle" | "analyzing" = "idle";
 
-  let selectedFile: DriveFile | null = null;
-  let importPlan: ImportItem[] = [];
-  let showPreview = false;
-  let analysisStatus: "idle" | "analyzing" = "idle"; // Added
+  $: matchCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "MATCH").length;
+  $: newCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "NEW").length;
+  $: resolvedCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "RESOLVED").length;
 
   // Interactive State
   let showConflictModal = false;
-  let currentConflictItem: any = null;
+  let conflictIndex: number = -1;
+  let currentConflictItem: AnalyzedItem | null = null;
   let splitAllocations: { [subtypePath: string]: number } = {};
+  let selectedHSResolution: "incoming" | "existing" = "incoming";
   let splitError = "";
 
   // Resolution State
   let importStatus: "idle" | "success" | "error" = "idle";
-  let importMessage = "";
+
 
   onMount(async () => {
     driveConfigured = isDriveConfigured();
@@ -120,17 +269,20 @@
   }
 
   function resetPreview() {
-    selectedFile = null;
-    importPlan = [];
-    showPreview = false;
+    if ($user && $user.uid) {
+        broadcast(firestore, $user.uid, clear_import());
+    }
     error = "";
-    // Do not clear successMsg here, as we might want to show it after success
   }
+
   function selectFile(file: DriveFile) {
-    console.log("Selecting file:", file.name);
-    selectedFile = file;
-    importPlan = [];
-    showPreview = false;
+    if (activeFile?.id === file.id) return; // Already selected
+    console.log("Selecting file (Session Start):", file.name);
+    
+    if ($user && $user.uid) {
+        broadcast(firestore, $user.uid, start_session({ id: file.id, name: file.name }));
+    }
+    
     error = "";
     successMsg = "";
   }
@@ -142,106 +294,80 @@
     if (!token) return;
 
     processing = true;
-    analysisStatus = "analyzing"; // Updated
+    analysisStatus = "analyzing"; 
     error = "";
     successMsg = "";
-    selectedFile = file;
+    
+    // Start Session (replaces old select_file / set_plan([]))
+    if ($user && $user.uid) {
+         broadcast(firestore, $user.uid, start_session({ id: file.id, name: file.name }));
+    }
 
     try {
       const content = await downloadFile(file.id, token.access_token);
-      importPlan = analyzeCSV(content);
-      showPreview = true;
+      
+      // Split content into lines. 
+      // Careful with Windows CRLF vs LF. .split(/\r?\n/) handles both.
+      const allLines = content.split(/\r?\n/).filter(line => line.trim() !== "");
+      
+      if (allLines.length === 0) {
+          throw new Error("File is empty");
+      }
+      
+      const header = allLines[0];
+      const bodyLines = allLines.slice(1);
+      
+      // 1. Send Header
+      if ($user && $user.uid) {
+          broadcast(firestore, $user.uid, set_header(header));
+      }
+      
+      // 2. Stream Body in chunks
+      const CHUNK_SIZE = 100;
+      
+      if (bodyLines.length === 0) {
+           // Header only
+           if ($user && $user.uid) {
+                broadcast(firestore, $user.uid, append_raw_rows({ rawRows: [], done: true }));
+           }
+      } else {
+          for (let i = 0; i < bodyLines.length; i += CHUNK_SIZE) {
+              const chunk = bodyLines.slice(i, i + CHUNK_SIZE);
+              const isLast = i + CHUNK_SIZE >= bodyLines.length;
+              
+              if ($user && $user.uid) {
+                broadcast(firestore, $user.uid, append_raw_rows({ 
+                    rawRows: chunk, 
+                    done: isLast 
+                }));
+              }
+              
+              const progress = Math.min(100, Math.round(((i + chunk.length) / bodyLines.length) * 100));
+              
+              // Small yield
+              await new Promise(r => setTimeout(r, 0));
+          }
+      }
+      
     } catch (e) {
       console.error("Analysis failed:", e);
       error = `Analysis failed: ${e instanceof Error ? e.message : String(e)}`;
-      selectedFile = null;
     } finally {
       processing = false;
-      analysisStatus = "idle"; // Updated
+      analysisStatus = "idle";
     }
   }
 
-  function analyzeCSV(content: string): ImportItem[] {
-    const parsed = Papa.parse(content, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => h.trim().toLowerCase(), // jan code, total pcs, description
-    });
-
-    if (parsed.errors && parsed.errors.length > 0) {
-      console.warn("CSV Parse Errors:", parsed.errors);
-    }
-
-    const plan: ImportItem[] = [];
-    const invState = $store.inventory; // Access global inventory state
-
-    parsed.data.forEach((row: any) => {
-      // Map columns from sample
-      // JAN CODE, TOTAL PCS, DESCRIPTION, Carton Number
-      const janCode = (row["jan code"] || row["code"] || "").trim();
-      if (!janCode) return; // Skip empty rows
-
-      const qty = parseInt(
-        (row["total pcs"] || row["qty"] || "0").replace(/,/g, ""),
-        10,
-      );
-      const description = row["description"] || "";
-      const carton = row["carton number"] || "";
-
-      // Logic: Lookup in inventory
-      // We need to find items by JAN. Inventory is keyed by itemKey (jan+subtype).
-      // So we iterate. (Optimization: Build map once if slow)
-      const matches: any[] = [];
-      for (const key in invState.idToItem) {
-        const item = invState.idToItem[key];
-        if (item.janCode === janCode) {
-          console.log(
-            "DEBUG MATCH FOUND:",
-            janCode,
-            "matched with",
-            item.janCode,
-            "ID:",
-            key,
-          );
-          matches.push({ key, ...item });
-        }
-      }
-
-      let status: "MATCH" | "NEW" | "CONFLICT" = "NEW";
-      let existingItem = undefined;
-      let subtypes = undefined;
-      let actionLabel = "Create Draft Item";
-
-      if (matches.length === 1) {
-        status = "MATCH";
-        existingItem = matches[0];
-        actionLabel = `Add ${qty} to stock`;
-      } else if (matches.length > 1) {
-        status = "CONFLICT";
-        subtypes = matches;
-        actionLabel = `Split ${qty} amongst ${matches.length} subtypes`;
-      }
-
-      plan.push({
-        janCode,
-        description,
-        qty,
-        carton,
-        status,
-        existingItem,
-        subtypes,
-        actionLabel,
-      });
-    });
-
-    return plan;
-  }
+  // analyzeCSV removed, Logic moved to reducer (append_raw_rows)
 
   // --- Execution Logic ---
 
-  function openConflictModal(item: any) {
+  function openConflictModal(item: AnalyzedItem, index: number) {
+    // Cast to ImportItem for modal logic compatibility or adapt modal
     currentConflictItem = item;
+    conflictIndex = index;
     splitAllocations = {};
+    selectedHSResolution = "incoming"; // Default to incoming
 
     if (item.subtypes && item.subtypes.length > 0) {
       const totalQty = item.qty;
@@ -249,10 +375,31 @@
       const perItem = Math.floor(totalQty / count);
       const remainder = totalQty % count;
 
-      item.subtypes.forEach((st: any, index: number) => {
-        // Distribute remainder to first item(s)
-        const extra = index < remainder ? 1 : 0;
-        splitAllocations[st.key] = perItem + extra;
+      item.subtypes.forEach((st: any, i: number) => {
+          // Use key as identifier for subtypes (assuming itemKey/id)
+          // st is an Inventory Item, so it doesn't have 'key' property directly usually? 
+          // Wait, Object.values() drops keys. We need the ID.
+          // In my analyze logic above, I lost the ID.
+          // Let's fix analyze logic to include ID in 'existingItem' or 'subtypes'
+          
+          // Actually, let's fix the analyzedPlan logic to include keys if possible.
+          // But wait, st is from $store.inventory.idToItem values.
+          // We need to find the key for this value.
+          
+          // HACK: Re-find key? Or store key in Item?
+          // Item interface doesn't have ID.
+          // Let's rely on finding it by reference? No, need ID for update.
+          
+          // Better: In analyzedPlan map, we should attach the ID.
+          
+          // For now, let's look up key from store based on ref equality?
+          // Use key directly attached during analysis
+          const key = st.key;
+          if (key) {
+               // Distribute remainder to first item(s)
+                const extra = i < remainder ? 1 : 0;
+                splitAllocations[key] = perItem + extra;
+          }
       });
     }
 
@@ -263,103 +410,159 @@
   function closeConflictModal() {
     showConflictModal = false;
     currentConflictItem = null;
+    conflictIndex = -1;
   }
 
   function confirmSplit() {
     if (!currentConflictItem) return;
 
-    // Validate Total
-    const totalAllocated = Object.values(splitAllocations).reduce(
-      (a, b) => a + b,
-      0,
-    );
-    if (totalAllocated !== currentConflictItem.qty) {
-      splitError = `Total allocated (${totalAllocated}) must equal CSV Quantity (${currentConflictItem.qty})`;
-      return;
+    // Validate Total (Only if NOT HS_MISMATCH)
+    if (currentConflictItem.conflictType !== "HS_MISMATCH") {
+        const totalAllocated = Object.values(splitAllocations).reduce(
+          (a, b) => a + b,
+          0,
+        );
+        if (totalAllocated !== currentConflictItem.qty) {
+          splitError = `Total allocated (${totalAllocated}) must equal CSV Quantity (${currentConflictItem.qty})`;
+          return;
+        }
     }
 
-    // Apply Resolution
-    // We transform this Conflict item into a "Resolved" state
-    // We will store the ready-to-execute actions directly on the item
-    currentConflictItem.status = "RESOLVED";
-    currentConflictItem.resolvedActions = Object.entries(splitAllocations)
-      .filter(([_, qty]) => qty > 0)
-      .map(([path, qty]) => ({
-        type: "update_item",
-        payload: {
-          itemKey: path,
-          qty: qty,
-        },
-      }));
+    // Apply Resolution via Redux
+    let resolvedActions: any[] = [];
+    
+    if (currentConflictItem.conflictType === "HS_MISMATCH") {
+        // Validation not really needed for radio choice, but ensuring key exists
+         const itemKey = currentConflictItem.existingItem?.key;
+         if (itemKey) {
+             resolvedActions.push({
+                 type: "update_item",
+                 payload: {
+                     itemKey: itemKey,
+                     qty: currentConflictItem.qty,
+                     hsCode: selectedHSResolution === "incoming" ? currentConflictItem.hsCode : currentConflictItem.existingItem.hsCode
+                 }
+             });
+         }
+    } else {
+        // Subtype split logic
+        resolvedActions = Object.entries(splitAllocations)
+          .filter(([_, qty]) => qty > 0)
+          .map(([path, qty]) => ({
+            type: "update_item",
+            payload: {
+              itemKey: path,
+              qty: qty,
+            },
+          }));
+    }
+    
+    // Broadcast resolution choice
+    if ($user && $user.uid) {
+        broadcast(firestore, $user.uid, resolve_conflict({ 
+            index: conflictIndex, 
+            resolvedActions 
+        }));
+    }
 
-    // Force reactivity
-    importPlan = [...importPlan];
     closeConflictModal();
   }
 
   async function processBatch(targetStatus: "MATCH" | "NEW") {
-    if (!importPlan.length) return;
+    if (!analyzedPlan.length) return;
 
-    const itemsToProcess = importPlan.filter((i) => i.status === targetStatus);
-    if (itemsToProcess.length === 0) return;
+    // Use analyzedPlan to filter
+    const itemsToProcessWithType = analyzedPlan
+        .map((item: AnalyzedItem, index: number) => ({ item, index }))
+        .filter(({ item }: { item: AnalyzedItem }) => item.status === targetStatus);
+        
+    if (itemsToProcessWithType.length === 0) return;
 
     processing = true;
-    let count = 0;
+    const indicesToMarkDone: number[] = [];
+    
+    // BULK ACTION CONSTRUCTION
+    const bulkUpdates: Array<{type: "new"|"update", id: string, item: any}> = [];
 
     try {
-      // Dispatch loops
-      for (const item of itemsToProcess) {
+      for (const { item, index } of itemsToProcessWithType) {
         if (item.status === "MATCH" && item.existingItem) {
-          // Determine item ID. In analysis we used `key`.
-          const itemKey = item.existingItem.key;
-          const payloadItem = {
-            ...item.existingItem,
-            qty: item.qty, // Delta
-          };
-
-          if ($user && $user.uid) {
-            broadcast(
-              firestore,
-              $user.uid,
-              update_item({
+          // Find Key again (since we didn't store it perfectly in AnalyzedItem yet, 
+          // or we rely on the logic that found it). 
+          // Ideally we fix AnalyzedItem to have 'id' on existingItem.
+          // For now:
+          // Use key directly attached during analysis
+          const itemKey = item.existingItem?.key;
+          
+          if (itemKey) {
+            const existHS = item.existingItem?.hsCode;
+            const newHS = item.hsCode;
+            // AUTO-FILL Logic: If existing is blank and new is present, OVERWRITE.
+            const useIncomingHS = !existHS && newHS;
+            
+            const payloadItem = {
+                ...item.existingItem,
+                qty: item.qty, // Delta for update_item logic (see inventory.ts)
+                hsCode: useIncomingHS ? newHS : existHS // Explicitly set it, though if it matches exisiting it's redundant but safe
+            };
+            
+            bulkUpdates.push({
+                type: "update",
                 id: itemKey,
-                item: payloadItem,
-              }),
-            );
-            count++;
+                item: payloadItem
+            });
+            indicesToMarkDone.push(index);
           }
         } else if (item.status === "NEW") {
-          // Create New Item logic
           const newItemKey = item.janCode;
           const newItem = {
             janCode: item.janCode,
             subtype: "",
             description: item.description,
-            hsCode: "",
+            hsCode: item.hsCode || "",
             image: "",
             qty: item.qty,
             pieces: 1,
             shipped: 0,
             creationDate: new Date().toISOString(),
           };
-
-          if ($user && $user.uid) {
-            broadcast(
-              firestore,
-              $user.uid,
-              update_item({
+          
+          // Reuse update_item logic (it handles new creation if ID missing? 
+          // inventory.ts: "if (state.idToItem[id] !== undefined) ... else ... state.idToItem[id] = ...")
+          // Yes, update_item handles creation if key is new.
+          
+            bulkUpdates.push({
+                type: "new",
                 id: newItemKey,
-                item: newItem,
-              }),
-            );
-            count++;
-          }
+                item: newItem
+            });
+            indicesToMarkDone.push(index);
         }
-        item.status = "DONE"; // Mark as processed
       }
+      
+      // Process in CHUNKS to avoid 1MB Firestore limit
+      const CHUNK_SIZE = 100;
+      let processedCount = 0;
 
-      importPlan = [...importPlan];
-      successMsg = `Successfully processed ${count} items.`;
+      for (let i = 0; i < bulkUpdates.length; i += CHUNK_SIZE) {
+        const batchUpdates = bulkUpdates.slice(i, i + CHUNK_SIZE);
+        const batchIndices = indicesToMarkDone.slice(i, i + CHUNK_SIZE);
+        
+        if ($user && $user.uid) {
+            // 1. Broadcast Import (Inventory Update)
+            broadcast(firestore, $user.uid, bulk_import_items({ items: batchUpdates }));
+            
+            // 2. Broadcast Done (UI Update)
+            // Note: We do this per-chunk so UI updates progressively
+            broadcast(firestore, $user.uid, mark_items_done({ indices: batchIndices }));
+        }
+        
+        processedCount += batchUpdates.length;
+        // Small yield to prevent UI freeze and allow other broadcasts to queue
+        await new Promise(r => setTimeout(r, 10));
+      }
+      
+      successMsg = `Successfully processed ${processedCount} items.`;
       importStatus = "success";
 
       setTimeout(() => {
@@ -375,45 +578,82 @@
   }
 
   async function processResolvedConflicts() {
-    const resolved = importPlan.filter((i) => i.status === "RESOLVED");
-    if (resolved.length === 0) return;
+    // Find Resolved items and their indices
+    const resolvedWithType = analyzedPlan
+        .map((item: AnalyzedItem, index: number) => ({ item, index }))
+        .filter(({ item }: { item: AnalyzedItem }) => item.status === "RESOLVED");
+
+    if (resolvedWithType.length === 0) return;
 
     processing = true;
-    let count = 0;
+    const indicesToMarkDone: number[] = [];
+    const bulkUpdates: Array<{type: "new"|"update", id: string, item: any}> = [];
 
     try {
-      for (const item of resolved) {
-        if (item.resolvedActions && $user && $user.uid) {
+      for (const { item, index } of resolvedWithType) {
+         if (item.resolvedActions) {
           item.resolvedActions.forEach((action: any) => {
-            // action.payload has itemKey and qty
-            // We need the full item? Wait, update_item in reducer needs full item structure if simple update?
-            // The reducer: state.idToItem[id] = { ...action.payload.item ... qty: action.payload.item.qty + qty }
-            // So we need to fetch the existing item again or store it?
-            // We have the path (key) in the payload. We can look it up in $store.inventory.
-
-            const currentInvItem =
-              $store.inventory.idToItem[action.payload.itemKey];
+            // action is { type: 'update_item', payload: { itemKey, qty } }
+            
+            // So we must fetch existing item.
+            const currentInvItem = $store.inventory.idToItem[action.payload.itemKey];
             if (currentInvItem) {
               const payloadItem = {
                 ...currentInvItem,
-                qty: action.payload.qty,
+                qty: action.payload.qty, // Delta
+                hsCode: action.payload.hsCode !== undefined ? action.payload.hsCode : currentInvItem.hsCode
               };
-              broadcast(
-                firestore,
-                $user.uid!,
-                update_item({
+              
+              bulkUpdates.push({
+                  type: "update",
                   id: action.payload.itemKey,
-                  item: payloadItem,
-                }),
-              );
+                  item: payloadItem
+              });
             }
           });
+          
+          indicesToMarkDone.push(index);
         }
-        item.status = "DONE";
-        count++;
       }
-      importPlan = [...importPlan];
-      successMsg = `Successfully processed ${count} resolved conflicts.`;
+      
+      // Process in CHUNKS
+      const CHUNK_SIZE = 100;
+      let processedCount = 0;
+
+      for (let i = 0; i < bulkUpdates.length; i += CHUNK_SIZE) {
+         const batchUpdates = bulkUpdates.slice(i, i + CHUNK_SIZE);
+         const batchIndices = indicesToMarkDone.slice(i, i + CHUNK_SIZE); // WARNING: indicesToMarkDone must align 1:1 with bulkUpdates?
+         // In processResolvedConflicts, we push to both arrays inside the loop.
+         // Wait, one item can have ONE resolution, but that resolution might trigger MULTIPLE updates (splits)?
+         // In 'resolvedActions.forEach', we push to `bulkUpdates` multiple times for one `index`.
+         // `indicesToMarkDone.push(index)` happens once per item.
+         // So `indicesToMarkDone` length < `bulkUpdates` length if splits exist.
+         // So slicing `indicesToMarkDone` via the same `i` is WRONG.
+         
+         // Fix: We can't easily couple them in the same generic loop unless we group by item.
+         // But `bulk_import_items` works on flat updates.
+         // AND `mark_items_done` works on plan indices.
+         
+         // Strategy:
+         // 1. Send all `bulk_import_items` in chunks.
+         // 2. Send `mark_items_done` at the end (payload is small, integers).
+         // 1MB limit for `mark_items_done`? 
+         // Array of 10k integers = 40KB. Safe to send all at once.
+         
+         if ($user && $user.uid) {
+            broadcast(firestore, $user.uid, bulk_import_items({ items: batchUpdates }));
+         }
+         
+         processedCount += batchUpdates.length;
+         await new Promise(r => setTimeout(r, 10));
+      }
+      
+      // Mark all as done after updates are sent
+      if (indicesToMarkDone.length > 0 && $user && $user.uid) {
+          broadcast(firestore, $user.uid, mark_items_done({ indices: indicesToMarkDone }));
+      }
+      
+      successMsg = `Successfully processed ${indicesToMarkDone.length} resolved conflicts.`;
       importStatus = "success";
 
       setTimeout(() => {
@@ -504,7 +744,7 @@
               </div>
             {:else if analysisStatus === "analyzing"}
               <div class="loading">Analyzing {selectedFile.name}...</div>
-            {:else if importPlan.length > 0}
+            {:else if rawRows.length > 0}
               <div class="preview-header">
                 <h2>Preview: {selectedFile.name}</h2>
                 <div class="batch-actions">
@@ -513,26 +753,21 @@
                     on:click={() => processBatch("MATCH")}
                     disabled={processing}
                   >
-                    Process Matches ({importPlan.filter(
-                      (i) => i.status === "MATCH",
-                    ).length})
+                    Process Matches ({matchCount})
                   </button>
                   <button
                     class="btn-secondary"
                     on:click={() => processBatch("NEW")}
                     disabled={processing}
                   >
-                    Create New ({importPlan.filter((i) => i.status === "NEW")
-                      .length})
+                    Create New ({newCount})
                   </button>
                   <button
                     class="btn-secondary"
                     on:click={processResolvedConflicts}
                     disabled={processing}
                   >
-                    Process Resolved ({importPlan.filter(
-                      (i) => i.status === "RESOLVED",
-                    ).length})
+                    Process Resolved ({resolvedCount})
                   </button>
                 </div>
               </div>
@@ -543,27 +778,29 @@
                     <tr>
                       <th>Status</th>
                       <th>JAN</th>
+                      <th>HS Code</th>
                       <th>Description</th>
                       <th>Qty</th>
                       <th>Action</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {#each importPlan as item}
-                      <tr class:done={item.status === "DONE"}>
-                        <td>
+                    <tbody>
+                      {#each visibleItems as item (item.originalIndex)}
+                        <tr transition:slide|local>
+                          <td>
                           <span class="badge {item.status.toLowerCase()}"
                             >{item.status}</span
                           >
                         </td>
                         <td>{item.janCode}</td>
+                        <td>{item.hsCode || '-'}</td>
                         <td>{item.description}</td>
                         <td>{item.qty}</td>
                         <td>
                           {#if item.status === "CONFLICT"}
                             <button
                               class="btn-small"
-                              on:click={() => openConflictModal(item)}
+                              on:click={() => openConflictModal(item, item.originalIndex)}
                               >Review</button
                             >
                           {:else if item.status === "RESOLVED"}
@@ -613,7 +850,25 @@
         <p>Total Qty from CSV: <strong>{currentConflictItem.qty}</strong></p>
 
         <div class="split-list">
-          {#if currentConflictItem.subtypes}
+          {#if currentConflictItem.conflictType === "HS_MISMATCH"}
+             <div class="hs-resolution">
+                 <p>HS Code Mismatch:</p>
+                 <label class="radio-label">
+                     <input type="radio" bind:group={selectedHSResolution} value="incoming" />
+                     <div class="radio-content">
+                        <span>Use Incoming: <strong>{currentConflictItem.hsCode || "Blank"}</strong></span>
+                        <span class="hs-desc">{HS_CODE_DESCRIPTIONS[currentConflictItem.hsCode || ""] || "Unknown"}</span>
+                     </div>
+                 </label>
+                 <label class="radio-label">
+                     <input type="radio" bind:group={selectedHSResolution} value="existing" />
+                     <div class="radio-content">
+                        <span>Keep Existing: <strong>{currentConflictItem.existingItem?.hsCode || "Blank"}</strong></span>
+                        <span class="hs-desc">{HS_CODE_DESCRIPTIONS[currentConflictItem.existingItem?.hsCode || ""] || "Unknown"}</span>
+                     </div>
+                 </label>
+             </div>
+          {:else if currentConflictItem.subtypes}
             {#each currentConflictItem.subtypes as subtype}
               <div class="split-row">
                 <span>{subtype.key}</span>
@@ -795,6 +1050,40 @@
     color: #dc2626;
     margin-top: 1rem;
     font-size: 0.9rem;
+  }
+  
+  .hs-resolution {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-top: 1rem;
+  }
+  
+  .radio-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      cursor: pointer;
+      padding: 0.5rem;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      transition: background 0.2s;
+  }
+  
+  .radio-label:hover {
+      background: #f9f9f9;
+  }
+  
+  .radio-content {
+      display: flex;
+      flex-direction: column;
+  }
+  
+  .hs-desc {
+      font-size: 0.85rem;
+      color: #666;
+      font-style: italic;
+      margin-top: 0.2rem;
   }
 
   .done {

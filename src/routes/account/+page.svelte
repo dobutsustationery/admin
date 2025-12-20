@@ -94,7 +94,7 @@
     {#if $user}
       <div class="grid grid-cols-[120px_1fr] gap-4 text-sm">
         <div class="font-medium text-gray-500">Name:</div>
-        <div>{$user.displayName || "N/A"}</div>
+        <div>{$user.name || "N/A"}</div>
 
         <div class="font-medium text-gray-500">Email:</div>
         <div>{$user.email || "N/A"}</div>

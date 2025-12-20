@@ -68,6 +68,7 @@ function randomItem(): Item {
     pieces: Math.floor(1 + Math.random() * 10),
     shipped: 0,
     creationDate: new Date().toISOString(),
+    timestamp: 0,
   };
 }
 
@@ -439,6 +440,7 @@ describe("reducer immutability", () => {
           janCode: "4542804044355",
           shipped: 0,
           creationDate: new Date().toISOString(),
+          timestamp: 0,
         },
       }),
       create_name({ id: "HSCode", name: "49090000" }),
@@ -456,6 +458,7 @@ describe("reducer immutability", () => {
           janCode: "4542804044362",
           shipped: 0,
           creationDate: new Date().toISOString(),
+          timestamp: 0,
         },
       }),
       new_order({

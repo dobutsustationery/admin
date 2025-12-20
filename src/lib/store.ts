@@ -5,6 +5,7 @@ import { history } from "./history";
 import { inventory } from "./inventory";
 import { names } from "./names";
 import { photos } from "./photos-slice";
+import { orderImport } from "./order-import-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 
 function svelteStoreEnhancer(createStoreApi: (arg0: any, arg1: any) => any) {
@@ -28,13 +29,15 @@ const reducerObject = {
   inventory,
   history,
   photos,
+  orderImport,
 };
 const combinedReducer = combineReducers(reducerObject);
 
 // Root reducer to handle full state hydration
 const rootReducer = (state: any, action: any) => {
   if (action.type === 'HYDRATE') {
-    return action.payload; // Replace state
+    // Merge payload into current state to preserve new slices not present in old snapshots
+    return { ...state, ...action.payload };
   }
   return combinedReducer(state, action);
 };
@@ -75,6 +78,8 @@ function triggerSave(state: any, lastAction: SnapshotMetadata | null) {
 const persistenceMiddleware = (storeAPI: any) => (next: any) => (action: any) => {
   const result = next(action);
   
+  // Check if this action has broadcast metadata (id + timestamp)
+  // We only care about tracking the "cursor" of processed actions.
   // Check if this action has broadcast metadata (id + timestamp)
   // We only care about tracking the "cursor" of processed actions.
   if (action && action.id && action.timestamp) {

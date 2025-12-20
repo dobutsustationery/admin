@@ -13,7 +13,7 @@ import {
   endOfMonth,
 } from "date-fns";
 
-export type DateRangeView = "day" | "week" | "month";
+export type DateRangeView = "day" | "week" | "month" | "search";
 
 export interface DateRange {
   start: Date;
@@ -40,6 +40,11 @@ export function getDateRange(
         start: startOfMonth(referenceDate),
         end: endOfMonth(referenceDate),
       };
+    case "search":
+      return {
+        start: new Date(0), // Epoch
+        end: new Date()
+      };
   }
 }
 
@@ -56,6 +61,8 @@ export function shiftDateRange(
       return addWeeks(currentDate, amount);
     case "month":
       return addMonths(currentDate, amount);
+    case "search":
+      return currentDate; // No shifting in search mode
   }
 }
 
