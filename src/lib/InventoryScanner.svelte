@@ -15,7 +15,6 @@
   let pieces = "";
   let hsCode = "39199080";
   let description = "";
-  let description = "";
   let qty = "10";
   let price = "";
   let weight = "";
@@ -47,8 +46,6 @@
       const item = state.inventory.idToItem[key];
       janCode = item.janCode;
       subtype = item.subtype;
-      hsCode = item.hsCode;
-      dataURL = item.image;
       hsCode = item.hsCode;
       dataURL = item.image;
       description = item.description;
