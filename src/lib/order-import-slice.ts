@@ -8,6 +8,8 @@ export interface ImportItem {
   carton: string;
   hsCode?: string;
   processed?: boolean;
+  price?: number;
+  weight?: number;
 }
 
 export interface RawRow {
@@ -135,6 +137,8 @@ const initialState: OrderImportState = {
                         qty: parseInt(parsedRow['total pcs'] || parsedRow['qty'] || "0", 10),
                         carton: parsedRow['carton number'] || parsedRow['carton'] || "",
                         hsCode: findHSCode(parsedRow),
+                        price: parsedRow['price'] ? parseFloat(parsedRow['price'].replace(/[^0-9.]/g, "")) : undefined,
+                        weight: parsedRow['weight'] ? parseFloat(parsedRow['weight'].replace(/[^0-9.]/g, "")) : undefined,
                      };
                  }
                  
