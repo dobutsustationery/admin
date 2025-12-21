@@ -11,6 +11,8 @@
   let error = "";
   let loading = true;
 
+  import { imageQueue } from "$lib/image-queue";
+
   async function loadImage() {
     // Reset state
     loading = true;
@@ -30,29 +32,35 @@
       return;
     }
     
-    // For Google Photos Picker URLs (lh3.googleusercontent...), we need authentication.
-    // Experiment: Try Header Auth again.
-    // Fall through to the fetch() block below.
+    // Check global token for authenticated Google Photos items
+    const token = getStoredToken();
+    if (!token && src.includes("googleusercontent.com")) {
+         // Should we error or try anonymous?
+         // Many drive links ARE public. Let's try queueing it plainly?
+         // But the logic below assumes we need auth if it gets here.
+         // Let's assume if we have a token, we use it. If not, we try without?
+    }
 
+    // Wrap fetch in Queue
     try {
-      const token = getStoredToken();
-      if (!token) {
-        throw new Error("No auth token");
-      }
+        await imageQueue.add(async () => {
+             const headers: any = {};
+             if (token) {
+                 headers.Authorization = `Bearer ${token.access_token}`;
+             }
+             
+             const response = await fetch(src, {
+                headers,
+                referrerPolicy: "no-referrer"
+             });
 
-      const response = await fetch(src, {
-        headers: {
-          Authorization: `Bearer ${token.access_token}`,
-        },
-        referrerPolicy: "no-referrer"
-      });
+             if (!response.ok) {
+                 throw new Error(`Failed to load image: ${response.status}`);
+             }
 
-      if (!response.ok) {
-        throw new Error(`Failed to load image: ${response.status}`);
-      }
-
-      const blob = await response.blob();
-      objectUrl = URL.createObjectURL(blob);
+             const blob = await response.blob();
+             objectUrl = URL.createObjectURL(blob);
+        });
     } catch (e: any) {
       console.error("SecureImage error:", e);
       error = e.message;
