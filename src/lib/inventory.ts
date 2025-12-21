@@ -188,6 +188,8 @@ function applyInventoryUpdate(state: InventoryState, id: string, item: Item, tim
     }
     state.idToItem[id] = {
       ...item,
+      janCode: item.janCode?.trim(),
+      subtype: item.subtype?.trim() || "",
       creationDate,
       qty: item.qty + qty,
       shipped: (item.shipped || 0) + shipped,
@@ -378,7 +380,10 @@ export const inventory = createReducer(initialState, (r) => {
     }
   });
   r.addCase(retype_item, (state, action) => {
-    const { itemKey, subtype, orderID, janCode, qty } = action.payload;
+    const { itemKey, orderID, qty } = action.payload;
+    const janCode = action.payload.janCode?.trim();
+    const subtype = action.payload.subtype?.trim() || "";
+    
     if (state.orderIdToOrder[orderID] === undefined) {
       const date = new Date(0);
       state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
@@ -434,7 +439,9 @@ export const inventory = createReducer(initialState, (r) => {
     });
   });
   r.addCase(rename_subtype, (state, action) => {
-    const { itemKey, subtype } = action.payload;
+    const { itemKey } = action.payload;
+    const subtype = action.payload.subtype?.trim() || "";
+    
     if (state.idToItem[itemKey] !== undefined) {
       const mergeItemKey = `${state.idToItem[itemKey].janCode}${subtype}`;
       if (itemKey === mergeItemKey) {
