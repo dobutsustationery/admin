@@ -12,6 +12,16 @@
     Download,
     Tag,
     Archive,
+    User,
+    History,
+    Barcode,
+    Import,
+    Image,
+    Camera,
+    ShoppingBag,
+    Tv,
+    CheckSquare,
+    FileEdit,
   } from "lucide-svelte";
 
   export let unsyncedActions = 0;
@@ -29,6 +39,16 @@
     { href: "/names", label: "Manage Names", icon: Tag },
     { href: "/archives", label: "Archives", icon: Archive },
     { href: "/audit", label: "Audit Log", icon: ClipboardList },
+    { href: "/account", label: "Account", icon: User },
+    { href: "/itemhistory", label: "Item History", icon: History },
+    { href: "/jancodes", label: "Jan Codes", icon: Barcode },
+    { href: "/order-import", label: "Order Import", icon: Import },
+    { href: "/photo-history", label: "Photo History", icon: Image },
+    { href: "/photos", label: "Photos", icon: Camera },
+    { href: "/shopify-products", label: "Shopify Products", icon: ShoppingBag },
+    { href: "/shows", label: "Shows", icon: Tv },
+    { href: "/sku-review", label: "SKU Review", icon: CheckSquare },
+    { href: "/test-edit", label: "Test Edit", icon: FileEdit },
   ];
 
   function toggleMenu() {
