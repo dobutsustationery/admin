@@ -23,6 +23,7 @@ export interface Item {
   tags?: string;
   imagePosition?: number;
   imageAltText?: string;
+  countryOfOrigin?: string;
 }
 export interface LineItem {
   itemKey: string;

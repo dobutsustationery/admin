@@ -87,6 +87,9 @@
             } else if (field === 'weight') {
                 valA = a.weight || 0;
                 valB = b.weight || 0;
+            } else if (field === 'coo') {
+                valA = a.countryOfOrigin || "";
+                valB = b.countryOfOrigin || "";
             } else if (field === 'stock') {
                 valA = a.qty;
                 valB = b.qty;
@@ -319,6 +322,7 @@
       subtype: 100,
       sku: 150,
       weight: 80,
+      coo: 120,
       stock: 80,
       price: 80,
       barcode: 120,
@@ -426,6 +430,11 @@
                         Variant Grams {sortHistory[0]?.field === 'weight' ? (sortHistory[0].dir === 'asc' ? '↑' : '↓') : ''}
                          <div class="resize-handle" on:mousedown={(e) => handleResizeStart(e, 'weight')} on:click|stopPropagation></div>
                     </th>
+                    <!-- 8. Country of Origin -->
+                    <th style="width: {columnWidths.coo}px" on:click={() => handleHeaderClick('coo')}>
+                        Country of Origin {sortHistory[0]?.field === 'coo' ? (sortHistory[0].dir === 'asc' ? '↑' : '↓') : ''}
+                         <div class="resize-handle" on:mousedown={(e) => handleResizeStart(e, 'coo')} on:click|stopPropagation></div>
+                    </th>
                     <!-- 8. Variant Inventory Qty -->
                     <th style="width: {columnWidths.stock}px" on:click={() => handleHeaderClick('stock')}>
                         Variant Inventory Qty {sortHistory[0]?.field === 'stock' ? (sortHistory[0].dir === 'asc' ? '↑' : '↓') : ''}
@@ -529,7 +538,18 @@
                             />
                         </td>
                         
-                         <!-- 8. Variant Inventory Qty -->
+                        <!-- 8. Country of Origin -->
+                        <td class="input-cell" class:selected={selectionColumn === 'countryOfOrigin' && i >= selectionStart && i <= selectionEnd}>
+                            <input 
+                                value={item.countryOfOrigin || ""}
+                                on:change={(e) => commitEdit(item.id, 'countryOfOrigin', e.currentTarget.value, i)}
+                                on:focus={() => handleFocus(i, 'countryOfOrigin')}
+                                on:keydown={(e) => handleInputKey(e, i, 'countryOfOrigin', item.countryOfOrigin, item)}
+                                on:mousedown={(e) => handleCellMouseDown(i, 'countryOfOrigin', e)}
+                            />
+                        </td>
+                        
+                         <!-- 9. Variant Inventory Qty -->
                         <td class="static-cell text-right pr-2">{item.qty}</td>
 
                         <!-- 9. Variant Price -->
