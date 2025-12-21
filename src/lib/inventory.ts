@@ -19,8 +19,6 @@ export interface Item {
   handle?: string;
   bodyHtml?: string;
   productCategory?: string;
-  productType?: string;
-  tags?: string;
   imagePosition?: number;
   imageAltText?: string;
   countryOfOrigin?: string;
@@ -44,6 +42,7 @@ export interface InventoryState {
   hiddenInventoryState: { [key: string]: InventoryState };
   salesEvents: { [key: string]: OrderInfo };
   orderIdToOrder: { [key: string]: OrderInfo };
+  shopifyUrlToDriveUrl: { [key: string]: string }; // [shopifyUrl] -> driveUrl
   initialized: boolean;
 }
 
@@ -98,7 +97,6 @@ export const make_sales = createAction<{
   archiveName: string;
   date: Date;
 }>("make_sales");
-
 export const bulk_import_items = createAction<{
   items: Array<{
     type: "new" | "update";
@@ -200,6 +198,17 @@ function applyInventoryUpdate(
   }
 
   if (state.idToItem[id] !== undefined) {
+    const oldImage = state.idToItem[id].image;
+    const newImage = item.image;
+    
+    // Implicitly track migration: Shopify -> Drive
+    if (oldImage && newImage && oldImage !== newImage) {
+        if (oldImage.includes("cdn.shopify.com") && newImage.includes("drive.google.com")) {
+            if (!state.shopifyUrlToDriveUrl) state.shopifyUrlToDriveUrl = {};
+            state.shopifyUrlToDriveUrl[oldImage] = newImage;
+        }
+    }
+
     creationDate = state.idToItem[id].creationDate + ", " + creationDate;
     qty = state.idToItem[id].qty;
     shipped = state.idToItem[id].shipped || 0;
@@ -251,6 +260,7 @@ export const initialState: InventoryState = {
   archivedInventoryDate: {},
   hiddenInventoryState: {},
   salesEvents: {},
+  shopifyUrlToDriveUrl: {},
   initialized: false,
 };
 
@@ -599,6 +609,7 @@ export const inventory = createReducer(initialState, (r) => {
       // Do NOT include archivedInventoryState or hiddenInventoryState to avoid recursion
       archivedInventoryState: {},
       hiddenInventoryState: {},
+      shopifyUrlToDriveUrl: {},
       initialized: state.initialized,
     });
     const timestamp = (action as any).timestamp;

@@ -10,6 +10,15 @@ export interface ShopifyImportItem {
   image?: string; // Image Src (URL)
   handle?: string; // For grouping/reference
   processed?: boolean;
+  
+  // New Fields
+  bodyHtml?: string;
+  productCategory?: string;
+  imagePosition?: number;
+  imageAltText?: string;
+  countryOfOrigin?: string; // 'Variant Country of Origin' usually? Or inferred? 
+  // Standard Shopify export has 'Variant Country of Origin' or derived from 'Country of Origin'? 
+  // The user asked for "Country of Origin".
 }
 
 export interface RawRow {
@@ -107,7 +116,14 @@ const initialState: ShopifyImportState = {
                         price: parsedRow['variant price'] ? parseFloat(parsedRow['variant price'].replace(/[^0-9.]/g, "")) : undefined,
                         weight: parsedRow['variant grams'] ? parseFloat(parsedRow['variant grams'].replace(/[^0-9.]/g, "")) : undefined,
                         image: parsedRow['image src'] || "",
-                        handle: handle
+                        handle: handle,
+                        
+                        // New Parsed Fields
+                        bodyHtml: parsedRow['body (html)'] || "",
+                        productCategory: parsedRow['product category'] || "",
+                        imagePosition: parsedRow['image position'] ? parseInt(parsedRow['image position'], 10) : undefined,
+                        imageAltText: parsedRow['image alt text'] || "",
+                        countryOfOrigin: parsedRow['variant country of origin'] || "" // Assuming correct header
                      };
                  }
                  

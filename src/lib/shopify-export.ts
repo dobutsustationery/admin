@@ -7,8 +7,6 @@ export interface ShopifyProduct {
   "Body (HTML)": string;
   Vendor: string;
   "Product Category": string;
-  Type: string;
-  Tags: string;
   Published: string;
   "Option1 Name": string;
   "Option1 Value": string;
@@ -49,8 +47,6 @@ export function mapItemToProduct(item: Item, imagePos: number): ShopifyProduct {
     "Body (HTML)": body,
     Vendor: "SPNSS Ltd.",
     "Product Category": item.productCategory || "", 
-    Type: item.productType || "",
-    Tags: item.tags || "",
     Published: "true",
     "Option1 Name": "Subtype",
     "Option1 Value": item.subtype || "Default",
