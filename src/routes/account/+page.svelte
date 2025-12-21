@@ -173,4 +173,25 @@
         </button>
     </div>
   </div>
+
+  <!-- Advanced Section -->
+  <div class="bg-white p-6 rounded-lg shadow-md mb-8 border-t-4 border-red-200">
+      <h2 class="text-xl font-semibold mb-4 text-red-800">Advanced / Danger Zone</h2>
+      <p class="text-sm text-gray-600 mb-4">
+          If you are experiencing state synchronization issues (e.g. items appearing as "New" when they should be matches), 
+          you can clear the local cache and force a full re-download of all history.
+      </p>
+      <button 
+          on:click={async () => {
+              if (confirm("Are you sure? This will clear your local cache and reload the page. It may take a few moments to rebuild.")) {
+                  const { clearActionCache } = await import("$lib/action-cache");
+                  await clearActionCache();
+                  window.location.reload();
+              }
+          }}
+          class="bg-white border border-red-500 text-red-600 px-4 py-2 rounded hover:bg-red-50 transition"
+      >
+          Refresh Cached State
+      </button>
+  </div>
 </div>
