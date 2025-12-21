@@ -35,15 +35,22 @@ export function generateShopifyCSV(products: ShopifyProduct[]): string {
 }
 
 // Helper to map our Item to a base partial ShopifyProduct
-export function mapItemToProduct(item: Item, handle: string, title: string, body: string, imagePos: number): ShopifyProduct {
+export function mapItemToProduct(item: Item, imagePos: number): ShopifyProduct {
+  // Use persisted fields or defaults
+  // Handle: Required. If missing from item, caller must ensure it exists or we default? 
+  // Ideally, valid items for export have handles.
+  const handle = item.handle || "MISSING-HANDLE";
+  const title = item.description || "Untitled";
+  const body = item.bodyHtml || "";
+  
   return {
     Handle: handle,
     Title: title,
     "Body (HTML)": body,
     Vendor: "SPNSS Ltd.",
-    "Product Category": "", // User must fill
-    Type: "",
-    Tags: "",
+    "Product Category": item.productCategory || "", 
+    Type: item.productType || "",
+    Tags: item.tags || "",
     Published: "true",
     "Option1 Name": "Subtype",
     "Option1 Value": item.subtype || "Default",

@@ -14,6 +14,15 @@ export interface Item {
   timestamp: number;
   price?: number;
   weight?: number; // in grams
+  
+  // Shopify specific
+  handle?: string;
+  bodyHtml?: string;
+  productCategory?: string;
+  productType?: string;
+  tags?: string;
+  imagePosition?: number;
+  imageAltText?: string;
 }
 export interface LineItem {
   itemKey: string;
