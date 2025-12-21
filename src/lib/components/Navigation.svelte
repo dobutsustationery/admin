@@ -45,6 +45,7 @@
     { href: "/order-import", label: "Order Import", icon: Import },
     { href: "/photo-history", label: "Photo History", icon: Image },
     { href: "/photos", label: "Photos", icon: Camera },
+    { href: "/shopify-import", label: "Shopify Import", icon: Import },
     { href: "/shopify-products", label: "Shopify Products", icon: ShoppingBag },
     { href: "/shows", label: "Shows", icon: Tv },
     { href: "/sku-review", label: "SKU Review", icon: CheckSquare },
