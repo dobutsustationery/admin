@@ -43,3 +43,4 @@ static/test-images
 
 # output file from running svelte check
 check_output.txt
+check_errors.txt

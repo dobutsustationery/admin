@@ -9,7 +9,8 @@ export interface ImportItem {
   hsCode?: string;
   processed?: boolean;
   price?: number;
-  weight?: number;
+  weight?: number; // in grams
+  countryOfOrigin?: string;
 }
 
 export interface RawRow {
@@ -139,6 +140,7 @@ const initialState: OrderImportState = {
                         hsCode: findHSCode(parsedRow),
                         price: parsedRow['price'] ? parseFloat(parsedRow['price'].replace(/[^0-9.]/g, "")) : undefined,
                         weight: parsedRow['weight'] ? parseFloat(parsedRow['weight'].replace(/[^0-9.]/g, "")) : undefined,
+                        countryOfOrigin: parsedRow['country of origin'] || parsedRow['origin'] || parsedRow['country'] || undefined,
                      };
                  }
                  
