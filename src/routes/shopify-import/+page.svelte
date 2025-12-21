@@ -86,6 +86,8 @@
                             const { key, ...itemData } = item;
                             const newItem = { ...itemData, image: driveLink };
                             
+                            
+                            
                             broadcast(firestore, $user.uid, update_item({ 
                                 id: key, 
                                 item: newItem
@@ -174,12 +176,18 @@
       const newPrice = item.price;
       if (existPrice && newPrice && existPrice !== newPrice) conflicts.push('Price');
 
+      const shopifyToDriveMap = $store.inventory.shopifyUrlToDriveUrl || {};
+      
       if (!useShopifyImages) {
           const existImage = match.image;
           const newImage = item.image;
           // Conflict if both exist and are different
           if (existImage && newImage && existImage !== newImage) {
-              conflicts.push('Image');
+               // Check if newImage (Shopify) maps to existImage (Drive)
+               const mappedDriveUrl = shopifyToDriveMap[newImage];
+               if (mappedDriveUrl !== existImage) {
+                   conflicts.push('Image');
+               }
           }
       }
 
@@ -379,7 +387,12 @@
                   const prop = field === 'Description' ? 'description' :
                                field === 'Weight' ? 'weight' :
                                field === 'Price' ? 'price' :
-                               field === 'Image' ? 'image' : null;
+                               field === 'Image' ? 'image' : 
+                               field === 'Body (HTML)' ? 'bodyHtml' :
+                               field === 'Product Category' ? 'productCategory' :
+                               field === 'Image Position' ? 'imagePosition' :
+                               field === 'Image Alt Text' ? 'imageAltText' :
+                               field === 'Country of Origin' ? 'countryOfOrigin' : null;
                   
                   if (prop) {
                       const incoming = (currentConflictItem as any)[prop];
@@ -467,6 +480,13 @@
                 payloadItem.qty = (payloadItem.qty || 0) + item.qty; 
                 if (!payloadItem.weight && item.weight) payloadItem.weight = item.weight;
                 if (!payloadItem.price && item.price) payloadItem.price = item.price;
+                
+                if (!payloadItem.bodyHtml && item.bodyHtml) payloadItem.bodyHtml = item.bodyHtml;
+                if (!payloadItem.productCategory && item.productCategory) payloadItem.productCategory = item.productCategory;
+                if (!payloadItem.imagePosition && item.imagePosition) payloadItem.imagePosition = item.imagePosition;
+                if (!payloadItem.imageAltText && item.imageAltText) payloadItem.imageAltText = item.imageAltText;
+                if (!payloadItem.countryOfOrigin && item.countryOfOrigin) payloadItem.countryOfOrigin = item.countryOfOrigin;
+
                 if (useShopifyImages && imageUrl) {
                     payloadItem.image = imageUrl;
                 } else if (!payloadItem.image && imageUrl) {
@@ -489,7 +509,12 @@
                     price: item.price,
                     weight: item.weight,
                     image: imageUrl, // Shopify URL
-                    handle: item.handle
+                    handle: item.handle,
+                    bodyHtml: item.bodyHtml,
+                    productCategory: item.productCategory,
+                    imagePosition: item.imagePosition,
+                    imageAltText: item.imageAltText,
+                    countryOfOrigin: item.countryOfOrigin
                 };
                 bulkUpdates.push({ type: "new", id: newItemKey, item: newItem });
                 indicesToMarkDone.push(index);
