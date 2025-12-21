@@ -485,7 +485,6 @@
                 if (!payloadItem.productCategory && item.productCategory) payloadItem.productCategory = item.productCategory;
                 if (!payloadItem.imagePosition && item.imagePosition) payloadItem.imagePosition = item.imagePosition;
                 if (!payloadItem.imageAltText && item.imageAltText) payloadItem.imageAltText = item.imageAltText;
-                if (!payloadItem.countryOfOrigin && item.countryOfOrigin) payloadItem.countryOfOrigin = item.countryOfOrigin;
 
                 if (useShopifyImages && imageUrl) {
                     payloadItem.image = imageUrl;
@@ -513,8 +512,7 @@
                     bodyHtml: item.bodyHtml,
                     productCategory: item.productCategory,
                     imagePosition: item.imagePosition,
-                    imageAltText: item.imageAltText,
-                    countryOfOrigin: item.countryOfOrigin
+                    imageAltText: item.imageAltText
                 };
                 bulkUpdates.push({ type: "new", id: newItemKey, item: newItem });
                 indicesToMarkDone.push(index);

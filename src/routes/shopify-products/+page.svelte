@@ -548,7 +548,7 @@
                                 on:mousedown={(e) => handleCellMouseDown(i, 'countryOfOrigin', e)}
                             />
                         </td>
-                        
+
                          <!-- 9. Variant Inventory Qty -->
                         <td class="static-cell text-right pr-2">{item.qty}</td>
 
