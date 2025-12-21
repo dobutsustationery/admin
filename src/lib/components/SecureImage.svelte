@@ -23,8 +23,7 @@
     if (
         src.startsWith("data:") || 
         src.startsWith("blob:") || 
-        src.includes("drive.google.com") ||
-        src.includes("cdn.shopify.com")
+        !src.includes("googleusercontent.com")
     ) {
       objectUrl = src;
       loading = false;
