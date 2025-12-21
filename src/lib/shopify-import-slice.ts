@@ -16,9 +16,6 @@ export interface ShopifyImportItem {
   productCategory?: string;
   imagePosition?: number;
   imageAltText?: string;
-  countryOfOrigin?: string; // 'Variant Country of Origin' usually? Or inferred? 
-  // Standard Shopify export has 'Variant Country of Origin' or derived from 'Country of Origin'? 
-  // The user asked for "Country of Origin".
 }
 
 export interface RawRow {
@@ -122,8 +119,7 @@ const initialState: ShopifyImportState = {
                         bodyHtml: parsedRow['body (html)'] || "",
                         productCategory: parsedRow['product category'] || "",
                         imagePosition: parsedRow['image position'] ? parseInt(parsedRow['image position'], 10) : undefined,
-                        imageAltText: parsedRow['image alt text'] || "",
-                        countryOfOrigin: parsedRow['variant country of origin'] || "" // Assuming correct header
+                        imageAltText: parsedRow['image alt text'] || ""
                      };
                  }
                  
