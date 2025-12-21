@@ -14,7 +14,7 @@ export interface Item {
   timestamp: number;
   price?: number;
   weight?: number; // in grams
-  
+
   // Shopify specific
   handle?: string;
   bodyHtml?: string;
@@ -130,91 +130,117 @@ export function itemsLookIdentical(oldItem: Item, mergeItem: Item) {
 }
 
 // Helper to apply update logic
-function applyInventoryUpdate(state: InventoryState, id: string, item: Item, timestamp?: any) {
-    if (!id) {
-        console.error("[InventoryDebug] applyInventoryUpdate called with missing ID", item);
-        return;
-    }
-    if (!state) {
-        console.error("[InventoryDebug] applyInventoryUpdate called with missing state!");
-        return;
-    }
+function applyInventoryUpdate(
+  state: InventoryState,
+  id: string,
+  item: Item,
+  timestamp?: any,
+) {
+  if (!id) {
+    console.error(
+      "[InventoryDebug] applyInventoryUpdate called with missing ID",
+      item,
+    );
+    return;
+  }
+  if (!state) {
+    console.error(
+      "[InventoryDebug] applyInventoryUpdate called with missing state!",
+    );
+    return;
+  }
 
-    let creationDate = "Unknown";
-    let globalDate = "Unknown";
-    // We assume an action ALWAYS has a timestamp in this architecture.
-    // If not, we might crash or have 0, but user insists no legacy data.
-    // Defaulting to 0 if missing to make it obvious rather than non-deterministic Date.now()
-    let val = 0; 
+  id = id.trim();
 
-    if (timestamp) {
-      const tsDate = new Date(timestamp.seconds * 1000);
-      val = tsDate.getTime();
-      globalDate = tsDate.toLocaleString("en", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        });
-      creationDate = globalDate + ` (${item.qty})`;
-    }
-    
-    // Safety check for state shape (idToHistory)
-    if (!state.idToHistory) {
-        console.error("[InventoryDebug] state.idToHistory is MISSING. Initializing empty object.");
-        state.idToHistory = {};
-    }
+  let creationDate = "Unknown";
+  let globalDate = "Unknown";
+  // We assume an action ALWAYS has a timestamp in this architecture.
+  // If not, we might crash or have 0, but user insists no legacy data.
+  // Defaulting to 0 if missing to make it obvious rather than non-deterministic Date.now()
+  let val = 0;
 
-    if (!state.idToHistory[id]) {
-      state.idToHistory[id] = [];
-    } else if (!Array.isArray(state.idToHistory[id])) {
-       console.warn(`[InventoryDebug] state.idToHistory['${id}'] exists but is NOT an array! Type: ${typeof state.idToHistory[id]}. Resetting to [].`);
-       state.idToHistory[id] = [];
-    }
+  if (timestamp) {
+    const tsDate = new Date(timestamp.seconds * 1000);
+    val = tsDate.getTime();
+    globalDate = tsDate.toLocaleString("en", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+    creationDate = globalDate + ` (${item.qty})`;
+  }
 
-    const date = creationDate;
-    let qty = 0;
-    let shipped = 0;
-    
-    // Safety check for idToItem
-    if (!state.idToItem) {
-        console.error("[InventoryDebug] state.idToItem is MISSING. Initializing empty object.");
-        state.idToItem = {};
-    }
+  // Safety check for state shape (idToHistory)
+  if (!state.idToHistory) {
+    console.error(
+      "[InventoryDebug] state.idToHistory is MISSING. Initializing empty object.",
+    );
+    state.idToHistory = {};
+  }
 
-    if (state.idToItem[id] !== undefined) {
-      creationDate = state.idToItem[id].creationDate + ", " + creationDate;
-      qty = state.idToItem[id].qty;
-      shipped = state.idToItem[id].shipped || 0;
-    }
-    state.idToItem[id] = {
-      ...item,
-      janCode: item.janCode?.trim(),
-      subtype: item.subtype?.trim() || "",
-      creationDate,
-      qty: item.qty + qty,
-      shipped: (item.shipped || 0) + shipped,
-      timestamp: val,
-    };
-    if (state.idToItem[id].shipped === undefined) {
-      state.idToItem[id].shipped = 0;
-    }
-    
-    // Final check before push
-    if (!state.idToHistory[id]) {
-        console.error(`[InventoryDebug] CRITICAL: state.idToHistory['${id}'] is undefined immediately before push! This should be impossible.`);
-        state.idToHistory[id] = [];
-    }
+  if (!state.idToHistory[id]) {
+    state.idToHistory[id] = [];
+  } else if (!Array.isArray(state.idToHistory[id])) {
+    console.warn(
+      `[InventoryDebug] state.idToHistory['${id}'] exists but is NOT an array! Type: ${typeof state.idToHistory[id]}. Resetting to [].`,
+    );
+    state.idToHistory[id] = [];
+  }
 
-    try {
-        state.idToHistory[id].push({
-          date: globalDate,
-          desc: `${item.description}, +${item.qty} plus ${qty}; ${state.idToItem[id].shipped} shipped`,
-          val,
-        });
-    } catch (e) {
-        console.error(`[InventoryDebug] Exception pushing to history for ${id}:`, e);
-        console.log(`[InventoryDebug] Dump for ${id}:`, JSON.stringify(state.idToHistory[id]));
-    }
+  const date = creationDate;
+  let qty = 0;
+  let shipped = 0;
+
+  // Safety check for idToItem
+  if (!state.idToItem) {
+    console.error(
+      "[InventoryDebug] state.idToItem is MISSING. Initializing empty object.",
+    );
+    state.idToItem = {};
+  }
+
+  if (state.idToItem[id] !== undefined) {
+    creationDate = state.idToItem[id].creationDate + ", " + creationDate;
+    qty = state.idToItem[id].qty;
+    shipped = state.idToItem[id].shipped || 0;
+  }
+  state.idToItem[id] = {
+    ...item,
+    janCode: item.janCode?.trim(),
+    subtype: item.subtype?.trim() || "",
+    creationDate,
+    qty: item.qty + qty,
+    shipped: (item.shipped || 0) + shipped,
+    timestamp: val,
+  };
+  if (state.idToItem[id].shipped === undefined) {
+    state.idToItem[id].shipped = 0;
+  }
+
+  // Final check before push
+  if (!state.idToHistory[id]) {
+    console.error(
+      `[InventoryDebug] CRITICAL: state.idToHistory['${id}'] is undefined immediately before push! This should be impossible.`,
+    );
+    state.idToHistory[id] = [];
+  }
+
+  try {
+    state.idToHistory[id].push({
+      date: globalDate,
+      desc: `${item.description}, +${item.qty} plus ${qty}; ${state.idToItem[id].shipped} shipped`,
+      val,
+    });
+  } catch (e) {
+    console.error(
+      `[InventoryDebug] Exception pushing to history for ${id}:`,
+      e,
+    );
+    console.log(
+      `[InventoryDebug] Dump for ${id}:`,
+      JSON.stringify(state.idToHistory[id]),
+    );
+  }
 }
 
 export const initialState: InventoryState = {
@@ -233,7 +259,12 @@ export const inventory = createReducer(initialState, (r) => {
     state.initialized = true;
   });
   r.addCase(update_item, (state, action) => {
-    applyInventoryUpdate(state, action.payload.id, action.payload.item, (action as any).timestamp);
+    applyInventoryUpdate(
+      state,
+      action.payload.id,
+      action.payload.item,
+      (action as any).timestamp,
+    );
   });
   r.addCase(update_field, (state, action) => {
     if (state.idToItem[action.payload.id]) {
@@ -313,7 +344,9 @@ export const inventory = createReducer(initialState, (r) => {
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty;
       if (!state.idToHistory[itemKey]) {
-        console.warn(`[InventoryDebug] package_item: idToHistory missing for ${itemKey}. Initializing empty.`);
+        console.warn(
+          `[InventoryDebug] package_item: idToHistory missing for ${itemKey}. Initializing empty.`,
+        );
         state.idToHistory[itemKey] = [];
       }
       state.idToHistory[itemKey].push({
@@ -342,8 +375,10 @@ export const inventory = createReducer(initialState, (r) => {
       if (qty > 0) {
         existingItem[0].qty = qty;
         if (!state.idToHistory[itemKey]) {
-            console.warn(`[InventoryDebug] quantify_item: idToHistory missing for ${itemKey}. Initializing empty.`);
-            state.idToHistory[itemKey] = [];
+          console.warn(
+            `[InventoryDebug] quantify_item: idToHistory missing for ${itemKey}. Initializing empty.`,
+          );
+          state.idToHistory[itemKey] = [];
         }
         state.idToHistory[itemKey].push({
           date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
@@ -365,8 +400,10 @@ export const inventory = createReducer(initialState, (r) => {
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty - priorQty;
       if (!state.idToHistory[itemKey]) {
-          console.warn(`[InventoryDebug] quantify_item (shipped update): idToHistory missing for ${itemKey}. Initializing empty.`);
-          state.idToHistory[itemKey] = [];
+        console.warn(
+          `[InventoryDebug] quantify_item (shipped update): idToHistory missing for ${itemKey}. Initializing empty.`,
+        );
+        state.idToHistory[itemKey] = [];
       }
       state.idToHistory[itemKey].push({
         date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
@@ -383,7 +420,7 @@ export const inventory = createReducer(initialState, (r) => {
     const { itemKey, orderID, qty } = action.payload;
     const janCode = action.payload.janCode?.trim();
     const subtype = action.payload.subtype?.trim() || "";
-    
+
     if (state.orderIdToOrder[orderID] === undefined) {
       const date = new Date(0);
       state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
@@ -412,8 +449,10 @@ export const inventory = createReducer(initialState, (r) => {
       state.idToItem[newItemKey].shipped += qty;
     }
     if (!state.idToHistory[itemKey]) {
-        console.warn(`[InventoryDebug] retype_item (old key): idToHistory missing for ${itemKey}. Initializing empty.`);
-        state.idToHistory[itemKey] = [];
+      console.warn(
+        `[InventoryDebug] retype_item (old key): idToHistory missing for ${itemKey}. Initializing empty.`,
+      );
+      state.idToHistory[itemKey] = [];
     }
     state.idToHistory[itemKey].push({
       date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
@@ -421,11 +460,13 @@ export const inventory = createReducer(initialState, (r) => {
         month: "short",
         day: "numeric",
       }),
-      desc: `Retyped from ${itemKey} to ${newItemKey} for ${orderID} (qty: ${state.idToItem[newItemKey]?.qty || '?'})`,
+      desc: `Retyped from ${itemKey} to ${newItemKey} for ${orderID} (qty: ${state.idToItem[newItemKey]?.qty || "?"})`,
       val: state.orderIdToOrder[orderID].date.getTime(),
     });
     if (!state.idToHistory[newItemKey]) {
-      console.warn(`[InventoryDebug] retype_item (new key): idToHistory missing for ${newItemKey}. Initializing empty.`);
+      console.warn(
+        `[InventoryDebug] retype_item (new key): idToHistory missing for ${newItemKey}. Initializing empty.`,
+      );
       state.idToHistory[newItemKey] = [];
     }
     state.idToHistory[newItemKey].push({
@@ -434,28 +475,29 @@ export const inventory = createReducer(initialState, (r) => {
         month: "short",
         day: "numeric",
       }),
-      desc: `Retyped from ${itemKey} to ${newItemKey} for ${orderID} (qty: ${state.idToItem[newItemKey]?.qty || '?'})`,
+      desc: `Retyped from ${itemKey} to ${newItemKey} for ${orderID} (qty: ${state.idToItem[newItemKey]?.qty || "?"})`,
       val: state.orderIdToOrder[orderID].date.getTime(),
     });
   });
   r.addCase(rename_subtype, (state, action) => {
     const { itemKey } = action.payload;
     const subtype = action.payload.subtype?.trim() || "";
-    
+
     if (state.idToItem[itemKey] !== undefined) {
       const mergeItemKey = `${state.idToItem[itemKey].janCode}${subtype}`;
       if (itemKey === mergeItemKey) {
-          
-          // Use action's timestamp for the event record.
-          // Note: "rename_subtype" action payload doesn't seem to have a timestamp in the interface
-          // but Firestore middleware attaches it. We need to grab it.
-          const ts = (action as any).timestamp;
-          const val = state.idToItem[itemKey].timestamp || (ts ? new Date(ts.seconds * 1000).getTime() : 0);
+        // Use action's timestamp for the event record.
+        // Note: "rename_subtype" action payload doesn't seem to have a timestamp in the interface
+        // but Firestore middleware attaches it. We need to grab it.
+        const ts = (action as any).timestamp;
+        const val =
+          state.idToItem[itemKey].timestamp ||
+          (ts ? new Date(ts.seconds * 1000).getTime() : 0);
 
-          state.idToHistory[itemKey].push({
+        state.idToHistory[itemKey].push({
           date: state.idToItem[itemKey].creationDate,
           desc: `Retype ignored from ${itemKey} to ${mergeItemKey}`,
-          val, 
+          val,
         });
         return state;
       }
@@ -483,24 +525,27 @@ export const inventory = createReducer(initialState, (r) => {
           existingItem[i].itemKey = mergeItemKey;
         }
       }
-      
+
       // Merge history: Copy old history to new key
       const oldHistory = state.idToHistory[itemKey] || [];
       if (!state.idToHistory[mergeItemKey]) {
-           state.idToHistory[mergeItemKey] = [];
+        state.idToHistory[mergeItemKey] = [];
       }
-      
-      const prefixedOldHistory = oldHistory.map(h => ({
-          ...h,
-          desc: `[${itemKey}] ${h.desc}`
+
+      const prefixedOldHistory = oldHistory.map((h) => ({
+        ...h,
+        desc: `[${itemKey}] ${h.desc}`,
       }));
-      
+
       // Combine and sort by date using 'val' timestamp
-      const combined = [...state.idToHistory[mergeItemKey], ...prefixedOldHistory];
+      const combined = [
+        ...state.idToHistory[mergeItemKey],
+        ...prefixedOldHistory,
+      ];
       combined.sort((a, b) => {
-          return (a.val || 0) - (b.val || 0);
+        return (a.val || 0) - (b.val || 0);
       });
-      
+
       // Reassign the sorted history (Redux Toolkit allows mutation or reassignment)
       state.idToHistory[mergeItemKey] = combined;
 
@@ -508,20 +553,24 @@ export const inventory = createReducer(initialState, (r) => {
       state.idToItem[itemKey].shipped = 0;
       state.idToItem[itemKey].qty = 0;
       if (!state.idToHistory[itemKey]) {
-        console.warn(`[InventoryDebug] rename_subtype (old key): idToHistory missing for ${itemKey}. Initializing empty.`);
+        console.warn(
+          `[InventoryDebug] rename_subtype (old key): idToHistory missing for ${itemKey}. Initializing empty.`,
+        );
         state.idToHistory[itemKey] = [];
       }
-      
+
       const ts = (action as any).timestamp;
       // Use the item's timestamp to match its creationDate string, if available
-      const val = state.idToItem[itemKey].timestamp || (ts ? new Date(ts.seconds * 1000).getTime() : 0);
-      
+      const val =
+        state.idToItem[itemKey].timestamp ||
+        (ts ? new Date(ts.seconds * 1000).getTime() : 0);
+
       state.idToHistory[itemKey].push({
         date: state.idToItem[itemKey].creationDate,
         desc: `Retyped from ${itemKey} to ${mergeItemKey} (qty: ${state.idToItem[mergeItemKey].qty})`,
         val,
       });
-      
+
       state.idToHistory[mergeItemKey].push({
         date: state.idToItem[itemKey].creationDate,
         desc: `Retyped from ${itemKey} to ${mergeItemKey}`,
@@ -542,15 +591,15 @@ export const inventory = createReducer(initialState, (r) => {
     const archiveName = action.payload.archiveName;
     // Prevent circular reference by picking only relevant state
     const archive = (state.archivedInventoryState[archiveName] = {
-        idToItem: { ...state.idToItem },
-        idToHistory: { ...state.idToHistory },
-        orderIdToOrder: { ...state.orderIdToOrder },
-        salesEvents: { ...state.salesEvents },
-        archivedInventoryDate: { ...state.archivedInventoryDate },
-        // Do NOT include archivedInventoryState or hiddenInventoryState to avoid recursion
-        archivedInventoryState: {},
-        hiddenInventoryState: {},
-        initialized: state.initialized
+      idToItem: { ...state.idToItem },
+      idToHistory: { ...state.idToHistory },
+      orderIdToOrder: { ...state.orderIdToOrder },
+      salesEvents: { ...state.salesEvents },
+      archivedInventoryDate: { ...state.archivedInventoryDate },
+      // Do NOT include archivedInventoryState or hiddenInventoryState to avoid recursion
+      archivedInventoryState: {},
+      hiddenInventoryState: {},
+      initialized: state.initialized,
     });
     const timestamp = (action as any).timestamp;
     let creationDate = "Unknown";
@@ -634,13 +683,13 @@ export const inventory = createReducer(initialState, (r) => {
       date,
     };
   });
-  
+
   r.addCase(bulk_import_items, (state, action) => {
-      const updates = action.payload.items;
-      const timestamp = (action as any).timestamp;
-      
-      updates.forEach(update => {
-          applyInventoryUpdate(state, update.id, update.item, timestamp);
-      });
+    const updates = action.payload.items;
+    const timestamp = (action as any).timestamp;
+
+    updates.forEach((update) => {
+      applyInventoryUpdate(state, update.id, update.item, timestamp);
+    });
   });
 });

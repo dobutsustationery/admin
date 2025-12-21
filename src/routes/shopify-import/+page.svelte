@@ -42,8 +42,10 @@
 
   // --- UI Options ---
   let useShopifyDescription = false;
+  let useShopifyImages = false;
 
   // --- Migration Logic ---
+  // Only migrate actual Shopify CDN links
   $: pendingMigrations = Object.entries($store.inventory.idToItem)
       .filter(([_, i]) => (i as Item).image && (i as Item).image.includes("cdn.shopify.com"))
       .map(([k, i]) => ({ ...(i as Item), key: k }));
@@ -109,8 +111,9 @@
       existingItem?: any;
       actionLabel: string;
       resolvedActions?: any[];
-      conflictType?: "DATA_MISMATCH";
+      conflictType?: "DATA_MISMATCH" | "MULTIPLE_MATCHES";
       conflictingFields?: string[];
+      matchingKeys?: string[];
       originalIndex: number;
   }
 
@@ -144,75 +147,59 @@
 
       const JAN = item.janCode; 
       
-      const inventoryMatches = Object.entries($store.inventory.idToItem)
-          .filter(([k, i]: [string, any]) => {
-              // Standard JAN match
-              if (i.janCode === JAN) return true;
-              // Subtype composite match (e.g. JAN + Subtype === IncomingJAN)
-              if ((i.janCode + (i.subtype || '')) === JAN) return true;
-              // Key match (fallback if key differs from jan/subtype composition)
-              if (k === JAN) return true;
-              return false;
-          })
-          .map(([k, i]: [string, any]) => ({ ...i, key: k }));
+      const existing = $store.inventory.idToItem[JAN];
+      const inventoryMatches = existing ? [{ ...existing, key: JAN }] : [];
 
       if (inventoryMatches.length === 0) {
           return { ...item, status: "NEW", actionLabel: "Create", originalIndex: index } as AnalyzedItem;
       }
       
-      if (inventoryMatches.length === 1) {
-          const existing = inventoryMatches[0] as any;
-          const conflicts: string[] = [];
-          
-          if (!useShopifyDescription) {
-             const existDesc = existing.description || "";
-             const newDesc = item.description || "";
-             // Simple logic: if new has content and is different from existing (which might be empty or different)
-             // Actually, if existing is empty, we auto-fill, no conflict?
-             // "update blank... conflicts resolution flow" implies conflict if existing is NON-BLANK and differs.
-             if (existDesc.trim() !== "" && newDesc.trim() !== "" && existDesc.trim() !== newDesc.trim()) {
-                 conflicts.push('Description');
-             }
-          }
-
-          const existWeight = existing.weight;
-          const newWeight = item.weight;
-          if (existWeight && newWeight && existWeight !== newWeight) conflicts.push('Weight');
-          
-          const existPrice = existing.price;
-          const newPrice = item.price;
-          if (existPrice && newPrice && existPrice !== newPrice) conflicts.push('Price');
-
-          if (conflicts.length > 0) {
-               return {
-                  ...item,
-                  status: "CONFLICT",
-                  conflictType: "DATA_MISMATCH",
-                  conflictingFields: conflicts,
-                  existingItem: existing,
-                  actionLabel: "Resolve Conflict",
-                  originalIndex: index
-               } as AnalyzedItem;
-          }
-
-          return { 
-              ...item, 
-              status: "MATCH", 
-              existingItem: existing, 
-              actionLabel: "Sync",
-              originalIndex: index
-          } as AnalyzedItem;
-      }
+      // Strict match implies length is 1. O(1) lookup.
+      const match = inventoryMatches[0] as any;
+      const conflicts: string[] = [];
       
-      return {
-          ...item,
-          status: "CONFLICT", 
-          conflictType: "DATA_MISMATCH", // Treat ambiguous match as conflict? No, standard logic is SUBTYPE conflict.
-          // For functionality, let's treat it as generic conflict for now or mismatch
-          // But 'shopify-products' doesn't have subtypes usually?
-          // If duplicate JAN in inventory, it's a data issue.
-          existingItem: inventoryMatches[0], 
-          actionLabel: "Resolve",
+      if (!useShopifyDescription) {
+          const existDesc = match.description || "";
+          const newDesc = item.description || "";
+          if (existDesc.trim() !== "" && newDesc.trim() !== "" && existDesc.trim() !== newDesc.trim()) {
+              conflicts.push('Description');
+          }
+      }
+
+      const existWeight = match.weight;
+      const newWeight = item.weight;
+      if (existWeight && newWeight && existWeight !== newWeight) conflicts.push('Weight');
+      
+      const existPrice = match.price;
+      const newPrice = item.price;
+      if (existPrice && newPrice && existPrice !== newPrice) conflicts.push('Price');
+
+      if (!useShopifyImages) {
+          const existImage = match.image;
+          const newImage = item.image;
+          // Conflict if both exist and are different
+          if (existImage && newImage && existImage !== newImage) {
+              conflicts.push('Image');
+          }
+      }
+
+      if (conflicts.length > 0) {
+            return {
+              ...item,
+              status: "CONFLICT",
+              conflictType: "DATA_MISMATCH",
+              conflictingFields: conflicts,
+              existingItem: match,
+              actionLabel: "Resolve Conflict",
+              originalIndex: index
+            } as AnalyzedItem;
+      }
+
+      return { 
+          ...item, 
+          status: "MATCH", 
+          existingItem: match, 
+          actionLabel: "Sync",
           originalIndex: index
       } as AnalyzedItem;
   });
@@ -243,9 +230,10 @@
   let analysisStatus: "idle" | "analyzing" = "idle";
   
   let showConflictModal = false;
-  let conflictIndex: number = -1;
-  let currentConflictItem: AnalyzedItem | null = null;
-  let fieldResolutions: { [fieldLabel: string]: "incoming" | "existing" } = {};
+  let currentConflictItem: any = null;
+  let currentConflictIndex = -1;
+  let fieldResolutions: Record<string, string> = {};
+  let hoveredImage: string | null = null;
 
   $: matchCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "MATCH").length;
   $: newCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "NEW").length;
@@ -353,21 +341,30 @@
 
   // --- Conflict Modal ---
   function openConflictModal(item: AnalyzedItem, index: number) {
-    console.log("Opening Conflict Modal for", item.janCode, index);
-    currentConflictItem = item;
-    conflictIndex = index;
-    fieldResolutions = {};
-    if (item.conflictingFields) {
-        item.conflictingFields.forEach(f => fieldResolutions[f] = 'incoming');
-    }
-    showConflictModal = true;
+      currentConflictItem = item;
+      currentConflictIndex = index;
+      fieldResolutions = {};
+      
+      if (item.conflictingFields) {
+          // Default to Incoming? Or Existing?
+          // Previous code defaulted to incoming.
+          item.conflictingFields.forEach((f: string) => fieldResolutions[f] = 'incoming');
+      }
+      showConflictModal = true;
   }
 
-  function closeConflictModal() { showConflictModal = false; currentConflictItem = null; conflictIndex = -1; }
+  function closeConflictModal() { showConflictModal = false; currentConflictItem = null; currentConflictIndex = -1; }
 
   function confirmConflictResolution() {
       if (!currentConflictItem) return;
       
+      // We need to construct a payload for 'update_item' or similar.
+      // Actually 'resolve_conflict' action in slice handles applying to state?
+      // No, checking inventory.ts... 'resolve_conflict' is not a standard action there.
+      // Wait, 'shopify-import-slice.ts' has 'resolve_conflict'? 
+      // Or do we emit updates?
+      // Step 292 implemented 'resolve_conflict'. Let's check imports.
+      // But assuming 'resolve_conflict' exists.
       const itemKey = currentConflictItem.existingItem?.key;
       const resolvedActions: any[] = [];
       
@@ -377,11 +374,12 @@
           // Similar to order-import, this implies valid reconciliation of counts.
           
           if (currentConflictItem.conflictingFields) {
-              currentConflictItem.conflictingFields.forEach(field => {
+              currentConflictItem.conflictingFields.forEach((field: string) => {
                   const choice = fieldResolutions[field];
                   const prop = field === 'Description' ? 'description' :
                                field === 'Weight' ? 'weight' :
-                               field === 'Price' ? 'price' : null;
+                               field === 'Price' ? 'price' :
+                               field === 'Image' ? 'image' : null;
                   
                   if (prop) {
                       const incoming = (currentConflictItem as any)[prop];
@@ -390,11 +388,17 @@
                   }
               });
           }
+          
+          // Also apply non-conflicting image if existing is missing
+          if (!currentConflictItem.existingItem.image && currentConflictItem.image) {
+              payload.image = currentConflictItem.image;
+          }
+
           resolvedActions.push({ type: "update_item", payload });
       }
 
       if ($user && $user.uid) {
-          broadcast(firestore, $user.uid, resolve_conflict({ index: conflictIndex, resolvedActions }));
+          broadcast(firestore, $user.uid, resolve_conflict({ index: currentConflictIndex, resolvedActions }));
       }
       closeConflictModal();
   }
@@ -446,19 +450,7 @@
             // Let's adopt the logic: If item.image is present, use it.
             // We do NOT block on upload here.
             
-            let imageUrl = "";
-            if (item.image) {
-                const needsImage = item.status === "NEW" || (item.status === "MATCH" && !item.existingItem?.image);
-                // What if we want to overwrite existing? 
-                // Currently "Accept Shopify Description" logic doesn't explicitly mention images.
-                // But generally users want consistent data.
-                // Let's stick to "fill if missing" or "NEW".
-                // If the user wants to force update images, that's complex without a toggle.
-                // For now, let's stick to the previous logic: "needsImage"
-                if (needsImage) {
-                    imageUrl = item.image; // Use Shopify URL directly
-                }
-            }
+            let imageUrl = item.image || "";
 
             if (item.status === "MATCH" && item.existingItem) {
                 const itemKey = item.existingItem.key;
@@ -475,7 +467,11 @@
                 payloadItem.qty = (payloadItem.qty || 0) + item.qty; 
                 if (!payloadItem.weight && item.weight) payloadItem.weight = item.weight;
                 if (!payloadItem.price && item.price) payloadItem.price = item.price;
-                if (!payloadItem.image && imageUrl) payloadItem.image = imageUrl;
+                if (useShopifyImages && imageUrl) {
+                    payloadItem.image = imageUrl;
+                } else if (!payloadItem.image && imageUrl) {
+                    payloadItem.image = imageUrl;
+                }
 
                 bulkUpdates.push({ type: "update", id: itemKey, item: payloadItem });
                 indicesToMarkDone.push(index);
@@ -659,10 +655,14 @@
                                
                                <!-- Description Toggle -->
                                <div class="mb-4 p-4 bg-gray-50 rounded border border-gray-200">
-                                   <label class="flex items-center gap-2 cursor-pointer">
-                                       <input type="checkbox" bind:checked={useShopifyDescription} />
-                                       <span class="font-medium">Accept Shopify Description</span>
-                                   </label>
+                                   <label class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border">
+                               <input type="checkbox" bind:checked={useShopifyDescription}>
+                               Accept Shopify Descriptions
+                           </label>
+                           <label class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border">
+                               <input type="checkbox" bind:checked={useShopifyImages}>
+                               Accept Shopify Images
+                           </label>
                                    <p class="text-xs text-muted mt-1">If checked, existing descriptions will be overwritten.</p>
                                </div>
 
@@ -732,7 +732,18 @@
              <h3>Resolve Conflict</h3>
              <p>JAN: <strong>{currentConflictItem.janCode}</strong></p>
              
-             {#if currentConflictItem.conflictingFields}
+             {#if currentConflictItem.conflictType === 'MULTIPLE_MATCHES'}
+                <div class="message error mb-4">
+                    <p class="font-bold">Multiple Matches Found</p>
+                    <p class="text-sm">This product matches multiple items in your inventory. This indicates a data integrity issue (duplicate JAN codes).</p>
+                    {#if currentConflictItem.matchingKeys}
+                        <p class="text-xs font-mono mt-2 p-2 bg-red-100 rounded">
+                            Matches: {currentConflictItem.matchingKeys.join(', ')}
+                        </p>
+                    {/if}
+                    <p class="text-sm mt-2">Please fix the inventory data manually in the Admin Console or select one to sync (not yet supported in UI).</p>
+                </div>
+             {:else if currentConflictItem.conflictingFields}
                   {#each currentConflictItem.conflictingFields as field}
                       <div class="conflict-group">
                            <p class="font-bold mb-2">{field}</p>
@@ -741,7 +752,20 @@
                                    <input type="radio" value="incoming" bind:group={fieldResolutions[field]} />
                                    <div class="radio-content">
                                        <span class="text-sm">Shopify: 
-                                          <strong>{getIncomingValue(field)}</strong>
+                                          {#if field === 'Image'}
+                                              <div class="conflict-thumb-wrapper"
+                                                   on:mouseenter={() => hoveredImage = getIncomingValue(field)}
+                                                   on:mouseleave={() => hoveredImage = null}>
+                                                  <img src={getIncomingValue(field)} 
+                                                       alt="Incoming" 
+                                                       class="conflict-thumb"/>
+                                              </div>
+                                              <span class="conflict-url" title={getIncomingValue(field)}>
+                                                  {getIncomingValue(field)}
+                                              </span>
+                                          {:else}
+                                              <strong>{getIncomingValue(field)}</strong>
+                                          {/if}
                                        </span>
                                    </div>
                                </label>
@@ -749,7 +773,20 @@
                                    <input type="radio" value="existing" bind:group={fieldResolutions[field]} />
                                    <div class="radio-content">
                                        <span class="text-sm">Existing: 
-                                          <strong>{getExistingValue(field)}</strong>
+                                          {#if field === 'Image'}
+                                              <div class="conflict-thumb-wrapper"
+                                                   on:mouseenter={() => hoveredImage = getExistingValue(field)}
+                                                   on:mouseleave={() => hoveredImage = null}>
+                                                  <img src={getExistingValue(field)} 
+                                                       alt="Existing" 
+                                                       class="conflict-thumb"/>
+                                              </div>
+                                              <span class="conflict-url" title={getExistingValue(field)}>
+                                                  {getExistingValue(field)}
+                                              </span>
+                                          {:else}
+                                              <strong>{getExistingValue(field)}</strong>
+                                          {/if}
                                        </span>
                                    </div>
                                </label>
@@ -766,6 +803,13 @@
     </div>
   {/if}
 </div>
+
+   <!-- Image Hover Overlay -->
+   {#if hoveredImage}
+       <div class="hover-overlay">
+           <img src={hoveredImage} alt="Zoomed" />
+       </div>
+   {/if}
 
 <style>
   .import-page { padding: 2rem; }
@@ -800,4 +844,48 @@
   .text-muted { color: #9ca3af; }
   .text-success { color: #166534; font-weight: 500; }
   .conflict-group { margin-bottom: 1rem; }
+  
+  .conflict-thumb-wrapper {
+      position: relative;
+      display: inline-block;
+  }
+  .conflict-thumb {
+      width: 64px;
+      height: 64px;
+      object-fit: cover;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-top: 0.25rem;
+      cursor: zoom-in;
+  }
+  .conflict-url {
+      font-size: 0.75rem;
+      color: #6b7280;
+      display: block;
+      max-width: 200px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+  }
+  
+  .hover-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(0, 0, 0, 0.5);
+  }
+  .hover-overlay img {
+      max-width: 80vw;
+      max-height: 80vh;
+      border: 4px solid white;
+      border-radius: 4px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  }
 </style>
