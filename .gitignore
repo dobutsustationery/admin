@@ -40,3 +40,6 @@ firestore-debug.log
 ui-debug.log
 # Keep static/test-images symlink out of git (it's created at test time)
 static/test-images
+
+# output file from running svelte check
+check_output.txt
