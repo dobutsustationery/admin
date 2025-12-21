@@ -43,13 +43,14 @@
   // We re-compute the "Plan" view dynamically based on current Inventory
   // This replaces the static "status" field in ImportItem
   
-  interface AnalyzedItem extends ImportItem {
+interface AnalyzedItem extends ImportItem {
       status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE";
       existingItem?: any;
       subtypes?: any[];
       actionLabel: string;
       resolvedActions?: any[];
-      conflictType?: "HS_MISMATCH" | "SUBTYPES";
+      conflictType?: "DATA_MISMATCH" | "SUBTYPES";
+      conflictingFields?: string[];
       originalIndex: number; // For keying in #each
   }
 
@@ -123,17 +124,28 @@
       if (inventoryMatches.length === 1) {
           // One match. Is it a simple item or one subtype? 
           // If it matches perfectly?
-          // Check for HS Code Mismatch
+          // Check for Data Mismatches (HS, Weight, COO)
           const existingHS = (inventoryMatches[0] as any).hsCode;
           const newHS = item.hsCode;
+          const existingWeight = (inventoryMatches[0] as any).weight;
+          const newWeight = item.weight;
+          const existingCOO = (inventoryMatches[0] as any).countryOfOrigin;
+          const newCOO = item.countryOfOrigin;
+
+          const conflicts: string[] = [];
           
-          if (existingHS && newHS && existingHS !== newHS) {
+          if (existingHS && newHS && existingHS !== newHS) conflicts.push('HS Code');
+          if (existingWeight && newWeight && existingWeight !== newWeight) conflicts.push('Weight');
+          if (existingCOO && newCOO && existingCOO !== newCOO) conflicts.push('Country of Origin');
+          
+          if (conflicts.length > 0) {
                return {
                   ...item,
                   status: "CONFLICT",
-                  conflictType: "HS_MISMATCH",
+                  conflictType: "DATA_MISMATCH",
+                  conflictingFields: conflicts,
                   existingItem: inventoryMatches[0],
-                  actionLabel: "Resolve HS",
+                  actionLabel: "Resolve Conflict",
                   originalIndex: index
                } as AnalyzedItem;
           }
@@ -201,7 +213,7 @@
   let conflictIndex: number = -1;
   let currentConflictItem: AnalyzedItem | null = null;
   let splitAllocations: { [subtypePath: string]: number } = {};
-  let selectedHSResolution: "incoming" | "existing" = "incoming";
+  let fieldResolutions: { [fieldLabel: string]: "incoming" | "existing" } = {};
   let splitError = "";
 
   // Resolution State
@@ -367,7 +379,13 @@
     currentConflictItem = item;
     conflictIndex = index;
     splitAllocations = {};
-    selectedHSResolution = "incoming"; // Default to incoming
+    // Reset field resolutions map
+    fieldResolutions = {}; 
+    
+    // Default to 'incoming' for all detected conflicts
+    if (item.conflictingFields) {
+        item.conflictingFields.forEach(f => fieldResolutions[f] = 'incoming');
+    }
 
     if (item.subtypes && item.subtypes.length > 0) {
       const totalQty = item.qty;
@@ -416,8 +434,8 @@
   function confirmSplit() {
     if (!currentConflictItem) return;
 
-    // Validate Total (Only if NOT HS_MISMATCH)
-    if (currentConflictItem.conflictType !== "HS_MISMATCH") {
+    // Validate Total (Only if NOT DATA_MISMATCH)
+    if (currentConflictItem.conflictType !== "DATA_MISMATCH") {
         const totalAllocated = Object.values(splitAllocations).reduce(
           (a, b) => a + b,
           0,
@@ -431,19 +449,45 @@
     // Apply Resolution via Redux
     let resolvedActions: any[] = [];
     
-    if (currentConflictItem.conflictType === "HS_MISMATCH") {
-        // Validation not really needed for radio choice, but ensuring key exists
-         const itemKey = currentConflictItem.existingItem?.key;
-         if (itemKey) {
-             resolvedActions.push({
-                 type: "update_item",
-                 payload: {
-                     itemKey: itemKey,
-                     qty: currentConflictItem.qty,
-                     hsCode: selectedHSResolution === "incoming" ? currentConflictItem.hsCode : currentConflictItem.existingItem.hsCode
-                 }
-             });
-         }
+    if (currentConflictItem.conflictType === "DATA_MISMATCH") {
+          const itemKey = currentConflictItem.existingItem?.key;
+          if (itemKey) {
+              // Construct update payload based on decisions
+              const payload: any = {
+                  itemKey: itemKey,
+                  qty: currentConflictItem.qty
+              };
+              
+              // Apply decisions for each conflicting field
+              if (currentConflictItem.conflictingFields) {
+                  currentConflictItem.conflictingFields.forEach(field => {
+                      const choice = fieldResolutions[field]; // 'incoming' or 'existing'
+                      const incomingVal = field === 'HS Code' ? currentConflictItem?.hsCode :
+                                          field === 'Weight' ? currentConflictItem?.weight :
+                                          field === 'Country of Origin' ? currentConflictItem?.countryOfOrigin : undefined;
+                                          
+                      const existingVal = field === 'HS Code' ? currentConflictItem?.existingItem.hsCode :
+                                          field === 'Weight' ? currentConflictItem?.existingItem.weight :
+                                          field === 'Country of Origin' ? currentConflictItem?.existingItem.countryOfOrigin : undefined;
+
+                      const finalVal = choice === 'incoming' ? incomingVal : existingVal;
+                      
+                      // Map back to Item property names
+                      const prop = field === 'HS Code' ? 'hsCode' :
+                                   field === 'Weight' ? 'weight' :
+                                   field === 'Country of Origin' ? 'countryOfOrigin' : null;
+                                   
+                      if (prop) {
+                          payload[prop] = finalVal;
+                      }
+                  });
+              }
+
+              resolvedActions.push({
+                  type: "update_item",
+                  payload
+              });
+          }
     } else {
         // Subtype split logic
         resolvedActions = Object.entries(splitAllocations)
@@ -509,6 +553,7 @@
             // Update price/weight if provided in CSV
             if (item.price !== undefined) payloadItem.price = item.price;
             if (item.weight !== undefined) payloadItem.weight = item.weight;
+            if (item.countryOfOrigin !== undefined) payloadItem.countryOfOrigin = item.countryOfOrigin;
             
             bulkUpdates.push({
                 type: "update",
@@ -531,6 +576,7 @@
             creationDate: new Date().toISOString(),
             price: item.price,
             weight: item.weight,
+            countryOfOrigin: item.countryOfOrigin,
           };
           
           // Reuse update_item logic (it handles new creation if ID missing? 
@@ -607,7 +653,9 @@
               const payloadItem = {
                 ...currentInvItem,
                 qty: action.payload.qty, // Delta
-                hsCode: action.payload.hsCode !== undefined ? action.payload.hsCode : currentInvItem.hsCode
+                hsCode: action.payload.hsCode !== undefined ? action.payload.hsCode : currentInvItem.hsCode,
+                weight: action.payload.weight !== undefined ? action.payload.weight : currentInvItem.weight,
+                countryOfOrigin: action.payload.countryOfOrigin !== undefined ? action.payload.countryOfOrigin : currentInvItem.countryOfOrigin
               };
               
               bulkUpdates.push({
@@ -856,23 +904,50 @@
         <p>Total Qty from CSV: <strong>{currentConflictItem.qty}</strong></p>
 
         <div class="split-list">
-          {#if currentConflictItem.conflictType === "HS_MISMATCH"}
+          {#if currentConflictItem.conflictType === "DATA_MISMATCH"}
              <div class="hs-resolution">
-                 <p>HS Code Mismatch:</p>
-                 <label class="radio-label">
-                     <input type="radio" bind:group={selectedHSResolution} value="incoming" />
-                     <div class="radio-content">
-                        <span>Use Incoming: <strong>{currentConflictItem.hsCode || "Blank"}</strong></span>
-                        <span class="hs-desc">{HS_CODE_DESCRIPTIONS[currentConflictItem.hsCode || ""] || "Unknown"}</span>
+                 <p class="font-bold mb-2">Resolve Data Mismatches:</p>
+                 
+                 {#each (currentConflictItem.conflictingFields || []) as field}
+                     <div class="mb-4">
+                         <p class="text-sm font-semibold mb-1">{field}</p>
+                         <div class="flex flex-col gap-2">
+                             <!-- Incoming Option -->
+                             <label class="radio-label">
+                                 <input type="radio" bind:group={fieldResolutions[field]} value="incoming" />
+                                 <div class="radio-content">
+                                    <span class="text-sm">Use Incoming: 
+                                        <strong>
+                                            {field === 'HS Code' ? (currentConflictItem.hsCode || "Blank") :
+                                             field === 'Weight' ? (currentConflictItem.weight || "0") :
+                                             field === 'Country of Origin' ? (currentConflictItem.countryOfOrigin || "Blank") : ""}
+                                        </strong>
+                                    </span>
+                                    {#if field === 'HS Code'}
+                                        <span class="hs-desc">{HS_CODE_DESCRIPTIONS[currentConflictItem.hsCode || ""] || ""}</span>
+                                    {/if}
+                                 </div>
+                             </label>
+                             
+                             <!-- Existing Option -->
+                             <label class="radio-label">
+                                 <input type="radio" bind:group={fieldResolutions[field]} value="existing" />
+                                 <div class="radio-content">
+                                    <span class="text-sm">Keep Existing: 
+                                        <strong>
+                                            {field === 'HS Code' ? (currentConflictItem.existingItem?.hsCode || "Blank") :
+                                             field === 'Weight' ? (currentConflictItem.existingItem?.weight || "0") :
+                                             field === 'Country of Origin' ? (currentConflictItem.existingItem?.countryOfOrigin || "Blank") : ""}
+                                        </strong>
+                                    </span>
+                                    {#if field === 'HS Code'}
+                                        <span class="hs-desc">{HS_CODE_DESCRIPTIONS[currentConflictItem.existingItem?.hsCode || ""] || ""}</span>
+                                    {/if}
+                                 </div>
+                             </label>
+                         </div>
                      </div>
-                 </label>
-                 <label class="radio-label">
-                     <input type="radio" bind:group={selectedHSResolution} value="existing" />
-                     <div class="radio-content">
-                        <span>Keep Existing: <strong>{currentConflictItem.existingItem?.hsCode || "Blank"}</strong></span>
-                        <span class="hs-desc">{HS_CODE_DESCRIPTIONS[currentConflictItem.existingItem?.hsCode || ""] || "Unknown"}</span>
-                     </div>
-                 </label>
+                 {/each}
              </div>
           {:else if currentConflictItem.subtypes}
             {#each currentConflictItem.subtypes as subtype}
