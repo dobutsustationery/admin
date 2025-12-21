@@ -1,9 +1,6 @@
 <script lang="ts">
   import { store } from "$lib/store";
-  import { update_item, type Item } from "$lib/inventory";
-  import { user } from "$lib/user-store";
-  import { firestore } from "$lib/firebase";
-  import { broadcast } from "$lib/redux-firestore";
+  import type { Item } from "$lib/inventory";
 
   let showAll = false;
   let itemsMissingData: { key: string; item: Item; missing: string[] }[] = [];
@@ -15,10 +12,26 @@
       for (const key in inv) {
         const item = inv[key];
         const missing: string[] = [];
+        
+        // 1. Description: Check existence and CAPS
+        if (!item.description) {
+            missing.push("Description");
+        } else if (item.description.length > 0 && item.description === item.description.toUpperCase() && /[a-z]/i.test(item.description)) {
+            missing.push("Description (ALL CAPS)");
+        }
+
+        // 2. Required Fields (excluding ignored ones)
         if (!item.price) missing.push("Price");
         if (!item.weight) missing.push("Weight");
         if (!item.image) missing.push("Image");
+        if (!item.hsCode) missing.push("HS Code");
+        if (!item.countryOfOrigin) missing.push("Country of Origin");
         
+        // Explicitly ignored: subtype, handle, productType, tags, qty, janCode, pieces, shipped, creationDate, timestamp
+        // Checking internal/Shopify optional fields that were likely intended by "Everything else"
+        // If these are too noisy, we can remove them.
+        if (!item.productCategory) missing.push("Category"); 
+
         // Filter out items with 0 qty if we are not showing all
         if (!showAll && (item.qty || 0) <= 0) continue;
 
@@ -30,25 +43,11 @@
       itemsMissingData.sort((a, b) => b.item.creationDate.localeCompare(a.item.creationDate));
     }
   }
-
-  function saveItem(key: string, item: Item, priceStr: string, weightStr: string) {
-    const price = parseFloat(priceStr);
-    const weight = parseFloat(weightStr);
-    
-    // Create a copy to update
-    const updatedItem = { ...item };
-    if (!isNaN(price)) updatedItem.price = price;
-    if (!isNaN(weight)) updatedItem.weight = weight;
-
-    if ($user && $user.uid) {
-      broadcast(firestore, $user.uid, update_item({ id: key, item: updatedItem }));
-    }
-  }
 </script>
 
 <div class="container">
   <h1>SKU Review</h1>
-  <p>Items missing Price, Weight, or Image.</p>
+  <p>Items missing required data or with invalid formatting.</p>
   
   <label>
     <input type="checkbox" bind:checked={showAll}> Show out-of-stock items
@@ -66,7 +65,6 @@
           <th>Description</th>
           <th>Stock</th>
           <th>Missing</th>
-          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -87,16 +85,6 @@
               {#each missing as m}
                 <span class="badge">{m}</span>
               {/each}
-            </td>
-            <td>
-               <div class="inputs">
-                 <input type="number" placeholder="Price" value={item.price || ''} 
-                   on:change={(e) => saveItem(key, item, e.currentTarget.value, item.weight?.toString() || '')}
-                 />
-                 <input type="number" placeholder="Weight (g)" value={item.weight || ''}
-                    on:change={(e) => saveItem(key, item, item.price?.toString() || '', e.currentTarget.value)}
-                 />
-               </div>
             </td>
           </tr>
         {/each}
@@ -143,16 +131,8 @@
     border-radius: 4px;
     font-size: 0.8rem;
     margin-right: 4px;
-  }
-  .inputs {
-    display: flex;
-    gap: 0.5rem;
-  }
-  input {
-    width: 80px;
-    padding: 4px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    display: inline-block;
+    margin-bottom: 2px;
   }
   .empty {
     margin-top: 2rem;
