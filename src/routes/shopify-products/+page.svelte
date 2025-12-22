@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { onMount, tick } from "svelte";
+  import { slide } from "svelte/transition";
+  import { generateHandle } from "$lib/handle-utils";
   import { store } from "$lib/store";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
@@ -118,13 +121,7 @@
         return a.id.localeCompare(b.id);
     });
 
-  function generateHandle(title: string, jan: string): string {
-    const slug = title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, ""); // Trim dashes
-    return `${slug}-${jan}`;
-  }
+
 
   // --- Interaction State ---
   // Selection is [start_row, end_row] for a specific column
