@@ -107,7 +107,7 @@
       }
   }
   interface AnalyzedItem extends ShopifyImportItem {
-      status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE";
+      status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE" | "IDENTICAL";
       existingItem?: any;
       actionLabel: string;
       resolvedActions?: any[];
@@ -228,6 +228,79 @@
             } as AnalyzedItem;
       }
 
+      // --- Check for IDENTICAL ---
+      // If we are here, it's a "MATCH" candidate (no conflicts).
+      // We check if it is actively different in any field we care about.
+      
+      let isIdentical = true;
+
+      // 1. Description
+      if (useShopifyDescription) {
+           const existDesc = match.description || "";
+           const newDesc = item.description || "";
+           if (existDesc.trim() !== newDesc.trim()) isIdentical = false;
+      }
+      
+      // 2. Weight (Always updated if present in CSV, so check difference)
+      if (item.weight && match.weight !== item.weight) isIdentical = false;
+
+      // 3. Price
+      if (item.price && match.price !== item.price) isIdentical = false;
+
+      // 4. Handles
+      if (useShopifyHandles) {
+          const existHandle = match.handle || "";
+          const newHandle = item.handle || "";
+          if (existHandle.trim() !== newHandle.trim()) isIdentical = false;
+      }
+
+      // 5. Images
+      if (useShopifyImages) {
+           const imageUrl = item.image || "";
+           // If CSV has image, we check if it matches existing.
+           // Note: Existing might be Drive URL. mismatched is conflict check above?
+           // The conflict check logic above (lines 179-190) handles explicit mismatches.
+           // If we are here, there is NO conflict.
+           // But is there a CHANGE?
+           // If existing has no image and new has image -> Change.
+           if (!match.image && imageUrl) isIdentical = false;
+           // If both exist and no conflict -> Identical (via map or same string).
+      }
+      
+      // 6. Extended Fields (Body, Category, etc) - These are "backfill" logic in processBatch?
+      // processBatch says: "if (!payloadItem.bodyHtml && item.bodyHtml) ..."
+      // So if existing HAS it, we don't change. If existing MISSING it, we change.
+      if (!match.bodyHtml && item.bodyHtml) isIdentical = false;
+      if (!match.productCategory && item.productCategory) isIdentical = false;
+      if (!match.imagePosition && item.imagePosition) isIdentical = false;
+      if (!match.imageAltText && item.imageAltText) isIdentical = false;
+
+      // 7. QTY / STOCK
+      // If ignoreShopifyQty is TRUE, we treat stock diffs as "Ignored" -> effectively Identical for processing purposes?
+      // "ensure that the bulk import triggered by this screen never include qty"
+      // If ignoreShopifyQty is FALSE, we verify sync.
+      if (!ignoreShopifyQty) {
+           // We are Syncing.
+           // Logic from processBatch:
+           // newTotal = item.qty (Remaining) + match.shipped
+           // oldTotal = match.qty (Total)
+           const existShipped = match.shipped || 0;
+           const newTotal = item.qty + existShipped;
+           const oldTotal = match.qty || 0;
+           
+           if (newTotal !== oldTotal) isIdentical = false;
+      }
+
+      if (isIdentical) {
+          return {
+              ...item,
+              status: "IDENTICAL",
+              existingItem: match,
+              actionLabel: "Identical",
+              originalIndex: index
+          } as AnalyzedItem;
+      }
+
       return { 
           ...item, 
           status: "MATCH", 
@@ -265,7 +338,7 @@
   let useShopifyDescription = false;
   let useShopifyImages = false;
   let useShopifyHandles = false; // Toggle for handles
-  let currentFilter: "ALL" | "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" = "ALL";
+  let currentFilter: "ALL" | "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "IDENTICAL" = "ALL";
   let showConflictModal = false;
   let currentConflictItem: any = null;
   let currentConflictIndex = -1;
@@ -278,6 +351,7 @@
   $: matchCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "MATCH").length;
   $: newCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "NEW").length;
   $: resolvedCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "RESOLVED").length;
+  $: identicalCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "IDENTICAL").length;
   
   onMount(async () => {
     driveConfigured = isDriveConfigured();
@@ -625,6 +699,29 @@
     }
   }
 
+  async function processIdentical() {
+      // Find Identical items
+      const identicalIndices = analyzedPlan
+          .map((item: AnalyzedItem, index: number) => ({ item, index }))
+          .filter(({ item }: { item: AnalyzedItem }) => item.status === "IDENTICAL")
+          .map(({ index }: { index: number }) => index);
+      
+      if (identicalIndices.length === 0) return;
+      
+      processing = true;
+      try {
+          if ($user && $user.uid) {
+              // We just mark them done. No updates broadcasted.
+              broadcast(firestore, $user.uid, mark_items_done({ indices: identicalIndices }));
+              successMsg = `Marked ${identicalIndices.length} identical items as processed.`;
+          }
+      } catch (e) {
+           error = "Processing failed: " + String(e);
+      } finally {
+          processing = false;
+      }
+  }
+
   async function processResolvedConflicts() {
       const resolvedWithType = analyzedPlan
         .map((item: AnalyzedItem, index: number) => ({ item, index }))
@@ -888,6 +985,9 @@
                                    <button class="btn-secondary" on:click={processResolvedConflicts} disabled={processing}>
                                        Process Resolved ({resolvedCount})
                                    </button>
+                                   <button class="btn-secondary" on:click={processIdentical} disabled={processing}>
+                                       Process Identical ({identicalCount})
+                                   </button>
                                </div>
                            </div>
 
@@ -1045,6 +1145,7 @@
   .badge.conflict { background: #fee2e2; color: #991b1b; }
   .badge.resolved { background: #fef3c7; color: #92400e; }
   .badge.done { background: #f3f4f6; color: #6b7280; }
+  .badge.identical { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
   .btn-primary { background: #4f46e5; color: white; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; }
   .btn-secondary { background: white; border: 1px solid #ccc; color: #333; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; margin-right: 0.5rem; }
   .btn-small { padding: 0.25rem 0.5rem; font-size: 0.8rem; background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; }
