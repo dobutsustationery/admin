@@ -214,6 +214,9 @@
       }
   }
   
+  // Hints for selection
+  let missedGroupHintIndex: number = -1;
+  let extensionHintIndex: number = -1;
   function handleInputKey(e: KeyboardEvent, index: number, field: string, value: any, item: any) {
       if (e.key === "Enter") {
            if (selectionColumn === field && selectionStart !== -1 && selectionStart !== selectionEnd) {
@@ -230,6 +233,8 @@
           selectionColumn = null;
           selectionStart = -1;
           selectionEnd = -1;
+          missedGroupHintIndex = -1;
+          extensionHintIndex = -1;
       } else if (e.key === "ArrowRight" && field === "handle") {
           // Auto-complete handle
           if (item.computedHandle && !item.handle) {
@@ -238,7 +243,7 @@
                e.preventDefault();
           }
       } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.shiftKey) {
-          // Smart JAN Selection
+          // Smart Handle Group Selection
           e.preventDefault();
           
           if (!selectionColumn) {
@@ -248,45 +253,109 @@
               anchorRow = index;
           }
 
-          const currentJan = visibleItems[index].janCode;
+          // Clear hints initially
+          missedGroupHintIndex = -1;
+          
+          // Get handles
+          const getHandle = (i: number) => {
+              if (i < 0 || i >= visibleItems.length) return null;
+              const it = visibleItems[i];
+              return it.handle || it.computedHandle;
+          }
+          
+          const currentHandle = getHandle(index);
           const direction = e.key === "ArrowDown" ? 1 : -1;
           
-          // We want to select all SAME JAN items in that direction.
-          // Logic: Look ahead from the *current* selection edge (or cursor position)
-          // Actually, user standard expectation: Shift-Arrow moves selection by one unit.
-          // User REQUEST: "automatically select all the rows with the same JAN code"
+          // Determine CURRENT selection bounds (before this move)
           
-          // Implementation:
-          // 1. Identify valid range of same JANs.
-          // 2. Expand selection to cover that range.
+          // LOGIC 1: Partial Group Warning (Keep this based on focused row/group?)
+          // actually check relative to the ENTIRE selection vs the handles inside it?
+          // The request was: "if the user selects down... and get a partial subset... highlight... to encourage them to fill out"
+          // This implies checking the ends of the selection.
           
-          let scanIndex = index + direction;
-          while (scanIndex >= 0 && scanIndex < visibleItems.length) {
-              if (visibleItems[scanIndex].janCode === currentJan) {
-                  // It matches, include it
-                  scanIndex += direction;
-              } else {
-                  // Stop
-                  break;
-              }
+          // Re-implement Partial Warning based on selection edges
+          const startHandle = getHandle(selectionStart);
+          const endHandle = getHandle(selectionEnd);
+          
+          // Check above Start
+          let groupStart = selectionStart;
+          while (getHandle(groupStart - 1) === startHandle) groupStart--;
+          if (direction === 1 && groupStart < selectionStart) {
+               missedGroupHintIndex = groupStart;
           }
-          // Back up one step (scanIndex is now on a non-match or out of bounds)
-          const limitIndex = scanIndex - direction;
           
-          // Updates selection
-          // If we are moving down (direction 1), we want to extend End to limitIndex (max).
-          // If we are moving up (direction -1), we want to extend Start to limitIndex (min).
-          // BUT we have to respect the anchor.
+          // Check below End
+          let groupEnd = selectionEnd;
+          while (getHandle(groupEnd + 1) === endHandle) groupEnd++;
+          if (direction === -1 && groupEnd > selectionEnd) {
+               missedGroupHintIndex = groupEnd;
+          }
+
+          // LOGIC 2: Expansion / Boundary Pause
           
-          // Let's assume user is on a row, shift-downs.
-          // We find the block of same-JAN rows below. Select them all.
+          // Determine "Active Edge" - the one moving.
+          let activeIndex = index; 
+          if (selectionStart === selectionEnd) {
+               activeIndex = selectionStart; // Single cell, moving edge matches key
+          } else {
+               // If anchor is Start, we move End. If anchor is End, we move Start.
+               // If anchor is undefined or lost, guess based on direction?
+               if (anchorRow === selectionStart) activeIndex = selectionEnd;
+               else if (anchorRow === selectionEnd) activeIndex = selectionStart;
+               else {
+                   // Fallback: Extend in direction
+                   activeIndex = (direction === 1) ? selectionEnd : selectionStart;
+               }
+          }
           
-          selectionEnd = Math.max(selectionEnd, limitIndex);
-          selectionStart = Math.min(selectionStart, limitIndex);
+          // If we are strictly shrinking (e.g. anchor=Start, direction=Up), handle simpler?
+          // We'll trust standard logic: Moving activeIndex by 'unit'. 
+          // Unit = Same Handle Block.
           
-          // Ensure we capture the current row too if it wasn't already (it should be)
-          selectionEnd = Math.max(selectionEnd, index);
-          selectionStart = Math.min(selectionStart, index);
+          let scanStart = activeIndex + direction;
+          
+          // Current handle at the *active edge* (not necessarily focused row)
+          const activeHandle = getHandle(activeIndex);
+          
+          let proposedLimitIndex = activeIndex;
+
+          if (getHandle(scanStart) === activeHandle) {
+               // Same group. Fill it.
+               let s = scanStart;
+               while (getHandle(s + direction) === activeHandle) s += direction;
+               proposedLimitIndex = s; 
+          } else {
+               // New group (or out of bounds)
+               const nextHandle = getHandle(scanStart);
+               if (nextHandle) {
+                   if (extensionHintIndex === scanStart) {
+                       // Proceed! Select NEXT group.
+                       let s = scanStart;
+                       while (getHandle(s + direction) === nextHandle) s += direction;
+                       proposedLimitIndex = s;
+                       extensionHintIndex = -1; 
+                   } else {
+                       // Pause!
+                       extensionHintIndex = scanStart;
+                       proposedLimitIndex = activeIndex; // Stay put
+                   }
+               } else {
+                   proposedLimitIndex = activeIndex;
+               }
+          }
+          
+          if (proposedLimitIndex !== activeIndex) {
+              extensionHintIndex = -1;
+          }
+
+          // Apply selection
+          selectionEnd = Math.max(selectionEnd, proposedLimitIndex);
+          selectionStart = Math.min(selectionStart, proposedLimitIndex);
+          
+          // We do NOT forcibly include 'index' here if we moved the other edge, 
+          // but usually selection includes anchor.
+          selectionEnd = Math.max(selectionEnd, anchorRow);
+          selectionStart = Math.min(selectionStart, anchorRow);
       }
   }
   
@@ -473,7 +542,11 @@
                 {#each visibleItems as item, i}
                     <tr>
                         <!-- 1. Handle -->
-                         <td class="input-cell" class:selected={selectionColumn === 'handle' && i >= selectionStart && i <= selectionEnd}>
+                         <td class="input-cell" 
+                            class:selected={selectionColumn === 'handle' && i >= selectionStart && i <= selectionEnd}
+                            class:missed-hint={selectionColumn === 'handle' && i === missedGroupHintIndex}
+                            class:extension-hint={selectionColumn === 'handle' && i === extensionHintIndex}
+                         >
                             <input 
                                 value={item.handle || ""} 
                                 placeholder={item.computedHandle}
@@ -485,7 +558,11 @@
                         </td>
                         
                         <!-- 2. Title -->
-                        <td class="input-cell" class:selected={selectionColumn === 'description' && i >= selectionStart && i <= selectionEnd}>
+                        <td class="input-cell"
+                            class:selected={selectionColumn === 'description' && i >= selectionStart && i <= selectionEnd}
+                            class:missed-hint={selectionColumn === 'description' && i === missedGroupHintIndex}
+                            class:extension-hint={selectionColumn === 'description' && i === extensionHintIndex}
+                        >
                             <input 
                                 value={item.description}
                                 on:change={(e) => commitEdit(item.id, 'description', e.currentTarget.value, i)}
@@ -496,7 +573,11 @@
                         </td>
                         
                         <!-- 3. Body (HTML) -->
-                         <td class="input-cell" class:selected={selectionColumn === 'bodyHtml' && i >= selectionStart && i <= selectionEnd}>
+                         <td class="input-cell"
+                             class:selected={selectionColumn === 'bodyHtml' && i >= selectionStart && i <= selectionEnd}
+                             class:missed-hint={selectionColumn === 'bodyHtml' && i === missedGroupHintIndex}
+                             class:extension-hint={selectionColumn === 'bodyHtml' && i === extensionHintIndex}
+                         >
                              <input 
                                 value={item.bodyHtml || ""}
                                 on:change={(e) => commitEdit(item.id, 'bodyHtml', e.currentTarget.value, i)}
@@ -507,7 +588,11 @@
                          </td>
 
                         <!-- 4. Product Category -->
-                        <td class="input-cell" class:selected={selectionColumn === 'productCategory' && i >= selectionStart && i <= selectionEnd}>
+                        <td class="input-cell"
+                            class:selected={selectionColumn === 'productCategory' && i >= selectionStart && i <= selectionEnd}
+                            class:missed-hint={selectionColumn === 'productCategory' && i === missedGroupHintIndex}
+                            class:extension-hint={selectionColumn === 'productCategory' && i === extensionHintIndex}
+                        >
                             <input 
                                 value={item.productCategory || ""}
                                 on:change={(e) => commitEdit(item.id, 'productCategory', e.currentTarget.value, i)}
@@ -524,7 +609,11 @@
                         <td class="static-cell">{item.id}</td>
 
                         <!-- 7. Variant Grams -->
-                        <td class="input-cell" class:selected={selectionColumn === 'weight' && i >= selectionStart && i <= selectionEnd}>
+                        <td class="input-cell"
+                            class:selected={selectionColumn === 'weight' && i >= selectionStart && i <= selectionEnd}
+                            class:missed-hint={selectionColumn === 'weight' && i === missedGroupHintIndex}
+                            class:extension-hint={selectionColumn === 'weight' && i === extensionHintIndex}
+                        >
                             <input 
                                 type="number"
                                 value={item.weight || ""}
@@ -536,7 +625,11 @@
                         </td>
                         
                         <!-- 8. Country of Origin -->
-                        <td class="input-cell" class:selected={selectionColumn === 'countryOfOrigin' && i >= selectionStart && i <= selectionEnd}>
+                        <td class="input-cell"
+                            class:selected={selectionColumn === 'countryOfOrigin' && i >= selectionStart && i <= selectionEnd}
+                            class:missed-hint={selectionColumn === 'countryOfOrigin' && i === missedGroupHintIndex}
+                            class:extension-hint={selectionColumn === 'countryOfOrigin' && i === extensionHintIndex}
+                        >
                             <input 
                                 value={item.countryOfOrigin || ""}
                                 on:change={(e) => commitEdit(item.id, 'countryOfOrigin', e.currentTarget.value, i)}
@@ -550,7 +643,11 @@
                         <td class="static-cell text-right pr-2">{item.qty}</td>
 
                         <!-- 9. Variant Price -->
-                        <td class="input-cell" class:selected={selectionColumn === 'price' && i >= selectionStart && i <= selectionEnd}>
+                        <td class="input-cell"
+                            class:selected={selectionColumn === 'price' && i >= selectionStart && i <= selectionEnd}
+                            class:missed-hint={selectionColumn === 'price' && i === missedGroupHintIndex}
+                            class:extension-hint={selectionColumn === 'price' && i === extensionHintIndex}
+                        >
                             <input 
                                 type="number"
                                 value={item.price || ""}
@@ -572,7 +669,11 @@
                         </td>
 
                         <!-- 12. Image Position -->
-                        <td class="input-cell" class:selected={selectionColumn === 'imagePosition' && i >= selectionStart && i <= selectionEnd}>
+                        <td class="input-cell"
+                            class:selected={selectionColumn === 'imagePosition' && i >= selectionStart && i <= selectionEnd}
+                            class:missed-hint={selectionColumn === 'imagePosition' && i === missedGroupHintIndex}
+                            class:extension-hint={selectionColumn === 'imagePosition' && i === extensionHintIndex}
+                        >
                             <input 
                                 type="number"
                                 value={item.imagePosition || ""}
@@ -584,7 +685,11 @@
                         </td>
                         
                           <!-- 13. Image Alt Text -->
-                        <td class="input-cell" class:selected={selectionColumn === 'imageAltText' && i >= selectionStart && i <= selectionEnd}>
+                        <td class="input-cell"
+                            class:selected={selectionColumn === 'imageAltText' && i >= selectionStart && i <= selectionEnd}
+                            class:missed-hint={selectionColumn === 'imageAltText' && i === missedGroupHintIndex}
+                            class:extension-hint={selectionColumn === 'imageAltText' && i === extensionHintIndex}
+                        >
                              <input 
                                 value={item.imageAltText || item.description || ""}
                                 on:change={(e) => commitEdit(item.id, 'imageAltText', e.currentTarget.value, i)}
@@ -714,6 +819,17 @@
         border: 2px solid #6366f1 !important;
         position: relative; /* For z-index if needed */
     }
+    
+    td.missed-hint {
+        background-color: #fef08a !important; /* Yellow-200 */
+        border: 2px dashed #eab308 !important; /* Yellow-500 */
+    }
+    
+    td.extension-hint {
+        background-color: #ddd6fe !important; /* Violet-200 (lighter than selected) */
+        border: 2px dashed #8b5cf6 !important; /* Violet-500 */
+    }
+
     td.selected input {
         background: transparent;
     }
