@@ -63,10 +63,14 @@ if (!command) {
   console.log("  Transfer: --from <env> --to <env>");
   console.log("\nEnvironments: production | staging | emulator");
   console.log("\nOptions:");
-  console.log("  --skip-broadcast     Skip the broadcast collection (not recommended)");
+  console.log(
+    "  --skip-broadcast     Skip the broadcast collection (not recommended)",
+  );
   console.log("  --skip-users         Skip the users collection");
   console.log("  --skip-orders        Skip the dobutsu (orders) collection");
-  console.log("  --force              Required when importing/transferring to production");
+  console.log(
+    "  --force              Required when importing/transferring to production",
+  );
   process.exit(1);
 }
 
@@ -93,9 +97,15 @@ function checkProductionWriteProtection(targetEnv) {
   if (!config.force) {
     console.error("\n❌ ERROR: Writing to production requires --force flag");
     console.error("\n⚠️  PRODUCTION WRITE PROTECTION");
-    console.error("   Writing data to production is dangerous and can overwrite live data.");
-    console.error("   If you are certain you want to proceed, add --force to your command:");
-    console.error(`   \n   ${process.argv.slice(0, 2).join(' ')} ${process.argv.slice(2).join(' ')} --force\n`);
+    console.error(
+      "   Writing data to production is dangerous and can overwrite live data.",
+    );
+    console.error(
+      "   If you are certain you want to proceed, add --force to your command:",
+    );
+    console.error(
+      `   \n   ${process.argv.slice(0, 2).join(" ")} ${process.argv.slice(2).join(" ")} --force\n`,
+    );
     process.exit(1);
   }
 
@@ -108,11 +118,17 @@ function checkProductionWriteProtection(targetEnv) {
   if (!existsSync(writeKeyPath)) {
     console.error("\n❌ ERROR: Production write credentials not found");
     console.error("\n⚠️  PRODUCTION WRITE PROTECTION");
-    console.error("   Writing to production requires special write credentials.");
+    console.error(
+      "   Writing to production requires special write credentials.",
+    );
     console.error(`   Expected file: ${writeKeyPath}`);
-    console.error("\n   This is separate from the read-only production service account.");
+    console.error(
+      "\n   This is separate from the read-only production service account.",
+    );
     console.error("   To create write credentials:");
-    console.error("   1. Go to Firebase Console > Project Settings > Service Accounts");
+    console.error(
+      "   1. Go to Firebase Console > Project Settings > Service Accounts",
+    );
     console.error("   2. Create a new service account with write permissions");
     console.error("   3. Save as: service-account-production-write.json");
     console.error("\n   ⚠️  Keep these credentials extremely secure!\n");
@@ -135,19 +151,19 @@ function initializeFirebaseForEnv(env, appName = undefined, isWrite = false) {
     // For emulator, use default credentials and connect to emulator
     const app = initializeApp(
       {
-        projectId: "dobutsu-stationery-6b227",
+        projectId: "dobutsu-admin",
       },
       appName,
     );
     const db = getFirestore(app);
-    
+
     // Connect to emulator
     const host = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
     db.settings({
       host: host,
       ssl: false,
     });
-    
+
     console.log(`🔧 Connected to Firestore emulator at ${host}`);
     return db;
   } else {
@@ -155,25 +171,17 @@ function initializeFirebaseForEnv(env, appName = undefined, isWrite = false) {
     // Production writes require special write credentials
     let keyPath;
     if (env === "production" && isWrite) {
-      keyPath = resolve(
-        process.cwd(),
-        "service-account-production-write.json",
-      );
+      keyPath = resolve(process.cwd(), "service-account-production-write.json");
     } else {
-      keyPath = resolve(
-        process.cwd(),
-        `service-account-${env}.json`,
-      );
+      keyPath = resolve(process.cwd(), `service-account-${env}.json`);
     }
 
     if (!existsSync(keyPath)) {
-      console.error(
-        `❌ Service account key not found: ${keyPath}`,
-      );
+      console.error(`❌ Service account key not found: ${keyPath}`);
       console.log(
         `\n💡 Download from Firebase Console > Project Settings > Service Accounts`,
       );
-      console.log(`   Save as: ${keyPath.split('/').pop()}`);
+      console.log(`   Save as: ${keyPath.split("/").pop()}`);
       process.exit(1);
     }
 
@@ -185,7 +193,7 @@ function initializeFirebaseForEnv(env, appName = undefined, isWrite = false) {
       appName,
     );
 
-    const accessType = (env === "production" && isWrite) ? " (WRITE ACCESS)" : "";
+    const accessType = env === "production" && isWrite ? " (WRITE ACCESS)" : "";
     console.log(`🔥 Connected to ${env} Firestore${accessType}`);
     return getFirestore(app);
   }
@@ -202,7 +210,7 @@ async function exportData(db, outputDir) {
   }
 
   const collections = [];
-  
+
   if (!config.skipBroadcast) {
     collections.push("broadcast");
   }
@@ -221,31 +229,37 @@ async function exportData(db, outputDir) {
   for (const collectionName of collections) {
     console.log(`\n  Exporting ${collectionName}...`);
     const collectionRef = db.collection(collectionName);
-    
+
     let snapshot;
     try {
       snapshot = await collectionRef.get();
     } catch (error) {
       // Handle collection not found or permission errors
-      if (error.code === 5 || error.message.includes('NOT_FOUND')) {
-        console.log(`    ⚠️  Collection "${collectionName}" not found or empty - skipping`);
+      if (error.code === 5 || error.message.includes("NOT_FOUND")) {
+        console.log(
+          `    ⚠️  Collection "${collectionName}" not found or empty - skipping`,
+        );
         exportData.collections[collectionName] = [];
         continue;
       }
       // Re-throw other errors
       throw error;
     }
-    
+
     const documents = [];
 
     snapshot.forEach((doc) => {
       const data = doc.data();
-      
+
       // Preserve Firestore Timestamps with full precision
       // Store them as objects with _seconds and _nanoseconds
       const serializedData = JSON.parse(
         JSON.stringify(data, (key, value) => {
-          if (value && typeof value === "object" && value._seconds !== undefined) {
+          if (
+            value &&
+            typeof value === "object" &&
+            value._seconds !== undefined
+          ) {
             // Firestore Timestamp - preserve exact seconds and nanoseconds
             return {
               _timestamp: true,
@@ -270,7 +284,7 @@ async function exportData(db, outputDir) {
   const outputFile = join(outputDir, "firestore-export.json");
   writeFileSync(outputFile, JSON.stringify(exportData, null, 2));
   console.log(`\n✅ Export complete: ${outputFile}`);
-  
+
   return exportData;
 }
 
@@ -281,7 +295,7 @@ async function importData(db, inputDir) {
   console.log(`\n📥 Importing data from ${inputDir}...`);
 
   const inputFile = join(inputDir, "firestore-export.json");
-  
+
   if (!existsSync(inputFile)) {
     console.error(`❌ Export file not found: ${inputFile}`);
     process.exit(1);
@@ -293,15 +307,17 @@ async function importData(db, inputDir) {
   for (const [collectionName, documents] of Object.entries(
     exportData.collections,
   )) {
-    console.log(`\n  Importing ${collectionName} (${documents.length} docs)...`);
-    
+    console.log(
+      `\n  Importing ${collectionName} (${documents.length} docs)...`,
+    );
+
     let batch = db.batch();
     let batchCount = 0;
-    const BATCH_SIZE = 500; // Firestore batch limit
+    const BATCH_SIZE = 100; // Firestore batch limit
 
     for (const { id, data } of documents) {
       const docRef = db.collection(collectionName).doc(id);
-      
+
       // Restore Firestore Timestamps from stored _seconds and _nanoseconds
       const deserializedData = JSON.parse(
         JSON.stringify(data),
@@ -338,7 +354,9 @@ async function importData(db, inputDir) {
       console.log(`    Committed final batch of ${batchCount} documents`);
     }
 
-    console.log(`    ✓ Imported ${documents.length} documents to ${collectionName}`);
+    console.log(
+      `    ✓ Imported ${documents.length} documents to ${collectionName}`,
+    );
   }
 
   console.log("\n✅ Import complete");
@@ -352,63 +370,75 @@ async function main() {
     if (command === COMMAND_EXPORT) {
       const sourceEnv = options.source;
       const outputDir = resolve(process.cwd(), options.output);
-      
+
       console.log(`📤 Exporting from ${sourceEnv} to ${outputDir}`);
       const db = initializeFirebaseForEnv(sourceEnv);
       await exportData(db, outputDir);
-      
     } else if (command === COMMAND_IMPORT) {
       const targetEnv = options.target;
       const inputDir = resolve(process.cwd(), options.input);
-      
+
       // Check production write protection
       checkProductionWriteProtection(targetEnv);
-      
+
       console.log(`📥 Importing to ${targetEnv} from ${inputDir}`);
       const db = initializeFirebaseForEnv(targetEnv, undefined, true);
       await importData(db, inputDir);
-      
     } else if (command === COMMAND_TRANSFER) {
       const fromEnv = options.from;
       const toEnv = options.to;
       const tempDir = resolve(process.cwd(), ".data-transfer-tmp");
-      
+
       // Check production write protection
       checkProductionWriteProtection(toEnv);
-      
+
       console.log(`🔄 Transferring from ${fromEnv} to ${toEnv}`);
-      
+
       // Export from source
       const sourceDb = initializeFirebaseForEnv(fromEnv, "source");
       await exportData(sourceDb, tempDir);
-      
+
       // Import to target (with write flag for production)
       const targetDb = initializeFirebaseForEnv(toEnv, "target", true);
       await importData(targetDb, tempDir);
-      
+
       console.log(`\n✅ Transfer complete from ${fromEnv} to ${toEnv}`);
       console.log(`   Temporary export saved at: ${tempDir}`);
     }
-    
+
     console.log("\n✨ Done!");
     process.exit(0);
   } catch (error) {
     console.error("\n❌ Error:", error.message);
-    
+
     // Provide helpful diagnostics for common errors
-    if (error.code === 5 || error.message.includes('NOT_FOUND')) {
+    if (error.code === 5 || error.message.includes("NOT_FOUND")) {
       console.error("\n💡 Troubleshooting tips:");
-      console.error("   - This error usually means a collection doesn't exist in Firestore");
-      console.error("   - Check that your service account has permission to read from Firestore");
-      console.error("   - Verify you're connecting to the correct Firebase project");
-      console.error("   - Make sure the collections exist in your Firestore database");
-    } else if (error.message.includes('Permission denied')) {
+      console.error(
+        "   - This error usually means a collection doesn't exist in Firestore",
+      );
+      console.error(
+        "   - Check that your service account has permission to read from Firestore",
+      );
+      console.error(
+        "   - Verify you're connecting to the correct Firebase project",
+      );
+      console.error(
+        "   - Make sure the collections exist in your Firestore database",
+      );
+    } else if (error.message.includes("Permission denied")) {
       console.error("\n💡 Troubleshooting tips:");
-      console.error("   - Check that your service account has the 'Cloud Datastore User' role");
-      console.error("   - Verify the service account key is valid and not expired");
-      console.error("   - Ensure Firestore security rules allow service account access");
+      console.error(
+        "   - Check that your service account has the 'Cloud Datastore User' role",
+      );
+      console.error(
+        "   - Verify the service account key is valid and not expired",
+      );
+      console.error(
+        "   - Ensure Firestore security rules allow service account access",
+      );
     }
-    
+
     if (error.stack) {
       console.error("\nStack trace:");
       console.error(error.stack);
