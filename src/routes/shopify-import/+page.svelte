@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { slide, fade } from "svelte/transition";
+  import { generateHandle } from "$lib/handle-utils";
   import { store } from "$lib/store";
   import {
     isDriveConfigured,
@@ -40,9 +41,6 @@
   $: step = $store.shopifyImport.step;
   $: resolutions = $store.shopifyImport.resolutions || {};
 
-  // --- UI Options ---
-  let useShopifyDescription = false;
-  let useShopifyImages = false;
 
   // --- Migration Logic ---
   // Only migrate actual Shopify CDN links
@@ -190,6 +188,19 @@
                }
           }
       }
+      
+      if (!useShopifyHandles) {
+          const existHandle = match.handle || "";
+          const newHandle = item.handle || "";
+          
+          if (existHandle.trim() !== newHandle.trim()) {
+             // Use match.janCode (pure JAN) instead of item.fanCode (CSV Variant SKU/ID)
+             const computed = generateHandle(match.description || item.description || "", match.janCode);
+             if (newHandle !== computed) {
+                 conflicts.push('Handle');
+             }
+          }
+      }
 
       if (conflicts.length > 0) {
             return {
@@ -237,11 +248,17 @@
   let processing = false;
   let analysisStatus: "idle" | "analyzing" = "idle";
   
+  let useShopifyDescription = false;
+  let useShopifyImages = false;
+  let useShopifyHandles = false; // Toggle for handles
+  let currentFilter: "ALL" | "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" = "ALL";
   let showConflictModal = false;
   let currentConflictItem: any = null;
   let currentConflictIndex = -1;
   let fieldResolutions: Record<string, string> = {};
   let hoveredImage: string | null = null;
+  
+  // Helper to compute default handle
 
   $: matchCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "MATCH").length;
   $: newCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "NEW").length;
@@ -392,7 +409,7 @@
                                field === 'Product Category' ? 'productCategory' :
                                field === 'Image Position' ? 'imagePosition' :
                                field === 'Image Alt Text' ? 'imageAltText' :
-                               field === 'Country of Origin' ? 'countryOfOrigin' : null;
+                               field === 'Handle' ? 'handle' : null;
                   
                   if (prop) {
                       const incoming = (currentConflictItem as any)[prop];
@@ -478,6 +495,13 @@
                 }
 
                 payloadItem.qty = (payloadItem.qty || 0) + item.qty; 
+
+                // Handle Logic
+                if (useShopifyHandles && item.handle) {
+                    payloadItem.handle = item.handle;
+                } else if (!payloadItem.handle && item.handle) {
+                    payloadItem.handle = item.handle;
+                }
                 if (!payloadItem.weight && item.weight) payloadItem.weight = item.weight;
                 if (!payloadItem.price && item.price) payloadItem.price = item.price;
                 
@@ -592,6 +616,9 @@
   function getExistingValue(field: string) {
       if (!currentConflictItem || !currentConflictItem.existingItem) return "";
       if (field === 'Description') return currentConflictItem.existingItem.description;
+      if (field === 'Handle') {
+          return currentConflictItem.existingItem.handle || generateHandle(currentConflictItem.existingItem.description || "", currentConflictItem.existingItem.janCode);
+      }
       const key = field.toLowerCase();
       return currentConflictItem.existingItem[key];
   }
@@ -686,7 +713,11 @@
                                <input type="checkbox" bind:checked={useShopifyImages}>
                                Accept Shopify Images
                            </label>
-                                   <p class="text-xs text-muted mt-1">If checked, existing descriptions will be overwritten.</p>
+                           <label class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border">
+                               <input type="checkbox" bind:checked={useShopifyHandles}>
+                               Accept Shopify Handles
+                           </label>
+                                   <p class="text-xs text-muted mt-1">If checked, existing descriptions and handles will be overwritten.</p>
                                </div>
 
                                <div class="batch-actions">
@@ -808,7 +839,11 @@
                                                   {getExistingValue(field)}
                                               </span>
                                           {:else}
-                                              <strong>{getExistingValue(field)}</strong>
+                                              {#if field === 'Handle' && !currentConflictItem.existingItem.handle}
+                                                  <span class="text-gray-400 font-normal">{getExistingValue(field)} <span class="text-xs italic">(auto-generated)</span></span>
+                                              {:else}
+                                                  <strong>{getExistingValue(field)}</strong>
+                                              {/if}
                                           {/if}
                                        </span>
                                    </div>
