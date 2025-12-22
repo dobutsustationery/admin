@@ -19,7 +19,7 @@ function getFirebaseConfig() {
       authDomain: "localhost",
       projectId:
         import.meta.env.VITE_FIREBASE_LOCAL_PROJECT_ID ||
-        "dobutsu-stationery-6b227",
+        "dobutsu-admin",
       storageBucket: "demo-storage-bucket",
       messagingSenderId: "demo-sender-id",
       appId: "demo-app-id",
