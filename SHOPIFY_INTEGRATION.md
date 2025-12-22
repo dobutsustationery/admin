@@ -5,7 +5,7 @@
 This document outlines the design for integrating the Dobutsu Stationery inventory management system with Shopify.
 
 **Architecture Philosophy: Event Sourcing & Immutability**
-The integration relies on **Immutable Actions** recorded in the `broadcast` collection. The state of Shopify connections and Product Listings is **derived in-memory** by reducing these actions. There are no mutable "Product Tables" in the database.
+The integration relies on **Immutable Actions** recorded in the `broadcast` collection. The state of Shopify connections and Product Listings is **derived in-memory** by reducing these actions.
 
 ## 1. Inventory Calculation (The "Real" Stock)
 
@@ -20,30 +20,36 @@ Inventory quantity is never "updated". It is calculated from two streams of acti
 
 ## 2. Data Model: Actions & Reducers
 
-We introduce a new Redux slice: `shopify`.
+We introduce a new Redux slice: `listings` (and maintain `shopify` for API logs/sync).
 
 ### A. New Actions
 
-These actions are dispatched to the `broadcast` collection to record changes to the Shopify integration state.
-
-#### 1. `shopify_link_product`
-Links a Shopify Handle and its Variants to internal Item Keys.
+#### 1. `create_listing` / `update_listing`
+Manages the Listing entity (Title, Body, Category, etc).
 ```typescript
-interface ShopifyLinkProductAction {
-  type: 'shopify_link_product';
+interface CreateListingAction {
+  type: 'create_listing';
   payload: {
     handle: string;
-    variants: {
-      shopifyVariantId: string;
-      sku: string; // Internal ItemKey
-      // Defines the specific combination of options for this variant
-      options: Record<string, string>; // e.g. { "Color": "Blue", "Style": "Retro" }
-    }[];
-    timestamp: number;
-    user: string;
+    title: string;
+    bodyHtml: string;
+    productCategory: string;
+    option1Name: string;
+    images: ListingImage[];
+    tags: string[];
+    vendor: string;
   };
 }
 ```
+
+#### 2. `shopify_link_product` (Legacy/Modified)
+Links a Shopify Handle and its Variants to internal Item Keys. Now effectively just ensures `Item.handle` is set.
+
+
+These actions are dispatched to the `broadcast` collection to record changes to the Listings and Shopify state.
+
+#### 1. `shopify_link_product`
+(Legacy support / Sync) - Ensures `Item.handle` is set correctly based on Shopify data.
 
 #### 2. `shopify_update_listing`
 Records a change to the display metadata of a listing.
@@ -85,16 +91,20 @@ interface ShopifyApiLogAction {
 The client-side reducer listens to these actions to build the "Database":
 
 ```typescript
-interface ShopifyState {
+interface ListingsState {
   // Map Handle -> Listing Data
-  listings: Record<string, {
+  handleToListing: Record<string, {
     handle: string;
     title: string;
-    body_html: string;
-    // Map VariantID -> { SKU, OptionMap }
-    linkedVariants: Record<string, { sku: string; options: Record<string, string> }>;
+    bodyHtml: string;
+    productCategory: string; // "Product Category"
+    option1Name: string; // e.g. "Color"
+    images: { url: string; position: number; altText: string }[];
+    status: 'active' | 'archived' | 'draft';
   }>;
 }
+
+// The 'shopify' slice mainly tracks API logs and Sync State now.
 ```
 
 ## 3. Workflows

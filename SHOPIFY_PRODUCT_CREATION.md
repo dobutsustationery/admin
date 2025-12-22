@@ -24,11 +24,11 @@ Fields that we will need to populate with varying data are:
 - Handle: user needs control of this, to group SKUs into listings
   - Generated from Title + janCode
   - Example: amifa-wall-stickers-4542...
-- Title: user needs manual control of this
-  - Store this in Inventory description / use Inventory description
-- Body (HTML): initially from Gemini AI description, but user-editable
-- Product Category: manually entered by user; defaults based on HS Code
-- Option1 Value: Variant Subtype (e.g., "Blue", "Purple"; or "Rabbit", "Cat")
+- Title: Stored in **Listing** (User control).
+- Body (HTML): Stored in **Listing** (User control, initially from Gemini).
+- Product Category: Stored in **Listing**.
+- Option1 Name: Stored in **Listing** (e.g. "Color").
+- Option1 Value: Variant Subtype (e.g., "Blue", "Purple").
 - Variant SKU: JAN Code + Subtype
 - Variant Grams: Weight in grams
 - Variant Inventory Qty: Stock Level
@@ -71,8 +71,9 @@ The `Item` interface represents our physical stock.
 - `shipped`: Number of this SKU that have shipped
 - `qty`: Quantity ever received. Available stock can be computed from qty -
   shipped
-- `description`: Short description to be used as the 'Title'.
-- `image`: Should be replaced with an image from the Photos module.
+- `description`: Inventory Description (Internal use).
+- `handle`: Link to the parent **Listing**.
+- `image`: Variant-specific image.
 
 **Missing Fields (Action Required):**
 
@@ -88,9 +89,8 @@ The Photos module fetches images and uses Gemini to analyze them.
   - `janCode`: Detected from image analysis.
   - `imageUrls`: High-res URLs.
 - AI Grouping needs to move into the new shopify export process. After creating
-  a Handle, and assigning SKUs to it, we can use AI to generate initial data, to
-  be edited by the user later. Key data:
-  - `body`: AI-generated HTML body.
+  a Listing, and assigning SKUs to it, we can use AI to generate initial data (Title, Body) for the Listing. Key data:
+  - `body`: AI-generated HTML body (Listing level).
   - `variants`: One variant per SKU in the handle.
 
 ## Proposed Implementation Plan
