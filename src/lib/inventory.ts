@@ -218,8 +218,8 @@ function applyInventoryUpdate(
     janCode: item.janCode?.trim(),
     subtype: item.subtype?.trim() || "",
     creationDate,
-    qty: item.qty + qty,
-    shipped: (item.shipped || 0) + shipped,
+    qty: Number(item.qty) + qty,
+    shipped: (Number(item.shipped) || 0) + shipped,
     timestamp: val,
   };
   if (state.idToItem[id].shipped === undefined) {
@@ -278,8 +278,14 @@ export const inventory = createReducer(initialState, (r) => {
   });
   r.addCase(update_field, (state, action) => {
     if (state.idToItem[action.payload.id]) {
+      const incomingValue = action.payload.to;
       (state.idToItem[action.payload.id] as any)[action.payload.field] =
-        action.payload.to;
+        action.payload.field === "qty" ||
+        action.payload.field === "shipped" ||
+        action.payload.field === "price" ||
+        action.payload.field === "weight"
+          ? Number(incomingValue)
+          : incomingValue;
       const timestamp = (action as any).timestamp;
       let creationDate = "Unknown";
       let val = 0;

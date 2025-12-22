@@ -109,7 +109,7 @@ const initialState: ShopifyImportState = {
                      item = {
                         janCode,
                         description: title,
-                        qty: parseInt(parsedRow['variant inventory qty'] || "0", 10),
+                        qty: parseInt((parsedRow['variant inventory qty'] || "0").replace(/[^0-9-]/g, ""), 10) || 0,
                         price: parsedRow['variant price'] ? parseFloat(parsedRow['variant price'].replace(/[^0-9.]/g, "")) : undefined,
                         weight: parsedRow['variant grams'] ? parseFloat(parsedRow['variant grams'].replace(/[^0-9.]/g, "")) : undefined,
                         image: parsedRow['image src'] || "",
