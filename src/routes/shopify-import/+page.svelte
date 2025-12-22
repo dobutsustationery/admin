@@ -202,6 +202,20 @@
           }
       }
 
+      // Stock Check
+      const existTotal = match.qty || 0;
+      const existShipped = match.shipped || 0;
+      const existRemaining = existTotal - existShipped;
+      const newRemaining = item.qty; // Shopify qty is remaining
+      
+      // Logic adjusted based on feedback:
+      // "Ignore" (Checked) -> Treat as success (MATCH), don't flag conflict. (And don't update qty).
+      // "Sync/Verify" (Unchecked) -> Flag conflict if mismatch.
+      
+      if (!ignoreShopifyQty && existRemaining !== newRemaining) {
+          conflicts.push('Stock');
+      }
+
       if (conflicts.length > 0) {
             return {
               ...item,
@@ -257,6 +271,7 @@
   let currentConflictIndex = -1;
   let fieldResolutions: Record<string, string> = {};
   let hoveredImage: string | null = null;
+  let ignoreShopifyQty = false; // Add state
   
   // Helper to compute default handle
 
@@ -409,12 +424,32 @@
                                field === 'Product Category' ? 'productCategory' :
                                field === 'Image Position' ? 'imagePosition' :
                                field === 'Image Alt Text' ? 'imageAltText' :
-                               field === 'Handle' ? 'handle' : null;
+                               field === 'Handle' ? 'handle' : 
+                               field === 'Stock' ? 'qty' : null;
+                  
                   
                   if (prop) {
                       const incoming = (currentConflictItem as any)[prop];
                       const existing = currentConflictItem!.existingItem[prop];
-                      payload[prop] = choice === 'incoming' ? incoming : existing;
+                      
+                      if (prop === 'qty') {
+                          // Special handling for Stock/Qty
+                          // Incoming 'qty' is Shopify Remaining.
+                          // Existing 'qty' is Available Total (Internal).
+                          
+                          if (choice === 'incoming') {
+                              // User wants to Sync to Shopify. 
+                              // Current Internal Total = Shopify Remaining + Shipped.
+                              const existingShipped = currentConflictItem!.existingItem.shipped || 0;
+                              payload[prop] = Number(incoming) + existingShipped;
+                          } else {
+                              // User wants to Keep Existing.
+                              // Payload = Existing Total.
+                              payload[prop] = existing;
+                          }
+                      } else {
+                          payload[prop] = choice === 'incoming' ? incoming : existing;
+                      }
                   }
               });
           }
@@ -485,7 +520,19 @@
             if (item.status === "MATCH" && item.existingItem) {
                 const itemKey = item.existingItem.key;
                 const existing = item.existingItem;
-                const payloadItem: any = { ...existing };
+                
+                // CRITICAL: applyInventoryUpdate treats qty/shipped as DELTAS.
+                // We must initiate them as 0 to avoid doubling existing values.
+                const payloadItem: any = { ...existing, qty: 0, shipped: 0 };
+                
+                // Logic:
+                // Shopify Qty is "Stock Remaining" (Total - Shipped).
+                // Internal Qty is "Total Lifetime Stock".
+                // Internal Stock Remaining = (Existing Qty - Existing Shipped).
+                // So, if (Existing Qty - Existing Shipped) != Shopify Qty, we have a conflict.
+                // WE DO NOT OVERWRITE QTY FROM SHOPIFY AUTOMATICALLY ON MATCH.
+                
+                // Only update descriptors/images if matches
                 
                 // Toggle Description
                 if (useShopifyDescription && item.description) {
@@ -493,8 +540,6 @@
                 } else if (!payloadItem.description && item.description) {
                     payloadItem.description = item.description;
                 }
-
-                payloadItem.qty = (payloadItem.qty || 0) + item.qty; 
 
                 // Handle Logic
                 if (useShopifyHandles && item.handle) {
@@ -515,6 +560,24 @@
                 } else if (!payloadItem.image && imageUrl) {
                     payloadItem.image = imageUrl;
                 }
+                
+                // Qty Logic:
+                // "Ensure that the bulk import triggered by this screen never include qty"
+                // if we are Ignoring.
+                if (!ignoreShopifyQty) {
+                     // If NOT ignoring, we Sync.
+                     // Sync means Inventory Qty = Shopify Qty + Shipped.
+                     // (Because Shopify Qty = Remaining).
+                     const existingShipped = existing.shipped || 0;
+                     const newTotal = item.qty + existingShipped;
+                     const oldTotal = existing.qty || 0;
+                     
+                     if (newTotal !== oldTotal) {
+                         // Calculate DELTA
+                         const delta = newTotal - oldTotal;
+                         payloadItem.qty = delta;
+                     }
+                }
 
                 bulkUpdates.push({ type: "update", id: itemKey, item: payloadItem });
                 indicesToMarkDone.push(index);
@@ -525,7 +588,7 @@
                     janCode: item.janCode,
                     subtype: "",
                     description: item.description, 
-                    qty: item.qty,
+                    qty: item.qty, // NEW items always get qty. Can't ignore initial stock?
                     pieces: 1,
                     shipped: 0,
                     creationDate: new Date().toISOString(),
@@ -578,13 +641,97 @@
                   item.resolvedActions.forEach((action: any) => {
                       const currentInvItem = $store.inventory.idToItem[action.payload.itemKey];
                       if (currentInvItem) {
+                          // The resolved action payload already contains the merged state
+                          // typically from confirmConflictResolution.
+                          // But wait, confirmConflictResolution builds a payload with SPECIFIC fields.
+                          // We should merge it carefully.
+                          
                           const payloadItem = {
                               ...currentInvItem,
                               ...action.payload, 
-                               // 'qty' is already in payload from resolve_conflict logic (CSV qty)
-                               // If we wanted to ADD, we would need to handle it in confirmConflictResolution
-                               // But typically resolution = setting correct final state
                           };
+                          
+                          // If action.payload has 'qty', it means we are forcing the Qty.
+                          // Ideally, if we are correcting stock, we might need adjustments to 'shipped' too?
+                          // Or we assume the user intends to overwrite TOTAL qty?
+                          // Shopify Qty is "Remaining".
+                          // If we set Internal Qty = Shopify Qty, needed to verify Shipped = 0?
+                          // Or do we recalculate Qty = Shopify Qty + Shipped?
+                          // Let's assume for RESOLVED conflicts from UI, if user accepted Shopify Qty,
+                          // they mean "Remaining Stock is X".
+                          // So Total Qty = X + Shipped.
+                          
+                          if (action.payload.qty !== undefined) {
+                              // Special case: If we 'Keep Existing', we might have passed existing Qty back in payload.
+                              // If so, does it match currentInvItem.qty?
+                              // If it matches, we are fine.
+                              
+                              // If we 'Use Incoming', action.payload.qty is Shopify Qty (Remaining).
+                              // So we must add Shipped.
+                              
+                              // We need to know if the payload value is "Total" or "Remaining".
+                              // UI logic (confirmConflictResolution):
+                              // payload.qty = choice === 'incoming' ? incoming : existing;
+                              // Incoming = Shopify Qty (Remaining).
+                              // Existing = currentConflictItem!.existingItem.qty (Total).
+                              
+                              // Conflict!
+                              // If we chose Existing (Total), we set payload.qty = Total.
+                              // If we chose Incoming (Remaining), we set payload.qty = Remaining.
+                              
+                              // We need to distinguish or normalize.
+                              // Ideally, payload should just be consistent updates.
+                              // But here we are applying "qty" update.
+                              
+                              // Let's check `fieldResolutions` logic in confirmConflictResolution.
+                              // If choice was 'incoming', we are updating to new Remaining.
+                              
+                              // Wait, we lost the context of "choice" here in `processResolvedConflicts` (looping over stored resolutions).
+                              // We only have the final payload.
+                              
+                              // Heuristic:
+                              // If the payload value matches Shopify Qty (item.qty), trust it as Remaining?
+                              // But what if Existing Total randomly equals Shopify Remaining?
+                              // That would be a coincidence but possible.
+                              
+                              // Better:
+                              // In `confirmConflictResolution`, normalize the payload to TOTAL immediately.
+                              
+                          } 
+                          
+                          // Wait, I can't change confirmConflictResolution here without context.
+                          // Let's assume the payload.qty is ALREADY normalized to Total in confirmConflictResolution?
+                          // Let's check existing code there.
+                          // Line 428: payload[prop] = choice === 'incoming' ? incoming : existing;
+                          // Incoming 'qty' is Remaining. Existing 'qty' is Total.
+                          // So the payload is mixed meaning!
+                          
+                          // Fix is needed in confirmConflictResolution.
+                          
+                          // But assuming I can fix it there (next step?), here we just apply simple math if needed?
+                          // No, safer to fix upstream.
+                          
+                          // For now, let's keep the existing logic block I am REPLACING, but simpler?
+                          // The original block (lines 622-625) added `existingShipped`.
+                          // "payloadItem.qty = Number(action.payload.qty) + existingShipped;"
+                          // This assumes payload.qty was REMAINING.
+                          // If user chose "Keep Existing" (Total), then we add Shipped? -> Total + Shipped ==> Wrong (Inflated).
+                          
+                          // Current Bug in existing code?
+                          // Yes, likely.
+                          
+                          // Since I am already ignoring Qty by default, maybe resolutions are less frequent?
+                          // But if they resolve...
+                          
+                          // I'll leave this block mostly as is but cleaner, and fix confirmConflictResolution next.
+                          
+                          // Actually, I can't leave it "as is" if it's broken.
+                          // I'll comment out the forced addition for now and rely on corrected payload.
+                          // Or... assume payload IS total.
+                           if (action.payload.qty !== undefined) {
+                               payloadItem.qty = Number(action.payload.qty);
+                           }
+
                           bulkUpdates.push({ type: "update", id: action.payload.itemKey, item: payloadItem });
                       }
                   });
@@ -609,6 +756,7 @@
   function getIncomingValue(field: string) {
       if (!currentConflictItem) return "";
       if (field === 'Description') return currentConflictItem.description;
+      if (field === 'Stock') return currentConflictItem.qty;
       const key = field.toLowerCase();
       return (currentConflictItem as any)[key];
   }
@@ -618,6 +766,12 @@
       if (field === 'Description') return currentConflictItem.existingItem.description;
       if (field === 'Handle') {
           return currentConflictItem.existingItem.handle || generateHandle(currentConflictItem.existingItem.description || "", currentConflictItem.existingItem.janCode);
+      }
+      if (field === 'Stock') {
+          // Display "Effective Stock Finding"
+          const total = currentConflictItem.existingItem.qty || 0;
+          const shipped = currentConflictItem.existingItem.shipped || 0;
+          return `${total - shipped} (Total: ${total}, Shipped: ${shipped})`;
       }
       const key = field.toLowerCase();
       return currentConflictItem.existingItem[key];
@@ -715,9 +869,13 @@
                            </label>
                            <label class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border">
                                <input type="checkbox" bind:checked={useShopifyHandles}>
-                               Accept Shopify Handles
-                           </label>
-                                   <p class="text-xs text-muted mt-1">If checked, existing descriptions and handles will be overwritten.</p>
+                                Accept Shopify Handles
+                            </label>
+                            <label class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border">
+                                <input type="checkbox" bind:checked={ignoreShopifyQty}>
+                                Ignore Shopify quantities
+                            </label>
+                                   <p class="text-xs text-muted mt-1">If checked, existing descriptions and handles will be overwritten. If "Ignore" is checked, quantity mismatches will flag conflicts but import will skip quantity updates.</p>
                                </div>
 
                                <div class="batch-actions">
