@@ -117,12 +117,14 @@ export function itemsLookIdentical(oldItem: Item, mergeItem: Item) {
     //);
     return false;
   }
+  /*
   if (mergeItem.image !== oldItem.image) {
     //console.error(
     //`Merge conflict on image ${oldItem.image} vs ${mergeItem.image}`,
     //);
     return false;
   }
+  */
   return true;
 }
 
@@ -562,33 +564,21 @@ export const inventory = createReducer(initialState, (r) => {
         return (a.val || 0) - (b.val || 0);
       });
 
-      // Reassign the sorted history (Redux Toolkit allows mutation or reassignment)
+      // Reassign the sorted history
       state.idToHistory[mergeItemKey] = combined;
 
-      //delete state.idToItem[itemKey];
-      state.idToItem[itemKey].shipped = 0;
-      state.idToItem[itemKey].qty = 0;
-      if (!state.idToHistory[itemKey]) {
-        console.warn(
-          `[InventoryDebug] rename_subtype (old key): idToHistory missing for ${itemKey}. Initializing empty.`,
-        );
-        state.idToHistory[itemKey] = [];
-      }
+      // Delete the old item
+      delete state.idToItem[itemKey];
 
       const ts = (action as any).timestamp;
-      // Use the item's timestamp to match its creationDate string, if available
-      const val =
-        state.idToItem[itemKey].timestamp ||
-        (ts ? new Date(ts.seconds * 1000).getTime() : 0);
-
-      state.idToHistory[itemKey].push({
-        date: state.idToItem[itemKey].creationDate,
-        desc: `Retyped from ${itemKey} to ${mergeItemKey} (qty: ${state.idToItem[mergeItemKey].qty})`,
-        val,
-      });
+      const val = ts ? new Date(ts.seconds * 1000).getTime() : Date.now();
 
       state.idToHistory[mergeItemKey].push({
-        date: state.idToItem[itemKey].creationDate,
+        date: new Date(val).toLocaleString("en", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        }),
         desc: `Retyped from ${itemKey} to ${mergeItemKey}`,
         val,
       });
