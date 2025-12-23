@@ -857,10 +857,35 @@
           if (!payloadItem.imageAltText && item.imageAltText)
             payloadItem.imageAltText = item.imageAltText;
 
-          if (useShopifyImages && imageUrl) {
-            payloadItem.image = imageUrl;
-          } else if (!payloadItem.image && imageUrl) {
-            payloadItem.image = imageUrl;
+          if (useShopifyImages) {
+              // 1. Update Inventory Item with Variant Image (item.image)
+              if (item.image) {
+                payloadItem.image = item.image;
+              }
+              
+              // 2. Add Gallery Image (item.listingImage) to Listing
+              if (item.listingImage && item.handle) {
+                  const newListingImage: ListingImage = {
+                      id: crypto.randomUUID(),
+                      url: item.listingImage,
+                      position: item.imagePosition || 999,
+                      altText: item.imageAltText || item.description || ""
+                  };
+                  imageActions.push(add_listing_image({ handle: item.handle, image: newListingImage }));
+              }
+          } else if (!payloadItem.image && item.image) {
+            payloadItem.image = item.image;
+          }
+          
+          // Backfill listing image if missing and present in import
+          if (!useShopifyImages && item.listingImage && item.handle) {
+             const newListingImage: ListingImage = {
+                 id: crypto.randomUUID(),
+                 url: item.listingImage,
+                 position: item.imagePosition || 999,
+                 altText: item.imageAltText || item.description || ""
+             };
+             imageActions.push(add_listing_image({ handle: item.handle, image: newListingImage }));
           }
 
           // Qty Logic:
