@@ -767,6 +767,7 @@
     const total = itemsToProcessWithType.length;
     let current = 0;
     const seenHandles = new Set<string>();
+    const clearedHandles = new Set<string>();
 
     // No longer need pendingImagesByHandle for atomic additions
     // const pendingImagesByHandle: Record<string, ListingImage[]> = {};
@@ -774,6 +775,12 @@
 
     try {
       for (const { item, index } of itemsToProcessWithType) {
+         // Strict Sync: Clear listing images first time we see a handle in this batch if syncing images
+         if (useShopifyImages && item.handle && !clearedHandles.has(item.handle)) {
+             imageActions.push(update_listing({ handle: item.handle, changes: { images: [] } }));
+             clearedHandles.add(item.handle);
+         }
+
         current++;
 
         // Only use Shopify URL if:
@@ -859,9 +866,9 @@
 
           if (useShopifyImages) {
               // 1. Update Inventory Item with Variant Image (item.image)
-              if (item.image) {
-                payloadItem.image = item.image;
-              }
+              // Strict Sync: If Shopify has no image for this variant (item.image is empty),
+              // we clear it in Inventory to match.
+              payloadItem.image = item.image;
               
               // 2. Add Gallery Image (item.listingImage) to Listing
               if (item.listingImage && item.handle) {
