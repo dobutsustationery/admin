@@ -32,8 +32,15 @@ export function generateShopifyCSV(products: ShopifyProduct[]): string {
   return Papa.unparse(products);
 }
 
+// Extended Item for Export (includes Listing fields overlay)
+export interface ExportableItem extends Item {
+    bodyHtml?: string;
+    productCategory?: string;
+    imageAltText?: string;
+}
+
 // Helper to map our Item to a base partial ShopifyProduct
-export function mapItemToProduct(item: Item, imagePos: number): ShopifyProduct {
+export function mapItemToProduct(item: ExportableItem, imagePos: number, option1Name: string = "Subtype"): ShopifyProduct {
   // Use persisted fields or defaults
   // Handle: Required. If missing from item, caller must ensure it exists or we default? 
   // Ideally, valid items for export have handles.
@@ -48,7 +55,7 @@ export function mapItemToProduct(item: Item, imagePos: number): ShopifyProduct {
     Vendor: "SPNSS Ltd.",
     "Product Category": item.productCategory || "", 
     Published: "true",
-    "Option1 Name": "Subtype",
+    "Option1 Name": option1Name,
     "Option1 Value": item.subtype || "Default",
     "Variant SKU": item.janCode + (item.subtype ? "-" + item.subtype : ""),
     "Variant Grams": item.weight || 0,
@@ -62,7 +69,7 @@ export function mapItemToProduct(item: Item, imagePos: number): ShopifyProduct {
     "Variant Barcode": item.janCode,
     "Image Src": item.image || "",
     "Image Position": imagePos,
-    "Image Alt Text": item.description, // Default to desc
+    "Image Alt Text": item.imageAltText || item.description || "", // Use Listing Alt if available
     "Variant Image": item.image || "", // Default to same image
     "Variant Weight Unit": "g",
     Status: "active"

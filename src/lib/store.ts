@@ -7,6 +7,7 @@ import { names } from "./names";
 import { photos } from "./photos-slice";
 import { orderImport } from "./order-import-slice";
 import { shopifyImport } from "./shopify-import-slice";
+import { listings } from "./listings-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 
 function svelteStoreEnhancer(createStoreApi: (arg0: any, arg1: any) => any) {
@@ -32,6 +33,7 @@ const reducerObject = {
   photos,
   orderImport,
   shopifyImport,
+  listings,
 };
 const combinedReducer = combineReducers(reducerObject);
 
