@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
+  import { goto } from "$app/navigation";
   import { slide } from "svelte/transition";
   import { generateHandle, generateSku } from "$lib/handle-utils";
   import { store } from "$lib/store";
@@ -466,6 +467,7 @@
   
   // --- Resizable Columns ---
   let columnWidths: Record<string, number> = {
+      view: 50,
       handle: 200,
       title: 300,
       body: 300,
@@ -685,6 +687,10 @@
         <table>
             <thead>
                 <tr>
+                    <!-- 0. View -->
+                    <th style="width: {columnWidths.view}px">
+                        <span class="sr-only">View</span>
+                    </th>
                     <!-- 1. Handle -->
                     <th style="width: {columnWidths.handle}px" on:click={() => handleHeaderClick('handle')}>
                         Handle {sortHistory[0]?.field === 'handle' ? (sortHistory[0].dir === 'asc' ? '↑' : '↓') : ''}
@@ -765,6 +771,18 @@
             <tbody>
                 {#each visibleItems as item, i}
                     <tr>
+                         <td class="text-center">
+                             <button 
+                                class="p-1 text-gray-500 hover:text-blue-600 focus:outline-none" 
+                                title="View Listing"
+                                on:click={() => goto(`/listing-detail?handle=${item.computedHandle}`)}
+                             >
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                     <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                                     <circle cx="12" cy="12" r="3"/>
+                                 </svg>
+                             </button>
+                         </td>
                         <!-- 1. Handle -->
                          <td class="input-cell" 
                             class:selected={selectionColumn === 'handle' && i >= selectionStart && i <= selectionEnd}
