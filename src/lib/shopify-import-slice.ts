@@ -7,7 +7,8 @@ export interface ShopifyImportItem {
   qty: number; // Variant Inventory Qty
   price?: number; // Variant Price
   weight?: number; // Variant Grams
-  image?: string; // Image Src (URL)
+  image?: string; // Inventory Item Image (Variant Image)
+  listingImage?: string; // Gallery Image (Image Src) - to be added to listing
   handle?: string; // For grouping/reference
   processed?: boolean;
   
@@ -157,7 +158,8 @@ const initialState: ShopifyImportState = {
                         bodyHtml: bodyHtml || "",
                         productCategory: productCategory || "",
                         imagePosition: pos,
-                        imageAltText: imageAltText || ""
+                        imageAltText: imageAltText || "",
+                        listingImage: imageStr || undefined
                      };
                      
                      // Update Cache if valid handle and not inheriting (or even if inheriting? No, only update on fresh data?)
