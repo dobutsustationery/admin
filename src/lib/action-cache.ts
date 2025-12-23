@@ -1,6 +1,6 @@
 
 const DB_NAME = "dobutsu_actions_db";
-const DB_VERSION = 3;
+const DB_VERSION = 10; // Bumped to force clear
 const ACTIONS_STORE = "actions";
 const SNAPSHOT_STORE = "snapshot";
 
@@ -36,6 +36,21 @@ function openDB(): Promise<IDBDatabase> {
     request.onupgradeneeded = (event) => {
       const db = request.result;
       const tx = request.transaction!;
+      
+      // Clear stores on upgrade to ensure fresh replay
+      if (db.objectStoreNames.contains(SNAPSHOT_STORE)) {
+          tx.objectStore(SNAPSHOT_STORE).clear();
+      }
+      if (db.objectStoreNames.contains(ACTIONS_STORE)) {
+           // Optional: clear actions if we want to re-fetch from source of truth?
+           // The user said "cache erasure/refresh". 
+           // If 'actions' store is just a cache of firestore events, clearing it forces re-fetch if implemented that way.
+           // Or if it IS the source of truth for offline...
+           // Let's safe side: Just clear Snapshot. The Actions store might be needed if it's the only copy?
+           // User: "Replaying the actions is the migration..."
+           // If actions are in IDB, we should probably keep them but re-process them.
+           // But clearing Snapshot forces reducer to run from initial state + actions.
+      }
       
       // Actions Store
       if (!db.objectStoreNames.contains(ACTIONS_STORE)) {

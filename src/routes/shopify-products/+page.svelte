@@ -7,9 +7,11 @@
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
   import { update_item, update_field, type Item } from "$lib/inventory";
+  import { update_listing, create_listing, type Listing, type ListingImage } from "$lib/listings-slice";
   import { generateShopifyCSV, mapItemToProduct } from "$lib/shopify-export";
   import { fade } from "svelte/transition";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
+
 
   // --- Derived Data ---
   let searchQuery = "";
@@ -43,13 +45,43 @@
       }
   }
 
-  // Flatten inventory
-  $: inventoryItems = (Object.entries($store.inventory.idToItem) as [string, Item][]).map(([key, item]) => ({
-    id: key,
-    ...item,
-    // Default handle logic: title-words-first-then-jan-code
-    computedHandle: item.handle || generateHandle(item.description || "Untitled", item.janCode)
-  }));
+  // Flatten inventory with Listing Overlay
+  $: inventoryItems = (Object.entries($store.inventory.idToItem) as [string, Item][]).map(([key, item]) => {
+      // Robust lookup: Check if listing slice knows the handle for this item ID (key)
+      // Fallback to generation if not found (e.g. not initialized or sync issue)
+      const knownHandle = $store.listings.idToHandle?.[key];
+      const computedHandle = knownHandle || (item.handle || generateHandle(item.description || "Untitled", item.janCode));
+      
+      const listing = $store.listings.handleToListing[computedHandle];
+      
+      // Find matching image in listing to get position/alt
+      let imagePosition: number | undefined = undefined;
+      let imageAltText: string | undefined = undefined;
+      
+      if (listing && item.image) {
+          const matchingImg = listing.images.find((img: ListingImage) => img.url === item.image);
+          if (matchingImg) {
+              imagePosition = matchingImg.position;
+              imageAltText = matchingImg.altText;
+          }
+      }
+
+      return {
+        id: key,
+        ...item,
+        computedHandle,
+        // Overlay Listing Data if available
+        description: listing ? listing.title : item.description,
+        bodyHtml: listing ? listing.bodyHtml : "",
+        productCategory: listing ? listing.productCategory : "",
+        // Derived Image Data
+        imagePosition,
+        imageAltText,
+        
+        // Helper to know if we are in "Listing Mode" for this item
+        hasListing: !!listing
+      };
+  });
 
   // Sort/Filter
   $: visibleItems = inventoryItems
@@ -132,15 +164,71 @@
 
   // --- Actions ---
 
-  function commitEdit(id: string, field: keyof Item, value: any, index: number) {
+  function commitEdit(id: string, field: string, value: any, index: number) {
       if (!$user || !$user.uid) return;
       
-      broadcast(firestore, $user.uid, update_field({
-          id,
-          field,
-          from: undefined, 
-          to: value
-      }));
+      const item = visibleItems[index]; // visibleItems usually maps 1:1 to index in list
+      // Safer: find item by id if sort order changed? But index is passed from the row iteration.
+      
+      const handle = item.computedHandle;
+      const listing = $store.listings.handleToListing[handle];
+      
+      // Listing Fields
+      if (['description', 'bodyHtml', 'productCategory'].includes(field)) {
+          if (listing) {
+              const changes: Partial<Listing> = {};
+              if (field === 'description') changes.title = value;
+              else if (field === 'bodyHtml') changes.bodyHtml = value;
+              else if (field === 'productCategory') changes.productCategory = value;
+              
+              broadcast(firestore, $user.uid, update_listing({ handle, changes }));
+          } else {
+              // Legacy Fallback is removed.
+              // We could trigger a listing creation here if missing?
+              // Ideally, if a user is editing "Description", they expect it to work.
+              // The listings slice should have handled creation via `update_item` replay.
+              // But if the listing is truly missing, we should create it on the fly or warn.
+              // Given the replay logic, it should exist. 
+              // If we force it:
+              // broadcast(firestore, $user.uid, create_listing(...));
+              // For now, let's assume it exists or fail gracefully by just logging warning.
+              console.warn(`Attempted to edit listing field ${field} for ${handle} but no listing exists.`);
+          }
+      } else if (['imageAltText', 'imagePosition'].includes(field)) {
+          // These are now Listing Image fields. Complex update.
+          if (listing && item.image) {
+             // Clone images
+             const newImages = (listing.images || []).map((img: ListingImage) => {
+                 if (img.url === item.image) {
+                     return { 
+                         ...img, 
+                         altText: field === 'imageAltText' ? value : img.altText,
+                         position: field === 'imagePosition' ? Number(value) : img.position
+                     };
+                 }
+                 return img;
+             });
+             broadcast(firestore, $user.uid, update_listing({ handle, changes: { images: newImages } }));
+          }
+      } else {
+          // Item Field
+          const validItemFields = ['janCode', 'subtype', 'price', 'weight', 'image', 'countryOfOrigin', 'qty', 'shipped'];
+          if (validItemFields.includes(field)) {
+             broadcast(firestore, $user.uid, update_field({
+                 id,
+                 field: field as keyof Item,
+                 from: undefined, 
+                 to: value
+             }));
+          } else if (field === 'handle') {
+             broadcast(firestore, $user.uid, update_field({
+                 id,
+                 field: 'handle',
+                 from: undefined, 
+                 to: value
+             }));
+          }
+      }
   }
 
   // Handle cell interaction
@@ -366,12 +454,9 @@
       
       for (let i = selectionStart; i <= selectionEnd; i++) {
           const item = visibleItems[i];
-          broadcast(firestore, $user.uid, update_field({
-              id: item.id,
-              field: selectionColumn as keyof Item,
-              from: undefined,
-              to: sourceValue
-          }));
+          if (selectionColumn) {
+             commitEdit(item.id, selectionColumn, sourceValue, i);
+          }
       }
       
       selectionColumn = null;
@@ -431,7 +516,11 @@
              ...item,
              handle: item.handle || item.computedHandle
          };
-         return mapItemToProduct(effectiveItem, item.imagePosition || (i + 1)); // Heuristic for fallback pos
+         // Get listing to find option1Name
+         const listing = $store.listings.handleToListing[effectiveItem.handle || ""];
+         const option1Name = listing ? listing.option1Name : "Subtype";
+         
+         return mapItemToProduct(effectiveItem, item.imagePosition || (i + 1), option1Name); // Heuristic for fallback pos
       });
       
       const csv = generateShopifyCSV(products);

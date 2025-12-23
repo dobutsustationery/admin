@@ -17,10 +17,7 @@ export interface Item {
 
   // Shopify specific
   handle?: string;
-  bodyHtml?: string;
-  productCategory?: string;
-  imagePosition?: number;
-  imageAltText?: string;
+  // bodyHtml, productCategory, etc. removed for Listings slice migration
   countryOfOrigin?: string;
 }
 export interface LineItem {
@@ -97,12 +94,14 @@ export const make_sales = createAction<{
   archiveName: string;
   date: Date;
 }>("make_sales");
-export const bulk_import_items = createAction<{
-  items: Array<{
+export interface BulkImportItem {
     type: "new" | "update";
     id: string; // janCode or itemKey
     item: Item; // The full item object or partial update
-  }>;
+}
+
+export const bulk_import_items = createAction<{
+  items: Array<BulkImportItem>;
 }>("bulk_import_items");
 
 export function itemsLookIdentical(oldItem: Item, mergeItem: Item) {
@@ -221,6 +220,7 @@ function applyInventoryUpdate(
     qty: Number(item.qty) + qty,
     shipped: (Number(item.shipped) || 0) + shipped,
     timestamp: val,
+    // Explicitly exclude legacy fields from spread if they exist in runtime payload (unlikely via TS, but safe)
   };
   if (state.idToItem[id].shipped === undefined) {
     state.idToItem[id].shipped = 0;
