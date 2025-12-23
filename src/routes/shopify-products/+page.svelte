@@ -533,14 +533,48 @@
           }
           const option1Name = listing ? listing.option1Name : "Subtype";
           
-          // Images: Listing Images take precedence for the "Gallery" (Image Src column)
-          // If no listing images, fallback to collecting unique images from variants?
-          // The prompt says "imported them" (into Listing), so we trust Listing.
-          const galleryImages = listing && listing.images ? listing.images : [];
+          // Images: Listing Images
+          const rawGallery = listing && listing.images ? [...listing.images] : [];
           
-          // If no listing images, maybe fallback to variant images if not present?
-          // Listing logic should be primary.
+          // Reorder gallery to align with variants if possible
+          // Algorithm:
+          // 1. For each variant i, if it has an image Val, find Val in rawGallery.
+          // 2. If found and not already placed, move it to index i (or swap/insert).
+          //    Actually simpler: Build a new ordered list.
           
+          const orderedGallery: any[] = new Array(variants.length).fill(null);
+          const usedGalleryIndices = new Set<number>();
+          
+          // Pass 1: Place variant-linked images at corresponding indices
+          variants.forEach((v, idx) => {
+              if (v.image) {
+                  const matchIdx = rawGallery.findIndex((img, i) => img.url === v.image && !usedGalleryIndices.has(i));
+                  if (matchIdx !== -1) {
+                      orderedGallery[idx] = rawGallery[matchIdx];
+                      usedGalleryIndices.add(matchIdx);
+                  }
+              }
+          });
+          
+          // Pass 2: Fill remaining slots (holes in orderedGallery or append) with remaining images
+          const remainingImages = rawGallery.filter((_, i) => !usedGalleryIndices.has(i));
+          
+          // Fill holes in the first N slots (where variants exist but didn't claim an image or claimed a shared one?)
+          // Actually, if V(i) didn't claim an image, orderedGallery[i] is null. 
+          // We can put a remaining image there.
+          let remainIdx = 0;
+          for (let i = 0; i < orderedGallery.length; i++) {
+              if (!orderedGallery[i] && remainIdx < remainingImages.length) {
+                   orderedGallery[i] = remainingImages[remainIdx++];
+              }
+          }
+          
+          // Append any leftovers
+          while (remainIdx < remainingImages.length) {
+              orderedGallery.push(remainingImages[remainIdx++]);
+          }
+          
+          const galleryImages = orderedGallery;
           const maxRows = Math.max(variants.length, galleryImages.length);
           
           for (let i = 0; i < maxRows; i++) {
