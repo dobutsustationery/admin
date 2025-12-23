@@ -127,8 +127,14 @@ const initialState: ShopifyImportState = {
                  let error: string | undefined = undefined;
                  
                  if (!janCode) {
-                     error = "Missing Variant SKU";
-                 } else {
+                     if (handle && imageStr) {
+                         // Valid Image Row
+                     } else {
+                         error = "Missing Variant SKU";
+                     }
+                 } 
+                 
+                 if (!error) {
                      const qty = parseInt((parsedRow['variant inventory qty'] || "0").replace(/[^0-9-]/g, ""), 10) || 0;
                      const price = priceStr ? parseFloat(priceStr.replace(/[^0-9.]/g, "")) : undefined;
                      const weight = weightStr ? parseFloat(weightStr.replace(/[^0-9.]/g, "")) : undefined;
