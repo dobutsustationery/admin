@@ -73,9 +73,11 @@ export const listings = createReducer(initialState, (builder) => {
         const { handle, image } = action.payload;
         const listing = state.handleToListing[handle];
         if (listing) {
-            // Allow duplicates as requested
-            listing.images.push(image);
-            listing.lastUpdated = Date.now();
+            const exists = listing.images.some(img => img.url === image.url);
+            if (!exists) {
+                listing.images.push(image);
+                listing.lastUpdated = Date.now();
+            }
         }
     })
     .addCase(remove_listing_image, (state, action) => {
@@ -259,12 +261,15 @@ function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, 
       
       // Handle Image
       if (itemPayload.image) {
-            listing.images.push({
-                  id: crypto.randomUUID(),
-                  url: itemPayload.image,
-                  position: itemPayload.imagePosition || listing.images.length + 1,
-                  altText: itemPayload.imageAltText || itemPayload.description || ""
-            });
-            listing.lastUpdated = Date.now();
+            const hasImage = listing.images.some(img => img.url === itemPayload.image);
+            if (!hasImage) {
+                 listing.images.push({
+                       id: crypto.randomUUID(),
+                       url: itemPayload.image,
+                       position: itemPayload.imagePosition || listing.images.length + 1,
+                       altText: itemPayload.imageAltText || itemPayload.description || ""
+                 });
+                 listing.lastUpdated = Date.now();
+            }
       }
 }
