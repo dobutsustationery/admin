@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { slide } from "svelte/transition";
-  import { generateHandle } from "$lib/handle-utils";
+  import { generateHandle, generateSku } from "$lib/handle-utils";
   import { store } from "$lib/store";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
   import { update_item, update_field, type Item } from "$lib/inventory";
   import { update_listing, create_listing, type Listing, type ListingImage } from "$lib/listings-slice";
-  import { generateShopifyCSV, mapItemToProduct } from "$lib/shopify-export";
+  import Papa from "papaparse";
   import { fade } from "svelte/transition";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
 
@@ -510,20 +510,121 @@
   }
 
   function downloadCSV() {
-      const products = visibleItems.map((item, i) => {
-         // Use computed handle if real handle is missing
-         const effectiveItem = {
-             ...item,
-             handle: item.handle || item.computedHandle
-         };
-         // Get listing to find option1Name
-         const listing = $store.listings.handleToListing[effectiveItem.handle || ""];
-         const option1Name = listing ? listing.option1Name : "Subtype";
-         
-         return mapItemToProduct(effectiveItem, item.imagePosition || (i + 1), option1Name); // Heuristic for fallback pos
+      // 1. Group by Handle
+      const rowsByHandle: Record<string, typeof visibleItems> = {};
+      
+      visibleItems.forEach(item => {
+          // Use computedHandle as primary because it aligns with idToHandle/Listings store.
+          // item.handle might be stale legacy data.
+          const h = item.computedHandle || item.handle || "MISSING-HANDLE";
+          if (!rowsByHandle[h]) rowsByHandle[h] = [];
+          rowsByHandle[h].push(item);
+      });
+
+      const exportRows: any[] = [];
+
+      // 2. Process each Group
+      Object.entries(rowsByHandle).forEach(([handle, variants]) => {
+          const listing = $store.listings.handleToListing[handle];
+          if (!listing) {
+               console.warn(`[Export Debug] No listing found for handle: '${handle}'. Variants found: ${variants.length}. ComputedHandles: ${variants.map(v => v.computedHandle).join(', ')}`);
+          } else {
+               console.log(`[Export Debug] Listing found for '${handle}'. Images: ${listing.images?.length || 0}. Variants: ${variants.length}`);
+          }
+          const option1Name = listing ? listing.option1Name : "Subtype";
+          
+          // Images: Listing Images take precedence for the "Gallery" (Image Src column)
+          // If no listing images, fallback to collecting unique images from variants?
+          // The prompt says "imported them" (into Listing), so we trust Listing.
+          const galleryImages = listing && listing.images ? listing.images : [];
+          
+          // If no listing images, maybe fallback to variant images if not present?
+          // Listing logic should be primary.
+          
+          const maxRows = Math.max(variants.length, galleryImages.length);
+          
+          for (let i = 0; i < maxRows; i++) {
+              const variant = variants[i]; // May be undefined
+              const galleryImg = galleryImages[i]; // May be undefined
+              
+              let exportRow: any = {};
+              
+              // A. Handle (Always)
+              exportRow['Handle'] = handle;
+              
+              // B. Product Data (Only on first row usually, but Shopify allows repeat)
+              // We'll put Title/Body/Category on Row 0.
+              if (i === 0) {
+                  const leader = variant || variants[0]; // Fallback to first variant info if we have image-only leading? 
+                  // If variants=0, we have an orphan listing? visibleItems implies we have inventory.
+                  // So variant exists if i=0 usually.
+                  
+                  exportRow['Title'] = listing ? listing.title : (leader ? leader.description : "");
+                  exportRow['Body (HTML)'] = listing ? listing.bodyHtml : "";
+                  exportRow['Vendor'] = "SPNSS Ltd.";
+                  exportRow['Product Category'] = listing ? listing.productCategory : "";
+                  exportRow['Published'] = "true";
+                  exportRow['Option1 Name'] = option1Name;
+              }
+              
+              // C. Variant Data
+              if (variant) {
+                  exportRow['Option1 Value'] = variant.subtype || "Default";
+                  exportRow['Variant SKU'] = generateSku(variant.janCode, variant.subtype);
+                  exportRow['Variant Grams'] = variant.weight || 0;
+                  exportRow['Variant Inventory Tracker'] = "shopify";
+                  exportRow['Variant Inventory Qty'] = variant.qty;
+                  exportRow['Variant Inventory Policy'] = "deny";
+                  exportRow['Variant Fulfillment Service'] = "manual";
+                  exportRow['Variant Price'] = variant.price || 0;
+                  exportRow['Variant Requires Shipping'] = "true";
+                  exportRow['Variant Taxable'] = "true";
+                  exportRow['Variant Barcode'] = variant.janCode;
+                  exportRow['Variant Weight Unit'] = "g";
+                  
+                  // Variant Image (The specific image for this variant)
+                  // If variant.image is a Data URL, we assume it was cleaned up or we ignore it?
+                  // Best effort: Use variant.image. If matched in gallery, good.
+                  exportRow['Variant Image'] = variant.image || "";
+                  
+                  // Status
+                  exportRow['Status'] = "active"; // Or based on verification?
+              }
+              
+              // D. Image Data (Gallery)
+              if (galleryImg) {
+                  exportRow['Image Src'] = galleryImg.url;
+                  exportRow['Image Position'] = galleryImg.position || (i + 1);
+                  exportRow['Image Alt Text'] = galleryImg.altText || "";
+              }
+              
+              exportRows.push(exportRow);
+          }
       });
       
-      const csv = generateShopifyCSV(products);
+      const csv = Papa.unparse(exportRows, {
+          columns: [
+              "Handle", "Title", "Body (HTML)", "Vendor", "Product Category", "Type", "Tags", "Published", 
+              "Option1 Name", "Option1 Value", "Option2 Name", "Option2 Value", "Option3 Name", "Option3 Value",
+              "Variant SKU", "Variant Grams", "Variant Inventory Tracker", "Variant Inventory Qty", "Variant Inventory Policy", 
+              "Variant Fulfillment Service", "Variant Price", "Variant Compare At Price", "Variant Requires Shipping", 
+              "Variant Taxable", "Variant Barcode", "Image Src", "Image Position", "Image Alt Text", "Gift Card", 
+              "SEO Title", "SEO Description", "Google Shopping / Google Product Category", "Google Shopping / Gender", 
+              "Google Shopping / Age Group", "Google Shopping / MPN", "Google Shopping / AdWords Grouping", 
+              "Google Shopping / AdWords Labels", "Google Shopping / Condition", "Google Shopping / Custom Product", 
+              "Google Shopping / Custom Label 0", "Google Shopping / Custom Label 1", "Google Shopping / Custom Label 2", 
+              "Google Shopping / Custom Label 3", "Google Shopping / Custom Label 4", "Variant Image", "Variant Weight Unit", 
+              "Variant Tax Code", "Cost per item", "Status"
+          ] 
+          // Note: Standard Shopify Columns. We can stick to the ones we use or full set.
+          // mapItemToProduct used a subset. Let's use the subset defined in mapItemToProduct's interface + extra logic.
+          // But Papa.unparse auto-detects columns from first row matching? Or union?
+          // Safer to let it auto detect or map explicitly. 
+          // Previous implementation used separate generateShopifyCSV function. 
+          // We can't use mapItemToProduct anymore because it assumes 1:1.
+          // We should construct objects matching ShopifyProduct interface.
+      });
+      
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');

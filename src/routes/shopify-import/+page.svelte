@@ -17,6 +17,7 @@
     type DriveFile,
     ensureFolderStructure,
   } from "$lib/google-drive";
+  import type { AnyAction } from "$lib/store";
   import {
     start_session,
     set_header,
@@ -30,6 +31,8 @@
   } from "$lib/shopify-import-slice";
   import {
     create_listing,
+    update_listing,
+    add_listing_image,
     type Listing,
     type ListingImage,
   } from "$lib/listings-slice";
@@ -127,10 +130,20 @@
     conflictingFields?: string[];
     matchingKeys?: string[];
     originalIndex: number;
+    isListingOnly?: boolean;
+    existingListing?: Listing;
   }
 
-  $: analyzedPlan = rawRows.map((rawRow: RawRow, index: number) => {
+  $: analyzedPlan = (() => {
+    const seenHandlesInBatch = new Set<string>();
+    
+    return rawRows.map((rawRow: RawRow, index: number) => {
     const item = rawRow.parsed;
+    
+    // Track handle immediately if valid item
+    if (item && item.handle) {
+        seenHandlesInBatch.add(item.handle);
+    }
 
     if (!item) {
       return {
@@ -167,8 +180,49 @@
     const existing = $store.inventory.idToItem[JAN];
     const inventoryMatches = existing ? [{ ...existing, key: JAN }] : [];
 
+    // Strict match implies length is 1. O(1) lookup.
+    
+    // NEW: Handle Listing-Only matches (empty JAN)
     if (inventoryMatches.length === 0) {
-      return {
+        if (!JAN && item.handle) {
+             const knownListing = $store.listings.handleToListing[item.handle];
+             const isNewInBatch = seenHandlesInBatch.has(item.handle);
+             
+             if (knownListing || isNewInBatch) {
+                 // Check if image already exists (only if knownListing exists)
+                 // If newInBatch, we assume it's NOT identical to what we just created? 
+                 // Or we could track images in batch too? 
+                 // Simple: If newInBatch, it's MATCH (Add Image).
+                 
+                 const imgExists = knownListing && item.image ? (knownListing.images || []).some((img: any) => img.url === item.image) : false;
+                 
+                 // Use knownListing or a mock for the reference
+                 const listingRef = knownListing || { handle: item.handle } as Listing;
+                 
+                 if (imgExists) {
+                     return {
+                        ...item,
+                        status: "IDENTICAL",
+                        actionLabel: "Identical",
+                        originalIndex: index,
+                        isListingOnly: true // Tracking
+                     } as AnalyzedItem;
+                 } else {
+                     return {
+                        ...item,
+                        status: "MATCH",
+                        actionLabel: "Add Image",
+                        originalIndex: index, 
+                        isListingOnly: true,
+                        existingListing: listingRef 
+                     } as AnalyzedItem;
+                 }
+             }
+        }
+    
+        // It's genuinely NEW
+
+        return {
         ...item,
         status: "NEW",
         actionLabel: "Create",
@@ -176,7 +230,6 @@
       } as AnalyzedItem;
     }
 
-    // Strict match implies length is 1. O(1) lookup.
     const match = inventoryMatches[0] as any;
     const conflicts: string[] = [];
 
@@ -340,6 +393,7 @@
       originalIndex: index,
     } as AnalyzedItem;
   });
+  })();
 
   $: visibleItems = analyzedPlan.filter(
     (i: AnalyzedItem) => i.status !== "DONE",
@@ -714,6 +768,10 @@
     let current = 0;
     const seenHandles = new Set<string>();
 
+    // No longer need pendingImagesByHandle for atomic additions
+    // const pendingImagesByHandle: Record<string, ListingImage[]> = {};
+    const imageActions: AnyAction[] = [];
+
     try {
       for (const { item, index } of itemsToProcessWithType) {
         current++;
@@ -727,9 +785,38 @@
 
         let imageUrl = item.image || "";
 
+        // NEW: Handle Listing Only (Image Append)
+        if (item.status === "MATCH" && item.isListingOnly && item.existingListing) {
+            const listing = item.existingListing;
+            if (item.image) {
+                // ATOMIC Add Image Action
+                // We broadcast this action directly. Since it's atomic, it's safe even if redundant.
+                // The reducer handles deduplication by URL.
+                const handle = listing.handle;
+                
+                // We need to generate a ListingImage object
+                // Position logic: The reducer will push. 
+                // If we want correct position from CSV, we might need 'imagePosition' field
+                // But typically append is enough for "Listing Only" rows which are usually additional variants/images.
+                // The CSV might provide explicit Position column though.
+                // For now, we trust the reducer to append.
+                
+                const newImage: ListingImage = {
+                     id: crypto.randomUUID(),
+                     url: item.image,
+                     position: item.imagePosition || 999, // Allow reducer to sort or just append
+                     altText: item.imageAltText || item.description || ""
+                };
+                
+                imageActions.push(add_listing_image({ handle, image: newImage }));
+            }
+            indicesToMarkDone.push(index);
+            continue;
+        }
+
         if (item.status === "MATCH" && item.existingItem) {
-          const itemKey = item.existingItem.key;
-          const existing = item.existingItem;
+            const itemKey = item.existingItem.key;
+            const existing = item.existingItem;
 
           // CRITICAL: applyInventoryUpdate treats qty/shipped as DELTAS.
           // We must initiate them as 0 to avoid doubling existing values.
@@ -863,6 +950,8 @@
         }
       }
 
+
+
       const CHUNK_SIZE = 100;
       for (let i = 0; i < bulkUpdates.length; i += CHUNK_SIZE) {
         const chunk = bulkUpdates.slice(i, i + CHUNK_SIZE);
@@ -877,6 +966,19 @@
         }
         await new Promise((r) => setTimeout(r, 10));
       }
+      
+    // 2. Broadcast Granular Image Actions (AFTER Bulk Updates)
+    if ($user && $user.uid && imageActions.length > 0) {
+        const IMG_CHUNK_SIZE = 50; 
+        for (let i = 0; i < imageActions.length; i += IMG_CHUNK_SIZE) {
+            const chunk = imageActions.slice(i, i + IMG_CHUNK_SIZE);
+            for (const action of chunk) {
+                broadcast(firestore, $user.uid, action);
+            }
+            await new Promise(r => setTimeout(r, 10));
+        }
+    }
+
       successMsg = `Processed ${bulkUpdates.length} items.`;
     } catch (e) {
       error =

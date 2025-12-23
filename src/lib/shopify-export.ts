@@ -1,5 +1,6 @@
 import type { Item } from "$lib/inventory";
 import Papa from "papaparse";
+import { generateSku } from "./handle-utils";
 
 export interface ShopifyProduct {
   Handle: string;
@@ -57,7 +58,7 @@ export function mapItemToProduct(item: ExportableItem, imagePos: number, option1
     Published: "true",
     "Option1 Name": option1Name,
     "Option1 Value": item.subtype || "Default",
-    "Variant SKU": item.janCode + (item.subtype ? "-" + item.subtype : ""),
+    "Variant SKU": generateSku(item.janCode, item.subtype),
     "Variant Grams": item.weight || 0,
     "Variant Inventory Tracker": "shopify",
     "Variant Inventory Qty": item.qty,

@@ -40,6 +40,8 @@ export const initialState: ListingsState = {
 export const create_listing = createAction<{ listing: Listing }>("create_listing");
 export const update_listing = createAction<{ handle: string; changes: Partial<Listing> }>("update_listing");
 export const delete_listing = createAction<{ handle: string }>("delete_listing");
+export const add_listing_image = createAction<{ handle: string; image: ListingImage }>("add_listing_image");
+export const remove_listing_image = createAction<{ handle: string; imageId: string }>("remove_listing_image");
 
 // Reducer
 export const listings = createReducer(initialState, (builder) => {
@@ -62,11 +64,26 @@ export const listings = createReducer(initialState, (builder) => {
     .addCase(delete_listing, (state, action) => {
         const { handle } = action.payload;
         delete state.handleToListing[handle];
-        // Clean up idToHandle? Expensive reverse lookup or ignored.
-        // Usually fine to leave stale generic IDs or we loop.
-        // For strict correctness:
+        // Clean up idToHandle
         for (const [id, h] of Object.entries(state.idToHandle)) {
             if (h === handle) delete state.idToHandle[id];
+        }
+    })
+    .addCase(add_listing_image, (state, action) => {
+        const { handle, image } = action.payload;
+        const listing = state.handleToListing[handle];
+        if (listing) {
+            // Allow duplicates as requested
+            listing.images.push(image);
+            listing.lastUpdated = Date.now();
+        }
+    })
+    .addCase(remove_listing_image, (state, action) => {
+        const { handle, imageId } = action.payload;
+        const listing = state.handleToListing[handle];
+        if (listing) {
+            listing.images = listing.images.filter(img => img.id !== imageId);
+            listing.lastUpdated = Date.now();
         }
     })
     // Legacy Action Handling for Replay
@@ -242,14 +259,12 @@ function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, 
       
       // Handle Image
       if (itemPayload.image) {
-          const exists = listing.images.some(img => img.url === itemPayload.image);
-          if (!exists) {
-              listing.images.push({
+            listing.images.push({
                   id: crypto.randomUUID(),
                   url: itemPayload.image,
                   position: itemPayload.imagePosition || listing.images.length + 1,
                   altText: itemPayload.imageAltText || itemPayload.description || ""
-              });
-          }
+            });
+            listing.lastUpdated = Date.now();
       }
 }
