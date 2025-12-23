@@ -138,9 +138,14 @@ const initialState: ShopifyImportState = {
                      const qty = parseInt((parsedRow['variant inventory qty'] || "0").replace(/[^0-9-]/g, ""), 10) || 0;
                      const price = priceStr ? parseFloat(priceStr.replace(/[^0-9.]/g, "")) : undefined;
                      const weight = weightStr ? parseFloat(weightStr.replace(/[^0-9.]/g, "")) : undefined;
-                     const image = imageStr || ""; // No inherit requested for image?
+                     let variantImageStr = parsedRow['variant image'];
+                     
+                     // ... 
+                     
+                     const image = janCode ? (variantImageStr || "") : (imageStr || ""); // Variant Image for variants, Image Src for listing-only
                      const pos = imagePositionStr ? parseInt(imagePositionStr, 10) : undefined;
-
+                     
+                     // ...
                      item = {
                         janCode,
                         description: title,
