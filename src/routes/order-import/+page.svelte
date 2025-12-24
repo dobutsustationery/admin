@@ -22,6 +22,7 @@
     mark_items_done, 
     clear_import,
     finish_import,
+    import_batch,
     type RawRow,
     type ImportItem
   } from "$lib/order-import-slice";
@@ -498,211 +499,54 @@ interface AnalyzedItem extends ImportItem {
 
   async function processBatch(targetStatus: "MATCH" | "NEW") {
     if (!analyzedPlan.length) return;
-
-    // Use analyzedPlan to filter
-    const itemsToProcessWithType = analyzedPlan
-        .map((item: AnalyzedItem, index: number) => ({ item, index }))
-        .filter(({ item }: { item: AnalyzedItem }) => item.status === targetStatus);
-        
-    if (itemsToProcessWithType.length === 0) return;
+    
+    // Check if we have items of this status
+    const hasItems = analyzedPlan.some((i: AnalyzedItem) => i.status === targetStatus);
+    if (!hasItems) return;
 
     processing = true;
-    const indicesToMarkDone: number[] = [];
-    
-    // BULK ACTION CONSTRUCTION
-    const bulkUpdates: Array<{type: "new"|"update", id: string, item: any}> = [];
-
     try {
-      for (const { item, index } of itemsToProcessWithType) {
-        if (item.status === "MATCH" && item.existingItem) {
-          // Find Key again (since we didn't store it perfectly in AnalyzedItem yet, 
-          // or we rely on the logic that found it). 
-          // Ideally we fix AnalyzedItem to have 'id' on existingItem.
-          // For now:
-          // Use key directly attached during analysis
-          const itemKey = item.existingItem?.key;
-          
-          if (itemKey) {
-            const existHS = item.existingItem?.hsCode;
-            const newHS = item.hsCode;
-            // AUTO-FILL Logic: If existing is blank and new is present, OVERWRITE.
-            const useIncomingHS = !existHS && newHS;
-            
-            const payloadItem: any = {
-                ...item.existingItem,
-                qty: item.qty, // Delta for update_item logic (see inventory.ts)
-                hsCode: useIncomingHS ? newHS : existHS // Explicitly set it, though if it matches exisiting it's redundant but safe
-            };
-
-            // Update price/weight if provided in CSV
-            if (item.price !== undefined) payloadItem.price = item.price;
-            if (item.weight !== undefined) payloadItem.weight = item.weight;
-            if (item.countryOfOrigin !== undefined) payloadItem.countryOfOrigin = item.countryOfOrigin;
-            
-            bulkUpdates.push({
-                type: "update",
-                id: itemKey,
-                item: payloadItem
-            });
-            indicesToMarkDone.push(index);
-          }
-        } else if (item.status === "NEW") {
-          const newItemKey = item.janCode;
-          const newItem = {
-            janCode: item.janCode,
-            subtype: "",
-            description: item.description,
-            hsCode: item.hsCode || "",
-            image: "",
-            qty: item.qty,
-            pieces: 1,
-             shipped: 0,
-            creationDate: new Date().toISOString(),
-            price: item.price,
-            weight: item.weight,
-            countryOfOrigin: item.countryOfOrigin,
-          };
-          
-          // Reuse update_item logic (it handles new creation if ID missing? 
-          // inventory.ts: "if (state.idToItem[id] !== undefined) ... else ... state.idToItem[id] = ...")
-          // Yes, update_item handles creation if key is new.
-          
-            bulkUpdates.push({
-                type: "new",
-                id: newItemKey,
-                item: newItem
-            });
-            indicesToMarkDone.push(index);
-        }
-      }
-      
-      // Process in CHUNKS to avoid 1MB Firestore limit
-      const CHUNK_SIZE = 100;
-      let processedCount = 0;
-
-      for (let i = 0; i < bulkUpdates.length; i += CHUNK_SIZE) {
-        const batchUpdates = bulkUpdates.slice(i, i + CHUNK_SIZE);
-        const batchIndices = indicesToMarkDone.slice(i, i + CHUNK_SIZE);
-        
         if ($user && $user.uid) {
-            // 1. Broadcast Import (Inventory Update)
-            broadcast(firestore, $user.uid, bulk_import_items({ items: batchUpdates }));
-            
-            // 2. Broadcast Done (UI Update)
-            // Note: We do this per-chunk so UI updates progressively
-            broadcast(firestore, $user.uid, mark_items_done({ indices: batchIndices }));
+            broadcast(firestore, $user.uid, import_batch({ filter: targetStatus }));
         }
         
-        processedCount += batchUpdates.length;
-        // Small yield to prevent UI freeze and allow other broadcasts to queue
-        await new Promise(r => setTimeout(r, 10));
-      }
-      
-      successMsg = `Successfully processed ${processedCount} items.`;
-      importStatus = "success";
+        successMsg = `Processed ${targetStatus} items.`;
+        importStatus = "success";
 
-      setTimeout(() => {
-        importStatus = "idle";
-        successMsg = "";
-      }, 3000);
+        setTimeout(() => {
+            importStatus = "idle";
+            successMsg = "";
+        }, 3000);
     } catch (e) {
-      console.error("Batch processing failed:", e);
-      error = `Batch processing failed: ${e instanceof Error ? e.message : String(e)}`;
+        console.error("Batch processing failed:", e);
+        error = `Batch processing failed: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
-      processing = false;
+        processing = false;
     }
   }
 
   async function processResolvedConflicts() {
-    // Find Resolved items and their indices
-    const resolvedWithType = analyzedPlan
-        .map((item: AnalyzedItem, index: number) => ({ item, index }))
-        .filter(({ item }: { item: AnalyzedItem }) => item.status === "RESOLVED");
-
-    if (resolvedWithType.length === 0) return;
+    const hasResolved = analyzedPlan.some((i: AnalyzedItem) => i.status === "RESOLVED");
+    if (!hasResolved) return;
 
     processing = true;
-    const indicesToMarkDone: number[] = [];
-    const bulkUpdates: Array<{type: "new"|"update", id: string, item: any}> = [];
-
     try {
-      for (const { item, index } of resolvedWithType) {
-         if (item.resolvedActions) {
-          item.resolvedActions.forEach((action: any) => {
-            // action is { type: 'update_item', payload: { itemKey, qty } }
-            
-            // So we must fetch existing item.
-            const currentInvItem = $store.inventory.idToItem[action.payload.itemKey];
-            if (currentInvItem) {
-              const payloadItem = {
-                ...currentInvItem,
-                qty: action.payload.qty, // Delta
-                hsCode: action.payload.hsCode !== undefined ? action.payload.hsCode : currentInvItem.hsCode,
-                weight: action.payload.weight !== undefined ? action.payload.weight : currentInvItem.weight,
-                countryOfOrigin: action.payload.countryOfOrigin !== undefined ? action.payload.countryOfOrigin : currentInvItem.countryOfOrigin
-              };
-              
-              bulkUpdates.push({
-                  type: "update",
-                  id: action.payload.itemKey,
-                  item: payloadItem
-              });
-            }
-          });
-          
-          indicesToMarkDone.push(index);
+        if ($user && $user.uid) {
+            broadcast(firestore, $user.uid, import_batch({ filter: "RESOLVED" }));
         }
-      }
-      
-      // Process in CHUNKS
-      const CHUNK_SIZE = 100;
-      let processedCount = 0;
+        
+        successMsg = `Processed resolved conflicts.`;
+        importStatus = "success";
 
-      for (let i = 0; i < bulkUpdates.length; i += CHUNK_SIZE) {
-         const batchUpdates = bulkUpdates.slice(i, i + CHUNK_SIZE);
-         const batchIndices = indicesToMarkDone.slice(i, i + CHUNK_SIZE); // WARNING: indicesToMarkDone must align 1:1 with bulkUpdates?
-         // In processResolvedConflicts, we push to both arrays inside the loop.
-         // Wait, one item can have ONE resolution, but that resolution might trigger MULTIPLE updates (splits)?
-         // In 'resolvedActions.forEach', we push to `bulkUpdates` multiple times for one `index`.
-         // `indicesToMarkDone.push(index)` happens once per item.
-         // So `indicesToMarkDone` length < `bulkUpdates` length if splits exist.
-         // So slicing `indicesToMarkDone` via the same `i` is WRONG.
-         
-         // Fix: We can't easily couple them in the same generic loop unless we group by item.
-         // But `bulk_import_items` works on flat updates.
-         // AND `mark_items_done` works on plan indices.
-         
-         // Strategy:
-         // 1. Send all `bulk_import_items` in chunks.
-         // 2. Send `mark_items_done` at the end (payload is small, integers).
-         // 1MB limit for `mark_items_done`? 
-         // Array of 10k integers = 40KB. Safe to send all at once.
-         
-         if ($user && $user.uid) {
-            broadcast(firestore, $user.uid, bulk_import_items({ items: batchUpdates }));
-         }
-         
-         processedCount += batchUpdates.length;
-         await new Promise(r => setTimeout(r, 10));
-      }
-      
-      // Mark all as done after updates are sent
-      if (indicesToMarkDone.length > 0 && $user && $user.uid) {
-          broadcast(firestore, $user.uid, mark_items_done({ indices: indicesToMarkDone }));
-      }
-      
-      successMsg = `Successfully processed ${indicesToMarkDone.length} resolved conflicts.`;
-      importStatus = "success";
-
-      setTimeout(() => {
-        importStatus = "idle";
-        successMsg = "";
-      }, 3000);
+        setTimeout(() => {
+            importStatus = "idle";
+            successMsg = "";
+        }, 3000);
     } catch (e) {
-      console.error("Conflict processing failed:", e);
-      error = `Conflict processing failed: ${e}`;
+        console.error("Conflict processing failed:", e);
+        error = `Conflict processing failed: ${e}`;
     } finally {
-      processing = false;
+        processing = false;
     }
   }
 

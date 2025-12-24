@@ -2,12 +2,12 @@ import { configureStore, combineReducers } from "@reduxjs/toolkit";
 import { writable } from "svelte/store";
 import type { Writable } from "svelte/store";
 import { history } from "./history";
-import { inventory } from "./inventory";
+import { inventory, bulk_import_items, type BulkImportItem, type Item } from "./inventory";
 import { names } from "./names";
 import { photos } from "./photos-slice";
-import { orderImport } from "./order-import-slice";
-import { shopifyImport } from "./shopify-import-slice";
-import { listings } from "./listings-slice";
+import { orderImport, computeOrderImportBatch, mark_items_done as markOrderDone } from "./order-import-slice";
+import { shopifyImport, computeShopifyImportBatch, mark_items_done as markShopifyDone } from "./shopify-import-slice";
+import { listings, add_listing_image, create_listing } from "./listings-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 
 function svelteStoreEnhancer(createStoreApi: (arg0: any, arg1: any) => any) {
@@ -37,13 +37,171 @@ const reducerObject = {
 };
 const combinedReducer = combineReducers(reducerObject);
 
-// Root reducer to handle full state hydration
-const rootReducer = (state: any, action: any) => {
+// Helper to map Order Import Item to Inventory Item
+const mapOrderToInventory = (importItem: any): Item => {
+    // Note: This helper might be redundant if computeOrderImportBatch constructs full items.
+    // But computeOrderImportBatch returns constructed items. We map them to BulkImportItem.
+    return {
+        janCode: importItem.janCode,
+        subtype: "", // Default
+        description: importItem.description,
+        hsCode: importItem.hsCode || "",
+        image: "",
+        qty: importItem.qty,
+        pieces: 1,
+        shipped: 0,
+        creationDate: "Unknown", 
+        timestamp: 0, 
+        price: importItem.price,
+        weight: importItem.weight,
+        countryOfOrigin: importItem.countryOfOrigin
+    };
+};
+
+// Helper to map Shopify Import Item to Inventory Item
+const mapShopifyToInventory = (importItem: any): Item => {
+    return {
+        janCode: importItem.janCode,
+        subtype: "",
+        description: importItem.description,
+        hsCode: "", 
+        image: importItem.image || "",
+        qty: importItem.qty,
+        pieces: 1,
+        shipped: 0,
+        creationDate: "Unknown",
+        timestamp: 0,
+        price: importItem.price,
+        weight: importItem.weight,
+        handle: importItem.handle,
+        ...importItem 
+    } as Item;
+};
+
+// Root reducer to handle full state hydration and Event Sourcing Orchestration
+export const rootReducer = (state: any, action: any) => {
   if (action.type === 'HYDRATE') {
-    // Merge payload into current state to preserve new slices not present in old snapshots
     return { ...state, ...action.payload };
   }
-  return combinedReducer(state, action);
+
+  // 1. Standard Reducer Execution
+  let nextState = combinedReducer(state, action);
+
+  // 2. Interception & Composition
+  
+  // Order Import Batch
+  if (action.type === 'orderImport/import_batch' && state.orderImport) {
+      console.log("[RootReducer] Intercepting Order Import Batch", action.payload);
+      
+      const { updates, indices } = computeOrderImportBatch(
+          state.orderImport, 
+          state.inventory.idToItem, 
+          action.payload.filter
+      );
+      
+      // Map updates to BulkImportItem (if compute returns raw objects)
+      // Actually computeOrderImportBatch returns objects with { type, id, item }.
+      // So they match BulkImportItem structure directly.
+      const bulkUpdates: BulkImportItem[] = updates.map(u => ({
+          type: u.type,
+          id: u.id,
+          item: u.type === 'new' ? mapOrderToInventory(u.item) : u.item // Map 'new' items to ensure defaults
+      }));
+
+      if (bulkUpdates.length > 0) {
+          const internalAction = {
+              ...bulk_import_items({ items: bulkUpdates }),
+              _ephemeral: true,
+              timestamp: action.timestamp // Inherit timestamp
+          };
+
+          // Apply to Inventory
+          nextState = {
+              ...nextState,
+              inventory: inventory(nextState.inventory, internalAction)
+          };
+          // Apply to Listings
+           nextState = {
+              ...nextState,
+              listings: listings(nextState.listings, internalAction)
+          };
+      }
+      
+      // Mark Items Done in Order Import Slice
+      if (indices.length > 0) {
+          const markAction = markOrderDone({ indices });
+          nextState = {
+              ...nextState,
+              orderImport: orderImport(nextState.orderImport, markAction)
+          };
+      }
+  }
+
+  // Shopify Import Batch
+  if (action.type === 'shopifyImport/import_batch' && state.shopifyImport) {
+      const { filter, options } = action.payload; // Extract options
+      console.log(`[RootReducer] Intercepting Shopify Import Batch { filter: '${filter}' }`);
+      
+      const { updates, listingUpdates, indices } = computeShopifyImportBatch(
+          state.shopifyImport,
+          state.inventory.idToItem,
+          state.listings.handleToListing,
+          filter,
+          options // Pass options
+      );
+      
+      const bulkUpdates: BulkImportItem[] = updates.map(u => ({
+          type: u.type,
+          id: u.id,
+          item: u.type === 'new' ? mapShopifyToInventory(u.item) : u.item
+      }));
+
+      if (bulkUpdates.length > 0) {
+          const internalAction = {
+              ...bulk_import_items({ items: bulkUpdates }),
+              _ephemeral: true,
+              timestamp: action.timestamp
+          };
+
+          nextState = {
+              ...nextState,
+              inventory: inventory(nextState.inventory, internalAction),
+              listings: listings(nextState.listings, internalAction)
+          };
+      }
+
+      if (listingUpdates && listingUpdates.length > 0) {
+          let nextListings = nextState.listings;
+          listingUpdates.forEach(u => {
+               if (u.type === 'add_image') {
+                   const internalAction = {
+                       ...add_listing_image({ handle: u.handle, image: u.image }),
+                       _ephemeral: true,
+                       timestamp: action.timestamp
+                   };
+                   nextListings = listings(nextListings, internalAction);
+               } else if (u.type === 'create_listing') {
+                   const internalAction = {
+                       ...create_listing({ listing: u.listing }),
+                       _ephemeral: true,
+                       timestamp: action.timestamp
+                   };
+                   nextListings = listings(nextListings, internalAction);
+               }
+          });
+          nextState = { ...nextState, listings: nextListings };
+      }
+      
+      if (indices.length > 0) {
+          const markAction = markShopifyDone({ indices });
+          nextState = {
+              ...nextState,
+              shopifyImport: shopifyImport(nextState.shopifyImport, markAction)
+          };
+      }
+  }
+
+  return nextState;
 };
 
 const devTools =
