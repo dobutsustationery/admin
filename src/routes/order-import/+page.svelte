@@ -318,34 +318,20 @@ interface AnalyzedItem extends ImportItem {
     try {
       const content = await downloadFile(file.id, token.access_token);
       
-      // Split content into lines. 
-      // Careful with Windows CRLF vs LF. .split(/\r?\n/) handles both.
-      const allLines = content.split(/\r?\n/).filter(line => line.trim() !== "");
+      // Simplify: Just stream the RAW content via append_raw_rows
+      // This uses chunking to fit Firestore limits, but logic is "One Shot" in reducer.
+      const CHUNK_SIZE = 400 * 1024; // 400KB chunks (safe for 1MB Firestore limit)
       
-      if (allLines.length === 0) {
-          throw new Error("File is empty");
-      }
-      
-      const header = allLines[0];
-      const bodyLines = allLines.slice(1);
-      
-      // 1. Send Header
-      if ($user && $user.uid) {
-          broadcast(firestore, $user.uid, set_header(header));
-      }
-      
-      // 2. Stream Body in chunks
-      const CHUNK_SIZE = 100;
-      
-      if (bodyLines.length === 0) {
-           // Header only
+      if (!content) {
+          // Empty file
            if ($user && $user.uid) {
-                broadcast(firestore, $user.uid, append_raw_rows({ rawRows: [], done: true }));
+                // done=true immediately
+                broadcast(firestore, $user.uid, append_raw_rows({ rawRows: "", done: true }));
            }
       } else {
-          for (let i = 0; i < bodyLines.length; i += CHUNK_SIZE) {
-              const chunk = bodyLines.slice(i, i + CHUNK_SIZE);
-              const isLast = i + CHUNK_SIZE >= bodyLines.length;
+          for (let i = 0; i < content.length; i += CHUNK_SIZE) {
+              const chunk = content.slice(i, i + CHUNK_SIZE);
+              const isLast = i + CHUNK_SIZE >= content.length;
               
               if ($user && $user.uid) {
                 broadcast(firestore, $user.uid, append_raw_rows({ 
@@ -354,9 +340,7 @@ interface AnalyzedItem extends ImportItem {
                 }));
               }
               
-              const progress = Math.min(100, Math.round(((i + chunk.length) / bodyLines.length) * 100));
-              
-              // Small yield
+              const progress = Math.min(100, Math.round(((i + chunk.length) / content.length) * 100));
               await new Promise(r => setTimeout(r, 0));
           }
       }
@@ -755,8 +739,7 @@ interface AnalyzedItem extends ImportItem {
 
         {#if error}
           <div class="error-message">{error}</div>
-        {/if}
-        {#if successMsg}
+        {:else if importStatus === "success"}
           <div class="success-message">{successMsg}</div>
         {/if}
 
