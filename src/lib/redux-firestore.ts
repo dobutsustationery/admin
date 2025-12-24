@@ -40,6 +40,10 @@ function stripUndefined(obj: any): any {
 }
 
 export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
+  if ((action as any)._ephemeral) {
+      console.warn("[Broadcast] Blocked ephemeral action from persistence:", action.type);
+      return; 
+  }
   const broadcasts = collection(fs, "broadcast");
   const cleanAction = stripUndefined(action);
   return addDoc(broadcasts, {

@@ -26,21 +26,17 @@
     mark_items_done,
     clear_import,
     finish_import,
-    type RawRow,
+    import_batch,
     type ShopifyImportItem,
+    type RawRow,
   } from "$lib/shopify-import-slice";
-  import {
-    create_listing,
-    update_listing,
-    add_listing_image,
-    type Listing,
-    type ListingImage,
-  } from "$lib/listings-slice";
+  import type { Listing } from "$lib/listings-slice";
+
 
   import { user } from "$lib/user-store";
   import { firestore } from "$lib/firebase";
   import { broadcast } from "$lib/redux-firestore";
-  import { update_item, bulk_import_items, type Item } from "$lib/inventory";
+  import { update_item, type Item } from "$lib/inventory";
   import Papa from "papaparse";
 
   // --- State from Redux ---
@@ -48,6 +44,8 @@
   $: rawRows = $store.shopifyImport.rows;
   $: step = $store.shopifyImport.step;
   $: resolutions = $store.shopifyImport.resolutions || {};
+  let importStatus: "idle" | "success" | "error" = "idle";
+
 
   // --- Migration Logic ---
   // Only migrate actual Shopify CDN links
@@ -136,6 +134,15 @@
 
   $: analyzedPlan = (() => {
     const seenHandlesInBatch = new Set<string>();
+    const handleToStatus = new Map<string, string>();
+    
+    // Optimization: Build set of existing inventory handles to detect matches even if listing missing
+    const inventoryHandles = new Set<string>();
+    if ($store && $store.inventory && $store.inventory.idToItem) {
+        Object.values($store.inventory.idToItem).forEach((i: any) => {
+            if (i.handle) inventoryHandles.add(i.handle);
+        });
+    }
     
     return rawRows.map((rawRow: RawRow, index: number) => {
     const item = rawRow.parsed;
@@ -179,55 +186,78 @@
 
     const existing = $store.inventory.idToItem[JAN];
     const inventoryMatches = existing ? [{ ...existing, key: JAN }] : [];
-
-    // Strict match implies length is 1. O(1) lookup.
     
-    // NEW: Handle Listing-Only matches (empty JAN)
+    // RECORD STATUS for this handle (Status Propagation)
+    // We do this just before returning. But we have multiple return points.
+    // Helper to capture result before returning
+    const recordAndReturn = (result: AnalyzedItem) => {
+        if (item.handle) {
+            // First occurrence wins for status? Or specific logic?
+            // If Parent (Jan), set status.
+            // If Child, don't overwrite if Parent set `NEW`.
+            if (JAN) {
+                handleToStatus.set(item.handle, result.status);
+            }
+        }
+        return result;
+    };
+
     if (inventoryMatches.length === 0) {
         if (!JAN && item.handle) {
              const knownListing = $store.listings.handleToListing[item.handle];
              const isNewInBatch = seenHandlesInBatch.has(item.handle);
+             const inventoryMatch = inventoryHandles.has(item.handle); // Check existing inventory by handle
              
-             if (knownListing || isNewInBatch) {
-                 // Check if image already exists (only if knownListing exists)
-                 // If newInBatch, we assume it's NOT identical to what we just created? 
-                 // Or we could track images in batch too? 
-                 // Simple: If newInBatch, it's MATCH (Add Image).
-                 
-                 const imgExists = knownListing && item.image ? (knownListing.images || []).some((img: any) => img.url === item.image) : false;
-                 
-                 // Use knownListing or a mock for the reference
+             // Smart Classification:
+             // 1. If known listing OR known inventory -> MATCH (even if listing missing)
+             // 2. If newInBatch (Child), check Parent status -> Inherit (NEW or MATCH)
+             
+             let determinedStatus: "MATCH" | "NEW" = "NEW"; // Default
+             
+             if (knownListing || inventoryMatch) {
+                 determinedStatus = "MATCH";
+             } else if (handleToStatus.has(item.handle)) {
+                 const parentStatus = handleToStatus.get(item.handle);
+                 if (parentStatus === "MATCH" || parentStatus === "IDENTICAL" || parentStatus === "RESOLVED") determinedStatus = "MATCH";
+                 else determinedStatus = "NEW";
+             } else if (isNewInBatch) {
+                 // Fallback if came before parent (unlikely) or no status yet
+                 determinedStatus = "NEW"; 
+             }
+
+             if (determinedStatus === "MATCH") {
+                 // Logic for Image Match
                  const listingRef = knownListing || { handle: item.handle } as Listing;
+                 const imgExists = listingRef.images ? listingRef.images.some((img: any) => img.url === item.image) : false;
                  
                  if (imgExists) {
-                     return {
+                     return recordAndReturn({
                         ...item,
                         status: "IDENTICAL",
                         actionLabel: "Identical",
                         originalIndex: index,
-                        isListingOnly: true // Tracking
-                     } as AnalyzedItem;
+                        isListingOnly: true
+                     } as AnalyzedItem);
                  } else {
-                     return {
+                     return recordAndReturn({
                         ...item,
                         status: "MATCH",
                         actionLabel: "Add Image",
                         originalIndex: index, 
                         isListingOnly: true,
                         existingListing: listingRef 
-                     } as AnalyzedItem;
+                     } as AnalyzedItem);
                  }
              }
         }
     
         // It's genuinely NEW
-
-        return {
-        ...item,
-        status: "NEW",
-        actionLabel: "Create",
-        originalIndex: index,
-      } as AnalyzedItem;
+        return recordAndReturn({
+            ...item,
+            status: "NEW",
+            actionLabel: "Create",
+            originalIndex: index,
+        } as AnalyzedItem);
     }
 
     const match = inventoryMatches[0] as any;
@@ -273,9 +303,8 @@
     if (!useShopifyHandles) {
       const existHandle = match.handle || "";
       const newHandle = item.handle || "";
-
+      
       if (existHandle.trim() !== newHandle.trim()) {
-        // Use match.janCode (pure JAN) instead of item.fanCode (CSV Variant SKU/ID)
         const computed = generateHandle(
           match.description || item.description || "",
           match.janCode,
@@ -301,7 +330,7 @@
     }
 
     if (conflicts.length > 0) {
-      return {
+      return recordAndReturn({
         ...item,
         status: "CONFLICT",
         conflictType: "DATA_MISMATCH",
@@ -309,7 +338,7 @@
         existingItem: match,
         actionLabel: "Resolve Conflict",
         originalIndex: index,
-      } as AnalyzedItem;
+      } as AnalyzedItem);
     }
 
     // --- Check for IDENTICAL ---
@@ -376,22 +405,22 @@
     }
 
     if (isIdentical) {
-      return {
+      return recordAndReturn({
         ...item,
         status: "IDENTICAL",
         existingItem: match,
         actionLabel: "Identical",
         originalIndex: index,
-      } as AnalyzedItem;
+      } as AnalyzedItem);
     }
 
-    return {
+    return recordAndReturn({
       ...item,
       status: "MATCH",
       existingItem: match,
       actionLabel: "Sync",
       originalIndex: index,
-    } as AnalyzedItem;
+    } as AnalyzedItem);
   });
   })();
 
@@ -750,274 +779,37 @@
 
   async function processBatch(targetStatus: "MATCH" | "NEW") {
     if (!analyzedPlan.length) return;
-    const itemsToProcessWithType = analyzedPlan
-      .map((item: AnalyzedItem, index: number) => ({ item, index }))
-      .filter(
-        ({ item }: { item: AnalyzedItem }) => item.status === targetStatus,
-      );
-    if (itemsToProcessWithType.length === 0) return;
+    
+    // Check if we have items of this status
+    const hasItems = analyzedPlan.some((i: AnalyzedItem) => i.status === targetStatus);
+    if (!hasItems) return;
 
     processing = true;
-    const indicesToMarkDone: number[] = [];
-    const bulkUpdates: Array<{
-      type: "new" | "update";
-      id: string;
-      item: any;
-    }> = [];
-    const total = itemsToProcessWithType.length;
-    let current = 0;
-    const seenHandles = new Set<string>();
-    const clearedHandles = new Set<string>();
-
-    // No longer need pendingImagesByHandle for atomic additions
-    // const pendingImagesByHandle: Record<string, ListingImage[]> = {};
-    const imageActions: AnyAction[] = [];
-
     try {
-      for (const { item, index } of itemsToProcessWithType) {
-         // Strict Sync: Clear listing images first time we see a handle in this batch if syncing images
-         if (useShopifyImages && item.handle && !clearedHandles.has(item.handle)) {
-             imageActions.push(update_listing({ handle: item.handle, changes: { images: [] } }));
-             clearedHandles.add(item.handle);
-         }
-
-        current++;
-
-        // Only use Shopify URL if:
-        // 1. It exists
-        // 2. We are creating NEW or (MATCH and existing has no image OR we want to overwrite?)
-        // Note: The prompt implies initially just pointing to Shopify CDN.
-        // Let's adopt the logic: If item.image is present, use it.
-        // We do NOT block on upload here.
-
-        let imageUrl = item.image || "";
-
-        // NEW: Handle Listing Only (Image Append)
-        if (item.status === "MATCH" && item.isListingOnly && item.existingListing) {
-            const listing = item.existingListing;
-            if (item.image) {
-                // ATOMIC Add Image Action
-                // We broadcast this action directly. Since it's atomic, it's safe even if redundant.
-                // The reducer handles deduplication by URL.
-                const handle = listing.handle;
-                
-                // We need to generate a ListingImage object
-                // Position logic: The reducer will push. 
-                // If we want correct position from CSV, we might need 'imagePosition' field
-                // But typically append is enough for "Listing Only" rows which are usually additional variants/images.
-                // The CSV might provide explicit Position column though.
-                // For now, we trust the reducer to append.
-                
-                const newImage: ListingImage = {
-                     id: crypto.randomUUID(),
-                     url: item.image,
-                     position: item.imagePosition || 999, // Allow reducer to sort or just append
-                     altText: item.imageAltText || item.description || ""
-                };
-                
-                imageActions.push(add_listing_image({ handle, image: newImage }));
-            }
-            indicesToMarkDone.push(index);
-            continue;
-        }
-
-        if (item.status === "MATCH" && item.existingItem) {
-            const itemKey = item.existingItem.key;
-            const existing = item.existingItem;
-
-          // CRITICAL: applyInventoryUpdate treats qty/shipped as DELTAS.
-          // We must initiate them as 0 to avoid doubling existing values.
-          const payloadItem: any = { ...existing, qty: 0, shipped: 0 };
-
-          // Logic:
-          // Shopify Qty is "Stock Remaining" (Total - Shipped).
-          // Internal Qty is "Total Lifetime Stock".
-          // Internal Stock Remaining = (Existing Qty - Existing Shipped).
-          // So, if (Existing Qty - Existing Shipped) != Shopify Qty, we have a conflict.
-          // WE DO NOT OVERWRITE QTY FROM SHOPIFY AUTOMATICALLY ON MATCH.
-
-          // Only update descriptors/images if matches
-
-          // Toggle Description
-          if (useShopifyDescription && item.description) {
-            payloadItem.description = item.description;
-          } else if (!payloadItem.description && item.description) {
-            payloadItem.description = item.description;
-          }
-
-          // Handle Logic
-          if (useShopifyHandles && item.handle) {
-            payloadItem.handle = item.handle;
-          } else if (!payloadItem.handle && item.handle) {
-            payloadItem.handle = item.handle;
-          }
-          if (!payloadItem.weight && item.weight)
-            payloadItem.weight = item.weight;
-          if (!payloadItem.price && item.price) payloadItem.price = item.price;
-
-          if (!payloadItem.bodyHtml && item.bodyHtml)
-            payloadItem.bodyHtml = item.bodyHtml;
-          if (!payloadItem.productCategory && item.productCategory)
-            payloadItem.productCategory = item.productCategory;
-          if (!payloadItem.imagePosition && item.imagePosition)
-            payloadItem.imagePosition = item.imagePosition;
-          if (!payloadItem.imageAltText && item.imageAltText)
-            payloadItem.imageAltText = item.imageAltText;
-
-          if (useShopifyImages) {
-              // 1. Update Inventory Item with Variant Image (item.image)
-              // Strict Sync: If Shopify has no image for this variant (item.image is empty),
-              // we clear it in Inventory to match.
-              payloadItem.image = item.image;
-              
-              // 2. Add Gallery Image (item.listingImage) to Listing
-              if (item.listingImage && item.handle) {
-                  const newListingImage: ListingImage = {
-                      id: crypto.randomUUID(),
-                      url: item.listingImage,
-                      position: item.imagePosition || 999,
-                      altText: item.imageAltText || item.description || ""
-                  };
-                  imageActions.push(add_listing_image({ handle: item.handle, image: newListingImage }));
-              }
-          } else if (!payloadItem.image && item.image) {
-            payloadItem.image = item.image;
-          }
-          
-          // Backfill listing image if missing and present in import
-          if (!useShopifyImages && item.listingImage && item.handle) {
-             const newListingImage: ListingImage = {
-                 id: crypto.randomUUID(),
-                 url: item.listingImage,
-                 position: item.imagePosition || 999,
-                 altText: item.imageAltText || item.description || ""
-             };
-             imageActions.push(add_listing_image({ handle: item.handle, image: newListingImage }));
-          }
-
-          // Qty Logic:
-          // "Ensure that the bulk import triggered by this screen never include qty"
-          // if we are Ignoring.
-          if (!ignoreShopifyQty) {
-            // If NOT ignoring, we Sync.
-            // Sync means Inventory Qty = Shopify Qty + Shipped.
-            // (Because Shopify Qty = Remaining).
-            const existingShipped = existing.shipped || 0;
-            const newTotal = item.qty + existingShipped;
-            const oldTotal = existing.qty || 0;
-
-            if (newTotal !== oldTotal) {
-              // Calculate DELTA
-              const delta = newTotal - oldTotal;
-              payloadItem.qty = delta;
-            }
-          }
-
-          bulkUpdates.push({ type: "update", id: itemKey, item: payloadItem });
-          indicesToMarkDone.push(index);
-        } else if (item.status === "NEW") {
-          const newItemKey = item.janCode;
-          const newItem = {
-            janCode: item.janCode,
-            subtype: "", // Option1 Value logic required? Shopify CSV has "Option1 Value".
-            // AnalyzedItem maps "Option1 Value" to... wait.
-            // parseShopifyCSV (slice) maps Option1 Value to item.subtype?
-            // Let's check parse logic?
-            // Assuming item object has what we need.
-            // If not, we might be losing Option1 Value.
-            // But for now, preserving existing logic for newItem creation.
-            description: item.description,
-            qty: item.qty, // NEW items always get qty. Can't ignore initial stock?
-            pieces: 1,
-            shipped: 0,
-            creationDate: new Date().toISOString(),
-            price: item.price,
-            weight: item.weight,
-            image: imageUrl, // Shopify URL
-            handle: item.handle,
-          };
-          bulkUpdates.push({ type: "new", id: newItemKey, item: newItem });
-          indicesToMarkDone.push(index);
-
-          // --- Listing Creation ---
-          if (item.handle) {
-            const handle = item.handle;
-            const existingListing = $store.listings.handleToListing[handle];
-
-            if (!existingListing && !seenHandles.has(handle)) {
-              // Create Listing
-              const newListing: Listing = {
-                handle,
-                title: item.description || "Untitled",
-                bodyHtml: item.bodyHtml || "",
-                productCategory: item.productCategory || "",
-                productType: "",
-                vendor: "SPNSS Ltd.",
-                tags: [],
-                status: "active",
-                option1Name: "Subtype", // Default
-                images: item.image
-                  ? [
-                      {
-                        id: crypto.randomUUID(),
-                        url: item.image,
-                        position: item.imagePosition || 1,
-                        altText: item.imageAltText || item.description || "",
-                      },
-                    ]
-                  : [],
-                lastUpdated: Date.now(),
-              };
-
-              if ($user && $user.uid) {
-                broadcast(
-                  firestore,
-                  $user.uid,
-                  create_listing({ listing: newListing }),
-                );
-              }
-              seenHandles.add(handle);
-            }
-          }
-        }
-      }
-
-
-
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < bulkUpdates.length; i += CHUNK_SIZE) {
-        const chunk = bulkUpdates.slice(i, i + CHUNK_SIZE);
-        const idxChunk = indicesToMarkDone.slice(i, i + CHUNK_SIZE);
         if ($user && $user.uid) {
-          broadcast(firestore, $user.uid, bulk_import_items({ items: chunk }));
-          broadcast(
-            firestore,
-            $user.uid,
-            mark_items_done({ indices: idxChunk }),
-          );
+            broadcast(firestore, $user.uid, import_batch({ 
+                filter: targetStatus,
+                options: {
+                    useShopifyDescription,
+                    useShopifyImages,
+                    useShopifyHandles,
+                    ignoreShopifyQty
+                }
+            }));
         }
-        await new Promise((r) => setTimeout(r, 10));
-      }
-      
-    // 2. Broadcast Granular Image Actions (AFTER Bulk Updates)
-    if ($user && $user.uid && imageActions.length > 0) {
-        const IMG_CHUNK_SIZE = 50; 
-        for (let i = 0; i < imageActions.length; i += IMG_CHUNK_SIZE) {
-            const chunk = imageActions.slice(i, i + IMG_CHUNK_SIZE);
-            for (const action of chunk) {
-                broadcast(firestore, $user.uid, action);
-            }
-            await new Promise(r => setTimeout(r, 10));
-        }
-    }
+        
+        successMsg = `Processed ${targetStatus} items.`;
+        importStatus = "success";
 
-      successMsg = `Processed ${bulkUpdates.length} items.`;
+        setTimeout(() => {
+            importStatus = "idle";
+            successMsg = "";
+        }, 3000);
     } catch (e) {
-      error =
-        "Processing failed: " + (e instanceof Error ? e.message : String(e));
+        console.error("Batch processing failed:", e);
+        error = `Batch processing failed: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
-      processing = false;
-      uploadStatus = "";
+        processing = false;
     }
   }
 
@@ -1049,136 +841,27 @@
   }
 
   async function processResolvedConflicts() {
-    const resolvedWithType = analyzedPlan
-      .map((item: AnalyzedItem, index: number) => ({ item, index }))
-      .filter(({ item }: { item: AnalyzedItem }) => item.status === "RESOLVED");
+    const hasResolved = analyzedPlan.some((i: AnalyzedItem) => i.status === "RESOLVED");
+    if (!hasResolved) return;
 
-    if (resolvedWithType.length === 0) return;
     processing = true;
-    const indicesToMarkDone: number[] = [];
-    const bulkUpdates: Array<{
-      type: "new" | "update";
-      id: string;
-      item: any;
-    }> = [];
-
     try {
-      for (const { item, index } of resolvedWithType) {
-        if (item.resolvedActions) {
-          item.resolvedActions.forEach((action: any) => {
-            const currentInvItem =
-              $store.inventory.idToItem[action.payload.itemKey];
-            if (currentInvItem) {
-              // The resolved action payload already contains the merged state
-              // typically from confirmConflictResolution.
-              // But wait, confirmConflictResolution builds a payload with SPECIFIC fields.
-              // We should merge it carefully.
-
-              const payloadItem = {
-                ...currentInvItem,
-                ...action.payload,
-              };
-
-              // If action.payload has 'qty', it means we are forcing the Qty.
-              // Ideally, if we are correcting stock, we might need adjustments to 'shipped' too?
-              // Or we assume the user intends to overwrite TOTAL qty?
-              // Shopify Qty is "Remaining".
-              // If we set Internal Qty = Shopify Qty, needed to verify Shipped = 0?
-              // Or do we recalculate Qty = Shopify Qty + Shipped?
-              // Let's assume for RESOLVED conflicts from UI, if user accepted Shopify Qty,
-              // they mean "Remaining Stock is X".
-              // So Total Qty = X + Shipped.
-
-              if (action.payload.qty !== undefined) {
-                // Special case: If we 'Keep Existing', we might have passed existing Qty back in payload.
-                // If so, does it match currentInvItem.qty?
-                // If it matches, we are fine.
-                // If we 'Use Incoming', action.payload.qty is Shopify Qty (Remaining).
-                // So we must add Shipped.
-                // We need to know if the payload value is "Total" or "Remaining".
-                // UI logic (confirmConflictResolution):
-                // payload.qty = choice === 'incoming' ? incoming : existing;
-                // Incoming = Shopify Qty (Remaining).
-                // Existing = currentConflictItem!.existingItem.qty (Total).
-                // Conflict!
-                // If we chose Existing (Total), we set payload.qty = Total.
-                // If we chose Incoming (Remaining), we set payload.qty = Remaining.
-                // We need to distinguish or normalize.
-                // Ideally, payload should just be consistent updates.
-                // But here we are applying "qty" update.
-                // Let's check `fieldResolutions` logic in confirmConflictResolution.
-                // If choice was 'incoming', we are updating to new Remaining.
-                // Wait, we lost the context of "choice" here in `processResolvedConflicts` (looping over stored resolutions).
-                // We only have the final payload.
-                // Heuristic:
-                // If the payload value matches Shopify Qty (item.qty), trust it as Remaining?
-                // But what if Existing Total randomly equals Shopify Remaining?
-                // That would be a coincidence but possible.
-                // Better:
-                // In `confirmConflictResolution`, normalize the payload to TOTAL immediately.
-              }
-
-              // Wait, I can't change confirmConflictResolution here without context.
-              // Let's assume the payload.qty is ALREADY normalized to Total in confirmConflictResolution?
-              // Let's check existing code there.
-              // Line 428: payload[prop] = choice === 'incoming' ? incoming : existing;
-              // Incoming 'qty' is Remaining. Existing 'qty' is Total.
-              // So the payload is mixed meaning!
-
-              // Fix is needed in confirmConflictResolution.
-
-              // But assuming I can fix it there (next step?), here we just apply simple math if needed?
-              // No, safer to fix upstream.
-
-              // For now, let's keep the existing logic block I am REPLACING, but simpler?
-              // The original block (lines 622-625) added `existingShipped`.
-              // "payloadItem.qty = Number(action.payload.qty) + existingShipped;"
-              // This assumes payload.qty was REMAINING.
-              // If user chose "Keep Existing" (Total), then we add Shipped? -> Total + Shipped ==> Wrong (Inflated).
-
-              // Current Bug in existing code?
-              // Yes, likely.
-
-              // Since I am already ignoring Qty by default, maybe resolutions are less frequent?
-              // But if they resolve...
-
-              // I'll leave this block mostly as is but cleaner, and fix confirmConflictResolution next.
-
-              // Actually, I can't leave it "as is" if it's broken.
-              // I'll comment out the forced addition for now and rely on corrected payload.
-              // Or... assume payload IS total.
-              if (action.payload.qty !== undefined) {
-                payloadItem.qty = Number(action.payload.qty);
-              }
-
-              bulkUpdates.push({
-                type: "update",
-                id: action.payload.itemKey,
-                item: payloadItem,
-              });
-            }
-          });
-          indicesToMarkDone.push(index);
+        if ($user && $user.uid) {
+            broadcast(firestore, $user.uid, import_batch({ filter: "RESOLVED" }));
         }
-      }
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < bulkUpdates.length; i += CHUNK_SIZE) {
-        const chunk = bulkUpdates.slice(i, i + CHUNK_SIZE);
-        if ($user && $user.uid)
-          broadcast(firestore, $user.uid, bulk_import_items({ items: chunk }));
-        await new Promise((r) => setTimeout(r, 10));
-      }
-      if ($user && $user.uid)
-        broadcast(
-          firestore,
-          $user.uid,
-          mark_items_done({ indices: indicesToMarkDone }),
-        );
-      successMsg = "Processed resolutions.";
+        
+        successMsg = `Processed resolved conflicts.`;
+        importStatus = "success";
+
+        setTimeout(() => {
+            importStatus = "idle";
+            successMsg = "";
+        }, 3000);
     } catch (e) {
-      error = String(e);
+        console.error("Conflict processing failed:", e);
+        error = `Conflict processing failed: ${e}`;
     } finally {
-      processing = false;
+        processing = false;
     }
   }
 
