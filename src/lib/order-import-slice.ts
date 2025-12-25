@@ -65,7 +65,7 @@ const mapImportItem = (row: any): ImportItem => {
     const janCode = (row['jan code'] || row['jan_code'] || row['jancode'] || "").toString().trim();
     return {
         janCode,
-        description: row['description'] || "",
+        description: row['description'] || row['product name'] || row['item name'] || row['product'] || row['title'] || row['name'] || row['product name（product number）'] || "",
         qty: parseInt(row['total pcs'] || row['qty'] || row["order q'ty pcs"] || "0", 10),
         carton: row['carton number'] || row['carton'] || "",
         hsCode: findHSCode(row),
@@ -131,7 +131,7 @@ export const parseRows = (headerRow: string | null, rawBody: string): ImportItem
         
         item = {
             janCode,
-            description: row['description'] || "",
+            description: row['description'] || row['product name'] || row['item name'] || row['product'] || row['title'] || row['name'] || row['product name（product number）'] || "",
             qty: parseInt(row['total pcs'] || row['qty'] || row["order q'ty pcs"] || "0", 10),
             carton: row['carton number'] || row['carton'] || "",
             hsCode: hs,
@@ -172,7 +172,7 @@ const generateUIState = (headerRow: string | null, rawBody: string): RawRow[] =>
             const hs = findHSCode(row);
             item = {
                 janCode,
-                description: row['description'] || "",
+                description: row['description'] || row['product name'] || row['item name'] || row['product'] || row['title'] || row['name'] || row['product name（product number）'] || "",
                 qty: parseInt(row['total pcs'] || row['qty'] || row["order q'ty pcs"] || "0", 10),
                 carton: row['carton number'] || row['carton'] || "",
                 hsCode: hs,
