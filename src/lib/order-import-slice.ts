@@ -34,7 +34,7 @@ export interface OrderImportState {
   resolutions: Record<number, ResolutionAction[]>;
 }
 
-const initialState: OrderImportState = {
+export const initialState: OrderImportState = {
   activeFile: null,
   step: "idle",
   headerRow: null,

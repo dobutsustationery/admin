@@ -9,7 +9,7 @@
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_PHOTOS_CLIENT_ID;
 const SCOPES = (
   import.meta.env.VITE_GOOGLE_PHOTOS_SCOPES ||
-  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly,https://www.googleapis.com/auth/drive.file"
+  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly,https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/userinfo.email"
 )
   .split(",")
   .map((s: string) => s.trim());
@@ -27,6 +27,7 @@ export interface GooglePhotosToken {
   expires_at: number;
   scope: string;
   token_type: string;
+  user_email?: string;
 }
 
 /**
@@ -114,18 +115,31 @@ export function getStoredToken(): GooglePhotosToken | null {
     }
 
     // Check if token has required scopes
-    // We check if all configured scopes are present in the token's scope string
-    const missingScopes = SCOPES.filter(
+    // We strictly require Photos access. Drive access is optional for "connection" status.
+    const REQUIRED_SCOPES = [
+        "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+    ];
+
+    const missingScopes = REQUIRED_SCOPES.filter(
       (scope: string) => !token.scope.includes(scope),
     );
+    
     if (missingScopes.length > 0) {
       console.warn(
-        "Token missing required scopes:",
+        "Token missing CRITICAL scopes:",
         missingScopes,
-        "invalidating.",
+        "Present scopes:", token.scope,
+        "- Invalidating token."
       );
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       return null;
+    }
+    
+    // Warn about optional scopes but don't invalidate
+    const optionalScopes = SCOPES.filter((s: string) => !REQUIRED_SCOPES.includes(s));
+    const missingOptional = optionalScopes.filter((s: string) => !token.scope.includes(s));
+    if (missingOptional.length > 0) {
+        console.warn("Token available but missing optional scopes:", missingOptional);
     }
 
     return token;
@@ -164,7 +178,11 @@ export function isAuthenticated(): boolean {
 /**
  * Initiate OAuth flow to authenticate with Google Photos
  */
-export function initiateOAuthFlow(): void {
+/**
+ * Initiate OAuth flow to authenticate with Google Photos
+ * @param allowSwitchAccount If true, forces the account chooser to appear
+ */
+export function initiateOAuthFlow(allowSwitchAccount = false): void {
   if (!isPhotosConfigured()) {
     console.error(
       "Google Photos is not configured. Please set VITE_GOOGLE_PHOTOS_CLIENT_ID",
@@ -181,7 +199,7 @@ export function initiateOAuthFlow(): void {
     scope: SCOPES.join(" "),
     include_granted_scopes: "true",
     state: "photos_auth",
-    prompt: "consent",
+    prompt: allowSwitchAccount ? "select_account consent" : "consent",
   });
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
@@ -193,7 +211,7 @@ export function initiateOAuthFlow(): void {
 /**
  * Handle OAuth callback and extract token from URL hash
  */
-export function handleOAuthCallback(): GooglePhotosToken | null {
+export async function handleOAuthCallback(): Promise<GooglePhotosToken | null> {
   const hash = window.location.hash;
   if (!hash || !hash.includes("access_token=")) {
     return null;
@@ -219,6 +237,20 @@ export function handleOAuthCallback(): GooglePhotosToken | null {
     if (!accessToken || !expiresIn) {
       return null;
     }
+    
+    // Fetch User Info (Email)
+    let userEmail: string | undefined = undefined;
+    try {
+        const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (userInfoRes.ok) {
+            const userInfo = await userInfoRes.json();
+            userEmail = userInfo.email;
+        }
+    } catch (e) {
+        console.warn("Failed to fetch user info:", e);
+    }
 
     const token: GooglePhotosToken = {
       access_token: accessToken,
@@ -226,6 +258,7 @@ export function handleOAuthCallback(): GooglePhotosToken | null {
       expires_at: Date.now() + parseInt(expiresIn, 10) * 1000,
       scope: scope || "",
       token_type: tokenType || "Bearer",
+      user_email: userEmail
     };
 
     // Store token
