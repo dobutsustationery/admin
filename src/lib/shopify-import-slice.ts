@@ -94,9 +94,21 @@ export const parseShopifyChunk = (
              if (context && context.handle === handle) {
                  // Same product, inherit if missing
                  if (!title) title = context.description;
-                 if (!priceStr && context.price !== undefined) priceStr = String(context.price);
+                if (!priceStr && context.price !== undefined) priceStr = String(context.price);
                  if (!weightStr && context.weight !== undefined) weightStr = String(context.weight);
+                 
+                 // Inherit Metadata
+                 if (!bodyHtml) bodyHtml = context.bodyHtml;
                  if (!productCategory) productCategory = context.productCategory;
+                 // Note: Image Alt Text is tricky. Usually specific to the image on the row.
+                 // But if row has no image but belongs to the handle, should it inherit? 
+                 // Usually Body is global. Images are per-row. 
+                 // But let's inherit for safety if undefined, though typically only Row 1 has global data.
+                 // Actually, Shopify CSVs have Body/Category/Tags/Vendor/Type ONLY on the first row (Handle row).
+                 // So we MUST inherit them.
+                 // Images: Each row *can* have an image. If Row 2 has no image, it shouldn't inherit Row 1's image metadata unless it's the exact same image?
+                 // Let's stick to Global Fields: Body, Category. 
+                 // Image Position/Alt are tied to Image Src. If local Image Src is missing, we don't inherit image metadata.
              } else {
                  // New product, context will update at end of loop if valid
              }
