@@ -5,6 +5,9 @@
     pollPickerSession,
     listSessionMediaItems,
     getStoredToken,
+    initiateOAuthFlow, 
+    handleOAuthCallback,
+    isAuthenticated as checkAuth 
   } from "$lib/google-photos";
   import type { MediaItem } from "$lib/google-photos";
   import { processMediaItems } from "$lib/gemini-client";
@@ -14,6 +17,20 @@
   import { auth, firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
   import { signOut } from "firebase/auth";
+  
+  // Local Auth State for UI
+  let isPhotosAuthenticated = false;
+  let connectedEmail: string | undefined = undefined;
+  
+  function checkAuthStatus() {
+      const token = getStoredToken();
+      isPhotosAuthenticated = !!token;
+      connectedEmail = token?.user_email;
+      return isPhotosAuthenticated;
+  }
+  
+  function isAuthenticated() { return isPhotosAuthenticated; } // Helper for template
+
 
   // State from Redux Store
   $: photos = $store.photos.selected as MediaItem[];
@@ -94,13 +111,31 @@
   let pickerWindow: Window | null = null;
 
   // LIFECYCLE
-  onMount(() => {
+  onMount(async () => {
+     console.log("Photos Page Mounted. Checking Auth...");
+     
+     // Handle OAuth Callback (hash parsing)
+     const tokenCaptured = await handleOAuthCallback();
+     if (tokenCaptured) {
+         console.log("OAuth Callback processed successfully. Token stored.", tokenCaptured);
+     } else {
+         console.log("No OAuth callback detected (or failed).");
+     }
+
+     // Check Photos Auth
+     checkAuthStatus();
+     console.log("Final Auth Status:", isPhotosAuthenticated, "Email:", connectedEmail);
+     
+     // Trigger re-render explicit
+     isPhotosAuthenticated = isPhotosAuthenticated;
+
      // Safety: Reset categorization state if it was stuck from a previous session/reload
      if ($store.photos.categorizing) {
          console.log("Resetting stuck 'categorizing' state on mount.");
          store.dispatch(end_categorize());
      }
   });
+
 
   onDestroy(() => {
     stopPolling();
@@ -412,8 +447,31 @@
   {/if}
 
   <div class="flex justify-between items-center mb-8">
-  <!-- ... existing content ... -->
-    <h1 class="text-3xl font-bold">Google Photos Import</h1>
+    <div>
+        <h1 class="text-3xl font-bold text-gray-800">Google Photos Import</h1>
+        <div class="mt-2 flex items-center gap-3">
+             <!-- Status Indicator -->
+             {#if isPhotosAuthenticated}
+                 <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-green-100 text-green-800" title={connectedEmail}>
+                     <span class="w-2 h-2 rounded-full bg-green-600"></span>
+                     Connected {connectedEmail ? `as ${connectedEmail}` : ''}
+                 </span>
+             {:else}
+                 <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+                     <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+                     Not Connected
+                 </span>
+             {/if}
+             
+             <!-- Switch Button -->
+             <button 
+                on:click={() => initiateOAuthFlow(true)} 
+                class="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium"
+             >
+                {isPhotosAuthenticated ? "Switch Account" : "Connect Account"}
+             </button>
+        </div>
+    </div>
   </div>
 
   <!-- CONTENT AREA -->
