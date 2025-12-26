@@ -256,16 +256,23 @@ const persistenceMiddleware =
 
     // Check if this action has broadcast metadata (id + timestamp)
     // We only care about tracking the "cursor" of processed actions.
-    // Check if this action has broadcast metadata (id + timestamp)
-    // We only care about tracking the "cursor" of processed actions.
     if (action && action.id && action.timestamp) {
       snapshotMetadata = { id: action.id, timestamp: action.timestamp };
-
+      
       // Debounce save
       if (saveTimeout) clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => {
         triggerSave(storeAPI.getState(), snapshotMetadata);
       }, 100);
+    } 
+    // ALSO trigger save for local 'photos/' actions to persist UI state (checkboxes, queue)
+    // We do NOT update snapshotMetadata because these are local-only changes, 
+    // and we want to resume event fetching from the last real remote event.
+    else if (action.type.startsWith('photos/')) {
+       if (saveTimeout) clearTimeout(saveTimeout);
+       saveTimeout = setTimeout(() => {
+         triggerSave(storeAPI.getState(), snapshotMetadata);
+       }, 500); // Slightly longer debounce for local UI thrashing
     }
 
     return result;
