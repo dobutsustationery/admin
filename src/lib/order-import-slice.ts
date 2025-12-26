@@ -76,71 +76,35 @@ const mapImportItem = (row: any): ImportItem => {
 };
 
 // Core Parsing Logic: One-Shot
-export const parseRows = (headerRow: string | null, rawBody: string): ImportItem[] => {
-    // Combine Header and Body.
-    // Legacy Header Fix: If the header was truncated inside a quote, 
-    // simply joining it with the body (which starts with the rest of the quote)
-    // will produce a valid CSV structure where the newline is accepted as part of the header column.
-    // This naturally aligns the subsequent columns without manual healing logic.
+const parseCSV = (headerRow: string | null, rawBody: string): any[] => {
     const fullCsv = (headerRow ? headerRow + "\n" : "") + (rawBody || "");
-    
     if (!fullCsv.trim()) return [];
 
-    // Use Papa Parse on the full content
     const result = Papa.parse(fullCsv, {
         header: true,
-        skipEmptyLines: "greedy", 
-        transformHeader: (h) => h.trim().toLowerCase(), 
+        skipEmptyLines: "greedy",
+        transformHeader: (h) => h.trim().toLowerCase(),
     });
+    
+    return result.data;
+};
 
+// Check if a row is effectively empty (no JAN code and few keys)
+const isValidRow = (row: any, janCode: string): boolean => {
+    // Skip purely empty rows or rows that clearly aren't data
+    if (!janCode && Object.keys(row).length < 2) return false;
+    return true;
+};
+
+export const parseRows = (headerRow: string | null, rawBody: string): ImportItem[] => {
+    const data = parseCSV(headerRow, rawBody);
     const parsedItems: ImportItem[] = [];
 
-    result.data.forEach((row: any) => {
-        // Cleaning: Normalize keys
-        // Identify Map Keys
-        const janCode = (row['jan code'] || row['jan_code'] || row['jancode'] || "").toString().trim();
-        
-        // Skip purely empty rows (Papa parse might yield one depending on trailing newline)
-        if (!janCode && Object.keys(row).length < 2) return;
-
-        // Build Import Item
-        let item: ImportItem;
-                 
-        if (!janCode) {
-            // Skip rows without Jan Code in output for now or mark error?
-            // The logic below pushed error items. We return ImportItem array.
-            // But ImportItem interface handles valid items. 
-            // If we want to support errors we might need a richer return type.
-            // For `reparse` (UI), we need errors. 
-            // For `finalize` (Action), we typically only import valid or error?
-            // Let's assume we return ALL and filter later?
-            // Actually, let's keep the exact logic:
-            // "item" is null if no Jan Code.
-            // But we need to return ImportItem[] for the internal action?
-            // The synthetic action `bulk_import_items` expects `BulkImportItem[]` which wraps `Item`.
-            // Let's output a cleaner structure from here.
-            
-            // Wait, this function is used by `reparse` to populate state.rows (RawRow[]).
-            // So it should probably return something that maps to RawRow, or RawRow logic stays here?
-            
-            // Let's return ParsedRow[] where ParsedRow has item | error.
-            return;
-        } 
-
-        const hs = findHSCode(row);
-        
-        item = {
-            janCode,
-            description: row['description'] || row['product name'] || row['item name'] || row['product'] || row['title'] || row['name'] || row['product name（product number）'] || "",
-            qty: parseInt(row['total pcs'] || row['qty'] || row["order q'ty pcs"] || "0", 10),
-            carton: row['carton number'] || row['carton'] || "",
-            hsCode: hs,
-            price: row['price'] ? parseFloat(row['price'].replace(/[^0-9.]/g, "")) : undefined,
-            weight: row['weight'] ? parseFloat(row['weight'].replace(/[^0-9.]/g, "")) : undefined,
-            countryOfOrigin: row['country of origin'] || row['origin'] || row['country'] || undefined,
-        };
-        
-        parsedItems.push(item);
+    data.forEach((row: any) => {
+        const item = mapImportItem(row);
+        if (isValidRow(row, item.janCode) && item.janCode) {
+             parsedItems.push(item);
+        }
     });
     
     return parsedItems;
@@ -148,43 +112,26 @@ export const parseRows = (headerRow: string | null, rawBody: string): ImportItem
 
 // Internal helper that returns rich status for UI
 const generateUIState = (headerRow: string | null, rawBody: string): RawRow[] => {
-     const fullCsv = (headerRow ? headerRow + "\n" : "") + (rawBody || "");
-    if (!fullCsv.trim()) return [];
-
-    const result = Papa.parse(fullCsv, {
-        header: true,
-        skipEmptyLines: "greedy", 
-        transformHeader: (h) => h.trim().toLowerCase(), 
-    });
-
+    const data = parseCSV(headerRow, rawBody);
     const rows: RawRow[] = [];
 
-    result.data.forEach((row: any) => {
-        const janCode = (row['jan code'] || row['jan_code'] || row['jancode'] || "").toString().trim();
-        if (!janCode && Object.keys(row).length < 2) return;
+    data.forEach((row: any) => {
+        const item = mapImportItem(row);
+        
+        if (!isValidRow(row, item.janCode)) return;
 
-        let item: ImportItem | null = null;
         let error: string | undefined = undefined;
+        let parsedItem: ImportItem | null = null;
                  
-        if (!janCode) {
+        if (!item.janCode) {
             error = "Missing JAN Code";
         } else {
-            const hs = findHSCode(row);
-            item = {
-                janCode,
-                description: row['description'] || row['product name'] || row['item name'] || row['product'] || row['title'] || row['name'] || row['product name（product number）'] || "",
-                qty: parseInt(row['total pcs'] || row['qty'] || row["order q'ty pcs"] || "0", 10),
-                carton: row['carton number'] || row['carton'] || "",
-                hsCode: hs,
-                price: row['price'] ? parseFloat(row['price'].replace(/[^0-9.]/g, "")) : undefined,
-                weight: row['weight'] ? parseFloat(row['weight'].replace(/[^0-9.]/g, "")) : undefined,
-                countryOfOrigin: row['country of origin'] || row['origin'] || row['country'] || undefined,
-            };
+            parsedItem = item;
         }
                  
         rows.push({
-            raw: "", 
-            parsed: item,
+            raw: "", // We don't preserve raw line string in this optimization (Papa doesn't give it easily per row in JSON mode)
+            parsed: parsedItem,
             error: error
         });
     });
