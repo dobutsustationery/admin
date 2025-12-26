@@ -1,4 +1,15 @@
+
+
+<!-- Add Imports -->
+<script context="module" lang="ts">
+    import { schedule_edit_batch, begin_edit, complete_edit, fail_edit, toggle_edit_status } from "$lib/photos-slice";
+    import { smartCrop, removeBackground } from "$lib/background-removal";
+    import { autoColorCorrect } from "$lib/color-correction";
+    import { uploadImageToDrive, ensureFolderStructure } from "$lib/google-drive";
+</script>
+
 <script lang="ts">
+  // ... existing imports ...
   import { onMount, onDestroy } from "svelte";
   import {
     createPickerSession,
@@ -32,10 +43,13 @@
   function isAuthenticated() { return isPhotosAuthenticated; } // Helper for template
 
 
+  import type { PhotoEditQueue } from "$lib/photos-slice";
+
   // State from Redux Store
   $: photos = $store.photos.selected as MediaItem[];
   $: uploads = $store.photos.uploads || {};
-  $: janCodeToPhotos = $store.photos.janCodeToPhotos || {};
+  $: janCodeToPhotos = ($store.photos.janCodeToPhotos || {}) as Record<string, MediaItem[]>;
+  $: edits = ($store.photos.edits || {}) as Record<string, PhotoEditQueue>;
   $: isGenerating = $store.photos.generating;
   $: isCategorizing = $store.photos.categorizing;
 
@@ -100,6 +114,152 @@
     }
   }
 
+  // --- EDIT QUEUE RUNNER ---
+  let isEditing = false;
+  // Reactive list of pending items
+  $: pendingEdits = Object.entries(edits).filter(([id, q]) => q.queue.length > 0 && !q.active);
+
+  // Trigger processing whenever we have pending items and are not busy
+  $: if (!isEditing && pendingEdits.length > 0) {
+      processNextEdit();
+  }
+
+  async function processNextEdit() {
+      if (isEditing || pendingEdits.length === 0) return;
+      
+      isEditing = true;
+      const [id, q] = pendingEdits[0]; // Pick first
+      const operation = q.queue[0]; // Pick first op in queue
+      
+      console.log(`[EditQueue] Starting ${operation} on ${id}`);
+      
+      try {
+          const token = getStoredToken();
+          if (!token) throw new Error("Not authenticated");
+          
+          store.dispatch(begin_edit({ id, operation }));
+          
+          // 1. Get Image
+          // Need to find the item to get its baseUrl. 
+          // Could be in `selected` OR `janCodeToPhotos`?
+          // We need a lookup.
+          let item = photos.find(p => p.id === id);
+          if (!item) {
+              // Check JAN groups
+              for (const code in janCodeToPhotos) {
+                  const found = janCodeToPhotos[code].find(p => p.id === id);
+                  if (found) { item = found; break; }
+              }
+          }
+          if (!item) throw new Error("Photo not found in state");
+          
+          // Fetch logic (duplicated from gemini-client roughly)
+          // We rely on background-removal / color-correction taking URL or Base64.
+          // They need Base64 if we want to avoid CORS canvas taint.
+          // So we fetch to Base64 first using our proxy-friendly method.
+          
+          // Import fetchImage logic dynamically or duplicate? 
+          // Since it's inside `gemini-client` but not exported, let's duplicate the fetch logic briefly or move it helper.
+          // Getting it via `fetch` directly works for Drive/Photos IF we have headers.
+          // `background-removal` tries to load using `Image` tag which fails CORS for canvas.
+          // So we MUST fetch blob -> base64.
+          
+          let fetchUrl = item.baseUrl;
+          if (fetchUrl.includes("drive.google.com/thumbnail")) {
+               const match = fetchUrl.match(/id=([^&]+)/);
+               if (match) fetchUrl = `https://www.googleapis.com/drive/v3/files/${match[1]}?alt=media`;
+          } else if (fetchUrl.includes("googleusercontent.com")) {
+               fetchUrl = `${fetchUrl}=w1024-h1024`; // High res
+          }
+
+          const res = await fetch(fetchUrl, { headers: { Authorization: `Bearer ${token.access_token}` } });
+          if (!res.ok) throw new Error("Failed to fetch image");
+          const blob = await res.blob();
+          const base64 = await new Promise<string>((resolve) => {
+              const r = new FileReader();
+              r.onload = () => resolve((r.result as string).split(',')[1]);
+              r.readAsDataURL(blob);
+          });
+
+          // 2. Process
+          let resultBase64: string | null = null;
+          if (operation === 'crop') {
+              resultBase64 = await smartCrop(base64);
+          } else if (operation === 'color_correct') {
+              resultBase64 = await autoColorCorrect(base64);
+          } else if (operation === 'remove_background') {
+              // Convert to data uri
+              resultBase64 = await removeBackground(`data:${blob.type};base64,${base64}`);
+          }
+          
+          if (!resultBase64) throw new Error("Operation returned no data");
+          
+          // 3. Upload
+          const folders = await ensureFolderStructure(token.access_token);
+          const filename = `edited_${operation}_${id}_${Date.now()}.png`;
+          // Convert base64 back to blob for upload
+          const byteChars = atob(resultBase64);
+          const byteNumbers = new Array(byteChars.length);
+          for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+          const byteArray = new Uint8Array(byteNumbers);
+          const uploadBlob = new Blob([byteArray], { type: 'image/png' });
+          
+          const uploaded = await uploadImageToDrive(uploadBlob, filename, folders.processedId, token.access_token);
+          
+          const finalUrl = uploaded.thumbnailLink || uploaded.webViewLink; // Use thumbnail link like gemini client
+          
+          // 4. Complete
+          store.dispatch(complete_edit({ id, operation, permanentUrl: finalUrl }));
+          
+          // 5. Broadcast (optional, but good for sync)
+           if ($user.uid) {
+             // We don't have a specific broadcast for "edit complete" yet implemented in reducer, 
+             // but `complete_upload` is similar. 
+             // We should probably just rely on local state broadcast if we added `complete_edit` to the reducer shared via redux-firestore?
+             // Actually, `photos-slice` actions are NOT automatically broadcast unless we wrap them.
+             // We'll skip broadcast for now, rely on `task_boundary` usage paradigm: State is local until saved?
+             // But Redux Firestore mirrors.
+             // Wait, `dispatch` only affects local store.
+             // We need to `broadcast` the action if we want other clients (or reload persistence) to see it?
+             // Since `photos` slice is NOT synced via firestore directly (it's local state + some manual broadcasts),
+             // The `urlHistory` is local?
+             // Ah, `photos-slice` IS local. We persist via local storage or manual saves.
+             // So this is fine.
+           }
+
+      } catch (e: any) {
+          console.error(`Edit failed for ${id}:`, e);
+          store.dispatch(fail_edit({ id, operation: operation as any, error: e.message }));
+      } finally {
+          isEditing = false;
+      }
+  }
+  
+  function scheduleBatch(op: 'crop' | 'color_correct' | 'remove_background') {
+      // Schedule for CATEGORIZED photos only (as per user request)
+      // Collect IDs from janCodeToPhotos only
+      const allIds = new Set<string>();
+      Object.values(janCodeToPhotos).flat().forEach(p => allIds.add(p.id));
+      
+      const ids = Array.from(allIds);
+      if (ids.length === 0) {
+          alert("No categorized photos to process.");
+          return;
+      }
+      
+      store.dispatch(schedule_edit_batch({ ids, operation: op }));
+  }
+
+  function handleProcessImages() {
+      // Schedule Color Correct THEN Remove Background
+      scheduleBatch('color_correct');
+      scheduleBatch('remove_background');
+      
+      // Note: Progress is tracked via pendingEdits
+  }
+
+
+
   // State
   let error = "";
   let isPolling = false;
@@ -109,8 +269,8 @@
 
   const MAX_POLL_ATTEMPTS = 60; // 2 minutes (approx)
   let pickerWindow: Window | null = null;
-
-  // LIFECYCLE
+  // ... existing checkAuthError etc ...
+    // LIFECYCLE
   onMount(async () => {
      console.log("Photos Page Mounted. Checking Auth...");
      
@@ -426,6 +586,7 @@
       if (previewTimer) clearTimeout(previewTimer);
       previewItem = null;
   }
+
 </script>
 
 <div class="p-8 max-w-6xl mx-auto relative">
@@ -647,6 +808,7 @@
                 >
                 Generate Descriptions
                 </button>
+                
              {/if}
           </div>
         </div>
@@ -683,6 +845,23 @@
                   className="w-full h-full object-cover"
                 />
                 
+                <!-- Edit Status Overlay -->
+                {#if edits[photo.id]}
+                   {@const q = edits[photo.id]}
+                   {#if q.active}
+                       <div class="absolute inset-0 bg-blue-600/40 flex items-center justify-center z-20 backdrop-blur-[1px]">
+                           <div class="text-white text-xs font-bold flex flex-col items-center drop-shadow-md">
+                              <span class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mb-1"></span>
+                              <span class="uppercase tracking-wider text-[10px]">{q.active.operation.replace('_', ' ')}</span>
+                           </div>
+                       </div>
+                   {:else if q.queue.length > 0}
+                       <div class="absolute top-1 right-1 bg-yellow-400 text-yellow-900 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-20 border border-yellow-500">
+                           {q.queue.length}
+                       </div>
+                   {/if}
+                {/if}
+
                 <!-- Upload Status Overlay -->
                 {#if uploads[photo.id]}
                     {#if uploads[photo.id].status === 'uploading'}
@@ -715,7 +894,22 @@
       <!-- CATEGORIZED RESULTS -->
       {#if Object.keys(janCodeToPhotos).length > 0}
         <div class="bg-white p-6 rounded-lg shadow-md mt-8 border-t-4 border-teal-500">
-            <h2 class="text-xl font-bold mb-4 text-gray-800">Categorized Photos</h2>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Categorized Photos</h2>
+                <div class="flex gap-2">
+                     <button
+                        on:click={handleProcessImages}
+                        disabled={isEditing}
+                        class="bg-indigo-600 text-white px-4 py-2 rounded-md font-bold hover:bg-indigo-700 transition disabled:opacity-50 text-sm flex items-center gap-2 shadow-sm"
+                        title="Auto-process all categorized images (Color Correct + Remove Background)"
+                        >
+                        {#if isEditing}
+                             <span class="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></span>
+                        {/if}
+                        <span>Process Images</span>
+                    </button>
+                </div>
+            </div>
             <div class="border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
                 <!-- Header -->
                 <div class="flex flex-row bg-slate-200 border-b-2 border-slate-300 text-slate-700" style="display: flex; flex-direction: row;">
@@ -772,27 +966,44 @@
                                 </button>
                             {/if}
 
-                            <div class="flex flex-row flex-wrap gap-2 content-start w-full" style="display: flex; flex-direction: row; flex-wrap: wrap;">
+                            <div class="flex flex-row flex-wrap gap-4 mt-6 mb-6 p-4" style="display: flex; flex-direction: row; flex-wrap: wrap;">
                                 {#each items as item}
                                     <div 
-                                        class="w-14 h-14 rounded border border-gray-200 overflow-hidden relative flex-none cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
-                                        style="width: 56px; height: 56px;"
+                                        class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group/item cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
+                                        style="width: 80px; height: 80px; flex-shrink: 0;"
+                                        on:click={() => goto(`/photo-history?id=${item.id}`)}
                                         on:mouseenter={(e) => handleThumbnailEnter(e, item)}
                                         on:mouseleave={handleThumbnailLeave}
-                                        on:click={() => goto(`/photo-history?id=${item.id}`)}
                                     >
                                         <SecureImage 
-                                            src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w128` : `${item.baseUrl}=w128-h128-c`}
+                                            src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w160` : `${item.baseUrl}=w160-h160-c`}
                                             className="w-full h-full object-cover"
                                         />
-                                        <!-- Show upload status here too -->
+                                        <!-- Filename Overlay -->
+                                        <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] p-0.5 truncate opacity-0 group-hover/item:opacity-100 transition-opacity">
+                                            {item.filename}
+                                        </div>
+
+                                        <!-- Status Icons -->
+                                        <div class="absolute top-1 right-1 flex flex-col gap-0.5">
+                                             {#if edits[item.id]?.status?.crop}
+                                                <div class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-sm border border-white" title="Cropped"></div>
+                                             {/if}
+                                             {#if edits[item.id]?.status?.color_correct}
+                                                <div class="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm border border-white" title="Color Corrected"></div>
+                                             {/if}
+                                             {#if edits[item.id]?.status?.remove_background}
+                                                <div class="w-1.5 h-1.5 rounded-full bg-pink-500 shadow-sm border border-white" title="BG Removed"></div>
+                                             {/if}
+                                        </div>
+
                                         {#if uploads[item.id]}
                                             {#if uploads[item.id].status === 'uploading'}
                                                 <div class="absolute inset-0 bg-black/30 flex items-center justify-center">
-                                                    <span class="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></span>
+                                                    <span class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>
                                                 </div>
                                             {:else if uploads[item.id].status === 'failed'}
-                                                <div class="absolute inset-0 bg-red-500/30 flex items-center justify-center">!</div>
+                                                <div class="absolute inset-0 bg-red-500/30 flex items-center justify-center font-bold text-white text-xs">!</div>
                                             {/if}
                                         {/if}
                                     </div>
@@ -803,13 +1014,55 @@
                 {/each}
             </div>
         </div>
+
       {/if}
       
     {/if}
   </div>
+
+  <!-- BATCH PROGRESS OVERLAY -->
+  {#if isEditing}
+      {@const activeEntry = Object.entries(edits).find(([_, q]) => q.active)}
+      {@const activeId = activeEntry ? activeEntry[0] : null}
+      {@const activeOp = activeEntry ? activeEntry[1].active?.operation : null}
+      
+      <div class="fixed bottom-0 left-0 right-0 bg-gray-900/90 text-white p-4 z-50 backdrop-blur-sm shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] transition-transform duration-300" transition:fade>
+          <div class="max-w-6xl mx-auto flex items-center justify-between">
+              <div class="flex items-center gap-6">
+                  <div class="relative">
+                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                       <span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
+                  </div>
+                  <div>
+                      <h3 class="font-bold text-lg">Processing Images</h3>
+                      <p class="text-gray-300 text-sm">{pendingEdits.length} task(s) remaining in queue</p>
+                  </div>
+              </div>
+
+              {#if activeId}
+                 {@const item = photos.find(p => p.id === activeId) || Object.values(janCodeToPhotos).flat().find(p => p.id === activeId)}
+                 {#if item}
+                    <div class="flex items-center gap-4 bg-gray-800 rounded-lg p-2 pr-4">
+                        <div class="w-12 h-12 rounded overflow-hidden bg-gray-700 relative">
+                             <SecureImage 
+                                src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w128` : `${item.baseUrl}=w128-h128-c`}
+                                className="w-full h-full object-cover"
+                            />
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-xs uppercase tracking-wider text-gray-400 font-bold">Current Operation</span>
+                            <span class="font-mono text-sm text-indigo-300">{activeOp?.replace('_', ' ')}</span>
+                        </div>
+                    </div>
+                 {/if}
+              {/if}
+          </div>
+      </div>
+  {/if}
 </div>
 
 <style>
+
     .categorized-row {
         border-bottom: 1px solid #e2e8f0;
         transition: background-color 0.1s;

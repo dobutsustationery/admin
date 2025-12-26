@@ -45,7 +45,9 @@
     try {
         await imageQueue.add(async () => {
              const headers: any = {};
-             if (token) {
+             // Only add Auth token for NON-googleusercontent URLs (unless it's the Drive API)
+             // Google Photos Base URLs (lh3.googleusercontent.com) are signed/public and reject Auth headers via CORS
+             if (token && !src.includes("googleusercontent.com")) {
                  headers.Authorization = `Bearer ${token.access_token}`;
              }
              

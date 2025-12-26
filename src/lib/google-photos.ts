@@ -7,12 +7,20 @@
 
 // Environment configuration
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_PHOTOS_CLIENT_ID;
-const SCOPES = (
+const rawScopes = (
   import.meta.env.VITE_GOOGLE_PHOTOS_SCOPES ||
-  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly,https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/userinfo.email"
-)
-  .split(",")
-  .map((s: string) => s.trim());
+  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly,https://www.googleapis.com/auth/drive.readonly,https://www.googleapis.com/auth/userinfo.email"
+).split(",").map((s: string) => s.trim());
+
+// FORCE `drive.readonly` existence (Fix for sticky Env vars)
+if (!rawScopes.some((s: string) => s.includes("drive.readonly") || s.includes("drive") && !s.includes("file"))) {
+    // Note: 'drive' is full access, which covers readonly. 'drive.file' does NOT.
+    // If we only have 'drive.file', we MUST add 'drive.readonly'.
+    console.warn("Forcing addition of drive.readonly scope via code override.");
+    rawScopes.push("https://www.googleapis.com/auth/drive.readonly");
+}
+
+const SCOPES = rawScopes;
 console.log("Configured Google Photos Scopes:", SCOPES.join(", "));
 
 // OAuth token storage key
@@ -117,7 +125,8 @@ export function getStoredToken(): GooglePhotosToken | null {
     // Check if token has required scopes
     // We strictly require Photos access. Drive access is optional for "connection" status.
     const REQUIRED_SCOPES = [
-        "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+        "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+        "https://www.googleapis.com/auth/drive.readonly"
     ];
 
     const missingScopes = REQUIRED_SCOPES.filter(
