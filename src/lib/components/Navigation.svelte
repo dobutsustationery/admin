@@ -22,6 +22,7 @@
     Tv,
     CheckSquare,
     FileEdit,
+    Bug,
   } from "lucide-svelte";
 
   export let unsyncedActions = 0;
@@ -50,6 +51,7 @@
     { href: "/shows", label: "Shows", icon: Tv },
     { href: "/sku-review", label: "SKU Review", icon: CheckSquare },
     { href: "/test-edit", label: "Test Edit", icon: FileEdit },
+    { href: "/devtools", label: "DevTools", icon: Bug },
   ];
 
   function toggleMenu() {
