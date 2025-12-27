@@ -74,12 +74,13 @@
 
         checkScopes().then(async (valid) => {
           if (!valid) {
-            console.error("[Layout] User signed in but missing required scopes or token after retries. Signing out.");
-            signOut(auth).then(() => {
-              me = { signedIn: false };
-              loadingState = "ready";
-            });
-          } else {
+            console.warn("[Layout] User signed in but missing required scopes or token. Functionality may be limited until 'Switch Account' is used.");
+            // Do NOT sign out. Allow user to enter and fix connection.
+            // Proceed to set user state below.
+          }
+          
+          // Proceed regardless of validity (allow fixing in UI)
+          if (true) {
             const { uid, email, displayName, photoURL } = firebaseUser;
             me = {
               signedIn: true,
@@ -96,13 +97,15 @@
             $user = me;
             loadingState = "loading"; 
 
-            setDoc(doc(firestore as any, "users", email), {
-              uid: me.uid,
-              name: me.name,
-              email: me.email,
-              photo: me.photo,
-              activity_timestamp: new Date().getTime(),
-            }).catch(console.error);
+            if (uid) { // Only write if we have a UID (always true here)
+                setDoc(doc(firestore as any, "users", email), {
+                  uid: me.uid,
+                  name: me.name,
+                  email: me.email,
+                  photo: me.photo,
+                  activity_timestamp: new Date().getTime(),
+                }).catch(console.error);
+            }
 
             if (!unsubscribeBroadcast) {
               unsubscribeBroadcast = startBroadcastListener();
