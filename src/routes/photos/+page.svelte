@@ -208,24 +208,15 @@
           
           const finalUrl = uploaded.thumbnailLink || uploaded.webViewLink; // Use thumbnail link like gemini client
           
-          // 4. Complete
-          store.dispatch(complete_edit({ id, operation, permanentUrl: finalUrl }));
+          // 4. Complete & Broadcast
+          const completeAction = complete_edit({ id, operation, permanentUrl: finalUrl });
           
-          // 5. Broadcast (optional, but good for sync)
-           if ($user.uid) {
-             // We don't have a specific broadcast for "edit complete" yet implemented in reducer, 
-             // but `complete_upload` is similar. 
-             // We should probably just rely on local state broadcast if we added `complete_edit` to the reducer shared via redux-firestore?
-             // Actually, `photos-slice` actions are NOT automatically broadcast unless we wrap them.
-             // We'll skip broadcast for now, rely on `task_boundary` usage paradigm: State is local until saved?
-             // But Redux Firestore mirrors.
-             // Wait, `dispatch` only affects local store.
-             // We need to `broadcast` the action if we want other clients (or reload persistence) to see it?
-             // Since `photos` slice is NOT synced via firestore directly (it's local state + some manual broadcasts),
-             // The `urlHistory` is local?
-             // Ah, `photos-slice` IS local. We persist via local storage or manual saves.
-             // So this is fine.
-           }
+          if ($user.uid) {
+              console.log(`[Batch] Broadcasting complete_edit for ${id}`);
+              broadcast(firestore, $user.uid, completeAction);
+          } else {
+              store.dispatch(completeAction);
+          }
 
       } catch (e: any) {
           console.error(`Edit failed for ${id}:`, e);
@@ -239,7 +230,14 @@
       // Schedule for CATEGORIZED photos only (as per user request)
       // Collect IDs from janCodeToPhotos only
       const allIds = new Set<string>();
-      Object.values(janCodeToPhotos).flat().forEach(p => allIds.add(p.id));
+      Object.values(janCodeToPhotos).flat().forEach(p => {
+          // Check if already done
+          const status = edits[p.id]?.status;
+          const isDone = status && status[op];
+          if (!isDone) {
+             allIds.add(p.id);
+          }
+      });
       
       const ids = Array.from(allIds);
       if (ids.length === 0) {
@@ -247,7 +245,15 @@
           return;
       }
       
-      store.dispatch(schedule_edit_batch({ ids, operation: op }));
+      const action = schedule_edit_batch({ ids, operation: op });
+      
+      if ($user.uid) {
+          console.log(`[Batch] Broadcasting schedule batch ${op} for ${ids.length} items.`);
+          broadcast(firestore, $user.uid, action);
+      } else {
+          console.warn("[Batch] No User UID! Dispatching locally only.");
+          store.dispatch(action);
+      }
   }
 
   function handleProcessImages() {
@@ -590,6 +596,45 @@
 </script>
 
 <div class="p-8 max-w-6xl mx-auto relative">
+  <!-- BATCH PROGRESS OVERLAY -->
+  {#if isEditing}
+      {@const activeEntry = Object.entries(edits).find(([_, q]) => q.active)}
+      {@const activeId = activeEntry ? activeEntry[0] : null}
+      {@const activeOp = activeEntry ? activeEntry[1].active?.operation : null}
+      
+      <div class="batch-progress-overlay" transition:fade>
+          <div class="overlay-content">
+              <div class="status-indicator">
+                  <div class="relative">
+                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                       <span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
+                  </div>
+                  <div>
+                      <h3>Processing Images</h3>
+                      <p>{pendingEdits.length} task(s) remaining in queue</p>
+                  </div>
+              </div>
+
+              {#if activeId}
+                 {@const item = photos.find(p => p.id === activeId) || Object.values(janCodeToPhotos).flat().find(p => p.id === activeId)}
+                 {#if item}
+                    <div class="active-item-card">
+                        <div class="thumbnail-wrapper">
+                             <SecureImage 
+                                src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w64` : `${item.baseUrl}=w64-h64-c`}
+                                className="w-full h-full object-cover"
+                            />
+                        </div>
+                        <div class="operation-details">
+                            <span class="op-label">Current Operation</span>
+                            <span class="op-value">{activeOp?.replace('_', ' ')}</span>
+                        </div>
+                    </div>
+                 {/if}
+              {/if}
+          </div>
+      </div>
+  {/if}
   <!-- PREVIEW OVERLAY -->
   {#if previewItem}
       <div 
@@ -1021,44 +1066,7 @@
   </div>
 
   <!-- BATCH PROGRESS OVERLAY -->
-  {#if isEditing}
-      {@const activeEntry = Object.entries(edits).find(([_, q]) => q.active)}
-      {@const activeId = activeEntry ? activeEntry[0] : null}
-      {@const activeOp = activeEntry ? activeEntry[1].active?.operation : null}
-      
-      <div class="fixed bottom-0 left-0 right-0 bg-gray-900/90 text-white p-4 z-50 backdrop-blur-sm shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] transition-transform duration-300" transition:fade>
-          <div class="max-w-6xl mx-auto flex items-center justify-between">
-              <div class="flex items-center gap-6">
-                  <div class="relative">
-                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                       <span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
-                  </div>
-                  <div>
-                      <h3 class="font-bold text-lg">Processing Images</h3>
-                      <p class="text-gray-300 text-sm">{pendingEdits.length} task(s) remaining in queue</p>
-                  </div>
-              </div>
 
-              {#if activeId}
-                 {@const item = photos.find(p => p.id === activeId) || Object.values(janCodeToPhotos).flat().find(p => p.id === activeId)}
-                 {#if item}
-                    <div class="flex items-center gap-4 bg-gray-800 rounded-lg p-2 pr-4">
-                        <div class="w-12 h-12 rounded overflow-hidden bg-gray-700 relative">
-                             <SecureImage 
-                                src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w128` : `${item.baseUrl}=w128-h128-c`}
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-xs uppercase tracking-wider text-gray-400 font-bold">Current Operation</span>
-                            <span class="font-mono text-sm text-indigo-300">{activeOp?.replace('_', ' ')}</span>
-                        </div>
-                    </div>
-                 {/if}
-              {/if}
-          </div>
-      </div>
-  {/if}
 </div>
 
 <style>
@@ -1095,4 +1103,80 @@
         box-shadow: 0 0 0 1px #14b8a6;
     }
     /* Let's fix the highlighting logic in the HTML block instead of CSS tricks */
+    
+    .batch-progress-overlay {
+        position: sticky;
+        top: 0;
+        left: 0;
+        right: 0;
+        background-color: rgba(17, 24, 39, 0.9); /* gray-900 / 90% */
+        color: white;
+        padding: 1rem;
+        z-index: 50;
+        backdrop-filter: blur(4px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        border-bottom-left-radius: 0.5rem;
+        border-bottom-right-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+        margin-left: -1rem;
+        margin-right: -1rem;
+        margin-top: -1rem;
+        transition: transform 0.3s;
+    }
+    .overlay-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }
+    .status-indicator h3 {
+        font-weight: 700;
+        font-size: 1.125rem;
+    }
+    .status-indicator p {
+        color: #d1d5db; /* gray-300 */
+        font-size: 0.875rem;
+    }
+    .active-item-card {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background-color: #1f2937; /* gray-800 */
+        border-radius: 0.5rem;
+        padding: 0.5rem;
+        padding-right: 1rem;
+        box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+        border: 1px solid #374151; /* gray-700 */
+    }
+    .thumbnail-wrapper {
+        width: 2.5rem; /* 10 */
+        height: 2.5rem;
+        flex-shrink: 0;
+        border-radius: 0.25rem;
+        overflow: hidden;
+        background-color: #374151;
+        position: relative;
+        border: 1px solid #4b5563; /* gray-600 */
+    }
+    .operation-details {
+        display: flex;
+        flex-direction: column;
+    }
+    .op-label {
+        font-size: 0.625rem; /* 10px */
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #9ca3af; /* gray-400 */
+        font-weight: 700;
+    }
+    .op-value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.75rem; /* xs */
+        color: #a5b4fc; /* indigo-300 */
+        white-space: nowrap;
+    }
 </style>

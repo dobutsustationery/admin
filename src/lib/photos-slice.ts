@@ -68,10 +68,17 @@ const photosSlice = createSlice({
       });
       
       const newIds = new Set(state.selected.map(p => p.id));
+      
+      // Also protect IDs currently in janCodeToPhotos (Categorized)
+      if (state.janCodeToPhotos) {
+          Object.values(state.janCodeToPhotos).flat().forEach(p => newIds.add(p.id));
+      }
+
       if (!state.uploads) state.uploads = {};
       for (const id in state.uploads) {
           if (!newIds.has(id)) delete state.uploads[id];
       }
+      
       // Clean edits? Maybe keep them for history? Let's clean for now to save memory
       if (!state.edits) state.edits = {};
       for (const id in state.edits) {

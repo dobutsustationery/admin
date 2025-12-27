@@ -254,14 +254,26 @@
           
           const result = await uploadImageToDrive(file, filename, folders.processedId, token.access_token);
           
+          console.log("[Manual Upload] Result:", result);
+
+          const safeUrl = result.thumbnailLink || result.webViewLink;
+          if (!safeUrl) {
+              throw new Error("Upload succeeded but returned no usable URL.");
+          }
+
            const action = complete_upload({ 
               id: photoId, 
-              permanentUrl: result.thumbnailLink || result.webViewLink, 
-              webViewLink: result.webViewLink 
+              permanentUrl: safeUrl, 
+              webViewLink: result.webViewLink || "" 
           });
 
-          if ($user.uid) broadcast(firestore, $user.uid, action);
-          else store.dispatch(action);
+          if ($user.uid) {
+              console.log("[Manual Upload] Broadcasting action via user", $user.uid);
+              broadcast(firestore, $user.uid, action);
+          } else {
+              console.warn("[Manual Upload] No User UID! Dispatching locally only. Persistence will fail.");
+              store.dispatch(action);
+          }
 
       } catch (e) {
           console.error("Upload Blob Failed", e);

@@ -46,11 +46,22 @@ export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
   }
   const broadcasts = collection(fs, "broadcast");
   const cleanAction = stripUndefined(action);
-  return addDoc(broadcasts, {
-    ...cleanAction,
-    timestamp: serverTimestamp(),
-    creator: uid,
-  });
+  
+  // Debug Log
+  console.log(`[Broadcast] Sending action ${action.type}`, cleanAction);
+  
+  try {
+      const docRef = await addDoc(broadcasts, {
+        ...cleanAction,
+        timestamp: serverTimestamp(),
+        creator: uid,
+      });
+      console.log(`[Broadcast] Success. Doc ID: ${docRef.id}`);
+      return docRef;
+  } catch (e) {
+      console.error(`[Broadcast] FAILED to write action ${action.type}`, e);
+      throw e;
+  }
 }
 
 // Modified callback signature to accept ActionWithId[] directly to simplify usage
