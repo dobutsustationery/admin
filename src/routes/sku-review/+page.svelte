@@ -2,12 +2,14 @@
   import { store } from "$lib/store";
   import type { Item } from "$lib/inventory";
 
-  let showAll = false;
+  let skipOutOfStock = true;
   let itemsMissingData: { key: string; item: Item; missing: string[] }[] = [];
+  let skippedCount = 0;
 
   $: {
     const inv = $store.inventory.idToItem;
     itemsMissingData = [];
+    skippedCount = 0;
     if (inv) {
       for (const key in inv) {
         const item = inv[key];
@@ -32,8 +34,13 @@
         // If these are too noisy, we can remove them.
         if (!item.productCategory) missing.push("Category"); 
 
-        // Filter out items with 0 qty if we are not showing all
-        if (!showAll && (item.qty || 0) <= 0) continue;
+        const stock = (item.qty || 0) - (item.shipped || 0);
+        
+        // Filter out items with <= 0 stock if we are skipping out of stock
+        if (stock <= 0) {
+            skippedCount++;
+            if (skipOutOfStock) continue;
+        }
 
         if (missing.length > 0) {
           itemsMissingData.push({ key, item, missing });
@@ -50,7 +57,12 @@
   <p>Items missing required data or with invalid formatting.</p>
   
   <label>
-    <input type="checkbox" bind:checked={showAll}> Show out-of-stock items
+    <input type="checkbox" bind:checked={skipOutOfStock}> 
+    {#if skipOutOfStock}
+        Skip items that are out of stock ({skippedCount} skipped)
+    {:else}
+        Skip items that are out of stock ({skippedCount} would be skipped)
+    {/if}
   </label>
 
   {#if itemsMissingData.length === 0}
@@ -80,7 +92,7 @@
             <td>{item.janCode}</td>
             <td>{item.subtype}</td>
             <td class="desc">{item.description}</td>
-            <td>{item.qty}</td>
+            <td>{(item.qty || 0) - (item.shipped || 0)}</td>
             <td>
               {#each missing as m}
                 <span class="badge">{m}</span>
