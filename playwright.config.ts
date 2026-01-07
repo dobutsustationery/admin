@@ -21,7 +21,7 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: 1,
   /* Global timeout for each test - increased for large datasets */
-  timeout: 120000, // 120 seconds per test
+  timeout: 10000,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [["html", { outputFolder: "e2e/reports/html" }], ["list"]],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
@@ -60,14 +60,14 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         deviceScaleFactor: 1, // Ensure standard pixel density
-        timezoneId: 'UTC', // Ensure consistent date rendering across environments
+        timezoneId: "UTC", // Ensure consistent date rendering across environments
         // Ensure consistent font rendering across environments
         // This prevents column width differences due to font variations
         launchOptions: {
           args: [
-            '--font-render-hinting=none',
-            '--disable-font-subpixel-positioning',
-            '--force-color-profile=srgb',
+            "--font-render-hinting=none",
+            "--disable-font-subpixel-positioning",
+            "--force-color-profile=srgb",
           ],
         },
       },
