@@ -354,7 +354,6 @@ admin/
 - **[GOOGLE_DRIVE_AND_SHEETS_INTEGRATION.md](docs/integrations/GOOGLE_DRIVE_AND_SHEETS_INTEGRATION.md)**: Design for integrating Google Drive and Google Sheets for file exports, logging, and collaborative data management
 - **[PHOTOS_INTEGRATION.md](docs/integrations/PHOTOS_INTEGRATION.md)**: Google Photos API integration specification for product import workflow
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
-- **[EXTRACTION_GUIDE.md](EXTRACTION_GUIDE.md)**: How this repository was extracted from the monorepo
 
 ## Contributing
 
@@ -371,6 +370,6 @@ Proprietary - All rights reserved. See [LICENSE](LICENSE) file for details.
 ## Support
 
 For issues or questions:
-- Check the [DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md) for architecture details
+- Check the [DESIGN_OVERVIEW.md](docs/design/DESIGN_OVERVIEW.md) for architecture details
 - Review existing code for patterns
 - Open an issue on GitHub

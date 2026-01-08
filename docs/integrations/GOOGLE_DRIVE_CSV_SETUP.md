@@ -1,5 +1,7 @@
 # Google Drive Integration for CSV Export - Setup Guide
 
+> **Status: Implementation Guide** - This is a setup guide for configuring Google Drive integration. The functionality is implemented in `google-drive.ts` and used by the `/csv` route.
+
 ## Overview
 
 This implementation provides an MVP (Minimal Viable Product) for exporting inventory data directly to Google Drive. Users can authenticate with Google, enter a filename, and upload CSV files to a designated Drive folder.

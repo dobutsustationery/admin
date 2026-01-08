@@ -1,5 +1,7 @@
 # Product Import Process - Design Document
 
+> **Status: Implemented** - Photo-based product import is available at `/photos` with Google Photos integration via `photos-slice.ts` and `google-photos.ts`.
+
 ## Overview
 
 This document describes the high-level design for importing new products into the Dobutsu Stationery inventory system using photo-based scanning with LLM assistance.
