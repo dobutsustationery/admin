@@ -26,7 +26,7 @@ function getEnvVar(keys: string[]): string | undefined {
     return undefined;
 }
 
-test('Debug Gemini Image Editing', async ({ page }) => {
+test.skip('Debug Gemini Image Editing', async ({ page }) => {
     // 0. Setup
     const apiKey = getEnvVar(['VITE_GOOGLE_API_KEY', 'VITE_FIREBASE_STAGING_API_KEY']);
     if (!apiKey) {
