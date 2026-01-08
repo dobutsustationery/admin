@@ -1,5 +1,7 @@
 # Shopify Integration - Design Document
 
+> **Status: Implemented** - Shopify integration is available with product management at `/shopify-products` and import at `/shopify-import`. The listings slice and Shopify export functionality are in place.
+
 ## Overview
 
 This document outlines the design for integrating the Dobutsu Stationery inventory management system with Shopify.

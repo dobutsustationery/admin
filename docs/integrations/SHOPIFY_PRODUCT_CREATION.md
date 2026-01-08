@@ -1,5 +1,7 @@
 # Shopify Product Creation Design
 
+> **Status: Design Document** - This describes the data mapping and process for generating Shopify product CSV files from internal inventory and photo data. See also [SHOPIFY_INTEGRATION.md](SHOPIFY_INTEGRATION.md) for the broader integration design.
+
 ## Objective
 
 The goal is to automate the generation of a Shopify-compatible product CSV

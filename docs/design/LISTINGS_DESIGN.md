@@ -1,5 +1,7 @@
 # Product Listings Redesign - Design Document
 
+> **Status: Implemented** - This design has been implemented. The `listings` slice exists in `src/lib/listings-slice.ts`, and listing management UI is available at `/listing-detail`.
+
 ## 1. Problem Statement
 Currently, Shopify listing-level data (Title, Body, Category, etc.) is duplicated across every SKU (Inventory Item) in the system. Ideally, "Listings" should be a distinct entity that groups multiple SKUs (Variants) via a common "Handle".
 

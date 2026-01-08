@@ -1,5 +1,7 @@
 # Google Photos Integration - Design Document
 
+> **Status: Implemented** - Google Photos Picker API integration is available at `/photos` via `google-photos.ts` and `photos-slice.ts`.
+
 ## Overview
 
 This document specifies the technical implementation details for integrating **Google Photos Picker API** into the Dobutsu Stationery product import workflow. It describes how to securely select product photos from a user's Google Photos library using the picker session flow.
