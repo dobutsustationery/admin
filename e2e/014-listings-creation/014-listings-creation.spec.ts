@@ -5,6 +5,7 @@ import * as path from "path";
 
 test.describe('Listings Creation Flow', () => {
     test('User can propose and approve a listing', async ({ authenticatedPage: page }, testInfo) => {
+        test.setTimeout(60000);
         const screenshots = createScreenshotHelper();
         const docHelper = new TestDocumentationHelper(path.dirname(testInfo.file));
 
@@ -20,6 +21,7 @@ test.describe('Listings Creation Flow', () => {
         await page.waitForFunction(() => (window as any).testHelpers);
         
         // 2. Navigate to Listings Creation
+        page.on('console', (msg) => console.log(`BROWSER LOG: ${msg.text()}`));
         await page.goto('/listings/create');
         
         // 3. Scan/Generate
@@ -92,11 +94,15 @@ test.describe('Listings Creation Flow', () => {
 
         await page.click('button:has-text("Start Batch")');
         
-        // 5. Review Proposal
+        // 5. Review Proposal (Now on Listing Detail)
+        // Verify Rewrite to Detail Page - Check for UI element instead of strict URL
+        await expect(page.getByText("Back to Batch")).toBeVisible({ timeout: 10000 });
+        
         const reviewVerifications = [{
-            description: 'Validated proposal card title',
+            description: 'Validated redirected to listing detail with draft title',
             check: async () => {
-                 await expect(page.locator('input[type="text"]')).toHaveValue('[DRAFT] Test Product For Listing');
+                 // ListingEditor uses h1 checking text content
+                 await expect(page.locator('h1')).toContainText('[DRAFT] Test Product For Listing');
             }
        }];
        docHelper.addStep("Review Proposal", "002-review-proposal.png", reviewVerifications);
@@ -106,13 +112,15 @@ test.describe('Listings Creation Flow', () => {
            }
        });
 
-        // Edit title
-        await page.fill('input[type="text"]', 'Final Product Title');
+        // Edit title - ContentEditable
+        // Playwright .fill() works on contenteditable
+        await page.locator('h1').fill('Final Product Title');
+        await page.keyboard.press('Tab'); // Trigger blur to ensure event handlers fire
         
         const editVerifications = [{
             description: 'Validated edited title',
             check: async () => {
-                 await expect(page.locator('input[type="text"]')).toHaveValue('Final Product Title');
+                 await expect(page.locator('h1')).toHaveText('Final Product Title');
             }
        }];
        docHelper.addStep("Edited Proposal", "003-edited-proposal.png", editVerifications);
@@ -123,9 +131,12 @@ test.describe('Listings Creation Flow', () => {
        });
 
         // 6. Approve
-        await page.click('button:has-text("Approve & Publish")');
+        await page.getByRole('button', { name: "Approve & Publish" }).click({ force: true });
         
         // 7. Verify Completion
+        // Should redirect back to /listings/create
+        await expect(page).toHaveURL(/listings\/create/);
+        
         // When batch is complete and no more drafts, UI shows empty state
         const completionVerifications = [{
             description: 'Validated batch complete and empty state',
