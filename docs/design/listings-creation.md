@@ -65,11 +65,11 @@ graph TD
 
 ### 4.2 State Management (`listing-creation-slice.ts`)
 
-We will introduce a new Redux slice to manage the *ephemeral* state of proposals.
+We will introduce a new Redux slice `listing-creation` to manage the *ephemeral* state of proposals. This slice is fully reconstructible from the Event Log (Firestore Broadcast), ensuring sessions can be resumed.
 
 ```typescript
 interface ListingProposal {
-  // Source Data
+  // Source Data (Immutable after creation)
   janCode: string;
   inventoryItemIds: string[]; // Linked Inventory Items
   photoGroupIds: string[];    // Linked Photo Groups
@@ -87,37 +87,84 @@ interface ListingProposal {
     itemId: string;
     option1Value: string; // e.g. "Red"
   }[];
+  
+  status: 'draft' | 'approved' | 'skipped';
 }
 
 interface ListingCreationState {
-  queue: string[]; // List of JAN codes ready for listing
-  currentBatch: ListingProposal[];
-  completedInBatch: number;
+  // All known proposals (key: janCode)
+  proposals: Record<string, ListingProposal>;
+  
+  // The current active batch of work
+  activeBatchJans: string[];
+  
+  // UI State (not persisted in broadcast, but derived or local)
+  currentStepIndex: number; 
 }
 ```
 
-### 4.3 Proposal Generation Logic
+### 4.3 Persistence & Resumability
 
-The `generate_proposals` thunk/saga will:
+The "Session" is simply the aggregate state of all `listing-creation/*` actions broadcast to Firestore.
 
-1.  **Scan Inventory**: Find items where `handle` is missing.
-2.  **Scan Photos**: Find `janCodeToPhotos` groups.
-3.  **Intersect**: Identify JANs present in both.
-4.  **LLM Enhancement**:
-    *   If a description was already generated during Photo Import, reuse it.
-    *   If not, trigger a new LLM call to generate Title/Body.
-5.  **Grouping**:
-    *   If multiple Inventory Items share a JAN (rare) or are marked as "Subtypes" of a common known parent, group them.
-    *   *Self-Correction*: If the user previously merged JAN groups in Photos, we treat them as one Product with multiple Variants.
+1.  **Resume**: When a user reloads the page, the `broadcast` listener replays all past actions. The `listing-creation` reducer rebuilds the `proposals` map and `activeBatchJans` list.
+2.  **Concurrency**: Since actions are appended to a global log, multiple users *could* conflict if they edit the same JAN. To prevent this, the `BATCH_START` action "claims" JANs. The reducer will reject/ignore claims for JANs already in an active batch by another user (though strictly enforcing this requires a server-side rule or "Jailed" action check; for now, we rely on social coordination and UI warnings).
 
-### 4.4 Event Sourcing Actions
+### 4.4 Detailed Redux Actions
 
-*   `PROPOSE_BATCH_START`: Locks a set of JANs for the current user to avoid collisions.
-*   `UPDATE_PROPOSAL`: Local edits to the proposal (title change, etc.).
-*   `APPROVE_LISTING`:
-    *   **Effect 1**: Dispatches `create_listing` (Listings Slice).
-    *   **Effect 2**: Dispatches `update_item` for each variant to set the `handle`.
-    *   **Effect 3**: Removes from `listingCreation` queue.
+Every user interaction corresponds to a specific Redux action. These actions are broadcast, ensuring zero data loss.
+
+#### Session / Batch Management
+*   **`INITIALIZE_SESSION`**
+    *   *Trigger*: User visits `/listings/create`.
+    *   *Payload*: None.
+    *   *Effect*: Checks for existing active batch. If none, triggers `GENERATE_PROPOSALS`.
+    
+*   **`START_BATCH`**
+    *   *Trigger*: User clicks "Start Batch" after proposals are generated.
+    *   *Payload*: `{ janCodes: string[] }` (The verified list of 10 JANs).
+    *   *Effect*: Sets `activeBatchJans`. effective "Lock" on these items.
+
+#### Proposal Editing (The "Work")
+*   **`UPDATE_PROPOSAL_FIELD`**
+    *   *Trigger*: User types in Title, Body, Vendor, or Category.
+    *   *Payload*: `{ janCode: string, field: keyof ListingProposal, value: any }`.
+    *   *Effect*: Updates the draft content.
+
+*   **`SET_VARIANT_OPTION_NAME`**
+    *   *Trigger*: User changes "Option Name" (e.g. from "Color" to "Size").
+    *   *Payload*: `{ janCode: string, name: string }`.
+    *   *Effect*: Updates `option1Name`.
+
+*   **`SET_VARIANT_VALUE`**
+    *   *Trigger*: User changes the value for a specific SKU (e.g. "Blue").
+    *   *Payload*: `{ janCode: string, itemId: string, value: string }`.
+    *   *Effect*: Updates the specific variant entry.
+
+*   **`ADD_TAG` / `REMOVE_TAG`**
+    *   *Trigger*: User manages tags.
+    *   *Payload*: `{ janCode: string, tag: string }`.
+
+#### Review Decisions
+*   **`APPROVE_PROPOSAL`**
+    *   *Trigger*: User clicks "Approve".
+    *   *Payload*: `{ janCode: string }`.
+    *   *Effect*:
+        1.  Marks proposal status as `approved`.
+        2.  **Side Effect**: Dispatches `create_listing` (Listings Slice) with the final data.
+        3.  **Side Effect**: Dispatches `update_item` (Inventory Slice) to link items to new handle.
+        4.  Advances UI to next item.
+
+*   **`SKIP_PROPOSAL`**
+    *   *Trigger*: User clicks "Skip/Discard".
+    *   *Payload*: `{ janCode: string, reason?: string }`.
+    *   *Effect*: Marks status as `skipped`. Removes from queue.
+
+#### Completion
+*   **`COMPLETE_BATCH`**
+    *   *Trigger*: All items in batch are resolved (Approved or Skipped).
+    *   *Payload*: `{ batchId: string }`.
+    *   *Effect*: Clears `activeBatchJans`, archives the proposals (or deletes them to keep state light), triggers "Celebration" UI.
 
 ## 5. Integration Plan
 
