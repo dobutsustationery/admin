@@ -21,7 +21,7 @@ process.env.FIRESTORE_EMULATOR_HOST = emulatorHost;
 
 // Initialize Firebase Admin for emulator
 const app = initializeApp({
-  projectId: "demo-test-project",
+  projectId: "dobutsu-admin",
 });
 
 const db = getFirestore(app);
@@ -104,17 +104,16 @@ async function loadTestData() {
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
 
-  // Clear existing data from collections to ensure clean state
-  // This prevents data accumulation from multiple test runs
+  // Clear existing data from emulator
+  // We explicitly list and clear ALL collections to ensure a clean state
   console.log(`\n🧹 Clearing existing data from emulator...`);
-  const collectionsToClear = Object.keys(exportData.collections);
-  for (const collectionName of collectionsToClear) {
-    const collectionRef = db.collection(collectionName);
-    const snapshot = await collectionRef.get();
+  const collections = await db.listCollections();
+  for (const collection of collections) {
+    const snapshot = await collection.get();
     if (snapshot.size > 0) {
-      console.log(`   Deleting ${snapshot.size} existing documents from ${collectionName}...`);
+      console.log(`   Deleting ${snapshot.size} docs from ${collection.id}...`);
       const batch = db.batch();
-      snapshot.docs.forEach(doc => batch.delete(doc.ref));
+      snapshot.docs.forEach((doc) => batch.delete(doc.ref));
       await batch.commit();
     }
   }
@@ -219,6 +218,8 @@ async function loadTestData() {
         batchCount = 0;
       }
     }
+
+
 
     if (batchCount > 0) {
       await batch.commit();

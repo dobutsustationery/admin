@@ -8,6 +8,7 @@
 
   $: {
     const inv = $store.inventory.idToItem;
+    const listings = $store.listings; // Add dependency
     itemsMissingData = [];
     skippedCount = 0;
     if (inv) {
@@ -34,6 +35,15 @@
         // If these are too noisy, we can remove them.
         if (!item.productCategory) missing.push("Category"); 
 
+        // Check if listing exists
+        const idToHandle = $store.listings.idToHandle;
+        const handleToListing = $store.listings.handleToListing;
+        const handle = idToHandle[key];
+        
+        if (!handle || !handleToListing[handle] || !handleToListing[handle].bodyHtml) {
+             missing.push("Unlisted");
+        }
+
         const stock = (item.qty || 0) - (item.shipped || 0);
         
         // Filter out items with <= 0 stock if we are skipping out of stock
@@ -43,6 +53,7 @@
         }
 
         if (missing.length > 0) {
+          // console.log(`[SKU Review] Item ${key} missing:`, missing);
           itemsMissingData.push({ key, item, missing });
         }
       }
