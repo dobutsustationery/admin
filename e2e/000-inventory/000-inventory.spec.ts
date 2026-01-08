@@ -37,6 +37,22 @@ test.describe("Inventory Page", () => {
       // ====================================================================
       // STEP 1: Signed out state
       // ====================================================================
+      // Ensure we start fresh - clear all storage including IndexedDB (Firebase Auth)
+      await page.goto("/");
+      await page.evaluate(async () => {
+        localStorage.clear();
+        sessionStorage.clear();
+        try {
+          const dbs = await window.indexedDB.databases();
+          dbs.forEach(db => {
+             if (db.name) window.indexedDB.deleteDatabase(db.name);
+          });
+        } catch (e) {
+          // Fallback for older browsers or if databases() is not supported
+          window.indexedDB.deleteDatabase("firebaseLocalStorageDb");
+        }
+      });
+      
       await page.goto("/inventory", { waitUntil: "load" });
   
       console.log("🔍 Waiting for sign-in button...");

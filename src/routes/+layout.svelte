@@ -153,7 +153,6 @@
             if (isBefore) return false;
             if (isSameId) return false;
             
-            console.log(`[Snapshot Filter] KEEPING action ${action.id} (Ts: ${thisSeconds}.${thisNanos} >= Snap: ${snapSeconds}.${snapNanos})`);
             return true;
          });
          

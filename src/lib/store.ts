@@ -20,7 +20,7 @@ import {
   computeShopifyImportBatch,
   mark_items_done as markShopifyDone,
 } from "./shopify-import-slice";
-import { listings, add_listing_image, create_listing } from "./listings-slice";
+import { listings, add_listing_image, create_listing, delete_listing } from "./listings-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 import { devtoolsMiddleware, logAction } from "./devtools-middleware";
 
@@ -350,6 +350,22 @@ const svelteStore = {
 };
 
 export const store = svelteStore as ReduxStore & SvelteStore;
+
+if (typeof window !== "undefined") {
+  // Expose store and actions for E2E testing in local environment
+  // This allows tests to manipulate state without importing modules (which fails in vite preview)
+  if (import.meta.env.VITE_FIREBASE_ENV === 'local') {
+      (window as any).testHelpers = {
+          store,
+          actions: {
+              bulk_import_items,
+              create_listing,
+              delete_listing
+          }
+      };
+      console.log("[Redux] Exposed window.testHelpers for E2E testing");
+  }
+}
 
 export { user } from "./user-store";
 

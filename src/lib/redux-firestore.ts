@@ -116,8 +116,7 @@ export async function watchBroadcastActions(
       q = query(broadcasts, orderBy("timestamp"));
   }
 
-  // 3. Initial Safety Check (Run once to detect server reset)
-  // We do not run this inside onSnapshot to avoid race conditions with optimistic writes.
+  // 3. Initial Safety Check
   try {
       const countSnapshot = await getCountFromServer(broadcasts);
       const serverCount = countSnapshot.data().count;
