@@ -202,7 +202,7 @@ npm run data:export -- --source production --output ./data-export
 npm run data:import -- --target staging --input ./data-export
 ```
 
-**For detailed usage and options, see [DATA_TRANSFER.md](DATA_TRANSFER.md).**
+**For detailed usage and options, see [DATA_TRANSFER.md](docs/tools/DATA_TRANSFER.md).**
 
 ### Building for Production
 
@@ -218,7 +218,7 @@ npm run build:production
 npm run preview
 ```
 
-**For detailed environment configuration information, see [ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md).**
+**For detailed environment configuration information, see [ENVIRONMENT_SETUP.md](docs/setup/reproducible-environment.md).**
 
 ### Deployment
 
@@ -270,7 +270,7 @@ npm test -- --coverage
 
 ### E2E Testing
 
-End-to-end tests use Playwright with Firebase emulators. See [E2E_TEST_GUIDELINES.md](E2E_TEST_GUIDELINES.md) for comprehensive guidelines.
+End-to-end tests use Playwright with Firebase emulators. See [E2E_TEST_GUIDELINES.md](docs/testing/E2E_TEST_GUIDELINES.md) for comprehensive guidelines.
 
 ```bash
 # Run E2E tests (manages emulators automatically)
@@ -344,15 +344,15 @@ admin/
 
 ## Documentation
 
-- **[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md)**: Comprehensive guide for environment configuration
-- **[E2E_TEST_GUIDELINES.md](E2E_TEST_GUIDELINES.md)**: Guidelines for writing E2E tests with Playwright
+- **[ENVIRONMENT_SETUP.md](docs/setup/reproducible-environment.md)**: Comprehensive guide for environment configuration
+- **[E2E_TEST_GUIDELINES.md](docs/testing/E2E_TEST_GUIDELINES.md)**: Guidelines for writing E2E tests with Playwright
 - **[scripts/README.md](scripts/README.md)**: Firebase config to .env converter utility documentation
-- **[DATA_TRANSFER.md](DATA_TRANSFER.md)**: Guide for transferring data between environments
-- **[DESIGN_OVERVIEW.md](DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
-- **[SHOPIFY_INTEGRATION.md](SHOPIFY_INTEGRATION.md)**: Design document for Shopify integration and two-way sync
-- **[PRODUCT_IMPORT_DESIGN.md](PRODUCT_IMPORT_DESIGN.md)**: Design for photo-based product import process with LLM assistance
-- **[GOOGLE_DRIVE_AND_SHEETS_INTEGRATION.md](GOOGLE_DRIVE_AND_SHEETS_INTEGRATION.md)**: Design for integrating Google Drive and Google Sheets for file exports, logging, and collaborative data management
-- **[PHOTOS_INTEGRATION.md](PHOTOS_INTEGRATION.md)**: Google Photos API integration specification for product import workflow
+- **[DATA_TRANSFER.md](docs/tools/DATA_TRANSFER.md)**: Guide for transferring data between environments
+- **[DESIGN_OVERVIEW.md](docs/design/DESIGN_OVERVIEW.md)**: Architecture, data models, and technical details
+- **[SHOPIFY_INTEGRATION.md](docs/integrations/SHOPIFY_INTEGRATION.md)**: Design document for Shopify integration and two-way sync
+- **[PRODUCT_IMPORT_DESIGN.md](docs/design/PRODUCT_IMPORT_DESIGN.md)**: Design for photo-based product import process with LLM assistance
+- **[GOOGLE_DRIVE_AND_SHEETS_INTEGRATION.md](docs/integrations/GOOGLE_DRIVE_AND_SHEETS_INTEGRATION.md)**: Design for integrating Google Drive and Google Sheets for file exports, logging, and collaborative data management
+- **[PHOTOS_INTEGRATION.md](docs/integrations/PHOTOS_INTEGRATION.md)**: Google Photos API integration specification for product import workflow
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)**: Guidelines for working with GitHub Copilot
 - **[EXTRACTION_GUIDE.md](EXTRACTION_GUIDE.md)**: How this repository was extracted from the monorepo
 
