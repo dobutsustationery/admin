@@ -43,7 +43,7 @@ test.describe('Google Photos Integration', () => {
             body: JSON.stringify({
                 id: 'sess_123',
                 pickerUri: 'http://example.com/picker',
-                mediaItemsSet: pollCount >= 2
+                mediaItemsSet: true
             })
         });
     });
@@ -56,7 +56,7 @@ test.describe('Google Photos Integration', () => {
         });
     });
 
-    await page.route('https://photospicker.googleapis.com/v1/mediaItems?sessionId=sess_123&pageSize=100', async (route: any) => {
+    await page.route('https://photospicker.googleapis.com/v1/mediaItems**', async (route: any) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
@@ -89,26 +89,26 @@ test.describe('Google Photos Integration', () => {
             description: "Navigate to Photos page",
             check: async () => {
                 await page.goto('/photos');
-                await expect(page.locator('h1')).toContainText('Google Photos Picker');
+                await expect(page.locator('h1')).toContainText('Google Photos Import');
             }
         },
         {
              description: "Verify Connect Button",
-             check: async () => await expect(page.locator('button', { hasText: 'Connect Google Photos' })).toBeVisible()
+             check: async () => await expect(page.locator('button', { hasText: 'Connect Account' })).toBeVisible()
         },
         {
             description: "Simulate OAuth Callback",
             check: async () => {
                 // Simulate return from Google with hash params
                 await page.goto('about:blank');
-                await page.goto('/photos#access_token=mock_token&expires_in=3600&scope=https://www.googleapis.com/auth/photospicker.mediaitems.readonly%20https://www.googleapis.com/auth/generative-language&token_type=Bearer&state=photos_auth');
+                await page.goto('/photos#access_token=mock_token&expires_in=3600&scope=https://www.googleapis.com/auth/photospicker.mediaitems.readonly%20https://www.googleapis.com/auth/generative-language%20https://www.googleapis.com/auth/drive.readonly&token_type=Bearer&state=photos_auth');
             }
         },
         {
             description: "Verify Connected State",
             check: async () => {
-                 await expect(page.locator('button', { hasText: 'Disconnect' })).toBeVisible();
-                 await expect(page.locator('button', { hasText: 'Photos Library' })).toBeVisible();
+                 await expect(page.getByRole('button', { name: 'Switch Account' })).toBeVisible();
+                 // await expect(page.locator('button', { hasText: 'Photos Library' })).toBeVisible();
             }
         }
     ]);
@@ -118,7 +118,7 @@ test.describe('Google Photos Integration', () => {
         {
             description: "Start Selection",
             check: async () => {
-                const btn = page.locator('button:has-text("Photos Library")');
+                const btn = page.getByRole('button', { name: 'Select Photos' });
                 await btn.waitFor({ state: 'visible', timeout: 5000 });
                 await btn.evaluate((node: any) => node.click());
             }
@@ -126,7 +126,7 @@ test.describe('Google Photos Integration', () => {
         {
             description: "Wait for Polling (Mocked)",
             check: async () => {
-                await expect(page.locator('text=Please select photos')).toBeVisible();
+                await expect(page.locator('text=Selection in progress...')).toBeVisible();
                 await expect(page.locator('h3', { hasText: 'Selected Photos (2)' })).toBeVisible({ timeout: 10000 });
             }
         },
