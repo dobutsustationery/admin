@@ -2,4 +2,4 @@
 
 Obsolete or superseded documentation.
 
-- [Implementation Summary](./IMPLEMENTATION_SUMMARY.md)
+This directory is currently empty. Historical documentation that is no longer relevant can be moved here before deletion.

@@ -1,5 +1,7 @@
 # Google Drive and Sheets Integration - Design Document
 
+> **Status: Implemented** - Google Drive integration is available via `google-drive.ts` with CSV export functionality at `/csv`.
+
 ## Overview
 
 This document describes the design for integrating Google Drive and Google Sheets into the Dobutsu Stationery admin application. The integration will enable the admin site to access a dedicated folder in dobustustationery@gmail.com's Google Drive and create CSV files, log files, and Google Sheets documents directly from the application.

@@ -1,5 +1,7 @@
 # Event Sourcing Design & Refactor
 
+> **Status: Partially Implemented** - The event sourcing pattern with broadcast actions is fully implemented. The "Facts vs. Intent" philosophy is documented in [ACTION_AUDIT.md](ACTION_AUDIT.md), which identifies remaining refactoring work needed to eliminate "Red" actions.
+
 ## Core Philosophy: "Facts vs. Intent" + "Root Action Composition"
 
 The system is built on an append-only log of immutable actions ("Broadcast").
