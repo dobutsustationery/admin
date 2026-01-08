@@ -23,7 +23,7 @@
 ![Review Proposal](screenshots/002-review-proposal.png)
 
 **Programmatic Verification:**
-- [ ] Validated proposal card title
+- [ ] Validated redirected to listing detail with draft title
 
 ### 4. Edited Proposal
 
