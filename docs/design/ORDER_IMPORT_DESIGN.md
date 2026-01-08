@@ -1,5 +1,7 @@
 # Order Import Design Document
 
+> **Status: Implemented** - Order import functionality is available at `/order-import` with the `order-import-slice.ts` managing state.
+
 ## Overview
 
 The **Order Import** feature streamlines the process of adding new inventory by analyzing spreadsheet invoices or packing lists (from vendors) stored in Google Drive. This system scans the spreadsheet for JAN codes, cross-references them with the existing inventory, and facilitates updates for both known and new items.
