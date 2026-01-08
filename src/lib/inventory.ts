@@ -51,8 +51,8 @@ export const update_item = createAction<{ id: string; item: Item }>(
 export const update_field = createAction<{
   id: string;
   field: keyof Item;
-  from: string | number | undefined;
-  to: string | number | undefined;
+  from: string | number;
+  to: string | number;
 }>("update_field");
 export const new_order = createAction<{
   orderID: string;
@@ -95,9 +95,9 @@ export const make_sales = createAction<{
   date: Date;
 }>("make_sales");
 export interface BulkImportItem {
-    type: "new" | "update";
-    id: string; // janCode or itemKey
-    item: Item; // The full item object or partial update
+  type: "new" | "update";
+  id: string; // janCode or itemKey
+  item: Item; // The full item object or partial update
 }
 
 export const bulk_import_items = createAction<{
@@ -201,13 +201,16 @@ function applyInventoryUpdate(
   if (state.idToItem[id] !== undefined) {
     const oldImage = state.idToItem[id].image;
     const newImage = item.image;
-    
+
     // Implicitly track migration: Shopify -> Drive
     if (oldImage && newImage && oldImage !== newImage) {
-        if (oldImage.includes("cdn.shopify.com") && newImage.includes("drive.google.com")) {
-            if (!state.shopifyUrlToDriveUrl) state.shopifyUrlToDriveUrl = {};
-            state.shopifyUrlToDriveUrl[oldImage] = newImage;
-        }
+      if (
+        oldImage.includes("cdn.shopify.com") &&
+        newImage.includes("drive.google.com")
+      ) {
+        if (!state.shopifyUrlToDriveUrl) state.shopifyUrlToDriveUrl = {};
+        state.shopifyUrlToDriveUrl[oldImage] = newImage;
+      }
     }
 
     creationDate = state.idToItem[id].creationDate + ", " + creationDate;
