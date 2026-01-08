@@ -146,22 +146,31 @@ const reparse = (state: OrderImportState) => {
 // Helper to compute batch updates for Root Reducer
 export type ImportBatchFilter = "MATCH" | "NEW" | "RESOLVED";
 
+// Helper to optimize JAN lookup
+const buildJanMap = (inventoryIdToItem: Record<string, any>) => {
+    const map: Record<string, { id: string; item: any }[]> = {};
+    Object.entries(inventoryIdToItem).forEach(([id, item]: [string, any]) => {
+         if (item.janCode) {
+            const jan = item.janCode.toString().trim();
+            if (!map[jan]) map[jan] = [];
+            map[jan].push({ id, item });
+        }
+    });
+    return map;
+};
+
 export const computeOrderImportBatch = (
     orderState: OrderImportState, 
-    inventoryIdToItem: Record<string, any>, // Item from inventory slice
+    inventoryIdToItem: Record<string, any>, 
     filter: ImportBatchFilter
 ): { updates: any[], indices: number[] } => {
     
     const updates: any[] = [];
     const indices: number[] = [];
-
-    // Parse fresh (or use cached if we stored ParsedRow, but we use one-shot parseRows)
     const items = parseRows(orderState.headerRow, orderState.rawBody);
+    const janToItems = buildJanMap(inventoryIdToItem);
 
     items.forEach((item, index) => {
-        // Skip if already processed
-        // Check state.rows[index].processed
-        // We assume parseRows returns items in same order as state.rows
         if (orderState.rows[index]?.processed) return;
 
         // RESOLVED Handling
@@ -169,23 +178,13 @@ export const computeOrderImportBatch = (
             const resolutions = orderState.resolutions[index];
             if (resolutions && resolutions.length > 0) {
                  resolutions.forEach(res => {
-                     // ResolutionAction.payload is the bulk update item effectively?
-                     // In UI: type: "update_item", payload: { itemKey, qty, ... }
-                     // We need to map this to BulkImportItem.
-                     // BulkImportItem: { type: "update"|"new", id: ..., item: ... }
-                     // The resolution payload from UI::processResolvedConflicts:
-                     // { type: "update_item", payload: { itemKey, qty ... } }
-                     
-                     // We trust the UI resolved actions payload structure
                      const itemKey = res.payload.itemKey;
                      const qty = res.payload.qty;
-                     
-                     // Construct payload
                      const invItem = inventoryIdToItem[itemKey];
                      if (invItem) {
                           const payloadItem = {
                             ...invItem,
-                            qty: qty, // This overwrites/updates based on intent
+                            qty: qty,
                             hsCode: res.payload.hsCode !== undefined ? res.payload.hsCode : invItem.hsCode,
                             weight: res.payload.weight !== undefined ? res.payload.weight : invItem.weight,
                             countryOfOrigin: res.payload.countryOfOrigin !== undefined ? res.payload.countryOfOrigin : invItem.countryOfOrigin
@@ -198,46 +197,31 @@ export const computeOrderImportBatch = (
                           });
                      }
                  });
-                 // Mark all resolved indices as handled
                  indices.push(index);
             }
             return;
         }
 
-        // MATCH / NEW Handling
         const resolutions = orderState.resolutions[index];
-        if (resolutions && resolutions.length > 0) return; // Prioritize Resolved filter for these
+        if (resolutions && resolutions.length > 0) return; 
 
-        // Logic from analyzedPlan
-        const exists = inventoryIdToItem[item.janCode];
-        
-        if (filter === "MATCH" && exists) {
+        const matches = janToItems[item.janCode] || [];
+        const exists = matches.length > 0;
+        const isConflict = matches.length > 1;
+
+        if (filter === "MATCH" && exists && !isConflict) {
+             const { id, item: existingItem } = matches[0];
              updates.push({
                  type: "update",
-                 id: item.janCode,
+                 id: id,
                  item: {
-                     ...exists, 
-                     // Pass the import values (will be merged/added by inventory reducer)
-                     // But we want to use the imported Qty as the delta.
-                     // The `mapOrderToInventory` sets `qty` from import.
-                     // If we pass `exists`... wait.
-                     // If we pass `exists`, we are overwriting the import data with old data?
-                     // Verify `applyInventoryUpdate` in `inventory.ts`.
-                     // It does `...existingItem, ...updateItem`. 
-                     // So we should pass the NEW data as the `item` in `updates`.
-                     // BUT we need `subtype`, `image` etc from existing if we want to preserve them?
-                     // Actually `update_item` logic in `inventory.ts`:
-                     // `const updatedItem = { ...state.idToItem[id], ...item };`
-                     // So we only need to pass the FIELDS we want to update.
-                     // We don't need to pass `...exists`.
-                     
+                     ...existingItem, 
                      janCode: item.janCode,
                      qty: item.qty, // Delta
-                     price: item.price, // Overwrite price? Receipts usually have current price.
-                     weight: item.weight, // Overwrite weight? Usually safe.
-                     // Safe Overwrite for generic fields
-                     hsCode: exists.hsCode ? exists.hsCode : item.hsCode, 
-                     countryOfOrigin: exists.countryOfOrigin ? exists.countryOfOrigin : item.countryOfOrigin
+                     price: item.price,
+                     weight: item.weight,
+                     hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode, 
+                     countryOfOrigin: existingItem.countryOfOrigin ? existingItem.countryOfOrigin : item.countryOfOrigin
                  } 
              });
              indices.push(index);
@@ -246,15 +230,7 @@ export const computeOrderImportBatch = (
             updates.push({
                 type: "new",
                 id: item.janCode,
-                item: item // Will be mapped by mapOrderToInventory in Root Reducer?
-                           // No, `computeOrderImportBatch` returns `any[]`.
-                           // The Root Reducer calls `mapOrderToInventory(p)`.
-                           // But here we are constructing the update object manually for logic.
-                           // Actually the Root Reducer logic I implemented EARLIER simple-maps ALL items.
-                           // I need to UPDATE Root Reducer to use this `computeOrderImportBatch` function.
-                           // And this function should return `BulkImportItem[]`.
-                           
-                           // So I should map it here.
+                item: item
             });
             indices.push(index);
         }

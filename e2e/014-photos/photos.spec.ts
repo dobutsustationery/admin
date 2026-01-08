@@ -24,6 +24,10 @@ test.describe('Google Photos Integration', () => {
       // Note: We do NOT seed localStorage here, we want to test the Connect flow first.
       window.open = () => null; // Mock window.open
     });
+    
+    page.on('console', msg => {
+        if (msg.type() === 'error') console.log(`[Browser Error] ${msg.text()}`);
+    });
 
     // Mock Picker API calls (will be used after connection)
     await page.route('https://photospicker.googleapis.com/v1/sessions', async (route: any) => {
@@ -48,38 +52,45 @@ test.describe('Google Photos Integration', () => {
         });
     });
 
-    await page.route('https://lh3.googleusercontent.com/**', async (route: any) => {
+    await page.route('https://mock.photos/**', async (route: any) => {
         await route.fulfill({
             status: 200,
-            contentType: 'image/jpeg',
-            body: Buffer.from('dummy image content', 'base64')
+            contentType: 'image/png',
+            body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAwAB/AL+f4QAAAAASUVORK5CYII=', 'base64')
         });
     });
 
     await page.route('https://photospicker.googleapis.com/v1/mediaItems**', async (route: any) => {
         await route.fulfill({
             status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
+            json: {
                 mediaItems: [
                     {
                         id: '1',
+                        description: 'Photo 1',
+                        productUrl: 'http://example.com/1',
                         mediaFile: {
-                             baseUrl: 'https://lh3.googleusercontent.com/photo1',
-                             filename: 'photo1.jpg',
-                             mimeType: 'image/jpeg'
-                        }
+                            baseUrl: 'https://mock.photos/photo1.jpg',
+                            filename: 'photo1.jpg',
+                            mimeType: 'image/jpeg',
+                            mediaFileMetadata: { width: '100', height: '100' }
+                        },
+                        mediaMetadata: { creationTime: '2023-01-01T00:00:00Z', width: '100', height: '100' }
                     },
                     {
                         id: '2',
+                        description: 'Photo 2',
+                        productUrl: 'http://example.com/2',
                         mediaFile: {
-                            baseUrl: 'https://lh3.googleusercontent.com/photo2',
+                            baseUrl: 'https://mock.photos/photo2.jpg',
                             filename: 'photo2.jpg',
-                            mimeType: 'image/jpeg'
-                        }
+                            mimeType: 'image/jpeg',
+                            mediaFileMetadata: { width: '100', height: '100' }
+                        },
+                        mediaMetadata: { creationTime: '2023-01-01T00:00:00Z', width: '100', height: '100' }
                     }
                 ]
-            })
+            }
         });
     });
 
@@ -127,7 +138,8 @@ test.describe('Google Photos Integration', () => {
             description: "Wait for Polling (Mocked)",
             check: async () => {
                 await expect(page.locator('text=Selection in progress...')).toBeVisible();
-                await expect(page.locator('h3', { hasText: 'Selected Photos (2)' })).toBeVisible({ timeout: 10000 });
+                // Check that 2 photos are rendered
+                await expect(page.locator('img[alt="Thumbnail"]')).toHaveCount(2);
             }
         },
         {

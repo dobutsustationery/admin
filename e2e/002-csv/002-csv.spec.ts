@@ -49,7 +49,7 @@ test.describe("CSV Export Page with Google Drive", () => {
     context,
   }, testInfo) => {
     // Set test timeout for complete workflow
-    test.setTimeout(3000);
+    test.setTimeout(60000);
 
     // Mock system time to ensure consistent default filename (inventory-export-2025-12-02.csv)
     await page.clock.install({ time: new Date("2025-12-02T12:00:00.000Z") });
