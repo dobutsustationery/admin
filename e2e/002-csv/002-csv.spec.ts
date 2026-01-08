@@ -392,14 +392,15 @@ test.describe("CSV Export Page with Google Drive", () => {
     const filenameInput = page.locator("input#filename");
     await filenameInput.fill("test-export.csv");
 
+    await expect(exportButton).toBeVisible();
     await exportButton.click();
 
     // Wait for upload success message or file in list
     // Assuming the UI updates to show "Last export: test-export.csv" or similar,
     // or checks the mock file list response
 
-    // Wait a bit for the async operation
-    await page.waitForTimeout(1000);
+    // Wait for the success message to appear, which confirms the upload finished
+    await expect(page.locator('.success-message')).toBeVisible({ timeout: 10000 });
 
     const step5Verifications = [
       {
