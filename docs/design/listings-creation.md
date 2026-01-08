@@ -49,18 +49,18 @@ The review screen focuses on **one proposal at a time** (or a focused grid of th
 
 ```mermaid
 graph TD
-    Inventory[Inventory Item] --> Matcher
-    Photos[Analyzed Photos] --> Matcher
-    Matcher -->|JAN Match| Proposals[Listing Proposals]
+    Inventory["Inventory Item"] --> Matcher
+    Photos["Analyzed Photos"] --> Matcher
+    Matcher -->|JAN Match| Proposals["Listing Proposals"]
     
     subgraph "Listing Creation State"
         Proposals
-        Batch[Current Batch (10)]
+        Batch["Current Batch (10)"]
     end
     
     Batch -->|Review & Edit| UserAction
-    UserAction -->|Approve| Listing[New Listing]
-    UserAction -->|Approve| ItemUpdate[Update Item Handle]
+    UserAction -->|Approve| Listing["New Listing"]
+    UserAction -->|Approve| ItemUpdate["Update Item Handle"]
 ```
 
 ### 4.2 State Management (`listing-creation-slice.ts`)
