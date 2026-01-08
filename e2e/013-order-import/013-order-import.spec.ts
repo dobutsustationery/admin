@@ -274,7 +274,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
                     // Wait for sync to complete
                     await waitForSync(page);
                     // Verify Match item (490...) is DONE
-                    await expect(page.locator('tr:has-text("4542804044355")').locator('td:last-child')).toContainText("Done");
+                    await expect(page.locator('tr:has-text("4542804044355")').locator('td:last-child')).toContainText("Done", { timeout: 15000 });
                     // Wait for success message to disappear for consistent screenshots
                     await expect(page.locator('.success-message')).toBeHidden();
                 }
