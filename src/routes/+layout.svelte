@@ -47,16 +47,19 @@
               try {
                 const token = JSON.parse(storedTokenString);
                 if (token && token.scope) {
-                  const criticalScopes = [
-                    "https://www.googleapis.com/auth/drive.file",
-                    "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
-                    "https://www.googleapis.com/auth/generative-language.retriever",
-                  ];
-                  const missing = criticalScopes.filter((s) => !token.scope.includes(s));
-                  hasAllScopes = missing.length === 0;
+                  const scopeStr = token.scope;
+                  // Strict Check: Must have Picker AND (Drive Readonly OR Drive File OR Drive Full)
+                  const hasPicker = scopeStr.includes("photospicker.mediaitems.readonly") || scopeStr.includes("cloud-platform");
+                  const hasDrive = scopeStr.includes("drive.readonly") || 
+                                   scopeStr.includes("drive.file") || 
+                                   (scopeStr.includes("/drive") && !scopeStr.includes("drive.appdata"));
+
+                  hasAllScopes = hasPicker && hasDrive;
 
                   if (!hasAllScopes && attempts === maxAttempts - 1) {
-                    console.warn(`[Layout] Scope mismatch! Missing: ${missing.join(", ")}`);
+                    console.warn(`[Layout] Scope mismatch! Picker: ${hasPicker}, Drive: ${hasDrive}. Scopes: ${scopeStr}`);
+                    // Force invalidate here too so the UI updates to "Not Connected"
+                    localStorage.removeItem("google_photos_access_token");
                   }
                 }
               } catch (e) {}

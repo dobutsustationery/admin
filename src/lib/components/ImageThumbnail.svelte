@@ -90,9 +90,10 @@
         transition:fade={{ duration: 150 }}
     >
         <SecureImage 
-            src={src.includes("drive.google.com") ? `${src}&sz=w800` : `${src}=w800`}
+            src={src.includes("drive.google.com") || src.includes("googleapis.com") ? src : `${src}=w800`}
             alt={alt} 
             className="zoomed-image"
+            fillParent={false}
         />
         {#if alt}
             <div class="bg-black/70 text-white text-xs px-2 py-1 mt-1 rounded max-w-[300px] truncate">

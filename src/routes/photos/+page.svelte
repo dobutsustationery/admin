@@ -168,8 +168,10 @@
           if (fetchUrl.includes("drive.google.com/thumbnail")) {
                const match = fetchUrl.match(/id=([^&]+)/);
                if (match) fetchUrl = `https://www.googleapis.com/drive/v3/files/${match[1]}?alt=media`;
+          } else if (fetchUrl.includes("googleapis.com/drive")) {
+               // Already high res API URL - Do nothing
           } else if (fetchUrl.includes("googleusercontent.com")) {
-               fetchUrl = `${fetchUrl}=w1024-h1024`; // High res
+               fetchUrl = `${fetchUrl}=w1024-h1024`; // High res for Photos
           }
 
           const res = await fetch(fetchUrl, { headers: { Authorization: `Bearer ${token.access_token}` } });
@@ -621,7 +623,7 @@
                     <div class="active-item-card">
                         <div class="thumbnail-wrapper">
                              <SecureImage 
-                                src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w64` : `${item.baseUrl}=w64-h64-c`}
+                                src={item.baseUrl.includes("drive.google.com") || item.baseUrl.includes("googleapis.com") ? item.baseUrl : `${item.baseUrl}=w64-h64-c`}
                                 className="w-full h-full object-cover"
                             />
                         </div>
@@ -644,7 +646,7 @@
       >
         <!-- Large Image -->
         <SecureImage 
-            src={previewItem.baseUrl.includes("drive.google.com") ? `${previewItem.baseUrl}&sz=w800` : `${previewItem.baseUrl}=w1024`}
+            src={previewItem.baseUrl.includes("drive.google.com") || previewItem.baseUrl.includes("googleapis.com") ? previewItem.baseUrl : `${previewItem.baseUrl}=w1024`}
             className="w-auto h-full max-h-full object-contain rounded"
         />
         <!-- Optional Info -->
@@ -744,7 +746,7 @@
                   style="width: 148px; height: 148px; flex-shrink: 0;"
                 >
                   <SecureImage
-                    src={url.startsWith("data:") || url.includes("drive.google.com") ? url : `${url}=w296-h296-c`}
+                    src={url.startsWith("data:") || url.includes("drive.google.com") || url.includes("googleapis.com") ? url : `${url}=w296-h296-c`}
                     alt="Product Thumbnail"
                     className="w-full h-full object-cover"
                   />
@@ -885,9 +887,10 @@
                 on:click={() => goto(`/photo-history?id=${photo.id}`)}
               >
                 <SecureImage
-                  src={photo.baseUrl.includes("drive.google.com") ? `${photo.baseUrl}&sz=w800` : `${photo.baseUrl}=w400-h400-c`}
+                  src={photo.baseUrl.includes("drive.google.com") || photo.baseUrl.includes("googleapis.com") ? photo.baseUrl : `${photo.baseUrl}=w400-h400-c`}
                   alt="Thumbnail"
                   className="w-full h-full object-cover"
+                  isUploading={!!uploads[photo.id] && uploads[photo.id].status === 'uploading'}
                 />
                 
                 <!-- Edit Status Overlay -->
@@ -1021,8 +1024,9 @@
                                         on:mouseleave={handleThumbnailLeave}
                                     >
                                         <SecureImage 
-                                            src={item.baseUrl.includes("drive.google.com") ? `${item.baseUrl}&sz=w160` : `${item.baseUrl}=w160-h160-c`}
+                                            src={item.baseUrl.includes("drive.google.com") || item.baseUrl.includes("googleapis.com") ? item.baseUrl : `${item.baseUrl}=w160-h160-c`}
                                             className="w-full h-full object-cover"
+                                            isUploading={!!uploads[item.id] && uploads[item.id].status === 'uploading'}
                                         />
                                         <!-- Filename Overlay -->
                                         <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] p-0.5 truncate opacity-0 group-hover/item:opacity-100 transition-opacity">

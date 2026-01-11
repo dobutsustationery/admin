@@ -122,34 +122,30 @@ export function getStoredToken(): GooglePhotosToken | null {
       return null;
     }
 
-    // Check if token has required scopes
-    // We strictly require Photos access. Drive access is optional for "connection" status.
-    const REQUIRED_SCOPES = [
-        "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
-        "https://www.googleapis.com/auth/drive.readonly"
-    ];
+    // Check for Drive Access (Any level)
+    // CRITICAL: "cloud-platform" does NOT grant Drive API access for files.get/media
+    // We MUST have explicit drive scopes.
+    const hasDriveScope = token.scope.includes("drive.readonly") || 
+                          token.scope.includes("drive.file") || 
+                          token.scope.includes("/drive") && !token.scope.includes("drive.appdata");
+    
+    // Check for Photos Picker Access
+    const hasPickerScope = token.scope.includes("photospicker.mediaitems.readonly") ||
+                           token.scope.includes("cloud-platform"); // Keep for Picker just in case
 
-    const missingScopes = REQUIRED_SCOPES.filter(
-      (scope: string) => !token.scope.includes(scope),
-    );
-    
-    if (missingScopes.length > 0) {
-      console.warn(
-        "Token missing CRITICAL scopes:",
-        missingScopes,
-        "Present scopes:", token.scope,
-        "- Invalidating token."
-      );
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      return null;
+     if (!hasDriveScope) {
+        console.warn("Token missing explicit Drive scope (readonly/file/full). 'cloud-platform' is insufficient. Invalidating. Had:", token.scope);
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        return null;
     }
     
-    // Warn about optional scopes but don't invalidate
-    const optionalScopes = SCOPES.filter((s: string) => !REQUIRED_SCOPES.includes(s));
-    const missingOptional = optionalScopes.filter((s: string) => !token.scope.includes(s));
-    if (missingOptional.length > 0) {
-        console.warn("Token available but missing optional scopes:", missingOptional);
+    if (!hasPickerScope) {
+         console.warn("Token missing Photos Picker scope. Invalidating.");
+         localStorage.removeItem(TOKEN_STORAGE_KEY);
+         return null;
     }
+    
+    // Optional scope warning removed as we enforce strict Drive access now.
 
     return token;
   } catch (e) {
@@ -201,11 +197,24 @@ export function initiateOAuthFlow(allowSwitchAccount = false): void {
 
   // Build OAuth URL
   const redirectUri = `${window.location.origin}/photos`;
+  
+  // Hardcoded Critical Scopes to bypass any Env/Init issues
+  const CRITICAL_SCOPES = [
+    "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+    "https://www.googleapis.com/auth/drive.readonly", // FORCE THIS
+    "https://www.googleapis.com/auth/userinfo.email"
+  ];
+  const finalScopes = Array.from(new Set([...SCOPES, ...CRITICAL_SCOPES]));
+
+  // Debug Scopes
+  console.log("[Auth] Initiating OAuth Flow (v2-FIXED)");
+  console.log("[Auth] Requested Scopes:", finalScopes);
+  
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     redirect_uri: redirectUri,
     response_type: "token",
-    scope: SCOPES.join(" "),
+    scope: finalScopes.join(" "),
     include_granted_scopes: "true",
     state: "photos_auth",
     prompt: allowSwitchAccount ? "select_account consent" : "consent",
@@ -234,6 +243,9 @@ export async function handleOAuthCallback(): Promise<GooglePhotosToken | null> {
     const scope = params.get("scope");
     const tokenType = params.get("token_type");
     const state = params.get("state");
+    
+    console.log("[Auth] OAuth Callback Received");
+    console.log("[Auth] Received Scopes:", scope);
 
     // Only process photos auth
     if (state !== "photos_auth" && !hash.includes("state=photos_auth")) {

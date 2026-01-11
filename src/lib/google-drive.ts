@@ -38,6 +38,8 @@ export interface DriveFileInfo {
   webViewLink: string;
   webContentLink?: string;
   thumbnailLink?: string;
+  publicUrl?: string; // View link (drive.google.com/uc?...)
+  apiUrl?: string;    // API Media link (googleapis.com/.../files/{id}?alt=media)
 }
 
 /**
@@ -49,7 +51,11 @@ export interface DriveFile {
   mimeType: string;
   modifiedTime: string;
   size?: string;
-  webViewLink?: string;
+  webViewLink?: string; // Preview (HTML)
+  webContentLink?: string; // Download
+  thumbnailLink?: string; // Low res or expiry-prone
+  publicUrl?: string;
+  apiUrl?: string;
 }
 
 /**
@@ -135,7 +141,7 @@ export function isAuthenticated(): boolean {
  * Initiate OAuth flow to authenticate with Google Drive
  * Uses Google's OAuth 2.0 for client-side web applications
  */
-export function initiateOAuthFlow(): void {
+export function initiateOAuthFlow(returnUrl?: string): void {
   if (!isDriveConfigured()) {
     console.error(
       "Google Drive is not configured. Please set VITE_GOOGLE_DRIVE_CLIENT_ID and VITE_GOOGLE_DRIVE_FOLDER_ID",
@@ -145,13 +151,17 @@ export function initiateOAuthFlow(): void {
 
   // Build OAuth URL
   const redirectUri = `${window.location.origin}/csv`;
+  
+  // Encode return URL in state if provided
+  const state = returnUrl ? `drive_auth|${returnUrl}` : "drive_auth";
+  
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     redirect_uri: redirectUri,
     response_type: "token",
     scope: SCOPES.join(" "),
     include_granted_scopes: "true",
-    state: "drive_auth",
+    state: state,
   });
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
@@ -164,7 +174,7 @@ export function initiateOAuthFlow(): void {
  * Handle OAuth callback and extract token from URL hash
  * Call this on page load to check for OAuth redirect
  */
-export function handleOAuthCallback(): GoogleDriveToken | null {
+export function handleOAuthCallback(): { token: GoogleDriveToken, state?: string } | null {
   const hash = window.location.hash;
   if (!hash || !hash.includes("access_token=")) {
     return null;
@@ -177,6 +187,7 @@ export function handleOAuthCallback(): GoogleDriveToken | null {
     const expiresIn = params.get("expires_in");
     const scope = params.get("scope");
     const tokenType = params.get("token_type");
+    const state = params.get("state");
 
     if (!accessToken || !expiresIn) {
       return null;
@@ -196,7 +207,7 @@ export function handleOAuthCallback(): GoogleDriveToken | null {
     // Clean up URL
     window.history.replaceState({}, document.title, window.location.pathname);
 
-    return token;
+    return { token, state: state || undefined };
   } catch (e) {
     console.error("Error handling OAuth callback:", e);
     return null;
@@ -230,11 +241,113 @@ export async function listFilesInFolder(
   );
 
   if (!response.ok) {
+    if (response.status === 401) {
+        console.error("Google Drive Token Expired (401). Clearing token.");
+        clearToken();
+    }
     throw new Error(`Failed to list files: ${response.statusText}`);
   }
 
   const data = (await response.json()) as { files: DriveFile[] };
   return data.files || [];
+}
+
+/**
+ * List all images in the configured folder (recursive or flat depending on need, flat for now)
+ * Used to discover files for Listing Creation.
+ */
+export async function listAllImages(
+    accessToken: string
+): Promise<DriveFile[]> {
+    if (!FOLDER_ID) {
+        throw new Error("Google Drive folder ID is not configured");
+    }
+
+    // Search for images in the folder tree? 
+    // Or just strictly in the folder?
+    // The requirement implies finding images for JANs. These might be in subfolders or root.
+    // Let's search recursively in the folder ID tree? 
+    // 'q' param 'ancestors' is not directly supported in 'q', uses 'parents' for direct.
+    // For deep search, we might need to rely on name convention or just search everything user has access to that looks like our data?
+    // Safer: Search for mimeType = image/ inside FOLDER_ID (direct parent) for now.
+    // If we need recursive, we need to iterate folders. 
+    // Wait, the previous logic (Photos) was flattened.
+    // Let's assume a flat structure in the "Images" folder or "Processed" folder?
+    // User said "the photos are stored in google drive".
+    // Let's search in the configured root FOLDER_ID and its children?
+    // Actually, 'q': `'${FOLDER_ID}' in parents` is direct.
+    
+    // Let's try to be broad: specific mimeType image/* and trashed=false.
+    // BUT we should scope it to our folder if possible.
+    // If files are in subfolders (e.g. "Images/Originals"), direct parent query won't find them.
+    // Workaround: We can search for everything and filter? No, too many files.
+    
+    // Let's stick to the "Images" folder structure we defined: Root -> Images -> [Originals, Processed]
+    // So we should search in "Images" folder ID?
+    // We can use `ensureFolderStructure` to get the IDs, then search in them?
+    // That seems safer.
+    
+    // Helper to search in a specific parent
+    const searchInParent = async (parentId: string): Promise<DriveFile[]> => {
+         const params = new URLSearchParams({
+            q: `'${parentId}' in parents and mimeType contains 'image/' and trashed=false`,
+            fields: "files(id,name,mimeType,modifiedTime,size,webViewLink,webContentLink,thumbnailLink)",
+            pageSize: "1000", // Fetch a lot
+            orderBy: "name",
+        });
+        
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
+             headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (!res.ok) {
+            if (res.status === 401) {
+                console.error("Google Drive Token Expired (401). Clearing token.");
+                clearToken();
+            }
+            throw new Error(`Failed to list images in ${parentId}`);
+        }
+        const data = await res.json();
+        return data.files || [];
+    };
+
+    try {
+        // Get structure
+        // This might be slow if we call it every time. 
+        // Ideally we cache these IDs or passed them.
+        // For now, let's just find "Images" folder inside ROOT.
+        // Search in Root FOLDER_ID
+        const rootImages = await searchInParent(FOLDER_ID);
+        
+        // Search in "Images" folder (if exists)
+        const imagesId = await findFolder("Images", FOLDER_ID, accessToken);
+        const imagesFolderImages = imagesId ? await searchInParent(imagesId) : [];
+        
+        // Search in "Originals" (if exists, inside Images)
+        let originalsImages: DriveFile[] = [];
+        if (imagesId) {
+             const originalsId = await findFolder("Originals", imagesId, accessToken);
+             if (originalsId) originalsImages = await searchInParent(originalsId);
+        }
+        
+        // Search in "Processed" (if exists, inside Images)
+        let processedImages: DriveFile[] = [];
+        if (imagesId) {
+             const processedId = await findFolder("Processed", imagesId, accessToken);
+             if (processedId) processedImages = await searchInParent(processedId);
+        }
+
+        // Return combined with apiUrl hydrated
+        const hydrate = (files: DriveFile[]) => files.map(f => ({
+            ...f,
+            apiUrl: `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`
+        }));
+
+        return [...hydrate(rootImages), ...hydrate(imagesFolderImages), ...hydrate(originalsImages), ...hydrate(processedImages)];
+        
+    } catch (e) {
+        console.error("Error listing all images:", e);
+        return [];
+    }
 }
 
 /**
@@ -359,6 +472,10 @@ export async function findFolder(
   );
 
   if (!response.ok) {
+    if (response.status === 401) {
+        console.error("Google Drive Token Expired (401). Clearing token.");
+        clearToken();
+    }
     throw new Error(`Failed to find folder '${name}': ${response.statusText}`);
   }
 
@@ -462,6 +579,29 @@ export async function setFilePermissions(
 }
 
 /**
+ * Rename a file in Drive
+ */
+export async function renameFile(
+  fileId: string,
+  newName: string,
+  accessToken: string
+): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ name: newName })
+  });
+  
+  if (!response.ok) {
+     const err = await response.text();
+     throw new Error(`Failed to rename file ${fileId}: ${err}`);
+  }
+}
+
+/**
  * Upload a Blob/File to Drive
  */
 export async function uploadImageToDrive(
@@ -551,6 +691,10 @@ export async function uploadImageToDrive(
   // This ensures the URL stored in our DB works forever.
   if (fileData.id) {
      details.thumbnailLink = `https://drive.google.com/thumbnail?id=${fileData.id}`;
+     // Add standard public view/download link for external systems (e.g. Shopify)
+     details.publicUrl = `https://drive.google.com/uc?export=view&id=${fileData.id}`;
+     // Add stable API URL for internal app usage (SecureImage)
+     details.apiUrl = `https://www.googleapis.com/drive/v3/files/${fileData.id}?alt=media`;
   }
 
   return details;
