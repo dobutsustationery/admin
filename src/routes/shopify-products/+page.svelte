@@ -7,8 +7,9 @@
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
-  import { update_item, update_field, type Item } from "$lib/inventory";
-  import { update_listing, create_listing, type Listing, type ListingImage } from "$lib/listings-slice";
+  import type { Item } from "$lib/inventory";
+  import { update_listing, type Listing, type ListingImage } from "$lib/listings-slice";
+  import { history_add } from "$lib/history";
   import Papa from "papaparse";
   import { fade } from "svelte/transition";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
@@ -215,17 +216,15 @@
           // Item Field
           const validItemFields = ['janCode', 'subtype', 'price', 'weight', 'image', 'countryOfOrigin', 'qty', 'shipped'];
           if (validItemFields.includes(field)) {
-             broadcast(firestore, $user.uid, update_field({
-                 id,
+             store.dispatch(history_add({
                  field: field as keyof Item,
-                 from: undefined, 
+                 from: "" as any, // Fix: undefined not assignable to string|number
                  to: value
              }));
-          } else if (field === 'handle') {
-             broadcast(firestore, $user.uid, update_field({
-                 id,
+         } else if (field === 'handle') {
+             store.dispatch(history_add({
                  field: 'handle',
-                 from: undefined, 
+                 from: "" as any, 
                  to: value
              }));
           }

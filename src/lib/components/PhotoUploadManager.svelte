@@ -88,31 +88,49 @@
           });
           
           // Fetch Blob
-          // Use high-res URL
-          // If fallback URL (baseUrl) is already invalid, this fails.
-          // But that's handled by retry limit.
-          const fetchUrl = `${item.baseUrl}${HIGH_RES_SUFFIX}`;
+          // Use high-res URL if possible (Photos), otherwise use raw (Drive API)
+          let fetchUrl = item.baseUrl;
+          if (!fetchUrl.includes("googleapis.com") && !fetchUrl.includes("drive.google.com")) {
+               fetchUrl += HIGH_RES_SUFFIX;
+          }
           
           // Experiment: User requested to try Header auth again.
           // We keep referrerPolicy: "no-referrer" which may help.
-          const resp = await fetch(fetchUrl, { 
+          let resp = await fetch(fetchUrl, { 
               headers: { Authorization: `Bearer ${accessToken}` },
               referrerPolicy: "no-referrer"
           });
           
+          if (!resp.ok && resp.status === 403) {
+             // Retry WITHOUT headers (common for public googleusercontent links)
+             console.log("[UploadManager] 403 with Auth, retrying without auth...");
+             resp = await fetch(fetchUrl, {
+                 referrerPolicy: "no-referrer"
+             });
+          }
+
           if (!resp.ok) {
               throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);
           }
           
           const blob = await resp.blob();
-          const driveFilename = `${Date.now()}_${item.filename}`;
+          
+          // Use Google Photos ID for uniqueness as requested
+          // Sanitize ID just in case (though usually base64-like)
+          const safeId = item.id.replace(/[^a-zA-Z0-9-_]/g, '');
+          const ext = item.filename.split('.').pop() || 'jpg';
+          const driveFilename = `${safeId}.${ext}`;
+          
+          // Check if file already exists? 
+          // Drive allows duplicates. To strictly avoid it, we'd need to search first.
+          // But for now, we just ensure the name is deterministic.
           
           // Upload
           const driveFile = await uploadImageToDrive(blob, driveFilename, folderId, accessToken);
           
           // Determine Permanent URL
-          // google-drive.ts now forces a constructed thumbnail link if needed
-          const permanentUrl = driveFile.thumbnailLink || driveFile.webContentLink;
+          // Use strict API URL first
+          const permanentUrl = driveFile.apiUrl || driveFile.thumbnailLink || driveFile.webContentLink;
           
           if (!permanentUrl) {
               throw new Error("No permanent URL returned from Drive");

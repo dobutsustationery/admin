@@ -31,6 +31,7 @@
   /* Navigation Items */
   const links = [
     { href: "/", label: "Dashboard", icon: Home },
+    { href: "/listings/create", label: "Create Listings", icon: FileEdit },
     { href: "/scanner", label: "Add Inventory", icon: PlusCircle },
     { href: "/inventory", label: "View Inventory", icon: ClipboardList },
     { href: "/orders", label: "Process Orders", icon: Package },

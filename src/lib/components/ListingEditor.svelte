@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import SecureImage from '$lib/components/SecureImage.svelte';
   
   export let listing: { title: string; bodyHtml: string; option1Name?: string } | null = null;
   export let images: any[] = []; // ListingImage[]
@@ -7,6 +8,8 @@
   export let selectedSubtypeId: string | null = null;
   export let readOnly = false;
   export let isCreationMode = false; // Toggle for "Approve" button vs "Add to cart"
+  export let isGeneratingTitle = false;
+  export let isGeneratingDescription = false;
 
   const dispatch = createEventDispatcher();
   
@@ -59,10 +62,18 @@
   }
 
   function handleDescriptionBlur(e: Event) {
-      if (readOnly) return;
+      if (readOnly || isGeneratingDescription) return;
       const newDesc = (e.target as HTMLElement).innerHTML;
       if (listing && newDesc !== listing.bodyHtml) {
           dispatch('updateDescription', newDesc);
+      }
+  }
+
+  function handlePriceBlur(e: Event) {
+      if (readOnly) return;
+      const newPrice = parseFloat((e.target as HTMLElement).innerText.replace(/[^0-9.]/g, ''));
+      if (!isNaN(newPrice)) {
+          dispatch('updatePrice', newPrice);
       }
   }
 
@@ -110,7 +121,7 @@
            <!-- Hero Image -->
            <div class="main-image-container">
                {#if mainImageObj && mainImageObj.url}
-                   <img src={mainImageObj.url} alt={mainImageObj.altText} class="main-image" />
+                   <SecureImage src={mainImageObj.url} alt={mainImageObj.altText} className="main-image" fillParent={true} />
                {:else}
                    <span class="no-image-text">No image available</span>
                {/if}
@@ -122,12 +133,12 @@
                <div class="thumbnails-grid">
                    {#each galleryImages as img}
                        <div 
-                            class="thumbnail-wrapper"
+                            class="thumbnail-container"
                             on:mouseenter={() => handleThumbnailHover(img)}
                             on:mouseleave={handleThumbnailLeave}
                        >
                            <button class="thumbnail-btn">
-                               <img src={img.url} alt={img.altText} class="thumbnail-img" />
+                               <SecureImage src={img.url} alt={img.altText} className="thumbnail-img" />
                            </button>
                            
                            <!-- Hover Overlay -->
@@ -160,7 +171,7 @@
                                       on:click={() => handleSubtypeSelect(item.id)}
                                       title={item.subtype}
                                    >
-                                       <img src={item.image} alt={item.subtype} class="thumbnail-img" />
+                                       <SecureImage src={item.image} alt={item.subtype} className="thumbnail-img" />
                                    </button>
                                    {#if !readOnly}
                                    <div class="subtype-overlay">
@@ -193,7 +204,11 @@
                   contenteditable={!readOnly}
                   on:blur={handleTitleBlur}
                >{listing.title}</h1>
-               <div class="listing-price">{price}</div>
+               <div 
+                   class="listing-price {readOnly ? '' : 'editable'}" 
+                   contenteditable={!readOnly}
+                   on:blur={handlePriceBlur}
+               >€{associatedItems[0]?.price?.toFixed(2) || '0.00'} EUR</div>
                <div class="tax-note">Taxes included.</div>
            </div>
            
@@ -269,20 +284,34 @@
   .details-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1.5rem; }
 
   /* Images */
-  .main-image-container { aspect-ratio: 1 / 1; width: 100%; background: #f9fafb; border-radius: 8px; overflow: hidden; border: 1px solid #f3f4f6; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
+  .main-image-container { 
+       width: 100%; 
+       height: auto;
+       aspect-ratio: 1 / 1; 
+       max-width: 400px; /* Constraint width */
+       background: #f9fafb; 
+       border-radius: 8px; 
+       overflow: hidden; 
+       border: 1px solid #f3f4f6; 
+       display: flex; 
+       align-items: center; 
+       justify-content: center; 
+       margin-bottom: 1rem; 
+       align-self: center; /* Center in column */
+  }
   .main-image { width: 100%; height: 100%; object-fit: contain; }
   .no-image-text { color: #9ca3af; }
   
   .thumbnails-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   
-  .thumbnail-wrapper { position: relative; width: 23%; aspect-ratio: 1 / 1; }
+  .thumbnail-container { position: relative; width: 23%; aspect-ratio: 1 / 1; }
   .thumbnail-btn { width: 100%; height: 100%; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; cursor: pointer; padding: 0; background: white; opacity: 1; transition: opacity 0.2s; position: relative; }
   .thumbnail-btn.selected { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
   .thumbnail-img { width: 100%; height: 100%; object-fit: cover; }
   
   /* Hover Overlay */
   .thumb-overlay { position: absolute; top: 0; right: 0; display: flex; gap: 2px; opacity: 0; transition: opacity 0.2s; background: rgba(0,0,0,0.5); padding: 2px; border-bottom-left-radius: 4px; }
-  .thumbnail-wrapper:hover .thumb-overlay { opacity: 1; }
+  .thumbnail-container:hover .thumb-overlay { opacity: 1; }
   .overlay-btn { background: none; border: none; color: white; cursor: pointer; font-size: 0.75rem; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
   .overlay-btn:hover { color: #ffa; }
   .overlay-btn.delete:hover { color: #ff9999; }

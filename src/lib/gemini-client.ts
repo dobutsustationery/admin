@@ -7,9 +7,9 @@ const GEMINI_API_URL =
 /**
  * Fetch image data from a URL using the user's OAuth token.
  */
-async function fetchImage(
+export async function fetchImage(
   url: string,
-  token: string,
+  token?: string,
 ): Promise<{ data: string; mimeType: string }> {
   // Handle Google Drive Thumbnail URLs:
   // These (drive.google.com/thumbnail?id=...) do NOT support CORS for fetch().
@@ -18,29 +18,69 @@ async function fetchImage(
   
   let fetchUrl = url;
   
-  // Extract ID from drive thumbnail link
-  const driveThumbnailMatch = url.match(/drive\.google\.com\/thumbnail\?id=([^&]+)/);
-  if (driveThumbnailMatch && driveThumbnailMatch[1]) {
-      const fileId = driveThumbnailMatch[1];
-      fetchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-      // Note: This requires the correct scope (drive.file or drive.readonly) which we have.
+  // Extract ID from drive thumbnail link or standard public export link
+  // Matches:
+  // 1. drive.google.com/thumbnail?id=XYZ
+  // 2. drive.google.com/uc?id=XYZ
+  // 3. drive.google.com/uc?export=view&id=XYZ
+  const driveIdMatch = url.match(/drive\.google\.com\/(?:thumbnail|uc)\?.*id=([^&]+)/);
+  if (driveIdMatch && driveIdMatch[1]) {
+      const fileId = driveIdMatch[1];
+      // If we have a token, we prefer the API endpoint to avoid CORS issues in browser
+      if (token) {
+          fetchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+      }
+      // If NO token, we keep the original public URL and hope it works (or use a proxy if needed).
+      // Public 'uc' links usually block XHR/Fetch, so this might fail client-side without a token,
+      // but it aligns with "unauthenticated access" needs.
+      
   } else if (url.includes("googleusercontent.com")) {
       // It's a Google Photos picker URL.
       // Modifiers supported.
       fetchUrl = `${url}=w1024-h1024`;
   }
 
-  const response = await fetch(fetchUrl, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    referrerPolicy: "no-referrer"
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image (${response.status}): ${response.statusText}`);
+  const headers: Record<string, string> = {};
+  if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
   }
 
+  try {
+      const response = await fetch(fetchUrl, {
+        headers,
+        referrerPolicy: "no-referrer"
+      });
+
+      if (!response.ok) {
+        // If we used a token and got 401/403, maybe the token is bad/expired/wrong scope.
+        // Fallback to trying the original public URL (no auth headers).
+        if (token && (response.status === 401 || response.status === 403) && fetchUrl.includes("googleapis.com")) {
+            console.warn(`Token rejected (${response.status}) for ${fetchUrl}. Attempting fallback to public URL: ${url}`);
+            // Still try the public URL directly - it might work if cached or if browser security context allows (e.g. extension)
+            // But likely will fail with CORS in strict browser env.
+            try {
+                const publicResponse = await fetch(url, { referrerPolicy: "no-referrer" });
+                if (publicResponse.ok) {
+                    return processResponse(publicResponse);
+                }
+            } catch (fallbackErr) {
+                 console.warn("Public URL fallback failed (likely CORS):", fallbackErr);
+            }
+            
+            throw new Error(`Authentication failed (${response.status}) and public fallback blocked. Please refresh your Google Drive token.`);
+        }
+        
+        throw new Error(`Failed to fetch image (${response.status}): ${response.statusText}`);
+      }
+      return processResponse(response);
+  } catch (e: any) {
+       // If the fallback (or initial) fetch failed, rethrow.
+       // Note: CORS errors on public URL usually show up as TypeError: Failed to fetch
+       throw e;
+  }
+}
+
+async function processResponse(response: Response): Promise<{ data: string; mimeType: string }> {
   const blob = await response.blob();
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -52,12 +92,11 @@ async function fetchImage(
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
-
   return { data: base64, mimeType: blob.type || "image/jpeg" };
 }
 
 // ... imagePrompt function remains same ...
-async function imagePrompt(
+export async function imagePrompt(
   text: string,
   images: { data: string; mimeType: string }[],
   accessToken: string,
@@ -487,7 +526,8 @@ export async function processMediaItems(
                 const processedBlob = await (await fetch(dataUri)).blob();
                 const filename = `processed_${group.janCode}_${imgIdx}_${Date.now()}.png`;
                 const driveFile = await uploadImageToDrive(processedBlob, filename, processedFolderId, accessToken);
-                driveUrl = driveFile.webContentLink || dataUri;
+                // Prefer publicUrl for external compatibility (Shopify), fall back to webContentLink or dataUri
+                driveUrl = driveFile.publicUrl || driveFile.webContentLink || dataUri;
              } catch(uploadErr) {
                  console.error("Failed to upload processed image", uploadErr);
              }

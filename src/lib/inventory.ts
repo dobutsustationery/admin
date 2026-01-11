@@ -218,6 +218,7 @@ function applyInventoryUpdate(
     shipped = state.idToItem[id].shipped || 0;
   }
   state.idToItem[id] = {
+    ...state.idToItem[id], // Preserve existing fields (e.g. price, handle)
     ...item,
     janCode: item.janCode?.trim(),
     subtype: item.subtype?.trim() || "",

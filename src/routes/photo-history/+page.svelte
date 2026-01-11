@@ -74,18 +74,18 @@
           
           // 5. Complete Upload & Update History
           // 5. Complete Upload & Update History
+          // Use the stable API URL if available, fallback to whatever we got.
+          const permanentUrl = result.apiUrl || result.thumbnailLink || result.webViewLink;
+
           const action = complete_upload({ 
               id: photoId, 
-              // Use thumbnailLink for the permanent URL as it renders an image. 
-              // webViewLink is the Drive UI viewer.
-              permanentUrl: result.thumbnailLink || result.webViewLink, 
+              permanentUrl: permanentUrl, 
               webViewLink: result.webViewLink 
           });
 
           if ($user.uid) {
               broadcast(firestore, $user.uid, action);
           } else {
-              // Fallback for unauthenticated/testing? Or just dispatch locally.
               store.dispatch(action);
           }
           
@@ -404,7 +404,7 @@
                                      width="200px" 
                                      height="120px" 
                                      fit="contain"
-                                 />
+                                />
                              </div>
                              
                              <div class="text-xs text-gray-500 truncate font-mono mb-2">

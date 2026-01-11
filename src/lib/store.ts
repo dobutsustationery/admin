@@ -21,9 +21,10 @@ import {
   mark_items_done as markShopifyDone,
 } from "./shopify-import-slice";
 import { listings, add_listing_image, create_listing, delete_listing } from "./listings-slice";
-import listingCreation from "./listing-creation-slice";
+import listingCreation, { set_proposals } from "./listing-creation-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 import { devtoolsMiddleware, logAction } from "./devtools-middleware";
+import { driveSyncMiddleware } from "./drive-sync-middleware";
 
 const reducerObject = {
   names,
@@ -221,6 +222,12 @@ export const rootReducer = (state: any, action: any) => {
     }
   }
 
+  // Listing Creation Global Config Persistence
+  if (action.type === "listingCreation/set_global_prompts" || 
+      action.type === "listingCreation/update_proposal_field") {
+      logAction(action, nextState, action._timestamp);
+  }
+
   return nextState;
 };
 
@@ -300,7 +307,8 @@ const reduxStore = configureStore({
       immutableCheck: false, // Disable for performance with large state
     })
     .concat(devtoolsMiddleware) // Add our native Svelte devtools middleware
-    .concat(persistenceMiddleware),
+    .concat(persistenceMiddleware)
+    .concat(driveSyncMiddleware as any), // Type cast if needed for strict Middleware constraints
   devTools: {
     // Keep standard DevTools enabled but with sanitizers as fallback
     name: "Dobutsu Admin",
@@ -362,7 +370,8 @@ if (typeof window !== "undefined") {
           actions: {
               bulk_import_items,
               create_listing,
-              delete_listing
+              delete_listing,
+              set_proposals
           }
       };
       console.log("[Redux] Exposed window.testHelpers for E2E testing");

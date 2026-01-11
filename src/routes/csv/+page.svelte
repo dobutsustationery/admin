@@ -59,9 +59,18 @@
 
     if (driveConfigured) {
       // Handle OAuth callback if present
-      const token = handleOAuthCallback();
-      if (token) {
+      const result = handleOAuthCallback();
+      
+      if (result) {
         authenticated = true;
+        // Check for redirect state
+        if (result.state && result.state.startsWith("drive_auth|")) {
+             const returnUrl = result.state.split("|")[1];
+             if (returnUrl) {
+                 window.location.href = returnUrl;
+                 return;
+             }
+        }
         await loadFiles();
       } else {
         // Check if already authenticated
