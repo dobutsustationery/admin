@@ -2,12 +2,19 @@
   import { page } from '$app/stores';
   import { store } from '$lib/store';
   import { update_listing, add_listing_image, remove_listing_image, type ListingImage } from '$lib/listings-slice';
-  import { update_proposal_field, approve_proposal_thunk, regenerate_title, regenerate_description } from '$lib/listing-creation-slice';
+  import { 
+      approve_proposal_thunk, 
+      regenerate_title, 
+      regenerate_description, 
+      update_proposal_field,
+      set_current_step 
+  } from "$lib/listing-creation-slice";
   import { update_field } from '$lib/inventory';
   import { goto } from '$app/navigation';
   import { broadcast } from '$lib/redux-firestore';
   import { firestore } from '$lib/firebase';
   import { user } from '$lib/user-store';
+  import { generateHandle } from "$lib/handle-utils";
   import { ensureFolderStructure, uploadImageToDrive, getStoredToken, initiateOAuthFlow } from '$lib/google-drive';
   import ListingEditor from '$lib/components/ListingEditor.svelte';
 
@@ -47,43 +54,82 @@
   let listingImages: ListingImage[] = [];
   let associatedItems: any[] = []; 
   
+  // Image Upload State
+  let uploadingImageId: string | null = null;
+  let replacingImagePosition: number | null = null;
+  let replacingSubtypeId: string | null = null;
+  let targetProposalJan: string | null = null;
+  
   $: {
       if (mode === 'create' && janCode) {
           // --- Creation Mode ---
-          console.log("[ListingDetail] Mode: create, JAN:", janCode);
-          const proposal = $store.listingCreation.proposals[janCode];
-          console.log("[ListingDetail] Found Proposal:", proposal);
-          if (proposal) {
+          const primaryProposal = $store.listingCreation.proposals[janCode];
+          
+          if (primaryProposal) {
+              // 1. Identify Handle Group
+              const primaryHandle = primaryProposal.handle || generateHandle(primaryProposal.title, primaryProposal.janCode);
+              
+              // 2. Find all proposals in this group (Aggregation)
+              const siblingProposals = Object.values($store.listingCreation.proposals)
+                  .filter((p: any) => {
+                      // Only check active batch if filtered, or all drafts? 
+                      // Ideally we check all "in batch". But proposals are global.
+                      // Let's just catch all with same handle.
+                      const h = p.handle || generateHandle(p.title, p.janCode);
+                      return h === primaryHandle;
+                  });
+
               listingData = {
-                  title: proposal.title,
-                  bodyHtml: proposal.bodyHtml,
-                  option1Name: proposal.option1Name,
-                  titlePrompt: proposal.titlePrompt,
-                  descriptionPrompt: proposal.descriptionPrompt
+                  title: primaryProposal.title,
+                  bodyHtml: primaryProposal.bodyHtml,
+                  option1Name: primaryProposal.option1Name,
+                  titlePrompt: primaryProposal.titlePrompt,
+                  descriptionPrompt: primaryProposal.descriptionPrompt
               };
               
-              // Loading flags
-              isGeneratingTitle = !!proposal.isGeneratingTitle;
-              isGeneratingDescription = !!proposal.isGeneratingDescription;
+              isGeneratingTitle = !!primaryProposal.isGeneratingTitle;
+              isGeneratingDescription = !!primaryProposal.isGeneratingDescription;
               
-              // Load associated items (and override price if proposal has draft price)
-              associatedItems = proposal.inventoryItemIds.map((id: string) => {
-                   const item = $store.inventory.idToItem[id];
-                   if (!item) return null;
-                   return { 
-                       ...item, 
-                       id,
-                       price: proposal.price !== undefined ? proposal.price : item.price 
-                   };
-              }).filter((x: any): x is NonNullable<typeof x> => !!x);
-              
-              // Images: Use baseUrl. SecureImage handles resizing/fetching.
-              // Note: SecureImage needs just the base url usually, or full url.
-              // If we appended =w1024 before, SecureImage might handle it if it's just a query param.
-              const photos = $store.photos.janCodeToPhotos[janCode] || [];
-              listingImages = photos.map((p: any, idx: number) => ({
+              associatedItems = [];
+              const allPhotos: any[] = [];
+              const seenItemIds = new Set<string>();
+              const seenPhotoIds = new Set<string>();
+
+              // 3. Flatten Items & Photos from ALL siblings
+              siblingProposals.forEach((p: any) => {
+                  // Items
+                  p.inventoryItemIds.forEach((id: string) => {
+                       if (seenItemIds.has(id)) return;
+                       seenItemIds.add(id);
+
+                       const item = $store.inventory.idToItem[id];
+                       if (item) {
+                           associatedItems.push({
+                               ...item,
+                               id,
+                               price: p.price !== undefined ? p.price : item.price 
+                           });
+                       }
+                  });
+
+                  // Photos
+                  const pPhotos = $store.photos.janCodeToPhotos[p.janCode] || [];
+                  pPhotos.forEach((ph: any) => {
+                      // Dedupe photos? Usually scoped by Jan.
+                      // But merged listing should show ALL.
+                      // ID might not be unique if same file object used?
+                      // Using filename + byteSize as unique key or just URL?
+                      // Drive file ID is best.
+                      if (!seenPhotoIds.has(ph.id)) {
+                          seenPhotoIds.add(ph.id);
+                          allPhotos.push(ph);
+                      }
+                  });
+              });
+
+              listingImages = allPhotos.map((p: any, idx: number) => ({
                   id: p.id,
-                  url: p.baseUrl || '', // SecureImage will assume it needs auth if it's a google URL
+                  url: p.baseUrl || '', 
                   position: idx,
                   altText: p.filename || 'Product Image'
               }));
@@ -92,7 +138,7 @@
           }
       } else {
           // ... (Live mode remains same)
-          const liveListing = $store.listings.handleToListing[handle];
+          const liveListing = handle ? $store.listings.handleToListing[handle] : null;
           if (liveListing) {
               listingData = liveListing;
               listingImages = liveListing.images;
@@ -106,6 +152,25 @@
           } else {
               listingData = null;
           }
+      }
+  }
+
+  function dispatchBroadcast(action: any) {
+    if ($user && $user.uid) {
+        broadcast(firestore, $user.uid, action);
+    } else {
+        console.warn("User not authenticated, falling back to local dispatch");
+        store.dispatch(action);
+    }
+  }
+
+  // Sync Step Index if in Batch
+  let isExiting = false;
+  $: if (!isExiting && mode === 'create' && janCode && activeBatchJans.length > 0) {
+      const idx = activeBatchJans.indexOf(janCode);
+      const currentStepIndex = $store.listingCreation.currentStepIndex;
+      if (idx !== -1 && idx !== currentStepIndex) {
+          dispatchBroadcast(set_current_step(idx));
       }
   }
 
@@ -130,9 +195,9 @@
   function handleRunPrompt() {
       if (mode === 'create' && janCode && promptTarget) {
           if (promptTarget === 'title') {
-              store.dispatch(regenerate_title(janCode, customPrompt));
+              regenerate_title(janCode, customPrompt)(dispatchBroadcast, store.getState, undefined);
           } else {
-              store.dispatch(regenerate_description(janCode, customPrompt));
+              regenerate_description(janCode, customPrompt)(dispatchBroadcast, store.getState, undefined);
           }
       }
       showPromptModal = false;
@@ -155,33 +220,41 @@
   // Updates
   function handleUpdateTitle(e: CustomEvent<string>) {
       if (!$user.uid) return;
-      if (mode === 'create') {
-          store.dispatch(update_proposal_field({ janCode, field: 'title', value: e.detail }));
-      } else {
+      if (mode === 'create' && janCode) {
+          dispatchBroadcast(update_proposal_field({ janCode, field: 'title', value: e.detail }));
+      } else if (handle) {
            broadcast(firestore, $user.uid, update_listing({ handle, changes: { title: e.detail } }));
       }
   }
 
   function handleUpdateDescription(e: CustomEvent<string>) {
        if (!$user.uid) return;
-       if (mode === 'create') {
-          store.dispatch(update_proposal_field({ janCode, field: 'bodyHtml', value: e.detail }));
-       } else {
+       if (mode === 'create' && janCode) {
+          dispatchBroadcast(update_proposal_field({ janCode, field: 'bodyHtml', value: e.detail }));
+       } else if (handle) {
            broadcast(firestore, $user.uid, update_listing({ handle, changes: { bodyHtml: e.detail } }));
        }
   }
 
   function handleUpdatePrice(e: CustomEvent<number>) {
-      if (!$user.uid) return;
+      const uid = $user.uid;
+      if (!uid) return;
       const newPrice = e.detail;
 
-      if (mode === 'create') {
+      if (mode === 'create' && janCode) {
           // Draft Mode: Update Redux state only
-          store.dispatch(update_proposal_field({ janCode, field: 'price', value: newPrice }));
+          dispatchBroadcast(update_proposal_field({ janCode, field: 'price', value: newPrice }));
       } else {
           // Live Mode: Update inventory directly
           associatedItems.forEach(item => {
-              broadcast(firestore, $user.uid, update_field({ id: item.id, field: 'price', value: newPrice }));
+              if (item && item.id) {
+                  broadcast(firestore, uid, update_field({ 
+                      id: item.id as string, 
+                      field: 'price', 
+                      from: item.price || 0,
+                      to: newPrice 
+                  }));
+              }
           });
       }
   }
@@ -191,7 +264,7 @@
       if (mode === 'create') {
           alert("Deleting images in draft mode not fully implemented");
       } else {
-          if (!$user.uid) return;
+          if (!$user.uid || !handle) return;
           broadcast(firestore, $user.uid, remove_listing_image({ handle, imageId: e.detail.id }));
       }
   }
@@ -256,7 +329,7 @@
               } else if (mode === 'create') {
                   alert("Replacing gallery images in draft not implemented");
               } else {
-                   if (uploadingImageId && replacingImagePosition !== null) {
+                   if (uploadingImageId && replacingImagePosition !== null && handle) {
                        broadcast(firestore, $user.uid, remove_listing_image({ handle, imageId: uploadingImageId }));
                        const newImage: ListingImage = {
                            id: crypto.randomUUID(),
@@ -283,7 +356,7 @@
   // Approval
   function handleApprove() {
       if (mode === 'create' && janCode) {
-          store.dispatch(approve_proposal_thunk(janCode));
+          approve_proposal_thunk(janCode)(dispatchBroadcast, store.getState, undefined);
           goto('/listings/create');
       }
   }
@@ -340,7 +413,11 @@
   {:else}
        <div class="search-header">
            <div class="nav-row">
-               <button class="back-btn" on:click={() => goto('/listings/create')}>Back to Batch</button>
+               <button class="back-btn" on:click={() => {
+                    isExiting = true;
+                    dispatchBroadcast(set_current_step(-1));
+                    goto('/listings/create');
+                }}>Back to Batch</button>
                
                <!-- Quick Batch Nav -->
                {#if activeBatchJans.length > 0}
@@ -363,7 +440,7 @@
                    <span class="label">AI Tools:</span>
                    
                    <div class="btn-group">
-                       <button class="ai-btn" disabled={isGeneratingTitle} on:click={() => store.dispatch(regenerate_title(janCode))}>
+                       <button class="ai-btn" disabled={isGeneratingTitle} on:click={() => janCode && regenerate_title(janCode)(dispatchBroadcast, store.getState, undefined)}>
                            {#if isGeneratingTitle}
                                <span class="spinner small"></span>
                            {:else}
@@ -376,7 +453,7 @@
                    <span class="sep">|</span>
                    
                    <div class="btn-group">
-                       <button class="ai-btn" disabled={isGeneratingDescription} on:click={() => store.dispatch(regenerate_description(janCode))}>
+                       <button class="ai-btn" disabled={isGeneratingDescription} on:click={() => janCode && regenerate_description(janCode)(dispatchBroadcast, store.getState, undefined)}>
                            {#if isGeneratingDescription}
                                <span class="spinner small"></span>
                            {:else}
