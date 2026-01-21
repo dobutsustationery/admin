@@ -9,7 +9,7 @@ import {
   type Item,
 } from "./inventory";
 import { names } from "./names";
-import { photos } from "./photos-slice";
+import { photos, categorize_photo } from "./photos-slice";
 import {
   orderImport,
   computeOrderImportBatch,
@@ -371,7 +371,8 @@ if (typeof window !== "undefined") {
               bulk_import_items,
               create_listing,
               delete_listing,
-              set_proposals
+              set_proposals,
+              categorize_photo
           }
       };
       console.log("[Redux] Exposed window.testHelpers for E2E testing");

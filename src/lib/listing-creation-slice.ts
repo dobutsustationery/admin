@@ -28,6 +28,7 @@ export interface ListingProposal {
 
   // Editable Content
   title: string;
+  handle?: string; // For merging/grouping
   bodyHtml: string;
   productCategory: string;
   vendor: string;
@@ -50,6 +51,7 @@ export interface ListingProposal {
 export interface ListingCreationState {
   proposals: Record<string, ListingProposal>;
   activeBatchJans: string[];
+  originalBatchJans: string[]; // Source of truth for batch items
   currentStepIndex: number;
   driveConnectionStatus: 'unknown' | 'connected' | 'disconnected';
   
@@ -62,6 +64,7 @@ export interface ListingCreationState {
   const initialState: ListingCreationState = {
     proposals: {},
     activeBatchJans: [],
+    originalBatchJans: [],
     currentStepIndex: 0,
     driveConnectionStatus: 'unknown',
     globalTitlePrompt: "Generate a concise, catchy product title for this product. Return ONLY the title text. No quotes.",
@@ -89,7 +92,38 @@ export interface ListingCreationState {
       },
       start_batch: (state, action: PayloadAction<{ janCodes: string[] }>) => {
           state.activeBatchJans = action.payload.janCodes;
-          state.currentStepIndex = 0;
+          state.originalBatchJans = action.payload.janCodes; // Set source
+          state.currentStepIndex = -1; // -1 = Batch Overview / Bulk Edit
+      },
+      set_current_step: (state, action: PayloadAction<number>) => {
+          state.currentStepIndex = action.payload;
+      },
+      recalculate_batch_navigation: (state) => {
+          // Re-evaluate activeBatchJans to group by Handle.
+          // We use originalBatchJans as the immutable source of truth to ensure we can Restore items
+          // if they were previously merged (hidden) and then unmerged.
+          
+          const sourceJans = state.originalBatchJans && state.originalBatchJans.length > 0 
+              ? state.originalBatchJans 
+              : state.activeBatchJans; // Fallback for migration if state persisted without original
+
+          const seenHandles = new Set<string>();
+          const newBatchOrder: string[] = [];
+          
+          sourceJans.forEach(jan => {
+              const p = state.proposals[jan];
+              if (!p) return;
+              
+              // If handle is unset, fallback to JAN (unique)
+              const key = p.handle || p.janCode;
+              
+              if (!seenHandles.has(key)) {
+                  seenHandles.add(key);
+                  newBatchOrder.push(jan);
+              }
+          });
+          
+          state.activeBatchJans = newBatchOrder;
       },
       
       // Editing
@@ -143,7 +177,9 @@ export const {
     approve_proposal,
     skip_proposal,
     next_step,
-    complete_batch
+    complete_batch,
+    set_current_step,
+    recalculate_batch_navigation
 } = listingCreationSlice.actions;
 
 export default listingCreationSlice.reducer;
@@ -215,38 +251,91 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
     }
 };
 
+import { create_listing, type Listing } from "./listings-slice";
+import { generateHandle } from "./handle-utils";
+
 export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, getState) => {
     // 1. Mark as Approved
     dispatch(approve_proposal({ janCode }));
     
-    // 2. Commit Pending Updates (Price)
+    // 2. Commit Pending Updates (Price & Handle) & Create Listing
     const state = getState();
     const proposal = state.listingCreation.proposals[janCode];
-    if (proposal && proposal.price !== undefined) {
+    
+    if (proposal) {
+         // Determine Handle
+         const finalHandle = proposal.handle || generateHandle(proposal.title, proposal.janCode);
+
+         // A. Update Inventory Items (Price + Handle)
          proposal.inventoryItemIds.forEach((id: string) => {
-             // We need to broadcast these to firestore via something like user-slice/action logging
-             // But since this is a thunk, we might not have user ID. 
-             // We'll rely on the UI to have handled individual edits?
-             // NO. The requirement is edits are DRAFT until approval.
-             // So here we must "commit" them.
-             
-             // Since we don't have direct Firestore access here easily without User ID context often,
-             // we will dispatch the standard update_field action.
-             // The persistence middleware (store.ts) should handle capturing this if whitelisted?
-             // Actually, update_field is an Inventory action. 
-             // To persist to backend, we usually use `broadcast` in UI.
-             // For thunks, we dispatch the action, and if we want persistence, 
-             // we need to wrap it or rely on a middleware that syncs "Inventory/update_field" to backend.
-             
-             // Update with draft price. Using 0 as 'from' since we are overwriting.
-             // Ideally we'd know the previous price, but for this bulk commit it's acceptable.
-             dispatch(update_field({ id, field: 'price', from: 0, to: proposal.price! }));
+             // Commit Price if set
+             if (proposal.price !== undefined) {
+                 dispatch(update_field({ id, field: 'price', from: 0, to: proposal.price! }));
+             }
+             // Commit Handle (Crucial for merging)
+             dispatch(update_field({ id, field: 'handle', from: "", to: finalHandle }));
          });
+
+         // B. Create/Update Listing
+         // Identify images from Photo State (In-Memory)
+         const janToPhotos = state.photos.janCodeToPhotos || {};
+         // @ts-ignore
+         const driveFiles = janToPhotos[janCode] || [];
+         
+         // @ts-ignore
+         const listingImages = driveFiles.map((f: any, i: number) => ({
+             url: f.url, // Ensure this is a usable URL (SecureImage handles it) // @ts-ignore
+             id: f.id || `img-${i}`,
+             altText: f.name,
+             position: i + 1
+         }));
+
+         const listing: Listing = {
+             handle: finalHandle,
+             title: proposal.title,
+             bodyHtml: proposal.bodyHtml,
+             productCategory: proposal.productCategory,
+             vendor: proposal.vendor,
+             tags: proposal.tags,
+             option1Name: proposal.option1Name,
+             images: listingImages,
+             // Required fields
+             productType: "", 
+             status: 'active',
+             lastUpdated: Date.now()
+         };
+
+         // Dispatch Create (Store middleware handles persistence if configured, or we rely on sync)
+         // Note: If listing exists, create_listing might overwrite. 
+         // For merging: We generally want to PRESERVE existing images if we are merging into an existing listing?
+         // But here we are "Creating" a batch.
+         // If A and B share handle X.
+         // 1. Approve A. Creates Listing X with Images A.
+         // 2. Approve B. Creates Listing X with Images B? -> Overwrite?
+         // Improvement: Check if listing exists.
+         const existingListing = state.listings.handleToListing[finalHandle];
+         if (existingListing) {
+             // Merge Images
+             const combinedImages = [...(existingListing.images || []), ...listingImages];
+             // Re-index positions
+             combinedImages.forEach((img, i) => img.position = i + 1);
+             
+             dispatch(create_listing({ listing: { ...existingListing, ...listing, images: combinedImages } }));
+         } else {
+             dispatch(create_listing({ listing }));
+         }
     }
 
     // 3. Advance UI
     const updatedState = getState().listingCreation;
     if (updatedState.currentStepIndex < updatedState.activeBatchJans.length - 1) {
+        // If we were at -1, we loop to 0. 
+        // But logic relies on activeBatchJans[currentStep].
+        // If we are at 0, we go to 1.
+        // If we are at -1 (Bulk Edit), how did we get here? 
+        // We usually enter approval from Detail (-1 -> 0 -> ...). 
+        // If we approve from Bulk Edit directly (future feature?), we handle it.
+        // Here we assume we are in Detail flow.
         dispatch(next_step());
     } else {
         dispatch(complete_batch());
