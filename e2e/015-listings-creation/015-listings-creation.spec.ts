@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures/auth';
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
+import { waitForAppReady } from "../helpers/loading-helper";
 import * as path from "path";
 
 test.describe('Listings Creation Flow', () => {
@@ -83,6 +84,7 @@ test.describe('Listings Creation Flow', () => {
         });
 
         await page.goto('/listings/create');
+        await waitForAppReady(page);
         
         // 3. Scan/Generate
         await expect(page.locator('h1')).toContainText('Create Listings', { timeout: 10000 });
