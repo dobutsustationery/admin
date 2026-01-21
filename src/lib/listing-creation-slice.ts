@@ -86,6 +86,7 @@ export interface ListingCreationState {
       },
       // Session / Batch
       set_proposals: (state, action: PayloadAction<ListingProposal[]>) => {
+          state.proposals = {};
           action.payload.forEach(p => {
               state.proposals[p.janCode] = p;
           });
