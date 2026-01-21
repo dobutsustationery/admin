@@ -178,11 +178,18 @@ test.describe('SKU Review - Unlisted Items', () => {
         });
 
         await test.step('Verify Unlisted Badge', async () => {
+             // Wait for specific rows to render first to avoid race conditions
+             const unlistedRow = page.locator('tr', { hasText: 'Test Unlisted Item' });
+             const listedRow = page.locator('tr', { hasText: 'Test Listed Item' });
+             
+             await unlistedRow.waitFor({ state: 'visible', timeout: 10000 });
+             await listedRow.waitFor({ state: 'visible', timeout: 10000 });
+
              // Verify the unlisted one HAS the badge
-             await expect(page.locator('tr', { hasText: 'Test Unlisted Item' }).locator('.badge', { hasText: 'Unlisted' })).toBeVisible();
+             await expect(unlistedRow.locator('.badge', { hasText: 'Unlisted' })).toBeVisible();
              
              // Verify the listed one does NOT have it
-             await expect(page.locator('tr', { hasText: 'Test Listed Item' }).locator('.badge', { hasText: 'Unlisted' })).toBeHidden();
+             await expect(listedRow.locator('.badge', { hasText: 'Unlisted' })).toBeHidden();
         });
     });
 });
