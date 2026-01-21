@@ -1036,10 +1036,14 @@ interface AnalyzedItem extends ImportItem {
     background: white;
     border: 1px solid #ccc;
     color: #dc2626;
-    padding: 0.5rem 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 14px;
+    line-height: 1;
   }
   .disconnect-button:hover {
     background: #fee2e2;
