@@ -330,4 +330,3 @@ test.describe("Inventory Receipt with Google Drive", () => {
         docHelper.writeReadme();
     });
 });
-
