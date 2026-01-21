@@ -422,9 +422,17 @@
                <!-- Quick Batch Nav -->
                {#if activeBatchJans.length > 0}
                <div class="mini-nav">
-                    <button class="icon-btn" disabled={!prevJan} on:click={() => prevJan && goToJan(prevJan)}>←</button>
+                    <button class="icon-btn" disabled={!prevJan} on:click={() => prevJan && goToJan(prevJan)} aria-label="Previous item">
+                         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M15 18l-6-6 6-6" />
+                         </svg>
+                    </button>
                     <span class="step-text">{currentIndex + 1} / {activeBatchJans.length}</span>
-                    <button class="icon-btn" disabled={!nextJan} on:click={() => nextJan && goToJan(nextJan)}>→</button>
+                    <button class="icon-btn" disabled={!nextJan} on:click={() => nextJan && goToJan(nextJan)} aria-label="Next item">
+                         <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M9 6l6 6-6 6" />
+                         </svg>
+                    </button>
                </div>
                {/if}
            </div>
@@ -550,7 +558,8 @@
   .nav-row { display: flex; justify-content: space-between; align-items: center; width: 100%; }
   
   .mini-nav { display: flex; align-items: center; gap: 1rem; }
-  .icon-btn { padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 4px; background: white; cursor: pointer; min-width: 32px; }
+  .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #e5e7eb; border-radius: 4px; background: white; cursor: pointer; padding: 0; }
+  .nav-icon { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .icon-btn:hover:not(:disabled) { background: #f3f4f6; }
   .icon-btn:disabled { color: #ccc; cursor: default; }
   .step-text { font-size: 0.9rem; font-weight: 500; color: #666; }
