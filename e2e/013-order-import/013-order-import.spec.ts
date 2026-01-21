@@ -130,6 +130,26 @@ test.describe("Inventory Receipt with Google Drive", () => {
         // --- 2. View Files ---
         // Navigate to target page
         await page.goto("/order-import");
+
+        await page.addStyleTag({
+            content: `
+@font-face {
+  font-family: "E2E Sans";
+  src: url("/fonts/e2e-sans.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+.import-page {
+  font-family: "E2E Sans", sans-serif;
+}
+`,
+        });
+
+        await page.evaluate(async () => {
+            await document.fonts.load('16px "E2E Sans"');
+            await document.fonts.ready;
+        });
         
         // Wait for loading to finish (Auth state resolution)
         try {
