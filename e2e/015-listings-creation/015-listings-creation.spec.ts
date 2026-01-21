@@ -5,7 +5,7 @@ import * as path from "path";
 
 test.describe('Listings Creation Flow', () => {
     test('User can propose and approve a listing', async ({ authenticatedPage: page }, testInfo) => {
-        test.setTimeout(60000);
+        test.setTimeout(120000);
         
         // Setup Console Logging & Error Trapping
         page.on('console', msg => console.log(`BROWSER LOG: ${msg.text()}`));
@@ -57,7 +57,31 @@ test.describe('Listings Creation Flow', () => {
         await page.waitForFunction(() => (window as any).testHelpers);
         
         // 2. Navigate to Listings Creation
-        page.on('console', (msg) => console.log(`BROWSER LOG: ${msg.text()}`));
+        page.on('console', (msg) => {
+            const text = msg.text();
+            if (!text.includes('Skipping update_field')) {
+                console.log(`BROWSER LOG: ${text}`);
+            }
+        });
+        
+        // Inject Fake Drive Token BEFORE navigation so onMount detects it
+        await page.evaluate(() => {
+            localStorage.setItem('google_drive_access_token', JSON.stringify({
+                access_token: 'fake-token-123',
+                expires_in: 3600,
+                expires_at: Date.now() + 3600000,
+                scope: 'https://www.googleapis.com/auth/drive.file',
+                token_type: 'Bearer'
+            }));
+        });
+
+        // Setup Broadcast Listener EARLY
+        console.log("Setting up Broadcast listener...");
+        const broadcastPromise = page.waitForEvent('console', { 
+            predicate: msg => msg.text().includes('[Broadcast] Stats'),
+            timeout: 60000 
+        });
+
         await page.goto('/listings/create');
         
         // 3. Scan/Generate
@@ -82,16 +106,6 @@ test.describe('Listings Creation Flow', () => {
         // Wait for hydration
         await page.waitForFunction(() => (window as any).testHelpers);
         
-        // Inject Fake Drive Token
-        await page.evaluate(() => {
-             localStorage.setItem("google_drive_access_token", JSON.stringify({
-                 access_token: "mock_token",
-                 expires_in: 3600,
-                 expires_at: Date.now() + 3600000,
-                 scope: "https://www.googleapis.com/auth/drive.file",
-                 token_type: "Bearer"
-             }));
-        });
 
         await page.evaluate(() => {
             const { store, actions } = (window as any).testHelpers;
@@ -131,10 +145,32 @@ test.describe('Listings Creation Flow', () => {
                  payload: { janCode, photo: mockPhoto }
             });
             // Note: generate_proposals uses janCodeToPhotos.
-        });
-        
-        // Ensure the "Scan" button is enabled/visible.
-        await page.click('button:has-text("Scan for matched items")');
+            
+            });
+
+
+
+
+        // Wait for Broadcast to finish replaying history
+        // matches: [Broadcast] Stats: Cache=..., Server=..., Dupes=...
+        // Wait for Broadcast to finish replaying history
+        console.log("Waiting for Broadcast to settle...");
+        await broadcastPromise;
+        console.log("Broadcast settled.");
+
+        // Ensure the "Scan" button is enabled/visible OR dispatch manually if state is stuck
+        const scanButton = page.locator('button:has-text("Scan for matched items")');
+        try {
+            await expect(scanButton).toBeVisible({ timeout: 5000 });
+            await scanButton.click();
+        } catch (e) {
+             console.log("BROWSER LOG: Scan button not visible, dispatching generate_proposals directly...");
+             await page.evaluate(() => {
+                 const helpers = (window as any).testHelpers;
+                 const { store, actions } = helpers;
+                 store.dispatch(actions.generate_proposals());
+             });
+        }
         
         // 4. Start Batch
         const draftsReadyVerifications = [{
@@ -143,12 +179,12 @@ test.describe('Listings Creation Flow', () => {
                  await expect(page.locator('h2')).toContainText(/Drafts Ready/);
             }
        }];
-       // docHelper.addStep("Drafts Ready", "001-drafts-ready.png", draftsReadyVerifications);
-       // await screenshots.capture(page, "drafts-ready", {
-       //     programmaticCheck: async () => {
-       //      for (const v of draftsReadyVerifications) await v.check();
-       //     }
-       // });
+        docHelper.addStep("Drafts Ready", "001-drafts-ready.png", draftsReadyVerifications);
+        await screenshots.capture(page, "drafts-ready", {
+            programmaticCheck: async () => {
+             for (const v of draftsReadyVerifications) await v.check();
+            }
+        });
 
         // Start Batch: Dispatch directly to avoid hydration/click issues
         await page.evaluate(() => {

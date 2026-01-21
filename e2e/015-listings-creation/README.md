@@ -18,21 +18,28 @@
 **Programmatic Verification:**
 - [ ] Validated drafts are ready
 
-### 3. Review Proposal
+### 3. Batch Editor
+
+![Batch Editor](screenshots/001b-batch-editor.png)
+
+**Programmatic Verification:**
+- [ ] Validated Batch Editor is visible
+
+### 4. Review Proposal
 
 ![Review Proposal](screenshots/002-review-proposal.png)
 
 **Programmatic Verification:**
 - [ ] Validated redirected to listing detail with draft title
 
-### 4. Edited Proposal
+### 5. Edited Proposal
 
 ![Edited Proposal](screenshots/003-edited-proposal.png)
 
 **Programmatic Verification:**
 - [ ] Validated edited title
 
-### 5. Batch Complete
+### 6. Batch Complete
 
 ![Batch Complete](screenshots/004-batch-complete.png)
 

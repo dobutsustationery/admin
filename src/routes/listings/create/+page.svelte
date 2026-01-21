@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from "$lib/store";
+  // HMR Trigger
   import { onMount } from "svelte";
   import { 
       generate_proposals, 

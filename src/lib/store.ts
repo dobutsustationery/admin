@@ -21,7 +21,12 @@ import {
   mark_items_done as markShopifyDone,
 } from "./shopify-import-slice";
 import { listings, add_listing_image, create_listing, delete_listing } from "./listings-slice";
-import listingCreation, { set_proposals } from "./listing-creation-slice";
+import listingCreation, { 
+  set_proposals, 
+  start_batch, 
+  generate_descriptions_for_batch,
+  generate_proposals
+} from "./listing-creation-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 import { devtoolsMiddleware, logAction } from "./devtools-middleware";
 import { driveSyncMiddleware } from "./drive-sync-middleware";
@@ -372,7 +377,10 @@ if (typeof window !== "undefined") {
               create_listing,
               delete_listing,
               set_proposals,
-              categorize_photo
+              categorize_photo,
+              start_batch,
+              generate_descriptions_for_batch,
+              generate_proposals
           }
       };
       console.log("[Redux] Exposed window.testHelpers for E2E testing");
