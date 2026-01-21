@@ -67,6 +67,13 @@ export function createScreenshotHelper(startIndex = 0): ScreenshotHelper {
         await programmaticCheck();
       }
 
+      // Ensure font loading does not shift layout during capture.
+      await page.evaluate(async () => {
+        if (document.fonts && "ready" in document.fonts) {
+          await document.fonts.ready;
+        }
+      });
+
       // Take the screenshot
       await expect(page).toHaveScreenshot(filename, {
         fullPage,

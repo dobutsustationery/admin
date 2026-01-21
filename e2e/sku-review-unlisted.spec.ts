@@ -1,92 +1,23 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { waitForAppReady } from './helpers/loading-helper';
-
-async function injectAuth(page: any, authInfo: any) {
-    await page.evaluate((authInfo: any) => {
-        const authKey = "firebase:authUser:demo-api-key:[DEFAULT]";
-        localStorage.setItem(
-          authKey,
-          JSON.stringify({
-            uid: authInfo.localId,
-            email: authInfo.email,
-            emailVerified: false,
-            displayName: "Test User",
-            isAnonymous: false,
-            photoURL: null,
-            providerData: [
-              {
-                providerId: "password",
-                uid: authInfo.localId,
-                displayName: "Test User",
-                email: authInfo.email,
-                phoneNumber: null,
-                photoURL: null,
-              },
-            ],
-            stsTokenManager: {
-              refreshToken: authInfo.refreshToken,
-              accessToken: authInfo.idToken,
-              expirationTime: Date.now() + 3600000,
-            },
-            createdAt: String(Date.now()),
-            lastLoginAt: String(Date.now()),
-            apiKey: "demo-api-key",
-            appName: "[DEFAULT]",
-          }),
-        );
-      }, authInfo);
-}
 
 test.describe('SKU Review - Unlisted Items', () => {
     test.setTimeout(60000);
 
-    test.beforeEach(async ({ page }) => {
-        // Navigate first to set origin for localStorage access
-        await page.goto('/');
+    test('should flag unlisted items with UNLISTED badge', async ({ authenticatedPage: page }) => {
+        const broadcastPromise = page
+            .waitForEvent('console', {
+                predicate: (msg) => msg.text().includes('[Broadcast] Stats'),
+                timeout: 30000,
+            })
+            .catch(() => null);
 
-        // Sign In logic directly adapted from 001-root.spec.ts
-        const authEmulatorUrl = "http://localhost:9099";
-        const testEmail = `test-${Date.now()}@example.com`;
-        const testPassword = "testpassword123";
-
-        const authResponse = await page.request.post(
-            `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
-            {
-                data: {
-                    email: testEmail,
-                    password: testPassword,
-                    displayName: "Test User",
-                    returnSecureToken: true,
-                },
-            },
-        );
-
-        if (!authResponse.ok()) {
-            // If sign-up fails, try sign-in (email might exist if seeded)
-             const loginResponse = await page.request.post(
-                `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-api-key`,
-                {
-                    data: {
-                        email: testEmail,
-                        password: testPassword,
-                        returnSecureToken: true,
-                    },
-                }
-            );
-            if (!loginResponse.ok()) throw new Error(`Failed to auth test user: ${authResponse.status()}`);
-             const authData = await loginResponse.json();
-             await injectAuth(page, authData);
-        } else {
-             const authData = await authResponse.json();
-             await injectAuth(page, authData);
-        }
-    });
-
-    test('should flag unlisted items with UNLISTED badge', async ({ page }) => {
         // Direct navigation to target page
         await page.goto('/sku-review/');
         await waitForAppReady(page);
         await expect(page.locator('h1')).toHaveText('SKU Review');
+        await page.waitForFunction(() => (window as any).testHelpers);
+        await broadcastPromise;
 
         // Inject Test Data
         await test.step('Inject Test Data', async () => {
@@ -178,6 +109,13 @@ test.describe('SKU Review - Unlisted Items', () => {
         });
 
         await test.step('Verify Unlisted Badge', async () => {
+             await page.waitForFunction(() => {
+                 const helpers = (window as any).testHelpers;
+                 if (!helpers) return false;
+                 const state = helpers.store.getState();
+                 return Boolean(state.inventory.idToItem?.['test-unlisted-sku']);
+             });
+
              // Wait for specific rows to render first to avoid race conditions
              const unlistedRow = page.locator('tr', { hasText: 'Test Unlisted Item' });
              const listedRow = page.locator('tr', { hasText: 'Test Listed Item' });
