@@ -1039,7 +1039,8 @@ interface AnalyzedItem extends ImportItem {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 8px 16px;
+    height: 33px;
+    padding: 0 16px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
