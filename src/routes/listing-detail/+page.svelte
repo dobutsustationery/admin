@@ -21,6 +21,7 @@
   import { generateHandle } from "$lib/handle-utils";
   import { ensureFolderStructure, uploadImageToDrive, getStoredToken, initiateOAuthFlow } from '$lib/google-drive';
   import ListingEditor from '$lib/components/ListingEditor.svelte';
+  import SecureImage from "$lib/components/SecureImage.svelte";
 
   // --- State ---
   $: mode = $page.url.searchParams.get('mode');
@@ -135,15 +136,20 @@
                   });
               });
 
-              const listingOnly = primaryProposal.listingOnlyImages || [];
+              const listingOnly = (primaryProposal.listingOnlyImages || []).map((img: any) => ({
+                  ...img,
+                  isListingOnly: true
+              }));
               const photoImages = allPhotos.map((p: any, idx: number) => ({
                   id: p.id,
                   url: p.baseUrl || '', 
                   position: idx,
                   altText: p.filename || 'Product Image'
               }));
-              const mergedImages = [...photoImages, ...listingOnly];
-              mergedImages.forEach((img, idx) => img.position = idx + 1);
+              const mergedImages = [...photoImages, ...listingOnly].map((img, idx) => ({
+                  ...img,
+                  position: idx + 1
+              }));
               listingImages = mergedImages;
           } else {
               listingData = null;
@@ -430,7 +436,9 @@
           altText: candidate.altText || '',
           position: listingImages.length + 1
       };
-      dispatchBroadcast(add_listing_only_image({ janCode: imagePickerTargetJan, image }));
+      if ($user && $user.uid) {
+          broadcast(firestore, $user.uid, add_listing_only_image({ janCode: imagePickerTargetJan, image }));
+      }
       showImagePicker = false;
       imagePickerTargetJan = null;
   }
@@ -628,7 +636,7 @@
               <div class="image-picker-grid">
                   {#each buildImagePickerCandidates() as candidate}
                       <button class="image-picker-item" on:click={() => handlePickListingImage(candidate)}>
-                          <img src={candidate.url} alt={candidate.altText} />
+                          <SecureImage src={candidate.url} alt={candidate.altText} className="image-picker-img" />
                       </button>
                   {/each}
               </div>
@@ -713,12 +721,12 @@
   .link-btn:hover { color: #1d4ed8; }
   
   /* Modal */
-  .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
   .image-tools-toolbar { display: flex; justify-content: flex-end; margin: 0.5rem 0 1rem; }
   .image-picker-modal { max-width: 720px; }
   .image-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.75rem; margin-top: 1rem; max-height: 420px; overflow: auto; }
   .image-picker-item { border: 1px solid #e5e7eb; background: white; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; }
-  .image-picker-item img { width: 100%; height: 90px; object-fit: cover; display: block; }
+  .image-picker-img { width: 100%; height: 90px; object-fit: cover; display: block; }
   .image-picker-item:hover { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
 </style>

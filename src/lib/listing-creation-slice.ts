@@ -156,10 +156,7 @@ export interface ListingCreationState {
           const proposal = state.proposals[janCode];
           if (!proposal) return;
           if (!proposal.listingOnlyImages) proposal.listingOnlyImages = [];
-          const exists = proposal.listingOnlyImages.some(img => img.url === image.url);
-          if (!exists) {
-              proposal.listingOnlyImages.push(image);
-          }
+          proposal.listingOnlyImages.push(image);
       },
       remove_listing_only_image: (state, action: PayloadAction<{ janCode: string, imageId: string }>) => {
           const { janCode, imageId } = action.payload;
@@ -322,8 +319,10 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          }));
          
          const listingOnly = proposal.listingOnlyImages || [];
-         const mergedImages = [...listingImages, ...listingOnly];
-         mergedImages.forEach((img, i) => img.position = i + 1);
+         const mergedImages = [...listingImages, ...listingOnly].map((img, i) => ({
+             ...img,
+             position: i + 1
+         }));
 
          const listing: Listing = {
              handle: finalHandle,

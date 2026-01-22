@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import SecureImage from "$lib/components/SecureImage.svelte";
 
   export let item: any;
   export let col: any; // Column Config
@@ -16,7 +17,7 @@
 <div class="cell-image-container">
     {#if src}
         <button class="cell-image-btn" on:click={handlePick} title="Pick image">
-            <img src={src} alt="Validation" class="cell-image" loading="lazy" />
+            <SecureImage src={src} alt="Validation" className="cell-image" />
         </button>
     {:else}
         <button class="no-image" on:click={handlePick} title="Pick image">No Img</button>
