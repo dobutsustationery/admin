@@ -34,6 +34,10 @@
       resize: { field: string, width: number };
   }>();
 
+  function handleEditHtml(e: CustomEvent<{ item: any }>) {
+      dispatch('editHtml', e.detail);
+  }
+
   // --- Interaction State ---
   let selectionColumn: string | null = null;
   let selectionStart: number = -1;
@@ -265,7 +269,7 @@
                                         {col}
                                         on:navigate
                                         on:imagePick={() => dispatch('imagePick', { item, index: i, col })}
-                                        on:editHtml={(e) => dispatch('editHtml', e.detail)}
+                                        on:editHtml={handleEditHtml}
                                     />
                                 </div>
                             {:else if col.editable !== false}

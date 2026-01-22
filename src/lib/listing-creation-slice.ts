@@ -331,7 +331,7 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          if (order.length > 0) {
              const byId = new Map(mergedImages.map(img => [img.id, img]));
              const ordered: any[] = [];
-             order.forEach(id => {
+             order.forEach((id: string) => {
                  const match = byId.get(id);
                  if (match) {
                      ordered.push(match);
@@ -382,12 +382,12 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
 
          // Remove all proposals sharing this handle to avoid stale drafts
          const allProposals = getState().listingCreation.proposals;
-         const matchingJans = Object.values(allProposals)
-             .filter(p => {
+         const matchingJans = (Object.values(allProposals) as ListingProposal[])
+             .filter((p) => {
                  const h = p.handle || generateHandle(p.title, p.janCode);
                  return h === finalHandle;
              })
-             .map(p => p.janCode);
+             .map((p) => p.janCode);
          matchingJans.forEach(jan => dispatch(remove_proposal({ janCode: jan })));
     }
 

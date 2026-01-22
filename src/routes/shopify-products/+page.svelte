@@ -206,6 +206,10 @@
       }
   }
 
+  function handleBulkCommit(e: CustomEvent<{ id: string; field: string; value: any; index: number }>) {
+      commitEdit(e.detail.id, e.detail.field, e.detail.value, e.detail.index);
+  }
+
   // --- Column Config ---
   let columnConfig: ColumnConfig[] = [
       { field: 'view', header: 'View', width: 50, editable: false, type: 'component', component: ViewCell },
@@ -365,7 +369,7 @@
             keyField="id"
             bind:sortHistory={sortHistory}
             on:sort={handleSort}
-            on:commit={(e) => commitEdit(e.detail.id, e.detail.field, e.detail.value, e.detail.index)}
+            on:commit={handleBulkCommit}
          />
     </div>
 </div>
