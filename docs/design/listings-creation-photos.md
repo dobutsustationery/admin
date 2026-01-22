@@ -125,7 +125,10 @@ Goal: deep editing and correctness.
   - sibling-variant images for the same handle
 
 **Remove**
-- Remove button removes from draft only. The underlying Drive photo is untouched.
+- Remove button in detail view:
+  - Listing-only image → `listingCreation/remove_listing_only_image`
+  - JAN photo → `photos/uncategorize_photo`
+  - The underlying Drive photo is untouched.
 
 ## 6) Approval behavior
 On approve:

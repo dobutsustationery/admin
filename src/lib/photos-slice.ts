@@ -162,6 +162,14 @@ const photosSlice = createSlice({
             state.selected = state.selected.filter(p => p.id !== photo.id);
         }
     },
+    uncategorize_photo: (state, action: PayloadAction<{ janCode: string, photoId: string }>) => {
+        const { janCode, photoId } = action.payload;
+        if (!state.janCodeToPhotos || !state.janCodeToPhotos[janCode]) return;
+        state.janCodeToPhotos[janCode] = state.janCodeToPhotos[janCode].filter(p => p.id !== photoId);
+        if (state.janCodeToPhotos[janCode].length === 0) {
+            delete state.janCodeToPhotos[janCode];
+        }
+    },
     initiate_upload: (state, action: PayloadAction<{ id: string, timestamp: number }>) => {
         const { id, timestamp } = action.payload;
         if (!state.uploads) state.uploads = {}; // Hydration safety
@@ -324,13 +332,14 @@ const photosSlice = createSlice({
   },
 });
 
-export const { 
+export const {
     select_photos, 
     clear_photos, 
     set_generating,
     begin_categorize,
     end_categorize,
     categorize_photo,
+    uncategorize_photo,
     initiate_upload,
     complete_upload,
     fail_upload,

@@ -129,7 +129,6 @@
 
   function handleDragStart(e: DragEvent, img: any) {
       if (readOnly) return;
-      console.log("[ListingEditor] dragstart", img.id);
       draggingId = img.id;
       previewOrderIds = galleryImages.map(g => g.id);
       e.dataTransfer?.setData("text/plain", img.id);
@@ -139,7 +138,6 @@
   function handleDragOver(e: DragEvent, targetId?: string) {
       if (readOnly) return;
       e.preventDefault();
-      if (targetId) console.log("[ListingEditor] dragover", { targetId, draggingId });
       if (!draggingId) return;
       const targetEl = e.currentTarget as HTMLElement;
       if (targetEl.classList.contains("dragging")) return;
@@ -157,7 +155,6 @@
   function handleDrop(e: DragEvent) {
       if (readOnly) return;
       e.preventDefault();
-      console.log("[ListingEditor] drop", { draggingId, dragOverId });
       if (!draggingId) return;
       if (dragOverId && dragOverId !== draggingId) {
           dispatch('reorderImages', { sourceId: draggingId, targetId: dragOverId });
@@ -168,7 +165,6 @@
   }
 
   function handleDragEnd() {
-      console.log("[ListingEditor] dragend", { draggingId, dragOverId });
       draggingId = null;
       dragOverId = null;
       previewOrderIds = null;

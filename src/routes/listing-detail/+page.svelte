@@ -14,6 +14,7 @@
       complete_batch
   } from "$lib/listing-creation-slice";
   import { update_field } from '$lib/inventory';
+  import { uncategorize_photo } from '$lib/photos-slice';
   import { goto } from '$app/navigation';
   import { broadcast } from '$lib/redux-firestore';
   import { firestore } from '$lib/firebase';
@@ -299,7 +300,7 @@
           if (isListingOnly) {
               dispatchBroadcast(remove_listing_only_image({ janCode, imageId: e.detail.id }));
           } else {
-              alert("Removing JAN photos from draft is not supported yet.");
+              dispatchBroadcast(uncategorize_photo({ janCode, photoId: e.detail.id }));
           }
           return;
       }
