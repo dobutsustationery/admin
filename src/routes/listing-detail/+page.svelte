@@ -155,7 +155,7 @@
               if (order.length > 0) {
                   const byId = new Map(mergedImages.map(img => [img.id, img]));
                   const ordered: any[] = [];
-                  order.forEach(id => {
+                  order.forEach((id: string) => {
                       const match = byId.get(id);
                       if (match) {
                           ordered.push(match);
@@ -233,9 +233,7 @@
       showBodyModal = true;
   }
 
-  $: if (showBodyModal && listingData) {
-      bodyModalValue = listingData.bodyHtml || "";
-  }
+  // bodyModalValue is controlled by the modal; avoid overwriting while editing.
 
   function saveBodyModal(e: CustomEvent<{ value: string }>) {
       if (!$user.uid) return;
@@ -324,7 +322,7 @@
       if (mode === 'create' && janCode) {
           const proposal = $store.listingCreation.proposals[janCode];
           const listingOnly = proposal?.listingOnlyImages || [];
-          const isListingOnly = listingOnly.some(img => img.id === e.detail.id);
+          const isListingOnly = listingOnly.some((img: { id: string }) => img.id === e.detail.id);
           if (isListingOnly) {
               dispatchBroadcast(remove_listing_only_image({ janCode, imageId: e.detail.id }));
           } else {

@@ -192,6 +192,18 @@
       }
   }
 
+  function handleBulkCommit(e: CustomEvent<{ id: string; field: string; value: any; index: number }>) {
+      handleCommit(e.detail.id, e.detail.field, e.detail.value, e.detail.index);
+  }
+
+  function handleBulkImagePick(e: CustomEvent<{ item: any }>) {
+      openImagePicker(e.detail.item);
+  }
+
+  function handleBulkEditHtml(e: CustomEvent<{ item: any }>) {
+      openBodyModal(e.detail.item);
+  }
+
   function openImagePicker(row: any) {
       imagePickerRow = row;
       showImagePicker = true;
@@ -275,9 +287,7 @@
       showDescPromptModal = false;
   }
 
-  $: if (showBodyModal && bodyModalJan) {
-      bodyModalValue = listingCreation.proposals[bodyModalJan]?.bodyHtml || "";
-  }
+  // bodyModalValue is controlled by the modal; avoid overwriting while editing.
 </script>
 
 <div class="container mx-auto p-6">
@@ -306,9 +316,9 @@
                 data={enrichedProposals.filter(p => visibleBatchJans.includes(p.janCode))}
                 columns={columnConfig}
                 keyField="janCode"
-                on:commit={(e) => handleCommit(e.detail.id, e.detail.field, e.detail.value, e.detail.index)}
-                on:imagePick={(e) => openImagePicker(e.detail.item)}
-                on:editHtml={(e) => openBodyModal(e.detail.item)}
+                on:commit={handleBulkCommit}
+                on:imagePick={handleBulkImagePick}
+                on:editHtml={handleBulkEditHtml}
              />
         </div>
     {:else if draftCount > 0}

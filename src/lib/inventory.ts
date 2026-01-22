@@ -19,6 +19,7 @@ export interface Item {
   handle?: string;
   // bodyHtml, productCategory, etc. removed for Listings slice migration
   countryOfOrigin?: string;
+  imagePosition?: number;
 }
 export interface LineItem {
   itemKey: string;
