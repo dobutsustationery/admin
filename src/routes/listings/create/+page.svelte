@@ -6,6 +6,7 @@
       generate_proposals, 
       start_batch, 
       generate_descriptions_for_batch, 
+      regenerate_description,
       set_current_step,
       recalculate_batch_navigation 
   } from "$lib/listing-creation-slice";
@@ -16,6 +17,8 @@
   import BulkEditor, { type ColumnConfig } from "$lib/components/BulkEditor.svelte";
   import { generateHandle } from "$lib/handle-utils";
   import ViewCell from "$lib/components/cell-renderers/ViewCell.svelte";
+  import BodyHtmlCell from "$lib/components/cell-renderers/BodyHtmlCell.svelte";
+  import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
@@ -34,6 +37,13 @@
 
   let showImagePicker = false;
   let imagePickerRow: any | null = null;
+
+  let showBodyModal = false;
+  let bodyModalJan: string | null = null;
+  let bodyModalValue = "";
+
+  let showDescPromptModal = false;
+  let descPromptValue = "";
   
 
   // Derived
@@ -140,7 +150,7 @@
       
       { field: 'handle', header: 'Handle', width: 200, type: 'text', placeholderField: 'computedHandle' },
       { field: 'title', header: 'Title', width: 300, type: 'text' }, 
-      { field: 'bodyHtml', header: 'Body (HTML)', width: 300, type: 'text' },
+      { field: 'bodyHtml', header: 'Body (HTML)', width: 300, type: 'component', component: BodyHtmlCell, editable: false },
       { field: 'productCategory', header: 'Product Category', width: 150, type: 'text' },
       { field: 'option1Name', header: 'Option1 Name', width: 120, type: 'text' }, // Added
       { field: 'option1Value', header: 'Option1 Value', width: 100, editable: false, placeholderField: 'subtype' }, // Mapped
@@ -229,6 +239,45 @@
       showImagePicker = false;
       imagePickerRow = null;
   }
+
+  function openBodyModal(row: any) {
+      bodyModalJan = row?.janCode || null;
+      bodyModalValue = row?.bodyHtml || "";
+      showBodyModal = true;
+  }
+
+  function saveBodyModal(e: CustomEvent<{ value: string }>) {
+      if (!bodyModalJan) return;
+      dispatchBroadcast(update_proposal_field({ janCode: bodyModalJan, field: 'bodyHtml', value: e.detail.value }));
+      showBodyModal = false;
+      bodyModalJan = null;
+  }
+
+  function cancelBodyModal() {
+      showBodyModal = false;
+      bodyModalJan = null;
+  }
+
+  function handleRegenerateDescription() {
+      if (!bodyModalJan) return;
+      regenerate_description(bodyModalJan)(dispatchBroadcast, store.getState, undefined);
+  }
+
+  function openDescriptionPrompt() {
+      const prompt = listingCreation.globalDescriptionPrompt || "Write a playful product description in HTML.";
+      descPromptValue = prompt;
+      showDescPromptModal = true;
+  }
+
+  function runDescriptionPrompt() {
+      if (!bodyModalJan) return;
+      regenerate_description(bodyModalJan, descPromptValue)(dispatchBroadcast, store.getState, undefined);
+      showDescPromptModal = false;
+  }
+
+  $: if (showBodyModal && bodyModalJan) {
+      bodyModalValue = listingCreation.proposals[bodyModalJan]?.bodyHtml || "";
+  }
 </script>
 
 <div class="container mx-auto p-6">
@@ -259,6 +308,7 @@
                 keyField="janCode"
                 on:commit={(e) => handleCommit(e.detail.id, e.detail.field, e.detail.value, e.detail.index)}
                 on:imagePick={(e) => openImagePicker(e.detail.item)}
+                on:editHtml={(e) => openBodyModal(e.detail.item)}
              />
         </div>
     {:else if draftCount > 0}
@@ -307,9 +357,38 @@
     </div>
 {/if}
 
+{#if showBodyModal}
+    <BodyHtmlModal
+        open={showBodyModal}
+        value={bodyModalValue}
+        title="Edit Description HTML"
+        showRegenerate={true}
+        showPrompt={true}
+        on:save={saveBodyModal}
+        on:cancel={cancelBodyModal}
+        on:regenerate={handleRegenerateDescription}
+        on:editPrompt={openDescriptionPrompt}
+    />
+{/if}
+
+{#if showDescPromptModal}
+    <div class="modal-backdrop">
+        <div class="modal prompt-modal">
+            <h3 class="modal-title">Edit Description Prompt</h3>
+            <textarea class="body-textarea" bind:value={descPromptValue}></textarea>
+            <div class="modal-actions">
+                <button class="btn-cancel" on:click={() => { showDescPromptModal = false; }}>Cancel</button>
+                <button class="btn-save" on:click={runDescriptionPrompt}>Run</button>
+            </div>
+        </div>
+    </div>
+{/if}
+
 <style>
   .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 720px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+  .prompt-modal { max-width: 720px; }
+  .btn-save { padding: 0.5rem 0.75rem; border-radius: 6px; background: #2563eb; color: white; border: none; cursor: pointer; }
   .modal-title { font-weight: 600; font-size: 1.1rem; }
   .image-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.75rem; margin-top: 1rem; max-height: 420px; overflow: auto; }
   .image-picker-item { border: 1px solid #e5e7eb; background: white; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; }
