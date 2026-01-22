@@ -30,6 +30,7 @@
       sort: { field: string };
       navigate: { id: string, event: MouseEvent };
       imagePick: { item: any, index: number, col: any };
+      editHtml: { item: any };
       resize: { field: string, width: number };
   }>();
 
@@ -264,6 +265,7 @@
                                         {col}
                                         on:navigate
                                         on:imagePick={() => dispatch('imagePick', { item, index: i, col })}
+                                        on:editHtml={(e) => dispatch('editHtml', e.detail)}
                                     />
                                 </div>
                             {:else if col.editable !== false}

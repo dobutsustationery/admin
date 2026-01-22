@@ -23,6 +23,7 @@
   import { ensureFolderStructure, uploadImageToDrive, getStoredToken, initiateOAuthFlow } from '$lib/google-drive';
   import ListingEditor from '$lib/components/ListingEditor.svelte';
   import SecureImage from "$lib/components/SecureImage.svelte";
+  import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
 
   // --- State ---
   $: mode = $page.url.searchParams.get('mode');
@@ -43,6 +44,8 @@
   let showPromptModal = false;
   let promptTarget: 'title' | 'description' | null = null;
   let customPrompt = "";
+  let showBodyModal = false;
+  let bodyModalValue = "";
 
   // Image Picker State (Listing Photos)
   let showImagePicker = false;
@@ -222,6 +225,31 @@
           }
       }
       showPromptModal = true;
+  }
+
+  function openBodyModal() {
+      if (!listingData) return;
+      bodyModalValue = listingData.bodyHtml || "";
+      showBodyModal = true;
+  }
+
+  $: if (showBodyModal && listingData) {
+      bodyModalValue = listingData.bodyHtml || "";
+  }
+
+  function saveBodyModal(e: CustomEvent<{ value: string }>) {
+      if (!$user.uid) return;
+      const value = e.detail.value;
+      if (mode === 'create' && janCode) {
+          dispatchBroadcast(update_proposal_field({ janCode, field: 'bodyHtml', value }));
+      } else if (handle) {
+          broadcast(firestore, $user.uid, update_listing({ handle, changes: { bodyHtml: value } }));
+      }
+      showBodyModal = false;
+  }
+
+  function cancelBodyModal() {
+      showBodyModal = false;
   }
   
   function handleRunPrompt() {
@@ -699,9 +727,13 @@
               <div class="modal-actions flex justify-end gap-2">
                   <button class="btn-cancel" on:click={() => { showImagePicker = false; imagePickerTargetJan = null; }}>Cancel</button>
               </div>
+               </div>
           </div>
-      </div>
-  {/if}
+          <div class="image-tools-toolbar">
+               <button class="ai-btn" on:click={openImagePicker}>Add Listing Photo</button>
+               <button class="ai-btn" on:click={openBodyModal}>Edit Description</button>
+          </div>
+      {/if}
 
   <!-- Hidden File Input for Replacements -->
   <input 
@@ -729,6 +761,20 @@
               </div>
           </div>
       </div>
+  {/if}
+
+  {#if showBodyModal}
+      <BodyHtmlModal
+          open={showBodyModal}
+          value={bodyModalValue}
+          title="Edit Description HTML"
+          showRegenerate={mode === 'create'}
+          showPrompt={mode === 'create'}
+          on:save={saveBodyModal}
+          on:cancel={cancelBodyModal}
+          on:regenerate={() => janCode && regenerate_description(janCode)(dispatchBroadcast, store.getState, undefined)}
+          on:editPrompt={() => openPromptModal('description')}
+      />
   {/if}
 </div>
 
