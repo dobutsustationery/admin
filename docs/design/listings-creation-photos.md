@@ -15,17 +15,15 @@ Constraints:
 ## 1) Canonical data sources
 We already have two image sources in the app:
 - `photos.janCodeToPhotos[janCode]` → group of images uploaded to Drive and categorized to a JAN.
-- `listings.handleToListing[handle].images` → listing-level images (ordering, alt text).
+- `listings.handleToListing[handle].images` → listing-level images (ordering, alt text) for live listings.
 
-In creation mode we don’t have a live listing yet. We need a **draft listing image plan** that is broadcast and replays deterministically. This plan must:
-- reference JAN-grouped photos
-- optionally reference variant-specific images
-- include listing-only images not tied to a JAN
-- provide ordering and alt text
+In creation mode we don’t have a live listing yet. We compose the draft listing images from:
+- JAN photos (`photos.janCodeToPhotos`)
+- listing-only images stored on the proposal (see below)
 
 ## 2) Draft data model (reusing existing structures)
-### 2.1 Draft image references
-Reuse `ListingImage` structure for all draft images:
+### 2.1 Listing-only images on proposals
+Reuse `ListingImage` for listing-only draft images:
 ```ts
 interface ListingImage {
   id: string;
@@ -35,17 +33,11 @@ interface ListingImage {
 }
 ```
 
-The draft needs to distinguish **where** the image comes from. We keep `ListingImage` but add a lightweight mapping for source/association:
+Listing-only images are stored directly on the proposal:
 ```ts
-type DraftImageSource =
-  | { type: 'jan'; janCode: string; photoId: string }   // categorized photo
-  | { type: 'variant'; itemId: string; photoId: string } // inventory item image
-  | { type: 'listing'; photoId: string };                // listing-only (uploaded for listing)
-
-interface DraftImageAssociation {
-  imageId: string;         // ListingImage.id
-  source: DraftImageSource;
-  variantItemId?: string;  // if associated to a variant
+interface ListingProposal {
+  // existing fields ...
+  listingOnlyImages?: ListingImage[];
 }
 ```
 
@@ -60,31 +52,17 @@ interface Item {
 }
 ```
 
-### 2.2 Draft image plan per proposal handle
-Add to `ListingProposal`:
-```ts
-interface ListingProposal {
-  // existing fields ...
-  handle?: string;
-  // image plan
-  draftImages: ListingImage[];               // ordered list
-  draftImageAssociations: DraftImageAssociation[]; // source + variant association
-}
-```
-
-Notes:
-- `draftImages` is the canonical ordered list used by UI.
-- `draftImageAssociations` tells us if an image is tied to a JAN photo, a variant, or listing-only.
-- We keep `draftImages` even if the image source is `jan` so order can be changed independently of `photos.janCodeToPhotos` ordering.
+**Draft listing images (creation mode)**
+- The proposal screen renders a merged list of images:
+  1) JAN photos from `photos.janCodeToPhotos[janCode]`
+  2) `listingOnlyImages` appended after JAN photos
+- Ordering is enforced via `ListingImage.position` when building the merged list.
 
 ## 3) Draft image generation rules
 When proposals are generated:
-1. For each proposal (JAN), select initial photos from `photos.janCodeToPhotos[janCode]`.
-2. Populate `draftImages` with those photos in a deterministic order (e.g., Drive modified time or original ordering).
-3. Create matching `draftImageAssociations` with `{ type: 'jan', janCode, photoId }`.
-4. If an inventory item has `image` set, include it as a `variant` source and associate it with that item ID (optional, only if available).
-
-This keeps the proposal fully editable without losing provenance.
+1. For each proposal (JAN), pull JAN photos from `photos.janCodeToPhotos[janCode]`.
+2. Initialize `listingOnlyImages` as empty.
+3. Variant images come from inventory (`inventory.idToItem[itemId].image`) and are managed in batch view.
 
 ## 4) Actions (reusing and extending)
 ### 4.1 Reused actions
@@ -92,21 +70,15 @@ This keeps the proposal fully editable without losing provenance.
 - `photos/categorize_photo`: attach a photo to a JAN (adds to `janCodeToPhotos`).
 - `inventory/update_field` (existing) for variant image changes when needed.
 
-### 4.2 New listing-creation actions
-These actions are required for draft image planning:
-- `listingCreation/add_draft_image({ janCode, image, association })`
-  - Adds a `ListingImage` at end (or explicit position) and adds association.
-- `listingCreation/remove_draft_image({ janCode, imageId })`
-  - Removes from `draftImages` and association list.
-- `listingCreation/reorder_draft_images({ janCode, orderedImageIds })`
-  - Rewrites `draftImages.position` based on the given order.
-- **Order sync rule:** whenever draft images are reordered in the proposal screen, update each associated inventory item's `imagePosition` to match its assigned image's new `position`. This keeps bulk-view ordering aligned.
-- `listingCreation/update_draft_image({ janCode, imageId, changes })`
-  - Updates `altText` or other image metadata.
-- `listingCreation/associate_draft_image_variant({ janCode, imageId, itemId })`
-  - Sets or clears `variantItemId` in association.
+### 4.2 Listing-only image actions
+- `listingCreation/add_listing_only_image({ janCode, image })`
+  - Appends a `ListingImage` to `listingOnlyImages`.
+- `listingCreation/remove_listing_only_image({ janCode, imageId })`
+  - Removes a listing-only image from the proposal.
 
-All actions must be broadcast so the draft image plan is fully reconstructible.
+### 4.3 Order sync rule
+- When images are reordered in detail view, update `ListingImage.position` for listing-only images.
+- If a reordered image is also assigned to a variant, update that inventory item’s `imagePosition` to match the new position.
 
 ## 5) UI design
 ### 5.1 Batch editor (grid view)
@@ -131,18 +103,14 @@ Goal: map a specific variant row to a specific JAN photo with minimal UI.
 Goal: deep editing and correctness.
 
 **Gallery**
-- Main image + thumbnail strip (ordered).
+- Main image + thumbnail strip (ordered by `position`).
 - Drag-and-drop to reorder.
-  - On reorder, update both:
-    1) `listingCreation/reorder_draft_images`
-    2) `inventory/update_field` for each variant item whose assigned image moved (`field: 'imagePosition'`).
+  - On reorder, update listing-only `position` values.
+  - If the moved image is assigned to a variant, update that item’s `imagePosition`.
 
 **Variant association**
-- Each thumbnail has a “Variant” selector:
-  - default: none (listing-only)
-  - options: each inventory item in the proposal group
-- Selecting a variant updates `associate_draft_image_variant`.
-  - When an image is assigned to a variant, set that item's `imagePosition` to the image's current `position`.
+- Variant image selection is handled in batch view only.
+- Detail view shows the current variant image but does not change it.
 
 **Add listing photo**
 - “Add Listing Photo” button:
@@ -152,14 +120,16 @@ Goal: deep editing and correctness.
 
 **Picker source**
 - The picker is the single entry point for adding listing photos in detail view.
-- It includes:\n  - `photos.janCodeToPhotos[janCode]`\n  - sibling-variant images for the same handle
+- It includes:
+  - `photos.janCodeToPhotos[janCode]`
+  - sibling-variant images for the same handle
 
 **Remove**
 - Remove button removes from draft only. The underlying Drive photo is untouched.
 
 ## 6) Approval behavior
 On approve:
-1. Build final `listing.images` from `draftImages` in order.
+1. Build final `listing.images` from JAN photos + `listingOnlyImages`.
 2. Ensure each image has `position` reflecting its order.
 3. Persist listing via `create_listing`.
 4. Variant associations (if needed) remain in inventory item image fields.
@@ -172,7 +142,7 @@ On approve:
 ## 7) Edge cases
 - If a JAN photo is removed from Photos, any draft image referencing it should remain but be marked “missing” (broken icon) until replaced.
 - If a variant image is removed from inventory, the association remains but thumbnail shows missing.
-- If proposal handle group changes, draft images merge by handle (union, de-dupe by `imageId`).
+- If proposal handle group changes, listing-only images are merged by handle (union, allow duplicates if user explicitly added).
 
 ## 8) Summary
 This design creates a deterministic, broadcast-only draft image plan with:
@@ -182,3 +152,10 @@ This design creates a deterministic, broadcast-only draft image plan with:
 - batch + detail UI operations
 
 It reuses existing image storage and adds a small set of draft actions in `listing-creation` to keep all changes event-sourced.
+
+## 9) Implementation status — **Complete**
+- Implemented:
+  - Batch picker for variant images (`inventory.update_field` on `image`)
+  - Detail picker for listing-only images (`listingCreation.add_listing_only_image`)
+  - Listing-only images are rendered even if they duplicate a variant image URL
+  - Drag-and-drop reorder in detail view with `imagePosition` sync

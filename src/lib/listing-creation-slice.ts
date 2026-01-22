@@ -46,6 +46,7 @@ export interface ListingProposal {
   variants: ListingVariant[];
   price?: number; // Draft price override
   listingOnlyImages?: ListingImage[]; // Listing-only images added in detail view
+  listingImageOrder?: string[]; // Ordered list of image IDs for draft view
 
   status: 'draft' | 'approved' | 'skipped';
 }
@@ -157,12 +158,18 @@ export interface ListingCreationState {
           if (!proposal) return;
           if (!proposal.listingOnlyImages) proposal.listingOnlyImages = [];
           proposal.listingOnlyImages.push(image);
+          if (proposal.listingImageOrder && proposal.listingImageOrder.length > 0) {
+              proposal.listingImageOrder.push(image.id);
+          }
       },
       remove_listing_only_image: (state, action: PayloadAction<{ janCode: string, imageId: string }>) => {
           const { janCode, imageId } = action.payload;
           const proposal = state.proposals[janCode];
           if (!proposal?.listingOnlyImages) return;
           proposal.listingOnlyImages = proposal.listingOnlyImages.filter(img => img.id !== imageId);
+          if (proposal.listingImageOrder) {
+              proposal.listingImageOrder = proposal.listingImageOrder.filter(id => id !== imageId);
+          }
       },
       set_variant_option_name: (state, action: PayloadAction<{ janCode: string, name: string }>) => {
            const { janCode, name } = action.payload;
@@ -319,7 +326,21 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          }));
          
          const listingOnly = proposal.listingOnlyImages || [];
-         const mergedImages = [...listingImages, ...listingOnly].map((img, i) => ({
+         let mergedImages = [...listingImages, ...listingOnly];
+         const order = proposal.listingImageOrder || [];
+         if (order.length > 0) {
+             const byId = new Map(mergedImages.map(img => [img.id, img]));
+             const ordered: any[] = [];
+             order.forEach(id => {
+                 const match = byId.get(id);
+                 if (match) {
+                     ordered.push(match);
+                     byId.delete(id);
+                 }
+             });
+             mergedImages = [...ordered, ...Array.from(byId.values())];
+         }
+         mergedImages = mergedImages.map((img, i) => ({
              ...img,
              position: i + 1
          }));

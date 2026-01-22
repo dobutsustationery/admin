@@ -60,11 +60,9 @@
              // or will fail CORS if we send it unexpectedly.
              if (token && src.includes("googleapis.com/drive")) {
                  headers.Authorization = `Bearer ${token.access_token}`;
-                 console.log(`[SecureImage] Fetching Drive URL with Auth: ${src}`);
              } else if (token && src.includes("googleusercontent.com")) {
                  // Try adding auth for lh3 links too, as they might be private Picker links
                  headers.Authorization = `Bearer ${token.access_token}`;
-                 console.log(`[SecureImage] Fetching Google Content URL with Auth: ${src}`);
              }
              
              const response = await fetch(src, {

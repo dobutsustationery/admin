@@ -1,5 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { flip } from "svelte/animate";
+  import { cubicOut } from "svelte/easing";
   import SecureImage from '$lib/components/SecureImage.svelte';
   
   export let listing: { title: string; bodyHtml: string; option1Name?: string } | null = null;
@@ -15,6 +17,9 @@
   
   // State for hover
   let hoveredImage: any | null = null;
+  let draggingId: string | null = null;
+  let dragOverId: string | null = null;
+  let previewOrderIds: string[] | null = null;
 
   // Split Images
   // Subtype Images: specific images linked to inventory items
@@ -22,6 +27,22 @@
   $: galleryImages = (images || [])
       .filter((img) => !subtypeImageUrls.has(img.url) || img.isListingOnly)
       .sort((a, b) => a.position - b.position);
+
+  $: displayedGalleryImages = (() => {
+      if (!previewOrderIds || previewOrderIds.length === 0) {
+          return galleryImages;
+      }
+      const byId = new Map(galleryImages.map(img => [img.id, img]));
+      const ordered: any[] = [];
+      previewOrderIds.forEach(id => {
+          const img = byId.get(id);
+          if (img) {
+              ordered.push(img);
+              byId.delete(id);
+          }
+      });
+      return [...ordered, ...Array.from(byId.values())];
+  })();
 
   // Hero Image Logic
   $: mainImageObj = (() => {
@@ -106,6 +127,53 @@
       dispatch('replaceSubtypeImage', item);
   }
 
+  function handleDragStart(e: DragEvent, img: any) {
+      if (readOnly) return;
+      console.log("[ListingEditor] dragstart", img.id);
+      draggingId = img.id;
+      previewOrderIds = galleryImages.map(g => g.id);
+      e.dataTransfer?.setData("text/plain", img.id);
+      e.dataTransfer?.setDragImage((e.target as HTMLElement), 40, 40);
+  }
+
+  function handleDragOver(e: DragEvent, targetId?: string) {
+      if (readOnly) return;
+      e.preventDefault();
+      if (targetId) console.log("[ListingEditor] dragover", { targetId, draggingId });
+      if (!draggingId) return;
+      const targetEl = e.currentTarget as HTMLElement;
+      if (targetEl.classList.contains("dragging")) return;
+      if (!targetId || targetId === draggingId || !previewOrderIds) return;
+      dragOverId = targetId;
+      const next = previewOrderIds.slice();
+      const fromIndex = next.indexOf(draggingId);
+      const toIndex = next.indexOf(targetId);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+      next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, draggingId);
+      previewOrderIds = next;
+  }
+
+  function handleDrop(e: DragEvent) {
+      if (readOnly) return;
+      e.preventDefault();
+      console.log("[ListingEditor] drop", { draggingId, dragOverId });
+      if (!draggingId) return;
+      if (dragOverId && dragOverId !== draggingId) {
+          dispatch('reorderImages', { sourceId: draggingId, targetId: dragOverId });
+      }
+      draggingId = null;
+      dragOverId = null;
+      previewOrderIds = null;
+  }
+
+  function handleDragEnd() {
+      console.log("[ListingEditor] dragend", { draggingId, dragOverId });
+      draggingId = null;
+      dragOverId = null;
+      previewOrderIds = null;
+  }
+
   // Computed display values
   $: price = associatedItems.length > 0 && associatedItems[0].price 
       ? `€${associatedItems[0].price.toFixed(2)} EUR` 
@@ -130,16 +198,25 @@
            <!-- Gallery Thumbnails (Images Not Associated with Subtypes) -->
            {#if galleryImages.length > 0}
                <div class="section-label">Gallery Images</div>
-               <div class="thumbnails-grid">
-                   {#each galleryImages as img}
+               <div class="thumbnails-grid" on:dragover={handleDragOver} on:drop={handleDrop}>
+                   {#each displayedGalleryImages as img (img.id)}
                        <div 
                             class="thumbnail-container"
+                            class:dragging={draggingId === img.id}
+                            class:drag-over={dragOverId === img.id}
+                            data-image-id={img.id}
+                            draggable={!readOnly}
+                            animate:flip={{ duration: 300, easing: cubicOut }}
+                            on:dragstart={(e) => handleDragStart(e, img)}
+                            on:dragover={(e) => handleDragOver(e, img.id)}
+                            on:drop={handleDrop}
+                            on:dragend={handleDragEnd}
                             on:mouseenter={() => handleThumbnailHover(img)}
                             on:mouseleave={handleThumbnailLeave}
                        >
-                           <button class="thumbnail-btn">
+                           <div class="thumbnail-btn">
                                <SecureImage src={img.url} alt={img.altText} className="thumbnail-img" />
-                           </button>
+                           </div>
                            
                            <!-- Hover Overlay -->
                            {#if !readOnly}
@@ -308,7 +385,12 @@
   .thumbnails-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   
   .thumbnail-container { position: relative; width: 23%; aspect-ratio: 1 / 1; }
-  .thumbnail-btn { width: 100%; height: 100%; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; cursor: pointer; padding: 0; background: white; opacity: 1; transition: opacity 0.2s; position: relative; }
+  .thumbnail-container[draggable="true"] { cursor: grab; }
+  .thumbnail-container[draggable="true"]:active { cursor: grabbing; }
+  .thumbnail-container.drag-over { outline: 2px dashed #3b82f6; outline-offset: 2px; background: rgba(59, 130, 246, 0.08); }
+  .thumbnail-container.dragging { opacity: 0.6; transition: none; }
+  .thumbnail-btn { width: 100%; height: 100%; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; cursor: grab; padding: 0; background: white; opacity: 1; transition: opacity 0.2s; position: relative; user-select: none; -webkit-user-drag: none; }
+  .thumbnail-btn :global(img) { -webkit-user-drag: none; user-drag: none; pointer-events: none; }
   .thumbnail-btn.selected { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
   .thumbnail-img { width: 100%; height: 100%; object-fit: cover; }
   

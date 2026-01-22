@@ -146,11 +146,24 @@
                   position: idx,
                   altText: p.filename || 'Product Image'
               }));
-              const mergedImages = [...photoImages, ...listingOnly].map((img, idx) => ({
+              let mergedImages = [...photoImages, ...listingOnly];
+              const order = primaryProposal.listingImageOrder || [];
+              if (order.length > 0) {
+                  const byId = new Map(mergedImages.map(img => [img.id, img]));
+                  const ordered: any[] = [];
+                  order.forEach(id => {
+                      const match = byId.get(id);
+                      if (match) {
+                          ordered.push(match);
+                          byId.delete(id);
+                      }
+                  });
+                  mergedImages = [...ordered, ...Array.from(byId.values())];
+              }
+              listingImages = mergedImages.map((img, idx) => ({
                   ...img,
                   position: idx + 1
               }));
-              listingImages = mergedImages;
           } else {
               listingData = null;
           }
@@ -467,6 +480,47 @@
       goto(`/listing-detail?mode=create&jan=${nextJan}`);
   }
 
+  function handleReorderImages(e: CustomEvent<{ sourceId: string; targetId: string }>) {
+      if (mode !== 'create' || !janCode) return;
+      const { sourceId, targetId } = e.detail;
+      const proposal = $store.listingCreation.proposals[janCode];
+      const listingOnly = proposal?.listingOnlyImages || [];
+
+      const current = listingImages.slice();
+      const sourceIndex = current.findIndex(img => img.id === sourceId);
+      const targetIndex = current.findIndex(img => img.id === targetId);
+      if (sourceIndex === -1 || targetIndex === -1) return;
+
+      const [moved] = current.splice(sourceIndex, 1);
+      current.splice(targetIndex, 0, moved);
+
+      const reordered = current.map((img, idx) => ({ ...img, position: idx + 1 }));
+      listingImages = reordered;
+
+      // Update listing-only positions (JAN photos ordering is implicit)
+      const updatedListingOnly = listingOnly.map((img: any) => {
+          const newIndex = reordered.findIndex(r => r.id === img.id);
+          if (newIndex !== -1) {
+              return { ...img, position: newIndex + 1 };
+          }
+          return img;
+      });
+
+      const newOrder = reordered.map(img => img.id);
+      dispatchBroadcast(update_proposal_field({ janCode, field: 'listingImageOrder', value: newOrder }));
+      dispatchBroadcast(update_proposal_field({ janCode, field: 'listingOnlyImages', value: updatedListingOnly }));
+
+      // Sync imagePosition for associated variants
+      const imageUrlToPosition = new Map<string, number>();
+      reordered.forEach(img => imageUrlToPosition.set(img.url, img.position));
+      associatedItems.forEach(item => {
+          if (!item?.id || !item.image) return;
+          const position = imageUrlToPosition.get(item.image);
+          if (!position) return;
+          dispatchBroadcast(update_field({ id: item.id, field: 'imagePosition', from: item.imagePosition || 0, to: position }));
+      });
+  }
+
   // Search (Live Mode)
   function handleSearch() {
        if (!searchTerm) {
@@ -584,25 +638,26 @@
       {/if}
 
       <ListingEditor
-          listing={listingData}
-          images={listingImages}
-          associatedItems={associatedItems}
-          bind:selectedSubtypeId
-          readOnly={false}
-          isCreationMode={mode === 'create'}
-          isGeneratingTitle={isGeneratingTitle}
-          isGeneratingDescription={isGeneratingDescription}
-          on:updateTitle={handleUpdateTitle}
-          on:updateDescription={handleUpdateDescription}
-          on:updatePrice={handleUpdatePrice}
-          on:deleteImage={handleDeleteImage}
-          on:selectSubtype={handleSelectSubtype}
-          on:deleteSubtypeImage={handleDeleteSubtypeImage}
-          on:replaceImage={handleReplaceImage}
-          on:replaceSubtypeImage={handleReplaceSubtypeImage}
-          on:approve={handleApprove}
-          on:drop={handleDrop}
-      />
+      listing={listingData}
+      images={listingImages}
+      associatedItems={associatedItems}
+      bind:selectedSubtypeId
+      readOnly={false}
+      isCreationMode={mode === 'create'}
+      isGeneratingTitle={isGeneratingTitle}
+      isGeneratingDescription={isGeneratingDescription}
+      on:updateTitle={handleUpdateTitle}
+      on:updateDescription={handleUpdateDescription}
+      on:updatePrice={handleUpdatePrice}
+      on:deleteImage={handleDeleteImage}
+      on:selectSubtype={handleSelectSubtype}
+      on:deleteSubtypeImage={handleDeleteSubtypeImage}
+      on:replaceImage={handleReplaceImage}
+      on:replaceSubtypeImage={handleReplaceSubtypeImage}
+      on:reorderImages={handleReorderImages}
+      on:approve={handleApprove}
+      on:drop={handleDrop}
+  />
       
       <!-- Batch Navigation Footer -->
       {#if mode === 'create' && activeBatchJans.length > 0}
