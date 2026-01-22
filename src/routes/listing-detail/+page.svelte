@@ -233,7 +233,24 @@
       showBodyModal = true;
   }
 
-  // bodyModalValue is controlled by the modal; avoid overwriting while editing.
+  $: if (showBodyModal && listingData) {
+      const next = listingData.bodyHtml || "";
+      if (next !== bodyModalValue) {
+          bodyModalValue = next;
+      }
+  }
+
+  function handleBodyModalRegenerate() {
+      if (mode === 'create' && janCode) {
+          regenerate_description(janCode)(dispatchBroadcast, store.getState, undefined);
+      }
+  }
+
+  function handleToolbarRegenerateDescription() {
+      if (mode === 'create' && janCode) {
+          regenerate_description(janCode)(dispatchBroadcast, store.getState, undefined);
+      }
+  }
 
   function saveBodyModal(e: CustomEvent<{ value: string }>) {
       if (!$user.uid) return;
@@ -647,7 +664,7 @@
                    <span class="sep">|</span>
                    
                    <div class="btn-group">
-                       <button class="ai-btn" disabled={isGeneratingDescription} on:click={() => janCode && regenerate_description(janCode)(dispatchBroadcast, store.getState, undefined)}>
+                      <button class="ai-btn" disabled={isGeneratingDescription} on:click={handleToolbarRegenerateDescription}>
                            {#if isGeneratingDescription}
                                <span class="spinner small"></span>
                            {:else}
@@ -716,7 +733,7 @@
   {/if}
 
   {#if showImagePicker}
-      <div class="modal-backdrop prompt-backdrop">
+      <div class="modal-backdrop">
           <div class="modal image-picker-modal">
               <h3 class="modal-title">Select listing image</h3>
               <div class="image-picker-grid">
@@ -744,7 +761,7 @@
   
   <!-- Prompt Modal -->
   {#if showPromptModal}
-      <div class="modal-backdrop">
+      <div class="modal-backdrop prompt-backdrop">
           <div class="modal prompt-modal">
               <h3 class="modal-title">Custom AI Prompt for {promptTarget === 'title' ? 'Title' : 'Description'}</h3>
               <textarea 
@@ -770,7 +787,7 @@
           showPrompt={mode === 'create'}
           on:save={saveBodyModal}
           on:cancel={cancelBodyModal}
-          on:regenerate={() => janCode && regenerate_description(janCode)(dispatchBroadcast, store.getState, undefined)}
+          on:regenerate={handleBodyModalRegenerate}
           on:editPrompt={() => openPromptModal('description')}
       />
   {/if}
@@ -824,8 +841,8 @@
   .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
   .image-tools-toolbar { display: flex; justify-content: flex-end; margin: 0.5rem 0 1rem; }
-  .prompt-modal { max-width: 720px; }
-  .prompt-backdrop { z-index: 300; }
+  .prompt-modal { max-width: 720px; z-index: 2001; position: relative; }
+  .prompt-backdrop { z-index: 2000; }
   .body-textarea { min-height: 320px; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; width: 100%; }
   .btn-save { padding: 0.5rem 0.75rem; border-radius: 6px; background: #2563eb; color: white; border: none; cursor: pointer; }
   .image-picker-modal { max-width: 720px; }
