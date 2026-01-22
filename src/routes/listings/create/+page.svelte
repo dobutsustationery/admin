@@ -20,6 +20,7 @@
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
   import { update_field } from "$lib/inventory";
+  import SecureImage from "$lib/components/SecureImage.svelte";
 
   // Subscribe to state
   $: listingCreation = $store.listingCreation;
@@ -50,23 +51,19 @@
   $: enrichedProposals = proposals.map(p => {
        const photos = photosState?.janCodeToPhotos?.[p.janCode];
        // Prefer baseUrl, fallback to thumbnailLink
-       const thumb = photos && photos.length > 0 ? (photos[0].baseUrl || photos[0].thumbnailLink) : null;
+       const janThumb = photos && photos.length > 0 ? (photos[0].baseUrl || photos[0].thumbnailLink) : null;
        
        // Flatten Variant Data (taking first variant for grid display)
        const firstVariant = p.variants && p.variants.length > 0 ? p.variants[0] : null;
-       // We need to look up inventory item to get weight, country, qty? 
-       // Proposal has `inventoryItemIds`. 
-       // We can iterate inventory. But for now, let's map what we have or accept blanks.
-       // The `ListingProposal` doesn't strictly copy all fields.
-       // We might need to look up the inventory item again.
+       const inventoryItem = firstVariant ? $store.inventory.idToItem[firstVariant.itemId] : null;
+       const variantThumb = inventoryItem?.image || null;
        
        return { 
            ...p, 
-           _thumbnail: thumb,
+           _thumbnail: variantThumb || janThumb,
            option1Value: firstVariant ? firstVariant.option1Value : "",
            // For simple display, using janCode as id mostly.
            id: firstVariant ? firstVariant.itemId : p.janCode, 
-           // weight: ?, countryOfOrigin: ? <- Not in Proposal currently, would need lookup.
        };
   });
 
@@ -299,7 +296,7 @@
             <div class="image-picker-grid">
                 {#each buildImagePickerCandidates(imagePickerRow) as candidate}
                     <button class="image-picker-item" on:click={() => handlePickVariantImage(candidate)}>
-                        <img src={candidate.url} alt={candidate.altText} />
+                        <SecureImage src={candidate.url} alt={candidate.altText} className="image-picker-img" />
                     </button>
                 {/each}
             </div>
@@ -311,12 +308,12 @@
 {/if}
 
 <style>
-  .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 720px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
   .modal-title { font-weight: 600; font-size: 1.1rem; }
   .image-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.75rem; margin-top: 1rem; max-height: 420px; overflow: auto; }
   .image-picker-item { border: 1px solid #e5e7eb; background: white; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; }
-  .image-picker-item img { width: 100%; height: 90px; object-fit: cover; display: block; }
+  .image-picker-img { width: 100%; height: 90px; object-fit: cover; display: block; }
   .image-picker-item:hover { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
   .modal-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
   .btn-cancel { padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; }
