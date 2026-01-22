@@ -119,6 +119,7 @@ Goal: map a specific variant row to a specific JAN photo with minimal UI.
 **Modal picker**
 - Title: “Select image for this variant”.
 - Shows all images in `photos.janCodeToPhotos[janCode]` as selectable thumbnails.
+- Also includes images associated with any variant that shares the same listing handle (sibling variants).
 - Selecting a thumbnail updates the variant image for that row only.
 - No reordering, removal, or listing-only image actions are available in batch view.
 
@@ -143,16 +144,15 @@ Goal: deep editing and correctness.
 - Selecting a variant updates `associate_draft_image_variant`.
   - When an image is assigned to a variant, set that item's `imagePosition` to the image's current `position`.
 
-**Add photo**
+**Add listing photo**
 - “Add Listing Photo” button:
-  - uploads to Drive
-  - creates `ListingImage`
-  - `add_draft_image` with `type: 'listing'`
+  - opens the same modal picker used in batch view
+  - selecting a thumbnail appends it to `draftImages` (listing-only)
+  - no upload occurs here; new photos must be added in Photos by associating them to the JAN
 
-**Use JAN photos**
-- “Add From JAN Photos” button:
-  - opens chooser with available `photos.janCodeToPhotos[janCode]`
-  - picking adds existing photo into `draftImages` without duplicating in Photos
+**Picker source**
+- The picker is the single entry point for adding listing photos in detail view.
+- It includes:\n  - `photos.janCodeToPhotos[janCode]`\n  - sibling-variant images for the same handle
 
 **Remove**
 - Remove button removes from draft only. The underlying Drive photo is untouched.
