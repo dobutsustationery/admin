@@ -113,7 +113,7 @@ test.describe('Listings Creation Flow', () => {
             const { store, actions } = (window as any).testHelpers;
             
             // Clear previous proposals
-            store.dispatch(actions.set_proposals([]));
+            store.dispatch(actions.add_proposals([]));
 
             const janCode = "TEST999999";
             
@@ -196,7 +196,7 @@ test.describe('Listings Creation Flow', () => {
              const drafts = (proposals as any[]).filter(p => p.status === 'draft').slice(0, 10);
              const ids = drafts.map(d => d.janCode);
              if (ids.length > 0) {
-                 store.dispatch(actions.start_batch({ janCodes: ids }));
+                 store.dispatch(actions.start_batch({ janCodes: ids, batchId: `batch-${Date.now()}`, createdAt: Date.now() }));
                  store.dispatch(actions.generate_descriptions_for_batch(ids));
              } else {
                  throw new Error("No drafts found to batch!");

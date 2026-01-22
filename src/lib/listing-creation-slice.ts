@@ -54,6 +54,8 @@ export interface ListingCreationState {
   originalBatchJans: string[]; // Source of truth for batch items
   currentStepIndex: number;
   driveConnectionStatus: 'unknown' | 'connected' | 'disconnected';
+  activeBatchId?: string;
+  activeBatchCreatedAt?: number;
   
   // Global Defaults (Persisted)
   globalTitlePrompt?: string;
@@ -67,6 +69,8 @@ export interface ListingCreationState {
     originalBatchJans: [],
     currentStepIndex: 0,
     driveConnectionStatus: 'unknown',
+    activeBatchId: undefined,
+    activeBatchCreatedAt: undefined,
     globalTitlePrompt: "Generate a concise, catchy product title for this product. Return ONLY the title text. No quotes.",
     globalDescriptionPrompt: "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text."
   };
@@ -85,16 +89,26 @@ export interface ListingCreationState {
           if (action.payload.descriptionPrompt) state.globalDescriptionPrompt = action.payload.descriptionPrompt;
       },
       // Session / Batch
-      set_proposals: (state, action: PayloadAction<ListingProposal[]>) => {
-          state.proposals = {};
+      add_proposals: (state, action: PayloadAction<ListingProposal[]>) => {
           action.payload.forEach(p => {
               state.proposals[p.janCode] = p;
           });
       },
-      start_batch: (state, action: PayloadAction<{ janCodes: string[] }>) => {
+      remove_proposal: (state, action: PayloadAction<{ janCode: string }>) => {
+          const { janCode } = action.payload;
+          delete state.proposals[janCode];
+          state.activeBatchJans = state.activeBatchJans.filter(jan => jan !== janCode);
+          state.originalBatchJans = state.originalBatchJans.filter(jan => jan !== janCode);
+          if (state.currentStepIndex >= state.activeBatchJans.length) {
+              state.currentStepIndex = Math.max(0, state.activeBatchJans.length - 1);
+          }
+      },
+      start_batch: (state, action: PayloadAction<{ janCodes: string[]; batchId: string; createdAt?: number }>) => {
           state.activeBatchJans = action.payload.janCodes;
           state.originalBatchJans = action.payload.janCodes; // Set source
           state.currentStepIndex = -1; // -1 = Batch Overview / Bulk Edit
+          state.activeBatchId = action.payload.batchId;
+          state.activeBatchCreatedAt = action.payload.createdAt ?? Date.now();
       },
       set_current_step: (state, action: PayloadAction<number>) => {
           state.currentStepIndex = action.payload;
@@ -149,12 +163,6 @@ export interface ListingCreationState {
               state.proposals[janCode].status = 'approved';
           }
       },
-      skip_proposal: (state, action: PayloadAction<{ janCode: string }>) => {
-          const { janCode } = action.payload;
-          if (state.proposals[janCode]) {
-              state.proposals[janCode].status = 'skipped';
-          }
-      },
       
       // UI
       next_step: (state) => {
@@ -163,6 +171,8 @@ export interface ListingCreationState {
       complete_batch: (state) => {
           state.activeBatchJans = [];
           state.currentStepIndex = 0;
+          state.activeBatchId = undefined;
+          state.activeBatchCreatedAt = undefined;
           // Optionally archive proposals here
       }
     },
@@ -171,12 +181,12 @@ export interface ListingCreationState {
 export const { 
     set_drive_connection_status,
     set_global_prompts,
-    set_proposals, 
+    add_proposals, 
+    remove_proposal,
     start_batch, 
     update_proposal_field, 
     set_variant_option_name,
     approve_proposal,
-    skip_proposal,
     next_step,
     complete_batch,
     set_current_step,
@@ -246,7 +256,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
     
     // Dispatch
     if (candidates.length > 0) {
-        dispatch(set_proposals(candidates));
+        dispatch(add_proposals(candidates));
     } else {
         console.log("No candidates found. Ensure photos are organized in the Photos tab and Inventory items exist.");
     }
@@ -325,22 +335,30 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          } else {
              dispatch(create_listing({ listing }));
          }
+
+         // Remove all proposals sharing this handle to avoid stale drafts
+         const allProposals = getState().listingCreation.proposals;
+         const matchingJans = Object.values(allProposals)
+             .filter(p => {
+                 const h = p.handle || generateHandle(p.title, p.janCode);
+                 return h === finalHandle;
+             })
+             .map(p => p.janCode);
+         matchingJans.forEach(jan => dispatch(remove_proposal({ janCode: jan })));
     }
 
     // 3. Advance UI
     const updatedState = getState().listingCreation;
-    if (updatedState.currentStepIndex < updatedState.activeBatchJans.length - 1) {
-        // If we were at -1, we loop to 0. 
-        // But logic relies on activeBatchJans[currentStep].
-        // If we are at 0, we go to 1.
-        // If we are at -1 (Bulk Edit), how did we get here? 
-        // We usually enter approval from Detail (-1 -> 0 -> ...). 
-        // If we approve from Bulk Edit directly (future feature?), we handle it.
-        // Here we assume we are in Detail flow.
-        dispatch(next_step());
-    } else {
+    const remaining = updatedState.activeBatchJans.length;
+    if (remaining === 0) {
         dispatch(complete_batch());
+        return;
     }
+
+    let nextIndex = updatedState.currentStepIndex;
+    if (nextIndex < 0) nextIndex = 0;
+    if (nextIndex >= remaining) nextIndex = 0;
+    dispatch(set_current_step(nextIndex));
 };
 
 export const generate_descriptions_for_batch = (janCodes: string[]): AppThunk => async (dispatch, getState) => {
@@ -556,4 +574,3 @@ export const regenerate_description = (janCode: string, customPrompt?: string): 
         dispatch(update_proposal_field({ janCode, field: 'isGeneratingDescription', value: false }));
     }
 };
-

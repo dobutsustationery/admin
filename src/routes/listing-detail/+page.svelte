@@ -7,7 +7,9 @@
       regenerate_title, 
       regenerate_description, 
       update_proposal_field,
-      set_current_step 
+      set_current_step,
+      remove_proposal,
+      complete_batch
   } from "$lib/listing-creation-slice";
   import { update_field } from '$lib/inventory';
   import { goto } from '$app/navigation';
@@ -361,6 +363,30 @@
       }
   }
 
+  function handleDrop() {
+      if (mode !== 'create' || !janCode) return;
+      const stateBefore = store.getState().listingCreation;
+      const currentIndex = stateBefore.activeBatchJans.indexOf(janCode);
+
+      dispatchBroadcast(remove_proposal({ janCode }));
+
+      const stateAfter = store.getState().listingCreation;
+      const remaining = stateAfter.activeBatchJans;
+      if (remaining.length === 0) {
+          dispatchBroadcast(complete_batch());
+          goto('/listings/create');
+          return;
+      }
+
+      let nextIndex = currentIndex;
+      if (nextIndex < 0) nextIndex = 0;
+      if (nextIndex >= remaining.length) nextIndex = 0;
+
+      const nextJan = remaining[nextIndex];
+      dispatchBroadcast(set_current_step(nextIndex));
+      goto(`/listing-detail?mode=create&jan=${nextJan}`);
+  }
+
   // Search (Live Mode)
   function handleSearch() {
        if (!searchTerm) {
@@ -492,6 +518,7 @@
           on:replaceImage={handleReplaceImage}
           on:replaceSubtypeImage={handleReplaceSubtypeImage}
           on:approve={handleApprove}
+          on:drop={handleDrop}
       />
       
       <!-- Batch Navigation Footer -->
