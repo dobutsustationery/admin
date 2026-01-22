@@ -13,13 +13,9 @@ These are the actions that must exist in the broadcast stream to fully enable li
 ### 2) Batch lifecycle (single-worker handoff) — **Complete**
 - `listingCreation/start_batch` now includes a stable `batchId` (and `createdAt`) for deterministic resume.
 
-### 3) Draft image changes
-- **Missing broadcast actions in create-mode image workflows**
-  - The UI currently shows alerts for “replace/delete in draft not implemented.”
-  - To support draft image changes with broadcast-only state, the flow must emit existing photo actions:
-    - `photos/complete_upload` for the newly uploaded file.
-    - `photos/categorize_photo` to attach it to the JAN.
-  - If we need to explicitly prune old photos from a JAN group, introduce a new `photos/uncategorize_photo` action (missing).
+### 3) Draft image changes — **Complete**
+- Draft remove uses `photos/uncategorize_photo`.
+- Draft add uses `photos/complete_upload` + `photos/categorize_photo`.
 
 ### 4) Inventory ↔ listing linkage for future updates — **Complete**
 - `inventory/update_field` for `handle` now routes through shared listings handle update logic, so `listings.idToHandle` is updated consistently during replay.
@@ -40,12 +36,10 @@ These are the actions that must exist in the broadcast stream to fully enable li
 2. Ensure `complete_batch` is always broadcast on resolution.
 3. When batch completes, also broadcast `remove_proposal` for each JAN.
 
-### C) Draft image modifications
-1. Implement draft image replace/delete by emitting:
-   - `photos/complete_upload` for the new file.
-   - `photos/categorize_photo` to bind it to the JAN.
-2. If delete is required, add `photos/uncategorize_photo` to drop a file from a JAN group.
-3. ListingEditor should update from `photos.janCodeToPhotos` only (no new persistence layer).
+### C) Draft image modifications — **Complete**
+1. Draft add uses `photos/complete_upload` + `photos/categorize_photo`.
+2. Draft delete uses `photos/uncategorize_photo` to drop from a JAN group.
+3. ListingEditor updates from `photos.janCodeToPhotos` only.
 
 ### D) Ensure listing ↔ inventory linkage is broadcasted — **Complete**
 1. Handle updates to `inventory.handle` inside listings reducer to update `idToHandle`.
@@ -57,7 +51,7 @@ These are the actions that must exist in the broadcast stream to fully enable li
 3. `complete_batch` is broadcast when the last item is resolved.
 
 ## Minimal action set to add/emit (remaining)
-- `photos/uncategorize_photo` (only if delete is required)
+- None.
 
 ## Expected outcome
 With the above actions emitted through the broadcast store, the listing-creation workflow becomes fully event-sourced: proposals and batches are reconstructible, draft edits persist, images can be updated, and approved listings maintain an inventory linkage for subsequent edits.
