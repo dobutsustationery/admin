@@ -104,13 +104,19 @@ export const listings = createReducer(initialState, (builder) => {
         const { id, field, to } = action.payload;
         const handle = state.idToHandle[id];
         
-        if (!handle) return; // Can't update if we don't know the handle
-        
-        const listing = state.handleToListing[handle];
-        if (!listing) return;
-        
         // Map Item fields to Listing fields
         const fieldKey = field as string;
+        if (fieldKey === 'handle') {
+             const newHandle = String(to);
+             applyHandleUpdate(state, id, newHandle, handle);
+             return;
+        }
+
+        if (!handle) return; // Can't update if we don't know the handle
+
+        const listing = state.handleToListing[handle];
+        if (!listing) return;
+
         if (fieldKey === 'description') {
             // Rename logic similar to above
             const newTitle = String(to);
@@ -219,33 +225,11 @@ function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, 
       */
 
       if (targetHandle !== handle) {
-           // Move Listing / Remap ID
-           // NOTE: If targetHandle already exists (e.g. merging into a group),
-           // we should merge, not overwrite blindly?
-           // The current logic was "delete old, set new".
-           // If targetHandle exists, we want to point this ID to it.
-           
-           state.idToHandle[id] = targetHandle;
-           
-           const existingTarget = state.handleToListing[targetHandle];
-           
-           if (existingTarget) {
-               // Merge into existing listing
-               // We don't need to move the old listing, we just re-point the ID.
-               // BUT, if the old listing has no other IDs pointing to it, we might want to delete it?
-               // For safety/simplicity, let's just update the ID mapping.
-               // And ensure the existing target gets any new data.
-               listing = existingTarget;
-               listing.title = newTitle; // Update title of target? Conflicting updates...
-               // For import, last write wins or specific merge logic. Let's assume update.
-           } else {
-               // Move the listing object to the new handle
-               const movedListing = { ...listing, handle: targetHandle, title: newTitle };
-               // Only delete if we are "renaming" and not "merging" 
-               // Actually, if we are moving this ID, and assuming 1:1, we move the listing.
-               delete state.handleToListing[handle];
-               state.handleToListing[targetHandle] = movedListing;
-               listing = movedListing;
+           applyHandleUpdate(state, id, targetHandle, handle);
+           const nextListing = state.handleToListing[targetHandle];
+           if (nextListing) {
+               listing = nextListing;
+               listing.title = newTitle;
            }
            handle = targetHandle;
       } else {
@@ -272,4 +256,37 @@ function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, 
                  listing.lastUpdated = Date.now();
             }
       }
+}
+
+function applyHandleUpdate(
+  state: ListingsState,
+  id: string,
+  newHandle: string,
+  previousHandle?: string,
+) {
+  if (!newHandle) return;
+
+  const priorHandle = previousHandle || state.idToHandle[id];
+  if (priorHandle === newHandle) {
+    state.idToHandle[id] = newHandle;
+    return;
+  }
+
+  state.idToHandle[id] = newHandle;
+
+  if (!priorHandle) return;
+
+  const priorListing = state.handleToListing[priorHandle];
+  const targetListing = state.handleToListing[newHandle];
+
+  if (priorListing && !targetListing) {
+    const movedListing = { ...priorListing, handle: newHandle, lastUpdated: Date.now() };
+    delete state.handleToListing[priorHandle];
+    state.handleToListing[newHandle] = movedListing;
+    return;
+  }
+
+  if (priorListing && targetListing) {
+    delete state.handleToListing[priorHandle];
+  }
 }

@@ -243,6 +243,9 @@
                    <button class="btn-buy-shop" on:click={() => dispatch('approve')}>
                        Approve & Publish
                    </button>
+                   <button class="btn-drop" on:click={() => dispatch('drop')}>
+                       Drop Proposal
+                   </button>
                </div>
            {:else}
                <div class="quantity-block">
@@ -350,6 +353,8 @@
   .btn-add-cart:hover { background: #f9fafb; }
   .btn-buy-shop { width: 100%; padding: 0.75rem 1.5rem; border: none; background: #5a31f4; color: white; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: background 0.2s; }
   .btn-buy-shop:hover { background: #4820e0; }
+  .btn-drop { width: 100%; padding: 0.75rem 1.5rem; border: 1px solid #dc2626; background: white; color: #dc2626; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: background 0.2s, color 0.2s; }
+  .btn-drop:hover { background: #fef2f2; color: #b91c1c; }
   .shop-logo { font-weight: bold; font-style: italic; }
   .payment-options { text-align: center; }
   .payment-link { font-size: 0.875rem; color: #6b7280; text-decoration: underline; text-decoration-color: #9ca3af; }

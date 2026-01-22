@@ -118,7 +118,10 @@
       }
       
       const ids = drafts.map(p => p.janCode);
-      dispatchBroadcast(start_batch({ janCodes: ids }));
+      const batchId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+          ? crypto.randomUUID()
+          : `batch-${Date.now()}`;
+      dispatchBroadcast(start_batch({ janCodes: ids, batchId, createdAt: Date.now() }));
       generate_descriptions_for_batch(ids)(dispatchBroadcast, store.getState, undefined);
       // Redirect handled by reactive statement above
   }

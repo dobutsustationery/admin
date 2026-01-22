@@ -22,7 +22,7 @@ import {
 } from "./shopify-import-slice";
 import { listings, add_listing_image, create_listing, delete_listing } from "./listings-slice";
 import listingCreation, { 
-  set_proposals, 
+  add_proposals, 
   start_batch, 
   generate_descriptions_for_batch,
   generate_proposals
@@ -376,7 +376,7 @@ if (typeof window !== "undefined") {
               bulk_import_items,
               create_listing,
               delete_listing,
-              set_proposals,
+              add_proposals,
               categorize_photo,
               start_batch,
               generate_descriptions_for_batch,
