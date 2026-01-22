@@ -29,6 +29,7 @@
       commit: { id: string, field: string, value: any, index: number };
       sort: { field: string };
       navigate: { id: string, event: MouseEvent };
+      imagePick: { item: any, index: number, col: any };
       resize: { field: string, width: number };
   }>();
 
@@ -261,7 +262,8 @@
                                         {item} 
                                         index={i}
                                         {col}
-                                        on:navigate 
+                                        on:navigate
+                                        on:imagePick={() => dispatch('imagePick', { item, index: i, col })}
                                     />
                                 </div>
                             {:else if col.editable !== false}

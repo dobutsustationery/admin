@@ -1,15 +1,25 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte";
+
   export let item: any;
   export let col: any; // Column Config
 
   $: src = item[col.field] || item._thumbnail;
+
+  const dispatch = createEventDispatcher();
+
+  function handlePick() {
+      dispatch("imagePick", { item, col });
+  }
 </script>
 
 <div class="cell-image-container">
     {#if src}
-        <img src={src} alt="Validation" class="cell-image" loading="lazy" />
+        <button class="cell-image-btn" on:click={handlePick} title="Pick image">
+            <img src={src} alt="Validation" class="cell-image" loading="lazy" />
+        </button>
     {:else}
-        <div class="no-image">No Img</div>
+        <button class="no-image" on:click={handlePick} title="Pick image">No Img</button>
     {/if}
 </div>
 
@@ -30,8 +40,24 @@
         border-radius: 2px;
     }
 
+    .cell-image-btn {
+        border: none;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
     .no-image {
         font-size: 0.7rem;
         color: #9ca3af;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        padding: 0;
     }
 </style>

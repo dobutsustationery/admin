@@ -19,6 +19,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
+  import { update_field } from "$lib/inventory";
 
   // Subscribe to state
   $: listingCreation = $store.listingCreation;
@@ -29,6 +30,9 @@
   $: visibleBatchJans = (originalBatchJans && originalBatchJans.length > 0) ? originalBatchJans : activeBatchJans;
   
   $: driveStatus = listingCreation.driveConnectionStatus;
+
+  let showImagePicker = false;
+  let imagePickerRow: any | null = null;
   
 
   // Derived
@@ -180,6 +184,54 @@
            }
       }
   }
+
+  function openImagePicker(row: any) {
+      imagePickerRow = row;
+      showImagePicker = true;
+  }
+
+  function buildImagePickerCandidates(row: any) {
+      if (!row) return [];
+      const janCode = row.janCode;
+      const targetProposal = proposals.find(p => p.janCode === janCode);
+      if (!targetProposal) return [];
+      const handleKey = targetProposal.handle || generateHandle(targetProposal.title || "", targetProposal.janCode);
+      const siblings = proposals.filter(p => {
+          const h = p.handle || generateHandle(p.title || "", p.janCode);
+          return h === handleKey;
+      });
+
+      const candidates = new Map<string, { id: string; url: string; altText: string }>();
+      const janPhotos = photosState?.janCodeToPhotos?.[janCode] || [];
+      janPhotos.forEach((p: any, idx: number) => {
+          const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+          if (!url) return;
+          candidates.set(url, { id: p.id || `jan-${idx}`, url, altText: p.filename || 'JAN photo' });
+      });
+
+      siblings.forEach(p => {
+          p.inventoryItemIds?.forEach((id: string) => {
+              const item = $store.inventory.idToItem[id];
+              if (!item?.image) return;
+              const url = item.image;
+              if (!candidates.has(url)) {
+                  candidates.set(url, { id: `variant-${id}`, url, altText: item.subtype || 'Variant image' });
+              }
+          });
+      });
+
+      return Array.from(candidates.values());
+  }
+
+  function handlePickVariantImage(candidate: { id: string; url: string }) {
+      if (!imagePickerRow) return;
+      const itemId = imagePickerRow.id;
+      const item = $store.inventory.idToItem[itemId];
+      const from = item?.image || "";
+      dispatchBroadcast(update_field({ id: itemId, field: 'image', from, to: candidate.url }));
+      showImagePicker = false;
+      imagePickerRow = null;
+  }
 </script>
 
 <div class="container mx-auto p-6">
@@ -209,6 +261,7 @@
                 columns={columnConfig}
                 keyField="janCode"
                 on:commit={(e) => handleCommit(e.detail.id, e.detail.field, e.detail.value, e.detail.index)}
+                on:imagePick={(e) => openImagePicker(e.detail.item)}
              />
         </div>
     {:else if draftCount > 0}
@@ -238,3 +291,33 @@
         </div>
     {/if}
 </div>
+
+{#if showImagePicker}
+    <div class="modal-backdrop">
+        <div class="modal image-picker-modal">
+            <h3 class="modal-title">Select image for this variant</h3>
+            <div class="image-picker-grid">
+                {#each buildImagePickerCandidates(imagePickerRow) as candidate}
+                    <button class="image-picker-item" on:click={() => handlePickVariantImage(candidate)}>
+                        <img src={candidate.url} alt={candidate.altText} />
+                    </button>
+                {/each}
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" on:click={() => { showImagePicker = false; imagePickerRow = null; }}>Cancel</button>
+            </div>
+        </div>
+    </div>
+{/if}
+
+<style>
+  .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 720px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+  .modal-title { font-weight: 600; font-size: 1.1rem; }
+  .image-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.75rem; margin-top: 1rem; max-height: 420px; overflow: auto; }
+  .image-picker-item { border: 1px solid #e5e7eb; background: white; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; }
+  .image-picker-item img { width: 100%; height: 90px; object-fit: cover; display: block; }
+  .image-picker-item:hover { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+  .modal-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
+  .btn-cancel { padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; }
+</style>

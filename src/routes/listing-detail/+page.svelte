@@ -7,6 +7,8 @@
       regenerate_title, 
       regenerate_description, 
       update_proposal_field,
+      add_listing_only_image,
+      remove_listing_only_image,
       set_current_step,
       remove_proposal,
       complete_batch
@@ -39,6 +41,10 @@
   let showPromptModal = false;
   let promptTarget: 'title' | 'description' | null = null;
   let customPrompt = "";
+
+  // Image Picker State (Listing Photos)
+  let showImagePicker = false;
+  let imagePickerTargetJan: string | null = null;
   
   // AI Loading State
   let isGeneratingTitle = false;
@@ -129,12 +135,16 @@
                   });
               });
 
-              listingImages = allPhotos.map((p: any, idx: number) => ({
+              const listingOnly = primaryProposal.listingOnlyImages || [];
+              const photoImages = allPhotos.map((p: any, idx: number) => ({
                   id: p.id,
                   url: p.baseUrl || '', 
                   position: idx,
                   altText: p.filename || 'Product Image'
               }));
+              const mergedImages = [...photoImages, ...listingOnly];
+              mergedImages.forEach((img, idx) => img.position = idx + 1);
+              listingImages = mergedImages;
           } else {
               listingData = null;
           }
@@ -263,12 +273,19 @@
   
   // Image Deletion
   function handleDeleteImage(e: CustomEvent<any>) {
-      if (mode === 'create') {
-          alert("Deleting images in draft mode not fully implemented");
-      } else {
-          if (!$user.uid || !handle) return;
-          broadcast(firestore, $user.uid, remove_listing_image({ handle, imageId: e.detail.id }));
+      if (mode === 'create' && janCode) {
+          const proposal = $store.listingCreation.proposals[janCode];
+          const listingOnly = proposal?.listingOnlyImages || [];
+          const isListingOnly = listingOnly.some(img => img.id === e.detail.id);
+          if (isListingOnly) {
+              dispatchBroadcast(remove_listing_only_image({ janCode, imageId: e.detail.id }));
+          } else {
+              alert("Removing JAN photos from draft is not supported yet.");
+          }
+          return;
       }
+      if (!$user.uid || !handle) return;
+      broadcast(firestore, $user.uid, remove_listing_image({ handle, imageId: e.detail.id }));
   }
   
   function handleDeleteSubtypeImage(e: CustomEvent<any>) {
@@ -361,6 +378,61 @@
           approve_proposal_thunk(janCode)(dispatchBroadcast, store.getState, undefined);
           goto('/listings/create');
       }
+  }
+
+  function openImagePicker() {
+      if (mode !== 'create' || !janCode) return;
+      imagePickerTargetJan = janCode;
+      showImagePicker = true;
+  }
+
+  function buildImagePickerCandidates() {
+      if (mode !== 'create' || !janCode) return [];
+      const primary = $store.listingCreation.proposals[janCode];
+      if (!primary) return [];
+      const handleKey = primary.handle || generateHandle(primary.title, primary.janCode);
+      const proposals = Object.values($store.listingCreation.proposals);
+      const siblings = proposals.filter((p: any) => {
+          const h = p.handle || generateHandle(p.title, p.janCode);
+          return h === handleKey;
+      });
+
+      const candidates = new Map<string, { id: string; url: string; altText: string }>();
+      const janPhotos = $store.photos.janCodeToPhotos?.[janCode] || [];
+      janPhotos.forEach((p: any, idx: number) => {
+          const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+          if (!url) return;
+          candidates.set(url, { id: p.id || `jan-${idx}`, url, altText: p.filename || 'JAN photo' });
+      });
+
+      siblings.forEach((p: any) => {
+          p.inventoryItemIds.forEach((id: string) => {
+              const item = $store.inventory.idToItem[id];
+              if (!item?.image) return;
+              const url = item.image;
+              if (!candidates.has(url)) {
+                  candidates.set(url, { id: `variant-${id}`, url, altText: item.subtype || 'Variant image' });
+              }
+          });
+      });
+
+      return Array.from(candidates.values());
+  }
+
+  function handlePickListingImage(candidate: { id: string; url: string; altText: string }) {
+      if (!imagePickerTargetJan) return;
+      const imageId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+          ? crypto.randomUUID()
+          : `img-${Date.now()}`;
+      const image = {
+          id: imageId,
+          url: candidate.url,
+          altText: candidate.altText || '',
+          position: listingImages.length + 1
+      };
+      dispatchBroadcast(add_listing_only_image({ janCode: imagePickerTargetJan, image }));
+      showImagePicker = false;
+      imagePickerTargetJan = null;
   }
 
   function handleDrop() {
@@ -498,6 +570,9 @@
                    </div>
                </div>
           </div>
+          <div class="image-tools-toolbar">
+               <button class="ai-btn" on:click={openImagePicker}>Add Listing Photo</button>
+          </div>
       {/if}
 
       <ListingEditor
@@ -543,6 +618,24 @@
   {:else}
        <div class="empty-state">
           <p class="empty-text">Search for a listing or start a creation batch.</p>
+      </div>
+  {/if}
+
+  {#if showImagePicker}
+      <div class="modal-backdrop">
+          <div class="modal image-picker-modal">
+              <h3 class="modal-title">Select listing image</h3>
+              <div class="image-picker-grid">
+                  {#each buildImagePickerCandidates() as candidate}
+                      <button class="image-picker-item" on:click={() => handlePickListingImage(candidate)}>
+                          <img src={candidate.url} alt={candidate.altText} />
+                      </button>
+                  {/each}
+              </div>
+              <div class="modal-actions flex justify-end gap-2">
+                  <button class="btn-cancel" on:click={() => { showImagePicker = false; imagePickerTargetJan = null; }}>Cancel</button>
+              </div>
+          </div>
       </div>
   {/if}
 
@@ -622,4 +715,10 @@
   /* Modal */
   .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+  .image-tools-toolbar { display: flex; justify-content: flex-end; margin: 0.5rem 0 1rem; }
+  .image-picker-modal { max-width: 720px; }
+  .image-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.75rem; margin-top: 1rem; max-height: 420px; overflow: auto; }
+  .image-picker-item { border: 1px solid #e5e7eb; background: white; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; }
+  .image-picker-item img { width: 100%; height: 90px; object-fit: cover; display: block; }
+  .image-picker-item:hover { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
 </style>

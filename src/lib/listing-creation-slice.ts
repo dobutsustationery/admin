@@ -4,6 +4,7 @@ import type { GlobalState } from "./store";
 import { update_field, type Item } from "./inventory";
 import { imagePrompt, fetchImage } from "./gemini-client";
 import { getStoredToken } from "./google-drive";
+import { create_listing, type Listing, type ListingImage } from "./listings-slice";
 
 // Define AppThunk locally if not exported
 export type AppThunk<ReturnType = void> = ThunkAction<
@@ -44,6 +45,7 @@ export interface ListingProposal {
   option1Name: string; // e.g. "Color"
   variants: ListingVariant[];
   price?: number; // Draft price override
+  listingOnlyImages?: ListingImage[]; // Listing-only images added in detail view
 
   status: 'draft' | 'approved' | 'skipped';
 }
@@ -149,6 +151,22 @@ export interface ListingCreationState {
               state.proposals[janCode][field] = value;
           }
       },
+      add_listing_only_image: (state, action: PayloadAction<{ janCode: string, image: ListingImage }>) => {
+          const { janCode, image } = action.payload;
+          const proposal = state.proposals[janCode];
+          if (!proposal) return;
+          if (!proposal.listingOnlyImages) proposal.listingOnlyImages = [];
+          const exists = proposal.listingOnlyImages.some(img => img.url === image.url);
+          if (!exists) {
+              proposal.listingOnlyImages.push(image);
+          }
+      },
+      remove_listing_only_image: (state, action: PayloadAction<{ janCode: string, imageId: string }>) => {
+          const { janCode, imageId } = action.payload;
+          const proposal = state.proposals[janCode];
+          if (!proposal?.listingOnlyImages) return;
+          proposal.listingOnlyImages = proposal.listingOnlyImages.filter(img => img.id !== imageId);
+      },
       set_variant_option_name: (state, action: PayloadAction<{ janCode: string, name: string }>) => {
            const { janCode, name } = action.payload;
            if (state.proposals[janCode]) {
@@ -185,6 +203,8 @@ export const {
     remove_proposal,
     start_batch, 
     update_proposal_field, 
+    add_listing_only_image,
+    remove_listing_only_image,
     set_variant_option_name,
     approve_proposal,
     next_step,
@@ -247,6 +267,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                      option1Value: x.item.subtype || "Default" 
                  })),
                  status: 'draft',
+                 listingOnlyImages: [],
                  // Inherit globals by default (undefined)
              });
         }
@@ -262,7 +283,6 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
     }
 };
 
-import { create_listing, type Listing } from "./listings-slice";
 import { generateHandle } from "./handle-utils";
 
 export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, getState) => {
@@ -294,12 +314,16 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          const driveFiles = janToPhotos[janCode] || [];
          
          // @ts-ignore
-         const listingImages = driveFiles.map((f: any, i: number) => ({
+        const listingImages = driveFiles.map((f: any, i: number) => ({
              url: f.url, // Ensure this is a usable URL (SecureImage handles it) // @ts-ignore
              id: f.id || `img-${i}`,
              altText: f.name,
              position: i + 1
          }));
+         
+         const listingOnly = proposal.listingOnlyImages || [];
+         const mergedImages = [...listingImages, ...listingOnly];
+         mergedImages.forEach((img, i) => img.position = i + 1);
 
          const listing: Listing = {
              handle: finalHandle,
@@ -309,7 +333,7 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
              vendor: proposal.vendor,
              tags: proposal.tags,
              option1Name: proposal.option1Name,
-             images: listingImages,
+            images: mergedImages,
              // Required fields
              productType: "", 
              status: 'active',
@@ -327,7 +351,7 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          const existingListing = state.listings.handleToListing[finalHandle];
          if (existingListing) {
              // Merge Images
-             const combinedImages = [...(existingListing.images || []), ...listingImages];
+            const combinedImages = [...(existingListing.images || []), ...mergedImages];
              // Re-index positions
              combinedImages.forEach((img, i) => img.position = i + 1);
              
