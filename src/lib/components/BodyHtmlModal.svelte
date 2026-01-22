@@ -12,6 +12,7 @@
   let htmlValue = "";
   let contentEl: HTMLDivElement | null = null;
   let isDirty = false;
+  let lastValue = "";
 
   function prettyPrintHtml(html: string) {
     const clean = (html || "")
@@ -36,8 +37,9 @@
     return out.join("\n");
   }
 
-  $: if (open && !isDirty) {
+  $: if (open && !isDirty && value !== lastValue) {
     htmlValue = prettyPrintHtml(value || "");
+    lastValue = value;
     tick().then(() => {
       if (contentEl) contentEl.innerHTML = htmlValue;
     });
@@ -61,11 +63,18 @@
   function handleSave() {
     dispatch("save", { value: htmlValue });
     isDirty = false;
+    lastValue = htmlValue;
   }
 
   function handleCancel() {
     dispatch("cancel");
     isDirty = false;
+    lastValue = value;
+  }
+
+  $: if (!open) {
+    isDirty = false;
+    lastValue = value;
   }
 </script>
 
@@ -76,10 +85,10 @@
         <h3 class="modal-title">{title}</h3>
         <div class="modal-tools">
           {#if showRegenerate}
-            <button class="btn-tool" on:click={() => dispatch("regenerate")}>Regenerate</button>
+            <button class="btn-tool" on:click={() => dispatch("regenerate")}>↻ Desc</button>
           {/if}
           {#if showPrompt}
-            <button class="btn-tool" on:click={() => dispatch("editPrompt")}>Edit Prompt</button>
+            <button class="btn-tool" on:click={() => dispatch("editPrompt")}>✎</button>
           {/if}
         </div>
       </div>

@@ -628,10 +628,9 @@
 
   {#if listingData}
   
-      <!-- AI Controls (Creation Mode Only) -->
-      {#if mode === 'create'}
-          <div class="ai-controls-toolbar">
-               <div class="ai-group">
+      <div class="ai-controls-toolbar">
+           <div class="ai-group">
+               {#if mode === 'create'}
                    <span class="label">AI Tools:</span>
                    
                    <div class="btn-group">
@@ -657,12 +656,17 @@
                        </button>
                        <button class="ai-btn icon-only" disabled={isGeneratingDescription} on:click={() => openPromptModal('description')} title="Edit Prompt">✎</button>
                    </div>
+               {/if}
+
+               <span class="sep">|</span>
+               <div class="btn-group">
+                   {#if mode === 'create'}
+                       <button class="ai-btn" on:click={openImagePicker}>Add Listing Photo</button>
+                   {/if}
+                   <button class="ai-btn" on:click={openBodyModal}>Edit Description</button>
                </div>
-          </div>
-          <div class="image-tools-toolbar">
-               <button class="ai-btn" on:click={openImagePicker}>Add Listing Photo</button>
-          </div>
-      {/if}
+           </div>
+      </div>
 
       <ListingEditor
       listing={listingData}
@@ -725,13 +729,9 @@
               <div class="modal-actions flex justify-end gap-2">
                   <button class="btn-cancel" on:click={() => { showImagePicker = false; imagePickerTargetJan = null; }}>Cancel</button>
               </div>
-               </div>
           </div>
-          <div class="image-tools-toolbar">
-               <button class="ai-btn" on:click={openImagePicker}>Add Listing Photo</button>
-               <button class="ai-btn" on:click={openBodyModal}>Edit Description</button>
-          </div>
-      {/if}
+      </div>
+  {/if}
 
   <!-- Hidden File Input for Replacements -->
   <input 
@@ -745,17 +745,17 @@
   <!-- Prompt Modal -->
   {#if showPromptModal}
       <div class="modal-backdrop">
-          <div class="modal">
-              <h3 class="font-bold text-lg mb-4">Custom AI Prompt for {promptTarget === 'title' ? 'Title' : 'Description'}</h3>
+          <div class="modal prompt-modal">
+              <h3 class="modal-title">Custom AI Prompt for {promptTarget === 'title' ? 'Title' : 'Description'}</h3>
               <textarea 
                 bind:value={customPrompt} 
-                rows="4"
-                class="w-full border p-2 rounded mb-4"
+                rows="10"
+                class="body-textarea"
                 placeholder="Enter your instructions for the AI..."
               ></textarea>
               <div class="modal-actions flex justify-end gap-2">
-                  <button class="px-4 py-2 border rounded hover:bg-gray-100" on:click={() => showPromptModal = false}>Cancel</button>
-                  <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" on:click={handleRunPrompt}>Generate</button>
+                  <button class="btn-cancel" on:click={() => showPromptModal = false}>Cancel</button>
+                  <button class="btn-save" on:click={handleRunPrompt}>Generate</button>
               </div>
           </div>
       </div>
@@ -824,6 +824,9 @@
   .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
   .image-tools-toolbar { display: flex; justify-content: flex-end; margin: 0.5rem 0 1rem; }
+  .prompt-modal { max-width: 720px; }
+  .body-textarea { min-height: 320px; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; width: 100%; }
+  .btn-save { padding: 0.5rem 0.75rem; border-radius: 6px; background: #2563eb; color: white; border: none; cursor: pointer; }
   .image-picker-modal { max-width: 720px; }
   .image-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.75rem; margin-top: 1rem; max-height: 420px; overflow: auto; }
   .image-picker-item { border: 1px solid #e5e7eb; background: white; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; }
