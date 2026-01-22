@@ -287,7 +287,12 @@
       showDescPromptModal = false;
   }
 
-  // bodyModalValue is controlled by the modal; avoid overwriting while editing.
+  $: if (showBodyModal && bodyModalJan) {
+      const next = $store.listingCreation.proposals[bodyModalJan]?.bodyHtml || "";
+      if (next !== bodyModalValue) {
+          bodyModalValue = next;
+      }
+  }
 </script>
 
 <div class="container mx-auto p-6">
@@ -397,8 +402,8 @@
 <style>
   .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 720px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-  .prompt-modal { max-width: 720px; }
-  .prompt-backdrop { z-index: 300; }
+  .prompt-modal { max-width: 720px; z-index: 2001; position: relative; }
+  .prompt-backdrop { z-index: 2000; }
   .body-textarea { min-height: 320px; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; width: 100%; }
   .btn-save { padding: 0.5rem 0.75rem; border-radius: 6px; background: #2563eb; color: white; border: none; cursor: pointer; }
   .modal-title { font-weight: 600; font-size: 1.1rem; }

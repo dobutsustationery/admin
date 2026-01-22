@@ -11,7 +11,6 @@
 
   let htmlValue = "";
   let contentEl: HTMLDivElement | null = null;
-  let isDirty = false;
   let lastValue = "";
 
   function prettyPrintHtml(html: string) {
@@ -37,7 +36,7 @@
     return out.join("\n");
   }
 
-  $: if (open && !isDirty && value !== lastValue) {
+  $: if (open && value !== lastValue) {
     htmlValue = prettyPrintHtml(value || "");
     lastValue = value;
     tick().then(() => {
@@ -48,7 +47,6 @@
   function handleTextInput(e: Event) {
     const target = e.target as HTMLTextAreaElement;
     htmlValue = target.value;
-    isDirty = true;
     if (contentEl && contentEl.innerHTML !== htmlValue) {
       contentEl.innerHTML = htmlValue;
     }
@@ -57,23 +55,19 @@
   function handleContentInput(e: Event) {
     const target = e.currentTarget as HTMLDivElement;
     htmlValue = target.innerHTML;
-    isDirty = true;
   }
 
   function handleSave() {
     dispatch("save", { value: htmlValue });
-    isDirty = false;
     lastValue = htmlValue;
   }
 
   function handleCancel() {
     dispatch("cancel");
-    isDirty = false;
     lastValue = value;
   }
 
   $: if (!open) {
-    isDirty = false;
     lastValue = value;
   }
 </script>
@@ -116,7 +110,7 @@
 {/if}
 
 <style>
-  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 150; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 960px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
   .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
   .modal-title { font-weight: 600; font-size: 1.1rem; }
