@@ -310,7 +310,7 @@
         <div id="bulk-editor-container" class="h-[calc(100vh-100px)] -mx-6 flex flex-col">
              <div class="flex justify-between items-center px-6 py-2 bg-white border-b">
                 <h2 class="text-xl font-bold">Batch Editor</h2>
-                <button class="primary-action-btn" on:click={() => {
+                <button class="btn-save start-review-btn" on:click={() => {
                     dispatchBroadcast(recalculate_batch_navigation());
                     dispatchBroadcast(set_current_step(0));
                 }}>
@@ -401,8 +401,7 @@
 {/if}
 
 <style>
-  .primary-action-btn { display: inline-flex; align-items: center; gap: 0.5rem; background: #2563eb; color: white; padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 700; white-space: nowrap; }
-  .primary-action-btn:hover { background: #1d4ed8; }
+  .start-review-btn { display: inline-flex; align-items: center; gap: 0.5rem; white-space: nowrap; }
   .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 720px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
   .prompt-modal { max-width: 720px; z-index: 2001; position: relative; }
