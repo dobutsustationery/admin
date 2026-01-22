@@ -10,6 +10,7 @@
 
 **Programmatic Verification:**
 - [ ] Validated header is visible
+- [ ] Validated empty state is visible
 
 ### 2. Drafts Ready
 

@@ -17,5 +17,6 @@
 
 **Programmatic Verification:**
 - [ ] Validated "Sign In" button is hidden
+- [ ] Validated orders table is visible
 - [ ] Validated Redux store has user state
 
