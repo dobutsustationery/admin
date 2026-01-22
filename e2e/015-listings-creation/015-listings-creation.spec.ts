@@ -88,11 +88,27 @@ test.describe('Listings Creation Flow', () => {
         
         // 3. Scan/Generate
         await expect(page.locator('h1')).toContainText('Create Listings', { timeout: 10000 });
+        await page.waitForFunction(() => (window as any).testHelpers);
+        await page.evaluate(() => {
+            const { store } = (window as any).testHelpers;
+            const proposals = Object.keys(store.getState().listingCreation.proposals || {});
+            proposals.forEach((jan: string) => store.dispatch({ type: "listingCreation/remove_proposal", payload: { janCode: jan } }));
+            store.dispatch({ type: "listingCreation/start_batch", payload: { janCodes: [], batchId: `reset-${Date.now()}`, createdAt: Date.now() } });
+            store.dispatch({ type: "listingCreation/set_current_step", payload: -1 });
+        });
+        await expect(page.locator('h2')).toContainText('No proposals found', { timeout: 10000 });
+        await expect(page.locator('button:has-text("Scan for matched items")')).toBeVisible({ timeout: 10000 });
         
         const initialVerifications = [{
              description: 'Validated header is visible',
              check: async () => {
                 await expect(page.locator('h1')).toContainText('Create Listings');
+             }
+        }, {
+             description: 'Validated empty state is visible',
+             check: async () => {
+                await expect(page.locator('h2')).toContainText('No proposals found');
+                await expect(page.locator('button:has-text("Scan for matched items")')).toBeVisible();
              }
         }];
 

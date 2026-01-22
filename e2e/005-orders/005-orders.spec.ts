@@ -123,12 +123,22 @@ test.describe("Orders Page", () => {
       await waitForAppReady(page);
   
       await signInButton.waitFor({ state: "hidden", timeout: 50000 });
+      const ordersTable = page.locator("table");
+      await ordersTable.waitFor({ state: "visible", timeout: 20000 });
+      await expect(ordersTable.locator("tr").nth(1)).toBeVisible({ timeout: 20000 });
 
       const step2Verifications = [
         {
             description: 'Validated "Sign In" button is hidden',
             check: async () => {
                  await expect(signInButton).toBeHidden();
+            }
+        },
+        {
+            description: 'Validated orders table is visible',
+            check: async () => {
+                await expect(ordersTable).toBeVisible();
+                await expect(ordersTable.locator("tr").nth(1)).toBeVisible();
             }
         },
         {
