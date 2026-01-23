@@ -8,7 +8,8 @@
       generate_descriptions_for_batch, 
       regenerate_description,
       set_current_step,
-      recalculate_batch_navigation 
+      recalculate_batch_navigation,
+      merge_proposal 
   } from "$lib/listing-creation-slice";
   import { goto } from '$app/navigation';
 
@@ -58,23 +59,41 @@
   $: isBulkEditMode = activeBatchJans.length > 0 && listingCreation.currentStepIndex === -1;
   
   // Enrich proposals with Image Data for Grid AND Variant Fields for Columns
-  $: enrichedProposals = proposals.map(p => {
-       const photos = photosState?.janCodeToPhotos?.[p.janCode];
-       // Prefer baseUrl, fallback to thumbnailLink
-       const janThumb = photos && photos.length > 0 ? (photos[0].baseUrl || photos[0].thumbnailLink) : null;
-       
-       // Flatten Variant Data (taking first variant for grid display)
-       const firstVariant = p.variants && p.variants.length > 0 ? p.variants[0] : null;
-       const inventoryItem = firstVariant ? $store.inventory.idToItem[firstVariant.itemId] : null;
-       const variantThumb = inventoryItem?.image || null;
-       
-       return { 
-           ...p, 
-           _thumbnail: variantThumb || janThumb,
-           option1Value: firstVariant ? firstVariant.option1Value : "",
-           // For simple display, using janCode as id mostly.
-           id: firstVariant ? firstVariant.itemId : p.janCode, 
-       };
+  // FLATTENED: Create one row per VARIANT, not per Proposal.
+  $: flattenedRows = proposals.flatMap(p => {
+       // If no variants defined (shouldn't happen for valid proposals), fallback to dummy
+       const variants = (p.variants && p.variants.length > 0) ? p.variants : [{ itemId: p.janCode, option1Value: "" }];
+
+       return variants.map((v: any, idx: number) => {
+            const inventoryItem = $store.inventory.idToItem[v.itemId];
+            
+            // Photo Lookup: Use Variant's JAN if possible
+            const variantJan = inventoryItem?.janCode || p.janCode;
+            const photos = photosState?.janCodeToPhotos?.[variantJan];
+            const thumb = photos && photos.length > 0 ? (photos[0].baseUrl || photos[0].thumbnailLink) : null;
+            
+            const variantThumb = inventoryItem?.image || null;
+            
+            return {
+                ...p, // Spread Shared Listing Props (Title, Handle, Price, Body, etc.)
+                
+                // Row Identity
+                rowId: v.itemId, // Unique ID for the grid row
+                id: v.itemId, // For Image Picker compatibility
+                janCode: p.janCode, // Reference to parent Proposal
+                
+                // Variant Specifics
+                variantId: v.itemId,
+                option1Value: v.option1Value,
+                
+                // Images: Variant image > Variant JAN Group Image
+                _thumbnail: variantThumb || thumb,
+                
+                // We use these for display/logic but they are derived
+                _variantIndex: idx,
+                _isPrimary: idx === 0 
+            };
+       });
   });
 
   // Redirect if Active Proposal Found (and not in Bulk Mode)
@@ -152,43 +171,49 @@
       { field: 'title', header: 'Title', width: 300, type: 'text' }, 
       { field: 'bodyHtml', header: 'Body (HTML)', width: 300, type: 'component', component: BodyHtmlCell, editable: false },
       { field: 'productCategory', header: 'Product Category', width: 150, type: 'text' },
-      { field: 'option1Name', header: 'Option1 Name', width: 120, type: 'text' }, // Added
-      { field: 'option1Value', header: 'Option1 Value', width: 100, editable: false, placeholderField: 'subtype' }, // Mapped
+      { field: 'option1Name', header: 'Option1 Name', width: 120, type: 'text' }, 
+      { field: 'option1Value', header: 'Option1 Value', width: 120, type: 'text' }, 
 
+      { field: 'price', header: 'Price', width: 100, type: 'number', align: 'right' },
       { field: 'id', header: 'Variant SKU', width: 150, editable: false },
-      { field: 'weight', header: 'Variant Grams', width: 80, type: 'number', align: 'right' },
-      { field: 'countryOfOrigin', header: 'Country of Origin', width: 120, type: 'text' },
-      { field: 'qty', header: 'Variant Inventory Qty', width: 80, type: 'number', align: 'right' },
-      { field: 'price', header: 'Variant Price', width: 80, type: 'number', align: 'right' },
-      { field: 'janCode', header: 'Variant Barcode', width: 120, editable: false },
-      // Image Src, Position, Alt Text could be added if editable, but sticking to core for creation.
+      { field: 'janCode', header: 'Barcode', width: 120, editable: false },
   ];
 
-  function handleCommit(janCode: string, field: string, value: any, index: number) {
+  function handleCommit(rowId: string, field: string, value: any, index: number) {
+      // Find the row data to get the real context
+      const row = flattenedRows.find(r => r.rowId === rowId);
+      if (!row) {
+          console.error("Could not find row for commit", rowId);
+          return;
+      }
+      
+      const janCode = row.janCode;
+
       if (field === 'handle') {
-           dispatchBroadcast(update_proposal_field({ janCode, field: 'handle', value }));
-      } else {
-           // Handle Merging Logic
-           const targetProposal = proposals.find(p => p.janCode === janCode);
-           const targetHandle = targetProposal?.handle || targetProposal?.janCode; 
+           const newHandle = value;
            
-           const currentHandle = targetProposal?.handle || generateHandle(targetProposal?.title || "", targetProposal?.janCode || "");
+           // Check for merge target
+           const targetGroup = proposals.filter(p => {
+               if (p.janCode === janCode) return false;
+               const h = p.handle || generateHandle(p.title || "", p.janCode);
+               return h === newHandle;
+           });
            
-           const isListingField = ['title', 'bodyHtml', 'productCategory', 'vendor', 'tags'].includes(field);
-           
-           if (isListingField) {
-               // Find sharing proposals
-               const sharingProposals = proposals.filter(p => {
-                   const h = p.handle || generateHandle(p.title || "", p.janCode);
-                   return h === currentHandle;
-               });
-               
-               sharingProposals.forEach(p => {
-                    dispatchBroadcast(update_proposal_field({ janCode: p.janCode, field: field as any, value }));
-               });
+           if (targetGroup.length > 0) {
+               // Merge into the first matching proposal
+               const target = targetGroup[0];
+               dispatchBroadcast(merge_proposal({ sourceJan: janCode, targetJan: target.janCode }));
            } else {
-               dispatchBroadcast(update_proposal_field({ janCode, field: field as any, value }));
+               // Just update the handle
+               dispatchBroadcast(update_proposal_field({ janCode, field: 'handle', value }));
            }
+      } else if (field === 'option1Value') {
+           console.warn("Editing option1Value not fully wired yet");
+      } else {
+           // Standard Update
+           // Since we now have "One Proposal = One Listing", we don't need to sync across multiple proposals.
+           // However, if we edit a shared field (Title), it applies to the Proposal (and thus all its variants).
+           dispatchBroadcast(update_proposal_field({ janCode, field: field as any, value }));
       }
   }
 
@@ -319,9 +344,9 @@
                 </button>
             </div>
              <BulkEditor 
-                data={enrichedProposals.filter(p => visibleBatchJans.includes(p.janCode))}
+                data={flattenedRows.filter(p => visibleBatchJans.includes(p.janCode))}
                 columns={columnConfig}
-                keyField="janCode"
+                keyField="rowId"
                 on:commit={handleBulkCommit}
                 on:imagePick={handleBulkImagePick}
                 on:editHtml={handleBulkEditHtml}
