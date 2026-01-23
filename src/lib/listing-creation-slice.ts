@@ -177,6 +177,30 @@ export interface ListingCreationState {
                state.proposals[janCode].option1Name = name;
            }
       },
+      merge_proposal: (state, action: PayloadAction<{ sourceJan: string, targetJan: string }>) => {
+          const { sourceJan, targetJan } = action.payload;
+          const source = state.proposals[sourceJan];
+          const target = state.proposals[targetJan];
+          
+          if (!source || !target || sourceJan === targetJan) return;
+          
+          // Merge Arrays
+          target.inventoryItemIds = [...new Set([...target.inventoryItemIds, ...source.inventoryItemIds])];
+          target.photoGroupIds = [...new Set([...target.photoGroupIds, ...source.photoGroupIds])];
+          target.variants = [...target.variants, ...source.variants]; // Keep duplicates? Should be unique items.
+          
+          if (source.listingOnlyImages) {
+              target.listingOnlyImages = [...(target.listingOnlyImages || []), ...source.listingOnlyImages];
+          }
+          if (source.listingImageOrder) {
+               target.listingImageOrder = [...(target.listingImageOrder || []), ...source.listingImageOrder];
+          }
+          
+          // Cleanup Source
+          delete state.proposals[sourceJan];
+          state.activeBatchJans = state.activeBatchJans.filter(j => j !== sourceJan);
+          state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
+      },
       
       // Review
       approve_proposal: (state, action: PayloadAction<{ janCode: string }>) => {
@@ -210,6 +234,7 @@ export const {
     add_listing_only_image,
     remove_listing_only_image,
     set_variant_option_name,
+    merge_proposal,
     approve_proposal,
     next_step,
     complete_batch,
@@ -564,10 +589,38 @@ export const regenerate_description = (janCode: string, customPrompt?: string): 
     }
 
     const janToPhotos = state.photos?.janCodeToPhotos || {};
-    const driveGroup = janToPhotos[janCode] || [];
+    let allPhotos: any[] = [];
     
-    if (driveGroup.length === 0) {
-        alert("No photos found for this item to generate description from.");
+    // Collect photos from all variants (including the primary JAN)
+    // The proposal itself has 'janCode', which corresponds to one variant/group usually.
+    // And 'variants' list contains ALL variants (including primary usually, or we ensure it).
+    
+    // Iterate variants to find their JANs
+    proposal.variants.forEach((v: ListingVariant) => {
+        const item = state.inventory.idToItem[v.itemId];
+        if (item && item.janCode) {
+            const photos = janToPhotos[item.janCode] || [];
+            allPhotos = [...allPhotos, ...photos];
+        }
+    });
+    
+    // Fallback: Check the proposal's own janCode just in case
+    if (allPhotos.length === 0) {
+        const photos = janToPhotos[proposal.janCode] || [];
+        allPhotos = [...allPhotos, ...photos];
+    }
+
+    // Deduplicate photos by ID or URL
+    const seenUrls = new Set();
+    allPhotos = allPhotos.filter(p => {
+        const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+        if (seenUrls.has(url)) return false;
+        seenUrls.add(url);
+        return true;
+    });
+
+    if (allPhotos.length === 0) {
+        alert("No photos found for these items to generate description from.");
         return;
     }
 
@@ -582,7 +635,7 @@ export const regenerate_description = (janCode: string, customPrompt?: string): 
         const token = getStoredToken();
         const accessToken = token?.access_token || "";
 
-        const imagesToUse = driveGroup.slice(0, 5);
+        const imagesToUse = allPhotos.slice(0, 5);
         const imagePromises = imagesToUse.map((f: any) => {
             const url = f.baseUrl || f.productUrl || f.apiUrl || f.thumbnailLink;
             return fetchImage(url, accessToken); 
