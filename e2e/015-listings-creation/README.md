@@ -10,39 +10,32 @@
 
 **Programmatic Verification:**
 - [ ] Validated header is visible
-- [ ] Validated empty state is visible
 
-### 2. Drafts Ready
+### 2. Batch Editor Variants
 
-![Drafts Ready](screenshots/001-drafts-ready.png)
-
-**Programmatic Verification:**
-- [ ] Validated drafts are ready
-
-### 3. Batch Editor
-
-![Batch Editor](screenshots/002-batch-editor.png)
+![Batch Editor Variants](screenshots/001-variants-start.png)
 
 **Programmatic Verification:**
-- [ ] Validated Batch Editor is visible
+- [ ] Validated Batch Editor is visible with 2 variant rows
 
-### 4. Review Proposal
+### 3. Variant Split
 
-![Review Proposal](screenshots/003-review-proposal.png)
-
-**Programmatic Verification:**
-- [ ] Validated redirected to listing detail with draft title
-
-### 5. Edited Proposal
-
-![Edited Proposal](screenshots/004-edited-proposal.png)
+![Variant Split](screenshots/002-variant-split.png)
 
 **Programmatic Verification:**
-- [ ] Validated edited title
+- [ ] Validated Variant Split via Handle change
 
-### 6. Batch Complete
+### 4. Variant Merge
 
-![Batch Complete](screenshots/005-batch-complete.png)
+![Variant Merge](screenshots/003-variant-merge.png)
 
 **Programmatic Verification:**
-- [ ] Validated batch complete and empty state
+- [ ] Validated Variant Merge via Handle change
+
+### 5. Review Multi-Variant
+
+![Review Multi-Variant](screenshots/004-review-multi-variant.png)
+
+**Programmatic Verification:**
+- [ ] Validated Review View for Multi-Variant
+
