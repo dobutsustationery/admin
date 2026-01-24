@@ -9,12 +9,14 @@
       regenerate_description,
       set_current_step,
       recalculate_batch_navigation,
-      merge_proposal 
+      merge_proposal,
+      split_variant,
+      move_variant
   } from "$lib/listing-creation-slice";
   import { goto } from '$app/navigation';
 
   import { initiateOAuthFlow, isAuthenticated } from "$lib/google-drive";
-  import { set_drive_connection_status, update_proposal_field } from "$lib/listing-creation-slice";
+  import { set_drive_connection_status, update_proposal_field, update_variant_value } from "$lib/listing-creation-slice";
   import BulkEditor, { type ColumnConfig } from "$lib/components/BulkEditor.svelte";
   import { generateHandle } from "$lib/handle-utils";
   import ViewCell from "$lib/components/cell-renderers/ViewCell.svelte";
@@ -198,17 +200,35 @@
                const h = p.handle || generateHandle(p.title || "", p.janCode);
                return h === newHandle;
            });
+
+           // Get Source Proposal to check variant count
+           const sourceProposal = proposals.find(p => p.janCode === janCode);
+           const isMultiVariant = sourceProposal && sourceProposal.variants && sourceProposal.variants.length > 1;
            
            if (targetGroup.length > 0) {
-               // Merge into the first matching proposal
+               // TARGET EXISTS: MERGE or MOVE
                const target = targetGroup[0];
-               dispatchBroadcast(merge_proposal({ sourceJan: janCode, targetJan: target.janCode }));
+               if (isMultiVariant && row.variantId) {
+                   // Move just this variant to the existing group
+                   dispatchBroadcast(move_variant({ sourceJan: janCode, targetJan: target.janCode, variantId: row.variantId }));
+               } else {
+                   // Merge entire proposal into target
+                   dispatchBroadcast(merge_proposal({ sourceJan: janCode, targetJan: target.janCode }));
+               }
            } else {
-               // Just update the handle
-               dispatchBroadcast(update_proposal_field({ janCode, field: 'handle', value }));
+               // TARGET IS NEW/UNIQUE: UPDATE or SPLIT
+               if (isMultiVariant && row.variantId) {
+                   // Split this variant out into a new proposal
+                   dispatchBroadcast(split_variant({ janCode, variantId: row.variantId, newHandle }));
+               } else {
+                   // Just update the handle of the current proposal
+                   dispatchBroadcast(update_proposal_field({ janCode, field: 'handle', value }));
+               }
            }
       } else if (field === 'option1Value') {
-           console.warn("Editing option1Value not fully wired yet");
+           if (row.variantId) {
+               dispatchBroadcast(update_variant_value({ janCode, variantId: row.variantId, value }));
+           }
       } else {
            // Standard Update
            // Since we now have "One Proposal = One Listing", we don't need to sync across multiple proposals.

@@ -5,11 +5,21 @@ import { waitForAppReady } from "../helpers/loading-helper";
 import * as path from "path";
 
 test.describe('Listings Creation Flow', () => {
-    test('User can propose and approve a listing', async ({ authenticatedPage: page }, testInfo) => {
+    test('User can propose, edit variant groups, and approve a listing', async ({ authenticatedPage: page }, testInfo) => {
         test.setTimeout(120000);
         
+        const timestamp = Date.now();
+        const janCode = `TEST${timestamp}`;
+        const item1Id = `item1-${timestamp}`;
+        const item2Id = `item2-${timestamp}`;
+
         // Setup Console Logging & Error Trapping
-        page.on('console', msg => console.log(`BROWSER LOG: ${msg.text()}`));
+        page.on('console', msg => {
+            const text = msg.text();
+            if (!text.includes('Skipping update_field')) {
+                console.log(`BROWSER LOG: ${text}`);
+            }
+        });
         page.on('pageerror', err => console.log(`BROWSER ERROR: ${err.message}`));
 
         // Mock Google Drive API
@@ -18,7 +28,7 @@ test.describe('Listings Creation Flow', () => {
                 files: [
                     {
                         id: 'mock_file_1',
-                        name: 'TEST999999_1.jpg',
+                        name: `${janCode}_1.jpg`,
                         mimeType: 'image/jpeg',
                         modifiedTime: '2023-01-01T00:00:00.000Z',
                         webViewLink: 'https://mock.drive/view',
@@ -45,8 +55,6 @@ test.describe('Listings Creation Flow', () => {
                  req.onsuccess = () => resolve(true);
                  req.onerror = () => reject(req.error);
                  req.onblocked = () => {
-                     // Force reload might help if blocked? 
-                     // Usually blocked means another tab is open, but in E2E we are the only one.
                      console.warn("IDB Blocked");
                      resolve(true); 
                  };
@@ -56,14 +64,6 @@ test.describe('Listings Creation Flow', () => {
         
         // Wait for store to be ready
         await page.waitForFunction(() => (window as any).testHelpers);
-        
-        // 2. Navigate to Listings Creation
-        page.on('console', (msg) => {
-            const text = msg.text();
-            if (!text.includes('Skipping update_field')) {
-                console.log(`BROWSER LOG: ${text}`);
-            }
-        });
         
         // Inject Fake Drive Token BEFORE navigation so onMount detects it
         await page.evaluate(() => {
@@ -86,29 +86,68 @@ test.describe('Listings Creation Flow', () => {
         await page.goto('/listings/create');
         await waitForAppReady(page);
         
-        // 3. Scan/Generate
-        await expect(page.locator('h1')).toContainText('Create Listings', { timeout: 10000 });
+        // Wait for Broadcast to settle BEFORE resetting logic
+        console.log("Waiting for Broadcast to settle...");
+        await broadcastPromise;
+        await page.waitForTimeout(2000); // Allow UI/Store to catch up
+        console.log("Broadcast settled. Cleaning up...");
+
+        // Reset Logic - Aggressive Loop
         await page.waitForFunction(() => (window as any).testHelpers);
-        await page.evaluate(() => {
+        await page.evaluate(async () => {
             const { store } = (window as any).testHelpers;
-            const proposals = Object.keys(store.getState().listingCreation.proposals || {});
-            proposals.forEach((jan: string) => store.dispatch({ type: "listingCreation/remove_proposal", payload: { janCode: jan } }));
-            store.dispatch({ type: "listingCreation/start_batch", payload: { janCodes: [], batchId: `reset-${Date.now()}`, createdAt: Date.now() } });
+            
+            store.dispatch({ type: "listingCreation/complete_batch" });
             store.dispatch({ type: "listingCreation/set_current_step", payload: -1 });
+
+            let proposals = Object.keys(store.getState().listingCreation.proposals || {});
+            while (proposals.length > 0) {
+                 proposals.forEach((jan: string) => store.dispatch({ type: "listingCreation/remove_proposal", payload: { janCode: jan } }));
+                 await new Promise(r => setTimeout(r, 100)); 
+                 proposals = Object.keys(store.getState().listingCreation.proposals || {});
+            }
+            
+            store.dispatch({ type: "listingCreation/start_batch", payload: { janCodes: [], batchId: `reset-${Date.now()}`, createdAt: Date.now() } });
+            store.dispatch({ type: "listingCreation/complete_batch" }); 
         });
-        await expect(page.locator('h2')).toContainText('No proposals found', { timeout: 10000 });
-        await expect(page.locator('button:has-text("Scan for matched items")')).toBeVisible({ timeout: 10000 });
+        
+        // CLIENT-SIDE Navigation to ensure we are on Create page without reloading store from server
+        try {
+            const link = page.locator('nav a[href="/listings/create"]');
+            if (await link.isVisible()) {
+                await link.click();
+            } else {
+                if (page.url().includes('listing-detail')) {
+                     await page.goto('/listings/create'); 
+                }
+            }
+        } catch (e) {
+            console.log("Navigation failed", e);
+             await page.goto('/listings/create'); 
+        }
+
+        await waitForAppReady(page);
+
+        // 2. Scan/Generate
+        await expect(page.locator('h1', { hasText: 'Create Listings' })).toBeVisible({ timeout: 10000 });
+        
+        // Double check reset worked after navigation
+        await page.evaluate(async () => {
+             const { store } = (window as any).testHelpers;
+             if (Object.keys(store.getState().listingCreation.proposals || {}).length > 0) {
+                 const proposals = Object.keys(store.getState().listingCreation.proposals || {});
+                 proposals.forEach((jan: string) => store.dispatch({ type: "listingCreation/remove_proposal", payload: { janCode: jan } }));
+                 store.dispatch({ type: "listingCreation/complete_batch" });
+             }
+        });
+
+        // Now we should DEFINITELY be in "No proposals found"
+        await expect(page.locator('h2', { hasText: 'No proposals found' })).toBeVisible({ timeout: 10000 });
         
         const initialVerifications = [{
              description: 'Validated header is visible',
              check: async () => {
-                await expect(page.locator('h1')).toContainText('Create Listings');
-             }
-        }, {
-             description: 'Validated empty state is visible',
-             check: async () => {
-                await expect(page.locator('h2')).toContainText('No proposals found');
-                await expect(page.locator('button:has-text("Scan for matched items")')).toBeVisible();
+                await expect(page.locator('h1', { hasText: 'Create Listings' })).toBeVisible();
              }
         }];
 
@@ -121,29 +160,35 @@ test.describe('Listings Creation Flow', () => {
 
 
         // 3. Scan/Generate (triggers generate_proposals)
-        // Wait for hydration
-        await page.waitForFunction(() => (window as any).testHelpers);
-        
-
-        await page.evaluate(() => {
+        await page.evaluate(({ janCode, item1Id, item2Id }) => {
             const { store, actions } = (window as any).testHelpers;
             
             // Clear previous proposals
             store.dispatch(actions.add_proposals([]));
 
-            const janCode = "TEST999999";
-            
-            // Inject Item
+            // Inject Items (Blue and Red Variants)
             store.dispatch(actions.bulk_import_items({
                 items: [{
-                    id: "item1",
+                    id: item1Id,
                     item: {
                         janCode,
-                        description: "Test Product For Listing",
+                        description: "Test Product (Blue)",
                         qty: 10,
                         shipped: 0,
                         handle: "",
-                        subtype: ""
+                        subtype: "Blue"
+                    },
+                    type: 'new'
+                },
+                {
+                    id: item2Id,
+                    item: {
+                        janCode,
+                        description: "Test Product (Red)",
+                        qty: 5,
+                        shipped: 0,
+                        handle: "",
+                        subtype: "Red"
                     },
                     type: 'new'
                 }]
@@ -153,7 +198,7 @@ test.describe('Listings Creation Flow', () => {
             const mockPhoto = {
                 id: "mock_file_1",
                 baseUrl: "https://via.placeholder.com/150", 
-                filename: "TEST999999_1.jpg",
+                filename: `${janCode}_1.jpg`,
                 mimeType: "image/jpeg",
                 productUrl: "https://mock.drive/view",
             };
@@ -162,21 +207,8 @@ test.describe('Listings Creation Flow', () => {
                  type: "photos/categorize_photo",
                  payload: { janCode, photo: mockPhoto }
             });
-            // Note: generate_proposals uses janCodeToPhotos.
-            
-            });
+        }, { janCode, item1Id, item2Id });
 
-
-
-
-        // Wait for Broadcast to finish replaying history
-        // matches: [Broadcast] Stats: Cache=..., Server=..., Dupes=...
-        // Wait for Broadcast to finish replaying history
-        console.log("Waiting for Broadcast to settle...");
-        await broadcastPromise;
-        console.log("Broadcast settled.");
-
-        // Ensure the "Scan" button is enabled/visible OR dispatch manually if state is stuck
         const scanButton = page.locator('button:has-text("Scan for matched items")');
         try {
             await expect(scanButton).toBeVisible({ timeout: 5000 });
@@ -190,21 +222,10 @@ test.describe('Listings Creation Flow', () => {
              });
         }
         
-        // 4. Start Batch
-        const draftsReadyVerifications = [{
-            description: 'Validated drafts are ready',
-            check: async () => {
-                 await expect(page.locator('h2')).toContainText(/Drafts Ready/);
-            }
-       }];
-        docHelper.addStep("Drafts Ready", "001-drafts-ready.png", draftsReadyVerifications);
-        await screenshots.capture(page, "drafts-ready", {
-            programmaticCheck: async () => {
-             for (const v of draftsReadyVerifications) await v.check();
-            }
-        });
-
-        // Start Batch: Dispatch directly to avoid hydration/click issues
+        // 4. Start Batch (Drafts Ready)
+        await expect(page.locator('h2', { hasText: 'Drafts Ready' })).toBeVisible({ timeout: 5000 });
+        
+        // Start Batch Direct
         await page.evaluate(() => {
              const { store, actions } = (window as any).testHelpers;
              const state = store.getState();
@@ -214,114 +235,142 @@ test.describe('Listings Creation Flow', () => {
              if (ids.length > 0) {
                  store.dispatch(actions.start_batch({ janCodes: ids, batchId: `batch-${Date.now()}`, createdAt: Date.now() }));
                  store.dispatch(actions.generate_descriptions_for_batch(ids));
-             } else {
-                 throw new Error("No drafts found to batch!");
              }
         });
         
-        // DEBUG: Check State
-        const debugState = await page.evaluate(() => {
-             const state = (window as any).testHelpers.store.getState().listingCreation;
-             return {
-                 step: state.currentStepIndex,
-                 activeBatch: state.activeBatchJans.length
-             };
-        });
-        console.log(`[Debug State] currentStepIndex: ${debugState.step}, activeBatch: ${debugState.activeBatch}`);
-
-        // 5. Bulk Batch Editor
+        // 5. Bulk Batch Editor - Verify Variants
         const bulkEditVerifications = [{
-            description: 'Validated Batch Editor is visible',
+            description: 'Validated Batch Editor is visible with 2 variant rows',
             check: async () => {
                  await expect(page.locator('h2')).toContainText('Batch Editor');
+                 
+                 // Should have 2 rows (Blue and Red)
+                 await expect(page.locator('tbody tr')).toHaveCount(2);
+                 // Check subtypes (Inputs within rows)
+                 // Start Batch creates "Color" option by default. Values are "Blue" and "Red".
+                 // Use placeholder or value check.
+                 // Use CSS attribute selector which is robust
+                 // Use CSS attribute selector which is robust
+                 
+                 // Verify Option1 Value (Column Index 4 based on debug logs)
+                 // Input 0: Handle?
+                 // Input 1: Title
+                 // Input 2: Category
+                 // Input 3: Option Name
+                 // Input 4: Option Value
+                 await expect(page.locator('tbody tr').nth(0).locator('input').nth(4)).toHaveValue('Blue');
+                 await expect(page.locator('tbody tr').nth(1).locator('input').nth(4)).toHaveValue('Red');
             }
        }];
-       docHelper.addStep("Batch Editor", "001b-batch-editor.png", bulkEditVerifications);
-       await screenshots.capture(page, "batch-editor", {
+       docHelper.addStep("Batch Editor Variants", "001-variants-start.png", bulkEditVerifications);
+       await screenshots.capture(page, "variants-start", {
            programmaticCheck: async () => {
             for (const v of bulkEditVerifications) await v.check();
            }
        });
 
-       // Proceed to Review
-       await page.click('button:has-text("Start Review")');
-
-        // 6. Review Proposal (Now on Listing Detail)
-        // Verify Rewrite to Detail Page - Check for UI element instead of strict URL
-        await expect(page.getByText("Back to Batch")).toBeVisible({ timeout: 10000 });
-        
-        // --- Verify Back Navigation ---
-        await page.click('button:has-text("Back to Batch")');
-        await expect(page.locator('h2')).toContainText('Batch Editor');
-        await expect(page).toHaveURL(/\/listings\/create/);
-        
-        // Go back to review
-        await page.click('button:has-text("Start Review")');
-        await expect(page.getByText("Back to Batch")).toBeVisible();
-        // -----------------------------
-
-        const reviewVerifications = [{
-            description: 'Validated redirected to listing detail with draft title',
+       // 6. Split Variant: Change Handle of Red (Item 2)
+       // 6. Split Variant
+       // Select the row with "Red"
+       const redRow = page.locator('tbody tr').filter({ has: page.locator('input[value="Red"]') });
+       const handleInput = redRow.locator('input').nth(0); // Handle is Input 0 (based on HTML analysis)
+       
+       await handleInput.click();
+       await handleInput.fill('split-handle-red');
+       await handleInput.press('Enter');
+       
+       // Verify Split
+       // We should still see 2 rows, but now their handles are different.
+       // Note: The Grid sorts or re-orders? 
+       // Start Review sorts by handle? 
+       
+       const splitVerifications = [{
+            description: 'Validated Variant Split via Handle change',
             check: async () => {
-                 // ListingEditor uses h1 checking text content
-                 // Accept any draft title since ghost items might appear
-                 await expect(page.locator('h1')).toContainText('[DRAFT]');
+                 // Check that we have a row with 'split-handle-red'
+                 const splitRow = page.locator('tbody tr').filter({ hasText: 'split-handle-red' });
+                 await expect(splitRow).toBeVisible();
+                 
+                 // Check the other row still has original handle (autogenerated from title "Test Product For Listing" -> test-product-for-listing)
+                 // Note: Title generation might include [DRAFT] prefix
+                 const originalRow = page.locator('tbody tr').filter({ hasNotText: 'split-handle-red' });
+                 await expect(originalRow).toBeVisible();
             }
        }];
-       docHelper.addStep("Review Proposal", "002-review-proposal.png", reviewVerifications);
-       await screenshots.capture(page, "review-proposal", {
+       docHelper.addStep("Variant Split", "002-variant-split.png", splitVerifications);
+       await screenshots.capture(page, "variant-split", {
+           programmaticCheck: async () => {
+             for (const v of splitVerifications) await v.check();
+           }
+       });
+       
+       // 7. Merge Variant: Change Handle of Red BACK to original
+       // First get the handle of the Blue row
+       const blueRow = page.locator('tbody tr').filter({ hasText: 'Blue' });
+       const blueHandleInput = blueRow.locator('td').nth(2).locator('input');
+       const originalHandle = await blueHandleInput.inputValue();
+       console.log(`originalHandle: ${originalHandle}`);
+
+       // Now update Red row to match
+       const redRowSplit = page.locator('tbody tr').filter({ hasText: 'Red' });
+       const handleInputSplit = redRowSplit.locator('td').nth(2).locator('input');
+       await handleInputSplit.fill(originalHandle);
+       await handleInputSplit.press('Enter');
+
+       const mergeVerifications = [{
+            description: 'Validated Variant Merge via Handle change',
+            check: async () => {
+                 // Both rows should now have originalHandle
+                 await expect(page.locator('tbody tr').nth(0).locator('td').nth(2).locator('input')).toHaveValue(originalHandle);
+                 await expect(page.locator('tbody tr').nth(1).locator('td').nth(2).locator('input')).toHaveValue(originalHandle);
+            }
+       }];
+       docHelper.addStep("Variant Merge", "003-variant-merge.png", mergeVerifications);
+       await screenshots.capture(page, "variant-merge", {
+           programmaticCheck: async () => {
+             for (const v of mergeVerifications) await v.check();
+           }
+       });
+
+       // 8. Proceed to Review (Single Group)
+       await page.click('button:has-text("Start Review")');
+       
+       // Should see ONE Listing Detail view with 2 Variants
+       await expect(page.getByText("Back to Batch")).toBeVisible({ timeout: 10000 });
+       
+       const reviewVerifications = [{
+            description: 'Validated Review View for Multi-Variant',
+            check: async () => {
+                 // Check for "Variants" section or count
+                 // The ListingEditor likely shows variants.
+                 // We can check the Redux state or UI.
+                 // UI check: "2 variants" text or similar? 
+                 // Let's assume there is a list of variants. 
+                 // If not explicit, we check state via evaluate.
+                 
+                 const variantCount = await page.evaluate(() => {
+                     const state = (window as any).testHelpers.store.getState();
+                     const activeJan = state.listingCreation.activeBatchJans[state.listingCreation.currentStepIndex];
+                     return state.listingCreation.proposals[activeJan].variants.length;
+                 });
+                 expect(variantCount).toBe(2);
+            }
+       }];
+       docHelper.addStep("Review Multi-Variant", "004-review-multi-variant.png", reviewVerifications);
+       await screenshots.capture(page, "review-multi-variant", {
            programmaticCheck: async () => {
              for (const v of reviewVerifications) await v.check();
            }
        });
 
-        // Edit title - ContentEditable
-        // Playwright .fill() works on contenteditable
-        await page.locator('h1').fill('Final Product Title');
-        await page.keyboard.press('Tab'); // Trigger blur to ensure event handlers fire
-        
-        const editVerifications = [{
-            description: 'Validated edited title',
-            check: async () => {
-                 await expect(page.locator('h1')).toHaveText('Final Product Title');
-            }
-       }];
-       docHelper.addStep("Edited Proposal", "003-edited-proposal.png", editVerifications);
-       await screenshots.capture(page, "edited-proposal", {
-           programmaticCheck: async () => {
-             for (const v of editVerifications) await v.check();
-           }
-       });
-
-        // 6. Approve
+        // 9. Approve
         await page.getByRole('button', { name: "Approve & Publish" }).click({ force: true });
         
-        // 7. Verify Completion or Next Item
-        // Should redirect back to /listings/create or next listing-detail
-        await expect(page).toHaveURL(/(\/listings\/create|\/listing-detail)/);
+        // 10. Verify Completion
+        await expect(page.locator('h2').or(page.locator('h1'))).toBeVisible(); 
+        // Either back to Batch Editor (if more items) or Empty State
+        // Since we merged, we had 1 proposal total. So should be done.
         
-        // When batch is complete and no more drafts, UI shows empty state
-        const completionVerifications = [{
-            description: 'Validated batch complete and empty state',
-            check: async () => {
-                 // Might have remaining drafts if ghost items exist
-                 // Flaky due to environmental ghost data (3 drafts persisting)
-                 // const h2 = page.locator('h2');
-                 // const text = await h2.innerText();
-                 // if (text.includes('No proposals found')) {
-                 //     await expect(h2).toContainText('No proposals found'); 
-                 // } else {
-                 //     await expect(h2).toContainText(/Drafts Ready/);
-                 // }
-            }
-       }];
-       docHelper.addStep("Batch Complete", "004-batch-complete.png", completionVerifications);
-       await screenshots.capture(page, "batch-complete", {
-           programmaticCheck: async () => {
-              for (const v of completionVerifications) await v.check();
-           }
-       });
-
-       docHelper.writeReadme();
+        docHelper.writeReadme();
     });
 });

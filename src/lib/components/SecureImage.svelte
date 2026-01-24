@@ -16,76 +16,74 @@
   import { imageQueue } from "$lib/image-queue";
 
   async function loadImage() {
-    // Reset state
-    // Reset state but KEEP objectUrl for overlay effect until new one is ready
     loading = true;
     error = "";
-    // if (objectUrl) URL.revokeObjectURL(objectUrl); // Don't revoke yet!
-    // objectUrl = ""; // Keep it!
-
-    // Handle local/generated images directly
-    // Also bypass fetch for Google and Drive URLs to avoid CORS (they don't need Auth header if public/token in URL)
-    // CRITICAL: googleapis.com contains Drive API links (files.get) which REQUIRE Auth headers.
-    // googleusercontent.com (Photos) might or might not, but we usually try auth.
-    // So we only bypass if it's NOT one of those.
-    const needsAuth = src.includes("googleusercontent.com") || src.includes("googleapis.com");
+    
+    // Check if we need auth
+    // googleusercontent.com (Photos) usually needs auth in this app context (based on user report)
+    // googleapis.com (Drive) ALWAYS needs auth
+    // Exception: lh3.googleusercontent.com is usually public and rejects Auth headers (CORS)
+    const needsAuth = (src.includes("googleusercontent.com") && !src.includes("lh3.")) || src.includes("googleapis.com");
     
     if (
         src.startsWith("data:") || 
         src.startsWith("blob:") || 
         !needsAuth
     ) {
-      if (objectUrl && objectUrl !== src) URL.revokeObjectURL(objectUrl);
+      if (objectUrl && objectUrl !== src && !objectUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(objectUrl);
+      }
       objectUrl = src;
       loading = false;
       return;
     }
     
-    // Check global token for authenticated Google Photos items
-    const token = getStoredToken();
-    if (!token && src.includes("googleusercontent.com")) {
-         console.warn("[SecureImage] No token available for", src);
-         // Should we error or try anonymous?
-         // Many drive links ARE public. Let's try queueing it plainly?
-         // But the logic below assumes we need auth if it gets here.
-         // Let's assume if we have a token, we use it. If not, we try without?
-    }
+    // Auth Mode
+    await fetchImage(src);
+  }
 
-    // Wrap fetch in Queue
-    try {
-             const headers: any = {};
-             
-             // Simple Auth Rule: If it's a Drive API URL, it needs the token.
-             // We generally assume other URLs (public web, data URIs) do not need the token 
-             // or will fail CORS if we send it unexpectedly.
-             if (token && src.includes("googleapis.com/drive")) {
-                 headers.Authorization = `Bearer ${token.access_token}`;
-             } else if (token && src.includes("googleusercontent.com")) {
-                 // Try adding auth for lh3 links too, as they might be private Picker links
-                 headers.Authorization = `Bearer ${token.access_token}`;
-             }
-             
-             const response = await fetch(src, {
-                headers,
-                referrerPolicy: "no-referrer"
-             });
+  async function fetchImage(url: string) {
+      try {
+         loading = true;
+         const token = getStoredToken();
+         const headers: any = {};
+         if (token) {
+             headers.Authorization = `Bearer ${token.access_token}`;
+         }
+         
+         const response = await fetch(url, {
+            headers,
+            referrerPolicy: "no-referrer"
+         });
 
-             if (!response.ok) {
-                 const errText = await response.text();
-                 console.error(`[SecureImage] Fetch Failed: ${response.status} ${response.statusText} - Body: ${errText}`);
-                 throw new Error(`Failed to load image: ${response.status} - ${errText.substring(0, 100)}`);
-             }
+         if (!response.ok) {
+             throw new Error(`Failed to load image: ${response.status}`);
+         }
 
-             const blob = await response.blob();
-             if (objectUrl) URL.revokeObjectURL(objectUrl); // Revoke OLD one now
-             objectUrl = URL.createObjectURL(blob);
-    } catch (e: any) {
-      console.error("SecureImage error:", e);
-      error = e.message;
-      dispatch("error", { message: error, src });
-    } finally {
+         const blob = await response.blob();
+         if (objectUrl && objectUrl !== src) URL.revokeObjectURL(objectUrl);
+         objectUrl = URL.createObjectURL(blob);
+      } catch (e: any) {
+          console.error("SecureImage fetch failed, trying direct fallback:", e);
+          // Fallback to direct load
+          if (objectUrl && objectUrl !== src) URL.revokeObjectURL(objectUrl);
+          
+          // CRITICAL: We must set objectUrl to src to let the <img> tag try to load it directly
+          // This allows the browser to handle "no-cors" opacity or standard public loading
+          objectUrl = src; 
+          loading = true; // Let the img onload/onerror handle the rest
+      } finally {
+          if (objectUrl.startsWith("blob:")) {
+              loading = false; 
+          }
+          // If fallback (src), loading is cleared by on:load/on:error
+      }
+  }
+
+  function handleImageError() {
+      console.error("Image failed to load (Direct/Fallback):", objectUrl);
+      error = "Failed to load image"; 
       loading = false;
-    }
   }
 
   import { createEventDispatcher } from "svelte";
@@ -96,7 +94,7 @@
   }
 
   onDestroy(() => {
-    if (objectUrl && !objectUrl.startsWith("data:")) {
+    if (objectUrl && !objectUrl.startsWith("data:") && !objectUrl.startsWith("http")) {
       URL.revokeObjectURL(objectUrl);
     }
   });
@@ -121,7 +119,7 @@
         style="{fillParent ? 'width: 100%; height: 100%;' : ''} {style}"
       >
         <span class="error-text" title={error}>
-          {error === "Failed to load image: 403" ? "Access Expired" : "Error"}
+          {error.includes("403") ? "Access Denied" : "Error"}
         </span>
       </div>
     {:else if objectUrl}
@@ -131,13 +129,7 @@
         class={className}
         style="{fillParent ? 'width: 100%; height: 100%; object-fit: contain;' : 'max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;'} display: block; {style}"
         referrerpolicy="no-referrer"
-        on:error={() => {
-            console.error("Image failed to load:", objectUrl);
-            error = "Failed to load image";
-            loading = false;
-            URL.revokeObjectURL(objectUrl);
-            objectUrl = ""; 
-        }}
+        on:error={handleImageError}
         on:load={() => {
             loading = false;
             error = "";

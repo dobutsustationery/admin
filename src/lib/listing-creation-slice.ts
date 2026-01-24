@@ -177,6 +177,76 @@ export interface ListingCreationState {
                state.proposals[janCode].option1Name = name;
            }
       },
+      update_variant_value: (state, action: PayloadAction<{ janCode: string, variantId: string, value: string }>) => {
+           const { janCode, variantId, value } = action.payload;
+           const proposal = state.proposals[janCode];
+           if (proposal) {
+               const variant = proposal.variants.find(v => v.itemId === variantId);
+               if (variant) {
+                   variant.option1Value = value;
+               }
+           }
+      },
+      split_variant: (state, action: PayloadAction<{ janCode: string, variantId: string, newHandle: string }>) => {
+           const { janCode, variantId, newHandle } = action.payload;
+           const source = state.proposals[janCode];
+           if (!source) return;
+           
+           // If it's the only variant, just update the handle (standard update)
+           if (source.variants.length <= 1) {
+               source.handle = newHandle;
+               return;
+           }
+
+           const variantIndex = source.variants.findIndex(v => v.itemId === variantId);
+           if (variantIndex === -1) return;
+           
+           const variant = source.variants[variantIndex];
+           
+           const newProposalId = variantId; 
+           
+           const newProposal: ListingProposal = {
+               ...source,
+               janCode: newProposalId,
+               handle: newHandle,
+               inventoryItemIds: [variantId], 
+               photoGroupIds: [...source.photoGroupIds], 
+               variants: [variant],
+               listingOnlyImages: [],
+               listingImageOrder: [],
+           };
+           
+           source.variants.splice(variantIndex, 1);
+           source.inventoryItemIds = source.inventoryItemIds.filter(id => id !== variantId);
+           
+           state.proposals[newProposalId] = newProposal;
+           state.activeBatchJans.push(newProposalId);
+           state.originalBatchJans.push(newProposalId);
+      },
+      move_variant: (state, action: PayloadAction<{ sourceJan: string, targetJan: string, variantId: string }>) => {
+           const { sourceJan, targetJan, variantId } = action.payload;
+           const source = state.proposals[sourceJan];
+           const target = state.proposals[targetJan];
+           if (!source || !target || sourceJan === targetJan) return;
+
+           const variantIndex = source.variants.findIndex(v => v.itemId === variantId);
+           if (variantIndex === -1) return;
+           const variant = source.variants[variantIndex];
+
+           // Move Variant
+           target.variants.push(variant);
+           target.inventoryItemIds.push(variantId);
+           
+           // Cleanup Source
+           source.variants.splice(variantIndex, 1);
+           source.inventoryItemIds = source.inventoryItemIds.filter(id => id !== variantId);
+           
+           if (source.variants.length === 0) {
+               delete state.proposals[sourceJan];
+               state.activeBatchJans = state.activeBatchJans.filter(j => j !== sourceJan);
+               state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
+           }
+      },
       merge_proposal: (state, action: PayloadAction<{ sourceJan: string, targetJan: string }>) => {
           const { sourceJan, targetJan } = action.payload;
           const source = state.proposals[sourceJan];
@@ -234,6 +304,9 @@ export const {
     add_listing_only_image,
     remove_listing_only_image,
     set_variant_option_name,
+    update_variant_value,
+    split_variant,
+    move_variant,
     merge_proposal,
     approve_proposal,
     next_step,
