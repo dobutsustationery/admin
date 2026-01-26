@@ -176,6 +176,7 @@
       : 'Price not set';
       
   $: stockCount = associatedItems.reduce((sum, item) => sum + (item.qty || 0), 0);
+  $: isPriceValid = associatedItems.length > 0 && (associatedItems[0].price || 0) > 0;
 </script>
 
 {#if listing}
@@ -277,8 +278,8 @@
                   contenteditable={!readOnly}
                   on:blur={handleTitleBlur}
                >{listing.title}</h1>
-               <div 
-                   class="listing-price {readOnly ? '' : 'editable'}" 
+                <div 
+                   class="listing-price {readOnly ? '' : 'editable'} {(!isPriceValid && !readOnly) ? 'invalid' : ''}" 
                    contenteditable={!readOnly}
                    on:blur={handlePriceBlur}
                >€{associatedItems[0]?.price?.toFixed(2) || '0.00'} EUR</div>
@@ -313,7 +314,7 @@
            <!-- Actions & Quantity -->
            {#if isCreationMode}
                <div class="actions-block">
-                   <button class="btn-buy-shop" on:click={() => dispatch('approve')}>
+                   <button class="btn-buy-shop" on:click={() => dispatch('approve')} disabled={!isPriceValid}>
                        Approve & Publish
                    </button>
                    <button class="btn-drop" on:click={() => dispatch('drop')}>
@@ -453,4 +454,29 @@
   .subtype-thumb-wrapper { position: relative; width: 64px; height: 64px; }
   .subtype-overlay { position: absolute; top: 0; right: 0; display: flex; gap: 1px; opacity: 0; transition: opacity 0.2s; background: rgba(0,0,0,0.6); padding: 2px; border-bottom-left-radius: 4px; }
   .subtype-thumb-wrapper:hover .subtype-overlay { opacity: 1; }
+
+  /* Validation Styles */
+  .listing-price.invalid {
+      border-color: #fca5a5; /* Red-300 */
+      background: #fef2f2; /* Red-50 */
+      color: #dc2626; /* Red-600 */
+  }
+  .listing-price.invalid:after {
+      content: "Price required";
+      display: block;
+      font-size: 0.65rem;
+      color: #dc2626;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-top: 2px;
+  }
+  
+  .btn-buy-shop:disabled {
+      background: #9ca3af; /* Gray-400 */
+      cursor: not-allowed;
+      opacity: 0.7;
+  }
+  .btn-buy-shop:disabled:hover {
+      background: #9ca3af;
+  }
 </style>
