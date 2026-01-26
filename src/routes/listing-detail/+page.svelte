@@ -117,10 +117,14 @@
 
                        const item = $store.inventory.idToItem[id];
                        if (item) {
+                           // Find variant definition in proposal to get draft option values
+                           const variant = (p.variants || []).find((v: any) => v.itemId === id);
+                           
                            associatedItems.push({
                                ...item,
                                id,
-                               price: p.price !== undefined ? p.price : item.price 
+                               price: p.price !== undefined ? p.price : item.price,
+                               subtype: variant?.option1Value || item.subtype // Prefer draft value
                            });
                        }
                   });
