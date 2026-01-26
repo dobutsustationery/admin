@@ -399,7 +399,7 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          // Determine Handle
          const finalHandle = proposal.handle || generateHandle(proposal.title, proposal.janCode);
 
-         // A. Update Inventory Items (Price + Handle)
+         // A. Update Inventory Items (Price + Handle + Subtype)
          proposal.inventoryItemIds.forEach((id: string) => {
              // Commit Price if set
              if (proposal.price !== undefined) {
@@ -407,6 +407,14 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
              }
              // Commit Handle (Crucial for merging)
              dispatch(update_field({ id, field: 'handle', from: "", to: finalHandle }));
+         });
+         
+         // Commit Subtypes (from variants)
+         proposal.variants.forEach((v) => {
+             console.log("APPROVE DEBUG: variant", v.itemId, v.option1Value);
+             if (v.option1Value) {
+                 dispatch(update_field({ id: v.itemId, field: 'subtype', from: "", to: v.option1Value }));
+             }
          });
 
          // B. Create/Update Listing
