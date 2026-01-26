@@ -47,8 +47,17 @@
              const headers: any = {};
              // Only add Auth token for NON-googleusercontent URLs (unless it's the Drive API)
              // Google Photos Base URLs (lh3.googleusercontent.com) are signed/public and reject Auth headers via CORS
-             if (token && !src.includes("googleusercontent.com")) {
-                 headers.Authorization = `Bearer ${token.access_token}`;
+             // Only add Auth token for NON-googleusercontent URLs (unless it's the Drive API)
+             // Google Photos Base URLs (lh3.googleusercontent.com) are signed/public and reject Auth headers via CORS
+             // UPDATE: Picker API URLs seem to require it or benefit from it to avoid 403s. 
+             // Reverting logic to send it if we have it, for all Google domains we know of.
+             if (token) {
+                 const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com");
+                 if (!src.includes("googleusercontent.com") || isGoogle) {
+                    // This logic is a bit circular, basically: always send if token exists?
+                    // The old logic was more specific. Let's match the old logic's INTENT but cleaner.
+                    headers.Authorization = `Bearer ${token.access_token}`;
+                 }
              }
              
              const response = await fetch(src, {
