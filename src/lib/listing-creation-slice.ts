@@ -270,6 +270,36 @@ export interface ListingCreationState {
           delete state.proposals[sourceJan];
           state.activeBatchJans = state.activeBatchJans.filter(j => j !== sourceJan);
           state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
+          state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
+      },
+      import_existing_variants: (state, action: PayloadAction<{ janCode: string, handle: string, items: Record<string, Item> }>) => {
+           const { janCode, handle, items } = action.payload;
+           const proposal = state.proposals[janCode];
+           if (!proposal) return;
+           
+           // Find items strictly matching handle
+           const matches: { id: string, item: Item }[] = [];
+           for (const [id, item] of Object.entries(items)) {
+               if (item.handle === handle) {
+                   matches.push({ id, item });
+               }
+           }
+           
+           if (matches.length === 0) return;
+           
+           // Add them to proposal
+           matches.forEach(({ id, item }) => {
+               if (!proposal.inventoryItemIds.includes(id)) {
+                   proposal.inventoryItemIds.push(id);
+                   proposal.variants.push({
+                        itemId: id,
+                        option1Value: item.subtype || "Default"
+                   });
+               }
+           });
+           
+           // Ensure defaults from existing sort of stick?
+           // The thunk already updated title/body.
       },
       
       // Review
@@ -308,6 +338,7 @@ export const {
     split_variant,
     move_variant,
     merge_proposal,
+    import_existing_variants,
     approve_proposal,
     next_step,
     complete_batch,
@@ -477,9 +508,9 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          const existingListing = state.listings.handleToListing[finalHandle];
          if (existingListing) {
              // Merge Images
-            const combinedImages = [...(existingListing.images || []), ...mergedImages];
-             // Re-index positions
-             combinedImages.forEach((img, i) => img.position = i + 1);
+             // Use map to deep clone (shallow ref is frozen) and re-index
+             const combinedImages = [...(existingListing.images || []), ...mergedImages]
+                .map((img, i) => ({ ...img, position: i + 1 }));
              
              dispatch(create_listing({ listing: { ...existingListing, ...listing, images: combinedImages } }));
          } else {
@@ -748,7 +779,84 @@ export const regenerate_description = (janCode: string, customPrompt?: string): 
                  field: 'bodyHtml', 
                  value: `<p>Failed to generate description. Error: ${e.message}</p>` 
              }));
-    } finally {
-        dispatch(update_proposal_field({ janCode, field: 'isGeneratingDescription', value: false }));
+    }
+};
+
+export const set_proposal_handle_thunk = (janCode: string, variantId: string | undefined, newHandle: string): AppThunk => (dispatch, getState) => {
+    const state = getState();
+    const proposals = Object.values(state.listingCreation.proposals);
+    const sourceProposal = state.listingCreation.proposals[janCode];
+    if (!sourceProposal) return;
+
+    // 1. Check for Merge Target (Active Proposal)
+    const targetGroup = proposals.filter(p => {
+        if (p.janCode === janCode) return false;
+        const h = p.handle || generateHandle(p.title || "", p.janCode);
+        return h === newHandle;
+    });
+
+    if (targetGroup.length > 0) {
+        // SCENARIO A: Target Exists (Draft Merge)
+        const target = targetGroup[0];
+        const isMultiVariant = sourceProposal.variants && sourceProposal.variants.length > 1;
+
+        if (isMultiVariant && variantId) {
+             // Move just this variant
+             dispatch(move_variant({ sourceJan: janCode, targetJan: target.janCode, variantId }));
+        } else {
+             // Merge entire proposal
+             dispatch(merge_proposal({ sourceJan: janCode, targetJan: target.janCode }));
+        }
+    } else {
+        // SCENARIO B: Check for Existing Listing (Store Persisted State)
+        const existingListing = state.listings.handleToListing[newHandle];
+        
+        if (existingListing) {
+            // Merge with Existing Listing
+            // 1. Import Context (Title, Body, etc.) - Update Proposal to match existing "Truth"
+            dispatch(update_proposal_field({ janCode, field: 'title', value: existingListing.title }));
+            dispatch(update_proposal_field({ janCode, field: 'bodyHtml', value: existingListing.bodyHtml }));
+            dispatch(update_proposal_field({ janCode, field: 'productCategory', value: existingListing.productCategory }));
+            dispatch(update_proposal_field({ janCode, field: 'vendor', value: existingListing.vendor }));
+            dispatch(update_proposal_field({ janCode, field: 'tags', value: existingListing.tags || [] }));
+            dispatch(update_proposal_field({ janCode, field: 'option1Name', value: existingListing.option1Name || "Option" }));
+
+            // 2. Set Handle (This links them)
+            const isMultiVariant = sourceProposal.variants && sourceProposal.variants.length > 1;
+             if (isMultiVariant && variantId) {
+                 dispatch(split_variant({ janCode, variantId, newHandle }));
+                 // Hack to follow up
+                 setTimeout(() => {
+                      dispatch(set_proposal_handle_thunk(variantId, undefined, newHandle));
+                 }, 50);
+                 return; 
+             } else {
+                 dispatch(update_proposal_field({ janCode, field: 'handle', value: newHandle }));
+             }
+
+            // 3. Import Existing Variants
+            // Find inventory items with this handle
+            Object.entries(state.inventory.idToItem).forEach(([id, item]) => {
+                if (item.handle === newHandle) {
+                     // Check if already in proposal?
+                     if (!sourceProposal.inventoryItemIds.includes(id)) {
+                         // Add as variant (We can't use existing actions easily for "Add Variant" without "Merge")
+                     }
+                }
+            });
+            
+            // Dispatch the import action (Need to create it)
+            dispatch(import_existing_variants({ janCode, handle: newHandle, items: state.inventory.idToItem }));
+
+        } else {
+            // SCENARIO C: New Handle (Update or Split)
+            const isMultiVariant = sourceProposal.variants && sourceProposal.variants.length > 1;
+
+            if (isMultiVariant && variantId) {
+                 dispatch(split_variant({ janCode, variantId, newHandle }));
+            } else {
+                 dispatch(update_proposal_field({ janCode, field: 'handle', value: newHandle }));
+            }
+        }
     }
 };

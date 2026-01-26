@@ -139,7 +139,25 @@ Every user interaction corresponds to a specific Redux action. These actions are
 *   **`SET_VARIANT_VALUE`**
     *   *Trigger*: User changes the value for a specific SKU (e.g. "Blue").
     *   *Payload*: `{ janCode: string, itemId: string, value: string }`.
+    *   *Payload*: `{ janCode: string, itemId: string, value: string }`.
     *   *Effect*: Updates the specific variant entry.
+
+#### 4.5 Handle Merging & Consolidation
+When a user edits the **Handle** field (e.g., changing `red-pen` to `pen-collection`), the system must dynamically consolidate context.
+
+*   **Scenario A: Merging Proposals**
+    *   If the new handle matches another **active proposal** in the current batch:
+    *   **Action**: The two proposals merge.
+    *   **UI**: The items from the other proposal move into the current proposal's "Variants" list. The other proposal is removed from the main list.
+
+*   **Scenario B: Appending to Existing Listing**
+    *   If the new handle matches an **active Shopify Listing** (or existing Inventory Items not in the batch):
+    *   **Action**: The system fetches the existing listing details (Title, Description, Images) and existing variants.
+    *   **UI**:
+        *   The Proposal switches mode to "Update Existing".
+        *   Existing variants appear in the list (read-only or editable depending on permissions).
+        *   The new items are added as *new variants* to this existing family.
+        *   Title/Body fields may be overwritten by the existing listing's data (source of truth).
 
 *   **`ADD_TAG` / `REMOVE_TAG`**
     *   *Trigger*: User manages tags.
