@@ -25,7 +25,9 @@ import listingCreation, {
   add_proposals, 
   start_batch, 
   generate_descriptions_for_batch,
-  generate_proposals
+  generate_proposals,
+  set_drive_connection_status,
+  approve_proposal_thunk
 } from "./listing-creation-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 import { devtoolsMiddleware, logAction } from "./devtools-middleware";
@@ -380,7 +382,9 @@ if (typeof window !== "undefined") {
               categorize_photo,
               start_batch,
               generate_descriptions_for_batch,
-              generate_proposals
+              generate_proposals,
+              set_drive_connection_status,
+              approve_proposal_thunk
           }
       };
       console.log("[Redux] Exposed window.testHelpers for E2E testing");
