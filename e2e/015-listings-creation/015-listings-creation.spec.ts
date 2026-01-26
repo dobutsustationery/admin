@@ -208,6 +208,32 @@ test.describe('Listings Creation Flow', () => {
                  payload: { janCode, photo: mockPhoto }
             });
         }, { janCode, item1Id, item2Id });
+            
+        await page.waitForFunction(() => (window as any).testHelpers);
+        
+        // Inject Existing Listing for Merge Test
+        await page.evaluate(() => {
+             const { store } = (window as any).testHelpers;
+             store.dispatch({
+                 type: "create_listing",
+                 payload: {
+                     listing: {
+                         handle: "existing-product",
+                         title: "Existing Product Title",
+                         bodyHtml: "<p>Existing Body</p>",
+                         productCategory: "Existing Cat",
+                         vendor: "Dobutsu",
+                         tags: ["existing-tag"],
+                         option1Name: "Color",
+                         images: [],
+                         status: 'active',
+                         lastUpdated: Date.now()
+                     }
+                 }
+             });
+             // Verified injection via debug logs previously
+        });
+        console.log("Injection done");
 
         const scanButton = page.locator('button:has-text("Scan for matched items")');
         try {
@@ -337,6 +363,34 @@ test.describe('Listings Creation Flow', () => {
        });
 
        // 8. Proceed to Review (Single Group)
+       
+       // 8a. Test Merge with Existing Listing
+       // Change handle to 'existing-product'
+       
+       // Update handle of the merged group (currently 'merged-handle') to 'existing-product'
+       // At this point we have 1 proposal (merged) with 2 variants.
+       const row = page.locator('tbody tr').nth(0);
+       const hInput = row.locator('input').nth(0);
+       await hInput.fill('existing-product');
+       await hInput.press('Enter');
+
+       // Verify Context Update
+        const mergeExistingVerifications = [{
+            description: 'Validated Merge with Existing Listing',
+            check: async () => {
+                 // Title should update to "Existing Product Title"
+                 await expect(page.locator('tbody tr').nth(0).locator('input').nth(1)).toHaveValue('Existing Product Title');
+                 // Should still have 2 rows
+                 await expect(page.locator('tbody tr')).toHaveCount(2);
+            }
+       }];
+       docHelper.addStep("Merge Existing", "003b-merge-existing.png", mergeExistingVerifications);
+       await screenshots.capture(page, "merge-existing", {
+           programmaticCheck: async () => {
+             for (const v of mergeExistingVerifications) await v.check();
+           }
+       });
+
        await page.click('button:has-text("Start Review")');
        
        // Should see ONE Listing Detail view with 2 Variants

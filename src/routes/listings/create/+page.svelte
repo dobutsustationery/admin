@@ -9,6 +9,8 @@
       regenerate_description,
       set_current_step,
       recalculate_batch_navigation,
+      recalculate_batch_navigation,
+      set_proposal_handle_thunk,
       merge_proposal,
       split_variant,
       move_variant
@@ -129,6 +131,10 @@
   });
   
   function dispatchBroadcast(action: any) {
+    if (typeof action === 'function') {
+        return action(dispatchBroadcast, store.getState);
+    }
+
     if ($user && $user.uid) {
         broadcast(firestore, $user.uid, action);
     } else {
@@ -193,38 +199,7 @@
 
       if (field === 'handle') {
            const newHandle = value;
-           
-           // Check for merge target
-           const targetGroup = proposals.filter(p => {
-               if (p.janCode === janCode) return false;
-               const h = p.handle || generateHandle(p.title || "", p.janCode);
-               return h === newHandle;
-           });
-
-           // Get Source Proposal to check variant count
-           const sourceProposal = proposals.find(p => p.janCode === janCode);
-           const isMultiVariant = sourceProposal && sourceProposal.variants && sourceProposal.variants.length > 1;
-           
-           if (targetGroup.length > 0) {
-               // TARGET EXISTS: MERGE or MOVE
-               const target = targetGroup[0];
-               if (isMultiVariant && row.variantId) {
-                   // Move just this variant to the existing group
-                   dispatchBroadcast(move_variant({ sourceJan: janCode, targetJan: target.janCode, variantId: row.variantId }));
-               } else {
-                   // Merge entire proposal into target
-                   dispatchBroadcast(merge_proposal({ sourceJan: janCode, targetJan: target.janCode }));
-               }
-           } else {
-               // TARGET IS NEW/UNIQUE: UPDATE or SPLIT
-               if (isMultiVariant && row.variantId) {
-                   // Split this variant out into a new proposal
-                   dispatchBroadcast(split_variant({ janCode, variantId: row.variantId, newHandle }));
-               } else {
-                   // Just update the handle of the current proposal
-                   dispatchBroadcast(update_proposal_field({ janCode, field: 'handle', value }));
-               }
-           }
+           dispatchBroadcast(set_proposal_handle_thunk(janCode, row.variantId, newHandle));
       } else if (field === 'option1Value') {
            if (row.variantId) {
                dispatchBroadcast(update_variant_value({ janCode, variantId: row.variantId, value }));
