@@ -90,15 +90,19 @@
           // Fetch Blob
           // Use high-res URL if possible (Photos), otherwise use raw (Drive API)
           let fetchUrl = item.baseUrl;
-          if (!fetchUrl.includes("googleapis.com") && !fetchUrl.includes("drive.google.com")) {
+          // PPA URLs (googleusercontent) might not support params or it breaks signature.
+          // Only append for non-google URLs (if any exist?) or strict Drive API (which usually doesn't need suffixes but params).
+          if (!fetchUrl.includes("googleapis.com") && !fetchUrl.includes("drive.google.com") && !fetchUrl.includes("googleusercontent.com")) {
                fetchUrl += HIGH_RES_SUFFIX;
           }
           
-          const headers: any = {};
-          // STRICTLY exclude googleusercontent.com from Auth headers (they are public/signed or session-based)
-          if (!fetchUrl.includes("googleusercontent.com")) {
-              headers.Authorization = `Bearer ${accessToken}`;
-          }
+          // Debug
+          console.log(`[UploadManager] Fetching ${fetchUrl} for ${item.id}`);
+
+          // PPA URLs require Auth header and 'photospicker.mediaitems.readonly' scope.
+          const headers: any = {
+              Authorization: `Bearer ${accessToken}`
+          };
 
           const resp = await fetch(fetchUrl, { 
               headers,
@@ -106,6 +110,11 @@
           });
           
           if (!resp.ok) {
+              // Log the text body for 403 details if possible (though CORS might block reading it)
+              try {
+                  const errText = await resp.text();
+                  console.error(`[UploadManager] Fetch error body:`, errText);
+              } catch (e) { /* ignore cors block */ }
               throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);
           }
           
