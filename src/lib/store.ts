@@ -27,7 +27,8 @@ import listingCreation, {
   generate_descriptions_for_batch,
   generate_proposals,
   set_drive_connection_status,
-  approve_proposal_thunk
+  approve_proposal_thunk,
+  add_variants_internal
 } from "./listing-creation-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 import { devtoolsMiddleware, logAction } from "./devtools-middleware";
@@ -227,6 +228,32 @@ export const rootReducer = (state: any, action: any) => {
       };
       logAction(markAction, nextState, action._timestamp); // LOG SUB-ACTION
     }
+  }
+
+  // Import Existing Variants (Listing Creation)
+  if (action.type === "listingCreation/import_existing_variants" && state.inventory) {
+      const { janCode, handle } = action.payload;
+      
+      const matchedItems: { id: string, item: Item }[] = [];
+      Object.entries(state.inventory.idToItem).forEach(([id, item]) => {
+          if ((item as Item).handle === handle) {
+               matchedItems.push({ id, item: item as Item });
+          }
+      });
+
+      if (matchedItems.length > 0) {
+          const internalAction = {
+              ...add_variants_internal({ janCode, items: matchedItems }),
+              _ephemeral: true,
+              timestamp: action._timestamp
+          };
+          
+          nextState = {
+              ...nextState,
+              listingCreation: listingCreation(nextState.listingCreation, internalAction)
+          };
+          logAction(internalAction, nextState, action._timestamp);
+      }
   }
 
   // Listing Creation Global Config Persistence

@@ -274,7 +274,11 @@ export interface ListingCreationState {
           state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
           state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
       },
-      import_existing_variants: (state, action: PayloadAction<{ janCode: string, items: { id: string, item: Item }[] }>) => {
+      import_existing_variants: (state, action: PayloadAction<{ janCode: string, handle: string }>) => {
+           // Represents the user intent to import existing variants for this handle.
+           // The logic to find and add the items is handled by the root reducer / middleware.
+      },
+      add_variants_internal: (state, action: PayloadAction<{ janCode: string, items: { id: string, item: Item }[] }>) => {
            const { janCode, items } = action.payload;
            const proposal = state.proposals[janCode];
            if (!proposal) return;
@@ -289,9 +293,6 @@ export interface ListingCreationState {
                    });
                }
            });
-           
-           // Ensure defaults from existing sort of stick?
-           // The thunk already updated title/body.
       },
       
       // Review
@@ -336,6 +337,7 @@ export const {
     move_variant,
     merge_proposal,
     import_existing_variants,
+    add_variants_internal,
     approve_proposal,
     next_step,
     complete_batch,
@@ -832,18 +834,9 @@ export const set_proposal_handle_thunk = (janCode: string, variantId: string | u
              }
 
             // 3. Import Existing Variants
-            // Find inventory items with this handle
-            const matchedItems: { id: string, item: Item }[] = [];
-            Object.entries(state.inventory.idToItem).forEach(([id, item]) => {
-                if ((item as Item).handle === newHandle) {
-                     matchedItems.push({ id, item: item as Item });
-                }
-            });
-            
-            // Dispatch the import action with filtered list
-            if (matchedItems.length > 0) {
-                dispatch(import_existing_variants({ janCode, items: matchedItems }));
-            }
+            // Dispatch the intent to import existing variants for this handle.
+            // The root reducer will intercept this, look up the items in inventory, and apply them.
+            dispatch(import_existing_variants({ janCode, handle: newHandle }));
 
         } else {
             // SCENARIO C: New Handle (Update or Split)
