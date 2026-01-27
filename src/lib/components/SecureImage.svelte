@@ -22,12 +22,7 @@
     objectUrl = "";
 
     // Handle local/generated images directly
-    // Also bypass fetch for Google Photos URLs to avoid CORS (let browser handle it naturally)
-    if (
-        src.startsWith("data:") || 
-        src.startsWith("blob:") || 
-        src.includes("googleusercontent.com")
-    ) {
+    if (src.startsWith("data:") || src.startsWith("blob:")) {
       objectUrl = src;
       loading = false;
       return;
@@ -35,30 +30,16 @@
     
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
-    if (!token && src.includes("googleusercontent.com")) {
-         // Should we error or try anonymous?
-         // Many drive links ARE public. Let's try queueing it plainly?
-         // But the logic below assumes we need auth if it gets here.
-         // Let's assume if we have a token, we use it. If not, we try without?
-    }
 
     // Wrap fetch in Queue
     try {
         await imageQueue.add(async () => {
              const headers: any = {};
-             // Only add Auth token for NON-googleusercontent URLs (unless it's the Drive API)
-             // Google Photos Base URLs (lh3.googleusercontent.com) are signed/public and reject Auth headers via CORS
-             // Only add Auth token for NON-googleusercontent URLs (unless it's the Drive API)
-             // Google Photos Base URLs (lh3.googleusercontent.com) are signed/public and reject Auth headers via CORS
-             // UPDATE: Picker API URLs seem to require it or benefit from it to avoid 403s. 
-             // Reverting logic to send it if we have it, for all Google domains we know of.
+             
+             // PPA (Photos Picker API) URLs (on googleusercontent.com) REQUIRE Authentication.
+             // We must send the token.
              if (token) {
-                 const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com");
-                 if (!src.includes("googleusercontent.com") || isGoogle) {
-                    // This logic is a bit circular, basically: always send if token exists?
-                    // The old logic was more specific. Let's match the old logic's INTENT but cleaner.
-                    headers.Authorization = `Bearer ${token.access_token}`;
-                 }
+                 headers.Authorization = `Bearer ${token.access_token}`;
              }
              
              const response = await fetch(src, {
