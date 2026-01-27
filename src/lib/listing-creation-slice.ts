@@ -3,7 +3,7 @@ import type { AnyAction } from "redux";
 import type { GlobalState } from "./store";
 import { update_field, type Item } from "./inventory";
 import { imagePrompt, fetchImage } from "./gemini-client";
-import { getStoredToken } from "./google-drive";
+import { getStoredToken } from "./google-photos";
 import { create_listing, type Listing, type ListingImage } from "./listings-slice";
 
 // Define AppThunk locally if not exported
