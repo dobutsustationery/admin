@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from "$lib/store";
+  import Celebration from "$lib/components/Celebration.svelte";
   // HMR Trigger
   import { onMount } from "svelte";
   import { 
@@ -50,6 +51,19 @@
   let showDescPromptModal = false;
   let descPromptValue = "";
   
+  let showCelebration = false;
+  let lastSeenBatchId: string | undefined = undefined;
+
+  $: completedBatchId = listingCreation.lastCompletedBatchId;
+  $: if (typeof completedBatchId === 'string' && completedBatchId !== lastSeenBatchId) {
+      lastSeenBatchId = completedBatchId;
+      showCelebration = true;
+      setTimeout(() => {
+          showCelebration = false;
+      }, 5500); // 5.5s to cover animation
+  } else if (completedBatchId === undefined) {
+      showCelebration = false;
+  }
 
   // Derived
   $: hasOrganizedPhotos = photosState && photosState.janCodeToPhotos && Object.keys(photosState.janCodeToPhotos).length > 0;
@@ -318,6 +332,10 @@
 <div class="container mx-auto p-6">
     <h1 class="text-3xl font-bold mb-6">Create Listings</h1>
     
+    {#if showCelebration}
+        <Celebration />
+    {/if}
+
     {#if driveStatus === 'disconnected'}
         <div class="bg-yellow-50 p-8 rounded border border-yellow-200 text-center">
             <h2 class="text-xl font-bold mb-4 text-yellow-800">Google Drive Connection Required</h2>

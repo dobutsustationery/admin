@@ -109,6 +109,7 @@ test.describe('Listings Creation Flow', () => {
             
             store.dispatch({ type: "listingCreation/start_batch", payload: { janCodes: [], batchId: `reset-${Date.now()}`, createdAt: Date.now() } });
             store.dispatch({ type: "listingCreation/complete_batch" }); 
+            store.dispatch({ type: "listingCreation/clear_celebration" }); 
         });
         
         // CLIENT-SIDE Navigation to ensure we are on Create page without reloading store from server
