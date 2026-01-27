@@ -6,6 +6,7 @@
   export let alt: string = "";
   export let className: string = "";
   export let style: string = "";
+  export let isUploading: boolean = false;
 
   let objectUrl: string = "";
   let error = "";
@@ -21,11 +22,11 @@
     objectUrl = "";
 
     // Handle local/generated images directly
-    // Also bypass fetch for Google and Drive URLs to avoid CORS (they don't need Auth header if public/token in URL)
+    // Also bypass fetch for Google Photos URLs to avoid CORS (let browser handle it naturally)
     if (
         src.startsWith("data:") || 
         src.startsWith("blob:") || 
-        !src.includes("googleusercontent.com")
+        src.includes("googleusercontent.com")
     ) {
       objectUrl = src;
       loading = false;
