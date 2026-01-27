@@ -59,6 +59,7 @@ export interface ListingCreationState {
   driveConnectionStatus: 'unknown' | 'connected' | 'disconnected';
   activeBatchId?: string;
   activeBatchCreatedAt?: number;
+  lastCompletedBatchId?: string; // For UI celebration triggers
   
   // Global Defaults (Persisted)
   globalTitlePrompt?: string;
@@ -112,6 +113,7 @@ export interface ListingCreationState {
           state.currentStepIndex = -1; // -1 = Batch Overview / Bulk Edit
           state.activeBatchId = action.payload.batchId;
           state.activeBatchCreatedAt = action.payload.createdAt ?? Date.now();
+          state.lastCompletedBatchId = undefined;
       },
       set_current_step: (state, action: PayloadAction<number>) => {
           state.currentStepIndex = action.payload;
@@ -315,11 +317,16 @@ export interface ListingCreationState {
           state.currentStepIndex++;
       },
       complete_batch: (state) => {
+          if (state.activeBatchId) {
+             state.lastCompletedBatchId = state.activeBatchId;
+          }
           state.activeBatchJans = [];
           state.currentStepIndex = 0;
           state.activeBatchId = undefined;
           state.activeBatchCreatedAt = undefined;
-          // Optionally archive proposals here
+      },
+      clear_celebration: (state) => {
+          state.lastCompletedBatchId = undefined;
       }
     },
   });
@@ -342,6 +349,7 @@ export const {
     approve_proposal,
     next_step,
     complete_batch,
+    clear_celebration,
     set_current_step,
     recalculate_batch_navigation
 } = listingCreationSlice.actions;
@@ -441,7 +449,7 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          });
          
          // Commit Subtypes (from variants)
-         proposal.variants.forEach((v) => {
+         proposal.variants.forEach((v: ListingVariant) => {
              console.log("APPROVE DEBUG: variant", v.itemId, v.option1Value);
              if (v.option1Value) {
                  dispatch(update_field({ id: v.itemId, field: 'subtype', from: "", to: v.option1Value }));
@@ -519,27 +527,28 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
 
          // Remove all proposals sharing this handle to avoid stale drafts
          const allProposals = getState().listingCreation.proposals;
-         const matchingJans = (Object.values(allProposals) as ListingProposal[])
+         const removedJans = (Object.values(allProposals) as ListingProposal[])
              .filter((p) => {
                  const h = p.handle || generateHandle(p.title, p.janCode);
                  return h === finalHandle;
              })
              .map((p) => p.janCode);
-         matchingJans.forEach(jan => dispatch(remove_proposal({ janCode: jan })));
-    }
+         removedJans.forEach(jan => dispatch(remove_proposal({ janCode: jan })));
 
-    // 3. Advance UI
-    const updatedState = getState().listingCreation;
-    const remaining = updatedState.activeBatchJans.length;
-    if (remaining === 0) {
-        dispatch(complete_batch());
-        return;
+         // 3. Advance UI
+         const currentActive = getState().listingCreation.activeBatchJans;
+         const remainingCount = currentActive.filter(j => !removedJans.includes(j)).length;
+         
+         if (remainingCount === 0) {
+             dispatch(complete_batch());
+             return;
+         }
+         
+         let nextIndex = getState().listingCreation.currentStepIndex;
+         if (nextIndex < 0) nextIndex = 0;
+         if (nextIndex >= remainingCount) nextIndex = 0;
+         dispatch(set_current_step(nextIndex));
     }
-
-    let nextIndex = updatedState.currentStepIndex;
-    if (nextIndex < 0) nextIndex = 0;
-    if (nextIndex >= remaining) nextIndex = 0;
-    dispatch(set_current_step(nextIndex));
 };
 
 export const generate_descriptions_for_batch = (janCodes: string[]): AppThunk => async (dispatch, getState) => {
@@ -784,12 +793,12 @@ export const regenerate_description = (janCode: string, customPrompt?: string): 
 
 export const set_proposal_handle_thunk = (janCode: string, variantId: string | undefined, newHandle: string): AppThunk => (dispatch, getState) => {
     const state = getState();
-    const proposals = Object.values(state.listingCreation.proposals);
+    const proposals = Object.values(state.listingCreation.proposals) as ListingProposal[];
     const sourceProposal = state.listingCreation.proposals[janCode];
     if (!sourceProposal) return;
 
     // 1. Check for Merge Target (Active Proposal)
-    const targetGroup = proposals.filter(p => {
+    const targetGroup = proposals.filter((p: ListingProposal) => {
         if (p.janCode === janCode) return false;
         const h = p.handle || generateHandle(p.title || "", p.janCode);
         return h === newHandle;
@@ -797,11 +806,11 @@ export const set_proposal_handle_thunk = (janCode: string, variantId: string | u
 
     if (targetGroup.length > 0) {
         // SCENARIO A: Target Exists (Draft Merge)
-        const target = targetGroup[0];
+        const target = targetGroup[0] as ListingProposal;
         const isMultiVariant = sourceProposal.variants && sourceProposal.variants.length > 1;
 
         if (isMultiVariant && variantId) {
-             // Move just this variant
+             // Move just this variant.
              dispatch(move_variant({ sourceJan: janCode, targetJan: target.janCode, variantId }));
         } else {
              // Merge entire proposal
@@ -825,10 +834,8 @@ export const set_proposal_handle_thunk = (janCode: string, variantId: string | u
             const isMultiVariant = sourceProposal.variants && sourceProposal.variants.length > 1;
              if (isMultiVariant && variantId) {
                  dispatch(split_variant({ janCode, variantId, newHandle }));
-                 // Hack to follow up
-                 setTimeout(() => {
-                      dispatch(set_proposal_handle_thunk(variantId, undefined, newHandle));
-                 }, 50);
+                 // Follow up synchronously
+                 dispatch(set_proposal_handle_thunk(variantId, undefined, newHandle));
                  return; 
              } else {
                  dispatch(update_proposal_field({ janCode, field: 'handle', value: newHandle }));
@@ -837,7 +844,7 @@ export const set_proposal_handle_thunk = (janCode: string, variantId: string | u
             // 3. Import Existing Variants
             // Find inventory items with this handle
             Object.entries(state.inventory.idToItem).forEach(([id, item]) => {
-                if (item.handle === newHandle) {
+                if ((item as Item).handle === newHandle) {
                      // Check if already in proposal?
                      if (!sourceProposal.inventoryItemIds.includes(id)) {
                          // Add as variant (We can't use existing actions easily for "Add Variant" without "Merge")
