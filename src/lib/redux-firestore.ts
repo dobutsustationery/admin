@@ -47,8 +47,17 @@ export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
   const broadcasts = collection(fs, "broadcast");
   const cleanAction = stripUndefined(action);
   
+  // Size Check
+  const payloadSize = new TextEncoder().encode(JSON.stringify(cleanAction)).length;
+  if (payloadSize > 900 * 1024) { // 900KB limit (safety buffer for Firestore 1MB)
+      console.error(`[Broadcast] Action ${action.type} is TOO LARGE (${(payloadSize / 1024).toFixed(2)} KB). Dropping.`);
+      // We return a rejected promise so the caller knows it failed, 
+      // but we don't crash the app or get the SDK stuck in a retry loop.
+      return Promise.reject(new Error(`Action too large: ${payloadSize} bytes`));
+  }
+
   // Debug Log
-  console.log(`[Broadcast] Sending action ${action.type}`, cleanAction);
+  console.log(`[Broadcast] Sending action ${action.type} (${payloadSize} bytes)`, cleanAction);
   
   try {
       const docRef = await addDoc(broadcasts, {
