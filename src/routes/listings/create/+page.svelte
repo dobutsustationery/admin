@@ -14,7 +14,8 @@
       set_proposal_handle_thunk,
       merge_proposal,
       split_variant,
-      move_variant
+      move_variant,
+      clear_celebration
   } from "$lib/listing-creation-slice";
   import { goto } from '$app/navigation';
 
@@ -60,6 +61,7 @@
       showCelebration = true;
       setTimeout(() => {
           showCelebration = false;
+          store.dispatch(clear_celebration());
       }, 5500); // 5.5s to cover animation
   } else if (completedBatchId === undefined) {
       showCelebration = false;
