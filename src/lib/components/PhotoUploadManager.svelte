@@ -94,19 +94,27 @@
                fetchUrl += HIGH_RES_SUFFIX;
           }
           
-          // Experiment: User requested to try Header auth again.
-          // We keep referrerPolicy: "no-referrer" which may help.
-          let resp = await fetch(fetchUrl, { 
-              headers: { Authorization: `Bearer ${accessToken}` },
-              referrerPolicy: "no-referrer"
-          });
-          
-          if (!resp.ok && resp.status === 403) {
-             // Retry WITHOUT headers (common for public googleusercontent links)
-             console.log("[UploadManager] 403 with Auth, retrying without auth...");
-             resp = await fetch(fetchUrl, {
-                 referrerPolicy: "no-referrer"
-             });
+          let resp;
+          try {
+              // Attempt 1: Try without explicit Auth header first. 
+              // Google Picker URLs (lh3.googleusercontent.com) are often signed or session-based.
+              // Sending a Drive API token here often causes 403 or CORS issues.
+              resp = await fetch(fetchUrl, {
+                  referrerPolicy: "no-referrer"
+              });
+          } catch (e) {
+              console.warn("[UploadManager] Fetch attempt 1 (No Auth) failed (likely CORS). Retrying with Auth...", e);
+              // Fall through to Attempt 2
+          }
+
+          if (!resp || !resp.ok) {
+               // Attempt 2: Try WITH Auth header (if Attempt 1 failed or returned 403)
+               // This is required if the URL is actually a direct API link or requires the token.
+               console.log("[UploadManager] Retrying fetch with Auth token...");
+               resp = await fetch(fetchUrl, { 
+                  headers: { Authorization: `Bearer ${accessToken}` },
+                  referrerPolicy: "no-referrer"
+              });
           }
 
           if (!resp.ok) {
