@@ -36,8 +36,9 @@ export async function fetchImage(
       
   } else if (url.includes("googleusercontent.com")) {
       // It's a Google Photos picker URL.
-      // Modifiers supported.
-      fetchUrl = `${url}=w1024-h1024`;
+      // Modifiers (e.g. =w1024) BREAK the signature for private PPA URLs when using Auth header.
+      // We must use the raw URL.
+      fetchUrl = url; 
   }
 
   const headers: Record<string, string> = {};
