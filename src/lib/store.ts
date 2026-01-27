@@ -262,8 +262,20 @@ export async function hydrate() {
 }
 
 function triggerSave(state: any, lastAction: SnapshotMetadata | null) {
+  // Sanitize state before save (clear ephemeral UI flags)
+  const safeState = { ...state };
+  if (safeState.listingCreation) {
+      safeState.listingCreation = {
+          ...safeState.listingCreation,
+          lastCompletedBatchId: undefined, // Don't persist celebration
+          activeBatchId: undefined, // Don't persist active batch ID if it implies celebration pending? 
+          // Actually, activeBatchId is needed for session resumption. 
+          // But lastCompletedBatchId is strictly an event trigger.
+      };
+  }
+
   // Save via IDB (async)
-  saveSnapshot(state, lastAction).catch((e) => console.warn("Save failed", e));
+  saveSnapshot(safeState, lastAction).catch((e) => console.warn("Save failed", e));
 }
 
 const persistenceMiddleware =
