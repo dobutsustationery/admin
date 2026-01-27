@@ -4,7 +4,7 @@
   import { user } from "$lib/user-store";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
-  import { getStoredToken } from "$lib/google-drive";
+  import { getStoredToken } from "$lib/google-photos";
   import { ensureFolderStructure, uploadImageToDrive } from "$lib/google-drive";
   import { getUploadCandidates } from "$lib/upload-logic";
 
