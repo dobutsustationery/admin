@@ -274,23 +274,13 @@ export interface ListingCreationState {
           state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
           state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
       },
-      import_existing_variants: (state, action: PayloadAction<{ janCode: string, handle: string, items: Record<string, Item> }>) => {
-           const { janCode, handle, items } = action.payload;
+      import_existing_variants: (state, action: PayloadAction<{ janCode: string, items: { id: string, item: Item }[] }>) => {
+           const { janCode, items } = action.payload;
            const proposal = state.proposals[janCode];
            if (!proposal) return;
            
-           // Find items strictly matching handle
-           const matches: { id: string, item: Item }[] = [];
-           for (const [id, item] of Object.entries(items)) {
-               if (item.handle === handle) {
-                   matches.push({ id, item });
-               }
-           }
-           
-           if (matches.length === 0) return;
-           
            // Add them to proposal
-           matches.forEach(({ id, item }) => {
+           items.forEach(({ id, item }) => {
                if (!proposal.inventoryItemIds.includes(id)) {
                    proposal.inventoryItemIds.push(id);
                    proposal.variants.push({
@@ -843,17 +833,17 @@ export const set_proposal_handle_thunk = (janCode: string, variantId: string | u
 
             // 3. Import Existing Variants
             // Find inventory items with this handle
+            const matchedItems: { id: string, item: Item }[] = [];
             Object.entries(state.inventory.idToItem).forEach(([id, item]) => {
                 if ((item as Item).handle === newHandle) {
-                     // Check if already in proposal?
-                     if (!sourceProposal.inventoryItemIds.includes(id)) {
-                         // Add as variant (We can't use existing actions easily for "Add Variant" without "Merge")
-                     }
+                     matchedItems.push({ id, item: item as Item });
                 }
             });
             
-            // Dispatch the import action (Need to create it)
-            dispatch(import_existing_variants({ janCode, handle: newHandle, items: state.inventory.idToItem }));
+            // Dispatch the import action with filtered list
+            if (matchedItems.length > 0) {
+                dispatch(import_existing_variants({ janCode, items: matchedItems }));
+            }
 
         } else {
             // SCENARIO C: New Handle (Update or Split)
