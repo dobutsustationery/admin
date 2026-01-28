@@ -178,7 +178,7 @@
            <div class="search-input-wrapper">
               <input 
                   type="text" 
-                  bind:value={searchQuery} 
+                  bind:value={searchTerm} 
                   placeholder="Search logs..." 
                   class="search-input"
                 />
