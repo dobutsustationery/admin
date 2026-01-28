@@ -91,11 +91,12 @@
                in:fade={{duration: 100}}
              >
                {#if group.children.length > 0}
-                   <span 
+                   <button 
                      class="twisty" 
                      class:expanded={group.expanded}
                      on:click|stopPropagation={() => toggleGroup(group)}
-                   >▶</span>
+                     aria-label="Toggle group"
+                   >▶</button>
                {:else}
                    <span class="twisty placeholder"></span>
                {/if}

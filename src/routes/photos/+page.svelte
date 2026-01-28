@@ -884,7 +884,11 @@
               <div
                 class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
                 style="width: 148px; height: 148px; flex-shrink: 0;"
+                role="button"
+                tabindex="0"
+                aria-label="View photo history"
                 on:click={() => goto(`/photo-history?id=${photo.id}`)}
+                on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${photo.id}`)}
               >
                 <SecureImage
                   src={photo.baseUrl.includes("drive.google.com") || photo.baseUrl.includes("googleapis.com") ? photo.baseUrl : `${photo.baseUrl}=w400-h400-c`}
@@ -976,6 +980,7 @@
                         class="flex flex-row categorized-row group" 
                         class:related-highlight={hoveredRowIndex === index + 1 && hoveredColumn === 'photos'}
                         style="display: flex; flex-direction: row relative;"
+                        role="row"
                         on:mouseleave={() => { hoveredRowIndex = null; hoveredColumn = null; }}
                     >
                         <!-- JAN Column -->
@@ -984,6 +989,7 @@
                             class:bg-red-100={!isValidJan(jan)} 
                             class:text-red-800={!isValidJan(jan)}
                             style="width: 200px; flex: none; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e2e8f0; { !isValidJan(jan) ? 'background-color: #fee2e2;' : '' }"
+                            role="gridcell"
                             on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'jan'; }}
                         >
                             <input 
@@ -999,6 +1005,7 @@
                         <div 
                             class="flex-1 p-4 min-w-0 relative" 
                             style="flex: 1; min-width: 0; position: relative;"
+                            role="gridcell"
                             on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'photos'; }}
                         >
                             <!-- Merge Trigger Button (Only if NOT the first row) -->
@@ -1019,7 +1026,11 @@
                                     <div 
                                         class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group/item cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
                                         style="width: 80px; height: 80px; flex-shrink: 0;"
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label="View photo history"
                                         on:click={() => goto(`/photo-history?id=${item.id}`)}
+                                        on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${item.id}`)}
                                         on:mouseenter={(e) => handleThumbnailEnter(e, item)}
                                         on:mouseleave={handleThumbnailLeave}
                                     >

@@ -1159,6 +1159,7 @@
                       {#if field === "Image"}
                         <div
                           class="conflict-thumb-wrapper"
+                          role="figure"
                           on:mouseenter={() =>
                             (hoveredImage = getIncomingValue(field))}
                           on:mouseleave={() => (hoveredImage = null)}
@@ -1193,6 +1194,7 @@
                       {#if field === "Image"}
                         <div
                           class="conflict-thumb-wrapper"
+                          role="figure"
                           on:mouseenter={() =>
                             (hoveredImage = getExistingValue(field))}
                           on:mouseleave={() => (hoveredImage = null)}

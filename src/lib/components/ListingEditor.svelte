@@ -195,7 +195,7 @@
            <!-- Gallery Thumbnails (Images Not Associated with Subtypes) -->
            {#if galleryImages.length > 0}
                <div class="section-label">Gallery Images</div>
-               <div class="thumbnails-grid" on:dragover={handleDragOver} on:drop={handleDrop}>
+               <div class="thumbnails-grid" role="list" on:dragover={handleDragOver} on:drop={handleDrop}>
                    {#each displayedGalleryImages as img (img.id)}
                        <div 
                             class="thumbnail-container"
@@ -203,6 +203,7 @@
                             class:drag-over={dragOverId === img.id}
                             data-image-id={img.id}
                             draggable={!readOnly}
+                            role="listitem"
                             animate:flip={{ duration: 300, easing: cubicOut }}
                             on:dragstart={(e) => handleDragStart(e, img)}
                             on:dragover={(e) => handleDragOver(e, img.id)}
@@ -297,7 +298,7 @@
            <!-- Subtypes / Options -->
            {#if associatedItems.length > 1}
               <div class="options-block">
-                  <label class="option-label">{listing.option1Name || 'Option'}</label>
+                  <span class="option-label">{listing.option1Name || 'Option'}</span>
                   <div class="options-list">
                       {#each associatedItems as item}
                           <button 
@@ -323,7 +324,7 @@
                </div>
            {:else}
                <div class="quantity-block">
-                   <label class="option-label">Quantity</label>
+                   <span class="option-label">Quantity</span>
                    <div class="quantity-selector">
                        <button class="qty-btn">-</button>
                        <div class="qty-value">1</div>
@@ -334,7 +335,7 @@
                <div class="actions-block">
                    <button class="btn-add-cart">Add to cart</button>
                    <button class="btn-buy-shop">Buy with <span class="shop-logo">shop</span></button>
-                   <div class="payment-options"><a href="#" class="payment-link" on:click|preventDefault>More payment options</a></div>
+                   <div class="payment-options"><button class="payment-link" type="button">More payment options</button></div>
                </div>
            {/if}
            
@@ -376,7 +377,7 @@
        margin-bottom: 1rem; 
        align-self: center; /* Center in column */
   }
-  .main-image { width: 100%; height: 100%; object-fit: contain; }
+  :global(.main-image) { width: 100%; height: 100%; object-fit: contain; }
   .no-image-text { color: #9ca3af; }
   
   .thumbnails-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
@@ -386,10 +387,10 @@
   .thumbnail-container[draggable="true"]:active { cursor: grabbing; }
   .thumbnail-container.drag-over { outline: 2px dashed #3b82f6; outline-offset: 2px; background: rgba(59, 130, 246, 0.08); }
   .thumbnail-container.dragging { opacity: 0.6; transition: none; }
-  .thumbnail-btn { width: 100%; height: 100%; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; cursor: grab; padding: 0; background: white; opacity: 1; transition: opacity 0.2s; position: relative; user-select: none; -webkit-user-drag: none; }
-  .thumbnail-btn :global(img) { -webkit-user-drag: none; user-drag: none; pointer-events: none; }
-  .thumbnail-btn.selected { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
-  .thumbnail-img { width: 100%; height: 100%; object-fit: cover; }
+  .thumbnail-btn { width: 100%; height: 100%; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; cursor: grab; padding: 0; background: white; opacity: 1; transition: opacity 0.2s; position: relative; user-select: none; }
+  .thumbnail-btn :global(img) { pointer-events: none; }
+  :global(.thumbnail-btn.selected) { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+  :global(.thumbnail-img) { width: 100%; height: 100%; object-fit: cover; }
   
   /* Hover Overlay */
   .thumb-overlay { position: absolute; top: 0; right: 0; display: flex; gap: 2px; opacity: 0; transition: opacity 0.2s; background: rgba(0,0,0,0.5); padding: 2px; border-bottom-left-radius: 4px; }

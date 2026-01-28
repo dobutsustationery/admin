@@ -93,8 +93,9 @@
     <!-- Controls -->
     <div class="bg-white p-4 rounded shadow space-y-4">
       <div>
-        <label class="block font-semibold mb-1">Image</label>
+        <label class="block font-semibold mb-1" for="file-upload">Image</label>
         <input
+          id="file-upload"
           type="file"
           accept="image/*"
           bind:files

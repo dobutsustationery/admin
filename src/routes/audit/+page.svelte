@@ -176,13 +176,12 @@
       <div class="date-nav">
        {#if viewMode === 'search'}
            <div class="search-input-wrapper">
-               <input 
-                 type="text" 
-                 bind:value={searchTerm} 
-                 placeholder="Search logs..." 
-                 class="search-input"
-                 autoFocus
-               />
+              <input 
+                  type="text" 
+                  bind:value={searchQuery} 
+                  placeholder="Search logs..." 
+                  class="search-input"
+                />
                <span class="search-hint">Searching local history...</span>
            </div>
        {:else}

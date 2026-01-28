@@ -6,7 +6,7 @@
   export let alt: string = "";
   export let className: string = "";
   export let style: string = "";
-  export let isUploading: boolean = false;
+  export const isUploading: boolean = false;
 
   let objectUrl: string = "";
   let error = "";
