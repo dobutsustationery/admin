@@ -2,8 +2,8 @@
   import { goto } from "$app/navigation";
   
   export let item: any;
-  export let index: number;
-  export let col: any; // Column Config
+  export const index: number = 0;
+  export const col: any = null; // Column Config
 
   function navigate() {
       // Use computedHandle if available, else handle? item.id?
@@ -11,6 +11,9 @@
       const handle = item.computedHandle || item.handle;
       if (handle) {
           goto(`/listing-detail?handle=${handle}`);
+      } else if (item.janCode) {
+          // Fallback for drafts
+          goto(`/listing-detail?mode=create&jan=${item.janCode}`);
       }
   }
 </script>

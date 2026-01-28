@@ -10,7 +10,6 @@
       regenerate_description,
       set_current_step,
       recalculate_batch_navigation,
-      recalculate_batch_navigation,
       set_proposal_handle_thunk,
       merge_proposal,
       split_variant,
