@@ -72,6 +72,7 @@
   style="width: {width}; height: {height};"
   on:mouseenter={handleMouseEnter}
   on:mouseleave={handleMouseLeave}
+  role="figure"
 >
   <div class="image-wrapper">
     <SecureImage 

@@ -34,7 +34,7 @@
         padding: 2px;
     }
 
-    .cell-image {
+    :global(.cell-image) {
         max-width: 100%;
         max-height: 100%;
         object-fit: contain;

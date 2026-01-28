@@ -242,11 +242,13 @@
                         
                         <!-- Resizer -->
                         <div 
-                            role="button" 
+                            role="separator" 
                             tabindex="0" 
                             class="col-resizer"
+                            aria-label="Resize Column"
                             on:mousedown={(e) => handleResizeStart(e, col.field)}
                             on:click|stopPropagation
+                            on:keydown={() => {}}
                         ></div>
                     </th>
                 {/each}
@@ -378,10 +380,6 @@
     /* Body/Row Styling */
     .data-row:hover {
         background-color: #eff6ff; /* blue-50 */
-    }
-
-    .data-row:hover td {
-         /* Keep borders on hover? */
     }
 
     .data-cell {
