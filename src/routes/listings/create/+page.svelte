@@ -450,7 +450,7 @@
   .modal-title { font-weight: 600; font-size: 1.1rem; }
   .image-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.75rem; margin-top: 1rem; max-height: 420px; overflow: auto; }
   .image-picker-item { border: 1px solid #e5e7eb; background: white; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; }
-  .image-picker-img { width: 100%; height: 90px; object-fit: cover; display: block; }
+  :global(.image-picker-img) { width: 100%; height: 90px; object-fit: cover; display: block; }
   .image-picker-item:hover { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
   .modal-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
   .btn-cancel { padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; }

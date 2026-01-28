@@ -844,7 +844,7 @@
   /* Modal */
   .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .modal { background: white; padding: 1.5rem; border-radius: 8px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-  .image-tools-toolbar { display: flex; justify-content: flex-end; margin: 0.5rem 0 1rem; }
+  /* .image-tools-toolbar removed */
   .prompt-modal { max-width: 720px; z-index: 2001; position: relative; }
   .prompt-backdrop { z-index: 2000; }
   .body-textarea { min-height: 320px; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; width: 100%; }
@@ -852,6 +852,6 @@
   .image-picker-modal { max-width: 720px; }
   .image-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.75rem; margin-top: 1rem; max-height: 420px; overflow: auto; }
   .image-picker-item { border: 1px solid #e5e7eb; background: white; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; }
-  .image-picker-img { width: 100%; height: 90px; object-fit: cover; display: block; }
+  :global(.image-picker-img) { width: 100%; height: 90px; object-fit: cover; display: block; }
   .image-picker-item:hover { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
 </style>

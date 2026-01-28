@@ -241,15 +241,14 @@
                         </div>
                         
                         <!-- Resizer -->
-                        <div 
-                            role="separator" 
-                            tabindex="0" 
+                        <button 
+                            type="button"
                             class="col-resizer"
                             aria-label="Resize Column"
                             on:mousedown={(e) => handleResizeStart(e, col.field)}
                             on:click|stopPropagation
                             on:keydown={() => {}}
-                        ></div>
+                        ></button>
                     </th>
                 {/each}
             </tr>
@@ -371,6 +370,9 @@
         width: 4px;
         cursor: col-resize;
         z-index: 20;
+        background: transparent;
+        border: none;
+        padding: 0;
     }
     
     .col-resizer:hover {

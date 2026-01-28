@@ -980,7 +980,7 @@
                         class="flex flex-row categorized-row group" 
                         class:related-highlight={hoveredRowIndex === index + 1 && hoveredColumn === 'photos'}
                         style="display: flex; flex-direction: row relative;"
-                        role="row"
+                        role="group"
                         on:mouseleave={() => { hoveredRowIndex = null; hoveredColumn = null; }}
                     >
                         <!-- JAN Column -->
@@ -989,7 +989,7 @@
                             class:bg-red-100={!isValidJan(jan)} 
                             class:text-red-800={!isValidJan(jan)}
                             style="width: 200px; flex: none; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e2e8f0; { !isValidJan(jan) ? 'background-color: #fee2e2;' : '' }"
-                            role="gridcell"
+                            role="group"
                             on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'jan'; }}
                         >
                             <input 
@@ -1005,7 +1005,7 @@
                         <div 
                             class="flex-1 p-4 min-w-0 relative" 
                             style="flex: 1; min-width: 0; position: relative;"
-                            role="gridcell"
+                            role="group"
                             on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'photos'; }}
                         >
                             <!-- Merge Trigger Button (Only if NOT the first row) -->
