@@ -529,7 +529,7 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
 
          // 3. Advance UI
          const currentActive = getState().listingCreation.activeBatchJans;
-         const remainingCount = currentActive.filter(j => !removedJans.includes(j)).length;
+         const remainingCount = currentActive.filter((j: string) => !removedJans.includes(j)).length;
          
          if (remainingCount === 0) {
              dispatch(complete_batch());

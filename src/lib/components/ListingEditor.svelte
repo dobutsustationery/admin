@@ -10,7 +10,7 @@
   export let selectedSubtypeId: string | null = null;
   export let readOnly = false;
   export let isCreationMode = false; // Toggle for "Approve" button vs "Add to cart"
-  export let isGeneratingTitle = false;
+  export const isGeneratingTitle: boolean = false;
   export let isGeneratingDescription = false;
 
   const dispatch = createEventDispatcher();
@@ -186,7 +186,7 @@
            <!-- Hero Image -->
            <div class="main-image-container">
                {#if mainImageObj && mainImageObj.url}
-                   <SecureImage src={mainImageObj.url} alt={mainImageObj.altText} className="main-image" fillParent={true} />
+                   <SecureImage src={mainImageObj.url} alt={mainImageObj.altText} className="main-image" />
                {:else}
                    <span class="no-image-text">No image available</span>
                {/if}
