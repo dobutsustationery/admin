@@ -8,26 +8,26 @@ describe("names reducer", () => {
       initialState,
       create_name({ id, name: "39199080" }),
     );
-    expect(nextState.nameIdToNames[id].length).to.equal(1);
+    expect(nextState.nameIdToNames[id].length).toBe(1);
   });
   it("sorts names by default", () => {
     const id = "sorted";
     let nextState = initialState;
     nextState = names(nextState, create_name({ id, name: "last" }));
-    expect(nextState.nameIdToNames[id].length).to.equal(1);
-    expect(nextState.nameIdToNames[id][0]).to.equal("last");
+    expect(nextState.nameIdToNames[id].length).toBe(1);
+    expect(nextState.nameIdToNames[id][0]).toBe("last");
     nextState = names(nextState, create_name({ id, name: "first" }));
-    expect(nextState.nameIdToNames[id].length).to.equal(2);
-    expect(nextState.nameIdToNames[id][0]).to.equal("first");
+    expect(nextState.nameIdToNames[id].length).toBe(2);
+    expect(nextState.nameIdToNames[id][0]).toBe("first");
   });
   it("removes a name", () => {
     const id = "sorted";
     let nextState = initialState;
     nextState = names(nextState, create_name({ id, name: "last" }));
     nextState = names(nextState, create_name({ id, name: "first" }));
-    expect(nextState.nameIdToNames[id].length).to.equal(2);
+    expect(nextState.nameIdToNames[id].length).toBe(2);
     nextState = names(nextState, remove_name({ id, name: "first" }));
-    expect(nextState.nameIdToNames[id].length).to.equal(1);
+    expect(nextState.nameIdToNames[id].length).toBe(1);
   });
   it("does nothing when removing a name from non-existent id", () => {
     const id = "nonExistent";
