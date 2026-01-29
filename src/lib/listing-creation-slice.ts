@@ -456,9 +456,9 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          
          // @ts-ignore
         const listingImages = driveFiles.map((f: any, i: number) => ({
-             url: f.url, // Ensure this is a usable URL (SecureImage handles it) // @ts-ignore
+             url: f.baseUrl || f.productUrl || f.url, // Fix: Use baseUrl (Photos) or fallback
              id: f.id || `img-${i}`,
-             altText: f.name,
+             altText: f.filename || f.name, // Fix: Photos uses filename
              position: i + 1
          }));
          
