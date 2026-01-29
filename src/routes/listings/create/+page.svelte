@@ -86,9 +86,27 @@
        return variants.map((v: any, idx: number) => {
             const inventoryItem = $store.inventory.idToItem[v.itemId];
             
-            // Photo Lookup: Use Variant's JAN if possible
-            const variantJan = inventoryItem?.janCode || p.janCode;
-            const photos = photosState?.janCodeToPhotos?.[variantJan];
+            // Photo Lookup Strategy:
+            // 1. Specific Variant JAN
+            // 2. Linked Photo Groups (from split/merge)
+            // 3. Proposal Key (Fallback)
+            let photos: any[] = [];
+            if (inventoryItem?.janCode && photosState?.janCodeToPhotos?.[inventoryItem.janCode]) {
+                photos = photosState.janCodeToPhotos[inventoryItem.janCode];
+            } else if (p.photoGroupIds && p.photoGroupIds.length > 0) {
+                // Aggregate all groups? Or just take first valid? 
+                // For thumbnail, first valid is fine.
+                for (const groupId of p.photoGroupIds) {
+                    const group = photosState?.janCodeToPhotos?.[groupId];
+                    if (group && group.length > 0) {
+                        photos = group;
+                        break;
+                    }
+                }
+            } else if (photosState?.janCodeToPhotos?.[p.janCode]) {
+                photos = photosState.janCodeToPhotos[p.janCode];
+            }
+
             const thumb = photos && photos.length > 0 ? (photos[0].baseUrl || photos[0].thumbnailLink) : null;
             
             const variantThumb = inventoryItem?.image || null;
@@ -256,7 +274,11 @@
       });
 
       const candidates = new Map<string, { id: string; url: string; altText: string }>();
-      const janPhotos = photosState?.janCodeToPhotos?.[janCode] || [];
+      
+      // Aggregate photos from all linked groups (handles split/merge)
+      const photoGroups = targetProposal.photoGroupIds || [janCode];
+      const janPhotos = photoGroups.flatMap((gid: string) => photosState?.janCodeToPhotos?.[gid] || []);
+      
       janPhotos.forEach((p: any, idx: number) => {
           const url = p.baseUrl || p.thumbnailLink || p.productUrl;
           if (!url) return;
