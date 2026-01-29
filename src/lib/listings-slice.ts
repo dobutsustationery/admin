@@ -276,17 +276,31 @@ function applyHandleUpdate(
 
   if (!priorHandle) return;
 
+  // Check if priorHandle is still in use by ANY other ID
+  const isStillUsed = Object.values(state.idToHandle).includes(priorHandle);
+
   const priorListing = state.handleToListing[priorHandle];
   const targetListing = state.handleToListing[newHandle];
 
   if (priorListing && !targetListing) {
-    const movedListing = { ...priorListing, handle: newHandle, lastUpdated: Date.now() };
-    delete state.handleToListing[priorHandle];
-    state.handleToListing[newHandle] = movedListing;
+    if (!isStillUsed) {
+        // Move (Rename) - No one else uses old handle, so we move the listing entity
+        const movedListing = { ...priorListing, handle: newHandle, lastUpdated: Date.now() };
+        delete state.handleToListing[priorHandle];
+        state.handleToListing[newHandle] = movedListing;
+    } else {
+        // Split (Clone) - Old handle still used, so we create a NEW listing for this item, cloning context
+        const newListing = { ...priorListing, handle: newHandle, lastUpdated: Date.now() };
+        state.handleToListing[newHandle] = newListing;
+    }
     return;
   }
 
   if (priorListing && targetListing) {
-    delete state.handleToListing[priorHandle];
+    // Merge into existing target
+    if (!isStillUsed) {
+        // Old handle empty, cleanup
+        delete state.handleToListing[priorHandle];
+    }
   }
 }
