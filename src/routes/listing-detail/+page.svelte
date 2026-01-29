@@ -139,20 +139,22 @@
                       // Drive file ID is best.
                       if (!seenPhotoIds.has(ph.id)) {
                           seenPhotoIds.add(ph.id);
-                          allPhotos.push(ph);
+                          allPhotos.push({ ...ph, sourceJan: p.janCode });
                       }
                   });
               });
 
               const listingOnly = (primaryProposal.listingOnlyImages || []).map((img: any) => ({
                   ...img,
-                  isListingOnly: true
+                  isListingOnly: true,
+                  sourceJan: primaryProposal.janCode
               }));
               const photoImages = allPhotos.map((p: any, idx: number) => ({
                   id: p.id,
                   url: p.baseUrl || '', 
                   position: idx,
-                  altText: p.filename || 'Product Image'
+                  altText: p.filename || 'Product Image',
+                  sourceJan: p.sourceJan
               }));
               let mergedImages = [...photoImages, ...listingOnly];
               const order = primaryProposal.listingImageOrder || [];
@@ -344,10 +346,13 @@
           const proposal = $store.listingCreation.proposals[janCode];
           const listingOnly = proposal?.listingOnlyImages || [];
           const isListingOnly = listingOnly.some((img: { id: string }) => img.id === e.detail.id);
+          // Use sourceJan from the image object if available, otherwise default to current page janCode (safe fallback for primary)
+          const targetJan = e.detail.sourceJan || janCode;
+          
           if (isListingOnly) {
-              dispatchBroadcast(remove_listing_only_image({ janCode, imageId: e.detail.id }));
+              dispatchBroadcast(remove_listing_only_image({ janCode: targetJan, imageId: e.detail.id }));
           } else {
-              dispatchBroadcast(uncategorize_photo({ janCode, photoId: e.detail.id }));
+              dispatchBroadcast(uncategorize_photo({ janCode: targetJan, photoId: e.detail.id }));
           }
           return;
       }
