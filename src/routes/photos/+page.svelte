@@ -960,6 +960,14 @@
                         {/if}
                         <span>Process Images</span>
                     </button>
+
+                    <button
+                        on:click={() => goto('/listings/create')}
+                        class="bg-green-600 text-white px-4 py-2 rounded-md font-bold hover:bg-green-700 transition text-sm flex items-center gap-2 shadow-sm"
+                        title="Create listings from these photos"
+                    >
+                        <span>Create Listings →</span>
+                    </button>
                 </div>
             </div>
             <div class="border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">

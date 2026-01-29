@@ -37,7 +37,7 @@ describe("Listing Creation - Split Variant", () => {
     expect(newProposal).toBeDefined();
     
     // Check JAN Code matches key (it does currently)
-    expect(newProposal.janCode).toBe(variantId);
+    expect(newProposal.janCode).toBe(janCode);
     
     // CRITICAL: Check Photo Groups
     expect(newProposal.photoGroupIds).toContain("JAN_A");

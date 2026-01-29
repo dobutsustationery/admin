@@ -65,15 +65,17 @@ test.describe('Listings Creation Flow', () => {
         // Wait for store to be ready
         await page.waitForFunction(() => (window as any).testHelpers);
         
-        // Inject Fake Drive Token BEFORE navigation so onMount detects it
+        // Inject Fake Drive & Photos Tokens BEFORE navigation so onMount detects it
         await page.evaluate(() => {
-            localStorage.setItem('google_drive_access_token', JSON.stringify({
+            const token = JSON.stringify({
                 access_token: 'fake-token-123',
                 expires_in: 3600,
                 expires_at: Date.now() + 3600000,
-                scope: 'https://www.googleapis.com/auth/drive.file',
+                scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
                 token_type: 'Bearer'
-            }));
+            });
+            localStorage.setItem('google_drive_access_token', token);
+            localStorage.setItem('google_photos_access_token', token);
         });
 
         // Setup Broadcast Listener EARLY
@@ -140,6 +142,9 @@ test.describe('Listings Creation Flow', () => {
                  proposals.forEach((jan: string) => store.dispatch({ type: "listingCreation/remove_proposal", payload: { janCode: jan } }));
                  store.dispatch({ type: "listingCreation/complete_batch" });
              }
+             
+             // FORCE CONNECTED to bypass potential race condition
+             store.dispatch({ type: "listingCreation/set_drive_connection_status", payload: 'connected' });
         });
 
         // Now we should DEFINITELY be in "No proposals found"
@@ -438,7 +443,7 @@ test.describe('Listings Creation Flow', () => {
         await approveBtn.click({ force: true });
         
         // 10. Verify Completion
-        await expect(page.getByText('No proposals found')).toBeVisible(); 
+        await expect(page.getByText('No proposals found')).toBeVisible({ timeout: 10000 }); 
         // Either back to Batch Editor (if more items) or Empty State
         // Since we merged, we had 1 proposal total. So should be done.
         

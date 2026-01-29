@@ -451,7 +451,18 @@
   function handleApprove() {
       if (mode === 'create' && janCode) {
           approve_proposal_thunk(janCode)(dispatchBroadcast, store.getState, undefined);
-          goto('/listings/create');
+          
+          const newState = store.getState().listingCreation;
+          if (newState.activeBatchJans.length === 0) {
+              goto('/listings/create');
+          } else {
+              const nextJan = newState.activeBatchJans[newState.currentStepIndex];
+              if (nextJan) {
+                   goto(`/listing-detail?mode=create&jan=${nextJan}`);
+              } else {
+                   goto('/listings/create');
+              }
+          }
       }
   }
 
@@ -517,7 +528,22 @@
       const stateBefore = store.getState().listingCreation;
       const currentIndex = stateBefore.activeBatchJans.indexOf(janCode);
 
-      dispatchBroadcast(remove_proposal({ janCode }));
+      // Remove all proposals in the same handle group
+      const primaryProposal = stateBefore.proposals[janCode];
+      if (primaryProposal) {
+          const handle = primaryProposal.handle || generateHandle(primaryProposal.title, primaryProposal.janCode);
+          const siblingProposals = Object.values(stateBefore.proposals)
+              .filter((p: any) => {
+                  const h = p.handle || generateHandle(p.title, p.janCode);
+                  return h === handle;
+              });
+           
+           siblingProposals.forEach((p: any) => {
+               dispatchBroadcast(remove_proposal({ janCode: p.janCode }));
+           });
+      } else {
+           dispatchBroadcast(remove_proposal({ janCode }));
+      }
 
       const stateAfter = store.getState().listingCreation;
       const remaining = stateAfter.activeBatchJans;
