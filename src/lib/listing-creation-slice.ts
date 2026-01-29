@@ -209,7 +209,7 @@ export interface ListingCreationState {
            
            const newProposal: ListingProposal = {
                ...source,
-               janCode: newProposalId,
+               janCode: source.janCode,
                handle: newHandle,
                inventoryItemIds: [variantId], 
                photoGroupIds: [...source.photoGroupIds], 
@@ -405,7 +405,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
              });
         }
         // Limit
-        if (candidates.length >= 10) break;
+        if (candidates.length >= 50) break;
     }
     
     // Dispatch

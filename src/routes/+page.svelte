@@ -13,6 +13,11 @@
         0,
       )
     : 0;
+
+  $: pendingDrafts = $store.listingCreation && $store.listingCreation.proposals 
+      ? Object.values($store.listingCreation.proposals).filter((p: any) => p.status === 'draft').length
+      : 0;
+
   // Recent activity mock
   let recentActivity = [
     { type: "order", text: "Order #1234 packed", time: "5m ago" },
@@ -33,12 +38,12 @@
       <div class="metric-label">Total Items</div>
     </div>
     <div class="card metric">
-      <div class="metric-value">--</div>
-      <div class="metric-label">Shipped Today</div>
+      <div class="metric-value">{pendingDrafts}</div>
+      <div class="metric-label">Pending Drafts</div>
     </div>
     <div class="card metric">
       <div class="metric-value">--</div>
-      <div class="metric-label">Low Stock</div>
+      <div class="metric-label">Shipped Today</div>
     </div>
   </div>
 
@@ -52,6 +57,10 @@
       <a href="/inventory" class="card action">
         <span class="icon">📋</span>
         View Inventory
+      </a>
+      <a href="/listings/create" class="card action">
+        <span class="icon">✨</span>
+        Create Listings
       </a>
       <a href="/orders" class="card action">
         <span class="icon">📦</span>
