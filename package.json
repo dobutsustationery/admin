@@ -30,6 +30,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run --coverage",
+    "test:bun": "bun test tests/",
     "test:watch": "vitest watch --coverage",
     "test:e2e": "bash e2e/run-tests.sh",
     "test:e2e:local-images": "bash e2e/run-tests-local-images.sh",
