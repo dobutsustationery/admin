@@ -49,18 +49,25 @@
   let descPromptValue = "";
   
   let showCelebration = false;
+  let showReturnToDashboard = false;
   let lastSeenBatchId: string | undefined = undefined;
 
   $: completedBatchId = listingCreation.lastCompletedBatchId;
   $: if (typeof completedBatchId === 'string' && completedBatchId !== lastSeenBatchId) {
       lastSeenBatchId = completedBatchId;
       showCelebration = true;
+      showReturnToDashboard = false;
       setTimeout(() => {
-          showCelebration = false;
-          store.dispatch(clear_celebration());
-      }, 5500); // 5.5s to cover animation
+          showReturnToDashboard = true;
+      }, 3500); // Allow animation to play out
   } else if (completedBatchId === undefined) {
       showCelebration = false;
+      showReturnToDashboard = false;
+  }
+  
+  function handleReturnToDashboard() {
+      store.dispatch(clear_celebration());
+      goto('/');
   }
 
   // Derived
@@ -354,6 +361,15 @@
     
     {#if showCelebration}
         <Celebration />
+        {#if showReturnToDashboard}
+            <div class="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+                <div class="pointer-events-auto mt-64">
+                    <button on:click={handleReturnToDashboard} class="bg-white text-blue-600 px-8 py-4 rounded-full font-bold text-xl shadow-2xl hover:scale-105 transition-transform border-4 border-blue-100">
+                        Return to Dashboard
+                    </button>
+                </div>
+            </div>
+        {/if}
     {/if}
 
     {#if driveStatus === 'disconnected'}

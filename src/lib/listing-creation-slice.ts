@@ -209,7 +209,8 @@ export interface ListingCreationState {
            
            const newProposal: ListingProposal = {
                ...source,
-               janCode: source.janCode,
+               // We preserve the source JAN semantics for photo lookup
+               janCode: source.janCode, 
                handle: newHandle,
                inventoryItemIds: [variantId], 
                photoGroupIds: [...source.photoGroupIds], 
@@ -221,6 +222,7 @@ export interface ListingCreationState {
            source.variants.splice(variantIndex, 1);
            source.inventoryItemIds = source.inventoryItemIds.filter(id => id !== variantId);
            
+           // Key must be unique, so we use variantId. janCode property handles the logic.
            state.proposals[newProposalId] = newProposal;
            state.activeBatchJans.push(newProposalId);
            state.originalBatchJans.push(newProposalId);
@@ -405,7 +407,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
              });
         }
         // Limit
-        if (candidates.length >= 50) break;
+        if (candidates.length >= 1000) break;
     }
     
     // Dispatch

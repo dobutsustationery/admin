@@ -442,10 +442,14 @@ test.describe('Listings Creation Flow', () => {
         // 9. Approve
         await approveBtn.click({ force: true });
         
-        // 10. Verify Completion
-        await expect(page.getByText('No proposals found')).toBeVisible({ timeout: 10000 }); 
-        // Either back to Batch Editor (if more items) or Empty State
-        // Since we merged, we had 1 proposal total. So should be done.
+        // 10. Verify Completion & Navigation
+        // Expect Celebration & Return Button
+        const returnBtn = page.getByRole('button', { name: "Return to Dashboard" });
+        await expect(returnBtn).toBeVisible({ timeout: 10000 });
+        await returnBtn.click();
+        
+        // Should be on Dashboard
+        await expect(page).toHaveURL(/\/$/);
         
         docHelper.writeReadme();
     });
