@@ -11,9 +11,6 @@
       set_current_step,
       recalculate_batch_navigation,
       set_proposal_handle_thunk,
-      merge_proposal,
-      split_variant,
-      move_variant,
       clear_celebration
   } from "$lib/listing-creation-slice";
   import { goto } from '$app/navigation';
