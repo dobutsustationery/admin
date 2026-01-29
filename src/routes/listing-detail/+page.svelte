@@ -21,6 +21,7 @@
   import { user } from '$lib/user-store';
   import { generateHandle } from "$lib/handle-utils";
   import { ensureFolderStructure, uploadImageToDrive, getStoredToken, initiateOAuthFlow } from '$lib/google-drive';
+  import { reorderListingImages } from "$lib/listing-image-ordering";
   import ListingEditor from '$lib/components/ListingEditor.svelte';
   import SecureImage from "$lib/components/SecureImage.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
@@ -534,43 +535,36 @@
   }
 
   function handleReorderImages(e: CustomEvent<{ sourceId: string; targetId: string }>) {
-      if (mode !== 'create' || !janCode) return;
       const { sourceId, targetId } = e.detail;
-      const proposal = $store.listingCreation.proposals[janCode];
+
+      const proposal = (mode === 'create' && janCode)
+          ? $store.listingCreation.proposals[janCode]
+          : null;
       const listingOnly = proposal?.listingOnlyImages || [];
 
-      const current = listingImages.slice();
-      const sourceIndex = current.findIndex(img => img.id === sourceId);
-      const targetIndex = current.findIndex(img => img.id === targetId);
-      if (sourceIndex === -1 || targetIndex === -1) return;
-
-      const [moved] = current.splice(sourceIndex, 1);
-      current.splice(targetIndex, 0, moved);
-
-      const reordered = current.map((img, idx) => ({ ...img, position: idx + 1 }));
-      listingImages = reordered;
-
-      // Update listing-only positions (JAN photos ordering is implicit)
-      const updatedListingOnly = listingOnly.map((img: any) => {
-          const newIndex = reordered.findIndex(r => r.id === img.id);
-          if (newIndex !== -1) {
-              return { ...img, position: newIndex + 1 };
-          }
-          return img;
+      const result = reorderListingImages({
+          listingImages,
+          associatedItems,
+          sourceId,
+          targetId,
+          listingOnlyImages: listingOnly
       });
 
-      const newOrder = reordered.map(img => img.id);
-      dispatchBroadcast(update_proposal_field({ janCode, field: 'listingImageOrder', value: newOrder }));
-      dispatchBroadcast(update_proposal_field({ janCode, field: 'listingOnlyImages', value: updatedListingOnly }));
+      if (!result) return;
 
-      // Sync imagePosition for associated variants
-      const imageUrlToPosition = new Map<string, number>();
-      reordered.forEach(img => imageUrlToPosition.set(img.url, img.position));
-      associatedItems.forEach(item => {
-          if (!item?.id || !item.image) return;
-          const position = imageUrlToPosition.get(item.image);
-          if (!position) return;
-          dispatchBroadcast(update_field({ id: item.id, field: 'imagePosition', from: item.imagePosition || 0, to: position }));
+      listingImages = result.updatedImages;
+
+      if (mode === 'create' && janCode) {
+          dispatchBroadcast(update_proposal_field({ janCode, field: 'listingImageOrder', value: result.reorderedGalleryIds }));
+          dispatchBroadcast(update_proposal_field({ janCode, field: 'listingOnlyImages', value: result.updatedListingOnly }));
+      } else if (handle && $user?.uid) {
+          broadcast(firestore, $user.uid, update_listing({ handle, changes: { images: result.updatedImages } }));
+      }
+
+      result.variantPositions.forEach(({ id, position }) => {
+          const item = associatedItems.find(i => i?.id === id);
+          if (!item) return;
+          dispatchBroadcast(update_field({ id, field: 'imagePosition', from: item.imagePosition || 0, to: position }));
       });
   }
 
