@@ -130,8 +130,10 @@
                        }
                   });
 
-                  // Photos
-                  const pPhotos = $store.photos.janCodeToPhotos[p.janCode] || [];
+                  // Photos: Use photoGroupIds to support split variants (where janCode != photo source)
+                  const groups = p.photoGroupIds || [p.janCode];
+                  const pPhotos = groups.flatMap((gid: string) => $store.photos.janCodeToPhotos[gid] || []);
+                  
                   pPhotos.forEach((ph: any) => {
                       // Dedupe photos? Usually scoped by Jan.
                       // But merged listing should show ALL.
