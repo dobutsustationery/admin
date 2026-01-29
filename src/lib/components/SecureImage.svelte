@@ -38,8 +38,12 @@
              
              // PPA (Photos Picker API) URLs (on googleusercontent.com) REQUIRE Authentication.
              // We must send the token.
+             // But we must NOT send it to external domains (Shopify, etc) or it causes CORS errors/leaks.
              if (token) {
-                 headers.Authorization = `Bearer ${token.access_token}`;
+                 const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com") || src.includes("drive.google.com");
+                 if (isGoogle) {
+                     headers.Authorization = `Bearer ${token.access_token}`;
+                 }
              }
              
              const response = await fetch(src, {
