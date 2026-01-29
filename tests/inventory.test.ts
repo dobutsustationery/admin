@@ -843,8 +843,7 @@ describe("inventory reducer", () => {
       expect(nextState.idToItem[newId]).toBeDefined();
       expect(nextState.idToItem[newId].subtype).toBe("Blue");
       expect(nextState.idToItem[newId].qty).toBe(10);
-      expect(nextState.idToItem[id].qty).toBe(0);
-      expect(nextState.idToItem[id].shipped).toBe(0);
+      expect(nextState.idToItem[id]).toBeUndefined();
     });
 
     it("merges quantities when renaming to existing subtype with identical item", () => {
@@ -886,8 +885,7 @@ describe("inventory reducer", () => {
 
       expect(nextState.idToItem[id2].qty).toBe(15);
       expect(nextState.idToItem[id2].shipped).toBe(3);
-      expect(nextState.idToItem[id1].qty).toBe(0);
-      expect(nextState.idToItem[id1].shipped).toBe(0);
+      expect(nextState.idToItem[id1]).toBeUndefined();
     });
 
     it("does not merge when items are not identical", () => {
