@@ -8,6 +8,7 @@ export interface OrderingImage {
   id: string;
   url: string;
   position: number;
+  altText: string;
 }
 
 export interface ListingOnlyImage {
@@ -64,6 +65,7 @@ export function reorderListingImages(params: {
 
   const reorderedGallery = currentGallery.map((img, idx) => ({
     ...img,
+    altText: img.altText || "",
     position: galleryOffset + idx + 1,
   }));
 
@@ -78,6 +80,7 @@ export function reorderListingImages(params: {
 
   const updatedVariantImages = variantImagesOrdered.map((img, idx) => ({
     ...img,
+    altText: img.altText || "",
     position: idx + 1,
   }));
 

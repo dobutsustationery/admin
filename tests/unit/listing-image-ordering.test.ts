@@ -4,10 +4,10 @@ import { reorderListingImages } from "$lib/listing-image-ordering";
 describe("reorderListingImages", () => {
   it("orders variant images by SKU and gallery images after them", () => {
     const listingImages = [
-      { id: "v-b", url: "img-b", position: 1 },
-      { id: "v-a", url: "img-a", position: 2 },
-      { id: "g-1", url: "img-g1", position: 3 },
-      { id: "g-2", url: "img-g2", position: 4 },
+      { id: "v-b", url: "img-b", position: 1, altText: "B" },
+      { id: "v-a", url: "img-a", position: 2, altText: "A" },
+      { id: "g-1", url: "img-g1", position: 3, altText: "G1" },
+      { id: "g-2", url: "img-g2", position: 4, altText: "G2" },
     ];
 
     const associatedItems = [
@@ -51,7 +51,7 @@ describe("reorderListingImages", () => {
   });
 
   it("returns null when source/target not in gallery subset", () => {
-    const listingImages = [{ id: "v-a", url: "img-a", position: 1 }];
+    const listingImages = [{ id: "v-a", url: "img-a", position: 1, altText: "A" }];
     const associatedItems = [{ id: "sku-a", image: "img-a" }];
 
     const result = reorderListingImages({
