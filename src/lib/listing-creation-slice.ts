@@ -449,10 +449,20 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          });
 
          // B. Create/Update Listing
-         // Identify images from Photo State (In-Memory)
+         
+         // Identify all proposals sharing this handle to aggregate photos
+         const allProposals = state.listingCreation.proposals;
+         const mergedJans = (Object.values(allProposals) as ListingProposal[])
+             .filter((p) => {
+                 const h = p.handle || generateHandle(p.title, p.janCode);
+                 return h === finalHandle;
+             })
+             .map((p) => p.janCode);
+
+         // Identify images from Photo State (In-Memory) for ALL merged JANs
          const janToPhotos = state.photos.janCodeToPhotos || {};
          // @ts-ignore
-         const driveFiles = janToPhotos[janCode] || [];
+         const driveFiles = mergedJans.flatMap(jan => janToPhotos[jan] || []);
          
          // @ts-ignore
         const listingImages = driveFiles.map((f: any, i: number) => ({
@@ -462,7 +472,10 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
              position: i + 1
          }));
          
-         const listingOnly = proposal.listingOnlyImages || [];
+         // Aggregate listing-only images from all merged proposals too?
+         // Yes, otherwise we lose edits from siblings.
+         const listingOnly = mergedJans.flatMap(jan => allProposals[jan]?.listingOnlyImages || []);
+         
          let mergedImages = [...listingImages, ...listingOnly];
          const order = proposal.listingImageOrder || [];
          if (order.length > 0) {
@@ -518,13 +531,7 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          }
 
          // Remove all proposals sharing this handle to avoid stale drafts
-         const allProposals = getState().listingCreation.proposals;
-         const removedJans = (Object.values(allProposals) as ListingProposal[])
-             .filter((p) => {
-                 const h = p.handle || generateHandle(p.title, p.janCode);
-                 return h === finalHandle;
-             })
-             .map((p) => p.janCode);
+         const removedJans = mergedJans; // Reuse calculation
          removedJans.forEach(jan => dispatch(remove_proposal({ janCode: jan })));
 
          // 3. Advance UI
