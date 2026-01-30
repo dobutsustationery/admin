@@ -185,8 +185,8 @@
   }
   
   function handleStartBatch() {
-      // Pick top 50 drafts (increased from 10)
-      const drafts = proposals.filter(p => p.status === 'draft').slice(0, 50);
+      // Pick top 10 drafts (Reverted to 10 per design)
+      const drafts = proposals.filter(p => p.status === 'draft').slice(0, 10);
       
       if (drafts.length === 0) {
           return;
@@ -206,6 +206,12 @@
   }
 
   import ImageCell from "$lib/components/cell-renderers/ImageCell.svelte";
+
+  // --- Progress ---
+  $: totalInBatch = originalBatchJans ? originalBatchJans.length : 0;
+  $: remainingInBatch = activeBatchJans.length;
+  $: doneInBatch = totalInBatch - remainingInBatch;
+  $: progressPercent = totalInBatch > 0 ? (doneInBatch / totalInBatch) * 100 : 0;
 
   // --- Bulk Editor Config ---
   let columnConfig: ColumnConfig[] = [
@@ -382,9 +388,17 @@
         </div>
     {:else if isBulkEditMode}
         <div id="bulk-editor-container" class="h-[calc(100vh-100px)] -mx-6 flex flex-col">
-             <div class="flex justify-between items-center px-6 py-2 bg-white border-b">
-                <h2 class="text-xl font-bold">Batch Editor ({activeBatchJans.length} items)</h2>
-                <button class="btn-save start-review-btn" on:click={() => {
+             <div class="flex justify-between items-center px-6 py-2 bg-white border-b gap-4">
+                <div class="flex-1">
+                    <div class="flex items-center justify-between mb-1">
+                        <h2 class="text-xl font-bold">Batch Editor ({remainingInBatch} items remaining)</h2>
+                        <span class="text-sm text-gray-500">{doneInBatch} / {totalInBatch} Completed</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: {progressPercent}%"></div>
+                    </div>
+                </div>
+                <button class="btn-save start-review-btn ml-4" on:click={() => {
                     dispatchBroadcast(recalculate_batch_navigation());
                     dispatchBroadcast(set_current_step(0));
                 }}>

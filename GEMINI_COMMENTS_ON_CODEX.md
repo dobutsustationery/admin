@@ -37,6 +37,8 @@ The criticisms in `CODEX_BRANCH_REVIEW.md` were **highly accurate** and identifi
     - Added "Return to Dashboard" button to the celebration overlay in `src/routes/listings/create/+page.svelte`.
     - Added batch progress count to "Bulk Editor" header.
     - Implemented draft gallery image replacement.
+    - Reverted batch size to 10 per design.
+    - Added Visual Progress Bar to Bulk Editor.
 
 ## Conclusion
 The `CODEX` review has been fully addressed. The code is now robust and aligned with the design requirements. E2E tests have been updated, although the final "Celebration" step in the listings creation flow exhibits some timing flakiness in the test environment due to animation delays. The underlying logic is verified.

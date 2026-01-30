@@ -423,7 +423,12 @@
               } else if (mode === 'create') {
                   // Draft Gallery Replacement
                   if (uploadingImageId && replacingImagePosition !== null && janCode) {
-                       // 1. Add new image as listing-only
+                       // 1. Identify Old Image Type
+                       const oldImage = listingImages.find(img => img.id === uploadingImageId);
+                       // @ts-ignore
+                       const isListingOnly = oldImage?.isListingOnly;
+
+                       // 2. Add new image as listing-only
                        const newImageId = crypto.randomUUID();
                        const newImage: ListingImage = {
                            id: newImageId,
@@ -433,7 +438,7 @@
                        };
                        dispatchBroadcast(add_listing_only_image({ janCode, image: newImage }));
                        
-                       // 2. Update Order to swap ID
+                       // 3. Update Order to swap ID
                        // Current order might be implicit or explicit.
                        let currentOrder = $store.listingCreation.proposals[janCode]?.listingImageOrder || [];
                        
@@ -451,6 +456,18 @@
                        } else {
                            // Fallback: append if not found (shouldn't happen)
                            console.warn("Could not find image to replace in order", uploadingImageId);
+                           // Force append? No, order is critical for replacement.
+                       }
+
+                       // 4. Remove Old Image
+                       // Use sourceJan from the image object if available, otherwise default to current page janCode
+                       // @ts-ignore
+                       const targetJan = oldImage?.sourceJan || janCode;
+
+                       if (isListingOnly) {
+                           dispatchBroadcast(remove_listing_only_image({ janCode: targetJan, imageId: uploadingImageId }));
+                       } else {
+                           dispatchBroadcast(uncategorize_photo({ janCode: targetJan, photoId: uploadingImageId }));
                        }
                   }
               } else {
