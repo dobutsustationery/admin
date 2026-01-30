@@ -421,7 +421,38 @@
                       }));
                   }
               } else if (mode === 'create') {
-                  alert("Replacing gallery images in draft not implemented");
+                  // Draft Gallery Replacement
+                  if (uploadingImageId && replacingImagePosition !== null && janCode) {
+                       // 1. Add new image as listing-only
+                       const newImageId = crypto.randomUUID();
+                       const newImage: ListingImage = {
+                           id: newImageId,
+                           url: newUrl,
+                           position: replacingImagePosition,
+                           altText: listingData?.title || ''
+                       };
+                       dispatchBroadcast(add_listing_only_image({ janCode, image: newImage }));
+                       
+                       // 2. Update Order to swap ID
+                       // Current order might be implicit or explicit.
+                       let currentOrder = $store.listingCreation.proposals[janCode]?.listingImageOrder || [];
+                       
+                       // If explicit order doesn't exist, we must build it from the current view
+                       if (currentOrder.length === 0) {
+                           currentOrder = listingImages.map(img => img.id);
+                       }
+                       
+                       // Swap
+                       const index = currentOrder.indexOf(uploadingImageId);
+                       if (index !== -1) {
+                           const newOrder = [...currentOrder];
+                           newOrder[index] = newImageId;
+                           dispatchBroadcast(update_proposal_field({ janCode, field: 'listingImageOrder', value: newOrder }));
+                       } else {
+                           // Fallback: append if not found (shouldn't happen)
+                           console.warn("Could not find image to replace in order", uploadingImageId);
+                       }
+                  }
               } else {
                    if (uploadingImageId && replacingImagePosition !== null && handle) {
                        broadcast(firestore, $user.uid, remove_listing_image({ handle, imageId: uploadingImageId }));

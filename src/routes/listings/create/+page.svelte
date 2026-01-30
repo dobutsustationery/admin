@@ -185,8 +185,8 @@
   }
   
   function handleStartBatch() {
-      // Pick top 10 drafts
-      const drafts = proposals.filter(p => p.status === 'draft').slice(0, 10);
+      // Pick top 50 drafts (increased from 10)
+      const drafts = proposals.filter(p => p.status === 'draft').slice(0, 50);
       
       if (drafts.length === 0) {
           return;
@@ -383,7 +383,7 @@
     {:else if isBulkEditMode}
         <div id="bulk-editor-container" class="h-[calc(100vh-100px)] -mx-6 flex flex-col">
              <div class="flex justify-between items-center px-6 py-2 bg-white border-b">
-                <h2 class="text-xl font-bold">Batch Editor</h2>
+                <h2 class="text-xl font-bold">Batch Editor ({activeBatchJans.length} items)</h2>
                 <button class="btn-save start-review-btn" on:click={() => {
                     dispatchBroadcast(recalculate_batch_navigation());
                     dispatchBroadcast(set_current_step(0));
