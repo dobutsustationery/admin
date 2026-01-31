@@ -499,17 +499,30 @@
   function handleApprove() {
       if (mode === 'create' && janCode) {
           approve_proposal_thunk(janCode)(dispatchBroadcast, store.getState, undefined);
-          
-          const newState = store.getState().listingCreation;
-          if (newState.activeBatchJans.length === 0) {
-              goto('/listings/create');
+          // Navigation is handled reactively when the item leaves activeBatchJans
+      }
+  }
+
+  // Reactive Navigation for Batch Flow
+  $: if (!isExiting && mode === 'create' && janCode) {
+      // If the current item is no longer in the active batch (e.g. approved)
+      // We must advance to the valid item at the current step.
+      if (activeBatchJans.length > 0 && !activeBatchJans.includes(janCode)) {
+          const nextIndex = $store.listingCreation.currentStepIndex;
+          // Ensure index is valid
+          const validIndex = Math.min(Math.max(0, nextIndex), activeBatchJans.length - 1);
+          const nextJan = activeBatchJans[validIndex];
+          if (nextJan) {
+              goto(`/listing-detail?mode=create&jan=${nextJan}`);
+          }
+      } else if (activeBatchJans.length === 0) {
+          // Check if it was just approved
+          const allProposals = Object.values($store.listingCreation.proposals);
+          if (allProposals.some((p: any) => p.janCode === janCode && p.status === 'approved')) {
+               goto('/listings/create');
           } else {
-              const nextJan = newState.activeBatchJans[newState.currentStepIndex];
-              if (nextJan) {
-                   goto(`/listing-detail?mode=create&jan=${nextJan}`);
-              } else {
-                   goto('/listings/create');
-              }
+               // Fallback for safety
+               goto('/listings/create');
           }
       }
   }

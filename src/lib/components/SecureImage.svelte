@@ -31,6 +31,16 @@
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
 
+    // Identify if this is a Google resource that might need Auth or Proxy
+    const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com") || src.includes("drive.google.com");
+
+    if (!isGoogle) {
+        // External/Public image (e.g. CDN, Shopify). Load directly to avoid CORS on fetch.
+        objectUrl = src;
+        loading = false;
+        return;
+    }
+
     // Wrap fetch in Queue
     try {
         await imageQueue.add(async () => {
