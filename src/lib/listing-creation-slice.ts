@@ -521,6 +521,8 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          
          // Process Splits
          itemsToSplit.forEach((variants, sourceId) => {
+             const usedIds = new Set<string>(); // Track IDs generated in this batch for collision handling
+
              if (variants.length > 1) {
                  // Split required
                  // Generate new IDs with Collision Handling
@@ -530,11 +532,13 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
                      let uniqueId = baseNewId;
                      let counter = 2;
                      
-                     // Check for collision in current inventory
-                     while (state.inventory.idToItem[uniqueId]) {
+                     // Check for collision in current inventory OR in usedIds
+                     while (state.inventory.idToItem[uniqueId] || usedIds.has(uniqueId)) {
                          uniqueId = `${baseNewId}_v${counter}`;
                          counter++;
                      }
+                     
+                     usedIds.add(uniqueId);
                      
                      return {
                          newId: uniqueId,
