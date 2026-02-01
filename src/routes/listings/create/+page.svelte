@@ -131,6 +131,8 @@
                 variantId: v.id,
                 option1Value: v.option1Value,
                 allocatedQty: v.qty, // Allocated quantity for this variant
+                sourceQty: inventoryItem ? inventoryItem.qty : 0, // Total available
+                photoGroupKey: v.photoGroupKey,
                 
                 // Images: Variant image > Variant JAN Group Image
                 _thumbnail: variantThumb || thumb,
@@ -229,6 +231,8 @@
       { field: 'productCategory', header: 'Product Category', width: 150, type: 'text' },
       { field: 'option1Name', header: 'Option1 Name', width: 120, type: 'text' }, 
       { field: 'option1Value', header: 'Option1 Value', width: 120, type: 'text' }, 
+      { field: 'photoGroupKey', header: 'Photo Group', width: 120, editable: false },
+      { field: 'sourceQty', header: 'Stock', width: 80, editable: false, align: 'right' },
       { field: 'allocatedQty', header: 'Allocated', width: 80, type: 'number', align: 'right' },
 
       { field: 'price', header: 'Price', width: 100, type: 'number', align: 'right' },

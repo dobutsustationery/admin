@@ -32,6 +32,10 @@ The criticisms in `CODEX_SUBTYPES_REVIEW.md` were **accurate and critical**. I h
 *   **Verdict:** **Valid.**
 *   **Status:** **Fixed.** `approve_proposal_thunk` now checks for existing item IDs **AND** intra-batch generated IDs before splitting. It appends a suffix (`_v2`, etc.) if a collision is detected, ensuring safe splitting without unintended merging even if multiple variants share the same option value.
 
+### 7. Batch Editor Visibility (Severity: Low)
+*   **Verdict:** **Valid.**
+*   **Status:** **Fixed.** Updated Batch Editor to display `sourceQty` (Available Stock) and `photoGroupKey`, providing clear visibility into allocation status and photo grouping.
+
 ## Additional Features Implemented
 - **UI for Allocation:** Added a numeric input for `allocatedQty` in the `ListingEditor` variant list.
 - **Visual Progress Bar:** Added to Batch Editor.
@@ -43,4 +47,4 @@ The criticisms in `CODEX_SUBTYPES_REVIEW.md` were **accurate and critical**. I h
 - **E2E Tests:** `e2e/015-listings-creation` verifies the UI flow. The core logic is solid.
 
 ## Conclusion
-The Subtype Automation feature is fully implemented. The system now safely handles splitting inventory items into subtypes, validates allocation quantities, correctly associates photos with variants, provides a clear UI for the process, and ensures ID uniqueness.
+The Subtype Automation feature is fully implemented. The system now safely handles splitting inventory items into subtypes, validates allocation quantities, correctly associates photos with variants, provides a clear UI for the process with full visibility in the batch editor, and ensures ID uniqueness.
