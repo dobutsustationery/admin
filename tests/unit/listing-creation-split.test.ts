@@ -22,8 +22,8 @@ describe("Listing Creation - Split Variant", () => {
       tags: [],
       option1Name: "Opt",
       variants: [
-          { itemId: "item-A", option1Value: "A" },
-          { itemId: variantId, option1Value: "B" }
+          { id: "v1", itemId: "item-A", option1Value: "A" },
+          { id: "v2", itemId: variantId, option1Value: "B" }
       ],
       status: 'draft'
     }]));

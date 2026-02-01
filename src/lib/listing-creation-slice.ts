@@ -17,8 +17,10 @@ export type AppThunk<ReturnType = void> = ThunkAction<
 // --- Types ---
 
 export interface ListingVariant {
+  id: string; // Unique Instance ID
   itemId: string;
   option1Value: string; // e.g. "Red"
+  photoGroupKey?: string; // Link to specific photo group
 }
 
 export interface ListingProposal {
@@ -290,6 +292,7 @@ export interface ListingCreationState {
                if (!proposal.inventoryItemIds.includes(id)) {
                    proposal.inventoryItemIds.push(id);
                    proposal.variants.push({
+                        id: crypto.randomUUID(), // Unique instance ID
                         itemId: id,
                         option1Value: item.subtype || "Default"
                    });
@@ -361,22 +364,23 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
          dispatch(set_drive_connection_status('connected'));
     } else {
          dispatch(set_drive_connection_status('disconnected'));
-         // We can still generate proposals if we have the mapping in memory!
-         // But we might want to warn the user that images won't load.
     }
 
-    // 2. Use In-Memory Mapping (Single Source of Truth)
+    // 2. Group Photo Keys by Base JAN
+    const organizedJans = Object.keys(photos.janCodeToPhotos || {});
+    const baseJanMap: Record<string, { key: string, subtype: string | null }[]> = {};
+    
+    organizedJans.forEach(key => {
+        const [base, subtype] = key.includes(':') ? key.split(':') : [key, null];
+        if (!baseJanMap[base]) baseJanMap[base] = [];
+        baseJanMap[base].push({ key, subtype });
+    });
+
     const candidates: ListingProposal[] = [];
     
-    // Iterate over JANs that have photos assigned
-    // These keys might be "454..." (Base) or "454...:Blue" (Split/Subtype)
-    const organizedJans = Object.keys(photos.janCodeToPhotos || {});
-    
-    for (const photoKey of organizedJans) {
-        // Parse Base JAN and Subtype
-        const [baseJan, subtype] = photoKey.includes(':') ? photoKey.split(':') : [photoKey, null];
-
-        // Find matching inventory items using Base JAN
+    // 3. Iterate Base JANs
+    for (const [baseJan, photoGroups] of Object.entries(baseJanMap)) {
+        // Find matching inventory items for BASE JAN
         const inventoryItems: { id: string, item: Item }[] = [];
         
         for (const [id, val] of Object.entries(inventory.idToItem)) {
@@ -388,37 +392,65 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
             
         if (inventoryItems.length > 0) {
              const firstItem = inventoryItems[0].item;
-             const inventoryIds = inventoryItems.map(x => x.id);
-             
-             // Determine Title & Option
-             let title = `[DRAFT] ${firstItem.description || 'New Product'}`;
-             let optionValue = firstItem.subtype || "Default";
-             
-             if (subtype) {
-                 title += ` (${subtype})`;
-                 optionValue = subtype;
-             }
+             const inventoryIds = inventoryItems.map(x => x.id); // All available items for this JAN
 
-             // Create Proposal using the Photo Key as the proposal's unique janCode
+             // Determine Title
+             let title = `[DRAFT] ${firstItem.description || 'New Product'}`;
+             
+             // Construct Variants
+             // If we have multiple photo groups (subtypes), we create a variant for EACH.
+             // If we have single photo group (no subtype), we create one variant.
+             
+             const variants: ListingVariant[] = [];
+             const allPhotoGroupIds: string[] = [];
+             
+             // Sort groups to ensure deterministic order (e.g. "Blue", "Red")
+             photoGroups.sort((a, b) => (a.subtype || "").localeCompare(b.subtype || ""));
+
+             photoGroups.forEach((pg, idx) => {
+                 allPhotoGroupIds.push(pg.key);
+                 
+                 // Strategy: 
+                 // If we have explicit subtypes from photos, use them.
+                 // If inventory has subtype, use it?
+                 // Usually inventory is generic if we are splitting.
+                 
+                 const optionValue = pg.subtype || firstItem.subtype || "Default";
+                 
+                 // Assign Inventory Items
+                 // If we have multiple inventory items, we could distribute them?
+                 // For now, assign ALL inventory items to the Proposal, 
+                 // and point the variants to the first available item ID (shared).
+                 // The user must split them later if they are physically different items.
+                 
+                 variants.push({
+                     id: crypto.randomUUID(),
+                     itemId: inventoryIds[0], // Point to the base item
+                     option1Value: optionValue,
+                     photoGroupKey: pg.key
+                 });
+             });
+             
+             // If we have inventory items BUT no photo groups (shouldn't happen if we iterate baseJanMap), skip.
+             // But baseJanMap comes from photos.
+
+             // Create Proposal
              candidates.push({
-                 janCode: photoKey, // Unique key (e.g. JAN:Blue)
+                 janCode: baseJan, // Use Base JAN (Correct Semantics)
                  inventoryItemIds: inventoryIds,
-                 photoGroupIds: [photoKey], // Link to specific photo group
+                 photoGroupIds: allPhotoGroupIds,
                  title: title,
                  bodyHtml: "<p>Generated description from AI...</p>",
                  productCategory: "Stationery",
                  vendor: "Dobutsu",
                  tags: ["New Arrival"],
-                 option1Name: "Color",
-                 variants: inventoryItems.map(x => ({ 
-                     itemId: x.id, 
-                     option1Value: optionValue // Use detected subtype
-                 })),
+                 option1Name: "Color", // Default option name
+                 variants: variants,
                  status: 'draft',
                  listingOnlyImages: [],
-                 // Inherit globals by default (undefined)
              });
         }
+        
         // Limit
         if (candidates.length >= 1000) break;
     }

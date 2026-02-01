@@ -55,7 +55,7 @@ describe("Listing Creation - Approve Proposal", () => {
       vendor: "Dobutsu",
       tags: ["tag1"],
       option1Name: "Color",
-      variants: [{ itemId, option1Value: "Red" }],
+      variants: [{ id: "v1", itemId, option1Value: "Red" }],
       status: 'draft',
       price: 1500
     }]));
@@ -93,8 +93,8 @@ describe("Listing Creation - Approve Proposal", () => {
     // 3. Setup Proposals (Merged via handle)
     const baseProp = { bodyHtml: "", productCategory: "", vendor: "", tags: [], option1Name: "Type", variants: [], status: 'draft' as const };
     store.dispatch(add_proposals([
-        { ...baseProp, janCode: janA, inventoryItemIds: ["item-A"], photoGroupIds: [janA], title: "Product", handle, variants: [{ itemId: "item-A", option1Value: "A" }] },
-        { ...baseProp, janCode: janB, inventoryItemIds: ["item-B"], photoGroupIds: [janB], title: "Product", handle, variants: [{ itemId: "item-B", option1Value: "B" }] }
+        { ...baseProp, janCode: janA, inventoryItemIds: ["item-A"], photoGroupIds: [janA], title: "Product", handle, variants: [{ id: "vA", itemId: "item-A", option1Value: "A" }] },
+        { ...baseProp, janCode: janB, inventoryItemIds: ["item-B"], photoGroupIds: [janB], title: "Product", handle, variants: [{ id: "vB", itemId: "item-B", option1Value: "B" }] }
     ]));
 
     // 4. Approve JAN_A
