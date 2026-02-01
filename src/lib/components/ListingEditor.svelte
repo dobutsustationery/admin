@@ -171,6 +171,13 @@
       previewOrderIds = null;
   }
 
+  function handleQtyChange(e: Event, item: any) {
+      const val = parseInt((e.target as HTMLInputElement).value, 10);
+      if (!isNaN(val) && val >= 0) {
+          dispatch('updateVariantQty', { id: item.variantId || item.id, qty: val });
+      }
+  }
+
   // Computed display values
   $: price = associatedItems.length > 0 && associatedItems[0].price 
       ? `€${associatedItems[0].price.toFixed(2)} EUR` 
@@ -237,17 +244,34 @@
            {#if associatedItems.length > 0}
                <div class="section-label mt-4">Subtype Images</div>
                <div class="subtype-list">
-                   {#each associatedItems as item}
-                       {#if item.image}
-                           <div class="subtype-row">
-                               <span class="subtype-label">{item.subtype || 'Default'}</span>
+                   {#each associatedItems as item (item.variantId || item.id)}
+                       {@const subtypeImg = item.photoGroupKey 
+                           ? images.find(img => img.sourceGroup === item.photoGroupKey) 
+                           : (item.image ? { url: item.image } : null)
+                       }
+                       <div class="subtype-row">
+                           <span class="subtype-label">{item.subtype || 'Default'}</span>
+                           
+                           {#if isCreationMode}
+                               <input 
+                                   type="number" 
+                                   min="0" 
+                                   class="subtype-qty-input"
+                                   value={item.allocatedQty !== undefined ? item.allocatedQty : 0}
+                                   on:input={(e) => handleQtyChange(e, item)}
+                                   placeholder="Qty"
+                                   title="Allocated Quantity"
+                               />
+                           {/if}
+
+                           {#if subtypeImg}
                                <div class="subtype-thumb-wrapper">
                                    <button 
                                       class="subtype-thumb-btn {selectedSubtypeId === item.id ? 'selected' : ''}"
                                       on:click={() => handleSubtypeSelect(item.id)}
                                       title={item.subtype}
                                    >
-                                       <SecureImage src={item.image} alt={item.subtype} className="thumbnail-img" />
+                                       <SecureImage src={subtypeImg.url} alt={item.subtype} className="thumbnail-img" />
                                    </button>
                                    {#if !readOnly}
                                    <div class="subtype-overlay">
@@ -260,13 +284,10 @@
                                    </div>
                                    {/if}
                                </div>
-                           </div>
-                       {:else}
-                           <div class="subtype-row">
-                               <span class="subtype-label">{item.subtype || 'Default'}</span>
+                           {:else}
                                <div class="subtype-placeholder">No Image</div>
-                           </div>
-                       {/if}
+                           {/if}
+                       </div>
                    {/each}
                </div>
            {/if}
@@ -449,6 +470,7 @@
   .subtype-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .subtype-row { display: flex; align-items: center; gap: 1rem; padding: 0.25rem 0; }
   .subtype-label { font-size: 0.875rem; font-weight: 500; color: #374151; width: 80px; text-align: right; }
+  .subtype-qty-input { width: 60px; padding: 0.25rem; border: 1px solid #d1d5db; border-radius: 4px; text-align: center; }
   .subtype-thumb-btn { width: 64px; height: 64px; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; cursor: pointer; padding: 0; background: white; opacity: 0.8; transition: all 0.2s; }
   .subtype-thumb-btn:hover { opacity: 1; border-color: #9ca3af; }
   .subtype-thumb-btn.selected { opacity: 1; border-color: #3b82f6; box-shadow: 0 0 0 2px #3b82f6; }

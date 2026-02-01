@@ -21,6 +21,7 @@ export interface ListingVariant {
   itemId: string;
   option1Value: string; // e.g. "Red"
   photoGroupKey?: string; // Link to specific photo group
+  qty?: number; // Allocated quantity for splitting
 }
 
 export interface ListingProposal {
@@ -185,9 +186,20 @@ export interface ListingCreationState {
            const { janCode, variantId, value } = action.payload;
            const proposal = state.proposals[janCode];
            if (proposal) {
-               const variant = proposal.variants.find(v => v.itemId === variantId);
+               // Try finding by ID first, then itemId
+               const variant = proposal.variants.find(v => v.id === variantId || v.itemId === variantId);
                if (variant) {
                    variant.option1Value = value;
+               }
+           }
+      },
+      update_variant_qty: (state, action: PayloadAction<{ janCode: string, variantId: string, qty: number }>) => {
+           const { janCode, variantId, qty } = action.payload;
+           const proposal = state.proposals[janCode];
+           if (proposal) {
+               const variant = proposal.variants.find(v => v.id === variantId || v.itemId === variantId);
+               if (variant) {
+                   variant.qty = qty;
                }
            }
       },
@@ -338,6 +350,7 @@ export const {
     remove_listing_only_image,
     set_variant_option_name,
     update_variant_value,
+    update_variant_qty,
     split_variant,
     move_variant,
     merge_proposal,
@@ -477,8 +490,49 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          // Determine Handle
          const finalHandle = proposal.handle || generateHandle(proposal.title, proposal.janCode);
 
-         // A. Update Inventory Items (Price + Handle + Subtype)
-         proposal.inventoryItemIds.forEach((id: string) => {
+         // A. Handle Inventory Splits
+         const finalInventoryIds: string[] = [];
+         const itemsToSplit = new Map<string, ListingVariant[]>();
+         
+         // Group variants by their CURRENT item ID
+         proposal.variants.forEach(v => {
+             if (!itemsToSplit.has(v.itemId)) itemsToSplit.set(v.itemId, []);
+             itemsToSplit.get(v.itemId)?.push(v);
+         });
+         
+         // Process Splits
+         itemsToSplit.forEach((variants, sourceId) => {
+             if (variants.length > 1) {
+                 // Split required
+                 // Generate new IDs
+                 const splits = variants.map(v => ({
+                     newId: `${sourceId}:${v.option1Value}`, // Deterministic ID
+                     qty: v.qty || 0, // Fallback 0 if not allocated
+                     subtype: v.option1Value
+                 }));
+                 
+                 dispatch(split_inventory_item({ sourceId, splits }));
+                 
+                 // Update references for next steps
+                 splits.forEach(s => finalInventoryIds.push(s.newId));
+                 
+                 // Update variant objects locally to point to new IDs for handle update? 
+                 // Actually, we just need to know which IDs to apply handle to.
+                 // And we need to make sure 'variants' loop below uses new IDs to update subtype?
+                 // The 'variants' loop uses v.itemId. We should update v.itemId in our local copy/reference?
+                 variants.forEach((v, i) => {
+                     v.itemId = splits[i].newId;
+                 });
+                 
+             } else {
+                 // No split, keep original
+                 finalInventoryIds.push(sourceId);
+             }
+         });
+
+         // B. Update Inventory Items (Price + Handle + Subtype)
+         // Update Price/Handle on ALL involved items
+         finalInventoryIds.forEach((id: string) => {
              // Commit Price if set
              if (proposal.price !== undefined) {
                  dispatch(update_field({ id, field: 'price', from: 0, to: proposal.price! }));
@@ -491,11 +545,12 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          proposal.variants.forEach((v: ListingVariant) => {
              console.log("APPROVE DEBUG: variant", v.itemId, v.option1Value);
              if (v.option1Value) {
+                 // v.itemId is updated above if split occurred
                  dispatch(update_field({ id: v.itemId, field: 'subtype', from: "", to: v.option1Value }));
              }
          });
 
-         // B. Create/Update Listing
+         // C. Create/Update Listing
          
          // Identify all proposals sharing this handle to aggregate photos
          const allProposals = state.listingCreation.proposals;
