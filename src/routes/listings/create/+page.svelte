@@ -122,6 +122,9 @@
             return {
                 ...p, // Spread Shared Listing Props (Title, Handle, Price, Body, etc.)
                 
+                // Computed Fields
+                computedHandle: p.handle || generateHandle(p.title || "", p.janCode),
+
                 // Row Identity
                 rowId: v.id || v.itemId, // Unique ID for the grid row (variant instance ID preferred)
                 id: v.itemId, // For Image Picker compatibility

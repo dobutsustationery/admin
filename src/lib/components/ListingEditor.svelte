@@ -25,7 +25,7 @@
   // Subtype Images: specific images linked to inventory items
   // We show ALL images in the gallery to allow reordering.
   // $: subtypeImageUrls = new Set(associatedItems.map(i => i.image).filter(Boolean));
-  $: galleryImages = (images || [])
+  $: galleryImages = [...(images || [])]
       //.filter((img) => !subtypeImageUrls.has(img.url) || img.isListingOnly)
       .sort((a, b) => a.position - b.position);
 
@@ -243,6 +243,13 @@
            <!-- Subtype Images Section -->
            {#if associatedItems.length > 0}
                <div class="section-label mt-4">Subtype Images</div>
+               {#if isCreationMode}
+                   <div class="subtype-header-row">
+                       <span class="subtype-label-header">Variant</span>
+                       <span class="subtype-qty-header">Alloc.</span>
+                       <span class="subtype-img-header">Image</span>
+                   </div>
+               {/if}
                <div class="subtype-list">
                    {#each associatedItems as item (item.variantId || item.id)}
                        {@const subtypeImg = item.photoGroupKey 
@@ -467,6 +474,11 @@
   .stock-dot { width: 8px; height: 8px; background: #f97316; border-radius: 50%; }
   
   /* Subtype List Styles */
+  .subtype-header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.25rem; font-size: 0.75rem; color: #6b7280; font-weight: 600; text-transform: uppercase; }
+  .subtype-label-header { width: 80px; text-align: right; }
+  .subtype-qty-header { width: 60px; text-align: center; }
+  .subtype-img-header { padding-left: 0.5rem; }
+  
   .subtype-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .subtype-row { display: flex; align-items: center; gap: 1rem; padding: 0.25rem 0; }
   .subtype-label { font-size: 0.875rem; font-weight: 500; color: #374151; width: 80px; text-align: right; }
