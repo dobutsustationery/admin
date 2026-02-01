@@ -369,15 +369,19 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
     const candidates: ListingProposal[] = [];
     
     // Iterate over JANs that have photos assigned
+    // These keys might be "454..." (Base) or "454...:Blue" (Split/Subtype)
     const organizedJans = Object.keys(photos.janCodeToPhotos || {});
     
-    for (const janCode of organizedJans) {
-        // Find matching inventory items
+    for (const photoKey of organizedJans) {
+        // Parse Base JAN and Subtype
+        const [baseJan, subtype] = photoKey.includes(':') ? photoKey.split(':') : [photoKey, null];
+
+        // Find matching inventory items using Base JAN
         const inventoryItems: { id: string, item: Item }[] = [];
         
         for (const [id, val] of Object.entries(inventory.idToItem)) {
             const item = val as Item;
-            if (item.janCode === janCode && !item.handle) {
+            if (item.janCode === baseJan && !item.handle) {
                 inventoryItems.push({ id, item });
             }
         }
@@ -385,13 +389,22 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
         if (inventoryItems.length > 0) {
              const firstItem = inventoryItems[0].item;
              const inventoryIds = inventoryItems.map(x => x.id);
+             
+             // Determine Title & Option
+             let title = `[DRAFT] ${firstItem.description || 'New Product'}`;
+             let optionValue = firstItem.subtype || "Default";
+             
+             if (subtype) {
+                 title += ` (${subtype})`;
+                 optionValue = subtype;
+             }
 
-             // Create Proposal
+             // Create Proposal using the Photo Key as the proposal's unique janCode
              candidates.push({
-                 janCode,
+                 janCode: photoKey, // Unique key (e.g. JAN:Blue)
                  inventoryItemIds: inventoryIds,
-                 photoGroupIds: [janCode], 
-                 title: `[DRAFT] ${firstItem.description || 'New Product'}`,
+                 photoGroupIds: [photoKey], // Link to specific photo group
+                 title: title,
                  bodyHtml: "<p>Generated description from AI...</p>",
                  productCategory: "Stationery",
                  vendor: "Dobutsu",
@@ -399,7 +412,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                  option1Name: "Color",
                  variants: inventoryItems.map(x => ({ 
                      itemId: x.id, 
-                     option1Value: x.item.subtype || "Default" 
+                     option1Value: optionValue // Use detected subtype
                  })),
                  status: 'draft',
                  listingOnlyImages: [],
