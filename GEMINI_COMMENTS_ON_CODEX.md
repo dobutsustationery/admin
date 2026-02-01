@@ -14,6 +14,7 @@ The criticisms in `CODEX_SUBTYPES_REVIEW.md` were **accurate and critical**. I d
     - Implemented `split_inventory_item` in `src/lib/inventory.ts` (Green Event).
     - Updated `approve_proposal_thunk` to detect multi-variant proposals sharing an item ID and dispatch `split_inventory_item` to create new SKUs with allocated quantities.
     - Updated `ListingVariant` interface to include `qty` for allocation.
+    - Added allocation validation to `approve_proposal_thunk` (blocks if qty is 0 or > available).
 
 ### 3. Multi-variant proposal logic is not implemented (Severity: Critical)
 *   **Verdict:** **Valid.**
@@ -25,7 +26,7 @@ The criticisms in `CODEX_SUBTYPES_REVIEW.md` were **accurate and critical**. I d
 
 ### 5. Variant-to-photo-group mapping is implicit (Severity: Medium)
 *   **Verdict:** **Valid.**
-*   **Status:** **Fixed.** Added explicit `photoGroupKey` to `ListingVariant`. Updated `ListingEditor` and `listing-detail` to use this key for filtering images per variant.
+*   **Status:** **Fixed.** Added explicit `photoGroupKey` to `ListingVariant`. Updated `ListingEditor` and `listing-detail` to use this key for filtering images per variant. Update image deletion logic to respect `sourceGroup`.
 
 ## Additional Features Implemented
 - **UI for Allocation:** Added a numeric input for `allocatedQty` in the `ListingEditor` variant list.

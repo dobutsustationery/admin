@@ -3,25 +3,20 @@
 This review is based on `docs/design/SUBTYPES_DESIGN.md` and the current implementation in `src/lib/listing-creation-slice.ts`.
 
 ## Critical Issues
-1) **No SKU split / inventory allocation exists.** The design calls for splitting a base JAN into multiple SKUs and allocating quantities per subtype. There is **no action, UI, or data flow** to create new inventory items or allocate stock between variants. The proposal now includes multiple variants, but they **all point to the same base `itemId`**, so approvals will overwrite subtype/handle on a single item. (`docs/design/SUBTYPES_DESIGN.md:25-88`, `src/lib/listing-creation-slice.ts:392-432`, `src/lib/listing-creation-slice.ts:488-499`)
+1) **Split/allocate flow can create zero‑qty variants with no validation.** `approve_proposal_thunk` uses `v.qty || 0` and always calls `split_inventory_item` when multiple variants share the same itemId. If allocations are left blank, this can create new SKUs with `qty = 0` and leave the base item unchanged. There’s no guard to require non‑zero allocation or to verify totals. (`src/lib/listing-creation-slice.ts:490-544`, `src/lib/inventory.ts:701-742`)
 
-2) **Photo group keys are not used in the UI.** `generate_proposals` now stores `photoGroupKey` on variants and includes `photoGroupIds`, but the listing creation UI still loads photos via `photos.janCodeToPhotos[p.janCode]`, which uses the **base JAN** and ignores `JAN:Subtype` keys. This means subtype photo groups likely never render. (`src/lib/listing-creation-slice.ts:404-430`, `src/routes/listing-detail/+page.svelte:132-146`)
+2) **Subtype photos are tracked by `sourceGroup`, but delete/replace still uses `sourceJan`.** The UI now tags photos with `sourceGroup` and variants with `photoGroupKey`, but delete/replace logic still reads `sourceJan`, so subtype photo groups won’t be uncategorized correctly. (`src/routes/listing-detail/+page.svelte:140-166`, `src/routes/listing-detail/+page.svelte:359-472`)
 
 ## Major Gaps / Poor Design Decisions
-3) **Inventory history and event-sourcing are not respected.** Creating new SKUs from a base JAN requires a **green event** that records the split/allocation. No such action exists. Using `update_field` on the base item to represent multiple variants is not reversible and corrupts history. (`docs/design/SUBTYPES_DESIGN.md:54-79`, `src/lib/inventory.ts:286-329`)
-
-4) **Variant-to-photo-group mapping is stored but not enforced.** `photoGroupKey` now exists on variants, but nothing consumes it. If the UI doesn’t bind photos by this key, edits can drift and “Blue” can be paired with “Red” images. (`src/lib/listing-creation-slice.ts:404-430`, `src/routes/listing-detail/+page.svelte:132-146`)
+3) **Inventory split IDs can collide or be invalid.** New IDs are built as `${sourceId}:${option1Value}` without sanitization or collision checks. Editing `option1Value` (or duplicates) can create overlapping IDs or invalid identifiers. (`src/lib/listing-creation-slice.ts:507-525`)
 
 ## Missing Features
-5) **No UI for subtype quantity allocation.** The design explicitly calls for prompting the user (“How many are Red?”). There is no UI, validation, or state to perform or persist this allocation. (`docs/design/SUBTYPES_DESIGN.md:58-79`)
-
-6) **No subtype-aware listing creation in batch editor.** The batch editor and proposal view don’t distinguish `JAN:Subtype` photo groups or link them to variant rows. Without UI changes, users cannot verify or correct variant-photo associations. (`docs/design/SUBTYPES_DESIGN.md:118-147`)
+4) **No subtype-aware batch editor.** The batch editor still doesn’t surface per‑variant photo groups or allocation data, so users can’t verify subtype‑specific imagery at scale. (`docs/design/SUBTYPES_DESIGN.md:118-147`, `src/routes/listings/create/+page.svelte`)
 
 ## Recommendations
-- **Implement a single multi-variant proposal per Base JAN.** Aggregate photo groups and build a unified `variants` array with explicit photo-group mapping.
-- **Introduce an inventory split action** (green event) that creates new item IDs and records quantity allocation across subtypes.
-- **Store explicit `variantPhotoGroupId`** (or similar) in the proposal instead of relying on suffix matching.
-- **Add UI for quantity allocation and confirmation** before approving.
+- **Require valid allocations before split.** Block approve if total allocated qty is 0 or exceeds base qty, and show validation errors.
+- **Use `sourceGroup` everywhere for subtype photos.** Update delete/replace to respect `sourceGroup` rather than `sourceJan`.
+- **Introduce safe ID generation** for split items (slugify + collision handling).
 
 ## Summary
-The subtype design doc is directionally correct, and `generate_proposals` now creates a **single multi-variant proposal per Base JAN**, which fixes the duplicate-proposal issue. However, it still **reuses the same inventory item for all variants**, lacks any stock allocation workflow, and the UI does **not** honor `photoGroupKey` for subtype-specific photo groups. The subtype feature remains unsafe until SKU split/allocation and photo-group binding are implemented.
+The subtype design doc is largely implemented: `generate_proposals` now builds a single multi‑variant proposal per Base JAN, variants carry `photoGroupKey`, and approval can split inventory. However, allocation validation is missing, subtype photo deletions still use `sourceJan` instead of `sourceGroup`, and split ID generation is fragile. The feature is close but still unsafe without validation and consistent photo‑group handling.
