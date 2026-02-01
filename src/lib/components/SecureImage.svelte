@@ -32,7 +32,7 @@
     const token = getStoredToken();
 
     // Identify if this is a Google resource that might need Auth or Proxy
-    const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com") || src.includes("drive.google.com");
+                 const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com");
 
     if (!isGoogle) {
         // External/Public image (e.g. CDN, Shopify). Load directly to avoid CORS on fetch.
@@ -50,7 +50,7 @@
              // We must send the token.
              // But we must NOT send it to external domains (Shopify, etc) or it causes CORS errors/leaks.
              if (token) {
-                 const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com") || src.includes("drive.google.com");
+                              const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com");
                  if (isGoogle) {
                      headers.Authorization = `Bearer ${token.access_token}`;
                  }
