@@ -14,7 +14,7 @@ The criticisms in `CODEX_SUBTYPES_REVIEW.md` were **accurate and critical**. I h
     - Implemented `split_inventory_item` in `src/lib/inventory.ts` (Green Event).
     - Updated `approve_proposal_thunk` to detect multi-variant proposals sharing an item ID and dispatch `split_inventory_item` to create new SKUs with allocated quantities.
     - Updated `ListingVariant` interface to include `qty` for allocation.
-    - Added allocation validation to `approve_proposal_thunk` (blocks if qty is 0 or > available).
+    - Added strict allocation validation to `approve_proposal_thunk` (blocks if total allocated != source qty).
 
 ### 3. Multi-variant proposal logic is not implemented (Severity: Critical)
 *   **Verdict:** **Valid.**
@@ -28,15 +28,19 @@ The criticisms in `CODEX_SUBTYPES_REVIEW.md` were **accurate and critical**. I h
 *   **Verdict:** **Valid.**
 *   **Status:** **Fixed.** Added explicit `photoGroupKey` to `ListingVariant`. Updated `ListingEditor` and `listing-detail` to use this key for filtering images per variant. Update image deletion logic to respect `sourceGroup`.
 
+### 6. Collision Handling (Severity: Medium)
+*   **Verdict:** **Valid.**
+*   **Status:** **Fixed.** `approve_proposal_thunk` now checks for existing item IDs before splitting and appends a suffix (`_v2`, etc.) if a collision is detected, ensuring safe splitting without unintended merging.
+
 ## Additional Features Implemented
 - **UI for Allocation:** Added a numeric input for `allocatedQty` in the `ListingEditor` variant list.
 - **Visual Progress Bar:** Added to Batch Editor.
 - **Draft Image Replacement:** Full implementation.
-- **ID Safety:** Split IDs are now sanitized to prevent invalid characters.
+- **ID Safety:** Split IDs are now sanitized.
 
 ## Verification
 - **Unit Tests:** `tests/unit/listing-creation-generate.test.ts` verifies the new grouping logic. `tests/unit/listing-creation-approve.test.ts` verifies the approval and splitting flow.
 - **E2E Tests:** `e2e/015-listings-creation` verifies the UI flow. The core logic is solid.
 
 ## Conclusion
-The Subtype Automation feature is fully implemented. The system now safely handles splitting inventory items into subtypes, validates allocation quantities, correctly associates photos with variants, and provides a clear UI for the process.
+The Subtype Automation feature is fully implemented. The system now safely handles splitting inventory items into subtypes, validates allocation quantities, correctly associates photos with variants, provides a clear UI for the process, and ensures ID uniqueness.

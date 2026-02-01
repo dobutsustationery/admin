@@ -511,8 +511,9 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
                      return;
                  }
                  
-                 if (sourceItem && totalAllocated > sourceItem.qty) {
-                     alert(`Error: Allocation exceeds stock for ${sourceId}. Available: ${sourceItem.qty}, Allocated: ${totalAllocated}`);
+                 // Strict Allocation Rule: Must allocate 100% of stock to variants
+                 if (sourceItem && totalAllocated !== sourceItem.qty) {
+                     alert(`Error: Allocation mismatch for ${sourceId}. You must allocate exactly ${sourceItem.qty} items. Currently allocated: ${totalAllocated}.`);
                      return;
                  }
              }
@@ -522,13 +523,25 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          itemsToSplit.forEach((variants, sourceId) => {
              if (variants.length > 1) {
                  // Split required
-                 // Generate new IDs
-                 const splits = variants.map(v => ({
-                     // Safe ID: sanitize option value
-                     newId: `${sourceId}:${(v.option1Value || 'Default').replace(/[^a-zA-Z0-9-_]/g, '')}`,
-                     qty: v.qty || 0, 
-                     subtype: v.option1Value
-                 }));
+                 // Generate new IDs with Collision Handling
+                 const splits = variants.map(v => {
+                     const cleanOption = (v.option1Value || 'Default').replace(/[^a-zA-Z0-9-_]/g, '');
+                     let baseNewId = `${sourceId}:${cleanOption}`;
+                     let uniqueId = baseNewId;
+                     let counter = 2;
+                     
+                     // Check for collision in current inventory
+                     while (state.inventory.idToItem[uniqueId]) {
+                         uniqueId = `${baseNewId}_v${counter}`;
+                         counter++;
+                     }
+                     
+                     return {
+                         newId: uniqueId,
+                         qty: v.qty || 0, 
+                         subtype: v.option1Value
+                     };
+                 });
                  
                  dispatch(split_inventory_item({ sourceId, splits }));
                  
