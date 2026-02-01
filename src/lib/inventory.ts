@@ -105,6 +105,11 @@ export const bulk_import_items = createAction<{
   items: Array<BulkImportItem>;
 }>("bulk_import_items");
 
+export const split_inventory_item = createAction<{
+  sourceId: string;
+  splits: { newId: string; qty: number; subtype: string }[];
+}>("split_inventory_item");
+
 export function itemsLookIdentical(oldItem: Item, mergeItem: Item) {
   if (mergeItem.description !== oldItem.description) {
     //console.error(
@@ -694,6 +699,66 @@ export const inventory = createReducer(initialState, (r) => {
       product,
       date,
     };
+  });
+
+  r.addCase(split_inventory_item, (state, action) => {
+    const { sourceId, splits } = action.payload;
+    const sourceItem = state.idToItem[sourceId];
+    
+    if (!sourceItem) {
+        console.error(`Cannot split missing item: ${sourceId}`);
+        return;
+    }
+
+    const totalSplitQty = splits.reduce((sum, s) => sum + s.qty, 0);
+    
+    // Validation (optional, maybe allow negative/overdraft?)
+    // if (sourceItem.qty < totalSplitQty) ...
+
+    // 1. Update Source Item
+    sourceItem.qty -= totalSplitQty;
+    
+    const timestamp = (action as any).timestamp;
+    const val = timestamp ? new Date(timestamp.seconds * 1000).getTime() : Date.now();
+    const dateStr = new Date(val).toLocaleString("en", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+    });
+
+    state.idToHistory[sourceId].push({
+        date: dateStr,
+        desc: `Split ${totalSplitQty} into ${splits.length} variants`,
+        val
+    });
+
+    // 2. Create New Items
+    splits.forEach(split => {
+        if (state.idToItem[split.newId]) {
+            console.warn(`Variant ID collision: ${split.newId} already exists. Merging/Overwriting.`);
+            // Merge logic? Or just add qty?
+            state.idToItem[split.newId].qty += split.qty;
+        } else {
+            state.idToItem[split.newId] = {
+                ...sourceItem,
+                qty: split.qty,
+                subtype: split.subtype,
+                janCode: sourceItem.janCode, // Keep base JAN? Or update if provided?
+                // Reset fields specific to the new item instance
+                shipped: 0, 
+                creationDate: dateStr,
+                timestamp: val
+            };
+        }
+        
+        // History for new item
+        if (!state.idToHistory[split.newId]) state.idToHistory[split.newId] = [];
+        state.idToHistory[split.newId].push({
+            date: dateStr,
+            desc: `Split from ${sourceId} (${split.qty})`,
+            val
+        });
+    });
   });
 
   r.addCase(bulk_import_items, (state, action) => {

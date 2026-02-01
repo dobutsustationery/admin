@@ -7,6 +7,7 @@
       regenerate_title, 
       regenerate_description, 
       update_proposal_field,
+      update_variant_qty,
       add_listing_only_image,
       remove_listing_only_image,
       set_current_step,
@@ -106,43 +107,43 @@
               
               associatedItems = [];
               const allPhotos: any[] = [];
-              const seenItemIds = new Set<string>();
               const seenPhotoIds = new Set<string>();
 
-              // 3. Flatten Items & Photos from ALL siblings
-              siblingProposals.forEach((p: any) => {
-                  // Items
-                  p.inventoryItemIds.forEach((id: string) => {
-                       if (seenItemIds.has(id)) return;
-                       seenItemIds.add(id);
+              // 3. Map Variants to Items & Photos
+              // We now iterate VARIANTS to support splitting one item into multiple.
+              const variants = primaryProposal.variants || [];
+              
+              variants.forEach((v: any) => {
+                   const item = $store.inventory.idToItem[v.itemId];
+                   if (item) {
+                       associatedItems.push({
+                           ...item,
+                           id: v.itemId, // Inventory ID (source)
+                           variantId: v.id, // Unique Instance ID
+                           price: primaryProposal.price !== undefined ? primaryProposal.price : item.price,
+                           subtype: v.option1Value || item.subtype,
+                           allocatedQty: v.qty, // For splitting
+                           photoGroupKey: v.photoGroupKey
+                       });
+                   }
+              });
 
-                       const item = $store.inventory.idToItem[id];
-                       if (item) {
-                           // Find variant definition in proposal to get draft option values
-                           const variant = (p.variants || []).find((v: any) => v.itemId === id);
-                           
-                           associatedItems.push({
-                               ...item,
-                               id,
-                               price: p.price !== undefined ? p.price : item.price,
-                               subtype: variant?.option1Value || item.subtype // Prefer draft value
-                           });
-                       }
-                  });
-
-                  // Photos: Use photoGroupIds to support split variants (where janCode != photo source)
-                  const groups = p.photoGroupIds || [p.janCode];
-                  const pPhotos = groups.flatMap((gid: string) => $store.photos.janCodeToPhotos[gid] || []);
-                  
+              // Photos: Aggregate from all variants' photo keys or proposal's photoGroupIds
+              // If variants have photoGroupKey, prioritize those?
+              // The review said: "UI does not honor photoGroupKey". 
+              // We need to load photos for ALL groups involved.
+              
+              const groupIds = new Set<string>(primaryProposal.photoGroupIds || []);
+              variants.forEach((v: any) => {
+                  if (v.photoGroupKey) groupIds.add(v.photoGroupKey);
+              });
+              
+              groupIds.forEach(gid => {
+                  const pPhotos = $store.photos.janCodeToPhotos[gid] || [];
                   pPhotos.forEach((ph: any) => {
-                      // Dedupe photos? Usually scoped by Jan.
-                      // But merged listing should show ALL.
-                      // ID might not be unique if same file object used?
-                      // Using filename + byteSize as unique key or just URL?
-                      // Drive file ID is best.
                       if (!seenPhotoIds.has(ph.id)) {
                           seenPhotoIds.add(ph.id);
-                          allPhotos.push({ ...ph, sourceJan: p.janCode });
+                          allPhotos.push({ ...ph, sourceGroup: gid }); // Track source group
                       }
                   });
               });
@@ -157,7 +158,7 @@
                   url: p.baseUrl || '', 
                   position: idx,
                   altText: p.filename || 'Product Image',
-                  sourceJan: p.sourceJan
+                  sourceGroup: p.sourceGroup
               }));
               let mergedImages = [...photoImages, ...listingOnly];
               const order = primaryProposal.listingImageOrder || [];
@@ -340,6 +341,12 @@
                   }));
               }
           });
+      }
+  }
+
+  function handleUpdateVariantQty(e: CustomEvent<{ id: string, qty: number }>) {
+      if (mode === 'create' && janCode) {
+          dispatchBroadcast(update_variant_qty({ janCode, variantId: e.detail.id, qty: e.detail.qty }));
       }
   }
   
@@ -789,6 +796,7 @@
       on:updateTitle={handleUpdateTitle}
       on:updateDescription={handleUpdateDescription}
       on:updatePrice={handleUpdatePrice}
+      on:updateVariantQty={handleUpdateVariantQty}
       on:deleteImage={handleDeleteImage}
       on:selectSubtype={handleSelectSubtype}
       on:deleteSubtypeImage={handleDeleteSubtypeImage}
