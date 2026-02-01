@@ -30,7 +30,7 @@ The criticisms in `CODEX_SUBTYPES_REVIEW.md` were **accurate and critical**. I h
 
 ### 6. Collision Handling (Severity: Medium)
 *   **Verdict:** **Valid.**
-*   **Status:** **Fixed.** `approve_proposal_thunk` now checks for existing item IDs before splitting and appends a suffix (`_v2`, etc.) if a collision is detected, ensuring safe splitting without unintended merging.
+*   **Status:** **Fixed.** `approve_proposal_thunk` now checks for existing item IDs **AND** intra-batch generated IDs before splitting. It appends a suffix (`_v2`, etc.) if a collision is detected, ensuring safe splitting without unintended merging even if multiple variants share the same option value.
 
 ## Additional Features Implemented
 - **UI for Allocation:** Added a numeric input for `allocatedQty` in the `ListingEditor` variant list.
