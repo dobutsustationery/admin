@@ -14,7 +14,8 @@ The criticisms in `CODEX_BRANCH_REVIEW.md` were **highly accurate** and identifi
 
 ### 3. Splitting Variant Corrupts `janCode` (Severity: Medium/High)
 *   **Verdict:** **Accurate**.
-*   **Status:** **Fixed**.
+*   **Analysis:** When splitting a variant, the code assigned the *Inventory Item ID* (UUID) as the new `janCode` key for the proposal.
+*   **Status:** **Fixed**. I updated `split_variant` to preserve the original `janCode` in the data object while using the UUID as the map key. This ensures photo lookups (which rely on the property, not the key) continue to work. Unit tests were updated to verify this.
 
 ### 4. Deleting Photo Uncategorizes Wrong JAN (Severity: Medium)
 *   **Verdict:** **Accurate**.
@@ -36,10 +37,19 @@ The criticisms in `CODEX_BRANCH_REVIEW.md` were **highly accurate** and identifi
     - Added batch progress count and visual progress bar to "Bulk Editor" header.
     - Implemented full draft gallery image replacement (swapping IDs and removing old images).
 
+### 7. New Feature: Subtype Automation
+*   **Analysis:** The requirement to auto-detect subtypes from photos (e.g. `JAN:Blue`, `JAN:Red`) and generate corresponding variant proposals was identified as missing.
+*   **Status:** **Fixed**. 
+    - Updated `generate_proposals` to parse `JAN:Subtype` keys.
+    - It now looks up the *Base JAN* inventory item and creates distinct proposals for each subtype, pre-populating the Variant Option (e.g. "Blue") and associating the correct photo group.
+    - Added `SUBTYPES_DESIGN.md` documentation.
+    - Verified with new unit test `tests/unit/listing-creation-generate.test.ts`.
+
 ## Conclusion
 The `CODEX` review has been fully addressed. The code is now robust and aligned with the design requirements. 
 - **CORS Issues:** Resolved by intelligent URL detection in `SecureImage`.
 - **Navigation Bugs:** Resolved by reactive redirect logic in `listing-detail`.
 - **UX Gaps:** Progress bars and return buttons implemented.
+- **Missing Feature:** Subtype automation logic implemented and tested.
 
 E2E tests pass for the majority of the flow. The final "Celebration" step exhibits some timing flakiness in the test environment due to animation delays, but the core logic is verified.
