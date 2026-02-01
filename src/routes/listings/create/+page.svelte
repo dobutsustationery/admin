@@ -91,11 +91,15 @@
             const inventoryItem = $store.inventory.idToItem[v.itemId];
             
             // Photo Lookup Strategy:
-            // 1. Specific Variant JAN
-            // 2. Linked Photo Groups (from split/merge)
-            // 3. Proposal Key (Fallback)
+            // 1. Explicit Photo Group Key (from Subtype Automation)
+            // 2. Specific Variant JAN
+            // 3. Linked Photo Groups (from split/merge)
+            // 4. Proposal Key (Fallback)
             let photos: any[] = [];
-            if (inventoryItem?.janCode && photosState?.janCodeToPhotos?.[inventoryItem.janCode]) {
+            
+            if (v.photoGroupKey && photosState?.janCodeToPhotos?.[v.photoGroupKey]) {
+                photos = photosState.janCodeToPhotos[v.photoGroupKey];
+            } else if (inventoryItem?.janCode && photosState?.janCodeToPhotos?.[inventoryItem.janCode]) {
                 photos = photosState.janCodeToPhotos[inventoryItem.janCode];
             } else if (p.photoGroupIds && p.photoGroupIds.length > 0) {
                 // Aggregate all groups? Or just take first valid? 
@@ -119,13 +123,14 @@
                 ...p, // Spread Shared Listing Props (Title, Handle, Price, Body, etc.)
                 
                 // Row Identity
-                rowId: v.itemId, // Unique ID for the grid row
+                rowId: v.id || v.itemId, // Unique ID for the grid row (variant instance ID preferred)
                 id: v.itemId, // For Image Picker compatibility
                 janCode: p.janCode, // Reference to parent Proposal
                 
                 // Variant Specifics
-                variantId: v.itemId,
+                variantId: v.id,
                 option1Value: v.option1Value,
+                allocatedQty: v.qty, // Allocated quantity for this variant
                 
                 // Images: Variant image > Variant JAN Group Image
                 _thumbnail: variantThumb || thumb,
@@ -224,6 +229,7 @@
       { field: 'productCategory', header: 'Product Category', width: 150, type: 'text' },
       { field: 'option1Name', header: 'Option1 Name', width: 120, type: 'text' }, 
       { field: 'option1Value', header: 'Option1 Value', width: 120, type: 'text' }, 
+      { field: 'allocatedQty', header: 'Allocated', width: 80, type: 'number', align: 'right' },
 
       { field: 'price', header: 'Price', width: 100, type: 'number', align: 'right' },
       { field: 'id', header: 'Variant SKU', width: 150, editable: false },
