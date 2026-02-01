@@ -71,20 +71,26 @@ describe("Listing Creation - Generate Proposals", () => {
 
     // 4. Verify
     const state = store.getState().listingCreation;
-    const proposals = Object.values(state.proposals);
+    const proposals = Object.values(state.proposals) as any[];
     
-    expect(proposals.length).toBe(2);
+    // Should have ONE proposal for the Base JAN
+    expect(proposals.length).toBe(1);
     
-    const blueProp = proposals.find((p: any) => p.janCode === "4542804104370:Blue");
-    expect(blueProp).toBeDefined();
-    expect(blueProp?.title).toContain("(Blue)");
-    expect(blueProp?.inventoryItemIds).toContain("item-1");
-    expect(blueProp?.variants[0].option1Value).toBe("Blue");
+    const proposal = proposals[0];
+    expect(proposal.janCode).toBe("4542804104370");
+    expect(proposal.inventoryItemIds).toContain("item-1");
+    
+    // Should have TWO variants
+    expect(proposal.variants.length).toBe(2);
+    
+    const blueVariant = proposal.variants.find((v: any) => v.option1Value === "Blue");
+    expect(blueVariant).toBeDefined();
+    expect(blueVariant.photoGroupKey).toBe("4542804104370:Blue");
+    expect(blueVariant.itemId).toBe("item-1");
 
-    const redProp = proposals.find((p: any) => p.janCode === "4542804104370:Red");
-    expect(redProp).toBeDefined();
-    expect(redProp?.title).toContain("(Red)");
-    expect(redProp?.inventoryItemIds).toContain("item-1");
-    expect(redProp?.variants[0].option1Value).toBe("Red");
+    const redVariant = proposal.variants.find((v: any) => v.option1Value === "Red");
+    expect(redVariant).toBeDefined();
+    expect(redVariant.photoGroupKey).toBe("4542804104370:Red");
+    expect(redVariant.itemId).toBe("item-1");
   });
 });
