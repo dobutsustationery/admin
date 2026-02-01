@@ -19,3 +19,6 @@ No remaining critical blockers identified after the latest fixes.
 
 ## Summary
 The subtype design doc is largely implemented: `generate_proposals` now builds a single multi‑variant proposal per Base JAN, variants carry `photoGroupKey`, approval can split inventory, and delete/replace now respects `sourceGroup`. Allocation validation now blocks zero/over‑allocation, but partial allocation remains ambiguous. The remaining gaps are split‑ID collision handling, clarity/enforcement around partial vs full allocation, and deeper batch‑editor visibility into subtype groups and validation state.
+
+## Review Update (2026-02-01)
+No new commits or working tree changes since the prior review. The issues listed above still apply and remain open.
