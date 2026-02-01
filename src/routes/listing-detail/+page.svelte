@@ -356,11 +356,14 @@
           const proposal = $store.listingCreation.proposals[janCode];
           const listingOnly = proposal?.listingOnlyImages || [];
           const isListingOnly = listingOnly.some((img: { id: string }) => img.id === e.detail.id);
-          // Use sourceJan from the image object if available, otherwise default to current page janCode (safe fallback for primary)
-          const targetJan = e.detail.sourceJan || janCode;
+          
+          // Use sourceGroup (subtype key) if available, else sourceJan, else default
+          const targetJan = e.detail.sourceGroup || e.detail.sourceJan || janCode;
           
           if (isListingOnly) {
-              dispatchBroadcast(remove_listing_only_image({ janCode: targetJan, imageId: e.detail.id }));
+              // Listing only images are attached to the PROPOSAL (base JAN)
+              // But if we support splitting listing-only images? Not yet.
+              dispatchBroadcast(remove_listing_only_image({ janCode: janCode, imageId: e.detail.id }));
           } else {
               dispatchBroadcast(uncategorize_photo({ janCode: targetJan, photoId: e.detail.id }));
           }
@@ -467,12 +470,12 @@
                        }
 
                        // 4. Remove Old Image
-                       // Use sourceJan from the image object if available, otherwise default to current page janCode
+                       // Use sourceGroup/sourceJan from the image object if available
                        // @ts-ignore
-                       const targetJan = oldImage?.sourceJan || janCode;
+                       const targetJan = oldImage?.sourceGroup || oldImage?.sourceJan || janCode;
 
                        if (isListingOnly) {
-                           dispatchBroadcast(remove_listing_only_image({ janCode: targetJan, imageId: uploadingImageId }));
+                           dispatchBroadcast(remove_listing_only_image({ janCode: janCode, imageId: uploadingImageId }));
                        } else {
                            dispatchBroadcast(uncategorize_photo({ janCode: targetJan, photoId: uploadingImageId }));
                        }

@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction, type ThunkAction } from "@reduxjs/toolkit";
 import type { AnyAction } from "redux"; 
 import type { GlobalState } from "./store";
-import { update_field, type Item } from "./inventory";
+import { update_field, split_inventory_item, type Item } from "./inventory";
 import { imagePrompt, fetchImage } from "./gemini-client";
 import { getStoredToken } from "./google-photos";
 import { create_listing, type Listing, type ListingImage } from "./listings-slice";
@@ -495,10 +495,28 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          const itemsToSplit = new Map<string, ListingVariant[]>();
          
          // Group variants by their CURRENT item ID
-         proposal.variants.forEach(v => {
+         proposal.variants.forEach((v: ListingVariant) => {
              if (!itemsToSplit.has(v.itemId)) itemsToSplit.set(v.itemId, []);
              itemsToSplit.get(v.itemId)?.push(v);
          });
+         
+         // Validation: Check for invalid splits BEFORE dispatching
+         for (const [sourceId, variants] of itemsToSplit) {
+             if (variants.length > 1) {
+                 const sourceItem = state.inventory.idToItem[sourceId];
+                 const totalAllocated = variants.reduce((sum, v) => sum + (v.qty || 0), 0);
+                 
+                 if (totalAllocated === 0) {
+                     alert(`Error: Allocation required for ${sourceId}. Total allocated quantity is 0.`);
+                     return;
+                 }
+                 
+                 if (sourceItem && totalAllocated > sourceItem.qty) {
+                     alert(`Error: Allocation exceeds stock for ${sourceId}. Available: ${sourceItem.qty}, Allocated: ${totalAllocated}`);
+                     return;
+                 }
+             }
+         }
          
          // Process Splits
          itemsToSplit.forEach((variants, sourceId) => {
@@ -506,8 +524,9 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
                  // Split required
                  // Generate new IDs
                  const splits = variants.map(v => ({
-                     newId: `${sourceId}:${v.option1Value}`, // Deterministic ID
-                     qty: v.qty || 0, // Fallback 0 if not allocated
+                     // Safe ID: sanitize option value
+                     newId: `${sourceId}:${(v.option1Value || 'Default').replace(/[^a-zA-Z0-9-_]/g, '')}`,
+                     qty: v.qty || 0, 
                      subtype: v.option1Value
                  }));
                  
@@ -516,10 +535,6 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
                  // Update references for next steps
                  splits.forEach(s => finalInventoryIds.push(s.newId));
                  
-                 // Update variant objects locally to point to new IDs for handle update? 
-                 // Actually, we just need to know which IDs to apply handle to.
-                 // And we need to make sure 'variants' loop below uses new IDs to update subtype?
-                 // The 'variants' loop uses v.itemId. We should update v.itemId in our local copy/reference?
                  variants.forEach((v, i) => {
                      v.itemId = splits[i].newId;
                  });
