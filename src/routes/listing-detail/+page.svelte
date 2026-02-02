@@ -9,6 +9,7 @@
       update_proposal_field,
       update_variant_qty,
       update_variant_value,
+      update_variant_image,
       set_variant_photo_group,
       add_listing_only_image,
       remove_listing_only_image,
@@ -127,7 +128,8 @@
                            price: primaryProposal.price !== undefined ? primaryProposal.price : item.price,
                            subtype: v.option1Value || item.subtype,
                            allocatedQty: v.qty, // For splitting
-                           photoGroupKey: v.photoGroupKey
+                           photoGroupKey: v.photoGroupKey,
+                           variantImage: v.image
                        });
                    }
               });
@@ -438,12 +440,21 @@
               if (replacingSubtypeId) {
                   const item = associatedItems.find(i => i.id === replacingSubtypeId);
                   if (item) {
-                       broadcast(firestore, $user.uid, update_field({
-                          id: item.id,
-                          field: 'image',
-                          from: item.image,
-                          to: newUrl
-                      }));
+                      if (mode === 'create' && janCode) {
+                          const vId = item.variantId || item.id;
+                          dispatchBroadcast(update_variant_image({ 
+                              janCode, 
+                              variantId: vId, 
+                              image: newUrl 
+                          }));
+                      } else {
+                           broadcast(firestore, $user.uid, update_field({
+                              id: item.id,
+                              field: 'image',
+                              from: item.image,
+                              to: newUrl
+                          }));
+                      }
                   }
               } else if (mode === 'create') {
                   // Draft Gallery Replacement
@@ -614,13 +625,25 @@
       if (replacingSubtypeId) {
           // Replace Subtype Image
           if ($user && $user.uid) {
-              // We dispatch update_field to inventory directly as this links the item to the image
-              broadcast(firestore, $user.uid, update_field({ 
-                  id: replacingSubtypeId, 
-                  field: 'image', 
-                  from: '', 
-                  to: candidate.url 
-              }));
+              if (mode === 'create' && janCode) {
+                  // Draft Mode: Update ListingVariant image override
+                  const item = associatedItems.find(i => i.id === replacingSubtypeId);
+                  const vId = item?.variantId || replacingSubtypeId;
+                  
+                  dispatchBroadcast(update_variant_image({ 
+                      janCode, 
+                      variantId: vId, 
+                      image: candidate.url 
+                  }));
+              } else {
+                  // Live Mode: Update Inventory Item directly
+                  broadcast(firestore, $user.uid, update_field({ 
+                      id: replacingSubtypeId, 
+                      field: 'image', 
+                      from: '', 
+                      to: candidate.url 
+                  }));
+              }
           }
           replacingSubtypeId = null;
       } else {
