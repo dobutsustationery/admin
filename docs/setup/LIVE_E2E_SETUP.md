@@ -6,7 +6,7 @@ This guide gets you from **no live test environment** to a fully configured setu
 - `npm run test:live:workflows`
 - `npm run test:live:e2e`
 
-The setup is mostly automated by one script:
+The setup is automated by one script:
 - `npm run setup:live:e2e`
 
 ---
@@ -23,7 +23,7 @@ That Nix shell provides all required CLI tools for this setup, including:
 - `gcloud` (via `google-cloud-sdk`)
 - `bun` / `npm`
 
-You only need a browser available locally for OAuth consent flow popups.
+You only need a browser available locally for the `gcloud` OAuth login flow.
 
 Authenticate gcloud once:
 
@@ -48,14 +48,13 @@ npm run setup:live:e2e
 ```
 
 What this script does:
-1. Optionally enables required Google APIs (if you provide a project ID).
-2. Prompts for OAuth Client ID + Secret.
-3. Runs two OAuth consent flows and captures refresh tokens:
-   - Drive token (`drive.file`)
-   - Photos token (`photospicker.mediaitems.readonly`, `drive.readonly`, `userinfo.email`, `photoslibrary.appendonly`)
-4. Creates/finds Drive root folder (default: `DobutsuE2E`).
-5. Creates Photos fixtures album (default: `DobutsuE2EFixtures`).
-6. Writes `.env.live.local` with all required `E2E_*` variables.
+1. Creates a GCP project automatically (unless it already exists).
+2. Enables required APIs.
+3. Uses `gcloud auth application-default login` with required scopes.
+4. Reuses ADC OAuth client credentials + refresh token for live E2E env.
+5. Creates/finds Drive root folder (default: `DobutsuE2E`).
+6. Creates Photos fixtures album (default: `DobutsuE2EFixtures`).
+7. Writes `.env.live.local` with all required `E2E_*` variables.
 
 After it finishes:
 
@@ -73,37 +72,46 @@ npm run test:live:e2e
 
 ---
 
-## 3) Minimal Manual Steps Still Required
+## 3) Project + Firebase Options
 
-Google OAuth client creation is still a console step.
-
-Create (or reuse) a **Web OAuth Client** in Google Cloud Console:
-- APIs & Services -> Credentials -> Create Credentials -> OAuth client ID
-- Authorized redirect URI must include:
-  - `http://127.0.0.1:8787/oauth2callback`
-
-If this is a new project, also configure OAuth consent screen (External/Internal as needed).
-
-Once you have client ID/secret, rerun:
+Pass an explicit project id:
 
 ```bash
-npm run setup:live:e2e
+npm run setup:live:e2e -- --project-id=dobutsu-live-e2e
+```
+
+Also initialize Firebase on that project (optional):
+
+```bash
+npm run setup:live:e2e -- --project-id=dobutsu-live-e2e --add-firebase
 ```
 
 ---
 
-## 4) Fully Automated GCP API Enablement
+## 4) Useful Flags
 
-If you want the bootstrap to enable APIs for a specific project automatically:
+Use a specific project name while creating the project:
 
 ```bash
-npm run setup:live:e2e -- --project-id=YOUR_PROJECT_ID
+npm run setup:live:e2e -- --project-id=YOUR_PROJECT_ID --project-name="Dobutsu Live E2E"
 ```
 
-Or skip gcloud automation entirely:
+Skip project creation:
 
 ```bash
-npm run setup:live:e2e -- --skip-gcloud
+npm run setup:live:e2e -- --project-id=YOUR_PROJECT_ID --no-create-project
+```
+
+Skip API enablement:
+
+```bash
+npm run setup:live:e2e -- --project-id=YOUR_PROJECT_ID --skip-api-enablement
+```
+
+Skip ADC login (only if you already ran it before):
+
+```bash
+npm run setup:live:e2e -- --project-id=YOUR_PROJECT_ID --skip-adc-login
 ```
 
 APIs enabled by automation:
@@ -123,6 +131,7 @@ APIs enabled by automation:
 - `E2E_GOOGLE_PHOTOS_REFRESH_TOKEN`
 - `E2E_GOOGLE_DRIVE_FOLDER_ID`
 - `E2E_GOOGLE_PHOTOS_ALBUM_ID`
+- `E2E_GOOGLE_PROJECT_ID`
 
 Do not commit this file.
 
@@ -184,8 +193,9 @@ npm run test:live:e2e
 - Re-run bootstrap and re-consent Photos scopes.
 - Ensure the Photos account used in consent is the same one intended for fixtures.
 
-### OAuth redirect fails
-- Confirm OAuth client includes: `http://127.0.0.1:8787/oauth2callback`.
+### Bootstrap cannot create project
+- Ensure your gcloud account has permission to create projects in your org.
+- Re-run with an existing project and `--no-create-project`.
 
 ### Live E2E opens but is not authenticated
 - Ensure env is sourced before run (`source .env.live.local`).
