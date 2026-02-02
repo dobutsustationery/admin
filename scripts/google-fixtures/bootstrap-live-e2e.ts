@@ -129,6 +129,26 @@ function normalizeProjectId(input: string): string {
   return base.slice(0, 30) || `dobutsu-e2e-${Date.now().toString().slice(-8)}`;
 }
 
+function listDobutsuE2EProjects(): string[] {
+  const output = sh(
+    "gcloud projects list --filter='projectId~^dobutsu-e2e' --format='value(projectId)'",
+    { allowFail: true },
+  );
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function deleteProject(projectId: string) {
+  console.log(`🗑️ Deleting project: ${projectId}`);
+  sh(`gcloud projects delete ${projectId} --quiet`);
+}
+
+function isYes(answer: string): boolean {
+  return ["y", "yes"].includes(answer.trim().toLowerCase());
+}
+
 function getProjectNumber(projectId: string): string {
   return sh(
     `gcloud projects describe ${projectId} --format='value(projectNumber)'`,
@@ -382,14 +402,57 @@ async function main() {
       ensureCommandExists("gcloud");
     }
 
-    const projectId = normalizeProjectId(
+    let projectId = normalizeProjectId(
       args.projectId || `dobutsu-e2e-${Date.now().toString().slice(-8)}`,
     );
-    const projectName = args.projectName || projectId;
+    let projectName = args.projectName || projectId;
+    let createProject = args.createProject;
     let projectNumber = "";
 
     if (!args.skipGcloud) {
-      ensureProject(projectId, projectName, args.createProject);
+      if (!args.projectId) {
+        const matchingProjects = listDobutsuE2EProjects();
+
+        if (matchingProjects.length > 1) {
+          console.log(
+            `\n⚠️ Found ${matchingProjects.length} existing dobutsu-e2e projects:`,
+          );
+          matchingProjects.forEach((id) => console.log(`  - ${id}`));
+          const answer = await rl.question(
+            "Delete all of these and create one fresh project? [y/N]: ",
+          );
+          if (!isYes(answer)) {
+            throw new Error("Aborting to avoid creating more dobutsu-e2e projects.");
+          }
+          matchingProjects.forEach(deleteProject);
+          projectId = normalizeProjectId(`dobutsu-e2e-${Date.now().toString().slice(-8)}`);
+          projectName = args.projectName || projectId;
+          createProject = true;
+        } else if (matchingProjects.length === 1) {
+          const existingId = matchingProjects[0];
+          const reuseAnswer = await rl.question(
+            `\nFound existing dobutsu-e2e project ${existingId}. Reuse it? [Y/n]: `,
+          );
+          if (reuseAnswer.trim() === "" || isYes(reuseAnswer)) {
+            projectId = existingId;
+            projectName = args.projectName || existingId;
+            createProject = false;
+            console.log(`♻️ Reusing existing project: ${projectId}`);
+          } else {
+            deleteProject(existingId);
+            projectId = normalizeProjectId(`dobutsu-e2e-${Date.now().toString().slice(-8)}`);
+            projectName = args.projectName || projectId;
+            createProject = true;
+          }
+        } else {
+          console.log("\nNo existing dobutsu-e2e project found; creating one.");
+          projectId = normalizeProjectId(`dobutsu-e2e-${Date.now().toString().slice(-8)}`);
+          projectName = args.projectName || projectId;
+          createProject = true;
+        }
+      }
+
+      ensureProject(projectId, projectName, createProject);
       if (!args.skipApiEnablement) enableApis(projectId);
       maybeAddFirebase(projectId, args.addFirebase);
       ensureAdcLogin(args.skipAdcLogin);

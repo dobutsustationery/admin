@@ -48,13 +48,18 @@ npm run setup:live:e2e
 ```
 
 What this script does:
-1. Creates a GCP project automatically (unless it already exists).
+1. Detects existing `dobutsu-e2e*` projects and prompts you to reuse/delete to avoid project sprawl; then ensures exactly one active target project.
 2. Enables required APIs.
 3. Uses `gcloud auth application-default login` for project automation.
 4. Uses your app OAuth Client ID/Secret (from JSON/env/prompt) and runs local OAuth to mint Drive/Photos refresh tokens.
 5. Creates/finds Drive root folder (default: `DobutsuE2E`).
 6. Creates Photos fixtures album (default: `DobutsuE2EFixtures`).
 7. Writes `.env.live.local` with all required `E2E_*` variables.
+
+Project selection behavior (when `--project-id` is not provided):
+- 0 matching projects: creates one.
+- 1 matching project: prompts to reuse or delete+recreate.
+- 2+ matching projects: prompts to delete all and create one fresh project.
 
 After it finishes:
 
