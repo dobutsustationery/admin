@@ -41,16 +41,13 @@
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
 
-    // Identify if this is a Google resource that might need Auth or Proxy
-    // Note: drive.google.com is purposely EXCLUDED to allow direct <img> loading (via cookies/public)
-    let isGoogle = finalSrc.includes("googleapis.com");
-    // Explicitly exclude googleusercontent (PPA) to ensure we don't fetch/CORS it
-    if (finalSrc.includes("googleusercontent.com")) isGoogle = false;
+    // Fetch googleapis.com directly and googleusercontent.com when we can attach auth.
+    // Otherwise fall back to <img src> loading (works for public/cookie-backed URLs).
+    const isGoogleApi = finalSrc.includes("googleapis.com");
+    const isGoogleusercontent = finalSrc.includes("googleusercontent.com");
+    const shouldFetch = isGoogleApi || (isGoogleusercontent && !!token);
 
-    // Debug log to trace behavior
-    // console.log("[SecureImage] Loading:", finalSrc, "isGoogle:", isGoogle);
-
-    if (!isGoogle) {
+    if (!shouldFetch) {
         // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
         objectUrl = finalSrc;
         loading = false;
@@ -64,7 +61,7 @@
              
              // PPA (Photos Picker API) URLs (on googleusercontent.com) REQUIRE Authentication.
              if (token) {
-                 const isGoogle = finalSrc.includes("googleapis.com");
+                 const isGoogle = isGoogleApi || isGoogleusercontent;
                  if (isGoogle) {
                      headers.Authorization = `Bearer ${token.access_token}`;
                  }
@@ -84,14 +81,19 @@
         });
     } catch (e: any) {
       console.error("SecureImage error:", e);
-      if (e.message.includes("403")) {
-          if (finalSrc.includes("/ppa/")) {
-             error = "Link Expired"; 
-          } else {
-             error = "Access Denied";
-          }
+
+      // Fallback for googleusercontent links: try direct image loading if auth-fetch fails.
+      if (isGoogleusercontent) {
+        objectUrl = finalSrc;
+        error = "";
+      } else if (e.message.includes("403")) {
+        if (finalSrc.includes("/ppa/")) {
+          error = "Link Expired";
+        } else {
+          error = "Access Denied";
+        }
       } else {
-          error = "Error";
+        error = "Error";
       }
     } finally {
       loading = false;
