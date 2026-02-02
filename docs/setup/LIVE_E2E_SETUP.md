@@ -75,6 +75,8 @@ npm run fixtures:google:sync
 npm run test:live:e2e
 ```
 
+`fixtures:google:sync` now uploads missing fixtures from `e2e/fixtures/photo-data/` based on `e2e/fixtures/google-media-manifest.json` (Drive `Seed` folder + configured Photos album).
+
 ---
 
 ## 3) Project + Firebase Options
@@ -108,6 +110,8 @@ Tip: the bootstrap script automatically reads `.env.emulator` and `.env.local` f
 - `E2E_GOOGLE_CLIENT_SECRET`
 - `VITE_GOOGLE_DRIVE_CLIENT_ID`
 - `VITE_GOOGLE_PHOTOS_CLIENT_ID`
+
+It also reads `.env.live.local` on reruns, so once bootstrap succeeds you should not need to re-paste client credentials.
 
 If only client ID is present, the script gives explicit console directions for obtaining the matching client secret.
 It also prints direct project-scoped console URLs (OAuth clients + API pages) and validates client/project number alignment.
@@ -236,6 +240,7 @@ npm run test:live:e2e
 ### `test:live:doctor` fails on Photos
 - Re-run bootstrap and re-consent Photos scopes.
 - Ensure the Photos account used in consent is the same one intended for fixtures.
+- If you see `ACCESS_TOKEN_SCOPE_INSUFFICIENT`, your existing refresh token predates scope updates; run `npm run setup:live:e2e` again to rotate `E2E_GOOGLE_PHOTOS_REFRESH_TOKEN`.
 
 ### Bootstrap cannot create project
 - Ensure your gcloud account has permission to create projects in your org.

@@ -21,6 +21,7 @@ const PHOTOS_SCOPES = [
   "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
   "https://www.googleapis.com/auth/drive.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata",
   "https://www.googleapis.com/auth/photoslibrary.appendonly",
 ];
 
@@ -74,9 +75,11 @@ function parseDotEnvFile(filePath: string): Record<string, string> {
 function loadLocalEnvDefaults(): Record<string, string> {
   const emulatorEnv = parseDotEnvFile(path.resolve(process.cwd(), ".env.emulator"));
   const localEnv = parseDotEnvFile(path.resolve(process.cwd(), ".env.local"));
+  const liveLocalEnv = parseDotEnvFile(path.resolve(process.cwd(), ".env.live.local"));
   return {
     ...emulatorEnv,
     ...localEnv,
+    ...liveLocalEnv,
   };
 }
 
@@ -478,7 +481,7 @@ async function main() {
       console.log("\n⚠️  A project-specific OAuth Web Client is required for Drive/Photos scopes.");
       console.log("I looked for defaults in:");
       console.log("  - E2E_GOOGLE_CLIENT_ID / E2E_GOOGLE_CLIENT_SECRET env vars");
-      console.log("  - .env.emulator and .env.local");
+      console.log("  - .env.emulator, .env.local, and .env.live.local");
       console.log("  - VITE_GOOGLE_DRIVE_CLIENT_ID / VITE_GOOGLE_PHOTOS_CLIENT_ID in those files");
       console.log("\nTo get the CLIENT SECRET:");
       console.log("  1) Open Google Cloud Console for your project");

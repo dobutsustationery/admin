@@ -82,6 +82,11 @@ async function main() {
 
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 403 && text.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+        throw new Error(
+          `Photos token is missing required scopes. Re-run: npm run setup:live:e2e to mint a new E2E_GOOGLE_PHOTOS_REFRESH_TOKEN.`,
+        );
+      }
       throw new Error(`Photos API returned ${response.status}: ${text}`);
     }
 
