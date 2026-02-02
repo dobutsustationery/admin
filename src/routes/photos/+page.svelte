@@ -21,7 +21,7 @@
     isAuthenticated as checkAuth 
   } from "$lib/google-photos";
   import type { MediaItem } from "$lib/google-photos";
-  import { processMediaItems } from "$lib/gemini-client";
+  import { processMediaItems, fetchImage } from "$lib/gemini-client";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { store } from "$lib/store";
   import { broadcast } from "$lib/redux-firestore";
@@ -164,24 +164,9 @@
           // `background-removal` tries to load using `Image` tag which fails CORS for canvas.
           // So we MUST fetch blob -> base64.
           
-          let fetchUrl = item.baseUrl;
-          if (fetchUrl.includes("drive.google.com/thumbnail")) {
-               const match = fetchUrl.match(/id=([^&]+)/);
-               if (match) fetchUrl = `https://www.googleapis.com/drive/v3/files/${match[1]}?alt=media`;
-          } else if (fetchUrl.includes("googleapis.com/drive")) {
-               // Already high res API URL - Do nothing
-          } else if (fetchUrl.includes("googleusercontent.com")) {
-               fetchUrl = `${fetchUrl}=w1024-h1024`; // High res for Photos
-          }
-
-          const res = await fetch(fetchUrl, { headers: { Authorization: `Bearer ${token.access_token}` } });
-          if (!res.ok) throw new Error("Failed to fetch image");
-          const blob = await res.blob();
-          const base64 = await new Promise<string>((resolve) => {
-              const r = new FileReader();
-              r.onload = () => resolve((r.result as string).split(',')[1]);
-              r.readAsDataURL(blob);
-          });
+          const fetched = await fetchImage(item.baseUrl, token.access_token);
+          const base64 = fetched.data;
+          const mimeType = fetched.mimeType || "image/jpeg";
 
           // 2. Process
           let resultBase64: string | null = null;
@@ -191,7 +176,7 @@
               resultBase64 = await autoColorCorrect(base64);
           } else if (operation === 'remove_background') {
               // Convert to data uri
-              resultBase64 = await removeBackground(`data:${blob.type};base64,${base64}`);
+              resultBase64 = await removeBackground(`data:${mimeType};base64,${base64}`);
           }
           
           if (!resultBase64) throw new Error("Operation returned no data");

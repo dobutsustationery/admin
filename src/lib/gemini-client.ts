@@ -35,10 +35,13 @@ export async function fetchImage(
       // but it aligns with "unauthenticated access" needs.
       
   } else if (url.includes("googleusercontent.com")) {
-      // It's a Google Photos picker URL.
-      // Modifiers (e.g. =w1024) BREAK the signature for private PPA URLs when using Auth header.
-      // We must use the raw URL.
-      fetchUrl = url; 
+      // Picker URLs support "=d" to fetch original bytes. Prefer that for full-resolution
+      // processing, but keep a raw-url fallback if the signed URL rejects modifiers.
+      if (!url.match(/=[a-z0-9,-]+$/i)) {
+          fetchUrl = `${url}=d`;
+      } else {
+          fetchUrl = url;
+      }
   }
 
   const headers: Record<string, string> = {};
@@ -53,6 +56,16 @@ export async function fetchImage(
       });
 
       if (!response.ok) {
+        if (url.includes("googleusercontent.com") && fetchUrl !== url) {
+            const rawResponse = await fetch(url, {
+                headers,
+                referrerPolicy: "no-referrer"
+            });
+            if (rawResponse.ok) {
+                return processResponse(rawResponse);
+            }
+        }
+
         // If we used a token and got 401/403, maybe the token is bad/expired/wrong scope.
         // Fallback to trying the original public URL (no auth headers).
         if (token && (response.status === 401 || response.status === 403) && fetchUrl.includes("googleapis.com")) {
