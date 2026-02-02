@@ -17,12 +17,11 @@ test.describe('Photo Processing Workflow', () => {
 
     // Helper to fetch photos
     const fetchPhotos = async () => {
-        const fallbackAlbumId = process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID;
-        return await page.evaluate(async (fallbackId) => {
+        return await page.evaluate(async () => {
           const tokenStr = localStorage.getItem('google_photos_access_token');
           if (!tokenStr) throw new Error('No Photos Token found in localStorage');
           const token = JSON.parse(tokenStr);
-          const albumId = (window as any).__GOOGLE_PHOTOS_ALBUM_ID__ || fallbackId;
+          const albumId = (window as any).__GOOGLE_PHOTOS_ALBUM_ID__;
           
           console.log("DEBUG: Using Album ID:", albumId);
           
@@ -39,80 +38,13 @@ test.describe('Photo Processing Workflow', () => {
           });
           const data = await res.json();
           return data.mediaItems || [];
-        }, fallbackAlbumId);
+        });
     };
 
     let photos = await fetchPhotos();
 
     if (photos.length < 2) {
-        console.log("Album empty or insufficient. Uploading test images...");
-        
-        const img1Path = path.resolve('e2e/test-images/006ccee443ad388aa0799f9d6d97290f.jpg');
-        const img2Path = path.resolve('e2e/test-images/0134323f36be97f2f6b5619eeae32bcd.jpg');
-        
-        if (!fs.existsSync(img1Path) || !fs.existsSync(img2Path)) {
-             test.skip(true, "Test images not found locally.");
-             return;
-        }
-        
-        const img1 = fs.readFileSync(img1Path).toString('base64');
-        const img2 = fs.readFileSync(img2Path).toString('base64');
-        const fallbackAlbumId = process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID;
-        
-        await page.evaluate(async ({ img1, img2, fallbackId }) => {
-             const tokenStr = localStorage.getItem('google_photos_access_token');
-             const token = JSON.parse(tokenStr);
-             const albumId = (window as any).__GOOGLE_PHOTOS_ALBUM_ID__ || fallbackId;
-             if (!albumId) throw new Error("No Album ID available for upload");
-
-             async function uploadPhoto(b64, filename) {
-                 const binary = atob(b64);
-                 const array = new Uint8Array(binary.length);
-                 for(let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
-                 
-                 const res1 = await fetch('https://photoslibrary.googleapis.com/v1/uploads', {
-                     method: 'POST',
-                     headers: {
-                         'Authorization': `Bearer ${token.access_token}`,
-                         'Content-Type': 'application/octet-stream',
-                         'X-Goog-Upload-File-Name': filename,
-                         'X-Goog-Upload-Protocol': 'raw'
-                     },
-                     body: array
-                 });
-                 if (!res1.ok) throw new Error("Upload failed: " + res1.statusText);
-                 const uploadToken = await res1.text();
-                 
-                 const res2 = await fetch('https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate', {
-                     method: 'POST',
-                     headers: {
-                         'Authorization': `Bearer ${token.access_token}`,
-                         'Content-Type': 'application/json'
-                     },
-                     body: JSON.stringify({
-                         albumId: albumId,
-                         newMediaItems: [{
-                             description: "E2E Test Image",
-                             simpleMediaItem: { uploadToken }
-                         }]
-                     })
-                 });
-                 if (!res2.ok) throw new Error("BatchCreate failed: " + res2.statusText);
-             }
-             
-             await uploadPhoto(img1, "test1.jpg");
-             await uploadPhoto(img2, "test2.jpg");
-        }, { img1, img2, fallbackId: fallbackAlbumId });
-        
-        console.log("Uploaded 2 images. Waiting for propagation...");
-        await page.waitForTimeout(5000); // Wait for photos to appear
-        photos = await fetchPhotos();
-        console.log(`Refetched: ${photos.length} photos.`);
-    }
-
-    if (photos.length < 2) {
-        test.skip(true, "Still not enough photos after upload attempt.");
-        return;
+        throw new Error(`Test environment not configured: Not enough photos in album (found ${photos.length}). Expected at least 2.`);
     }
 
     // Use first 2
