@@ -43,7 +43,7 @@
 
     // Identify if this is a Google resource that might need Auth or Proxy
     // Note: drive.google.com is purposely EXCLUDED to allow direct <img> loading (via cookies/public)
-    const isGoogle = finalSrc.includes("googleapis.com");
+    const isGoogle = finalSrc.includes("googleusercontent.com") || finalSrc.includes("googleapis.com");
 
     if (!isGoogle) {
         // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
@@ -59,7 +59,7 @@
              
              // PPA (Photos Picker API) URLs (on googleusercontent.com) REQUIRE Authentication.
              if (token) {
-                 const isGoogle = finalSrc.includes("googleapis.com");
+                 const isGoogle = finalSrc.includes("googleusercontent.com") || finalSrc.includes("googleapis.com");
                  if (isGoogle) {
                      headers.Authorization = `Bearer ${token.access_token}`;
                  }
@@ -79,7 +79,15 @@
         });
     } catch (e: any) {
       console.error("SecureImage error:", e);
-      error = e.message;
+      if (e.message.includes("403")) {
+          if (finalSrc.includes("/ppa/")) {
+             error = "Link Expired"; 
+          } else {
+             error = "Access Denied";
+          }
+      } else {
+          error = "Error";
+      }
     } finally {
       loading = false;
     }
@@ -107,7 +115,7 @@
     class="{className} bg-red-100 flex items-center justify-center p-2 text-center"
   >
     <span class="text-xs text-red-500 font-medium overflow-hidden text-ellipsis px-1" title={error}>
-      {error === "Failed to load image: 403" ? "Access Expired" : "Error"}
+      {error}
     </span>
   </div>
 {:else}
