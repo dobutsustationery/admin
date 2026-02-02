@@ -9,6 +9,7 @@
       update_proposal_field,
       update_variant_qty,
       update_variant_value,
+      set_variant_photo_group,
       add_listing_only_image,
       remove_listing_only_image,
       set_current_step,
@@ -441,6 +442,15 @@
                           from: item.image,
                           to: newUrl
                       }));
+                      
+                      if (mode === 'create' && janCode) {
+                          const vId = item.variantId || item.id;
+                          dispatchBroadcast(set_variant_photo_group({ 
+                              janCode, 
+                              variantId: vId, 
+                              groupKey: null 
+                          }));
+                      }
                   }
               } else if (mode === 'create') {
                   // Draft Gallery Replacement
@@ -601,6 +611,21 @@
                   from: '', 
                   to: candidate.url 
               }));
+              
+              if (mode === 'create' && janCode) {
+                  // Explicitly detach variant from photo group so it uses the item.image (newly selected)
+                  // Use variantId if possible, but replacingSubtypeId might be itemId.
+                  // We need to find the variant ID from associatedItems if needed, or pass it.
+                  // associatedItems contains variantId.
+                  const item = associatedItems.find(i => i.id === replacingSubtypeId);
+                  const vId = item?.variantId || replacingSubtypeId;
+                  
+                  dispatchBroadcast(set_variant_photo_group({ 
+                      janCode, 
+                      variantId: vId, 
+                      groupKey: null 
+                  }));
+              }
           }
           replacingSubtypeId = null;
       } else {
