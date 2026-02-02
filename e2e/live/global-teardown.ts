@@ -31,7 +31,11 @@ async function globalTeardown() {
   }
   
   // Delete env file
-  fs.unlinkSync(envFile);
+  try {
+    fs.unlinkSync(envFile);
+  } catch {
+    // ignore missing file race
+  }
 }
 
 export default globalTeardown;

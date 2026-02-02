@@ -2,6 +2,22 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
+function extractLastJsonObject(output: string): any {
+  const lines = output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(lines[i]);
+    } catch {
+      // keep scanning
+    }
+  }
+  throw new Error('No JSON payload found in sandbox creation output.');
+}
+
 async function globalSetup() {
   console.log('🌍 [Live Setup] Creating Sandbox...');
   
@@ -14,20 +30,13 @@ async function globalSetup() {
       env: process.env // Pass current env which has E2E secrets
     });
     
-    // Parse the JSON output (script prints JSON at end)
-    // The script might print logs before JSON. We look for the last line or parse all?
-    // The script `create-run-sandbox.ts` uses console.log for logs.
-    // I should modify it to output ONLY JSON or write to file?
-    // Or I parse the last valid JSON line.
-    
-    const lines = stdout.trim().split('\n');
-    const jsonLine = lines[lines.length - 1];
-    const sandboxData = JSON.parse(jsonLine);
+    const sandboxData = extractLastJsonObject(stdout);
     
     console.log(`✅ Sandbox Created: ${sandboxData.sandboxName} (${sandboxData.driveFolderId})`);
     
     // Write to a temporary file for tests to consume
     const envFile = path.resolve(process.cwd(), 'e2e/live/.env.live.json');
+    fs.mkdirSync(path.dirname(envFile), { recursive: true });
     fs.writeFileSync(envFile, JSON.stringify(sandboxData, null, 2));
 
   } catch (error: any) {
