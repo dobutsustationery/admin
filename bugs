@@ -1,0 +1,34 @@
+We imported the zebra brush photos, but in bulk edit even though I set
+all the handles equal, it only grouped the first two. I had to do it
+againt to get the full group?
+
+
+Option1 Name should be set to "Subtype" not "Color"
+
+Reordering the images does not work.
+
+The wrong images are shown in the subtype view even though clicking on the
+pills shows the correct image in the preview.
+
+The subtypes should be editable on the listing preview page if you click them
+
+"Allocation" and "Stock" are the same frickin' thing.
+
+The batch complete animation happens more than once when it shouldn't.
+
+The price sometimes preserves the leading 0, but if you delete the leading
+0 it often doubles the leading digits ... pretty messed up price parsing
+
+Not all the images seem to make it over to the finished listing. We'll need a way to
+add images to the listing after the fact.
+
+Unprocessed photos reappeared in the categorized rows, but when you click the history
+they look like the processed photos.
+
+Manual edits resize the photos small - whether we crop or remove bg - it should never
+resize.
+
+The processed image doesn't seem to update on the listing, which is wrong. The listing
+should pull the photo by its id so that future processing affects it.
+
+

@@ -48,7 +48,7 @@ test('Publishing a proposal saves Draft Subtype to Inventory', async ({ page }) 
              productCategory: "Test",
              vendor: "Test",
              tags: [],
-             option1Name: "Color",
+             option1Name: "Subtype",
              variants: [{ itemId, option1Value: "New" }], 
              status: 'draft'
         }]));

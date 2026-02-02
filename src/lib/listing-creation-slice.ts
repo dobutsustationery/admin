@@ -457,7 +457,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                  productCategory: "Stationery",
                  vendor: "Dobutsu",
                  tags: ["New Arrival"],
-                 option1Name: "Color", // Default option name
+                 option1Name: "Subtype", // Default option name
                  variants: variants,
                  status: 'draft',
                  listingOnlyImages: [],
