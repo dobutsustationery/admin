@@ -51,7 +51,7 @@ What this script does:
 1. Creates a GCP project automatically (unless it already exists).
 2. Enables required APIs.
 3. Uses `gcloud auth application-default login` for project automation.
-4. Prompts for your app OAuth Client ID/Secret (or reads env vars) and runs local OAuth to mint Drive/Photos refresh tokens.
+4. Uses your app OAuth Client ID/Secret (from JSON/env/prompt) and runs local OAuth to mint Drive/Photos refresh tokens.
 5. Creates/finds Drive root folder (default: `DobutsuE2E`).
 6. Creates Photos fixtures album (default: `DobutsuE2EFixtures`).
 7. Writes `.env.live.local` with all required `E2E_*` variables.
@@ -82,7 +82,18 @@ http://127.0.0.1:8787/oauth2callback
 
 You can then either:
 - set `E2E_GOOGLE_CLIENT_ID` / `E2E_GOOGLE_CLIENT_SECRET` before bootstrap, or
+- paste the path to downloaded Google OAuth JSON when prompted, or
 - paste them when prompted by `setup:live:e2e`.
+
+The script reads:
+- `web.client_id`
+- `web.client_secret`
+- `web.project_id`
+- `web.redirect_uris`
+
+and validates that:
+- the JSON belongs to the same project being bootstrapped
+- redirect URI includes `http://127.0.0.1:8787/oauth2callback`
 
 Important: that OAuth client must belong to the same GCP project being bootstrapped.  
 If you provide credentials from another project, Photos/Drive scope flows can fail even when APIs are enabled on the new project.
@@ -134,6 +145,12 @@ Skip ADC login (only if you already ran it before):
 
 ```bash
 npm run setup:live:e2e -- --project-id=YOUR_PROJECT_ID --skip-adc-login
+```
+
+When prompted, you can paste a local path such as:
+
+```bash
+~/Downloads/client_secret_XXXX.json
 ```
 
 APIs enabled by automation:
