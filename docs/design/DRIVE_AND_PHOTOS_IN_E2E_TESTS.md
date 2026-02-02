@@ -131,7 +131,7 @@ Critical scenarios derived from recent regressions:
 
 ### 10.1 URL Expiry & Refresh
 - **Scenario:** Store a Photos Picker URL, wait >60 mins (simulated or real delay), verify app handles 403.
-- **Assertion:** App should either auto-refresh the URL using `mediaItemId` or provide a clear UI actionable (e.g. "Refresh Link" button) rather than a broken image.
+- **Assertion:** App should prefer immediate promotion to a durable Drive URL as the source of truth. If only an expired picker URL exists, the UI should provide a clear actionable fallback (e.g. reselect/reimport) rather than showing a broken image.
 - **SecureImage:** Verify `SecureImage` component correctly identifies expired URLs vs. valid ones and sets error state appropriately.
 
 ### 10.2 CORS & Canvas Access
@@ -139,7 +139,7 @@ Critical scenarios derived from recent regressions:
 - **Assertion:**
   - Drive images should load visibly (fallback to `<img>` without CORS if needed).
   - Photos Picker images should load visibly.
-  - **Color Correction:** Verify that at least one path allows Canvas access (`crossorigin="anonymous"`). If PPA URLs don't support it, verify the app falls back to `fetch`+`blob` or disables the feature gracefully instead of crashing.
+  - **Color Correction:** Verify processing uses an authenticated `fetch` + `blob`/data URL path for canvas operations. If that path is unavailable, verify the app disables the feature gracefully with clear user feedback instead of crashing.
 
 ### 10.3 Subtype Automation
 - **Scenario:** Import multiple photos with distinct subtype visual cues (e.g. Blue vs Red).
