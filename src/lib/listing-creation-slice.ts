@@ -22,6 +22,7 @@ export interface ListingVariant {
   option1Value: string; // e.g. "Red"
   photoGroupKey?: string; // Link to specific photo group
   qty?: number; // Allocated quantity for splitting
+  image?: string; // Specific image for this variant (draft override)
 }
 
 export interface ListingProposal {
@@ -219,6 +220,16 @@ export interface ListingCreationState {
                }
            }
       },
+      update_variant_image: (state, action: PayloadAction<{ janCode: string, variantId: string, image: string }>) => {
+           const { janCode, variantId, image } = action.payload;
+           const proposal = state.proposals[janCode];
+           if (proposal) {
+               const variant = proposal.variants.find(v => v.id === variantId || v.itemId === variantId);
+               if (variant) {
+                   variant.image = image;
+               }
+           }
+      },
       set_variant_photo_group: (state, action: PayloadAction<{ janCode: string, variantId: string, groupKey: string | null }>) => {
            const { janCode, variantId, groupKey } = action.payload;
            const proposal = state.proposals[janCode];
@@ -386,6 +397,7 @@ export const {
     set_variant_option_name,
     update_variant_value,
     update_variant_qty,
+    update_variant_image,
     set_variant_photo_group,
     split_variant,
     move_variant,
@@ -609,12 +621,15 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
              dispatch(update_field({ id, field: 'handle', from: "", to: finalHandle }));
          });
          
-         // Commit Subtypes (from variants)
+         // Commit Subtypes & Images (from variants)
          proposal.variants.forEach((v: ListingVariant) => {
              console.log("APPROVE DEBUG: variant", v.itemId, v.option1Value);
              if (v.option1Value) {
                  // v.itemId is updated above if split occurred
                  dispatch(update_field({ id: v.itemId, field: 'subtype', from: "", to: v.option1Value }));
+             }
+             if (v.image) {
+                 dispatch(update_field({ id: v.itemId, field: 'image', from: "", to: v.image }));
              }
          });
 
