@@ -8,9 +8,10 @@
 import type { drive_v3 } from "googleapis";
 
 // Environment configuration
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
-const FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID;
+const CLIENT_ID = (typeof window !== 'undefined' && (window as any).__GOOGLE_DRIVE_CLIENT_ID__) || import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
+const FOLDER_ID = (typeof window !== 'undefined' && (window as any).__GOOGLE_DRIVE_FOLDER_ID__) || import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID;
 const SCOPES = (
+  (typeof window !== 'undefined' && (window as any).__GOOGLE_DRIVE_SCOPES__) ||
   import.meta.env.VITE_GOOGLE_DRIVE_SCOPES ||
   "https://www.googleapis.com/auth/drive.file"
 ).split(",");

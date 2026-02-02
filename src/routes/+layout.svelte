@@ -236,8 +236,14 @@
     return () => {
       unsubscribe();
       if (unsubscribeBroadcast) unsubscribeBroadcast();
+      if (typeof window !== "undefined") delete (window as any).__store;
     };
   });
+
+  if (typeof window !== "undefined") {
+      (window as any).__store = store;
+      (window as any).__firebaseAuth = auth;
+  }
 </script>
 
 {#if me.signedIn}
