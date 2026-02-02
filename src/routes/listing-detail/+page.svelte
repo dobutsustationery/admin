@@ -9,8 +9,11 @@
       update_proposal_field,
       update_variant_qty,
       update_variant_value,
+      set_variant_photo_group,
       add_listing_only_image,
       remove_listing_only_image,
+      exclude_proposal_photo,
+      include_proposal_photo,
       set_current_step,
       remove_proposal,
       complete_batch
@@ -139,10 +142,12 @@
                   if (v.photoGroupKey) groupIds.add(v.photoGroupKey);
               });
               
+              const excludedIds = new Set<string>(primaryProposal.excludedPhotoIds || []);
+              
               groupIds.forEach(gid => {
                   const pPhotos = $store.photos.janCodeToPhotos[gid] || [];
                   pPhotos.forEach((ph: any) => {
-                      if (!seenPhotoIds.has(ph.id)) {
+                      if (!seenPhotoIds.has(ph.id) && !excludedIds.has(ph.id)) {
                           seenPhotoIds.add(ph.id);
                           allPhotos.push({ ...ph, sourceGroup: gid }); // Track source group
                       }
@@ -365,15 +370,13 @@
           const listingOnly = proposal?.listingOnlyImages || [];
           const isListingOnly = listingOnly.some((img: { id: string }) => img.id === e.detail.id);
           
-          // Use sourceGroup (subtype key) if available, else sourceJan, else default
-          const targetJan = e.detail.sourceGroup || e.detail.sourceJan || janCode;
-          
           if (isListingOnly) {
               // Listing only images are attached to the PROPOSAL (base JAN)
               // But if we support splitting listing-only images? Not yet.
               dispatchBroadcast(remove_listing_only_image({ janCode: janCode, imageId: e.detail.id }));
           } else {
-              dispatchBroadcast(uncategorize_photo({ janCode: targetJan, photoId: e.detail.id }));
+              // Exclude from proposal instead of removing from source
+              dispatchBroadcast(exclude_proposal_photo({ janCode, photoId: e.detail.id }));
           }
           return;
       }
@@ -621,18 +624,32 @@
           }
           replacingSubtypeId = null;
       } else {
-          // Add to Gallery
-          const imageId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-              ? crypto.randomUUID()
-              : `img-${Date.now()}`;
-          const image = {
-              id: imageId,
-              url: candidate.url,
-              altText: candidate.altText || '',
-              position: listingImages.length + 1
-          };
-          if ($user && $user.uid) {
-              broadcast(firestore, $user.uid, add_listing_only_image({ janCode: imagePickerTargetJan, image }));
+          // Check for exclusion first
+          const proposal = $store.listingCreation.proposals[imagePickerTargetJan];
+          const isExcluded = proposal?.excludedPhotoIds?.includes(candidate.id);
+
+          if (isExcluded) {
+              dispatchBroadcast(include_proposal_photo({ janCode: imagePickerTargetJan, photoId: candidate.id }));
+              
+              // If explicit order exists, ensure this ID is added
+              if (proposal.listingImageOrder && proposal.listingImageOrder.length > 0) {
+                  const newOrder = [...proposal.listingImageOrder, candidate.id];
+                  dispatchBroadcast(update_proposal_field({ janCode: imagePickerTargetJan, field: 'listingImageOrder', value: newOrder }));
+              }
+          } else {
+              // Add to Gallery (New Listing Only Image)
+              const imageId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+                  ? crypto.randomUUID()
+                  : `img-${Date.now()}`;
+              const image = {
+                  id: imageId,
+                  url: candidate.url,
+                  altText: candidate.altText || '',
+                  position: listingImages.length + 1
+              };
+              if ($user && $user.uid) {
+                  broadcast(firestore, $user.uid, add_listing_only_image({ janCode: imagePickerTargetJan, image }));
+              }
           }
       }
       showImagePicker = false;

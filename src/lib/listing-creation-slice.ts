@@ -50,6 +50,7 @@ export interface ListingProposal {
   price?: number; // Draft price override
   listingOnlyImages?: ListingImage[]; // Listing-only images added in detail view
   listingImageOrder?: string[]; // Ordered list of image IDs for draft view
+  excludedPhotoIds?: string[]; // IDs of source photos hidden from the listing
 
   status: 'draft' | 'approved' | 'skipped';
 }
@@ -176,6 +177,21 @@ export interface ListingCreationState {
               proposal.listingImageOrder = proposal.listingImageOrder.filter(id => id !== imageId);
           }
       },
+      exclude_proposal_photo: (state, action: PayloadAction<{ janCode: string, photoId: string }>) => {
+          const { janCode, photoId } = action.payload;
+          const p = state.proposals[janCode];
+          if (p) {
+              if (!p.excludedPhotoIds) p.excludedPhotoIds = [];
+              if (!p.excludedPhotoIds.includes(photoId)) p.excludedPhotoIds.push(photoId);
+          }
+      },
+      include_proposal_photo: (state, action: PayloadAction<{ janCode: string, photoId: string }>) => {
+          const { janCode, photoId } = action.payload;
+          const p = state.proposals[janCode];
+          if (p && p.excludedPhotoIds) {
+              p.excludedPhotoIds = p.excludedPhotoIds.filter(id => id !== photoId);
+          }
+      },
       set_variant_option_name: (state, action: PayloadAction<{ janCode: string, name: string }>) => {
            const { janCode, name } = action.payload;
            if (state.proposals[janCode]) {
@@ -297,6 +313,9 @@ export interface ListingCreationState {
           if (source.listingImageOrder) {
                target.listingImageOrder = [...(target.listingImageOrder || []), ...source.listingImageOrder];
           }
+          if (source.excludedPhotoIds) {
+               target.excludedPhotoIds = [...new Set([...(target.excludedPhotoIds || []), ...source.excludedPhotoIds])];
+          }
           
           // Cleanup Source
           delete state.proposals[sourceJan];
@@ -362,6 +381,8 @@ export const {
     update_proposal_field, 
     add_listing_only_image,
     remove_listing_only_image,
+    exclude_proposal_photo,
+    include_proposal_photo,
     set_variant_option_name,
     update_variant_value,
     update_variant_qty,
