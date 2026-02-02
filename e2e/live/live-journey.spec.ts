@@ -24,11 +24,25 @@ test('Select and categorize first 8 Google Photos', async ({ page }) => {
     const tokenStr = localStorage.getItem('google_photos_access_token');
     if (!tokenStr) throw new Error('No Photos Token found in localStorage');
     const token = JSON.parse(tokenStr);
+    const albumId = (window as any).__GOOGLE_PHOTOS_ALBUM_ID__;
     
-    // Call Google Photos API directly to get real items
-    const res = await fetch('https://photoslibrary.googleapis.com/v1/mediaItems?pageSize=10', {
-      headers: { Authorization: `Bearer ${token.access_token}` }
+    // Call Google Photos API: Search in our test album to ensure we get test data
+    const url = albumId 
+        ? 'https://photoslibrary.googleapis.com/v1/mediaItems:search'
+        : 'https://photoslibrary.googleapis.com/v1/mediaItems?pageSize=10';
+        
+    const method = albumId ? 'POST' : 'GET';
+    const body = albumId ? JSON.stringify({ albumId, pageSize: 10 }) : undefined;
+
+    const res = await fetch(url, {
+      method,
+      headers: { 
+          Authorization: `Bearer ${token.access_token}`,
+          ...(albumId ? { 'Content-Type': 'application/json' } : {})
+      },
+      body
     });
+    
     if (!res.ok) throw new Error(`Google Photos API Error: ${res.status} ${res.statusText}`);
     const data = await res.json();
     return data.mediaItems ? data.mediaItems.slice(0, 8) : [];
