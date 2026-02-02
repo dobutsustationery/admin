@@ -84,6 +84,9 @@ You can then either:
 - set `E2E_GOOGLE_CLIENT_ID` / `E2E_GOOGLE_CLIENT_SECRET` before bootstrap, or
 - paste them when prompted by `setup:live:e2e`.
 
+Important: that OAuth client must belong to the same GCP project being bootstrapped.  
+If you provide credentials from another project, Photos/Drive scope flows can fail even when APIs are enabled on the new project.
+
 Tip: the bootstrap script automatically reads `.env.emulator` and `.env.local` for:
 - `E2E_GOOGLE_CLIENT_ID`
 - `E2E_GOOGLE_CLIENT_SECRET`
@@ -91,6 +94,7 @@ Tip: the bootstrap script automatically reads `.env.emulator` and `.env.local` f
 - `VITE_GOOGLE_PHOTOS_CLIENT_ID`
 
 If only client ID is present, the script gives explicit console directions for obtaining the matching client secret.
+It also prints direct project-scoped console URLs (OAuth clients + API pages) and validates client/project number alignment.
 
 Pass an explicit project id:
 
