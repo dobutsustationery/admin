@@ -28,15 +28,26 @@
       return;
     }
     
+    // Rewrite Google Drive API links to Thumbnail links (which handle Auth better via cookies/public access)
+    // and avoid CORS/Auth header issues with raw API fetch.
+    let finalSrc = src;
+    if (src.includes("googleapis.com/drive/v3/files/")) {
+        const match = src.match(/files\/([a-zA-Z0-9_-]+)/);
+        if (match && match[1]) {
+            finalSrc = `https://drive.google.com/thumbnail?id=${match[1]}&sz=w3000`;
+        }
+    }
+    
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
 
     // Identify if this is a Google resource that might need Auth or Proxy
-                 const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com");
+    // Note: drive.google.com is purposely EXCLUDED to allow direct <img> loading (via cookies/public)
+    const isGoogle = finalSrc.includes("googleusercontent.com") || finalSrc.includes("googleapis.com");
 
     if (!isGoogle) {
-        // External/Public image (e.g. CDN, Shopify). Load directly to avoid CORS on fetch.
-        objectUrl = src;
+        // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
+        objectUrl = finalSrc;
         loading = false;
         return;
     }
@@ -47,16 +58,14 @@
              const headers: any = {};
              
              // PPA (Photos Picker API) URLs (on googleusercontent.com) REQUIRE Authentication.
-             // We must send the token.
-             // But we must NOT send it to external domains (Shopify, etc) or it causes CORS errors/leaks.
              if (token) {
-                              const isGoogle = src.includes("googleusercontent.com") || src.includes("googleapis.com");
+                 const isGoogle = finalSrc.includes("googleusercontent.com") || finalSrc.includes("googleapis.com");
                  if (isGoogle) {
                      headers.Authorization = `Bearer ${token.access_token}`;
                  }
              }
              
-             const response = await fetch(src, {
+             const response = await fetch(finalSrc, {
                 headers,
                 referrerPolicy: "no-referrer"
              });
