@@ -6,7 +6,7 @@ This guide gets you from **no live test environment** to a fully configured setu
 - `npm run test:live:workflows`
 - `npm run test:live:e2e`
 
-The setup is automated by one script:
+The setup is mostly automated by one script:
 - `npm run setup:live:e2e`
 
 ---
@@ -50,8 +50,8 @@ npm run setup:live:e2e
 What this script does:
 1. Creates a GCP project automatically (unless it already exists).
 2. Enables required APIs.
-3. Uses `gcloud auth application-default login` with required scopes.
-4. Reuses ADC OAuth client credentials + refresh token for live E2E env.
+3. Uses `gcloud auth application-default login` for project automation.
+4. Prompts for your app OAuth Client ID/Secret (or reads env vars) and runs local OAuth to mint Drive/Photos refresh tokens.
 5. Creates/finds Drive root folder (default: `DobutsuE2E`).
 6. Creates Photos fixtures album (default: `DobutsuE2EFixtures`).
 7. Writes `.env.live.local` with all required `E2E_*` variables.
@@ -73,6 +73,16 @@ npm run test:live:e2e
 ---
 
 ## 3) Project + Firebase Options
+
+One required manual setup remains: create an OAuth **Web application** client in Google Auth Platform and add redirect URI:
+
+```
+http://127.0.0.1:8787/oauth2callback
+```
+
+You can then either:
+- set `E2E_GOOGLE_CLIENT_ID` / `E2E_GOOGLE_CLIENT_SECRET` before bootstrap, or
+- paste them when prompted by `setup:live:e2e`.
 
 Pass an explicit project id:
 
