@@ -203,6 +203,20 @@ export interface ListingCreationState {
                }
            }
       },
+      set_variant_photo_group: (state, action: PayloadAction<{ janCode: string, variantId: string, groupKey: string | null }>) => {
+           const { janCode, variantId, groupKey } = action.payload;
+           const proposal = state.proposals[janCode];
+           if (proposal) {
+               const variant = proposal.variants.find(v => v.id === variantId || v.itemId === variantId);
+               if (variant) {
+                   if (groupKey === null) {
+                       delete variant.photoGroupKey;
+                   } else {
+                       variant.photoGroupKey = groupKey;
+                   }
+               }
+           }
+      },
       split_variant: (state, action: PayloadAction<{ janCode: string, variantId: string, newHandle: string }>) => {
            const { janCode, variantId, newHandle } = action.payload;
            const source = state.proposals[janCode];
@@ -351,6 +365,7 @@ export const {
     set_variant_option_name,
     update_variant_value,
     update_variant_qty,
+    set_variant_photo_group,
     split_variant,
     move_variant,
     merge_proposal,
