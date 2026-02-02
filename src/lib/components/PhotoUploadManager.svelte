@@ -92,8 +92,9 @@
           let fetchUrl = item.baseUrl;
           // Photos Picker URLs need rendering options; without these, fetch can 403.
           // `=d` requests downloadable original bytes and is suitable for Drive re-upload.
-          if (fetchUrl.includes("googleusercontent.com") && !fetchUrl.match(/=[a-z0-9,-]+$/i)) {
-              fetchUrl += "=d";
+          if (fetchUrl.includes("googleusercontent.com")) {
+              const base = fetchUrl.replace(/=[a-z0-9,-]+$/i, "");
+              fetchUrl = `${base}=d`;
           } else if (!fetchUrl.includes("googleapis.com") && !fetchUrl.includes("drive.google.com")) {
               fetchUrl += HIGH_RES_SUFFIX;
           }

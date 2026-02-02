@@ -35,13 +35,10 @@ export async function fetchImage(
       // but it aligns with "unauthenticated access" needs.
       
   } else if (url.includes("googleusercontent.com")) {
-      // Picker URLs support "=d" to fetch original bytes. Prefer that for full-resolution
-      // processing, but keep a raw-url fallback if the signed URL rejects modifiers.
-      if (!url.match(/=[a-z0-9,-]+$/i)) {
-          fetchUrl = `${url}=d`;
-      } else {
-          fetchUrl = url;
-      }
+      // Normalize to full-resolution download form. If a resized suffix was persisted
+      // accidentally (e.g. =w400-h400-c), strip it and request original bytes.
+      const base = url.replace(/=[a-z0-9,-]+$/i, "");
+      fetchUrl = `${base}=d`;
   }
 
   const headers: Record<string, string> = {};

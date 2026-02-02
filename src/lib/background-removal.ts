@@ -76,7 +76,7 @@ export async function removeBackground(
     const canvas = document.createElement("canvas");
     canvas.width = image.width;
     canvas.height = image.height;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("Could not get canvas context");
 
     ctx.drawImage(image.toCanvas(), 0, 0);
@@ -124,14 +124,14 @@ export async function smartCrop(input: string | HTMLCanvasElement): Promise<stri
         canvas = document.createElement('canvas');
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) throw new Error("No context");
         ctx.drawImage(img, 0, 0);
     } else {
         canvas = input;
     }
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) throw new Error("No context");
     
     const width = canvas.width;
@@ -226,7 +226,7 @@ export async function smartCrop(input: string | HTMLCanvasElement): Promise<stri
         const cropCanvas = document.createElement("canvas");
         cropCanvas.width = cropWidth;
         cropCanvas.height = cropHeight;
-        const cropCtx = cropCanvas.getContext("2d");
+        const cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
         if (cropCtx) {
           cropCtx.putImageData(
             ctx.getImageData(cropX, cropY, cropWidth, cropHeight),

@@ -15,7 +15,7 @@ export async function autoColorCorrect(input: string): Promise<string> {
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) throw new Error("No context");
     
     ctx.drawImage(img, 0, 0);
