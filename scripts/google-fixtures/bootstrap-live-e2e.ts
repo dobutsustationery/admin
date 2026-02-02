@@ -42,6 +42,13 @@ type AdcCreds = {
   refresh_token: string;
 };
 
+type OAuthClientJsonDefaults = {
+  clientId: string;
+  clientSecret: string;
+  projectId: string;
+  redirectUris: string[];
+};
+
 function parseDotEnvFile(filePath: string): Record<string, string> {
   if (!fs.existsSync(filePath)) return {};
   const raw = fs.readFileSync(filePath, "utf8");
@@ -75,8 +82,12 @@ function loadLocalEnvDefaults(): Record<string, string> {
 
 function parseArgs(): Args {
   const args = process.argv.slice(2);
-  const get = (key: string) =>
-    args.find((a) => a.startsWith(`${key}=`))?.split("=")[1] || "";
+  const get = (key: string) => {
+    const match = args.find((a) => a.startsWith(`${key}=`));
+    if (!match) return "";
+    const equalsIndex = match.indexOf("=");
+    return equalsIndex === -1 ? "" : match.slice(equalsIndex + 1);
+  };
 
   return {
     projectId: get("--project-id"),
@@ -324,6 +335,42 @@ function writeEnvFile(values: Record<string, string>) {
   fs.writeFileSync(ENV_OUTPUT_PATH, `${lines.join("\n")}\n`, "utf8");
 }
 
+function loadOAuthClientJsonDefaults(inputPath: string): OAuthClientJsonDefaults {
+  const resolvedPath = path.resolve(process.cwd(), inputPath);
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(`OAuth client JSON file not found: ${resolvedPath}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(resolvedPath, "utf8"));
+  } catch (err: any) {
+    throw new Error(`Failed to parse OAuth client JSON: ${resolvedPath}\n${err?.message || err}`);
+  }
+
+  const web = (parsed as { web?: unknown }).web as
+    | {
+        client_id?: string;
+        client_secret?: string;
+        project_id?: string;
+        redirect_uris?: string[];
+      }
+    | undefined;
+
+  if (!web?.client_id || !web?.client_secret) {
+    throw new Error(
+      `OAuth client JSON missing web.client_id/web.client_secret: ${resolvedPath}`,
+    );
+  }
+
+  return {
+    clientId: web.client_id,
+    clientSecret: web.client_secret,
+    projectId: web.project_id || "",
+    redirectUris: Array.isArray(web.redirect_uris) ? web.redirect_uris : [],
+  };
+}
+
 async function main() {
   const args = parseArgs();
   const rl = readline.createInterface({ input, output });
@@ -352,18 +399,18 @@ async function main() {
     // Validate ADC exists (required for gcloud-managed bootstrap context).
     readAdcCreds();
     const fileEnv = loadLocalEnvDefaults();
-    const defaultClientId =
+    let defaultClientId =
       process.env.E2E_GOOGLE_CLIENT_ID ||
       fileEnv.E2E_GOOGLE_CLIENT_ID ||
       fileEnv.VITE_GOOGLE_DRIVE_CLIENT_ID ||
       fileEnv.VITE_GOOGLE_PHOTOS_CLIENT_ID ||
       "";
-    const defaultClientSecret =
+    let defaultClientSecret =
       process.env.E2E_GOOGLE_CLIENT_SECRET ||
       fileEnv.E2E_GOOGLE_CLIENT_SECRET ||
       "";
 
-    const useProvided = defaultClientId && defaultClientSecret;
+    let useProvided = defaultClientId && defaultClientSecret;
     if (!useProvided) {
       console.log("\n⚠️  A project-specific OAuth Web Client is required for Drive/Photos scopes.");
       console.log("I looked for defaults in:");
@@ -381,7 +428,41 @@ async function main() {
       console.log("  6) Put them in .env.emulator as:");
       console.log("     E2E_GOOGLE_CLIENT_ID=...");
       console.log("     E2E_GOOGLE_CLIENT_SECRET=...");
-      console.log("     (or paste them below now)\n");
+      console.log("     (or paste a path to client_secret_*.json below)\n");
+
+      const oauthClientJsonPath = (
+        await rl.question(
+          "OAuth client JSON path (optional, press Enter to skip): ",
+        )
+      ).trim();
+      if (oauthClientJsonPath) {
+        const oauthClientJsonDefaults = loadOAuthClientJsonDefaults(oauthClientJsonPath);
+        console.log(
+          `🔑 Loaded OAuth client defaults from JSON: ${path.resolve(process.cwd(), oauthClientJsonPath)}`,
+        );
+        if (
+          oauthClientJsonDefaults.projectId &&
+          oauthClientJsonDefaults.projectId !== projectId
+        ) {
+          printProjectConsoleLinks(projectId);
+          throw new Error(
+            `OAuth JSON belongs to project ${oauthClientJsonDefaults.projectId}, but bootstrap target is ${projectId}. Use a client JSON downloaded from project ${projectId}.`,
+          );
+        }
+        if (
+          oauthClientJsonDefaults.redirectUris.length > 0 &&
+          !oauthClientJsonDefaults.redirectUris.includes(REDIRECT_URI)
+        ) {
+          printProjectConsoleLinks(projectId);
+          throw new Error(
+            `OAuth JSON redirect URIs do not include ${REDIRECT_URI}. Update the OAuth Web Client in project ${projectId} and re-download the JSON.`,
+          );
+        }
+
+        defaultClientId = oauthClientJsonDefaults.clientId;
+        defaultClientSecret = oauthClientJsonDefaults.clientSecret;
+        useProvided = defaultClientId && defaultClientSecret;
+      }
     }
 
     const clientId = useProvided
