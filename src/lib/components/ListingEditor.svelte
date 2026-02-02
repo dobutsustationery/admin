@@ -24,9 +24,9 @@
   // Split Images
   // Subtype Images: specific images linked to inventory items
   // We show ALL images in the gallery to allow reordering.
-  // $: subtypeImageUrls = new Set(associatedItems.map(i => i.image).filter(Boolean));
+  $: subtypeImageUrls = new Set(associatedItems.map(i => i.image).filter(Boolean));
   $: galleryImages = [...(images || [])]
-      //.filter((img) => !subtypeImageUrls.has(img.url) || img.isListingOnly)
+      .filter((img) => !subtypeImageUrls.has(img.url) || img.isListingOnly)
       .sort((a, b) => a.position - b.position);
 
   $: displayedGalleryImages = (() => {
@@ -201,7 +201,7 @@
            </div>
 
            <!-- Gallery Thumbnails (Images Not Associated with Subtypes) -->
-           {#if galleryImages.length > 0}
+           {#if galleryImages.length > 0 || !readOnly}
                <div class="section-label">Gallery Images</div>
                <div class="thumbnails-grid" role="list" on:dragover={handleDragOver} on:drop={handleDrop}>
                    {#each displayedGalleryImages as img (img.id)}
@@ -237,6 +237,14 @@
                            {/if}
                        </div>
                    {/each}
+                   
+                   {#if !readOnly}
+                       <div class="thumbnail-container">
+                           <button class="thumbnail-btn add-btn" on:click={() => dispatch('addImage')} title="Add Image">
+                               <span class="plus-icon">+</span>
+                           </button>
+                       </div>
+                   {/if}
                </div>
            {/if}
            
@@ -515,4 +523,8 @@
   .btn-buy-shop:disabled:hover {
       background: #9ca3af;
   }
+  
+  .add-btn { display: flex; align-items: center; justify-content: center; background: #f9fafb; border: 1px dashed #d1d5db; color: #9ca3af; transition: all 0.2s; }
+  .add-btn:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+  .plus-icon { font-size: 2rem; font-weight: 300; line-height: 1; }
 </style>

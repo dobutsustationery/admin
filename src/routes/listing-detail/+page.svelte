@@ -806,6 +806,7 @@
       on:replaceImage={handleReplaceImage}
       on:replaceSubtypeImage={handleReplaceSubtypeImage}
       on:reorderImages={handleReorderImages}
+      on:addImage={openImagePicker}
       on:approve={handleApprove}
       on:drop={handleDrop}
   />
