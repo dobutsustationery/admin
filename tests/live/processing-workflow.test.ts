@@ -1,23 +1,16 @@
-// @vitest-environment jsdom
-
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as GoogleDrive from '../../src/lib/google-drive';
-import { removeBackground, smartCrop } from '../../src/lib/background-removal';
-import { autoColorCorrect } from '../../src/lib/color-correction';
+import { removeBackground } from '../../src/lib/background-removal';
 import { OAuth2Client } from 'google-auth-library';
-import { google } from 'googleapis';
 
 const isLiveConfigured = process.env.E2E_GOOGLE_CLIENT_ID && process.env.E2E_GOOGLE_DRIVE_REFRESH_TOKEN;
+const canUseDom = typeof document !== 'undefined';
 
-describe.skipIf(!isLiveConfigured)('Image Processing Workflow (@live)', () => {
+describe.skipIf(!isLiveConfigured || !canUseDom)('Image Processing Workflow (@live)', () => {
     let accessToken: string;
     let driveRootId: string;
     let seedFolderId: string;
     
-    // We assume there is a 'Seed' folder with a test image.
-    // Ideally we upload one if missing.
-    const SEED_IMAGE_NAME = 'test_seed_image.png'; 
-
     beforeAll(async () => {
          // Setup Tokens
         const clientId = process.env.E2E_GOOGLE_CLIENT_ID!;
@@ -44,13 +37,6 @@ describe.skipIf(!isLiveConfigured)('Image Processing Workflow (@live)', () => {
         if (!seedFolderId) return;
 
         // 1. Find a seed image
-        // We'll search for any png/jpg in Seed
-        const drive = google.drive({ version: 'v3', auth: process.env.E2E_GOOGLE_CLIENT_ID }); 
-        // Note: googleapis requires auth client. 
-        // We can use listFilesInFolder from library but it uses global FOLDER_ID.
-        // Let's use raw fetch or the helper if we can override folder.
-        // `listAllImages` logic searches recursively.
-        // Let's manually list using raw fetch to be safe and specific.
         
         const params = new URLSearchParams({
             q: `'${seedFolderId}' in parents and mimeType contains 'image/' and trashed=false`,
@@ -72,14 +58,6 @@ describe.skipIf(!isLiveConfigured)('Image Processing Workflow (@live)', () => {
         console.log(`Using seed image: ${file.name} (${file.id})`);
 
         // 2. Download
-        const blobUrl = await GoogleDrive.downloadFile(file.id, accessToken);
-        // downloadFile returns text? No, it returns text() because it assumes CSV in many places?
-        // Wait, `downloadFile` impl:
-        // `return await response.text();`
-        // This is BAD for images. It will corrupt binary data.
-        // I need to fix `google-drive.ts` `downloadFile` to support Blob or ArrayBuffer.
-        
-        // For now, I'll fetch manually here to avoid breaking refactor yet.
         const dlRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
             headers: { Authorization: `Bearer ${accessToken}` }
         });

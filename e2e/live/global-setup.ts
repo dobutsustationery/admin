@@ -1,9 +1,8 @@
-import { FullConfig } from '@playwright/test';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-async function globalSetup(config: FullConfig) {
+async function globalSetup() {
   console.log('🌍 [Live Setup] Creating Sandbox...');
   
   // Run the sandbox creation script
@@ -28,7 +27,7 @@ async function globalSetup(config: FullConfig) {
     console.log(`✅ Sandbox Created: ${sandboxData.sandboxName} (${sandboxData.driveFolderId})`);
     
     // Write to a temporary file for tests to consume
-    const envFile = path.resolve(__dirname, '.env.live.json');
+    const envFile = path.resolve(process.cwd(), 'e2e/live/.env.live.json');
     fs.writeFileSync(envFile, JSON.stringify(sandboxData, null, 2));
 
   } catch (error: any) {
