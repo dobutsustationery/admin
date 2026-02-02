@@ -16,9 +16,7 @@ export const test = base.extend<LiveFixtures>({
     }
     
     // Inject into window
-    console.log("DEBUG: sandboxData loaded:", JSON.stringify(sandboxData));
     await page.addInitScript((data) => {
-        console.log("DEBUG: InitScript injection data:", data);
         (window as any).__GOOGLE_DRIVE_FOLDER_ID__ = data.driveFolderId;
         (window as any).__GOOGLE_DRIVE_CLIENT_ID__ = data.clientId;
         (window as any).__GOOGLE_PHOTOS_ALBUM_ID__ = data.photosAlbumId;
