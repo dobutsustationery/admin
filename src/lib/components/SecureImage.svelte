@@ -38,10 +38,13 @@
         }
     }
 
-    // Google Photos/Picker googleusercontent URLs often require a size suffix.
-    // If missing, load failures/403 are common. Add a safe default render size.
-    if (finalSrc.includes("googleusercontent.com") && !finalSrc.match(/=[a-z0-9,-]+$/i)) {
-      finalSrc = `${finalSrc}=w2000`;
+    // During pending picker->Drive migration we intentionally avoid rendering
+    // fragile googleusercontent URLs and keep a loading spinner instead.
+    if (isUploading && finalSrc.includes("googleusercontent.com")) {
+      loading = true;
+      error = "";
+      objectUrl = "";
+      return;
     }
     
     // Check global token for authenticated Google Photos items
