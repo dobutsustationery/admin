@@ -97,6 +97,10 @@
     loadImage();
   }
 
+  // Determine crossorigin attribute: 'anonymous' for most external images to allow Canvas access,
+  // but NULL for drive.google.com (requires cookies) and blobs/data (same origin).
+  $: crossOriginVal = ((objectUrl && !objectUrl.includes("drive.google.com") && !objectUrl.startsWith("data:") && !objectUrl.startsWith("blob:")) ? "anonymous" : null) as "anonymous" | null;
+
   onDestroy(() => {
     if (objectUrl && !objectUrl.startsWith("data:")) {
       URL.revokeObjectURL(objectUrl);
@@ -125,7 +129,7 @@
     class={className}
     style="width: 100%; height: 100%; display: block; {style}"
     referrerpolicy="no-referrer"
-    crossorigin="anonymous"
+    crossorigin={crossOriginVal}
     on:error={() => {
         console.error("Image failed to load:", objectUrl);
         error = "Failed to load image";
