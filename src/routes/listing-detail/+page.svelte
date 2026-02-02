@@ -9,7 +9,6 @@
       update_proposal_field,
       update_variant_qty,
       update_variant_value,
-      set_variant_photo_group,
       add_listing_only_image,
       remove_listing_only_image,
       set_current_step,
@@ -442,15 +441,6 @@
                           from: item.image,
                           to: newUrl
                       }));
-                      
-                      if (mode === 'create' && janCode) {
-                          const vId = item.variantId || item.id;
-                          dispatchBroadcast(set_variant_photo_group({ 
-                              janCode, 
-                              variantId: vId, 
-                              groupKey: null 
-                          }));
-                      }
                   }
               } else if (mode === 'create') {
                   // Draft Gallery Replacement
@@ -577,13 +567,30 @@
       });
 
       const candidates = new Map<string, { id: string; url: string; altText: string }>();
+      
+      // 1. Photos from Base JAN
       const janPhotos = $store.photos.janCodeToPhotos?.[janCode] || [];
       janPhotos.forEach((p: any, idx: number) => {
           const url = p.baseUrl || p.thumbnailLink || p.productUrl;
           if (!url) return;
           candidates.set(url, { id: p.id || `jan-${idx}`, url, altText: p.filename || 'JAN photo' });
       });
+      
+      // 2. Photos from Linked Photo Groups (Subtypes)
+      if (primary.photoGroupIds) {
+          primary.photoGroupIds.forEach((gid: string) => {
+              const groupPhotos = $store.photos.janCodeToPhotos?.[gid] || [];
+              groupPhotos.forEach((p: any, idx: number) => {
+                  const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+                  if (!url) return;
+                  if (!candidates.has(url)) {
+                      candidates.set(url, { id: p.id || `group-${gid}-${idx}`, url, altText: p.filename || `Photo Group ${gid}` });
+                  }
+              });
+          });
+      }
 
+      // 3. Current Variant Images (from Siblings)
       siblings.forEach((p: any) => {
           p.inventoryItemIds.forEach((id: string) => {
               const item = $store.inventory.idToItem[id];
@@ -611,21 +618,6 @@
                   from: '', 
                   to: candidate.url 
               }));
-              
-              if (mode === 'create' && janCode) {
-                  // Explicitly detach variant from photo group so it uses the item.image (newly selected)
-                  // Use variantId if possible, but replacingSubtypeId might be itemId.
-                  // We need to find the variant ID from associatedItems if needed, or pass it.
-                  // associatedItems contains variantId.
-                  const item = associatedItems.find(i => i.id === replacingSubtypeId);
-                  const vId = item?.variantId || replacingSubtypeId;
-                  
-                  dispatchBroadcast(set_variant_photo_group({ 
-                      janCode, 
-                      variantId: vId, 
-                      groupKey: null 
-                  }));
-              }
           }
           replacingSubtypeId = null;
       } else {
