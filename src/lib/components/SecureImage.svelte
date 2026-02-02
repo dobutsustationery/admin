@@ -41,11 +41,11 @@
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
 
-    // Fetch googleapis.com directly and googleusercontent.com when we can attach auth.
-    // Otherwise fall back to <img src> loading (works for public/cookie-backed URLs).
+    // Only fetch googleapis endpoints. googleusercontent (PPA/lh3) does not provide
+    // CORS headers for JS fetch, so it must load via plain <img src>.
     const isGoogleApi = finalSrc.includes("googleapis.com");
     const isGoogleusercontent = finalSrc.includes("googleusercontent.com");
-    const shouldFetch = isGoogleApi || (isGoogleusercontent && !!token);
+    const shouldFetch = isGoogleApi;
 
     if (!shouldFetch) {
         // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
