@@ -19,12 +19,14 @@ export const test = base.extend<LiveFixtures>({
     await page.addInitScript((data) => {
         (window as any).__GOOGLE_DRIVE_FOLDER_ID__ = data.driveFolderId;
         (window as any).__GOOGLE_DRIVE_CLIENT_ID__ = data.clientId;
+        (window as any).__GOOGLE_PHOTOS_ALBUM_ID__ = data.photosAlbumId;
         // Scopes must match what we requested in auth.setup.ts
         (window as any).__GOOGLE_DRIVE_SCOPES__ = "https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/photoslibrary.readonly";
         console.log("💉 Injected Sandbox FOLDER_ID:", data.driveFolderId);
     }, {
         driveFolderId: sandboxData.driveFolderId,
         clientId: process.env.E2E_GOOGLE_CLIENT_ID,
+        photosAlbumId: process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID,
     });
 
     await use(sandboxData.driveFolderId);
