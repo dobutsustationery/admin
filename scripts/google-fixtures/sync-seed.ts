@@ -12,6 +12,10 @@ const REQUIRED_ENV_VARS = [
 
 const MANIFEST_PATH = path.resolve(process.cwd(), 'e2e/fixtures/google-media-manifest.json');
 
+function escapeDriveQueryValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 async function main() {
   const missingVars = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
   if (missingVars.length > 0) {
@@ -75,22 +79,19 @@ async function main() {
   for (const fixture of fixtures) {
     const { id, filename, sha256 } = fixture;
     // Check if exists in Seed folder
-    const fileQ = `'${seedFolderId}' in parents and name = '${filename}' and trashed = false`;
+    const safeFilename = escapeDriveQueryValue(filename);
+    const fileQ = `'${seedFolderId}' in parents and name = '${safeFilename}' and trashed = false`;
     
     try {
-      const fileRes = await drive.files.list({ 
-        q: fileQ, 
-        fields: 'files(id, hasThumbnail, sha256Checksum, size)' // Note: sha256Checksum might not be populated for all files or takes time?
-        // standard drive API returns md5Checksum. sha256 only via content?
-        // Actually Drive API v3 usually provides md5Checksum. 
-        // We might need to download and verification if we really care about SHA256 matches.
-        // For "existence", name match is enough for now.
+      const fileRes = await drive.files.list({
+        q: fileQ,
+        fields: 'files(id, name, md5Checksum, size)',
       });
 
       if (fileRes.data.files && fileRes.data.files.length > 0) {
-        // const file = fileRes.data.files[0];
-        // TODO: Strict checksum check? 
-        console.log(`✅ [${id}] Found: ${filename}`);
+        const file = fileRes.data.files[0];
+        const checksumMsg = sha256 ? ` (manifest sha256: ${sha256.slice(0, 12)}...)` : '';
+        console.log(`✅ [${id}] Found: ${filename}${checksumMsg}`);
       } else {
         console.error(`❌ [${id}] Missing: ${filename} in Seed folder.`);
         success = false;

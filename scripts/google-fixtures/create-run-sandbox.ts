@@ -52,6 +52,18 @@ async function main() {
   const photosAuth = new OAuth2Client(clientId, clientSecret);
   photosAuth.setCredentials({ refresh_token: photosRefreshToken });
   const { token: photosAccessToken } = await photosAuth.getAccessToken();
+  if (!photosAccessToken) {
+    console.error('❌ Failed to obtain Photos access token.');
+    // Best-effort cleanup of created Drive sandbox.
+    if (driveFolderId) {
+      try {
+        await drive.files.delete({ fileId: driveFolderId });
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+    process.exit(1);
+  }
 
   let photosAlbumId = '';
   try {
@@ -77,8 +89,14 @@ async function main() {
     photosAlbumId = album.id;
   } catch (error: any) {
     console.error('❌ Failed to create Photos sandbox album:', error.message);
-    // Attempt cleanup of Drive folder if photos fail? 
-    // For now, just exit. Test runner handles cleanup or manual sweep.
+    // Cleanup Drive sandbox when album creation fails to avoid leaks.
+    if (driveFolderId) {
+      try {
+        await drive.files.delete({ fileId: driveFolderId });
+      } catch (cleanupError: any) {
+        console.error('⚠️ Failed to cleanup Drive sandbox after Photos failure:', cleanupError.message);
+      }
+    }
     process.exit(1);
   }
 
