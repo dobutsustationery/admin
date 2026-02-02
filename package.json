@@ -52,6 +52,7 @@
     "deploy:staging": "vite build --mode staging && firebase deploy --only hosting --project staging",
     "fixtures:google:sync": "bun scripts/google-fixtures/sync-seed.ts",
     "fixtures:google:cleanup": "bun scripts/google-fixtures/cleanup-run-sandbox.ts",
+    "setup:live:e2e": "bun scripts/google-fixtures/bootstrap-live-e2e.ts",
     "test:live:doctor": "bun scripts/google-fixtures/healthcheck.ts",
     "test:live:contracts": "vitest run --testNamePattern='@live'",
     "test:live:workflows": "vitest run --run tests/live/processing-workflow.test.ts",
