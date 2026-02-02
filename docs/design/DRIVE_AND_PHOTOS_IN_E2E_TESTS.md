@@ -4,7 +4,7 @@
 
 Drive and Google Photos behavior is currently fragile in production flows:
 - OAuth state and token handling can drift or expire unexpectedly.
-- External image loading is non-deterministic (URL expiry, throttling, permissions).
+- External image loading is non-deterministic (URL expiry, throttling, permissions, CORS).
 - Photo processing (crop/color correction/background removal/upload) lacks stable, automated verification.
 - Existing E2E setup intentionally avoids real Google integrations in CI, which limits confidence.
 
@@ -125,7 +125,31 @@ Use layered assertions (strict -> tolerant):
 
 Do not rely only on screenshots for image correctness.
 
-## 10) CI/CD Execution Plan
+## 10) Specific Edge Cases & Regression Prevention
+
+Critical scenarios derived from recent regressions:
+
+### 10.1 URL Expiry & Refresh
+- **Scenario:** Store a Photos Picker URL, wait >60 mins (simulated or real delay), verify app handles 403.
+- **Assertion:** App should either auto-refresh the URL using `mediaItemId` or provide a clear UI actionable (e.g. "Refresh Link" button) rather than a broken image.
+- **SecureImage:** Verify `SecureImage` component correctly identifies expired URLs vs. valid ones and sets error state appropriately.
+
+### 10.2 CORS & Canvas Access
+- **Scenario:** Load images from Drive (`drive.google.com`) and Photos Picker (`lh3.googleusercontent.com`).
+- **Assertion:**
+  - Drive images should load visibly (fallback to `<img>` without CORS if needed).
+  - Photos Picker images should load visibly.
+  - **Color Correction:** Verify that at least one path allows Canvas access (`crossorigin="anonymous"`). If PPA URLs don't support it, verify the app falls back to `fetch`+`blob` or disables the feature gracefully instead of crashing.
+
+### 10.3 Subtype Automation
+- **Scenario:** Import multiple photos with distinct subtype visual cues (e.g. Blue vs Red).
+- **Assertion:**
+  - App correctly groups photos into subtypes.
+  - Generated proposals map photos to the correct variant `photoGroupKey`.
+  - Batch Editor displays the correct thumbnail for each variant row.
+  - "Split Inventory" action correctly allocates stock and maintains photo association.
+
+## 11) CI/CD Execution Plan
 
 Add separate jobs:
 - `test:e2e` (existing fast lane).
@@ -142,7 +166,7 @@ Control flakiness:
 - Record HAR + console logs + API error payloads on failure.
 - Keep tests serial for shared quota-sensitive resources.
 
-## 11) Required Configuration
+## 12) Required Configuration
 
 New env/secret set (examples):
 - `E2E_GOOGLE_CLIENT_ID`
@@ -157,7 +181,7 @@ Security rules:
 - Rotate refresh tokens on schedule and incident.
 - Restrict test users to least-privilege scopes and isolated folders/albums.
 
-## 12) Observability and Debuggability
+## 13) Observability and Debuggability
 
 On failure, always capture:
 - Playwright trace/video/screenshot
@@ -169,7 +193,7 @@ On failure, always capture:
 Add a one-command diagnostic:
 - `npm run test:live:doctor` to verify scopes, folder access, album access, quota headroom.
 
-## 13) Rollout Plan
+## 14) Rollout Plan
 
 ### Phase 1: Foundation
 - Add token bootstrap tooling and healthcheck.
@@ -185,7 +209,7 @@ Add a one-command diagnostic:
 - Wire nightly CI and artifacts.
 - Define pass/fail SLO (example: 95% pass over 14 days).
 
-## 14) Acceptance Criteria
+## 15) Acceptance Criteria
 
 This design is complete when:
 1. A nightly CI run executes real Drive + Photos tests without mocks.
@@ -194,7 +218,7 @@ This design is complete when:
 4. Listing flows using real media are validated end-to-end.
 5. Team can run the live suite locally with documented setup and deterministic fixture prep.
 
-## 15) Suggested New Commands
+## 16) Suggested New Commands
 
 - `npm run test:live:contracts`
 - `npm run test:live:workflows`
@@ -202,4 +226,3 @@ This design is complete when:
 - `npm run test:live:doctor`
 - `npm run fixtures:google:sync`
 - `npm run fixtures:google:cleanup`
-
