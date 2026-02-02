@@ -118,6 +118,35 @@ function normalizeProjectId(input: string): string {
   return base.slice(0, 30) || `dobutsu-e2e-${Date.now().toString().slice(-8)}`;
 }
 
+function getProjectNumber(projectId: string): string {
+  return sh(
+    `gcloud projects describe ${projectId} --format='value(projectNumber)'`,
+  );
+}
+
+function getClientProjectNumber(clientId: string): string {
+  return clientId.split("-")[0] || "";
+}
+
+function printProjectConsoleLinks(projectId: string) {
+  console.log("Open these pages for the correct project:");
+  console.log(
+    `  - OAuth Clients: https://console.cloud.google.com/auth/clients?project=${projectId}`,
+  );
+  console.log(
+    `  - OAuth Branding/Consent: https://console.cloud.google.com/auth/branding?project=${projectId}`,
+  );
+  console.log(
+    `  - Photos Library API: https://console.cloud.google.com/apis/library/photoslibrary.googleapis.com?project=${projectId}`,
+  );
+  console.log(
+    `  - Photo Picker API: https://console.cloud.google.com/apis/library/photospicker.googleapis.com?project=${projectId}`,
+  );
+  console.log(
+    `  - Drive API: https://console.cloud.google.com/apis/library/drive.googleapis.com?project=${projectId}`,
+  );
+}
+
 function ensureProject(projectId: string, projectName: string, createProject: boolean) {
   const existing = sh(
     `gcloud projects describe ${projectId} --format='value(projectId)'`,
@@ -310,12 +339,14 @@ async function main() {
       args.projectId || `dobutsu-e2e-${Date.now().toString().slice(-8)}`,
     );
     const projectName = args.projectName || projectId;
+    let projectNumber = "";
 
     if (!args.skipGcloud) {
       ensureProject(projectId, projectName, args.createProject);
       if (!args.skipApiEnablement) enableApis(projectId);
       maybeAddFirebase(projectId, args.addFirebase);
       ensureAdcLogin(args.skipAdcLogin);
+      projectNumber = getProjectNumber(projectId);
     }
 
     // Validate ADC exists (required for gcloud-managed bootstrap context).
@@ -343,6 +374,7 @@ async function main() {
       console.log("  1) Open Google Cloud Console for your project");
       console.log("  2) Go to Google Auth Platform -> Clients");
       console.log("  3) Open (or create) an OAuth Client of type: Web application");
+      printProjectConsoleLinks(projectId);
       console.log("  4) Add authorized redirect URI:");
       console.log(`   ${REDIRECT_URI}`);
       console.log("  5) Copy Client ID and Client Secret");
@@ -361,6 +393,16 @@ async function main() {
 
     if (!clientId || !clientSecret) {
       throw new Error("OAuth client id/secret are required.");
+    }
+
+    if (projectNumber) {
+      const clientProjectNumber = getClientProjectNumber(clientId);
+      if (clientProjectNumber && clientProjectNumber !== projectNumber) {
+        printProjectConsoleLinks(projectId);
+        throw new Error(
+          `OAuth client appears to belong to a different project. Expected project number ${projectNumber}, but client id prefix was ${clientProjectNumber}. Use a Web OAuth client created in project ${projectId}.`,
+        );
+      }
     }
 
     const driveRefreshToken = await getRefreshToken(
