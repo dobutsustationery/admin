@@ -16,7 +16,7 @@
   import { goto } from '$app/navigation';
 
   import { initiateOAuthFlow, isAuthenticated } from "$lib/google-drive";
-  import { set_drive_connection_status, update_proposal_field, update_variant_value } from "$lib/listing-creation-slice";
+  import { set_drive_connection_status, update_proposal_field, update_variant_value, update_variant_image } from "$lib/listing-creation-slice";
   import BulkEditor, { type ColumnConfig } from "$lib/components/BulkEditor.svelte";
   import { generateHandle } from "$lib/handle-utils";
   import ViewCell from "$lib/components/cell-renderers/ViewCell.svelte";
@@ -117,7 +117,8 @@
 
             const thumb = photos && photos.length > 0 ? (photos[0].baseUrl || photos[0].thumbnailLink) : null;
             
-            const variantThumb = inventoryItem?.image || null;
+            // Prioritize draft variant image override, then inventory image
+            const variantThumb = v.image || inventoryItem?.image || null;
             
             return {
                 ...p, // Spread Shared Listing Props (Title, Handle, Price, Body, etc.)
@@ -324,10 +325,21 @@
 
   function handlePickVariantImage(candidate: { id: string; url: string }) {
       if (!imagePickerRow) return;
-      const itemId = imagePickerRow.id;
-      const item = $store.inventory.idToItem[itemId];
-      const from = item?.image || "";
-      dispatchBroadcast(update_field({ id: itemId, field: 'image', from, to: candidate.url }));
+      
+      // Use Variant Context to update Draft State
+      const janCode = imagePickerRow.janCode;
+      const variantId = imagePickerRow.variantId;
+      
+      if (janCode && variantId) {
+          dispatchBroadcast(update_variant_image({ janCode, variantId, image: candidate.url }));
+      } else {
+          // Fallback to Inventory Update (e.g. legacy)
+          const itemId = imagePickerRow.id;
+          const item = $store.inventory.idToItem[itemId];
+          const from = item?.image || "";
+          dispatchBroadcast(update_field({ id: itemId, field: 'image', from, to: candidate.url }));
+      }
+      
       showImagePicker = false;
       imagePickerRow = null;
   }
