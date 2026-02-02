@@ -19,7 +19,15 @@
       system: let
         pkgs = nixpkgs.legacyPackages.${system};
       in {
-        devShells.default = pkgs.mkShell {packages = with pkgs; [nodejs_20 bun openjdk imagemagick];};
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            nodejs_20
+            bun
+            openjdk
+            imagemagick
+            google-cloud-sdk
+          ];
+        };
       }
     );
 }

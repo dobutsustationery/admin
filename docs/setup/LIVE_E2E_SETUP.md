@@ -13,10 +13,17 @@ The setup is mostly automated by one script:
 
 ## 1) Prerequisites
 
-Install:
-- `gcloud` CLI (for project + API setup automation)
-- `bun` and `npm` (repo scripts use both)
-- Browser available locally (OAuth consent flow opens URLs)
+From a fresh machine, run:
+
+```bash
+direnv allow
+```
+
+That Nix shell provides all required CLI tools for this setup, including:
+- `gcloud` (via `google-cloud-sdk`)
+- `bun` / `npm`
+
+You only need a browser available locally for OAuth consent flow popups.
 
 Authenticate gcloud once:
 
@@ -187,4 +194,3 @@ npm run test:live:e2e
 ### Sandbox cleanup warning for Photos albums
 - Drive folders are cleaned automatically.
 - Photos albums may require periodic manual cleanup depending on API constraints/account policy.
-
