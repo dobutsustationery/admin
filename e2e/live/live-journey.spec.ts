@@ -48,21 +48,11 @@ test('Drive Processing Pipeline Journey', async ({ page, sandboxId }) => {
   
   // Dispatch Selection
   await page.evaluate((item) => {
-      const { store } = (window as any);
-      // We need the action creator.
-      // If action is NOT exposed on window, we can construct the object manually if we know the type.
-      // `photos/addPhotos` or similar.
-      // `photos-slice.ts` likely exports `addPhotos`.
-      // We didn't expose slice actions.
-      // But we can `store.dispatch({ type: 'photos/setSelected', payload: [item] })` if we know the string type.
-      // It's Redux Toolkit. Type is usually "photos/setSelected".
-      // Let's assume standard RTK naming.
-      
-      store.dispatch({ 
-          type: 'photos/setSelected', 
-          payload: [item] 
+      const store = (window as any).__store;
+      store.dispatch({
+          type: 'photos/select_photos',
+          payload: { photos: [item] }
       });
-      
   }, mediaItem);
   
   // 3. Wait for Upload
@@ -90,10 +80,14 @@ test('Drive Processing Pipeline Journey', async ({ page, sandboxId }) => {
   // 4. Verify Result
   const result = await page.evaluate((id) => {
       const s = (window as any).__store.getState();
-      return s.photos.uploads[id];
+      return {
+        status: s.photos.uploads[id]?.status,
+        latestUrl: s.photos.urlHistory[id]?.[0] || s.photos.selected.find((p: any) => p.id === id)?.baseUrl || ""
+      };
   }, testId);
   
-  expect(result.permanentUrl).toContain('drive.google.com');
-  console.log('✅ Upload verification passed:', result.permanentUrl);
+  expect(result.status).toBe('completed');
+  expect(result.latestUrl).toMatch(/drive\.google\.com|googleapis\.com/);
+  console.log('✅ Upload verification passed:', result.latestUrl);
 
 });

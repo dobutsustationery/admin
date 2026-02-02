@@ -16,6 +16,8 @@ import baseConfig from './playwright.config';
 export default defineConfig({
   ...baseConfig,
   testDir: "./e2e/live",
+  globalSetup: "./e2e/live/global-setup.ts",
+  globalTeardown: "./e2e/live/global-teardown.ts",
   // Allow longer timeout for real network calls
   timeout: 60000, 
   // No retries for live tests to avoid burning quota/state confusion? 
@@ -32,7 +34,8 @@ export default defineConfig({
       VITE_GOOGLE_DRIVE_CLIENT_ID: process.env.E2E_GOOGLE_CLIENT_ID || "",
       VITE_GOOGLE_DRIVE_FOLDER_ID: process.env.E2E_GOOGLE_DRIVE_FOLDER_ID || "",
       // Ensure we have correct scopes
-      VITE_GOOGLE_DRIVE_SCOPES: "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/photoslibrary.readonly",
+      VITE_GOOGLE_DRIVE_SCOPES: "https://www.googleapis.com/auth/drive.file",
+      VITE_ENABLE_TEST_HOOKS: "true",
     },
   },
   

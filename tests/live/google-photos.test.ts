@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import * as GooglePhotos from './google-photos';
+import * as GooglePhotos from '../../src/lib/google-photos';
 import { OAuth2Client } from 'google-auth-library';
 
 const isLiveConfigured = process.env.E2E_GOOGLE_CLIENT_ID && process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN;

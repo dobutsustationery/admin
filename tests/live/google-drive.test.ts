@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import * as GoogleDrive from './google-drive';
+import * as GoogleDrive from '../../src/lib/google-drive';
 import { OAuth2Client } from 'google-auth-library';
 import { google } from 'googleapis';
 

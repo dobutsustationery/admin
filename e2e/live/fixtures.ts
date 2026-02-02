@@ -9,7 +9,7 @@ type LiveFixtures = {
 export const test = base.extend<LiveFixtures>({
   sandboxId: async ({ page }, use) => {
     // Read Sandbox ID from global setup file
-    const envPath = path.resolve(__dirname, '.env.live.json');
+    const envPath = path.resolve(process.cwd(), 'e2e/live/.env.live.json');
     let sandboxData: any = {};
     if (fs.existsSync(envPath)) {
         sandboxData = JSON.parse(fs.readFileSync(envPath, 'utf-8'));

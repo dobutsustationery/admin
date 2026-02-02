@@ -240,7 +240,7 @@
     };
   });
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && import.meta.env.VITE_ENABLE_TEST_HOOKS === "true") {
       (window as any).__store = store;
       (window as any).__firebaseAuth = auth;
   }

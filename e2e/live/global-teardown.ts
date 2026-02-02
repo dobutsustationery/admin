@@ -1,12 +1,11 @@
-import { FullConfig } from '@playwright/test';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-async function globalTeardown(config: FullConfig) {
+async function globalTeardown() {
   console.log('🌍 [Live Teardown] Cleaning up...');
 
-  const envFile = path.resolve(__dirname, '.env.live.json');
+  const envFile = path.resolve(process.cwd(), 'e2e/live/.env.live.json');
   if (!fs.existsSync(envFile)) {
     console.warn('⚠️ No environment file found. Skipping cleanup.');
     return;
