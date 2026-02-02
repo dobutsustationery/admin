@@ -197,6 +197,9 @@ npm run test:live:e2e
 - Ensure your gcloud account has permission to create projects in your org.
 - Re-run with an existing project and `--no-create-project`.
 
+### ADC login complains cloud-platform scope is required
+- Use the latest bootstrap script; it now includes `https://www.googleapis.com/auth/cloud-platform` automatically when running ADC login.
+
 ### Live E2E opens but is not authenticated
 - Ensure env is sourced before run (`source .env.live.local`).
 - Re-run bootstrap to rotate refresh tokens.

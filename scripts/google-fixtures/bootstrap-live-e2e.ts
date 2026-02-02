@@ -17,7 +17,13 @@ const PHOTOS_SCOPES = [
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/photoslibrary.appendonly",
 ];
-const ALL_SCOPES = Array.from(new Set([...DRIVE_SCOPES, ...PHOTOS_SCOPES]));
+const ALL_SCOPES = Array.from(
+  new Set([
+    ...DRIVE_SCOPES,
+    ...PHOTOS_SCOPES,
+    "https://www.googleapis.com/auth/cloud-platform",
+  ]),
+);
 
 type Args = {
   projectId: string;
@@ -271,4 +277,3 @@ main().catch((err) => {
   console.error("❌ Bootstrap failed:", err.message || err);
   process.exit(1);
 });
-
