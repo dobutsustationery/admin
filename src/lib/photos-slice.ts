@@ -41,6 +41,10 @@ const initialState: PhotosState = {
   categorizing: false,
 };
 
+function isEphemeralPhotosUrl(url: string | undefined): boolean {
+  return !!url && url.includes("googleusercontent.com");
+}
+
 const photosSlice = createSlice({
   name: "photos",
   initialState,
@@ -58,9 +62,9 @@ const photosSlice = createSlice({
       // Construct new list
       state.selected = action.payload.photos.map(newItem => {
           if (!state.urlHistory[newItem.id]) {
-               state.urlHistory[newItem.id] = [newItem.baseUrl];
-          } 
-          const currentBestUrl = state.urlHistory[newItem.id][0];
+               state.urlHistory[newItem.id] = isEphemeralPhotosUrl(newItem.baseUrl) ? [] : [newItem.baseUrl];
+          }
+          const currentBestUrl = state.urlHistory[newItem.id][0] || newItem.baseUrl;
           return {
               ...newItem,
               baseUrl: currentBestUrl,

@@ -90,10 +90,12 @@
           // Fetch Blob
           // Use high-res URL if possible (Photos), otherwise use raw (Drive API)
           let fetchUrl = item.baseUrl;
-          // PPA URLs (googleusercontent) might not support params or it breaks signature.
-          // Only append for non-google URLs (if any exist?) or strict Drive API (which usually doesn't need suffixes but params).
-          if (!fetchUrl.includes("googleapis.com") && !fetchUrl.includes("drive.google.com") && !fetchUrl.includes("googleusercontent.com")) {
-               fetchUrl += HIGH_RES_SUFFIX;
+          // Photos Picker URLs need rendering options; without these, fetch can 403.
+          // `=d` requests downloadable original bytes and is suitable for Drive re-upload.
+          if (fetchUrl.includes("googleusercontent.com") && !fetchUrl.match(/=[a-z0-9,-]+$/i)) {
+              fetchUrl += "=d";
+          } else if (!fetchUrl.includes("googleapis.com") && !fetchUrl.includes("drive.google.com")) {
+              fetchUrl += HIGH_RES_SUFFIX;
           }
           
           // Debug
