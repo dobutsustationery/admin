@@ -230,7 +230,7 @@ test.describe('Listings Creation Flow', () => {
                          productCategory: "Existing Cat",
                          vendor: "Dobutsu",
                          tags: ["existing-tag"],
-                         option1Name: "Color",
+                         option1Name: "Subtype",
                          images: [],
                          status: 'active',
                          lastUpdated: Date.now()

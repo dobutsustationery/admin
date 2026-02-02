@@ -54,7 +54,7 @@ describe("Listing Creation - Approve Proposal", () => {
       productCategory: "Stationery",
       vendor: "Dobutsu",
       tags: ["tag1"],
-      option1Name: "Color",
+      option1Name: "Subtype",
       variants: [{ id: "v1", itemId, option1Value: "Red" }],
       status: 'draft',
       price: 1500
