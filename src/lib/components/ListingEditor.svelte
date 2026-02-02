@@ -177,6 +177,14 @@
           dispatch('updateVariantQty', { id: item.variantId || item.id, qty: val });
       }
   }
+  
+  function handleSubtypeBlur(e: Event, item: any) {
+      const newVal = (e.target as HTMLElement).innerText.trim();
+      if (newVal !== (item.subtype || 'Default')) {
+          const id = item.variantId || item.id;
+          dispatch('updateVariantValue', { id, value: newVal });
+      }
+  }
 
   // Computed display values
   $: price = associatedItems.length > 0 && associatedItems[0].price 
@@ -260,12 +268,16 @@
                {/if}
                <div class="subtype-list">
                    {#each associatedItems as item (item.variantId || item.id)}
-                       {@const subtypeImg = item.photoGroupKey 
+                       {@const subtypeImg = (item.photoGroupKey 
                            ? images.find(img => img.sourceGroup === item.photoGroupKey) 
-                           : (item.image ? { url: item.image } : null)
+                           : null) || (item.image ? { url: item.image } : null)
                        }
                        <div class="subtype-row">
-                           <span class="subtype-label">{item.subtype || 'Default'}</span>
+                           <span 
+                               class="subtype-label {isCreationMode ? 'editable' : ''}"
+                               contenteditable={isCreationMode}
+                               on:blur={(e) => handleSubtypeBlur(e, item)}
+                           >{item.subtype || 'Default'}</span>
                            
                            {#if isCreationMode}
                                <input 
@@ -283,8 +295,8 @@
                                <div class="subtype-thumb-wrapper">
                                    <button 
                                       class="subtype-thumb-btn {selectedSubtypeId === item.id ? 'selected' : ''}"
-                                      on:click={() => handleSubtypeSelect(item.id)}
-                                      title={item.subtype}
+                                      on:click={() => isCreationMode ? dispatch('replaceSubtypeImage', item) : handleSubtypeSelect(item.id)}
+                                      title={isCreationMode ? "Click to Replace Image" : item.subtype}
                                    >
                                        <SecureImage src={subtypeImg.url} alt={item.subtype} className="thumbnail-img" />
                                    </button>
@@ -300,7 +312,15 @@
                                    {/if}
                                </div>
                            {:else}
-                               <div class="subtype-placeholder">No Image</div>
+                               <button 
+                                   type="button"
+                                   class="subtype-placeholder" 
+                                   on:click={() => isCreationMode ? dispatch('replaceSubtypeImage', item) : null} 
+                                   style="cursor: {isCreationMode ? 'pointer' : 'default'}"
+                                   disabled={!isCreationMode}
+                               >
+                                   No Image
+                               </button>
                            {/if}
                        </div>
                    {/each}

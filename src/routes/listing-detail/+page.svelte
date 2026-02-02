@@ -8,6 +8,7 @@
       regenerate_description, 
       update_proposal_field,
       update_variant_qty,
+      update_variant_value,
       add_listing_only_image,
       remove_listing_only_image,
       set_current_step,
@@ -347,6 +348,13 @@
   function handleUpdateVariantQty(e: CustomEvent<{ id: string, qty: number }>) {
       if (mode === 'create' && janCode) {
           dispatchBroadcast(update_variant_qty({ janCode, variantId: e.detail.id, qty: e.detail.qty }));
+      }
+  }
+  
+  function handleUpdateVariantValue(e: CustomEvent<{ id: string, value: string }>) {
+      const { id, value } = e.detail;
+      if (mode === 'create' && janCode) {
+          dispatchBroadcast(update_variant_value({ janCode, variantId: id, value }));
       }
   }
   
@@ -800,6 +808,7 @@
       on:updateDescription={handleUpdateDescription}
       on:updatePrice={handleUpdatePrice}
       on:updateVariantQty={handleUpdateVariantQty}
+      on:updateVariantValue={handleUpdateVariantValue}
       on:deleteImage={handleDeleteImage}
       on:selectSubtype={handleSelectSubtype}
       on:deleteSubtypeImage={handleDeleteSubtypeImage}
