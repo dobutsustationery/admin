@@ -268,10 +268,7 @@
                {/if}
                <div class="subtype-list">
                    {#each associatedItems as item (item.variantId || item.id)}
-                       {@const subtypeImg = (item.photoGroupKey 
-                           ? images.find(img => img.sourceGroup === item.photoGroupKey) 
-                           : null) || (item.image ? { url: item.image } : null)
-                       }
+                       {@const subtypeImg = item.image ? { url: item.image } : null}
                        <div class="subtype-row">
                            <span 
                                class="subtype-label {isCreationMode ? 'editable' : ''}"
