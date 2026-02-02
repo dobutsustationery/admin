@@ -193,7 +193,7 @@
           
           const uploaded = await uploadImageToDrive(uploadBlob, filename, folders.processedId, token.access_token);
           
-          const finalUrl = uploaded.thumbnailLink || uploaded.webViewLink; // Use thumbnail link like gemini client
+          const finalUrl = uploaded.apiUrl || uploaded.thumbnailLink || uploaded.webViewLink;
           
           // 4. Complete & Broadcast
           const completeAction = complete_edit({ id, operation, permanentUrl: finalUrl });
