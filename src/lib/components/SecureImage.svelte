@@ -37,6 +37,12 @@
             finalSrc = `https://drive.google.com/thumbnail?id=${match[1]}&sz=w3000`;
         }
     }
+
+    // Google Photos/Picker googleusercontent URLs often require a size suffix.
+    // If missing, load failures/403 are common. Add a safe default render size.
+    if (finalSrc.includes("googleusercontent.com") && !finalSrc.match(/=[a-z0-9,-]+$/i)) {
+      finalSrc = `${finalSrc}=w2000`;
+    }
     
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
