@@ -145,6 +145,13 @@
     referrerpolicy="no-referrer"
     crossorigin={crossOriginVal}
     on:error={() => {
+        if (isUploading && objectUrl.includes("googleusercontent.com")) {
+            // During picker->Drive migration, avoid flashing a broken image icon.
+            // Keep loading state until the durable Drive URL replaces this source.
+            loading = true;
+            error = "";
+            return;
+        }
         console.error("Image failed to load:", objectUrl);
         error = "Failed to load image";
         loading = false;

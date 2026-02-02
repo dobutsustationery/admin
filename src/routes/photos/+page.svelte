@@ -42,6 +42,17 @@
   
   function isAuthenticated() { return isPhotosAuthenticated; } // Helper for template
 
+  function isDirectRenderableUrl(url: string): boolean {
+      return url.startsWith("data:") ||
+          url.includes("drive.google.com") ||
+          url.includes("googleapis.com") ||
+          url.includes("googleusercontent.com");
+  }
+
+  function displayUrl(url: string, suffix: string): string {
+      return isDirectRenderableUrl(url) ? url : `${url}${suffix}`;
+  }
+
 
   import type { PhotoEditQueue } from "$lib/photos-slice";
 
@@ -608,7 +619,7 @@
                     <div class="active-item-card">
                         <div class="thumbnail-wrapper">
                              <SecureImage 
-                                src={item.baseUrl.includes("drive.google.com") || item.baseUrl.includes("googleapis.com") ? item.baseUrl : `${item.baseUrl}=w64-h64-c`}
+                                src={displayUrl(item.baseUrl, "=w64-h64-c")}
                                 className="w-full h-full object-cover"
                             />
                         </div>
@@ -631,7 +642,7 @@
       >
         <!-- Large Image -->
         <SecureImage 
-            src={previewItem.baseUrl.includes("drive.google.com") || previewItem.baseUrl.includes("googleapis.com") ? previewItem.baseUrl : `${previewItem.baseUrl}=w1024`}
+            src={displayUrl(previewItem.baseUrl, "=w1024")}
             className="w-auto h-full max-h-full object-contain rounded"
         />
         <!-- Optional Info -->
@@ -731,7 +742,7 @@
                   style="width: 148px; height: 148px; flex-shrink: 0;"
                 >
                   <SecureImage
-                    src={url.startsWith("data:") || url.includes("drive.google.com") || url.includes("googleapis.com") ? url : `${url}=w296-h296-c`}
+                    src={displayUrl(url, "=w296-h296-c")}
                     alt="Product Thumbnail"
                     className="w-full h-full object-cover"
                   />
@@ -876,10 +887,13 @@
                 on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${photo.id}`)}
               >
                 <SecureImage
-                  src={photo.baseUrl.includes("drive.google.com") || photo.baseUrl.includes("googleapis.com") ? photo.baseUrl : `${photo.baseUrl}=w400-h400-c`}
+                  src={displayUrl(photo.baseUrl, "=w400-h400-c")}
                   alt="Thumbnail"
                   className="w-full h-full object-cover"
-                  isUploading={!!uploads[photo.id] && uploads[photo.id].status === 'uploading'}
+                  isUploading={
+                      (!!uploads[photo.id] && uploads[photo.id].status === 'uploading') ||
+                      (!uploads[photo.id] && photo.baseUrl.includes("googleusercontent.com"))
+                  }
                 />
                 
                 <!-- Edit Status Overlay -->
@@ -1028,7 +1042,7 @@
                                         on:mouseleave={handleThumbnailLeave}
                                     >
                                         <SecureImage 
-                                            src={item.baseUrl.includes("drive.google.com") || item.baseUrl.includes("googleapis.com") ? item.baseUrl : `${item.baseUrl}=w160-h160-c`}
+                                            src={displayUrl(item.baseUrl, "=w160-h160-c")}
                                             className="w-full h-full object-cover"
                                             isUploading={!!uploads[item.id] && uploads[item.id].status === 'uploading'}
                                         />
