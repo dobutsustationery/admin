@@ -2,14 +2,13 @@ import { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
 import fs from "fs";
 import path from "path";
-import http from "http";
 import { execSync } from "child_process";
-import readline from "readline/promises";
-import { stdin as input, stdout as output } from "process";
 
 const ENV_OUTPUT_PATH = path.resolve(process.cwd(), ".env.live.local");
-const REDIRECT_PORT = 8787;
-const REDIRECT_URI = `http://127.0.0.1:${REDIRECT_PORT}/oauth2callback`;
+const ADC_PATH = path.resolve(
+  process.env.HOME || "",
+  ".config/gcloud/application_default_credentials.json",
+);
 
 const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"];
 const PHOTOS_SCOPES = [
@@ -18,60 +17,135 @@ const PHOTOS_SCOPES = [
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/photoslibrary.appendonly",
 ];
+const ALL_SCOPES = Array.from(new Set([...DRIVE_SCOPES, ...PHOTOS_SCOPES]));
 
-function parseArgs() {
+type Args = {
+  projectId: string;
+  projectName: string;
+  createProject: boolean;
+  addFirebase: boolean;
+  skipGcloud: boolean;
+  skipApiEnablement: boolean;
+  skipAdcLogin: boolean;
+  driveFolderName: string;
+  photosAlbumTitle: string;
+};
+
+type AdcCreds = {
+  client_id: string;
+  client_secret: string;
+  refresh_token: string;
+};
+
+function parseArgs(): Args {
   const args = process.argv.slice(2);
+  const get = (key: string) =>
+    args.find((a) => a.startsWith(`${key}=`))?.split("=")[1] || "";
+
   return {
-    projectId: args.find((a) => a.startsWith("--project-id="))?.split("=")[1] || "",
+    projectId: get("--project-id"),
+    projectName: get("--project-name"),
+    createProject: !args.includes("--no-create-project"),
+    addFirebase: args.includes("--add-firebase"),
     skipGcloud: args.includes("--skip-gcloud"),
+    skipApiEnablement: args.includes("--skip-api-enablement"),
+    skipAdcLogin: args.includes("--skip-adc-login"),
+    driveFolderName: get("--drive-folder-name") || "DobutsuE2E",
+    photosAlbumTitle: get("--photos-album-title") || "DobutsuE2EFixtures",
   };
 }
 
-function requireToken(tokens: { access_token?: string | null; refresh_token?: string | null }, label: string): string {
-  if (!tokens.refresh_token) {
-    throw new Error(`No refresh token returned for ${label}. Re-run and ensure consent prompt is accepted.`);
+function sh(command: string, opts: { allowFail?: boolean } = {}): string {
+  try {
+    return execSync(command, {
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+    }).trim();
+  } catch (err: any) {
+    if (opts.allowFail) return "";
+    const stderr = err?.stderr?.toString?.() || err?.message || String(err);
+    throw new Error(`${command}\n${stderr}`);
   }
-  return tokens.refresh_token;
 }
 
-async function getRefreshToken(clientId: string, clientSecret: string, scopes: string[], label: string): Promise<string> {
-  const oauth2Client = new OAuth2Client(clientId, clientSecret, REDIRECT_URI);
-  const authUrl = oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
-    scope: scopes,
-  });
+function ensureCommandExists(name: string) {
+  const result = sh(`command -v ${name}`, { allowFail: true });
+  if (!result) throw new Error(`Missing required command: ${name}`);
+}
 
-  console.log(`\n[${label}] Open this URL and complete consent:\n${authUrl}\n`);
+function normalizeProjectId(input: string): string {
+  const base = input
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/--+/g, "-");
+  return base.slice(0, 30) || `dobutsu-e2e-${Date.now().toString().slice(-8)}`;
+}
 
-  const code = await new Promise<string>((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      try {
-        const url = new URL(req.url || "", `http://127.0.0.1:${REDIRECT_PORT}`);
-        if (url.pathname !== "/oauth2callback") return;
-        const incomingCode = url.searchParams.get("code");
-        if (!incomingCode) {
-          res.writeHead(400);
-          res.end("Missing code");
-          reject(new Error(`No authorization code received for ${label}.`));
-          server.close();
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "text/plain" });
-        res.end("Authorization received. You can close this tab.");
-        resolve(incomingCode);
-        server.close();
-      } catch (e) {
-        reject(e);
-        server.close();
-      }
-    });
+function ensureProject(projectId: string, projectName: string, createProject: boolean) {
+  const existing = sh(
+    `gcloud projects describe ${projectId} --format='value(projectId)'`,
+    { allowFail: true },
+  );
+  if (existing === projectId) {
+    console.log(`✅ Using existing project: ${projectId}`);
+    return;
+  }
+  if (!createProject) {
+    throw new Error(`Project ${projectId} does not exist and --no-create-project was used.`);
+  }
+  const name = projectName || projectId;
+  console.log(`🆕 Creating project ${projectId} (${name})...`);
+  sh(`gcloud projects create ${projectId} --name='${name.replace(/'/g, "\\'")}'`);
+}
 
-    server.listen(REDIRECT_PORT, "127.0.0.1");
-  });
+function maybeAddFirebase(projectId: string, addFirebase: boolean) {
+  if (!addFirebase) return;
+  const firebaseCmd = sh("command -v firebase", { allowFail: true });
+  if (!firebaseCmd) {
+    console.warn("⚠️ firebase CLI not found; skipping Firebase project initialization.");
+    return;
+  }
+  console.log(`🔥 Adding Firebase services to ${projectId}...`);
+  sh(`firebase projects:addfirebase ${projectId}`, { allowFail: true });
+}
 
-  const tokenResponse = await oauth2Client.getToken(code);
-  return requireToken(tokenResponse.tokens, label);
+function enableApis(projectId: string) {
+  const services = [
+    "drive.googleapis.com",
+    "photoslibrary.googleapis.com",
+    "photospicker.googleapis.com",
+    "picker.googleapis.com",
+  ];
+  console.log(`🔌 Enabling APIs for ${projectId}...`);
+  sh(`gcloud config set project ${projectId}`);
+  sh(`gcloud services enable ${services.join(" ")}`);
+}
+
+function ensureAdcLogin(skipAdcLogin: boolean) {
+  if (skipAdcLogin && fs.existsSync(ADC_PATH)) return;
+  if (skipAdcLogin && !fs.existsSync(ADC_PATH)) {
+    throw new Error(`ADC credentials not found at ${ADC_PATH} and --skip-adc-login was set.`);
+  }
+  console.log("🔐 Running gcloud ADC login for Drive/Photos scopes...");
+  sh(
+    `gcloud auth application-default login --scopes='${ALL_SCOPES.join(",")}'`,
+  );
+}
+
+function readAdcCreds(): AdcCreds {
+  if (!fs.existsSync(ADC_PATH)) {
+    throw new Error(`ADC credentials file not found: ${ADC_PATH}`);
+  }
+  const raw = JSON.parse(fs.readFileSync(ADC_PATH, "utf-8")) as Partial<AdcCreds>;
+  if (!raw.client_id || !raw.client_secret || !raw.refresh_token) {
+    throw new Error("ADC file missing client_id/client_secret/refresh_token.");
+  }
+  return {
+    client_id: raw.client_id,
+    client_secret: raw.client_secret,
+    refresh_token: raw.refresh_token,
+  };
 }
 
 async function createOrFindDriveFolder(
@@ -102,7 +176,12 @@ async function createOrFindDriveFolder(
   return created.data.id as string;
 }
 
-async function createPhotosAlbum(clientId: string, clientSecret: string, photosRefreshToken: string, title: string): Promise<string> {
+async function createPhotosAlbum(
+  clientId: string,
+  clientSecret: string,
+  photosRefreshToken: string,
+  title: string,
+): Promise<string> {
   const auth = new OAuth2Client(clientId, clientSecret);
   auth.setCredentials({ refresh_token: photosRefreshToken });
   const tokenRes = await auth.getAccessToken();
@@ -126,85 +205,66 @@ async function createPhotosAlbum(clientId: string, clientSecret: string, photosR
   return data.id;
 }
 
-function maybeEnableApis(projectId: string) {
-  if (!projectId) return;
-  const services = [
-    "drive.googleapis.com",
-    "photoslibrary.googleapis.com",
-    "photospicker.googleapis.com",
-    "picker.googleapis.com",
-  ];
-
-  console.log(`\n[Bootstrap] Enabling APIs in project ${projectId}...`);
-  execSync(`gcloud config set project ${projectId}`, { stdio: "inherit" });
-  execSync(`gcloud services enable ${services.join(" ")}`, { stdio: "inherit" });
-}
-
 function writeEnvFile(values: Record<string, string>) {
   const lines = Object.entries(values).map(([k, v]) => `${k}=${v}`);
   fs.writeFileSync(ENV_OUTPUT_PATH, `${lines.join("\n")}\n`, "utf8");
 }
 
 async function main() {
-  const { projectId, skipGcloud } = parseArgs();
-  const rl = readline.createInterface({ input, output });
+  const args = parseArgs();
+  console.log("=== Live E2E Bootstrap ===");
+  console.log("Creating project/resources and writing .env.live.local using gcloud ADC credentials.");
 
-  try {
-    console.log("=== Live E2E Bootstrap ===");
-    console.log("This script obtains refresh tokens, provisions root resources, and writes .env.live.local.");
-
-    let effectiveProjectId = projectId;
-    if (!effectiveProjectId) {
-      effectiveProjectId = (await rl.question("GCP project id (optional, used for API enablement): ")).trim();
-    }
-
-    if (!skipGcloud && effectiveProjectId) {
-      maybeEnableApis(effectiveProjectId);
-    } else if (!effectiveProjectId) {
-      console.log("[Bootstrap] Skipping gcloud API enablement (no project id provided).");
-    }
-
-    console.log("\nCreate a Web OAuth client in Google Cloud Console with redirect URI:");
-    console.log(`  ${REDIRECT_URI}\n`);
-
-    const clientId =
-      process.env.E2E_GOOGLE_CLIENT_ID ||
-      (await rl.question("OAuth client id: ")).trim();
-    const clientSecret =
-      process.env.E2E_GOOGLE_CLIENT_SECRET ||
-      (await rl.question("OAuth client secret: ")).trim();
-
-    if (!clientId || !clientSecret) {
-      throw new Error("Client ID/secret are required.");
-    }
-
-    const driveRefreshToken = await getRefreshToken(clientId, clientSecret, DRIVE_SCOPES, "Drive");
-    const photosRefreshToken = await getRefreshToken(clientId, clientSecret, PHOTOS_SCOPES, "Photos");
-
-    const driveFolderName = (await rl.question("Drive root folder name [DobutsuE2E]: ")).trim() || "DobutsuE2E";
-    const photosAlbumTitle = (await rl.question("Photos album title [DobutsuE2EFixtures]: ")).trim() || "DobutsuE2EFixtures";
-
-    const driveFolderId = await createOrFindDriveFolder(clientId, clientSecret, driveRefreshToken, driveFolderName);
-    const photosAlbumId = await createPhotosAlbum(clientId, clientSecret, photosRefreshToken, photosAlbumTitle);
-
-    writeEnvFile({
-      E2E_GOOGLE_CLIENT_ID: clientId,
-      E2E_GOOGLE_CLIENT_SECRET: clientSecret,
-      E2E_GOOGLE_DRIVE_REFRESH_TOKEN: driveRefreshToken,
-      E2E_GOOGLE_PHOTOS_REFRESH_TOKEN: photosRefreshToken,
-      E2E_GOOGLE_DRIVE_FOLDER_ID: driveFolderId,
-      E2E_GOOGLE_PHOTOS_ALBUM_ID: photosAlbumId,
-    });
-
-    console.log(`\n✅ Bootstrap complete. Wrote ${ENV_OUTPUT_PATH}`);
-    console.log("Next steps:");
-    console.log("  1) source .env.live.local");
-    console.log("  2) npm run test:live:doctor");
-    console.log("  3) npm run fixtures:google:sync");
-    console.log("  4) npm run test:live:e2e");
-  } finally {
-    rl.close();
+  if (!args.skipGcloud) {
+    ensureCommandExists("gcloud");
   }
+
+  const projectId = normalizeProjectId(
+    args.projectId || `dobutsu-e2e-${Date.now().toString().slice(-8)}`,
+  );
+  const projectName = args.projectName || projectId;
+
+  if (!args.skipGcloud) {
+    ensureProject(projectId, projectName, args.createProject);
+    if (!args.skipApiEnablement) enableApis(projectId);
+    maybeAddFirebase(projectId, args.addFirebase);
+    ensureAdcLogin(args.skipAdcLogin);
+  }
+
+  const adc = readAdcCreds();
+  const clientId = process.env.E2E_GOOGLE_CLIENT_ID || adc.client_id;
+  const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET || adc.client_secret;
+  const refreshToken = adc.refresh_token;
+
+  const driveFolderId = await createOrFindDriveFolder(
+    clientId,
+    clientSecret,
+    refreshToken,
+    args.driveFolderName,
+  );
+  const photosAlbumId = await createPhotosAlbum(
+    clientId,
+    clientSecret,
+    refreshToken,
+    args.photosAlbumTitle,
+  );
+
+  writeEnvFile({
+    E2E_GOOGLE_CLIENT_ID: clientId,
+    E2E_GOOGLE_CLIENT_SECRET: clientSecret,
+    E2E_GOOGLE_DRIVE_REFRESH_TOKEN: refreshToken,
+    E2E_GOOGLE_PHOTOS_REFRESH_TOKEN: refreshToken,
+    E2E_GOOGLE_DRIVE_FOLDER_ID: driveFolderId,
+    E2E_GOOGLE_PHOTOS_ALBUM_ID: photosAlbumId,
+    E2E_GOOGLE_PROJECT_ID: projectId,
+  });
+
+  console.log(`\n✅ Bootstrap complete. Wrote ${ENV_OUTPUT_PATH}`);
+  console.log("Next steps:");
+  console.log("  1) set -a && source .env.live.local && set +a");
+  console.log("  2) npm run test:live:doctor");
+  console.log("  3) npm run fixtures:google:sync");
+  console.log("  4) npm run test:live:e2e");
 }
 
 main().catch((err) => {
