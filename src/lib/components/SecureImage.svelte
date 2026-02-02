@@ -6,7 +6,7 @@
   export let alt: string = "";
   export let className: string = "";
   export let style: string = "";
-  export const isUploading: boolean = false;
+  export let isUploading: boolean = false;
 
   let objectUrl: string = "";
   let error = "";
@@ -139,6 +139,7 @@
   <img
     src={objectUrl}
     {alt}
+    aria-busy={isUploading}
     class={className}
     style="width: 100%; height: 100%; display: block; {style}"
     referrerpolicy="no-referrer"
