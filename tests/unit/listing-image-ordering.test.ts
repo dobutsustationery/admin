@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { reorderListingImages } from "$lib/listing-image-ordering";
 
 describe("reorderListingImages", () => {
-  it("orders variant images by SKU and gallery images after them", () => {
+  it("allows arbitrary reordering including variant images", () => {
     const listingImages = [
       { id: "v-b", url: "img-b", position: 1, altText: "B" },
       { id: "v-a", url: "img-a", position: 2, altText: "A" },
@@ -15,6 +15,7 @@ describe("reorderListingImages", () => {
       { id: "sku-a", image: "img-a" },
     ];
 
+    // Move g-1 to g-2 (swap last two)
     const result = reorderListingImages({
       listingImages,
       associatedItems,
@@ -26,8 +27,9 @@ describe("reorderListingImages", () => {
     expect(result).toBeTruthy();
     if (!result) return;
 
+    // Expect v-b, v-a (preserved order), g-2, g-1 (swapped)
     const orderedIds = result.updatedImages.map((img) => img.id);
-    expect(orderedIds).toEqual(["v-a", "v-b", "g-2", "g-1"]);
+    expect(orderedIds).toEqual(["v-b", "v-a", "g-2", "g-1"]);
 
     const positions = result.updatedImages.reduce<Record<string, number>>(
       (acc, img) => {
@@ -37,31 +39,31 @@ describe("reorderListingImages", () => {
       {},
     );
     expect(positions).toEqual({
-      "v-a": 1,
-      "v-b": 2,
+      "v-b": 1,
+      "v-a": 2,
       "g-2": 3,
       "g-1": 4,
     });
 
-    expect(result.reorderedGalleryIds).toEqual(["g-2", "g-1"]);
-    expect(result.updatedListingOnly).toEqual([
-      { id: "g-1", position: 4 },
-      { id: "g-2", position: 3 },
-    ]);
+    expect(result.reorderedGalleryIds).toEqual(["v-b", "v-a", "g-2", "g-1"]);
   });
 
-  it("returns null when source/target not in gallery subset", () => {
-    const listingImages = [{ id: "v-a", url: "img-a", position: 1, altText: "A" }];
-    const associatedItems = [{ id: "sku-a", image: "img-a" }];
+  it("returns result when reordering variant images", () => {
+    const listingImages = [
+        { id: "v-a", url: "img-a", position: 1, altText: "A" }, 
+        { id: "v-b", url: "img-b", position: 2, altText: "B" }
+    ];
+    const associatedItems = [{ id: "sku-a", image: "img-a" }, { id: "sku-b", image: "img-b" }];
 
     const result = reorderListingImages({
       listingImages,
       associatedItems,
       sourceId: "v-a",
-      targetId: "v-a",
+      targetId: "v-b",
       listingOnlyImages: [],
     });
 
-    expect(result).toBeNull();
+    expect(result).toBeTruthy();
+    expect(result?.updatedImages.map(i => i.id)).toEqual(["v-b", "v-a"]);
   });
 });
