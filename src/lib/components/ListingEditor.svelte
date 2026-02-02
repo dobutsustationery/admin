@@ -51,10 +51,13 @@
       
       if (selectedSubtypeId) {
           const item = associatedItems.find(i => i.id === selectedSubtypeId);
-          if (item && item.image) {
-              // Find matching ListingImage if exists, else mock
-              const existing = images.find((img) => img.url === item.image);
-              return existing || { url: item.image, altText: item.subtype || 'Subtype Image', id: 'subtype-'+item.id, position: -1 };
+          if (item) {
+              const targetUrl = item.variantImage || item.image;
+              if (targetUrl) {
+                  // Find matching ListingImage if exists, else mock
+                  const existing = images.find((img) => img.url === targetUrl);
+                  return existing || { url: targetUrl, altText: item.subtype || 'Subtype Image', id: 'subtype-'+item.id, position: -1 };
+              }
           }
       }
       
