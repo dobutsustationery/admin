@@ -286,6 +286,19 @@ npm run test:e2e:ui
 npm run test:e2e:headed
 ```
 
+### Live Integration Testing (Drive/Photos)
+
+For tests involving real Google APIs (Live E2E), specific credentials are required.
+See **[LIVE_E2E_SETUP.md](docs/setup/LIVE_E2E_SETUP.md)** for setup instructions.
+
+```bash
+# Verify credentials
+npm run test:live:doctor
+
+# Run live integration tests
+npm run test:live:e2e
+```
+
 **Key principles:**
 - Tests must come with committed baseline screenshots
 - Zero-pixel tolerance is enforced (exact match required)

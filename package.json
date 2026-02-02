@@ -49,7 +49,12 @@
     "data:transfer": "node scripts/transfer-data.js",
     "deploy": "npm run deploy:production",
     "deploy:production": "vite build --mode production && firebase deploy --only hosting --project production",
-    "deploy:staging": "vite build --mode staging && firebase deploy --only hosting --project staging"
+    "deploy:staging": "vite build --mode staging && firebase deploy --only hosting --project staging",
+    "fixtures:google:sync": "bun scripts/google-fixtures/sync-seed.ts",
+    "fixtures:google:cleanup": "bun scripts/google-fixtures/cleanup-run-sandbox.ts",
+    "test:live:doctor": "bun scripts/google-fixtures/healthcheck.ts",
+    "test:live:contracts": "vitest run --testNamePattern='@live'",
+    "test:live:e2e": "npx playwright test --config=playwright.live.config.ts"
   },
   "files": [
     "dist",
