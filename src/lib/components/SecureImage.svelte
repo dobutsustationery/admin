@@ -43,7 +43,12 @@
 
     // Identify if this is a Google resource that might need Auth or Proxy
     // Note: drive.google.com is purposely EXCLUDED to allow direct <img> loading (via cookies/public)
-    const isGoogle = finalSrc.includes("googleapis.com");
+    let isGoogle = finalSrc.includes("googleapis.com");
+    // Explicitly exclude googleusercontent (PPA) to ensure we don't fetch/CORS it
+    if (finalSrc.includes("googleusercontent.com")) isGoogle = false;
+
+    // Debug log to trace behavior
+    // console.log("[SecureImage] Loading:", finalSrc, "isGoogle:", isGoogle);
 
     if (!isGoogle) {
         // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
