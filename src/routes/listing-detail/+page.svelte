@@ -406,7 +406,11 @@
       replacingSubtypeId = item.id;
       uploadingImageId = null; 
       targetProposalJan = null;
-      fileInput.click();
+      // Open Image Picker instead of file upload
+      if (mode === 'create' && janCode) {
+          imagePickerTargetJan = janCode;
+          showImagePicker = true;
+      }
   }
   
   async function handleFileUpload(event: Event) {
@@ -586,17 +590,33 @@
 
   function handlePickListingImage(candidate: { id: string; url: string; altText: string }) {
       if (!imagePickerTargetJan) return;
-      const imageId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-          ? crypto.randomUUID()
-          : `img-${Date.now()}`;
-      const image = {
-          id: imageId,
-          url: candidate.url,
-          altText: candidate.altText || '',
-          position: listingImages.length + 1
-      };
-      if ($user && $user.uid) {
-          broadcast(firestore, $user.uid, add_listing_only_image({ janCode: imagePickerTargetJan, image }));
+      
+      if (replacingSubtypeId) {
+          // Replace Subtype Image
+          if ($user && $user.uid) {
+              // We dispatch update_field to inventory directly as this links the item to the image
+              broadcast(firestore, $user.uid, update_field({ 
+                  id: replacingSubtypeId, 
+                  field: 'image', 
+                  from: '', 
+                  to: candidate.url 
+              }));
+          }
+          replacingSubtypeId = null;
+      } else {
+          // Add to Gallery
+          const imageId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+              ? crypto.randomUUID()
+              : `img-${Date.now()}`;
+          const image = {
+              id: imageId,
+              url: candidate.url,
+              altText: candidate.altText || '',
+              position: listingImages.length + 1
+          };
+          if ($user && $user.uid) {
+              broadcast(firestore, $user.uid, add_listing_only_image({ janCode: imagePickerTargetJan, image }));
+          }
       }
       showImagePicker = false;
       imagePickerTargetJan = null;
