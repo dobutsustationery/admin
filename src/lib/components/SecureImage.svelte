@@ -97,9 +97,9 @@
     loadImage();
   }
 
-  // Determine crossorigin attribute: 'anonymous' for most external images to allow Canvas access,
-  // but NULL for drive.google.com (requires cookies) and blobs/data (same origin).
-  $: crossOriginVal = ((objectUrl && !objectUrl.includes("drive.google.com") && !objectUrl.startsWith("data:") && !objectUrl.startsWith("blob:")) ? "anonymous" : null) as "anonymous" | null;
+  // Determine crossorigin attribute: 'anonymous' for known CORS-supporting hosts (e.g. Shopify),
+  // but NULL for drive.google.com (cookies) and googleusercontent.com (PPA - often fails CORS check or requires no-header).
+  $: crossOriginVal = ((objectUrl && objectUrl.includes("cdn.shopify.com")) ? "anonymous" : null) as "anonymous" | null;
 
   onDestroy(() => {
     if (objectUrl && !objectUrl.startsWith("data:")) {
