@@ -84,6 +84,14 @@ You can then either:
 - set `E2E_GOOGLE_CLIENT_ID` / `E2E_GOOGLE_CLIENT_SECRET` before bootstrap, or
 - paste them when prompted by `setup:live:e2e`.
 
+Tip: the bootstrap script automatically reads `.env.emulator` and `.env.local` for:
+- `E2E_GOOGLE_CLIENT_ID`
+- `E2E_GOOGLE_CLIENT_SECRET`
+- `VITE_GOOGLE_DRIVE_CLIENT_ID`
+- `VITE_GOOGLE_PHOTOS_CLIENT_ID`
+
+If only client ID is present, the script gives explicit console directions for obtaining the matching client secret.
+
 Pass an explicit project id:
 
 ```bash

@@ -42,6 +42,37 @@ type AdcCreds = {
   refresh_token: string;
 };
 
+function parseDotEnvFile(filePath: string): Record<string, string> {
+  if (!fs.existsSync(filePath)) return {};
+  const raw = fs.readFileSync(filePath, "utf8");
+  const result: Record<string, string> = {};
+  raw.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const idx = trimmed.indexOf("=");
+    if (idx === -1) return;
+    const key = trimmed.slice(0, idx).trim();
+    let value = trimmed.slice(idx + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  });
+  return result;
+}
+
+function loadLocalEnvDefaults(): Record<string, string> {
+  const emulatorEnv = parseDotEnvFile(path.resolve(process.cwd(), ".env.emulator"));
+  const localEnv = parseDotEnvFile(path.resolve(process.cwd(), ".env.local"));
+  return {
+    ...emulatorEnv,
+    ...localEnv,
+  };
+}
+
 function parseArgs(): Args {
   const args = process.argv.slice(2);
   const get = (key: string) =>
@@ -289,15 +320,36 @@ async function main() {
 
     // Validate ADC exists (required for gcloud-managed bootstrap context).
     readAdcCreds();
-    const defaultClientId = process.env.E2E_GOOGLE_CLIENT_ID || "";
-    const defaultClientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET || "";
+    const fileEnv = loadLocalEnvDefaults();
+    const defaultClientId =
+      process.env.E2E_GOOGLE_CLIENT_ID ||
+      fileEnv.E2E_GOOGLE_CLIENT_ID ||
+      fileEnv.VITE_GOOGLE_DRIVE_CLIENT_ID ||
+      fileEnv.VITE_GOOGLE_PHOTOS_CLIENT_ID ||
+      "";
+    const defaultClientSecret =
+      process.env.E2E_GOOGLE_CLIENT_SECRET ||
+      fileEnv.E2E_GOOGLE_CLIENT_SECRET ||
+      "";
 
     const useProvided = defaultClientId && defaultClientSecret;
     if (!useProvided) {
       console.log("\n⚠️  A project-specific OAuth Web Client is required for Drive/Photos scopes.");
-      console.log("Create one in Google Auth Platform and add redirect URI:");
+      console.log("I looked for defaults in:");
+      console.log("  - E2E_GOOGLE_CLIENT_ID / E2E_GOOGLE_CLIENT_SECRET env vars");
+      console.log("  - .env.emulator and .env.local");
+      console.log("  - VITE_GOOGLE_DRIVE_CLIENT_ID / VITE_GOOGLE_PHOTOS_CLIENT_ID in those files");
+      console.log("\nTo get the CLIENT SECRET:");
+      console.log("  1) Open Google Cloud Console for your project");
+      console.log("  2) Go to Google Auth Platform -> Clients");
+      console.log("  3) Open (or create) an OAuth Client of type: Web application");
+      console.log("  4) Add authorized redirect URI:");
       console.log(`   ${REDIRECT_URI}`);
-      console.log("You can set E2E_GOOGLE_CLIENT_ID/E2E_GOOGLE_CLIENT_SECRET or paste below.\n");
+      console.log("  5) Copy Client ID and Client Secret");
+      console.log("  6) Put them in .env.emulator as:");
+      console.log("     E2E_GOOGLE_CLIENT_ID=...");
+      console.log("     E2E_GOOGLE_CLIENT_SECRET=...");
+      console.log("     (or paste them below now)\n");
     }
 
     const clientId = useProvided
