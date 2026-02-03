@@ -21,6 +21,11 @@
   let dragOverId: string | null = null;
   let previewOrderIds: string[] | null = null;
 
+  // Subtype DnD State
+  let draggingSubtypeId: string | null = null;
+  let dragOverSubtypeId: string | null = null;
+  let previewSubtypeOrderIds: string[] | null = null;
+
   // Split Images
   // Subtype Images: specific images linked to inventory items
   // We show ALL images in the gallery to allow reordering.
@@ -39,6 +44,23 @@
           const img = byId.get(id);
           if (img) {
               ordered.push(img);
+              byId.delete(id);
+          }
+      });
+      return [...ordered, ...Array.from(byId.values())];
+  })();
+
+  $: displayedSubtypes = (() => {
+      if (!previewSubtypeOrderIds || previewSubtypeOrderIds.length === 0) {
+          return associatedItems;
+      }
+      // Use variantId or id as key
+      const byId = new Map(associatedItems.map(item => [item.variantId || item.id, item]));
+      const ordered: any[] = [];
+      previewSubtypeOrderIds.forEach(id => {
+          const item = byId.get(id);
+          if (item) {
+              ordered.push(item);
               byId.delete(id);
           }
       });
@@ -67,6 +89,47 @@
   // Interaction Handlers
   function handleSubtypeSelect(id: string) {
       dispatch('selectSubtype', id);
+  }
+
+  // Subtype DnD Handlers
+  function handleSubtypeDragStart(e: DragEvent, item: any) {
+      if (readOnly) return;
+      const key = item.variantId || item.id;
+      draggingSubtypeId = key;
+      previewSubtypeOrderIds = displayedSubtypes.map(i => i.variantId || i.id);
+      
+      e.dataTransfer?.setData("text/plain", key);
+      // Optional: Custom drag image
+  }
+
+  function handleSubtypeDragOver(e: DragEvent, targetId: string) {
+      if (readOnly) return;
+      e.preventDefault();
+      if (!draggingSubtypeId) return;
+      if (!targetId || targetId === draggingSubtypeId || !previewSubtypeOrderIds) return;
+      
+      dragOverSubtypeId = targetId;
+      
+      const next = previewSubtypeOrderIds.slice();
+      const fromIndex = next.indexOf(draggingSubtypeId);
+      const toIndex = next.indexOf(targetId);
+      
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+      
+      next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, draggingSubtypeId);
+      previewSubtypeOrderIds = next;
+  }
+
+  function handleSubtypeDrop(e: DragEvent) {
+      if (readOnly) return;
+      e.preventDefault();
+      if (draggingSubtypeId && previewSubtypeOrderIds) {
+          dispatch('reorderSubtypes', { order: previewSubtypeOrderIds });
+      }
+      draggingSubtypeId = null;
+      dragOverSubtypeId = null;
+      previewSubtypeOrderIds = null;
   }
 
   function handleThumbnailHover(img: any) {
@@ -359,11 +422,16 @@
            {#if associatedItems.length > 1}
               <div class="options-block">
                   <span class="option-label">{listing.option1Name || 'Option'}</span>
-                  <div class="options-list">
-                      {#each associatedItems as item}
+                  <div class="options-list" role="list">
+                      {#each displayedSubtypes as item (item.variantId || item.id)}
                           <button 
                               class="option-btn {item.qty > 0 ? 'available' : 'unavailable'} {selectedSubtypeId === item.id ? 'active' : ''}"
+                              draggable={!readOnly}
+                              animate:flip={{ duration: 300, easing: cubicOut }}
                               on:click={() => handleSubtypeSelect(item.id)}
+                              on:dragstart={(e) => handleSubtypeDragStart(e, item)}
+                              on:dragover={(e) => handleSubtypeDragOver(e, item.variantId || item.id)}
+                              on:drop={(e) => handleSubtypeDrop(e)}
                           >
                               {item.subtype || 'Default'}
                           </button>
