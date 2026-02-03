@@ -770,7 +770,7 @@
         cachedOriginalsId,
         token.access_token,
       );
-      return driveFile.publicUrl || driveFile.apiUrl || driveFile.webContentLink || driveFile.thumbnailLink || null;
+      return driveFile.thumbnailLink || driveFile.webContentLink || null;
     } catch (e) {
       console.error("Image upload failed", url, e);
       return null;

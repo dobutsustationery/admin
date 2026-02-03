@@ -537,8 +537,8 @@ export async function processMediaItems(
                 const processedBlob = await (await fetch(dataUri)).blob();
                 const filename = `processed_${group.janCode}_${imgIdx}_${Date.now()}.png`;
                 const driveFile = await uploadImageToDrive(processedBlob, filename, processedFolderId, accessToken);
-                // Prefer publicUrl/apiUrl for high resolution, fall back to webContentLink or dataUri
-                driveUrl = driveFile.publicUrl || driveFile.apiUrl || driveFile.webContentLink || dataUri;
+                // Prefer publicUrl for external compatibility (Shopify), fall back to webContentLink or dataUri
+                driveUrl = driveFile.publicUrl || driveFile.webContentLink || dataUri;
              } catch(uploadErr) {
                  console.error("Failed to upload processed image", uploadErr);
              }
