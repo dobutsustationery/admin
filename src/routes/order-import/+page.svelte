@@ -271,7 +271,7 @@ interface AnalyzedItem extends ImportItem {
   }
 
   function handleConnect() {
-    initiateOAuthFlow();
+    initiateOAuthFlow(window.location.href);
   }
 
   function handleDisconnect() {
