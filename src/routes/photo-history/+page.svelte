@@ -131,12 +131,18 @@
        const headers: any = {};
        
        let fetchUrl = url;
-       // 1. Rewrite Drive Thumbnail URLs to API URLs
-       if (fetchUrl.includes("drive.google.com/thumbnail")) {
-            const match = fetchUrl.match(/id=([^&]+)/);
-            if (match && match[1]) {
-                fetchUrl = `https://www.googleapis.com/drive/v3/files/${match[1]}?alt=media`;
-            }
+       
+       // 1. Robustly Rewrite Drive URLs to API URLs
+       // Matches: id=XYZ (query param) or /d/XYZ (path)
+       let driveId = null;
+       const idMatch = fetchUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+       if (idMatch) driveId = idMatch[1];
+       
+       const pathMatch = fetchUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+       if (pathMatch) driveId = pathMatch[1];
+
+       if (driveId) {
+            fetchUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media`;
        } else if (fetchUrl.includes("googleusercontent.com")) {
             // Force full resolution for Google Photos/Drive content URLs
             // Strip existing params (e.g. =w200) and append =d (download original)
@@ -195,6 +201,13 @@
       try {
           // 1. Get Safe Source
           const safeDataUrl = await fetchSafeDataUrl(url); // This is "data:image/png;base64,..."
+          
+          // Debug Dimensions
+          const imgDebug = new Image();
+          imgDebug.src = safeDataUrl;
+          await new Promise(r => imgDebug.onload = r);
+          console.log(`[ManualOp] Fetched ${url} -> SafeDataURL (${safeDataUrl.length} chars). Dims: ${imgDebug.naturalWidth}x${imgDebug.naturalHeight}`);
+
           // Extract purely base64 for libraries that want it raw?
           // removeBackground takes full URL or Base64? library says:
           // "img.src = input.startsWith('data:') ? input : `data:image/png;base64,${input}`;"
