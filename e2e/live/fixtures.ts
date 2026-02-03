@@ -26,7 +26,7 @@ export const test = base.extend<LiveFixtures>({
     }, {
         driveFolderId: sandboxData.driveFolderId,
         clientId: process.env.E2E_GOOGLE_CLIENT_ID,
-        photosAlbumId: sandboxData.photosAlbumId || process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID,
+        photosAlbumId: process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID || sandboxData.photosAlbumId,
     });
 
     await use(sandboxData.driveFolderId);
