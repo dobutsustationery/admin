@@ -74,12 +74,13 @@
           
           // 5. Complete Upload & Update History
           // 5. Complete Upload & Update History
-          // Use the stable API URL if available, fallback to whatever we got.
-          const permanentUrl = result.apiUrl || result.thumbnailLink || result.webViewLink;
+          // Use the stable public URL if available (best for Shopify/compatibility)
+          // fallback to apiUrl (internal) then webViewLink
+          const permanentUrl = result.publicUrl || result.apiUrl || result.webViewLink || result.thumbnailLink;
 
           const action = complete_upload({ 
               id: photoId, 
-              permanentUrl: permanentUrl, 
+              permanentUrl: permanentUrl || "", 
               webViewLink: result.webViewLink 
           });
 
@@ -141,13 +142,20 @@
        const pathMatch = fetchUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
        if (pathMatch) driveId = pathMatch[1];
 
+       console.log(`[FetchSafe] Input: ${url}`);
+       
        if (driveId) {
+            console.log(`[FetchSafe] Detected Drive ID: ${driveId}. Using API.`);
             fetchUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media`;
        } else if (fetchUrl.includes("googleusercontent.com")) {
             // Force full resolution for Google Photos/Drive content URLs
             // Strip existing params (e.g. =w200) and append =d (download original)
+            const original = fetchUrl;
             const base = fetchUrl.replace(/=[a-z0-9,-]+$/i, "");
             fetchUrl = `${base}=d`;
+            console.log(`[FetchSafe] Detected GoogleUserContent. Rewrote: ${original} -> ${fetchUrl}`);
+       } else {
+            console.log(`[FetchSafe] No rewrite rule matched. Fetching as-is.`);
        }
 
        // 2. Configure Headers
@@ -274,7 +282,7 @@
           
           console.log("[Manual Upload] Result:", result);
 
-          const safeUrl = result.thumbnailLink || result.webViewLink;
+          const safeUrl = result.publicUrl || result.apiUrl || result.webViewLink || result.thumbnailLink;
           if (!safeUrl) {
               throw new Error("Upload succeeded but returned no usable URL.");
           }

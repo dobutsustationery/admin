@@ -65,6 +65,7 @@ export interface ListingCreationState {
   activeBatchId?: string;
   activeBatchCreatedAt?: number;
   lastCompletedBatchId?: string; // For UI celebration triggers
+  hasCelebrated?: boolean; // Track if we've shown the confetti for the last completion
   
   // Global Defaults (Persisted)
   globalTitlePrompt?: string;
@@ -80,6 +81,7 @@ export interface ListingCreationState {
     driveConnectionStatus: 'unknown',
     activeBatchId: undefined,
     activeBatchCreatedAt: undefined,
+    hasCelebrated: false,
     globalTitlePrompt: "Generate a concise, catchy product title for this product. Return ONLY the title text. No quotes.",
     globalDescriptionPrompt: "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text."
   };
@@ -105,6 +107,7 @@ export interface ListingCreationState {
       },
       remove_proposal: (state, action: PayloadAction<{ janCode: string }>) => {
           const { janCode } = action.payload;
+          console.log("[Slice] Removing proposal:", janCode, "Exists:", !!state.proposals[janCode]);
           delete state.proposals[janCode];
           state.activeBatchJans = state.activeBatchJans.filter(jan => jan !== janCode);
           state.originalBatchJans = state.originalBatchJans.filter(jan => jan !== janCode);
@@ -119,6 +122,7 @@ export interface ListingCreationState {
           state.activeBatchId = action.payload.batchId;
           state.activeBatchCreatedAt = action.payload.createdAt ?? Date.now();
           state.lastCompletedBatchId = undefined;
+          state.hasCelebrated = false;
       },
       set_current_step: (state, action: PayloadAction<number>) => {
           state.currentStepIndex = action.payload;
@@ -395,6 +399,7 @@ export interface ListingCreationState {
           state.currentStepIndex++;
       },
       complete_batch: (state) => {
+          console.log("[Slice] Completing Batch. Active ID:", state.activeBatchId);
           if (state.activeBatchId) {
              state.lastCompletedBatchId = state.activeBatchId;
           }
@@ -402,9 +407,14 @@ export interface ListingCreationState {
           state.currentStepIndex = 0;
           state.activeBatchId = undefined;
           state.activeBatchCreatedAt = undefined;
+          state.hasCelebrated = false;
+      },
+      mark_celebrated: (state) => {
+          state.hasCelebrated = true;
       },
       clear_celebration: (state) => {
           state.lastCompletedBatchId = undefined;
+          state.hasCelebrated = false;
       }
     },
   });
@@ -434,6 +444,7 @@ export const {
     approve_proposal,
     next_step,
     complete_batch,
+    mark_celebrated,
     clear_celebration,
     set_current_step,
     recalculate_batch_navigation

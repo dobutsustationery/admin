@@ -437,7 +437,7 @@
           const folders = await ensureFolderStructure(token.access_token);
           const uploadKey = mode === 'create' ? janCode : handle;
           const result = await uploadImageToDrive(file, `replace_${uploadKey}_${Date.now()}.jpg`, folders.processedId, token.access_token);
-          const newUrl = result.thumbnailLink || result.webViewLink;
+          const newUrl = result.publicUrl || result.apiUrl || result.webViewLink || result.thumbnailLink || "";
 
           if ($user.uid) {
               if (replacingSubtypeId) {
