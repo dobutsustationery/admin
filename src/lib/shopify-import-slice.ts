@@ -17,6 +17,8 @@ export interface ShopifyImportItem {
   productCategory?: string;
   imagePosition?: number;
   imageAltText?: string;
+  option1Name?: string;
+  option1Value?: string;
 }
 
 export interface RawRow {
@@ -42,6 +44,7 @@ export interface LastSeenProduct {
     productCategory?: string;
     imagePosition?: number;
     imageAltText?: string;
+    option1Name?: string;
 }
 
 export interface ShopifyImportState {
@@ -88,6 +91,8 @@ export const parseShopifyChunk = (
          let productCategory = parsedRow['product category'];
          let imagePositionStr = parsedRow['image position'];
          let imageAltText = parsedRow['image alt text'];
+         let option1Name = parsedRow['option1 name'];
+         let option1Value = parsedRow['option1 value'];
 
          // Smart Inheritance Logic
          if (handle) {
@@ -100,6 +105,7 @@ export const parseShopifyChunk = (
                  // Inherit Metadata
                  if (!bodyHtml) bodyHtml = context.bodyHtml;
                  if (!productCategory) productCategory = context.productCategory;
+                 if (!option1Name) option1Name = context.option1Name;
                  // Note: Image Alt Text is tricky. Usually specific to the image on the row.
                  // But if row has no image but belongs to the handle, should it inherit? 
                  // Usually Body is global. Images are per-row. 
@@ -146,7 +152,9 @@ export const parseShopifyChunk = (
                 productCategory: productCategory || "",
                 imagePosition: pos,
                 imageAltText: imageAltText || "",
-                listingImage: imageStr || undefined
+                listingImage: imageStr || undefined,
+                option1Name: option1Name || "",
+                option1Value: option1Value || ""
              };
              
              if (handle) {
@@ -160,7 +168,8 @@ export const parseShopifyChunk = (
                         bodyHtml,
                         productCategory,
                         imagePosition: pos,
-                        imageAltText
+                        imageAltText,
+                        option1Name
                     };
                 }
              }
@@ -299,6 +308,7 @@ export const computeShopifyImportBatch = (
                     ...(useImg ? { image: item.image, listingImage: item.listingImage } : {}),
                     bodyHtml: item.bodyHtml,
                     productCategory: item.productCategory,
+                    subtype: item.option1Value || currentItem.subtype // Update Subtype
                 };
                 
                 updates.push({
@@ -330,7 +340,7 @@ export const computeShopifyImportBatch = (
                                   vendor: "SPNSS Ltd.",
                                   tags: [],
                                   status: "active",
-                                  option1Name: "Title",
+                                  option1Name: parentItem.option1Name || "Title",
                                   images: [],
                                   lastUpdated: Date.now()
                               }
@@ -362,10 +372,15 @@ export const computeShopifyImportBatch = (
         } else if (filter === "NEW" && !exists) {
              if (item.janCode) {
                  // Real New Item
+                 // Map option1Value to subtype
+                 const itemWithSubtype = {
+                     ...item,
+                     subtype: item.option1Value || ""
+                 };
                  updates.push({
                      type: "new",
                      id: item.janCode,
-                     item: item
+                     item: itemWithSubtype
                  });
                  if (storeHandle) createdHandles.add(storeHandle);
                  indices.push(index);
@@ -389,7 +404,7 @@ export const computeShopifyImportBatch = (
                                   vendor: "SPNSS Ltd.",
                                   tags: [],
                                   status: "active",
-                                  option1Name: "Title",
+                                  option1Name: parentItem.option1Name || "Title",
                                   images: [],
                                   lastUpdated: Date.now()
                               }
