@@ -125,6 +125,7 @@
                 
                 // Computed Fields
                 computedHandle: p.handle || generateHandle(p.title || "", p.janCode),
+                _viewMode: 'create',
 
                 // Row Identity
                 rowId: v.id || v.itemId, // Unique ID for the grid row (variant instance ID preferred)

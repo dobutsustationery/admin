@@ -6,6 +6,12 @@
   export const col: any = null; // Column Config
 
   function navigate() {
+      // Prioritize Create Mode if context flag is set (Drafts/Proposals)
+      if (item._viewMode === 'create' && item.janCode) {
+          goto(`/listing-detail?mode=create&jan=${item.janCode}`);
+          return;
+      }
+
       // Use computedHandle if available, else handle? item.id?
       // Legacy used computedHandle
       const handle = item.computedHandle || item.handle;
