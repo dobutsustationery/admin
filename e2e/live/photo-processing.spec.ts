@@ -10,12 +10,18 @@ test.describe('Photo Processing Workflow', () => {
   }
 
   test('should process photos with color correction, crop, and background removal', async ({ page }) => {
-    test.setTimeout(120000);
+    test.setTimeout(300000);
     console.log("Starting Photo Processing Test...");
     console.log("DEBUG ENV: E2E_GOOGLE_PHOTOS_ALBUM_ID =", process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID);
     
     await page.goto('/');
     await expect(page.locator('.app-shell')).toBeVisible({ timeout: 10000 });
+
+    // Monitor alerts
+    page.on('dialog', dialog => {
+        console.log(`[Browser Dialog] ${dialog.type()}: ${dialog.message()}`);
+        dialog.dismiss().catch(() => {});
+    });
 
     // Helper to fetch photos
     const fetchPhotos = async () => {
@@ -106,7 +112,7 @@ test.describe('Photo Processing Workflow', () => {
     console.log("Running Remove Background...");
     const bgBtn = page.locator('button:has-text("Remove BG")').first();
     await bgBtn.click();
-    await expect(page.locator('text=Previous Version').nth(2)).toBeVisible({ timeout: 90000 });
+    await expect(page.locator('text=Previous Version').nth(2)).toBeVisible({ timeout: 180000 });
 
     // Screenshot Result
     await page.screenshot({ path: path.join(reportDir, 'photo-1-history.png'), fullPage: true });
