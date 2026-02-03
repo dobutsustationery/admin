@@ -24,6 +24,8 @@ export default defineConfig({
   // Or retries to handle flake? Design doc says "Retry only on known transient...".
   // Playwright retries are general. Let's keep 0 for now or 1.
   retries: 1,
+  // Disable interactive reporters
+  reporter: [['list']],
 
   // Use the same webServer, but we need to inject the REAL Client ID via ENV
   webServer: {
