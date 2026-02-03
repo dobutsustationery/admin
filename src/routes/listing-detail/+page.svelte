@@ -700,6 +700,7 @@
               });
            
            removedJans = siblingProposals.map((p: any) => p.janCode);
+           if (!removedJans.includes(janCode)) removedJans.push(janCode);
            
            siblingProposals.forEach((p: any) => {
                dispatchBroadcast(remove_proposal({ janCode: p.janCode }));
@@ -710,6 +711,15 @@
 
       // Optimistically calculate remaining items
       const remaining = stateBefore.activeBatchJans.filter((j: string) => !removedJans.includes(j));
+      
+      console.log("[handleDrop] Debug:", {
+          currentJan: janCode,
+          activeBatch: stateBefore.activeBatchJans,
+          removed: removedJans,
+          remaining: remaining,
+          currentIndex,
+          nextIndexCalc: currentIndex >= remaining.length ? 0 : currentIndex
+      });
 
       if (remaining.length === 0) {
           dispatchBroadcast(complete_batch());
