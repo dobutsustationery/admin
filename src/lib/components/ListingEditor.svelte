@@ -270,7 +270,7 @@
                    </div>
                {/if}
                <div class="subtype-list">
-                   {#each associatedItems as item, i (item.variantId || item.id || `fallback-${i}`)}
+                   {#each associatedItems as item, i (i)}
                        {@const subtypeImg = (item.variantImage ? { url: item.variantImage } : null) || 
                            (item.photoGroupKey ? images.find(img => img.sourceGroup === item.photoGroupKey) : null) || 
                            (item.image ? { url: item.image } : null)
