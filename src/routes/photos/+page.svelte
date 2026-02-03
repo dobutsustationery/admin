@@ -679,7 +679,7 @@
   </div>
 
   <!-- CONTENT AREA -->
-  <div class="bg-white p-6 rounded-lg shadow-md min-h-[400px]">
+  <div class="bg-white p-6 rounded-lg shadow-md min-h-[400px]" data-testid="selection-area">
     <!-- Progress Bar -->
     {#if isGenerating || analysisGroups.length > 0}
       <div class="mb-8">
@@ -882,6 +882,7 @@
                 style="width: 148px; height: 148px; flex-shrink: 0;"
                 role="button"
                 tabindex="0"
+                data-testid="photo-thumbnail-{photo.id}"
                 aria-label="View photo history"
                 on:click={() => goto(`/photo-history?id=${photo.id}`)}
                 on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${photo.id}`)}
@@ -988,6 +989,7 @@
                         class:related-highlight={hoveredRowIndex === index + 1 && hoveredColumn === 'photos'}
                         style="display: flex; flex-direction: row relative;"
                         role="group"
+                        data-testid="group-{jan}"
                         on:mouseleave={() => { hoveredRowIndex = null; hoveredColumn = null; }}
                     >
                         <!-- JAN Column -->
@@ -1003,6 +1005,7 @@
                                 type="text" 
                                 value={jan} 
                                 class="editable-jan"
+                                data-testid="jan-input-{jan}"
                                 on:blur={(e) => handleJanRename(jan, e.currentTarget.value)}
                                 on:keyup={(e) => handleInputKey(e, jan)}
                             />
@@ -1035,6 +1038,7 @@
                                         style="width: 80px; height: 80px; flex-shrink: 0;"
                                         role="button"
                                         tabindex="0"
+                                        data-testid="photo-thumbnail-{item.id}"
                                         aria-label="View photo history"
                                         on:click={() => goto(`/photo-history?id=${item.id}`)}
                                         on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${item.id}`)}
