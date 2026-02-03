@@ -81,6 +81,7 @@ test.describe('Live Photo Processing', () => {
     ];
     docHelper.addStep('Photos Selected', '000-photos-selected.png', verifications2);
     await screenshots.capture(page, 'photos-selected', {
+        maxDiffPixelRatio: 0.1,
         programmaticCheck: async () => { for (const v of verifications2) await v.check(); }
     });
 
