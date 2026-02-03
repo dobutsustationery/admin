@@ -73,14 +73,12 @@
           const result = await uploadImageToDrive(file, `replaced_${photoId}_${Date.now()}.jpg`, folders.processedId, token.access_token);
           
           // 5. Complete Upload & Update History
-          // 5. Complete Upload & Update History
-          // Use the stable public URL if available (best for Shopify/compatibility)
-          // fallback to apiUrl (internal) then webViewLink
-          const permanentUrl = result.publicUrl || result.apiUrl || result.webViewLink || result.thumbnailLink;
+          // Use the stable API URL if available, fallback to whatever we got.
+          const permanentUrl = result.thumbnailLink || result.webViewLink;
 
           const action = complete_upload({ 
               id: photoId, 
-              permanentUrl: permanentUrl || "", 
+              permanentUrl: permanentUrl, 
               webViewLink: result.webViewLink 
           });
 
@@ -280,9 +278,7 @@
           
           const result = await uploadImageToDrive(file, filename, folders.processedId, token.access_token);
           
-          console.log("[Manual Upload] Result:", result);
-
-          const safeUrl = result.publicUrl || result.apiUrl || result.webViewLink || result.thumbnailLink;
+          const safeUrl = result.thumbnailLink || result.webViewLink;
           if (!safeUrl) {
               throw new Error("Upload succeeded but returned no usable URL.");
           }
