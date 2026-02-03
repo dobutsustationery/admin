@@ -4,7 +4,7 @@
   import { goto } from "$app/navigation";
   import { store } from "$lib/store";
   import { initiate_upload, complete_upload } from "$lib/photos-slice";
-  import { ensureFolderStructure, uploadImageToDrive } from "$lib/google-drive";
+  import { ensureFolderStructure, uploadImageToDrive, getStoredToken as getDriveToken, initiateOAuthFlow as initiateDriveAuth } from "$lib/google-drive";
   import { getStoredToken, initiateOAuthFlow } from "$lib/google-photos";
   import Navigation from "$lib/components/Navigation.svelte";
 
@@ -56,9 +56,9 @@
 
       try {
           // 1. Auth Check
-          const token = getStoredToken();
+          const token = getDriveToken();
           if (!token) {
-              initiateOAuthFlow();
+              initiateDriveAuth();
               return;
           }
 
@@ -242,8 +242,8 @@
       if (!photoId) return;
       
       try {
-          const token = getStoredToken();
-          if (!token) { initiateOAuthFlow(); return; }
+          const token = getDriveToken();
+          if (!token) { initiateDriveAuth(); return; }
           
           const folders = await ensureFolderStructure(token.access_token);
           
@@ -275,9 +275,10 @@
               store.dispatch(action);
           }
 
-      } catch (e) {
+      } catch (e: any) {
           console.error("Upload Blob Failed", e);
-          alert("Failed to save result.");
+          const msg = e instanceof Error ? e.message : String(e);
+          alert("Failed to save result: " + msg);
       }
   }
 </script>

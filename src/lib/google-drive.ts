@@ -648,7 +648,10 @@ export async function uploadImageToDrive(
     }
   );
   
-  if (!initRes.ok) throw new Error("Failed to initiate upload");
+  if (!initRes.ok) {
+      const errText = await initRes.text();
+      throw new Error(`Failed to initiate upload: ${initRes.status} ${errText}`);
+  }
   
   const uploadUrl = initRes.headers.get("Location");
   if (!uploadUrl) throw new Error("No upload location returned");
