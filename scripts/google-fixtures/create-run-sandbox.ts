@@ -17,9 +17,8 @@ async function main() {
     process.exit(1);
   }
 
-  const runId = process.env.RUN_ID || randomUUID();
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const sandboxName = `Sandbox_${timestamp}_${runId}`;
+  const REUSED_SANDBOX_NAME = "Sandbox_E2E_Reused";
+  const useReuse = true; // Feature flag
 
   const clientId = process.env.E2E_GOOGLE_CLIENT_ID!;
   const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET!;
@@ -27,7 +26,11 @@ async function main() {
   const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN!;
   const driveRootId = process.env.E2E_GOOGLE_DRIVE_FOLDER_ID!;
 
-  // 1. Create Drive Folder
+  // 1. Create Drive Folder (Still create new for Drive isolation as it supports deletion)
+  const runId = process.env.RUN_ID || randomUUID();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const sandboxName = `Sandbox_${timestamp}_${runId}`; // For Drive
+
   const driveAuth = new OAuth2Client(clientId, clientSecret);
   driveAuth.setCredentials({ refresh_token: driveRefreshToken });
   const drive = google.drive({ version: 'v3', auth: driveAuth });
@@ -48,54 +51,92 @@ async function main() {
     process.exit(1);
   }
 
-  // 2. Create Photos Album
+  // 2. Create/Reuse Photos Album
   const photosAuth = new OAuth2Client(clientId, clientSecret);
   photosAuth.setCredentials({ refresh_token: photosRefreshToken });
   const { token: photosAccessToken } = await photosAuth.getAccessToken();
   if (!photosAccessToken) {
     console.error('❌ Failed to obtain Photos access token.');
-    // Best-effort cleanup of created Drive sandbox.
-    if (driveFolderId) {
-      try {
-        await drive.files.delete({ fileId: driveFolderId });
-      } catch {
-        // ignore cleanup errors
-      }
-    }
+    if (driveFolderId) await drive.files.delete({ fileId: driveFolderId });
     process.exit(1);
   }
 
   let photosAlbumId = '';
-  try {
-    const response = await fetch('https://photoslibrary.googleapis.com/v1/albums', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${photosAccessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        album: {
-          title: sandboxName,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Photos API returned ${response.status}: ${text}`);
-    }
-
-    const album = await response.json();
-    photosAlbumId = album.id;
-  } catch (error: any) {
-    console.error('❌ Failed to create Photos sandbox album:', error.message);
-    // Cleanup Drive sandbox when album creation fails to avoid leaks.
-    if (driveFolderId) {
+  
+  async function emptyAlbum(albumId: string, token: string) {
+      // List media items
       try {
-        await drive.files.delete({ fileId: driveFolderId });
-      } catch (cleanupError: any) {
-        console.error('⚠️ Failed to cleanup Drive sandbox after Photos failure:', cleanupError.message);
+          const searchRes = await fetch('https://photoslibrary.googleapis.com/v1/mediaItems:search', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ albumId, pageSize: 100 })
+          });
+          const searchData = await searchRes.json();
+          const items = searchData.mediaItems || [];
+          
+          if (items.length > 0) {
+              const ids = items.map((i: any) => i.id);
+              // Batch remove
+              const removeRes = await fetch(`https://photoslibrary.googleapis.com/v1/albums/${albumId}:batchRemoveMediaItems`, {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ mediaItemIds: ids })
+              });
+              if (!removeRes.ok) console.warn("Failed to empty album items:", await removeRes.text());
+              
+              // Recurse if more? (Pagination)
+              if (searchData.nextPageToken) {
+                  // Simply run again? Or handle pagination. For E2E, 100 is likely enough.
+                  // But recursive is safer.
+                  await emptyAlbum(albumId, token);
+              }
+          }
+      } catch (e) {
+          console.warn("Error emptying album:", e);
       }
+  }
+
+  try {
+      if (useReuse) {
+          // List albums to find reuse target
+          const listRes = await fetch('https://photoslibrary.googleapis.com/v1/albums?pageSize=50', {
+              headers: { 'Authorization': `Bearer ${photosAccessToken}` }
+          });
+          const listData = await listRes.json();
+          const existing = (listData.albums || []).find((a: any) => a.title === REUSED_SANDBOX_NAME);
+          
+          if (existing) {
+              photosAlbumId = existing.id;
+              await emptyAlbum(photosAlbumId, photosAccessToken);
+          }
+      }
+
+      if (!photosAlbumId) {
+          const response = await fetch('https://photoslibrary.googleapis.com/v1/albums', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${photosAccessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              album: {
+                title: useReuse ? REUSED_SANDBOX_NAME : sandboxName,
+              },
+            }),
+          });
+      
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Photos API returned ${response.status}: ${text}`);
+          }
+      
+          const album = await response.json();
+          photosAlbumId = album.id;
+      }
+  } catch (error: any) {
+    console.error('❌ Failed to create/reuse Photos sandbox album:', error.message);
+    if (driveFolderId) {
+      try { await drive.files.delete({ fileId: driveFolderId }); } catch {}
     }
     process.exit(1);
   }
@@ -103,7 +144,7 @@ async function main() {
   // Output JSON result
   console.log(JSON.stringify({
     runId,
-    sandboxName,
+    sandboxName: useReuse ? REUSED_SANDBOX_NAME : sandboxName, // Use actual name
     driveFolderId,
     photosAlbumId,
   }));
