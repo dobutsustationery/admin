@@ -427,7 +427,7 @@
       try {
           const token = getStoredToken();
           if (!token) {
-              initiateOAuthFlow();
+              initiateOAuthFlow(window.location.href);
               return;
           }
           
