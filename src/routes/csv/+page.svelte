@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { goto } from '$app/navigation';
   import { store } from "$lib/store";
   import { user } from "$lib/globals";
   import { Parser } from "@json2csv/plainjs";
@@ -65,10 +66,25 @@
         authenticated = true;
         // Check for redirect state
         if (result.state && result.state.startsWith("drive_auth|")) {
-             const returnUrl = result.state.split("|")[1];
-             if (returnUrl) {
-                 window.location.href = returnUrl;
-                 return;
+             const parts = result.state.split("|");
+             if (parts.length > 1) {
+                 const returnUrlEncoded = parts[1];
+                 try {
+                     // Attempt to decode, handling both encoded and unencoded (legacy) cases
+                     const returnUrl = decodeURIComponent(returnUrlEncoded);
+                     if (returnUrl) {
+                         console.log("Redirecting to return URL:", returnUrl);
+                         // Use goto for internal links to avoid reload, fallback to href for others
+                         if (returnUrl.startsWith("/") || returnUrl.startsWith(window.location.origin)) {
+                            goto(returnUrl, { replaceState: true });
+                         } else {
+                            window.location.href = returnUrl;
+                         }
+                         return;
+                     }
+                 } catch (e) {
+                     console.error("Error decoding return URL from state:", e);
+                 }
              }
         }
         await loadFiles();

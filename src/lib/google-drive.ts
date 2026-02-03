@@ -151,10 +151,11 @@ export function initiateOAuthFlow(returnUrl?: string): void {
   }
 
   // Build OAuth URL
-  const redirectUri = `${window.location.origin}/csv`;
+  const redirectUri = import.meta.env.VITE_GOOGLE_DRIVE_REDIRECT_URI || `${window.location.origin}/csv`;
   
   // Encode return URL in state if provided
-  const state = returnUrl ? `drive_auth|${returnUrl}` : "drive_auth";
+  // We encode the return URL to ensure special characters don't break the state parsing
+  const state = returnUrl ? `drive_auth|${encodeURIComponent(returnUrl)}` : "drive_auth";
   
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
