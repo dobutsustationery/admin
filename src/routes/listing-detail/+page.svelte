@@ -687,8 +687,10 @@
       const stateBefore = store.getState().listingCreation;
       const currentIndex = stateBefore.activeBatchJans.indexOf(janCode);
 
-      // Remove all proposals in the same handle group
+      // Identify items to remove (current + siblings sharing handle)
       const primaryProposal = stateBefore.proposals[janCode];
+      let removedJans: string[] = [janCode];
+
       if (primaryProposal) {
           const handle = primaryProposal.handle || generateHandle(primaryProposal.title, primaryProposal.janCode);
           const siblingProposals = Object.values(stateBefore.proposals)
@@ -697,6 +699,8 @@
                   return h === handle;
               });
            
+           removedJans = siblingProposals.map((p: any) => p.janCode);
+           
            siblingProposals.forEach((p: any) => {
                dispatchBroadcast(remove_proposal({ janCode: p.janCode }));
            });
@@ -704,8 +708,9 @@
            dispatchBroadcast(remove_proposal({ janCode }));
       }
 
-      const stateAfter = store.getState().listingCreation;
-      const remaining = stateAfter.activeBatchJans;
+      // Optimistically calculate remaining items
+      const remaining = stateBefore.activeBatchJans.filter((j: string) => !removedJans.includes(j));
+
       if (remaining.length === 0) {
           dispatchBroadcast(complete_batch());
           goto('/listings/create');
@@ -713,8 +718,9 @@
       }
 
       let nextIndex = currentIndex;
-      if (nextIndex < 0) nextIndex = 0;
-      if (nextIndex >= remaining.length) nextIndex = 0;
+      if (nextIndex >= remaining.length) {
+          nextIndex = 0; // Wrap to start if we dropped the last item
+      }
 
       const nextJan = remaining[nextIndex];
       dispatchBroadcast(set_current_step(nextIndex));
