@@ -215,7 +215,7 @@
            {#if galleryImages.length > 0 || !readOnly}
                <div class="section-label">Gallery Images</div>
                <div class="thumbnails-grid" role="list" on:dragover={handleDragOver} on:drop={handleDrop}>
-                   {#each displayedGalleryImages as img (img.id)}
+                   {#each displayedGalleryImages as img, i (img.id || `gallery-${i}`)}
                        <div 
                             class="thumbnail-container"
                             class:dragging={draggingId === img.id}
