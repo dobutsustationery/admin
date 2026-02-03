@@ -65,6 +65,22 @@
      if (hoverTimer) clearTimeout(hoverTimer);
      isHovered = false;
   }
+
+  // Compute high-res URL for zoom
+  $: zoomedSrc = (() => {
+      if (src.includes("drive.google.com/thumbnail")) {
+          // Force high resolution for Drive thumbnails
+          // Check if already has sz param? Assuming we append or replace.
+          // Simplest is to append, last param wins usually or it's unique.
+          return src.includes("sz=") ? src.replace(/sz=[^&]+/, "sz=w1600") : `${src}&sz=w1600`;
+      } 
+      if (src.includes("googleusercontent.com")) {
+          // Strip params and request high res
+          return src.replace(/=[a-z0-9,-]+$/i, "") + "=w1600";
+      }
+      // For others, use original source (often high res enough)
+      return src;
+  })();
 </script>
 
 <div 
@@ -91,7 +107,7 @@
         transition:fade={{ duration: 150 }}
     >
                 <SecureImage
-                    src={src.includes("drive.google.com") || src.includes("googleapis.com") ? src : `${src}=w800`}
+                    src={zoomedSrc}
                     alt={alt}
                     className="zoomed-image"
                 />        {#if alt}
@@ -132,13 +148,13 @@
       flex-direction: column;
       align-items: center;
       width: auto;
-      max-width: 80vh; /* Max constrained */
-      max-height: 50vh;
+      max-width: 90vw; /* Max constrained */
+      max-height: 90vh;
   }
   
   /* Deep selector to constrain the image inside the overlay */
   :global(.zoom-overlay .zoomed-image) {
-      max-height: 45vh;
+      max-height: 85vh;
       width: auto;
       object-fit: contain;
       border-radius: 0.25rem;
