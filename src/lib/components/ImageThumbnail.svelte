@@ -61,8 +61,9 @@
         availableHeight = winHeight - rect.bottom - 20; // 20px padding from screen bottom
     }
     
-    // Enforce constraints
-    style += ` max-height: ${availableHeight}px;`;
+    // Pass constraint to image via CSS variable, reserving space for text/padding (approx 40px)
+    // We don't constrain the container height directly, we let content drive it up to the limit.
+    style += ` --max-img-height: ${Math.max(100, availableHeight - 40)}px;`;
     
     zoomStyle = style;
 
@@ -160,12 +161,11 @@
       align-items: center;
       width: auto;
       max-width: 90vw; /* Max constrained */
-      /* max-height handled by inline style */
   }
   
   /* Deep selector to constrain the image inside the overlay */
   :global(.zoom-overlay .zoomed-image) {
-      max-height: 100%; /* Fill the container's calculated max-height */
+      max-height: var(--max-img-height, 85vh);
       width: auto;
       object-fit: contain;
       border-radius: 0.25rem;
