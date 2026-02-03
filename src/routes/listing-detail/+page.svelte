@@ -702,8 +702,8 @@
            removedJans = siblingProposals.map((p: any) => p.janCode);
            if (!removedJans.includes(janCode)) removedJans.push(janCode);
            
-           siblingProposals.forEach((p: any) => {
-               dispatchBroadcast(remove_proposal({ janCode: p.janCode }));
+           removedJans.forEach((jan: string) => {
+               dispatchBroadcast(remove_proposal({ janCode: jan }));
            });
       } else {
            dispatchBroadcast(remove_proposal({ janCode }));
