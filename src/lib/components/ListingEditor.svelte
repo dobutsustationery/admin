@@ -10,7 +10,7 @@
   export let selectedSubtypeId: string | null = null;
   export let readOnly = false;
   export let isCreationMode = false; // Toggle for "Approve" button vs "Add to cart"
-  export const isGeneratingTitle: boolean = false;
+  export let isGeneratingTitle: boolean = false;
   export let isGeneratingDescription = false;
 
   const dispatch = createEventDispatcher();
@@ -270,7 +270,7 @@
                    </div>
                {/if}
                <div class="subtype-list">
-                   {#each associatedItems as item (item.variantId || item.id)}
+                   {#each associatedItems as item, i (item.variantId || item.id || `fallback-${i}`)}
                        {@const subtypeImg = (item.variantImage ? { url: item.variantImage } : null) || 
                            (item.photoGroupKey ? images.find(img => img.sourceGroup === item.photoGroupKey) : null) || 
                            (item.image ? { url: item.image } : null)

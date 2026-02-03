@@ -202,6 +202,8 @@
                       return item ? { ...item, id } : null;
                   })
                   .filter((item): item is NonNullable<typeof item> => !!item);
+              
+              console.log("[ListingDetail] Live Mode Associated Items:", associatedItems);
           } else {
               listingData = null;
           }
