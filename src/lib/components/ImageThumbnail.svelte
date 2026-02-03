@@ -40,18 +40,29 @@
     // Default style: Centered vertically relative to mouse/element, but pushed to side?
     // Inherited logic was Above/Below. Let's stick to that as it works well for grids.
     
-    const spaceAbove = mouseY;
-    const spaceBelow = winHeight - mouseY;
+    const spaceAbove = rect.top;
+    const spaceBelow = winHeight - rect.bottom;
     
+    // Default style: Centered horizontally
     let style = "left: 50%; transform: translateX(-50%); position: fixed; z-index: 9999;";
-    
+    let availableHeight = 0;
+
+    // Prefer side with more space
     if (spaceAbove > spaceBelow) {
         // Show ABOVE
-        style += ` bottom: ${winHeight - rect.top + 10}px; top: auto;`;
+        // Bottom is fixed to just above the element
+        const bottomPos = winHeight - rect.top + 10;
+        style += ` bottom: ${bottomPos}px; top: auto;`;
+        availableHeight = rect.top - 20; // 20px padding from screen top
     } else {
         // Show BELOW
-        style += ` top: ${rect.bottom + 10}px; bottom: auto;`;
+        const topPos = rect.bottom + 10;
+        style += ` top: ${topPos}px; bottom: auto;`;
+        availableHeight = winHeight - rect.bottom - 20; // 20px padding from screen bottom
     }
+    
+    // Enforce constraints
+    style += ` max-height: ${availableHeight}px;`;
     
     zoomStyle = style;
 
@@ -149,12 +160,12 @@
       align-items: center;
       width: auto;
       max-width: 90vw; /* Max constrained */
-      max-height: 90vh;
+      /* max-height handled by inline style */
   }
   
   /* Deep selector to constrain the image inside the overlay */
   :global(.zoom-overlay .zoomed-image) {
-      max-height: 85vh;
+      max-height: 100%; /* Fill the container's calculated max-height */
       width: auto;
       object-fit: contain;
       border-radius: 0.25rem;
