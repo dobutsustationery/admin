@@ -255,10 +255,11 @@ export interface ListingCreationState {
                return;
            }
 
-           const variantIndex = source.variants.findIndex(v => v.itemId === variantId);
+           const variantIndex = source.variants.findIndex(v => v.id === variantId);
            if (variantIndex === -1) return;
            
            const variant = source.variants[variantIndex];
+           const targetItemId = variant.itemId;
            
            const newProposalId = variantId; 
            
@@ -267,7 +268,7 @@ export interface ListingCreationState {
                // We preserve the source JAN semantics for photo lookup
                janCode: source.janCode, 
                handle: newHandle,
-               inventoryItemIds: [variantId], 
+               inventoryItemIds: [targetItemId], 
                photoGroupIds: [...source.photoGroupIds], 
                variants: [variant],
                listingOnlyImages: [],
@@ -275,7 +276,7 @@ export interface ListingCreationState {
            };
            
            source.variants.splice(variantIndex, 1);
-           source.inventoryItemIds = source.inventoryItemIds.filter(id => id !== variantId);
+           source.inventoryItemIds = source.inventoryItemIds.filter(id => id !== targetItemId);
            
            // Key must be unique, so we use variantId. janCode property handles the logic.
            state.proposals[newProposalId] = newProposal;
@@ -288,17 +289,20 @@ export interface ListingCreationState {
            const target = state.proposals[targetJan];
            if (!source || !target || sourceJan === targetJan) return;
 
-           const variantIndex = source.variants.findIndex(v => v.itemId === variantId);
+           const variantIndex = source.variants.findIndex(v => v.id === variantId);
            if (variantIndex === -1) return;
            const variant = source.variants[variantIndex];
+           const targetItemId = variant.itemId;
 
            // Move Variant
            target.variants.push(variant);
-           target.inventoryItemIds.push(variantId);
+           if (!target.inventoryItemIds.includes(targetItemId)) {
+               target.inventoryItemIds.push(targetItemId);
+           }
            
            // Cleanup Source
            source.variants.splice(variantIndex, 1);
-           source.inventoryItemIds = source.inventoryItemIds.filter(id => id !== variantId);
+           source.inventoryItemIds = source.inventoryItemIds.filter(id => id !== targetItemId);
            
            if (source.variants.length === 0) {
                delete state.proposals[sourceJan];
