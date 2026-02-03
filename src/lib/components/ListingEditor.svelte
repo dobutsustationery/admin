@@ -157,9 +157,10 @@
       }
   }
 
-  function handlePriceBlur(e: Event) {
+  function handlePriceChange(e: Event) {
       if (readOnly) return;
-      const newPrice = parseFloat((e.target as HTMLElement).innerText.replace(/[^0-9.]/g, ''));
+      const target = e.target as HTMLInputElement;
+      const newPrice = parseFloat(target.value);
       if (!isNaN(newPrice)) {
           dispatch('updatePrice', newPrice);
       }
@@ -402,11 +403,24 @@
                   contenteditable={!readOnly}
                   on:blur={handleTitleBlur}
                >{listing.title}</h1>
-                <div 
-                   class="listing-price {readOnly ? '' : 'editable'} {(!isPriceValid && !readOnly) ? 'invalid' : ''}" 
-                   contenteditable={!readOnly}
-                   on:blur={handlePriceBlur}
-               >€{associatedItems[0]?.price?.toFixed(2) || '0.00'} EUR</div>
+               <!-- Price Input (Parsed correctly) -->
+               <div class="listing-price-container {(!isPriceValid && !readOnly) ? 'invalid' : ''}">
+                   <span class="currency">€</span>
+                   {#if readOnly}
+                       <span class="price-val">{associatedItems[0]?.price?.toFixed(2) || '0.00'}</span>
+                   {:else}
+                       <input 
+                           type="number" 
+                           class="price-input editable" 
+                           step="0.01" 
+                           min="0"
+                           value={associatedItems[0]?.price || 0} 
+                           on:change={handlePriceChange}
+                           title="Price in EUR"
+                       />
+                   {/if}
+                   <span class="currency">EUR</span>
+               </div>
                <div class="tax-note">Taxes included.</div>
            </div>
            
@@ -535,7 +549,31 @@
   /* Typography & Details */
   .title-block { margin-bottom: 0.5rem; }
   .listing-title { font-size: 2.25rem; font-weight: 400; line-height: 1.1; color: #111827; margin: 0 0 0.5rem 0; }
-  .listing-price { font-size: 1.25rem; color: #374151; font-weight: 500; }
+  
+  /* Updated Price Styling */
+  .listing-price-container { 
+      font-size: 1.25rem; 
+      color: #374151; 
+      font-weight: 500; 
+      display: flex; 
+      align-items: center; 
+      gap: 4px;
+  }
+  .price-input {
+      font-size: inherit;
+      font-weight: inherit;
+      color: inherit;
+      border: 1px dashed transparent;
+      padding: 0 2px;
+      width: 100px;
+      background: transparent;
+  }
+  .price-input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      background: #f8fafc;
+  }
+  
   .tax-note { font-size: 0.875rem; color: #6b7280; margin-top: 0.25rem; }
   .description-block :global(p) { margin-bottom: 1em; line-height: 1.6; color: #4b5563; }
   .description-block :global(ul) { margin-bottom: 1em; padding-left: 1.5em; }
@@ -591,12 +629,12 @@
   .subtype-thumb-wrapper:hover .subtype-overlay { opacity: 1; }
 
   /* Validation Styles */
-  .listing-price.invalid {
+  .listing-price-container.invalid {
       border-color: #fca5a5; /* Red-300 */
       background: #fef2f2; /* Red-50 */
       color: #dc2626; /* Red-600 */
   }
-  .listing-price.invalid:after {
+  .listing-price-container.invalid:after {
       content: "Price required";
       display: block;
       font-size: 0.65rem;
