@@ -137,6 +137,11 @@
             if (match && match[1]) {
                 fetchUrl = `https://www.googleapis.com/drive/v3/files/${match[1]}?alt=media`;
             }
+       } else if (fetchUrl.includes("googleusercontent.com")) {
+            // Force full resolution for Google Photos/Drive content URLs
+            // Strip existing params (e.g. =w200) and append =d (download original)
+            const base = fetchUrl.replace(/=[a-z0-9,-]+$/i, "");
+            fetchUrl = `${base}=d`;
        }
 
        // 2. Configure Headers
