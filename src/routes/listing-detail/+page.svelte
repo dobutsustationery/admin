@@ -17,7 +17,8 @@
       include_proposal_photo,
       set_current_step,
       remove_proposal,
-      complete_batch
+      complete_batch,
+      reorder_variants
   } from "$lib/listing-creation-slice";
   import { update_field } from '$lib/inventory';
   import { uncategorize_photo } from '$lib/photos-slice';
@@ -754,6 +755,12 @@
       });
   }
 
+  function handleReorderSubtypes(e: CustomEvent<{ order: string[] }>) {
+      if (mode === 'create' && janCode) {
+          dispatchBroadcast(reorder_variants({ janCode, newVariantOrder: e.detail.order }));
+      }
+  }
+
   // Search (Live Mode)
   function handleSearch() {
        if (!searchTerm) {
@@ -894,6 +901,7 @@
       on:replaceImage={handleReplaceImage}
       on:replaceSubtypeImage={handleReplaceSubtypeImage}
       on:reorderImages={handleReorderImages}
+      on:reorderSubtypes={handleReorderSubtypes}
       on:addImage={openImagePicker}
       on:approve={handleApprove}
       on:drop={handleDrop}

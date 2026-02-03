@@ -151,6 +151,28 @@ export interface ListingCreationState {
           state.activeBatchJans = newBatchOrder;
       },
       
+      reorder_variants: (state, action: PayloadAction<{ janCode: string, newVariantOrder: string[] }>) => {
+          const { janCode, newVariantOrder } = action.payload;
+          const proposal = state.proposals[janCode];
+          if (!proposal || !proposal.variants) return;
+          
+          const byId = new Map(proposal.variants.map(v => [v.id, v]));
+          const newVariants: ListingVariant[] = [];
+          
+          newVariantOrder.forEach(id => {
+              const v = byId.get(id);
+              if (v) {
+                  newVariants.push(v);
+                  byId.delete(id);
+              }
+          });
+          
+          // Append any remaining variants not in the order (safety)
+          Array.from(byId.values()).forEach(v => newVariants.push(v));
+          
+          proposal.variants = newVariants;
+      },
+      
       // Editing
       update_proposal_field: (state, action: PayloadAction<{ janCode: string, field: keyof ListingProposal, value: any }>) => {
           const { janCode, field, value } = action.payload;
@@ -404,6 +426,7 @@ export const {
     update_variant_image,
     set_variant_photo_group,
     split_variant,
+    reorder_variants,
     move_variant,
     merge_proposal,
     import_existing_variants,
