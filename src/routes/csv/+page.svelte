@@ -74,13 +74,25 @@
                      const returnUrl = decodeURIComponent(returnUrlEncoded);
                      if (returnUrl) {
                          console.log("Redirecting to return URL:", returnUrl);
-                         // Use goto for internal links to avoid reload, fallback to href for others
-                         if (returnUrl.startsWith("/") || returnUrl.startsWith(window.location.origin)) {
-                            goto(returnUrl, { replaceState: true });
-                         } else {
-                            window.location.href = returnUrl;
+                         
+                         let isDifferentPath = true;
+                         try {
+                             const targetUrl = new URL(returnUrl, window.location.origin);
+                             isDifferentPath = targetUrl.pathname !== window.location.pathname;
+                         } catch (e) {
+                             console.warn("Could not parse returnUrl:", returnUrl);
                          }
-                         return;
+
+                         if (isDifferentPath) {
+                             if (returnUrl.startsWith("/") || returnUrl.startsWith(window.location.origin)) {
+                                goto(returnUrl, { replaceState: true });
+                             } else {
+                                window.location.href = returnUrl;
+                             }
+                             return;
+                         }
+                         
+                         window.history.replaceState({}, document.title, returnUrl);
                      }
                  } catch (e) {
                      console.error("Error decoding return URL from state:", e);
