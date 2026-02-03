@@ -137,8 +137,8 @@
           const driveFile = await uploadImageToDrive(blob, driveFilename, folderId, accessToken);
           
           // Determine Permanent URL
-          // Use strict API URL first
-          const permanentUrl = driveFile.apiUrl || driveFile.thumbnailLink || driveFile.webContentLink;
+          // Use publicUrl (best for Shopify) then API URL
+          const permanentUrl = driveFile.publicUrl || driveFile.apiUrl || driveFile.webContentLink || driveFile.thumbnailLink;
           
           if (!permanentUrl) {
               throw new Error("No permanent URL returned from Drive");

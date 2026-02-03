@@ -11,7 +11,8 @@
       set_current_step,
       recalculate_batch_navigation,
       set_proposal_handle_thunk,
-      clear_celebration
+      clear_celebration,
+      mark_celebrated
   } from "$lib/listing-creation-slice";
   import { goto } from '$app/navigation';
 
@@ -50,11 +51,11 @@
   
   let showCelebration = false;
   let showReturnToDashboard = false;
-  let lastSeenBatchId: string | undefined = undefined;
 
   $: completedBatchId = listingCreation.lastCompletedBatchId;
-  $: if (typeof completedBatchId === 'string' && completedBatchId !== lastSeenBatchId) {
-      lastSeenBatchId = completedBatchId;
+  $: if (typeof completedBatchId === 'string' && !listingCreation.hasCelebrated) {
+      console.log("[Celebration] Triggering! Batch:", completedBatchId);
+      store.dispatch(mark_celebrated()); // Record that we played it
       showCelebration = true;
       showReturnToDashboard = false;
       setTimeout(() => {
