@@ -368,20 +368,16 @@ export interface ListingCreationState {
            // Represents the user intent to import existing variants for this handle.
            // The logic to find and add the items is handled by the root reducer / middleware.
       },
-      add_variants_internal: (state, action: PayloadAction<{ janCode: string, items: { id: string, item: Item }[] }>) => {
-           const { janCode, items } = action.payload;
+      add_variants_internal: (state, action: PayloadAction<{ janCode: string, variants: ListingVariant[] }>) => {
+           const { janCode, variants } = action.payload;
            const proposal = state.proposals[janCode];
            if (!proposal) return;
            
            // Add them to proposal
-           items.forEach(({ id, item }) => {
-               if (!proposal.inventoryItemIds.includes(id)) {
-                   proposal.inventoryItemIds.push(id);
-                   proposal.variants.push({
-                        id: crypto.randomUUID(), // Unique instance ID
-                        itemId: id,
-                        option1Value: item.subtype || "Default"
-                   });
+           variants.forEach(variant => {
+               if (!proposal.inventoryItemIds.includes(variant.itemId)) {
+                   proposal.inventoryItemIds.push(variant.itemId);
+                   proposal.variants.push(variant);
                }
            });
       },

@@ -242,8 +242,14 @@ export const rootReducer = (state: any, action: any) => {
       });
 
       if (matchedItems.length > 0) {
+          const variants = matchedItems.map(({ id, item }) => ({
+              id: crypto.randomUUID(),
+              itemId: id,
+              option1Value: item.subtype || "Default"
+          }));
+
           const internalAction = {
-              ...add_variants_internal({ janCode, items: matchedItems }),
+              ...add_variants_internal({ janCode, variants }),
               _ephemeral: true,
               timestamp: action._timestamp
           };
@@ -291,16 +297,9 @@ export async function hydrate() {
 function triggerSave(state: any, lastAction: SnapshotMetadata | null) {
   // Sanitize state before save (clear ephemeral UI flags)
   const safeState = { ...state };
-  if (safeState.listingCreation) {
-      safeState.listingCreation = {
-          ...safeState.listingCreation,
-          lastCompletedBatchId: undefined, // Don't persist celebration
-          activeBatchId: undefined, // Don't persist active batch ID if it implies celebration pending? 
-          // Actually, activeBatchId is needed for session resumption. 
-          // But lastCompletedBatchId is strictly an event trigger.
-      };
-  }
-
+  // Note: We used to clear listingCreation flags here, but activeBatchId IS critical session state
+  // and lastCompletedBatchId should persist until acknowledged to ensure the user sees the reward.
+  
   // Save via IDB (async)
   saveSnapshot(safeState, lastAction).catch((e) => console.warn("Save failed", e));
 }
