@@ -400,15 +400,25 @@ export const rootReducer = (state: any, action: any) => {
            // 3. Create/Update Listing with Aggregated Images
            // Identify siblings (all proposals sharing this handle)
            const allProposals = nextState.listingCreation.proposals;
-           const mergedJans = Object.values(allProposals)
+           
+           // Use the proposal objects directly. Key might be variantId (split) or janCode.
+           // Mapping via janCode is unsafe if multiple proposals share janCode (splits).
+           const mergedProposals = Object.values(allProposals)
                .filter((p: any) => {
                    const h = p.handle || generateHandle(p.title, p.janCode);
                    return h === finalHandle;
-               })
-               .map((p: any) => p.janCode);
+               }) as any[]; // Type assertion for Proposal
 
-           // Map JANs to Proposal Objects
-           const mergedProposals = mergedJans.map(jan => allProposals[jan]).filter(Boolean) as any[];
+           // We need to ensure the Approved Proposal is FIRST in the list so its listingImageOrder takes precedence
+           // Sort or find?
+           const primaryIndex = mergedProposals.findIndex(p => p === proposal);
+           if (primaryIndex > 0) {
+               mergedProposals.splice(primaryIndex, 1);
+               mergedProposals.unshift(proposal);
+           } else if (primaryIndex === -1) {
+               // Should not happen, but ensure it's included
+               mergedProposals.unshift(proposal);
+           }
 
            // Use Canonical Image Builder (supports siblings)
            const mergedImages = buildDraftListingImages(
