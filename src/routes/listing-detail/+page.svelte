@@ -29,6 +29,7 @@
   import { generateHandle } from "$lib/handle-utils";
   import { ensureFolderStructure, uploadImageToDrive, getStoredToken, initiateOAuthFlow } from '$lib/google-drive';
   import { reorderListingImages } from "$lib/listing-image-ordering";
+  import { buildDraftListingImages } from "$lib/listing-image-logic";
   import ListingEditor from '$lib/components/ListingEditor.svelte';
   import SecureImage from "$lib/components/SecureImage.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
@@ -145,48 +146,12 @@
                   if (v.photoGroupKey) groupIds.add(v.photoGroupKey);
               });
               
-              const excludedIds = new Set<string>(primaryProposal.excludedPhotoIds || []);
-              
-              groupIds.forEach(gid => {
-                  const pPhotos = $store.photos.janCodeToPhotos[gid] || [];
-                  pPhotos.forEach((ph: any) => {
-                      if (!seenPhotoIds.has(ph.id) && !excludedIds.has(ph.id)) {
-                          seenPhotoIds.add(ph.id);
-                          allPhotos.push({ ...ph, sourceGroup: gid }); // Track source group
-                      }
-                  });
-              });
-
-              const listingOnly = (primaryProposal.listingOnlyImages || []).map((img: any) => ({
-                  ...img,
-                  isListingOnly: true,
-                  sourceJan: primaryProposal.janCode
-              }));
-              const photoImages = allPhotos.map((p: any, idx: number) => ({
-                  id: p.id,
-                  url: p.baseUrl || '', 
-                  position: idx,
-                  altText: p.filename || 'Product Image',
-                  sourceGroup: p.sourceGroup
-              }));
-              let mergedImages = [...photoImages, ...listingOnly];
-              const order = primaryProposal.listingImageOrder || [];
-              if (order.length > 0) {
-                  const byId = new Map(mergedImages.map(img => [img.id, img]));
-                  const ordered: any[] = [];
-                  order.forEach((id: string) => {
-                      const match = byId.get(id);
-                      if (match) {
-                          ordered.push(match);
-                          byId.delete(id);
-                      }
-                  });
-                  mergedImages = [...ordered, ...Array.from(byId.values())];
-              }
-              listingImages = mergedImages.map((img, idx) => ({
-                  ...img,
-                  position: idx + 1
-              }));
+              // Photos: Aggregate using Canonical Builder
+              listingImages = buildDraftListingImages(
+                  primaryProposal, 
+                  $store.photos, 
+                  $store.inventory
+              );
           } else {
               listingData = null;
           }

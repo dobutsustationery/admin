@@ -38,6 +38,7 @@ import { saveSnapshot, loadSnapshot } from "./action-cache";
 import { devtoolsMiddleware, logAction } from "./devtools-middleware";
 import { driveSyncMiddleware } from "./drive-sync-middleware";
 import { generateHandle } from "./handle-utils";
+import { buildDraftListingImages } from "./listing-image-logic";
 
 const reducerObject = {
   names,
@@ -397,79 +398,12 @@ export const rootReducer = (state: any, action: any) => {
            });
 
            // 3. Create/Update Listing with Aggregated Images
-           // Use Primary Proposal as source of truth to match Draft View
-           
-           // Image Aggregation Logic
-           const janToPhotos = nextState.photos.janCodeToPhotos || {};
-           const allPhotoKeys = new Set<string>();
-           const allExcludedIds = new Set<string>();
-           
-           // Base JAN
-           allPhotoKeys.add(proposal.janCode);
-           
-           // Linked Groups
-           if (proposal.photoGroupIds) {
-               proposal.photoGroupIds.forEach((gid: string) => allPhotoKeys.add(gid));
-           }
-           
-           // Variant Groups
-           if (proposal.variants) {
-               proposal.variants.forEach((v: any) => {
-                   if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey);
-                   
-                   // Fallback: Inventory Item JAN (for imported items or legacy)
-                   const item = nextState.inventory.idToItem[v.itemId];
-                   if (item && item.janCode) {
-                       allPhotoKeys.add(item.janCode);
-                   }
-               });
-           }
-           
-           // Exclusions
-           if (proposal.excludedPhotoIds) {
-               proposal.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
-           }
-
-           const allPhotos: any[] = [];
-           const seenPhotoIds = new Set<string>();
-           
-           allPhotoKeys.forEach(key => {
-               const photos = janToPhotos[key] || [];
-               photos.forEach((ph: any) => {
-                   if (!seenPhotoIds.has(ph.id) && !allExcludedIds.has(ph.id)) {
-                       seenPhotoIds.add(ph.id);
-                       allPhotos.push(ph);
-                   }
-               });
-           });
-           
-           const listingImages = allPhotos.map((f: any, i: number) => ({
-               url: f.baseUrl || f.productUrl || f.url, 
-               id: f.id || `img-${i}`,
-               altText: f.filename || f.name,
-               position: i + 1
-           }));
-           
-           // Listing-Only Images
-           const listingOnly = (proposal.listingOnlyImages || []).map((img: any) => ({ ...img })); // Clone
-           let mergedImages = [...listingImages, ...listingOnly];
-           
-           // Reordering
-           const order = proposal.listingImageOrder || [];
-           if (order.length > 0) {
-               const byId = new Map(mergedImages.map(img => [img.id, img]));
-               const ordered: any[] = [];
-               order.forEach((id: string) => {
-                   const match = byId.get(id);
-                   if (match) {
-                       ordered.push(match);
-                       byId.delete(id);
-                   }
-               });
-               // Strict Order: If order is defined, use it exactly. Discard remainders (garbage/duplicates).
-               mergedImages = ordered; 
-           }
-           mergedImages = mergedImages.map((img, i) => ({ ...img, position: i + 1 }));
+           // Use Canonical Image Builder to match Draft View exactly
+           const mergedImages = buildDraftListingImages(
+               proposal, 
+               nextState.photos, 
+               nextState.inventory
+           );
 
            const listingData = {
                handle: finalHandle,
@@ -489,9 +423,10 @@ export const rootReducer = (state: any, action: any) => {
            const existingListing = nextState.listings.handleToListing[finalHandle];
            let finalListing = listingData;
            if (existingListing) {
-               const combinedImages = [...(existingListing.images || []), ...mergedImages]
-                  .map((img: any, i: number) => ({ ...img, position: i + 1 }));
-               finalListing = { ...existingListing, ...listingData, images: combinedImages };
+               // We overwrite the existing listing with the proposal data.
+               // Crucially, we REPLACE the images with the proposal's gallery (mergedImages),
+               // rather than appending, to ensure deletions in the draft are respected.
+               finalListing = { ...existingListing, ...listingData };
            }
 
            const createActionLocal = {
