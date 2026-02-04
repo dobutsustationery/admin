@@ -404,14 +404,8 @@ export const rootReducer = (state: any, action: any) => {
            const allPhotoKeys = new Set<string>();
            const allExcludedIds = new Set<string>();
            
-           console.log("[Store Interceptor Trace] Approving Proposal JAN:", proposal.janCode);
-           console.log("[Store Interceptor Trace] PhotoGroups:", proposal.photoGroupIds);
-           console.log("[Store Interceptor Trace] Variants:", proposal.variants);
-           console.log("[Store Interceptor Trace] Listing Only Images:", proposal.listingOnlyImages);
-           console.log("[Store Interceptor Trace] Listing Image Order:", proposal.listingImageOrder);
-
-           // Base JAN (Removed to match Draft View logic which relies on photoGroupIds)
-           // allPhotoKeys.add(proposal.janCode);
+           // Base JAN
+           allPhotoKeys.add(proposal.janCode);
            
            // Linked Groups
            if (proposal.photoGroupIds) {
@@ -431,8 +425,6 @@ export const rootReducer = (state: any, action: any) => {
                });
            }
            
-           console.log("[Store Interceptor Trace] Aggregated Keys:", Array.from(allPhotoKeys));
-
            // Exclusions
            if (proposal.excludedPhotoIds) {
                proposal.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
@@ -451,8 +443,6 @@ export const rootReducer = (state: any, action: any) => {
                });
            });
            
-           console.log("[Store Interceptor Trace] All Photos Found:", allPhotos.length, "IDs:", allPhotos.map((p: any) => p.id));
-
            const listingImages = allPhotos.map((f: any, i: number) => ({
                url: f.baseUrl || f.productUrl || f.url, 
                id: f.id || `img-${i}`,
@@ -464,8 +454,6 @@ export const rootReducer = (state: any, action: any) => {
            const listingOnly = (proposal.listingOnlyImages || []).map((img: any) => ({ ...img })); // Clone
            let mergedImages = [...listingImages, ...listingOnly];
            
-           console.log("[Store Interceptor] Merged IDs (Pre-Sort):", mergedImages.map(img => img.id));
-           
            // Reordering
            const order = proposal.listingImageOrder || [];
            if (order.length > 0) {
@@ -476,15 +464,12 @@ export const rootReducer = (state: any, action: any) => {
                    if (match) {
                        ordered.push(match);
                        byId.delete(id);
-                   } else {
-                       console.warn("[Store Interceptor] Order ID not found in pool:", id);
                    }
                });
-               mergedImages = [...ordered, ...Array.from(byId.values())];
+               // Strict Order: If order is defined, use it exactly. Discard remainders (garbage/duplicates).
+               mergedImages = ordered; 
            }
            mergedImages = mergedImages.map((img, i) => ({ ...img, position: i + 1 }));
-           
-           console.log("[Store Interceptor] Final IDs (Post-Sort):", mergedImages.map(img => img.id));
 
            const listingData = {
                handle: finalHandle,
