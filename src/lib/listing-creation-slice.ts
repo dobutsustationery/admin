@@ -682,11 +682,51 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
 
          // Identify images from Photo State (In-Memory) for ALL merged JANs
          const janToPhotos = state.photos.janCodeToPhotos || {};
-         // @ts-ignore
-         const driveFiles = mergedJans.flatMap(jan => janToPhotos[jan] || []);
+         
+         const allPhotoKeys = new Set<string>();
+         const allExcludedIds = new Set<string>();
+         
+         // Aggregate keys and exclusions from all merged proposals
+         mergedJans.forEach(jan => {
+             const p = allProposals[jan];
+             if (!p) return;
+             
+             // Base JAN
+             allPhotoKeys.add(p.janCode);
+             
+             // Linked Groups
+             if (p.photoGroupIds) {
+                 p.photoGroupIds.forEach((gid: string) => allPhotoKeys.add(gid));
+             }
+             
+             // Variant Groups
+             if (p.variants) {
+                 p.variants.forEach((v: ListingVariant) => {
+                     if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey);
+                 });
+             }
+             
+             // Exclusions
+             if (p.excludedPhotoIds) {
+                 p.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
+             }
+         });
+
+         const allPhotos: any[] = [];
+         const seenPhotoIds = new Set<string>();
+         
+         allPhotoKeys.forEach(key => {
+             const photos = janToPhotos[key] || [];
+             photos.forEach((ph: any) => {
+                 if (!seenPhotoIds.has(ph.id) && !allExcludedIds.has(ph.id)) {
+                     seenPhotoIds.add(ph.id);
+                     allPhotos.push(ph);
+                 }
+             });
+         });
          
          // @ts-ignore
-        const listingImages = driveFiles.map((f: any, i: number) => ({
+        const listingImages = allPhotos.map((f: any, i: number) => ({
              url: f.baseUrl || f.productUrl || f.url, // Fix: Use baseUrl (Photos) or fallback
              id: f.id || `img-${i}`,
              altText: f.filename || f.name, // Fix: Photos uses filename
