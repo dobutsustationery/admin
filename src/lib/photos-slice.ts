@@ -21,7 +21,7 @@ export interface PhotoEditQueue {
   status: { crop: boolean; color_correct: boolean; remove_background: boolean; };
 }
 
-interface PhotosState {
+export interface PhotosState {
   selected: MediaItem[];
   uploads: Record<string, UploadState>;
   urlHistory: Record<string, string[]>; 
