@@ -398,9 +398,21 @@ export const rootReducer = (state: any, action: any) => {
            });
 
            // 3. Create/Update Listing with Aggregated Images
-           // Use Canonical Image Builder to match Draft View exactly
+           // Identify siblings (all proposals sharing this handle)
+           const allProposals = nextState.listingCreation.proposals;
+           const mergedJans = Object.values(allProposals)
+               .filter((p: any) => {
+                   const h = p.handle || generateHandle(p.title, p.janCode);
+                   return h === finalHandle;
+               })
+               .map((p: any) => p.janCode);
+
+           // Map JANs to Proposal Objects
+           const mergedProposals = mergedJans.map(jan => allProposals[jan]).filter(Boolean) as any[];
+
+           // Use Canonical Image Builder (supports siblings)
            const mergedImages = buildDraftListingImages(
-               proposal, 
+               mergedProposals, 
                nextState.photos, 
                nextState.inventory
            );

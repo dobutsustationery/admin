@@ -148,7 +148,7 @@
               
               // Photos: Aggregate using Canonical Builder
               listingImages = buildDraftListingImages(
-                  primaryProposal, 
+                  [primaryProposal, ...siblingProposals], 
                   $store.photos, 
                   $store.inventory
               );
@@ -653,7 +653,7 @@
                   position: listingImages.length + 1
               };
               if ($user && $user.uid) {
-                  broadcast(firestore, $user.uid, add_listing_only_image({ janCode: imagePickerTargetJan, image }));
+                  dispatchBroadcast(add_listing_only_image({ janCode: imagePickerTargetJan, image }));
               }
           }
       }

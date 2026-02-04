@@ -4,32 +4,38 @@ import type { InventoryState } from "./inventory";
 import type { ListingImage } from "./listings-slice";
 
 export function buildDraftListingImages(
-    proposal: ListingProposal,
+    proposals: ListingProposal[],
     photosState: PhotosState,
-    inventoryState?: InventoryState // Optional if needed for fallback
+    inventoryState?: InventoryState 
 ): ListingImage[] {
+    if (proposals.length === 0) return [];
+    
+    // Primary is the one driving the order/view (usually first or active)
+    const primary = proposals[0];
     
     // 1. Identify Photo Sources
-    const groupIds = new Set<string>(proposal.photoGroupIds || []);
+    const groupIds = new Set<string>();
+    const excludedIds = new Set<string>();
     
-    if (proposal.variants) {
-        proposal.variants.forEach((v: ListingVariant) => {
-            if (v.photoGroupKey) {
-                groupIds.add(v.photoGroupKey);
-            }
-            // CODEX Analysis doesn't explicitly demand fallback, but Draft View logic 
-            // relies on photoGroupKey + photoGroupIds.
-            // If we want to support implicit photos from imported items (which lack photoGroupKey),
-            // we would need to add item.janCode here.
-            // But CODEX says: "Draft composition: source groups from photoGroupIds + variant.photoGroupKey".
-            // So we stick to that for now to match Draft View exactly.
-        });
-    }
+    proposals.forEach(p => {
+        if (p.photoGroupIds) {
+            p.photoGroupIds.forEach(gid => groupIds.add(gid));
+        }
+        if (p.variants) {
+            p.variants.forEach((v: ListingVariant) => {
+                if (v.photoGroupKey) {
+                    groupIds.add(v.photoGroupKey);
+                }
+            });
+        }
+        if (p.excludedPhotoIds) {
+            p.excludedPhotoIds.forEach(id => excludedIds.add(id));
+        }
+    });
 
     // 2. Aggregate Photos
     const allPhotos: any[] = [];
     const seenPhotoIds = new Set<string>();
-    const excludedIds = new Set<string>(proposal.excludedPhotoIds || []);
     const janToPhotos = photosState.janCodeToPhotos || {};
 
     groupIds.forEach(gid => {
@@ -42,25 +48,28 @@ export function buildDraftListingImages(
         });
     });
 
-    // 3. Convert to ListingImage format
+    // 3. Convert to ListingImage format (Preserve metadata)
     const photoImages = allPhotos.map((f: any, i: number) => ({
         url: f.baseUrl || f.productUrl || f.url, 
         id: f.id || `img-${i}`,
         altText: f.filename || f.name,
-        position: i + 1
+        position: i + 1,
+        sourceGroup: f.sourceGroup // Preserve for replacement logic
     }));
 
-    // 4. Add Listing-Only Images
-    const listingOnly = (proposal.listingOnlyImages || []).map((img: any) => ({ 
-        ...img,
-        isListingOnly: true,
-        sourceJan: proposal.janCode 
-    }));
+    // 4. Add Listing-Only Images (Aggregate from all)
+    const listingOnly = proposals.flatMap(p => 
+        (p.listingOnlyImages || []).map((img: any) => ({ 
+            ...img,
+            isListingOnly: true,
+            sourceJan: p.janCode 
+        }))
+    );
 
     let mergedImages = [...photoImages, ...listingOnly];
 
-    // 5. Apply Order
-    const order = proposal.listingImageOrder || [];
+    // 5. Apply Order (Use Primary's order)
+    const order = primary.listingImageOrder || [];
     if (order.length > 0) {
         const byId = new Map(mergedImages.map(img => [img.id, img]));
         const ordered: any[] = [];
@@ -74,9 +83,6 @@ export function buildDraftListingImages(
         });
         
         // Append Remainders (Match Draft View behavior)
-        // If we want strict, we would drop them. But CODEX suggests matching behavior.
-        // "either always strict, or always append leftovers — but identical in draft and approve."
-        // Draft view appends. So we append.
         mergedImages = [...ordered, ...Array.from(byId.values())];
     }
 
