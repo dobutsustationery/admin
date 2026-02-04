@@ -368,8 +368,8 @@ export const rootReducer = (state: any, action: any) => {
            const allPhotoKeys = new Set<string>();
            const allExcludedIds = new Set<string>();
            
-           // Base JAN
-           allPhotoKeys.add(proposal.janCode);
+           // Base JAN (Removed to match Draft View logic which relies on photoGroupIds)
+           // allPhotoKeys.add(proposal.janCode);
            
            // Linked Groups
            if (proposal.photoGroupIds) {
@@ -381,11 +381,8 @@ export const rootReducer = (state: any, action: any) => {
                proposal.variants.forEach((v: any) => {
                    if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey);
                    
-                   // Fallback: Inventory Item JAN (for imported items or legacy)
-                   const item = nextState.inventory.idToItem[v.itemId];
-                   if (item && item.janCode) {
-                       allPhotoKeys.add(item.janCode);
-                   }
+                   // Fallback removed to match Draft View strictly. 
+                   // If Draft View shows photos, they must be in photoGroupIds or photoGroupKey.
                });
            }
            
