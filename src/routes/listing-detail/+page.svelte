@@ -202,7 +202,8 @@
                       const item = $store.inventory.idToItem[id];
                       return item ? { ...item, id } : null;
                   })
-                  .filter((item): item is NonNullable<typeof item> => !!item);
+                  .filter((item): item is NonNullable<typeof item> => !!item)
+                  .sort((a, b) => (a.subtype || "").localeCompare(b.subtype || ""));
               
               console.log("[ListingDetail] Live Mode Associated Items:", associatedItems);
           } else {
