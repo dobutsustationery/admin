@@ -303,7 +303,7 @@ export const computeShopifyImportBatch = (
                     price: item.price,
                     weight: item.weight,
                     ...(useHandles ? { handle: item.handle } : {}), 
-                    ...(ignoreQty ? {} : { qty: delta }),
+                    qty: ignoreQty ? 0 : delta,
                     ...(useDesc ? { description: item.description } : {}), 
                     ...(useImg ? { image: item.image, listingImage: item.listingImage } : {}),
                     bodyHtml: item.bodyHtml,
