@@ -7,6 +7,8 @@ import {
   bulk_import_items,
   type BulkImportItem,
   type Item,
+  update_field,
+  split_inventory_item
 } from "./inventory";
 import { names } from "./names";
 import { photos, categorize_photo } from "./photos-slice";
@@ -28,11 +30,14 @@ import listingCreation, {
   generate_proposals,
   set_drive_connection_status,
   approve_proposal_thunk,
-  add_variants_internal
+  add_variants_internal,
+  remove_proposal,
+  complete_batch
 } from "./listing-creation-slice";
 import { saveSnapshot, loadSnapshot } from "./action-cache";
 import { devtoolsMiddleware, logAction } from "./devtools-middleware";
 import { driveSyncMiddleware } from "./drive-sync-middleware";
+import { generateHandle } from "./handle-utils";
 
 const reducerObject = {
   names,
@@ -266,6 +271,213 @@ export const rootReducer = (state: any, action: any) => {
   if (action.type === "listingCreation/set_global_prompts" || 
       action.type === "listingCreation/update_proposal_field") {
       logAction(action, nextState, action._timestamp);
+  }
+
+  // Approve Proposal Interceptor (Event Sourcing Logic)
+  if (action.type === "listingCreation/approve_proposal") {
+      // The reducer has already marked it as approved in nextState.
+      // Now we must apply the side effects (Inventory/Listings updates) deterministically.
+      
+      const { janCode } = action.payload;
+      const proposal = nextState.listingCreation.proposals[janCode];
+      
+      if (proposal) {
+           const finalHandle = proposal.handle || generateHandle(proposal.title, proposal.janCode);
+
+           // 1. Inventory Splits
+           const itemsToSplit = new Map<string, any[]>();
+           proposal.variants.forEach((v: any) => {
+               if (!itemsToSplit.has(v.itemId)) itemsToSplit.set(v.itemId, []);
+               itemsToSplit.get(v.itemId)?.push(v);
+           });
+
+           itemsToSplit.forEach((variants, sourceId) => {
+               if (variants.length > 1) {
+                   const splits = variants.map((v: any) => {
+                        // Clean option value for ID generation
+                        const cleanOption = (v.option1Value || 'Default').replace(/[^a-zA-Z0-9-_]/g, '');
+                        // Deterministic Variant ID generation relying on Proposal Variant IDs would be ideal,
+                        // but split_inventory_item needs NEW inventory IDs.
+                        // We use a deterministic naming scheme based on source + subtype to ensure replay stability if possible,
+                        // OR we rely on the fact that this interceptor runs during replay.
+                        // Ideally: sourceId + subtype.
+                        let uniqueId = `${sourceId}:${cleanOption}`;
+                        // Collision check logic is hard in pure replay without looking at *current* state.
+                        // We assume standard collision logic holds.
+                        
+                        return {
+                           newId: uniqueId,
+                           qty: v.qty || 0,
+                           subtype: v.option1Value
+                        };
+                   });
+                   
+                   const splitAction = {
+                       ...split_inventory_item({ sourceId, splits }),
+                       _ephemeral: true,
+                       timestamp: action._timestamp
+                   };
+                   nextState = { ...nextState, inventory: inventory(nextState.inventory, splitAction) };
+                   logAction(splitAction, nextState, action._timestamp);
+                   
+                   // Update variant references to new IDs locally for subsequent steps
+                   variants.forEach((v: any, i: number) => {
+                       v.itemId = splits[i].newId;
+                   });
+               }
+           });
+
+           // 2. Inventory Updates (Price, Handle, Subtype, Image, Position)
+           // Use a Set to avoid redundant updates on the same Item ID
+           const processedItemIds = new Set<string>();
+           
+           proposal.variants.forEach((v: any, i: number) => {
+               // Update Fields
+               const fields: any[] = [];
+               
+               if (proposal.price !== undefined) fields.push({ field: 'price', value: proposal.price });
+               fields.push({ field: 'handle', value: finalHandle });
+               if (v.option1Value) fields.push({ field: 'subtype', value: v.option1Value });
+               if (v.image) fields.push({ field: 'image', value: v.image });
+               fields.push({ field: 'imagePosition', value: i + 1 }); // Persist Order
+
+               fields.forEach(f => {
+                   // Optimization: Check if update is needed?
+                   // For now, apply all.
+                   const updateAction = {
+                       ...update_field({ id: v.itemId, field: f.field, from: "", to: f.value }),
+                       _ephemeral: true,
+                       timestamp: action._timestamp
+                   };
+                   
+                   // update_field affects Inventory AND Listings (if handle/title change)
+                   nextState = { 
+                       ...nextState, 
+                       inventory: inventory(nextState.inventory, updateAction),
+                       listings: listings(nextState.listings, updateAction)
+                   };
+                   logAction(updateAction, nextState, action._timestamp);
+               });
+           });
+
+           // 3. Create/Update Listing with Aggregated Images
+           
+           // Identify siblings (all proposals sharing this handle)
+           const allProposals = nextState.listingCreation.proposals;
+           const mergedJans = Object.values(allProposals)
+               .filter((p: any) => {
+                   const h = p.handle || generateHandle(p.title, p.janCode);
+                   return h === finalHandle;
+               })
+               .map((p: any) => p.janCode);
+
+           // Image Aggregation Logic
+           const janToPhotos = nextState.photos.janCodeToPhotos || {};
+           const allPhotoKeys = new Set<string>();
+           const allExcludedIds = new Set<string>();
+           
+           mergedJans.forEach((jan: string) => {
+               const p = allProposals[jan] as any;
+               if (!p) return;
+               allPhotoKeys.add(p.janCode);
+               if (p.photoGroupIds) p.photoGroupIds.forEach((gid: string) => allPhotoKeys.add(gid));
+               if (p.variants) p.variants.forEach((v: any) => { if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey); });
+               if (p.excludedPhotoIds) p.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
+           });
+
+           const allPhotos: any[] = [];
+           const seenPhotoIds = new Set<string>();
+           
+           allPhotoKeys.forEach(key => {
+               const photos = janToPhotos[key] || [];
+               photos.forEach((ph: any) => {
+                   if (!seenPhotoIds.has(ph.id) && !allExcludedIds.has(ph.id)) {
+                       seenPhotoIds.add(ph.id);
+                       allPhotos.push(ph);
+                   }
+               });
+           });
+           
+           const listingImages = allPhotos.map((f: any, i: number) => ({
+               url: f.baseUrl || f.productUrl || f.url, 
+               id: f.id || `img-${i}`,
+               altText: f.filename || f.name,
+               position: i + 1
+           }));
+           
+           // Listing-Only Images
+           const listingOnly = mergedJans.flatMap((jan: string) => allProposals[jan]?.listingOnlyImages || []);
+           let mergedImages = [...listingImages, ...listingOnly];
+           
+           // Reordering
+           const order = proposal.listingImageOrder || [];
+           if (order.length > 0) {
+               const byId = new Map(mergedImages.map(img => [img.id, img]));
+               const ordered: any[] = [];
+               order.forEach((id: string) => {
+                   const match = byId.get(id);
+                   if (match) {
+                       ordered.push(match);
+                       byId.delete(id);
+                   }
+               });
+               mergedImages = [...ordered, ...Array.from(byId.values())];
+           }
+           mergedImages = mergedImages.map((img, i) => ({ ...img, position: i + 1 }));
+
+           const listingData = {
+               handle: finalHandle,
+               title: proposal.title,
+               bodyHtml: proposal.bodyHtml,
+               productCategory: proposal.productCategory,
+               vendor: proposal.vendor,
+               tags: proposal.tags,
+               option1Name: proposal.option1Name,
+               images: mergedImages,
+               productType: "", 
+               status: 'active' as const,
+               lastUpdated: Date.now()
+           };
+
+           // Handle Merge with Existing
+           const existingListing = nextState.listings.handleToListing[finalHandle];
+           let finalListing = listingData;
+           if (existingListing) {
+               const combinedImages = [...(existingListing.images || []), ...mergedImages]
+                  .map((img: any, i: number) => ({ ...img, position: i + 1 }));
+               finalListing = { ...existingListing, ...listingData, images: combinedImages };
+           }
+
+           const createActionLocal = {
+               ...create_listing({ listing: finalListing }),
+               _ephemeral: true,
+               timestamp: action._timestamp
+           };
+           nextState = { ...nextState, listings: listings(nextState.listings, createActionLocal) };
+           logAction(createActionLocal, nextState, action._timestamp);
+
+           // 4. Cleanup Proposals
+           mergedJans.forEach((jan: string) => {
+               const removeAction = {
+                   ...remove_proposal({ janCode: jan }),
+                   _ephemeral: true,
+                   timestamp: action._timestamp
+               };
+               nextState = { ...nextState, listingCreation: listingCreation(nextState.listingCreation, removeAction) };
+               logAction(removeAction, nextState, action._timestamp);
+           });
+
+           // 5. Complete Batch Check
+           if (nextState.listingCreation.activeBatchJans.length === 0) {
+               const completeAction = {
+                   ...complete_batch(),
+                   _ephemeral: true,
+                   timestamp: action._timestamp
+               };
+               nextState = { ...nextState, listingCreation: listingCreation(nextState.listingCreation, completeAction) };
+               logAction(completeAction, nextState, action._timestamp);
+           }
+      }
   }
 
   return nextState;
