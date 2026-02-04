@@ -29,11 +29,12 @@ describe("Listing Creation - Split Variant", () => {
     }]));
 
     // 2. Split
-    store.dispatch(split_variant({ janCode, variantId, newHandle }));
+    const targetVariantId = "v2";
+    store.dispatch(split_variant({ janCode, variantId: targetVariantId, newHandle }));
 
     // 3. Verify New Proposal
     // The new proposal key is the variantId (as per current impl)
-    const newProposal = store.getState().listingCreation.proposals[variantId];
+    const newProposal = store.getState().listingCreation.proposals[targetVariantId];
     expect(newProposal).toBeDefined();
     
     // Check JAN Code matches key (it does currently)
