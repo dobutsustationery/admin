@@ -248,7 +248,8 @@ function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, 
             const hasImage = listing.images.some(img => img.url === itemPayload.image);
             if (!hasImage) {
                  listing.images.push({
-                       id: crypto.randomUUID(),
+                       // Deterministic ID based on URL to ensure replay stability
+                       id: itemPayload.image, 
                        url: itemPayload.image,
                        position: itemPayload.imagePosition || listing.images.length + 1,
                        altText: itemPayload.imageAltText || itemPayload.description || ""
