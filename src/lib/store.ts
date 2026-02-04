@@ -361,27 +361,24 @@ export const rootReducer = (state: any, action: any) => {
            });
 
            // 3. Create/Update Listing with Aggregated Images
+           // Use Primary Proposal as source of truth to match Draft View
            
-           // Identify siblings (all proposals sharing this handle)
-           const allProposals = nextState.listingCreation.proposals;
-           const mergedJans = Object.values(allProposals)
-               .filter((p: any) => {
-                   const h = p.handle || generateHandle(p.title, p.janCode);
-                   return h === finalHandle;
-               })
-               .map((p: any) => p.janCode);
-
            // Image Aggregation Logic
            const janToPhotos = nextState.photos.janCodeToPhotos || {};
            const allPhotoKeys = new Set<string>();
            const allExcludedIds = new Set<string>();
            
-           mergedJans.forEach((jan: string) => {
-               const p = allProposals[jan] as any;
-               if (!p) return;
-               allPhotoKeys.add(p.janCode);
-               if (p.photoGroupIds) p.photoGroupIds.forEach((gid: string) => allPhotoKeys.add(gid));
-               if (p.variants) p.variants.forEach((v: any) => { 
+           // Base JAN
+           allPhotoKeys.add(proposal.janCode);
+           
+           // Linked Groups
+           if (proposal.photoGroupIds) {
+               proposal.photoGroupIds.forEach((gid: string) => allPhotoKeys.add(gid));
+           }
+           
+           // Variant Groups
+           if (proposal.variants) {
+               proposal.variants.forEach((v: any) => {
                    if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey);
                    
                    // Fallback: Inventory Item JAN (for imported items or legacy)
@@ -390,8 +387,12 @@ export const rootReducer = (state: any, action: any) => {
                        allPhotoKeys.add(item.janCode);
                    }
                });
-               if (p.excludedPhotoIds) p.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
-           });
+           }
+           
+           // Exclusions
+           if (proposal.excludedPhotoIds) {
+               proposal.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
+           }
 
            const allPhotos: any[] = [];
            const seenPhotoIds = new Set<string>();
@@ -414,7 +415,7 @@ export const rootReducer = (state: any, action: any) => {
            }));
            
            // Listing-Only Images
-           const listingOnly = mergedJans.flatMap((jan: string) => allProposals[jan]?.listingOnlyImages || []);
+           const listingOnly = (proposal.listingOnlyImages || []).map((img: any) => ({ ...img })); // Clone
            let mergedImages = [...listingImages, ...listingOnly];
            
            // Reordering
@@ -464,16 +465,14 @@ export const rootReducer = (state: any, action: any) => {
            nextState = { ...nextState, listings: listings(nextState.listings, createActionLocal) };
            logAction(createActionLocal, nextState, action._timestamp);
 
-           // 4. Cleanup Proposals
-           mergedJans.forEach((jan: string) => {
-               const removeAction = {
-                   ...remove_proposal({ janCode: jan }),
-                   _ephemeral: true,
-                   timestamp: action._timestamp
-               };
-               nextState = { ...nextState, listingCreation: listingCreation(nextState.listingCreation, removeAction) };
-               logAction(removeAction, nextState, action._timestamp);
-           });
+           // 4. Cleanup Proposal (Primary Only)
+           const removeAction = {
+               ...remove_proposal({ janCode }),
+               _ephemeral: true,
+               timestamp: action._timestamp
+           };
+           nextState = { ...nextState, listingCreation: listingCreation(nextState.listingCreation, removeAction) };
+           logAction(removeAction, nextState, action._timestamp);
 
            // 5. Complete Batch Check
            if (nextState.listingCreation.activeBatchJans.length === 0) {
