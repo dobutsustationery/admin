@@ -140,20 +140,13 @@
        const pathMatch = fetchUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
        if (pathMatch) driveId = pathMatch[1];
 
-       console.log(`[FetchSafe] Input: ${url}`);
-       
        if (driveId) {
-            console.log(`[FetchSafe] Detected Drive ID: ${driveId}. Using API.`);
             fetchUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media`;
        } else if (fetchUrl.includes("googleusercontent.com")) {
             // Force full resolution for Google Photos/Drive content URLs
             // Strip existing params (e.g. =w200) and append =d (download original)
-            const original = fetchUrl;
             const base = fetchUrl.replace(/=[a-z0-9,-]+$/i, "");
             fetchUrl = `${base}=d`;
-            console.log(`[FetchSafe] Detected GoogleUserContent. Rewrote: ${original} -> ${fetchUrl}`);
-       } else {
-            console.log(`[FetchSafe] No rewrite rule matched. Fetching as-is.`);
        }
 
        // 2. Configure Headers
@@ -208,12 +201,6 @@
           // 1. Get Safe Source
           const safeDataUrl = await fetchSafeDataUrl(url); // This is "data:image/png;base64,..."
           
-          // Debug Dimensions
-          const imgDebug = new Image();
-          imgDebug.src = safeDataUrl;
-          await new Promise(r => imgDebug.onload = r);
-          console.log(`[ManualOp] Fetched ${url} -> SafeDataURL (${safeDataUrl.length} chars). Dims: ${imgDebug.naturalWidth}x${imgDebug.naturalHeight}`);
-
           // Extract purely base64 for libraries that want it raw?
           // removeBackground takes full URL or Base64? library says:
           // "img.src = input.startsWith('data:') ? input : `data:image/png;base64,${input}`;"
