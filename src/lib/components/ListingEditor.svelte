@@ -29,7 +29,7 @@
   // Split Images
   // Subtype Images: specific images linked to inventory items
   // We show ALL images in the gallery to allow reordering.
-  $: subtypeImageUrls = new Set(associatedItems.map(i => i.image).filter(Boolean));
+  $: subtypeImageUrls = new Set(associatedItems.map(i => i.variantImage || i.image).filter(Boolean));
   $: galleryImages = [...(images || [])]
       .filter((img) => !subtypeImageUrls.has(img.url) || img.isListingOnly)
       .sort((a, b) => a.position - b.position);
