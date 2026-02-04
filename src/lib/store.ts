@@ -267,10 +267,46 @@ export const rootReducer = (state: any, action: any) => {
       }
   }
 
-  // Listing Creation Global Config Persistence
-  if (action.type === "listingCreation/set_global_prompts" || 
-      action.type === "listingCreation/update_proposal_field") {
-      logAction(action, nextState, action._timestamp);
+  // Listing Creation Global Config & Proposal Persistence
+  // We must log ALL actions that modify the proposal state to ensure replayability
+  if (action.type.startsWith("listingCreation/") && 
+      !action.type.includes("approve_proposal") && // Handled by interceptor
+      !action.type.includes("remove_proposal") &&  // Handled by interceptor
+      !action.type.includes("complete_batch") &&   // Handled by interceptor
+      !action.type.includes("start_batch") &&      // Handled elsewhere or safe? start_batch resets state.
+      !action.type.includes("import_existing_variants") // Handled by interceptor
+     ) {
+      // Whitelist or Blacklist? 
+      // Safe to log all state-modifying reducers.
+      // List of reducers in slice:
+      // set_drive_connection_status (ephemeral? yes)
+      // set_current_step (ephemeral? yes, handled by UI state mostly, but good to log for resume)
+      // add_proposals (logged by thunk usually? or component dispatch)
+      
+      // Explicit list of critical editing actions:
+      const criticalActions = [
+          "listingCreation/set_global_prompts",
+          "listingCreation/update_proposal_field",
+          "listingCreation/exclude_proposal_photo",
+          "listingCreation/include_proposal_photo",
+          "listingCreation/add_listing_only_image",
+          "listingCreation/remove_listing_only_image",
+          "listingCreation/update_variant_value",
+          "listingCreation/update_variant_qty",
+          "listingCreation/update_variant_image",
+          "listingCreation/set_variant_photo_group",
+          "listingCreation/split_variant",
+          "listingCreation/move_variant",
+          "listingCreation/merge_proposal",
+          "listingCreation/reorder_variants",
+          "listingCreation/add_proposals",
+          "listingCreation/start_batch",
+          "listingCreation/set_current_step"
+      ];
+      
+      if (criticalActions.includes(action.type)) {
+          logAction(action, nextState, action._timestamp);
+      }
   }
 
   // Approve Proposal Interceptor (Event Sourcing Logic)
@@ -368,6 +404,12 @@ export const rootReducer = (state: any, action: any) => {
            const allPhotoKeys = new Set<string>();
            const allExcludedIds = new Set<string>();
            
+           console.log("[Store Interceptor Trace] Approving Proposal JAN:", proposal.janCode);
+           console.log("[Store Interceptor Trace] PhotoGroups:", proposal.photoGroupIds);
+           console.log("[Store Interceptor Trace] Variants:", proposal.variants);
+           console.log("[Store Interceptor Trace] Listing Only Images:", proposal.listingOnlyImages);
+           console.log("[Store Interceptor Trace] Listing Image Order:", proposal.listingImageOrder);
+
            // Base JAN (Removed to match Draft View logic which relies on photoGroupIds)
            // allPhotoKeys.add(proposal.janCode);
            
@@ -381,11 +423,16 @@ export const rootReducer = (state: any, action: any) => {
                proposal.variants.forEach((v: any) => {
                    if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey);
                    
-                   // Fallback removed to match Draft View strictly. 
-                   // If Draft View shows photos, they must be in photoGroupIds or photoGroupKey.
+                   // Fallback: Inventory Item JAN (for imported items or legacy)
+                   const item = nextState.inventory.idToItem[v.itemId];
+                   if (item && item.janCode) {
+                       allPhotoKeys.add(item.janCode);
+                   }
                });
            }
            
+           console.log("[Store Interceptor Trace] Aggregated Keys:", Array.from(allPhotoKeys));
+
            // Exclusions
            if (proposal.excludedPhotoIds) {
                proposal.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
@@ -404,6 +451,8 @@ export const rootReducer = (state: any, action: any) => {
                });
            });
            
+           console.log("[Store Interceptor Trace] All Photos Found:", allPhotos.length, "IDs:", allPhotos.map((p: any) => p.id));
+
            const listingImages = allPhotos.map((f: any, i: number) => ({
                url: f.baseUrl || f.productUrl || f.url, 
                id: f.id || `img-${i}`,
@@ -415,6 +464,8 @@ export const rootReducer = (state: any, action: any) => {
            const listingOnly = (proposal.listingOnlyImages || []).map((img: any) => ({ ...img })); // Clone
            let mergedImages = [...listingImages, ...listingOnly];
            
+           console.log("[Store Interceptor] Merged IDs (Pre-Sort):", mergedImages.map(img => img.id));
+           
            // Reordering
            const order = proposal.listingImageOrder || [];
            if (order.length > 0) {
@@ -425,11 +476,15 @@ export const rootReducer = (state: any, action: any) => {
                    if (match) {
                        ordered.push(match);
                        byId.delete(id);
+                   } else {
+                       console.warn("[Store Interceptor] Order ID not found in pool:", id);
                    }
                });
                mergedImages = [...ordered, ...Array.from(byId.values())];
            }
            mergedImages = mergedImages.map((img, i) => ({ ...img, position: i + 1 }));
+           
+           console.log("[Store Interceptor] Final IDs (Post-Sort):", mergedImages.map(img => img.id));
 
            const listingData = {
                handle: finalHandle,
