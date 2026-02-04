@@ -30,7 +30,11 @@
   // Subtype Images: specific images linked to inventory items
   // We show ALL images in the gallery to allow reordering.
   $: subtypeImageUrls = new Set(associatedItems.map(i => i.variantImage || i.image).filter(Boolean));
-  $: galleryImages = [...(images || [])]
+  
+  // Dedupe images by ID to prevent crash
+  $: uniqueImages = Array.from(new Map((images || []).map(img => [img.id, img])).values());
+  
+  $: galleryImages = uniqueImages
       .filter((img) => !subtypeImageUrls.has(img.url) || img.isListingOnly)
       .sort((a, b) => a.position - b.position);
 
@@ -50,12 +54,15 @@
       return [...ordered, ...Array.from(byId.values())];
   })();
 
+  // Dedupe subtypes to prevent crash
+  $: uniqueAssociatedItems = Array.from(new Map(associatedItems.map(item => [item.variantId || item.id, item])).values());
+
   $: displayedSubtypes = (() => {
       if (!previewSubtypeOrderIds || previewSubtypeOrderIds.length === 0) {
-          return associatedItems;
+          return uniqueAssociatedItems;
       }
       // Use variantId or id as key
-      const byId = new Map(associatedItems.map(item => [item.variantId || item.id, item]));
+      const byId = new Map(uniqueAssociatedItems.map(item => [item.variantId || item.id, item]));
       const ordered: any[] = [];
       previewSubtypeOrderIds.forEach(id => {
           const item = byId.get(id);
