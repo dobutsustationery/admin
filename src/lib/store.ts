@@ -243,7 +243,7 @@ export const rootReducer = (state: any, action: any) => {
 
       if (matchedItems.length > 0) {
           const variants = matchedItems.map(({ id, item }) => ({
-              id: crypto.randomUUID(),
+              id: `${item.janCode}:${item.subtype || "Default"}:${crypto.randomUUID().slice(0, 8)}`,
               itemId: id,
               option1Value: item.subtype || "Default"
           }));
