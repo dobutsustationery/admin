@@ -203,7 +203,12 @@
                       return item ? { ...item, id } : null;
                   })
                   .filter((item): item is NonNullable<typeof item> => !!item)
-                  .sort((a, b) => (a.subtype || "").localeCompare(b.subtype || ""));
+                  .sort((a, b) => {
+                      const posA = a.imagePosition !== undefined ? a.imagePosition : 9999;
+                      const posB = b.imagePosition !== undefined ? b.imagePosition : 9999;
+                      if (posA !== posB) return posA - posB;
+                      return (a.subtype || "").localeCompare(b.subtype || "");
+                  });
               
               console.log("[ListingDetail] Live Mode Associated Items:", associatedItems);
           } else {

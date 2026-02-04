@@ -660,7 +660,7 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
          });
          
          // Commit Subtypes & Images (from variants)
-         proposal.variants.forEach((v: ListingVariant) => {
+         proposal.variants.forEach((v: ListingVariant, i: number) => {
              console.log("APPROVE DEBUG: variant", v.itemId, v.option1Value);
              if (v.option1Value) {
                  // v.itemId is updated above if split occurred
@@ -669,6 +669,8 @@ export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, 
              if (v.image) {
                  dispatch(update_field({ id: v.itemId, field: 'image', from: "", to: v.image }));
              }
+             // Persist Variant Order using imagePosition
+             dispatch(update_field({ id: v.itemId, field: 'imagePosition', from: 0, to: i + 1 }));
          });
 
          // C. Create/Update Listing
