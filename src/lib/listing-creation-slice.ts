@@ -519,7 +519,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                  // The user must split them later if they are physically different items.
                  
                  variants.push({
-                     id: crypto.randomUUID(),
+                     id: `${baseJan}:${optionValue}:${crypto.randomUUID().slice(0, 8)}`,
                      itemId: inventoryIds[0], // Point to the base item
                      option1Value: optionValue,
                      photoGroupKey: pg.key
