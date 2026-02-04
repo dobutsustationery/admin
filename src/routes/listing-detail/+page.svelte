@@ -389,6 +389,14 @@
               // Exclude from proposal instead of removing from source
               dispatchBroadcast(exclude_proposal_photo({ janCode, photoId: e.detail.id }));
           }
+          
+          // Sync Order: Remove ID from listingImageOrder to ensure strict/robust removal
+          if (proposal.listingImageOrder) {
+              const newOrder = proposal.listingImageOrder.filter((id: string) => id !== e.detail.id);
+              if (newOrder.length !== proposal.listingImageOrder.length) {
+                  dispatchBroadcast(update_proposal_field({ janCode, field: 'listingImageOrder', value: newOrder }));
+              }
+          }
           return;
       }
       if (!$user.uid || !handle) return;
