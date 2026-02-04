@@ -381,7 +381,15 @@ export const rootReducer = (state: any, action: any) => {
                if (!p) return;
                allPhotoKeys.add(p.janCode);
                if (p.photoGroupIds) p.photoGroupIds.forEach((gid: string) => allPhotoKeys.add(gid));
-               if (p.variants) p.variants.forEach((v: any) => { if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey); });
+               if (p.variants) p.variants.forEach((v: any) => { 
+                   if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey);
+                   
+                   // Fallback: Inventory Item JAN (for imported items or legacy)
+                   const item = nextState.inventory.idToItem[v.itemId];
+                   if (item && item.janCode) {
+                       allPhotoKeys.add(item.janCode);
+                   }
+               });
                if (p.excludedPhotoIds) p.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
            });
 
