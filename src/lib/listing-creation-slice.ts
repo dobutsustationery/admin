@@ -1,10 +1,10 @@
 import { createSlice, type PayloadAction, type ThunkAction } from "@reduxjs/toolkit";
 import type { AnyAction } from "redux"; 
 import type { GlobalState } from "./store";
-import { update_field, split_inventory_item, type Item } from "./inventory";
+import type { Item } from "./inventory";
 import { imagePrompt, fetchImage } from "./gemini-client";
 import { getStoredToken } from "./google-photos";
-import { create_listing, type Listing, type ListingImage } from "./listings-slice";
+import type { ListingImage } from "./listings-slice";
 
 // Define AppThunk locally if not exported
 export type AppThunk<ReturnType = void> = ThunkAction<
@@ -561,254 +561,29 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
 import { generateHandle } from "./handle-utils";
 
 export const approve_proposal_thunk = (janCode: string): AppThunk => (dispatch, getState) => {
-    // 1. Mark as Approved
+    // 1. Mark as Approved (This triggers the rootReducer interceptor for logic)
     dispatch(approve_proposal({ janCode }));
     
-    // 2. Commit Pending Updates (Price & Handle) & Create Listing
-    const state = getState();
-    const proposal = state.listingCreation.proposals[janCode];
+    // 2. Advance UI
+    // The interceptor handles removing the proposal and updating activeBatchJans.
+    // We just need to check the updated state to decide where to go.
+    // Note: Reactivity in Svelte components often handles navigation (as seen in ListingDetail),
+    // but explicit step advancement is good.
     
-    if (proposal) {
-         // Determine Handle
-         const finalHandle = proposal.handle || generateHandle(proposal.title, proposal.janCode);
-
-         // A. Handle Inventory Splits
-         const finalInventoryIds: string[] = [];
-         const itemsToSplit = new Map<string, ListingVariant[]>();
-         
-         // Group variants by their CURRENT item ID
-         proposal.variants.forEach((v: ListingVariant) => {
-             if (!itemsToSplit.has(v.itemId)) itemsToSplit.set(v.itemId, []);
-             itemsToSplit.get(v.itemId)?.push(v);
-         });
-         
-         // Validation: Check for invalid splits BEFORE dispatching
-         for (const [sourceId, variants] of itemsToSplit) {
-             if (variants.length > 1) {
-                 const sourceItem = state.inventory.idToItem[sourceId];
-                 const totalAllocated = variants.reduce((sum, v) => sum + (v.qty || 0), 0);
-                 
-                 if (totalAllocated === 0) {
-                     alert(`Error: Allocation required for ${sourceId}. Total allocated quantity is 0.`);
-                     return;
-                 }
-                 
-                 // Strict Allocation Rule: Must allocate 100% of stock to variants
-                 if (sourceItem && totalAllocated !== sourceItem.qty) {
-                     alert(`Error: Allocation mismatch for ${sourceId}. You must allocate exactly ${sourceItem.qty} items. Currently allocated: ${totalAllocated}.`);
-                     return;
-                 }
-             }
-         }
-         
-         // Process Splits
-         itemsToSplit.forEach((variants, sourceId) => {
-             const usedIds = new Set<string>(); // Track IDs generated in this batch for collision handling
-
-             if (variants.length > 1) {
-                 // Split required
-                 // Generate new IDs with Collision Handling
-                 const splits = variants.map(v => {
-                     const cleanOption = (v.option1Value || 'Default').replace(/[^a-zA-Z0-9-_]/g, '');
-                     let baseNewId = `${sourceId}:${cleanOption}`;
-                     let uniqueId = baseNewId;
-                     let counter = 2;
-                     
-                     // Check for collision in current inventory OR in usedIds
-                     while (state.inventory.idToItem[uniqueId] || usedIds.has(uniqueId)) {
-                         uniqueId = `${baseNewId}_v${counter}`;
-                         counter++;
-                     }
-                     
-                     usedIds.add(uniqueId);
-                     
-                     return {
-                         newId: uniqueId,
-                         qty: v.qty || 0, 
-                         subtype: v.option1Value
-                     };
-                 });
-                 
-                 dispatch(split_inventory_item({ sourceId, splits }));
-                 
-                 // Update references for next steps
-                 splits.forEach(s => finalInventoryIds.push(s.newId));
-                 
-                 variants.forEach((v, i) => {
-                     v.itemId = splits[i].newId;
-                 });
-                 
-             } else {
-                 // No split, keep original
-                 finalInventoryIds.push(sourceId);
-             }
-         });
-
-         // B. Update Inventory Items (Price + Handle + Subtype)
-         // Update Price/Handle on ALL involved items
-         finalInventoryIds.forEach((id: string) => {
-             // Commit Price if set
-             if (proposal.price !== undefined) {
-                 dispatch(update_field({ id, field: 'price', from: 0, to: proposal.price! }));
-             }
-             // Commit Handle (Crucial for merging)
-             dispatch(update_field({ id, field: 'handle', from: "", to: finalHandle }));
-         });
-         
-         // Commit Subtypes & Images (from variants)
-         proposal.variants.forEach((v: ListingVariant, i: number) => {
-             console.log("APPROVE DEBUG: variant", v.itemId, v.option1Value);
-             if (v.option1Value) {
-                 // v.itemId is updated above if split occurred
-                 dispatch(update_field({ id: v.itemId, field: 'subtype', from: "", to: v.option1Value }));
-             }
-             if (v.image) {
-                 dispatch(update_field({ id: v.itemId, field: 'image', from: "", to: v.image }));
-             }
-             // Persist Variant Order using imagePosition
-             dispatch(update_field({ id: v.itemId, field: 'imagePosition', from: 0, to: i + 1 }));
-         });
-
-         // C. Create/Update Listing
-         
-         // Identify all proposals sharing this handle to aggregate photos
-         const allProposals = state.listingCreation.proposals;
-         const mergedJans = (Object.values(allProposals) as ListingProposal[])
-             .filter((p) => {
-                 const h = p.handle || generateHandle(p.title, p.janCode);
-                 return h === finalHandle;
-             })
-             .map((p) => p.janCode);
-
-         // Identify images from Photo State (In-Memory) for ALL merged JANs
-         const janToPhotos = state.photos.janCodeToPhotos || {};
-         
-         const allPhotoKeys = new Set<string>();
-         const allExcludedIds = new Set<string>();
-         
-         // Aggregate keys and exclusions from all merged proposals
-         mergedJans.forEach(jan => {
-             const p = allProposals[jan];
-             if (!p) return;
-             
-             // Base JAN
-             allPhotoKeys.add(p.janCode);
-             
-             // Linked Groups
-             if (p.photoGroupIds) {
-                 p.photoGroupIds.forEach((gid: string) => allPhotoKeys.add(gid));
-             }
-             
-             // Variant Groups
-             if (p.variants) {
-                 p.variants.forEach((v: ListingVariant) => {
-                     if (v.photoGroupKey) allPhotoKeys.add(v.photoGroupKey);
-                 });
-             }
-             
-             // Exclusions
-             if (p.excludedPhotoIds) {
-                 p.excludedPhotoIds.forEach((id: string) => allExcludedIds.add(id));
-             }
-         });
-
-         const allPhotos: any[] = [];
-         const seenPhotoIds = new Set<string>();
-         
-         allPhotoKeys.forEach(key => {
-             const photos = janToPhotos[key] || [];
-             photos.forEach((ph: any) => {
-                 if (!seenPhotoIds.has(ph.id) && !allExcludedIds.has(ph.id)) {
-                     seenPhotoIds.add(ph.id);
-                     allPhotos.push(ph);
-                 }
-             });
-         });
-         
-         // @ts-ignore
-        const listingImages = allPhotos.map((f: any, i: number) => ({
-             url: f.baseUrl || f.productUrl || f.url, // Fix: Use baseUrl (Photos) or fallback
-             id: f.id || `img-${i}`,
-             altText: f.filename || f.name, // Fix: Photos uses filename
-             position: i + 1
-         }));
-         
-         // Aggregate listing-only images from all merged proposals too?
-         // Yes, otherwise we lose edits from siblings.
-         const listingOnly = mergedJans.flatMap(jan => allProposals[jan]?.listingOnlyImages || []);
-         
-         let mergedImages = [...listingImages, ...listingOnly];
-         const order = proposal.listingImageOrder || [];
-         if (order.length > 0) {
-             const byId = new Map(mergedImages.map(img => [img.id, img]));
-             const ordered: any[] = [];
-             order.forEach((id: string) => {
-                 const match = byId.get(id);
-                 if (match) {
-                     ordered.push(match);
-                     byId.delete(id);
-                 }
-             });
-             mergedImages = [...ordered, ...Array.from(byId.values())];
-         }
-         mergedImages = mergedImages.map((img, i) => ({
-             ...img,
-             position: i + 1
-         }));
-
-         const listing: Listing = {
-             handle: finalHandle,
-             title: proposal.title,
-             bodyHtml: proposal.bodyHtml,
-             productCategory: proposal.productCategory,
-             vendor: proposal.vendor,
-             tags: proposal.tags,
-             option1Name: proposal.option1Name,
-            images: mergedImages,
-             // Required fields
-             productType: "", 
-             status: 'active',
-             lastUpdated: Date.now()
-         };
-
-         // Dispatch Create (Store middleware handles persistence if configured, or we rely on sync)
-         // Note: If listing exists, create_listing might overwrite. 
-         // For merging: We generally want to PRESERVE existing images if we are merging into an existing listing?
-         // But here we are "Creating" a batch.
-         // If A and B share handle X.
-         // 1. Approve A. Creates Listing X with Images A.
-         // 2. Approve B. Creates Listing X with Images B? -> Overwrite?
-         // Improvement: Check if listing exists.
-         const existingListing = state.listings.handleToListing[finalHandle];
-         if (existingListing) {
-             // Merge Images
-             // Use map to deep clone (shallow ref is frozen) and re-index
-             const combinedImages = [...(existingListing.images || []), ...mergedImages]
-                .map((img, i) => ({ ...img, position: i + 1 }));
-             
-             dispatch(create_listing({ listing: { ...existingListing, ...listing, images: combinedImages } }));
-         } else {
-             dispatch(create_listing({ listing }));
-         }
-
-         // Remove all proposals sharing this handle to avoid stale drafts
-         const removedJans = mergedJans; // Reuse calculation
-         removedJans.forEach(jan => dispatch(remove_proposal({ janCode: jan })));
-
-         // 3. Advance UI
-         const currentActive = getState().listingCreation.activeBatchJans;
-         const remainingCount = currentActive.filter((j: string) => !removedJans.includes(j)).length;
-         
-         if (remainingCount === 0) {
-             dispatch(complete_batch());
-             return;
-         }
-         
-         let nextIndex = getState().listingCreation.currentStepIndex;
-         if (nextIndex < 0) nextIndex = 0;
-         if (nextIndex >= remainingCount) nextIndex = 0;
-         dispatch(set_current_step(nextIndex));
+    const state = getState();
+    const currentActive = state.listingCreation.activeBatchJans;
+    
+    if (currentActive.length === 0) {
+        // Batch Complete
+        // Interceptor already dispatched complete_batch?
+        // Let's rely on component reactivity to detect empty batch.
+        return;
     }
+    
+    let nextIndex = state.listingCreation.currentStepIndex;
+    if (nextIndex < 0) nextIndex = 0;
+    if (nextIndex >= currentActive.length) nextIndex = 0;
+    dispatch(set_current_step(nextIndex));
 };
 
 export const generate_descriptions_for_batch = (janCodes: string[]): AppThunk => async (dispatch, getState) => {
