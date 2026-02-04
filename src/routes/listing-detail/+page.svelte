@@ -147,8 +147,11 @@
               });
               
               // Photos: Aggregate using Canonical Builder
+              // Ensure Primary is first and unique
+              const otherSiblings = siblingProposals.filter((p: any) => p !== primaryProposal);
+              
               listingImages = buildDraftListingImages(
-                  [primaryProposal, ...siblingProposals], 
+                  [primaryProposal, ...otherSiblings], 
                   $store.photos, 
                   $store.inventory
               );
