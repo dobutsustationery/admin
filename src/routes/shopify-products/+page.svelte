@@ -7,7 +7,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
-  import type { Item } from "$lib/inventory";
+  import { update_field, type Item } from "$lib/inventory";
   import { update_listing, type Listing, type ListingImage } from "$lib/listings-slice";
   import { history_add } from "$lib/history";
   import Papa from "papaparse";
@@ -191,15 +191,20 @@
           // Item Field
           const validItemFields = ['janCode', 'subtype', 'price', 'weight', 'image', 'countryOfOrigin', 'qty', 'shipped'];
           if (validItemFields.includes(field)) {
-             store.dispatch(history_add({
+             // @ts-ignore
+             const fromVal = item[field];
+             broadcast(firestore, $user.uid, update_field({
+                 id: item.id,
                  field: field as keyof Item,
-                 from: "" as any, 
+                 from: fromVal,
                  to: value
              }));
          } else if (field === 'handle') {
-             store.dispatch(history_add({
+             const fromVal = item.computedHandle || "";
+             broadcast(firestore, $user.uid, update_field({
+                 id: item.id,
                  field: 'handle',
-                 from: "" as any, 
+                 from: fromVal,
                  to: value
              }));
           }
