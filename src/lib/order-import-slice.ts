@@ -277,22 +277,15 @@ export const computeOrderImportBatch = (
           const qty = res.payload.qty;
           const invItem = inventoryIdToItem[itemKey];
           if (invItem) {
-            const payloadItem = {
-              ...invItem,
-              qty: qty,
-              hsCode:
-                res.payload.hsCode !== undefined
-                  ? res.payload.hsCode
-                  : invItem.hsCode,
-              weight:
-                res.payload.weight !== undefined
-                  ? res.payload.weight
-                  : invItem.weight,
-              countryOfOrigin:
-                res.payload.countryOfOrigin !== undefined
-                  ? res.payload.countryOfOrigin
-                  : invItem.countryOfOrigin,
-            };
+                          const payloadItem = {
+                            ...invItem,
+                            qty: qty,
+                            // Priority: Resolution > CSV > Existing
+                            hsCode: res.payload.hsCode !== undefined ? res.payload.hsCode : (item.hsCode || invItem.hsCode),
+                            weight: res.payload.weight !== undefined ? res.payload.weight : (item.weight || invItem.weight),
+                            countryOfOrigin: res.payload.countryOfOrigin !== undefined ? res.payload.countryOfOrigin : (item.countryOfOrigin || invItem.countryOfOrigin),
+                            cost: res.payload.cost !== undefined ? res.payload.cost : (item.cost !== undefined ? item.cost : invItem.cost),
+                          };
 
             updates.push({
               type: "update",
