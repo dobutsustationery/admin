@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { getStoredToken } from "$lib/google-photos";
+  import { getStoredToken as getDriveToken } from "$lib/google-drive";
 
   export let src: string; // The base URL
   export let alt: string = "";
@@ -14,7 +15,33 @@
 
   import { imageQueue } from "$lib/image-queue";
 
+  let shouldRun = true;
+  let loadSeq = 0;
+
+  async function fetchWithRetries(
+    url: string,
+    options: RequestInit,
+    attempts = 4,
+    backoffMs = 250,
+  ): Promise<Response> {
+    let lastError: any;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const response = await fetch(url, options);
+        if (response.ok) return response;
+        lastError = new Error(`Failed to load image: ${response.status}`);
+      } catch (error) {
+        lastError = error;
+      }
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, backoffMs * (i + 1)));
+      }
+    }
+    throw lastError || new Error("Failed to load image");
+  }
+
   async function loadImage() {
+    const seq = ++loadSeq;
     // Reset state
     loading = true;
     error = "";
@@ -24,18 +51,29 @@
     // Handle local/generated images directly
     if (src.startsWith("data:") || src.startsWith("blob:")) {
       objectUrl = src;
-      loading = false;
+      if (shouldRun && seq === loadSeq) loading = false;
       return;
     }
     
     let finalSrc = src;
+    const driveQueryIdMatch = finalSrc.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    const drivePathIdMatch = finalSrc.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    const driveApiIdMatch = finalSrc.match(/drive\/v3\/files\/([a-zA-Z0-9_-]+)/);
+    const driveFileId = driveApiIdMatch?.[1] || driveQueryIdMatch?.[1] || drivePathIdMatch?.[1] || "";
+
+    // Normalize Drive URLs so we can always do an authenticated fetch.
+    if (driveFileId && !finalSrc.includes("googleapis.com/drive/v3/files/")) {
+      finalSrc = `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`;
+    }
 
     // During pending picker->Drive migration we intentionally avoid rendering
     // fragile googleusercontent URLs and keep a loading spinner instead.
     if (isUploading && finalSrc.includes("googleusercontent.com")) {
-      loading = true;
-      error = "";
-      objectUrl = "";
+      if (shouldRun && seq === loadSeq) {
+        loading = true;
+        error = "";
+        objectUrl = "";
+      }
       return;
     }
     
@@ -44,29 +82,13 @@
     const driveFileIdMatch = finalSrc.match(/drive\/v3\/files\/([a-zA-Z0-9_-]+)/);
     const driveThumbnailUrl =
       driveFileIdMatch?.[1] ? `https://drive.google.com/thumbnail?id=${driveFileIdMatch[1]}&sz=w3000` : "";
-    const resolveDrivePreviewUrl = async () => {
-      if (!driveFileIdMatch?.[1]) return driveThumbnailUrl;
-      if (!token) return driveThumbnailUrl;
-      try {
-        const metaRes = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${driveFileIdMatch[1]}?fields=thumbnailLink`,
-          { headers: { Authorization: `Bearer ${token.access_token}` } }
-        );
-        if (metaRes.ok) {
-          const meta = await metaRes.json();
-          if (meta?.thumbnailLink) return meta.thumbnailLink as string;
-        }
-      } catch {
-        // Fall back to static Drive thumbnail URL.
-      }
-      return driveThumbnailUrl;
-    };
 
-    // Only fetch googleapis endpoints. googleusercontent (PPA/lh3) does not provide
-    // CORS headers for JS fetch, so it must load via plain <img src>.
+    // Prefer fetching Google URLs and render via object URLs. This avoids flaky
+    // direct-image auth behavior on Drive/Photos links. For googleusercontent,
+    // we still fall back to direct <img> if fetch path fails.
     const isGoogleApi = finalSrc.includes("googleapis.com");
     const isGoogleusercontent = finalSrc.includes("googleusercontent.com");
-    const shouldFetch = isGoogleApi;
+    const shouldFetch = isGoogleApi || isGoogleusercontent;
 
     if (!shouldFetch) {
         // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
@@ -78,61 +100,87 @@
     // Wrap fetch in Queue
     try {
         await imageQueue.add(async () => {
-             const headers: any = {};
-             
-             // PPA (Photos Picker API) URLs (on googleusercontent.com) REQUIRE Authentication.
-             if (token) {
-                 const isGoogle = isGoogleApi || isGoogleusercontent;
-                 if (isGoogle) {
-                     headers.Authorization = `Bearer ${token.access_token}`;
-                 }
-             }
-             
-             const response = await fetch(finalSrc, {
-                headers,
-                referrerPolicy: "no-referrer"
-             });
+             const driveToken = getDriveToken();
+             const authCandidates = Array.from(
+               new Set(
+                 [token?.access_token, driveToken?.access_token]
+                   .filter(Boolean) as string[]
+               )
+             );
+             const tryFetch = async (authHeader?: string) =>
+               await fetchWithRetries(
+                 finalSrc,
+                 {
+                   headers: authHeader ? { Authorization: authHeader } : {},
+                   referrerPolicy: "no-referrer",
+                 },
+                 4,
+                 250,
+               );
 
-             if (!response.ok) {
-                 throw new Error(`Failed to load image: ${response.status}`);
+             let response: Response | null = null;
+             let lastError: any = null;
+
+             for (const accessToken of authCandidates) {
+               try {
+                 response = await tryFetch(`Bearer ${accessToken}`);
+                 break;
+               } catch (error) {
+                 lastError = error;
+               }
+             }
+
+             if (!response) {
+               // For non-Drive resources, allow one anonymous attempt as fallback.
+               if (!isGoogleApi) {
+                 try {
+                   response = await tryFetch();
+                 } catch (error) {
+                   lastError = error;
+                 }
+               }
+             }
+
+             if (!response) {
+               throw lastError || new Error("Failed to load image");
              }
 
              const blob = await response.blob();
              const mime = (blob.type || "").toLowerCase();
              const isHeicLike = mime.includes("heic") || mime.includes("heif");
-             const isClearlyRenderableImage = /^image\/(png|jpe?g|webp|gif|bmp|svg\+xml|avif)$/.test(mime);
-             if (driveThumbnailUrl && (isHeicLike || !isClearlyRenderableImage)) {
+             // If MIME is missing, try rendering bytes first; do not assume non-renderable.
+             const hasKnownRenderableMime = mime
+               ? /^image\/(png|jpe?g|webp|gif|bmp|svg\+xml|avif)$/.test(mime)
+               : true;
+             if (driveThumbnailUrl && (isHeicLike || !hasKnownRenderableMime)) {
                  // Browsers often cannot render HEIC (or unknown binary) blobs directly; Drive thumbnail is renderable.
-                 objectUrl = await resolveDrivePreviewUrl();
+                 if (shouldRun && seq === loadSeq) objectUrl = driveThumbnailUrl;
              } else {
-                 objectUrl = URL.createObjectURL(blob);
+                 if (shouldRun && seq === loadSeq) objectUrl = URL.createObjectURL(blob);
              }
         });
     } catch (e: any) {
       console.error("SecureImage error:", e);
 
-      if (isGoogleApi && driveThumbnailUrl) {
-        // Fallback for transient Drive API auth/format failures.
-        objectUrl = await resolveDrivePreviewUrl();
-        error = "";
-        return;
-      }
-
-      // Fallback for googleusercontent links: try direct image loading if auth-fetch fails.
+      // Fallback for googleusercontent links: direct image load when fetch path fails.
       if (isGoogleusercontent) {
-        objectUrl = finalSrc;
-        error = "";
+        if (shouldRun && seq === loadSeq) {
+          objectUrl = finalSrc;
+          error = "";
+        }
       } else if (e.message.includes("403")) {
-        if (finalSrc.includes("/ppa/")) {
-          error = "Link Expired";
-        } else {
-          error = "Access Denied";
+        if (shouldRun && seq === loadSeq) {
+          if (finalSrc.includes("/ppa/")) {
+            error = "Link Expired";
+          } else {
+            error = "Access Denied";
+          }
         }
       } else {
-        error = "Error";
+        if (shouldRun && seq === loadSeq) error = "Error";
       }
     } finally {
-      loading = false;
+      if (shouldRun && seq === loadSeq) loading = false;
     }
   }
 
@@ -145,6 +193,7 @@
   $: crossOriginVal = ((objectUrl && objectUrl.includes("cdn.shopify.com")) ? "anonymous" : null) as "anonymous" | null;
 
   onDestroy(() => {
+    shouldRun = false;
     if (objectUrl && !objectUrl.startsWith("data:")) {
       URL.revokeObjectURL(objectUrl);
     }

@@ -17,6 +17,7 @@
 
 **Programmatic Verification:**
 - [ ] Color operation entered in-progress state
+- [ ] Current/history images are fully loaded during in-progress state
 
 ### 3. Color Completed
 
@@ -31,6 +32,7 @@
 
 **Programmatic Verification:**
 - [ ] Auto Crop operation entered in-progress state
+- [ ] Current/history images are fully loaded during in-progress state
 
 ### 5. Auto Crop Completed
 
@@ -45,6 +47,7 @@
 
 **Programmatic Verification:**
 - [ ] Remove BG operation entered in-progress state
+- [ ] Current/history images are fully loaded during in-progress state
 
 ### 7. Remove BG Completed
 

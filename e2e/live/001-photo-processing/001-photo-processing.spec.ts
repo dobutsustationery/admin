@@ -173,8 +173,22 @@ test.describe('Live Photo Processing', () => {
       completeScreenshot: string,
       expectedCount: number,
     ) => {
+      const previousHeadUrl = await page.evaluate((targetPhotoId) => {
+        const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
+        const photos = runtimeStore?.getState?.()?.photos;
+        return photos?.urlHistory?.[targetPhotoId]?.[0] || null;
+      }, chosenPhotoId);
+
       const targetRow = historyRows.first();
       const opButton = targetRow.locator('button', { hasText: label }).first();
+
+      await page.evaluate(() => {
+        (window as any).__E2E_OP_PAUSE_RESOLVER__ = null;
+        (window as any).__E2E_PAUSE_OPERATION_AT_START__ = () =>
+          new Promise<void>((resolve) => {
+            (window as any).__E2E_OP_PAUSE_RESOLVER__ = resolve;
+          });
+      });
 
       await expect(opButton).toBeEnabled({ timeout: 30000 });
       await opButton.click();
@@ -187,6 +201,15 @@ test.describe('Live Photo Processing', () => {
           description: `${label} operation entered in-progress state`,
           check: async () => await expect(inProgress.first()).toBeVisible(),
         },
+        {
+          description: 'Current/history images are fully loaded during in-progress state',
+          check: async () => {
+            await expect(page.getByText('Failed to load image')).toHaveCount(0);
+            await expect(page.getByText('Loading...')).toHaveCount(0);
+            await expect(page.locator('img[alt="Current"]').first()).toBeVisible();
+            await expect(targetRow.locator('img').first()).toBeVisible();
+          },
+        },
       ];
 
       docHelper.addStep(`${label} In Progress`, progressScreenshot, progressChecks);
@@ -197,14 +220,43 @@ test.describe('Live Photo Processing', () => {
         },
       });
 
+      await page.evaluate(() => {
+        const resume = (window as any).__E2E_OP_PAUSE_RESOLVER__;
+        if (typeof resume === "function") resume();
+        delete (window as any).__E2E_OP_PAUSE_RESOLVER__;
+        delete (window as any).__E2E_PAUSE_OPERATION_AT_START__;
+      });
+
       await expect(targetRow.locator('button', { hasText: '...' })).toHaveCount(0, { timeout: 600000 });
       expect(
         dialogMessages,
         `Operation "${label}" failed with dialog: ${dialogMessages.join(' | ')} (file: ${importResult.importedFilename}, mime: ${importResult.importedMimeType})`,
       ).toEqual([]);
+      await page.waitForFunction(
+        ({ targetPhotoId, prior }) => {
+          const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
+          const photos = runtimeStore?.getState?.()?.photos;
+          const history = photos?.urlHistory?.[targetPhotoId] || [];
+          const head = history[0] || null;
+          const selected = (photos?.selected || []).find((item: any) => item.id === targetPhotoId);
+          return !!head && head !== prior && selected?.baseUrl === head;
+        },
+        { targetPhotoId: chosenPhotoId, prior: previousHeadUrl },
+        { timeout: 180000 },
+      );
       await expect(historyRows).toHaveCount(expectedCount, { timeout: 180000 });
-      await expect(page.getByText('Failed to load image')).toHaveCount(0, { timeout: 120000 });
+      expect(await page.getByText('Failed to load image').count()).toBe(0);
       await expect(page.getByText('Loading...')).toHaveCount(0, { timeout: 120000 });
+      await expect
+        .poll(async () => {
+          const current = page.locator('img[alt="Current"]').first();
+          const history = targetRow.locator('img').first();
+          return await Promise.all([
+            current.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+            history.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+          ]);
+        }, { timeout: 120000 })
+        .toEqual([true, true]);
       for (let i = 0; i < expectedCount; i++) {
         const row = historyRows.nth(i);
         await expect(row.locator('img').first()).toBeVisible({ timeout: 120000 });
