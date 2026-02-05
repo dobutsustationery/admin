@@ -1,12 +1,36 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { store } from "$lib/store";
   import type { Item } from "$lib/inventory";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { formatYen, formatEuro } from "$lib/formatters";
 
   let skipOutOfStock = true;
+  let showHidden = false;
   let itemsMissingData: { key: string; item: Item; missing: string[] }[] = [];
   let skippedCount = 0;
+  let hiddenKeys = new Set<string>();
+
+  onMount(() => {
+      const stored = localStorage.getItem('skuReviewHiddenKeys');
+      if (stored) {
+          try {
+              hiddenKeys = new Set(JSON.parse(stored));
+          } catch (e) {
+              console.error("Failed to parse hidden keys", e);
+          }
+      }
+  });
+
+  function toggleHide(key: string) {
+      if (hiddenKeys.has(key)) {
+          hiddenKeys.delete(key);
+      } else {
+          hiddenKeys.add(key);
+      }
+      hiddenKeys = new Set(hiddenKeys); // Trigger reactivity
+      localStorage.setItem('skuReviewHiddenKeys', JSON.stringify(Array.from(hiddenKeys)));
+  }
 
   $: {
     const inv = $store.inventory.idToItem;
@@ -64,24 +88,39 @@
       itemsMissingData.sort((a, b) => b.item.creationDate.localeCompare(a.item.creationDate));
     }
   }
+
+  $: visibleItems = itemsMissingData.filter(i => showHidden || !hiddenKeys.has(i.key));
+  $: hiddenCount = itemsMissingData.length - visibleItems.length;
 </script>
 
 <div class="container">
   <h1>SKU Review</h1>
-  <h2 class="summary">{itemsMissingData.length} exceptions found.</h2>
+  <div class="header-controls">
+      <h2 class="summary">{visibleItems.length} exceptions found.</h2>
+      {#if hiddenCount > 0}
+          <span class="hidden-count">({hiddenCount} hidden)</span>
+      {/if}
+  </div>
   <p>Items missing required data or with invalid formatting.</p>
   
-  <label>
-    <input type="checkbox" bind:checked={skipOutOfStock}> 
-    {#if skipOutOfStock}
-        Skip items that are out of stock ({skippedCount} skipped)
-    {:else}
-        Skip items that are out of stock ({skippedCount} would be skipped)
-    {/if}
-  </label>
+  <div class="filters">
+      <label>
+        <input type="checkbox" bind:checked={skipOutOfStock}> 
+        {#if skipOutOfStock}
+            Skip out of stock ({skippedCount} skipped)
+        {:else}
+            Skip out of stock ({skippedCount} would be skipped)
+        {/if}
+      </label>
+      
+      <label>
+        <input type="checkbox" bind:checked={showHidden}> 
+        Show hidden items
+      </label>
+  </div>
 
-  {#if itemsMissingData.length === 0}
-    <div class="empty">All set! No items missing data.</div>
+  {#if visibleItems.length === 0}
+    <div class="empty">All set! No items missing data (that are visible).</div>
   {:else}
     <table>
       <thead>
@@ -94,11 +133,12 @@
           <th>Description</th>
           <th>Stock</th>
           <th>Missing</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
-        {#each itemsMissingData as { key, item, missing } (key)}
-          <tr>
+        {#each visibleItems as { key, item, missing } (key)}
+          <tr class:hidden-row={hiddenKeys.has(key)}>
             <td>
               {#if item.image}
                 <div class="thumb-wrap">
@@ -119,6 +159,11 @@
                 <span class="badge">{m}</span>
               {/each}
             </td>
+            <td>
+                <button class="btn-small" on:click={() => toggleHide(key)}>
+                    {hiddenKeys.has(key) ? "Unhide" : "Hide"}
+                </button>
+            </td>
           </tr>
         {/each}
       </tbody>
@@ -130,10 +175,40 @@
   .container {
     padding: 2rem;
   }
+  .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+  }
   .summary {
       font-size: 1.25rem;
       color: #b91c1c;
-      margin-bottom: 0.5rem;
+      margin: 0;
+  }
+  .hidden-count {
+      font-size: 0.9rem;
+      color: #6b7280;
+  }
+  .filters {
+      display: flex;
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+  }
+  .btn-small {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.8rem;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+  }
+  .btn-small:hover {
+      background: #f9fafb;
+  }
+  .hidden-row {
+      opacity: 0.5;
+      background: #f9fafb;
   }
   table {
     width: 100%;
