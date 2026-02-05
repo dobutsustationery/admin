@@ -44,3 +44,6 @@ static/test-images
 check_output.txt
 check_errors.txt
 test_output.txt
+
+# Playwright auth state (contains OAuth access tokens)
+e2e/live/.auth/
