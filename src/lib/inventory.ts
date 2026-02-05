@@ -13,6 +13,7 @@ export interface Item {
   creationDate: string;
   timestamp: number;
   price?: number;
+  cost?: number;
   weight?: number; // in grams
 
   // Shopify specific
@@ -229,6 +230,7 @@ function applyInventoryUpdate(
     janCode: item.janCode?.trim(),
     subtype: item.subtype?.trim() || "",
     hsCode: item.hsCode ? String(item.hsCode).replace(/\s+/g, "") : (state.idToItem[id]?.hsCode || ""),
+    cost: item.cost !== undefined ? Number(item.cost) : state.idToItem[id]?.cost,
     creationDate,
     qty: Number(item.qty) + qty,
     shipped: (Number(item.shipped) || 0) + shipped,
@@ -296,6 +298,7 @@ export const inventory = createReducer(initialState, (r) => {
         action.payload.field === "qty" ||
         action.payload.field === "shipped" ||
         action.payload.field === "price" ||
+        action.payload.field === "cost" ||
         action.payload.field === "weight"
           ? Number(incomingValue)
           : incomingValue;
