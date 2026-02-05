@@ -275,10 +275,12 @@
       }
     }
 
-    const existWeight = match.weight;
-    const newWeight = item.weight;
-    if (existWeight && newWeight && existWeight !== newWeight)
-      conflicts.push("Weight");
+    if (!useShopifyWeights) {
+        const existWeight = match.weight;
+        const newWeight = item.weight;
+        if (existWeight && newWeight && existWeight !== newWeight)
+          conflicts.push("Weight");
+    }
 
     const existPrice = match.price;
     const newPrice = item.price;
@@ -1015,6 +1017,12 @@
                   >
                     <input type="checkbox" bind:checked={useShopifyHandles} />
                     Accept Shopify Handles
+                  </label>
+                  <label
+                    class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border"
+                  >
+                    <input type="checkbox" bind:checked={useShopifyWeights} />
+                    Accept Shopify Weights
                   </label>
                   <label
                     class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border"
