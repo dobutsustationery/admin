@@ -61,8 +61,80 @@ const findHSCode = (row: any): string => {
    return "";
  };
 
+const normalizeHeaderKey = (key: string): string => {
+    return key
+        .normalize("NFKC")
+        .replace(/\uFEFF/g, "")
+        .toLowerCase()
+        .replace(/\r?\n/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+};
+
+const getOrderedRowCells = (row: Record<string, unknown>): Array<{ key: string; value: string }> => {
+    return Object.entries(row)
+        .filter(([key]) => key !== "__parsed_extra" && key !== "")
+        .map(([key, value]) => ({ key, value: String(value ?? "").trim() }));
+};
+
+const getValueByHeaders = (
+    row: Record<string, unknown>,
+    headerPredicates: Array<(normalizedHeader: string) => boolean>,
+    fallbackColumnIndex?: number,
+): string | undefined => {
+    const cells = getOrderedRowCells(row);
+
+    for (const cell of cells) {
+        const normalizedHeader = normalizeHeaderKey(cell.key);
+        if (headerPredicates.some((predicate) => predicate(normalizedHeader))) {
+            if (cell.value) return cell.value;
+        }
+    }
+
+    if (fallbackColumnIndex !== undefined) {
+        const fallback = cells[fallbackColumnIndex];
+        if (fallback && fallback.value) {
+            return fallback.value;
+        }
+    }
+
+    return undefined;
+};
+
+const parseNumberish = (value: string | undefined): number | undefined => {
+    if (!value) return undefined;
+    const cleaned = value.replace(/[^0-9.-]/g, "");
+    if (!cleaned) return undefined;
+    const parsed = Number.parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const mapImportItem = (row: any): ImportItem => {
     const janCode = (row['jan code'] || row['jan_code'] || row['jancode'] || "").toString().trim();
+    const countryOfOrigin = getValueByHeaders(
+        row,
+        [
+            (h) => h === "country of origin",
+            (h) => h === "origin",
+            (h) => h === "country",
+            (h) => h.includes("country of origin"),
+        ],
+        1, // Column B
+    );
+
+    const weight = parseNumberish(
+        getValueByHeaders(
+            row,
+            [
+                (h) => h === "weight",
+                (h) => h.includes("weight in grams"),
+                (h) => h.includes("per piece"),
+                (h) => h.includes("weight in grams per piece"),
+            ],
+            8, // Column I
+        ),
+    );
+
     return {
         janCode,
         description: row['description'] || row['product name'] || row['item name'] || row['product'] || row['title'] || row['name'] || row['product name（product number）'] || "",
@@ -70,8 +142,8 @@ const mapImportItem = (row: any): ImportItem => {
         carton: row['carton number'] || row['carton'] || "",
         hsCode: findHSCode(row),
         price: row['price'] ? parseFloat(row['price'].replace(/[^0-9.]/g, "")) : undefined,
-        weight: row['weight'] ? parseFloat(row['weight'].replace(/[^0-9.]/g, "")) : undefined,
-        countryOfOrigin: row['country of origin'] || row['origin'] || row['country'] || undefined,
+        weight,
+        countryOfOrigin: countryOfOrigin || undefined,
     };
 };
 
