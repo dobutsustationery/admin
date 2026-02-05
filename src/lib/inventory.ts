@@ -228,6 +228,7 @@ function applyInventoryUpdate(
     ...item,
     janCode: item.janCode?.trim(),
     subtype: item.subtype?.trim() || "",
+    hsCode: item.hsCode ? String(item.hsCode).replace(/\s+/g, "") : (state.idToItem[id]?.hsCode || ""),
     creationDate,
     qty: Number(item.qty) + qty,
     shipped: (Number(item.shipped) || 0) + shipped,
