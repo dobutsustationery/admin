@@ -158,23 +158,26 @@ function applyInventoryUpdate(
 
   id = id.trim();
 
-  let creationDate = "Unknown";
-  let globalDate = "Unknown";
-  // We assume an action ALWAYS has a timestamp in this architecture.
-  // If not, we might crash or have 0, but user insists no legacy data.
-  // Defaulting to 0 if missing to make it obvious rather than non-deterministic Date.now()
-  let val = 0;
-
+  // Robust Timestamp Parsing
+  let val = Date.now(); // Default to now
   if (timestamp) {
-    const tsDate = new Date(timestamp.seconds * 1000);
-    val = tsDate.getTime();
-    globalDate = tsDate.toLocaleString("en", {
+      if (typeof timestamp === 'number') {
+          val = timestamp;
+      } else if (timestamp.seconds) {
+          val = timestamp.seconds * 1000;
+      } else if (timestamp instanceof Date) {
+          val = timestamp.getTime();
+      }
+  }
+  
+  if (isNaN(val)) val = Date.now(); // Fallback if parsing failed
+
+  const dateObj = new Date(val);
+  const globalDate = dateObj.toLocaleString("en", {
       year: "numeric",
       month: "short",
       day: "numeric",
-    });
-    creationDate = globalDate + ` (${item.qty})`;
-  }
+  });
 
   // Safety check for state shape (idToHistory)
   if (!state.idToHistory) {
@@ -193,10 +196,6 @@ function applyInventoryUpdate(
     state.idToHistory[id] = [];
   }
 
-  const date = creationDate;
-  let qty = 0;
-  let shipped = 0;
-
   // Safety check for idToItem
   if (!state.idToItem) {
     console.error(
@@ -205,25 +204,94 @@ function applyInventoryUpdate(
     state.idToItem = {};
   }
 
-  if (state.idToItem[id] !== undefined) {
-    const oldImage = state.idToItem[id].image;
-    const newImage = item.image;
+  const existingItem = state.idToItem[id];
+  const historyEntries: { date: string; desc: string; val: number }[] = [];
 
-    // Implicitly track migration: Shopify -> Drive
-    if (oldImage && newImage && oldImage !== newImage) {
-      if (
-        oldImage.includes("cdn.shopify.com") &&
-        newImage.includes("drive.google.com")
-      ) {
-        if (!state.shopifyUrlToDriveUrl) state.shopifyUrlToDriveUrl = {};
-        state.shopifyUrlToDriveUrl[oldImage] = newImage;
+  // 1. Detect Changes
+  if (existingItem) {
+      // Compare fields
+      if (item.cost !== undefined && item.cost !== existingItem.cost) {
+          historyEntries.push({
+              date: globalDate,
+              desc: `Cost updated: ${existingItem.cost} -> ${item.cost}`,
+              val
+          });
       }
-    }
+      if (item.qty !== undefined && item.qty !== 0) {
+           // Qty is usually a delta in bulk import (e.g. +50)
+           // But wait, update_item usually takes a FULL ITEM or DELTA?
+           // In computeOrderImportBatch, we passed: qty: item.qty (Delta)
+           // The applyInventoryUpdate logic below does: qty = Number(item.qty) + qty (existing)
+           // So item.qty IS a delta here.
+           historyEntries.push({
+              date: globalDate,
+              desc: `Quantity adjustment: ${item.qty > 0 ? '+' : ''}${item.qty} (New Total: ${existingItem.qty + item.qty})`,
+              val
+          });
+      }
+      if (item.hsCode && item.hsCode !== existingItem.hsCode) {
+          historyEntries.push({
+              date: globalDate,
+              desc: `HS Code changed: ${existingItem.hsCode} -> ${item.hsCode}`,
+              val
+          });
+      }
+      if (item.weight && item.weight !== existingItem.weight) {
+          historyEntries.push({
+              date: globalDate,
+              desc: `Weight changed: ${existingItem.weight}g -> ${item.weight}g`,
+              val
+          });
+      }
+      if (item.countryOfOrigin && item.countryOfOrigin !== existingItem.countryOfOrigin) {
+          historyEntries.push({
+              date: globalDate,
+              desc: `Origin changed: ${existingItem.countryOfOrigin} -> ${item.countryOfOrigin}`,
+              val
+          });
+      }
+      if (item.description && item.description !== existingItem.description) {
+           // Description often changes slightly, log only if significant?
+           // For now log it.
+           historyEntries.push({
+              date: globalDate,
+              desc: `Description updated`,
+              val
+          });
+      }
+      
+      // Implicitly track migration: Shopify -> Drive
+      const oldImage = existingItem.image;
+      const newImage = item.image;
+      if (oldImage && newImage && oldImage !== newImage) {
+          historyEntries.push({
+              date: globalDate,
+              desc: `Image updated`,
+              val
+          });
+          if (
+            oldImage.includes("cdn.shopify.com") &&
+            newImage.includes("drive.google.com")
+          ) {
+            if (!state.shopifyUrlToDriveUrl) state.shopifyUrlToDriveUrl = {};
+            state.shopifyUrlToDriveUrl[oldImage] = newImage;
+          }
+      }
 
-    creationDate = state.idToItem[id].creationDate + ", " + creationDate;
-    qty = state.idToItem[id].qty;
-    shipped = state.idToItem[id].shipped || 0;
+  } else {
+      // New Item
+      historyEntries.push({
+          date: globalDate,
+          desc: `Created Item: ${item.description} (Qty: ${item.qty})`,
+          val
+      });
   }
+
+  // 2. Apply State Updates
+  const currentQty = existingItem ? existingItem.qty : 0;
+  const currentShipped = existingItem ? (existingItem.shipped || 0) : 0;
+  const currentCreationDate = existingItem ? existingItem.creationDate : (globalDate + ` (${item.qty})`);
+
   state.idToItem[id] = {
     ...state.idToItem[id], // Preserve existing fields (e.g. price, handle)
     ...item,
@@ -231,38 +299,32 @@ function applyInventoryUpdate(
     subtype: item.subtype?.trim() || "",
     hsCode: item.hsCode ? String(item.hsCode).replace(/\s+/g, "") : (state.idToItem[id]?.hsCode || ""),
     cost: item.cost !== undefined ? Number(item.cost) : state.idToItem[id]?.cost,
-    creationDate,
-    qty: Number(item.qty) + qty,
-    shipped: (Number(item.shipped) || 0) + shipped,
+    creationDate: currentCreationDate,
+    qty: Number(item.qty) + currentQty, // Apply Delta
+    shipped: (Number(item.shipped) || 0) + currentShipped,
     timestamp: val,
-    // Explicitly exclude legacy fields from spread if they exist in runtime payload (unlikely via TS, but safe)
   };
+  
   if (state.idToItem[id].shipped === undefined) {
     state.idToItem[id].shipped = 0;
   }
 
+  // 3. Push History
   // Final check before push
   if (!state.idToHistory[id]) {
-    console.error(
-      `[InventoryDebug] CRITICAL: state.idToHistory['${id}'] is undefined immediately before push! This should be impossible.`,
-    );
     state.idToHistory[id] = [];
   }
 
   try {
-    state.idToHistory[id].push({
-      date: globalDate,
-      desc: `${item.description}, +${item.qty} plus ${qty}; ${state.idToItem[id].shipped} shipped`,
-      val,
-    });
+      historyEntries.forEach(entry => {
+          state.idToHistory[id].push(entry);
+      });
+      // Fallback: If no changes detected but function called? 
+      // (e.g. identical update). No history needed.
   } catch (e) {
     console.error(
       `[InventoryDebug] Exception pushing to history for ${id}:`,
       e,
-    );
-    console.log(
-      `[InventoryDebug] Dump for ${id}:`,
-      JSON.stringify(state.idToHistory[id]),
     );
   }
 }
