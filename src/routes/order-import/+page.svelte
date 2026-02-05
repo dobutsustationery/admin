@@ -78,6 +78,49 @@ interface AnalyzedItem extends ImportItem {
           return { ...item, status: "DONE", actionLabel: "Done", originalIndex: index } as AnalyzedItem;
       }
       
+      // Analyze against Inventory (Shared Logic)
+      const JAN = item.janCode; 
+      const inventoryMatches = Object.entries($store.inventory.idToItem)
+          .filter(([k, i]: [string, any]) => i.janCode === JAN)
+          .map(([k, i]: [string, any]) => ({ ...i, key: k })); 
+
+      // Detect Conflicts
+      let detectedStatus: "MATCH" | "NEW" | "CONFLICT" = "NEW";
+      let conflictType: "DATA_MISMATCH" | "SUBTYPES" | undefined;
+      let conflictingFields: string[] | undefined;
+      let existingItem: any | undefined;
+      let subtypes: any[] | undefined;
+
+      if (inventoryMatches.length === 0) {
+          detectedStatus = "NEW";
+      } else if (inventoryMatches.length === 1) {
+          existingItem = inventoryMatches[0];
+          // Check for Data Mismatches
+          const existingHS = existingItem.hsCode;
+          const newHS = item.hsCode;
+          const existingWeight = existingItem.weight;
+          const newWeight = item.weight;
+          const existingCOO = existingItem.countryOfOrigin;
+          const newCOO = item.countryOfOrigin;
+
+          const conflicts: string[] = [];
+          if (existingHS && newHS && existingHS !== newHS) conflicts.push('HS Code');
+          if (existingWeight && newWeight && existingWeight !== newWeight) conflicts.push('Weight');
+          if (existingCOO && newCOO && existingCOO !== newCOO) conflicts.push('Country of Origin');
+          
+          if (conflicts.length > 0) {
+              detectedStatus = "CONFLICT";
+              conflictType = "DATA_MISMATCH";
+              conflictingFields = conflicts;
+          } else {
+              detectedStatus = "MATCH";
+          }
+      } else {
+          detectedStatus = "CONFLICT";
+          conflictType = "SUBTYPES";
+          subtypes = inventoryMatches;
+      }
+
       // If has resolution override, it's RESOLVED
       if (resolutions[index]) {
           return { 
@@ -85,88 +128,24 @@ interface AnalyzedItem extends ImportItem {
               status: "RESOLVED", 
               resolvedActions: resolutions[index],
               actionLabel: "Ready",
-              originalIndex: index
+              originalIndex: index,
+              // Preserve context
+              existingItem,
+              subtypes,
+              conflictType,
+              conflictingFields
           } as AnalyzedItem;
       }
 
-      // Compute Match/New/Conflict against LIVE inventory
-      const JAN = item.janCode; 
-      
-      // 1. Check for exact matches (including subtypes if JAN implies them?)
-      // Actually the previous logic was complex. Let's look at how we find items.
-      // We search inventory for items starting with JAN?
-      
-      const candidates = Object.values($store.inventory.idToItem).filter((inv: any) => 
-          inv.janCode === JAN || inv.janCode === JAN + inv.subtype // Simplified logic assumption
-      );
-      
-      // Ideally we rely on the previous logic's finding mechanism.
-      // Let's implement a simple finder:
-      // Subtypes logic in this app seems to be: Key = JAN + Subtype.
-      
-      // Let's filter idToItem where keys start with JAN? or properties match?
-      // Reusing logic from previous analyzeCSV would be good but that was "run once".
-      // Here we run it reactive. Efficiency warning: Mapping over 1000 items on every store change is heavy.
-      // Optimization: Only re-run if inventory or plan changes. Svelte $: does this.
-      
-      // Let's replicate the "find" logic here.
-      
-      // Case A: Exact JAN match (no subtype)
-      // Case B: JAN match with subtypes existing
-      
-      // Find all items in inventory that share this JAN
-      const inventoryMatches = Object.entries($store.inventory.idToItem)
-          .filter(([k, i]: [string, any]) => i.janCode === JAN)
-          .map(([k, i]: [string, any]) => ({ ...i, key: k })); // Preserve key for modal usage
-
-      if (inventoryMatches.length === 0) {
-          return { ...item, status: "NEW", actionLabel: "Create", originalIndex: index } as AnalyzedItem;
-      }
-      
-      if (inventoryMatches.length === 1) {
-          // One match. Is it a simple item or one subtype? 
-          // If it matches perfectly?
-          // Check for Data Mismatches (HS, Weight, COO)
-          const existingHS = (inventoryMatches[0] as any).hsCode;
-          const newHS = item.hsCode;
-          const existingWeight = (inventoryMatches[0] as any).weight;
-          const newWeight = item.weight;
-          const existingCOO = (inventoryMatches[0] as any).countryOfOrigin;
-          const newCOO = item.countryOfOrigin;
-
-          const conflicts: string[] = [];
-          
-          if (existingHS && newHS && existingHS !== newHS) conflicts.push('HS Code');
-          if (existingWeight && newWeight && existingWeight !== newWeight) conflicts.push('Weight');
-          if (existingCOO && newCOO && existingCOO !== newCOO) conflicts.push('Country of Origin');
-          
-          if (conflicts.length > 0) {
-               return {
-                  ...item,
-                  status: "CONFLICT",
-                  conflictType: "DATA_MISMATCH",
-                  conflictingFields: conflicts,
-                  existingItem: inventoryMatches[0],
-                  actionLabel: "Resolve Conflict",
-                  originalIndex: index
-               } as AnalyzedItem;
-          }
-
-          return { 
-              ...item, 
-              status: "MATCH", 
-              existingItem: inventoryMatches[0], // Now has 'key'
-              actionLabel: "Add Qty",
-              originalIndex: index
-          } as AnalyzedItem;
-      }
-      
-      // Multiple matches -> Conflict (ambiguous target)
-      return {
-          ...item,
-          status: "CONFLICT",
-          subtypes: inventoryMatches, // Now has 'key'
-          actionLabel: "Resolve",
+      // Default Status
+      return { 
+          ...item, 
+          status: detectedStatus,
+          conflictType,
+          conflictingFields,
+          existingItem,
+          subtypes,
+          actionLabel: detectedStatus === "CONFLICT" ? "Resolve" : (detectedStatus === "NEW" ? "Create" : "Add Qty"),
           originalIndex: index
       } as AnalyzedItem;
   });
