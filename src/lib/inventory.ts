@@ -1,4 +1,5 @@
 import { createAction, createReducer } from "@reduxjs/toolkit";
+import { formatYen } from "./formatters";
 
 // TODO hceck item history for 4542804115635Silver
 export interface Item {
@@ -213,7 +214,7 @@ function applyInventoryUpdate(
       if (item.cost !== undefined && item.cost !== existingItem.cost) {
           historyEntries.push({
               date: globalDate,
-              desc: `Cost updated: ${existingItem.cost} -> ${item.cost}`,
+              desc: `Cost updated: ${formatYen(existingItem.cost)} -> ${formatYen(item.cost)}`,
               val
           });
       }
