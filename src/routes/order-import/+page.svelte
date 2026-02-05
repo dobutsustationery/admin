@@ -257,6 +257,11 @@ interface AnalyzedItem extends ImportItem {
       });
   }
 
+  function ignoreItem(index: number) {
+      if (!$user || !$user.uid) return;
+      broadcast(firestore, $user.uid, mark_items_done({ indices: [index] }));
+  }
+
 
   onMount(async () => {
     driveConfigured = isDriveConfigured();
@@ -774,20 +779,28 @@ interface AnalyzedItem extends ImportItem {
                         <td>{item.description}</td>
                         <td>{item.qty}</td>
                         <td>
-                          {#if item.status === "CONFLICT"}
-                            <button
-                              class="btn-small"
-                              on:click={() => openConflictModal(item, item.originalIndex)}
-                              >Review</button
-                            >
-                          {:else if item.status === "RESOLVED"}
-                            <span class="text-success">Ready</span>
-                          {:else if item.status === "DONE"}
-                            <span class="text-muted">Done</span>
-                          {:else}
-                            <!-- Standard items processed via batch -->
-                            <span class="text-muted">-</span>
-                          {/if}
+                          <div class="action-cell">
+                              {#if item.status === "CONFLICT"}
+                                <button
+                                  class="btn-small"
+                                  on:click={() => openConflictModal(item, item.originalIndex)}
+                                  >Review</button
+                                >
+                              {:else if item.status === "RESOLVED"}
+                                <span class="text-success">Ready</span>
+                              {:else if item.status === "DONE"}
+                                <span class="text-muted">Done</span>
+                              {:else}
+                                <!-- Standard items processed via batch -->
+                                <span class="text-muted">-</span>
+                              {/if}
+                              
+                              <button 
+                                  class="btn-icon ignore" 
+                                  on:click={() => ignoreItem(item.originalIndex)}
+                                  title="Ignore Row"
+                              >✕</button>
+                          </div>
                         </td>
                       </tr>
                     {/each}
@@ -1153,4 +1166,9 @@ interface AnalyzedItem extends ImportItem {
   .bulk-hs-actions { margin-top: 0.5rem; font-weight: normal; font-size: 0.8rem; }
   .bulk-hs-actions label { display: flex; align-items: center; gap: 0.25rem; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
   .bulk-hs-actions label.selected { background: #dcfce7; color: #166534; font-weight: 600; }
+  
+  .action-cell { display: flex; align-items: center; gap: 0.5rem; }
+  .btn-icon { background: none; border: none; font-size: 1rem; cursor: pointer; color: #9ca3af; padding: 0.25rem; line-height: 1; border-radius: 4px; }
+  .btn-icon:hover { background: #f3f4f6; color: #6b7280; }
+  .btn-icon.ignore:hover { background: #fee2e2; color: #ef4444; }
 </style>
