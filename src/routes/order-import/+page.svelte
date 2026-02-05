@@ -116,9 +116,37 @@ interface AnalyzedItem extends ImportItem {
               detectedStatus = "MATCH";
           }
       } else {
-          detectedStatus = "CONFLICT";
-          conflictType = "SUBTYPES";
-          subtypes = inventoryMatches;
+          // Multiple matches
+          if (item.qty === 0) {
+              // Special Case: Zero Quantity Split
+              // If incoming qty is 0, allocation is trivial (0).
+              // We treat this as a MATCH on the first item to allow auto-processing (e.g. cost updates).
+              detectedStatus = "MATCH";
+              existingItem = inventoryMatches[0];
+              
+              // Still check for Data Mismatches on this target
+              const existingHS = existingItem.hsCode;
+              const newHS = item.hsCode;
+              const existingWeight = existingItem.weight;
+              const newWeight = item.weight;
+              const existingCOO = existingItem.countryOfOrigin;
+              const newCOO = item.countryOfOrigin;
+
+              const conflicts: string[] = [];
+              if (existingHS && newHS && existingHS !== newHS) conflicts.push('HS Code');
+              if (existingWeight && newWeight && existingWeight !== newWeight) conflicts.push('Weight');
+              if (existingCOO && newCOO && existingCOO !== newCOO) conflicts.push('Country of Origin');
+              
+              if (conflicts.length > 0) {
+                  detectedStatus = "CONFLICT";
+                  conflictType = "DATA_MISMATCH";
+                  conflictingFields = conflicts;
+              }
+          } else {
+              detectedStatus = "CONFLICT";
+              conflictType = "SUBTYPES";
+              subtypes = inventoryMatches;
+          }
       }
 
       // If has resolution override, it's RESOLVED

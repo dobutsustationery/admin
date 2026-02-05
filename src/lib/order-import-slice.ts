@@ -309,12 +309,16 @@ export const computeOrderImportBatch = (
     const resolutions = orderState.resolutions[index];
     if (resolutions && resolutions.length > 0) return;
 
-    const matches = janToItems[item.janCode] || [];
-    const exists = matches.length > 0;
-    let isConflict = matches.length > 1;
-
-    if (exists && !isConflict) {
-      // Check for Data Mismatches (HS, Weight, COO) to match UI logic
+            const matches = janToItems[item.janCode] || [];
+            const exists = matches.length > 0;
+            let isConflict = matches.length > 1;
+            
+            // Special Case: Zero Qty Split -> Treat as Match (on first item)
+            if (isConflict && item.qty === 0) {
+                isConflict = false;
+            }
+    
+            if (exists && !isConflict) {      // Check for Data Mismatches (HS, Weight, COO) to match UI logic
       const { item: existingItem } = matches[0];
 
       const existingHS = existingItem.hsCode;
