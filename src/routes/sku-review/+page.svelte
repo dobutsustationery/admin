@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "$lib/store";
+  import { user } from "$lib/user-store";
+  import { firestore } from "$lib/firebase";
+  import { broadcast } from "$lib/redux-firestore";
   import type { Item } from "$lib/inventory";
+  import { hide_exception, show_exception } from "$lib/inventory";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { formatYen, formatEuro } from "$lib/formatters";
 
@@ -9,31 +13,20 @@
   let showHidden = false;
   let itemsMissingData: { key: string; item: Item; missing: string[] }[] = [];
   let skippedCount = 0;
-  let hiddenKeys = new Set<string>();
-
-  onMount(() => {
-      const stored = localStorage.getItem('skuReviewHiddenKeys');
-      if (stored) {
-          try {
-              hiddenKeys = new Set(JSON.parse(stored));
-          } catch (e) {
-              console.error("Failed to parse hidden keys", e);
-          }
-      }
-  });
 
   function toggleHide(key: string) {
-      if (hiddenKeys.has(key)) {
-          hiddenKeys.delete(key);
+      if (!$user || !$user.uid) return;
+      const isHidden = $store.inventory.hiddenExceptions?.[key];
+      if (isHidden) {
+          broadcast(firestore, $user.uid, show_exception({ itemKey: key }));
       } else {
-          hiddenKeys.add(key);
+          broadcast(firestore, $user.uid, hide_exception({ itemKey: key }));
       }
-      hiddenKeys = new Set(hiddenKeys); // Trigger reactivity
-      localStorage.setItem('skuReviewHiddenKeys', JSON.stringify(Array.from(hiddenKeys)));
   }
 
   $: {
     const inv = $store.inventory.idToItem;
+    // ... existing analysis ...
     const listings = $store.listings; // Add dependency
     itemsMissingData = [];
     skippedCount = 0;
@@ -89,7 +82,8 @@
     }
   }
 
-  $: visibleItems = itemsMissingData.filter(i => showHidden || !hiddenKeys.has(i.key));
+  $: hiddenExceptions = $store.inventory.hiddenExceptions || {};
+  $: visibleItems = itemsMissingData.filter(i => showHidden || !hiddenExceptions[i.key]);
   $: hiddenCount = itemsMissingData.length - visibleItems.length;
 </script>
 
@@ -138,7 +132,7 @@
       </thead>
       <tbody>
         {#each visibleItems as { key, item, missing } (key)}
-          <tr class:hidden-row={hiddenKeys.has(key)}>
+          <tr class:hidden-row={hiddenExceptions[key]}>
             <td>
               {#if item.image}
                 <div class="thumb-wrap">
@@ -161,7 +155,7 @@
             </td>
             <td>
                 <button class="btn-small" on:click={() => toggleHide(key)}>
-                    {hiddenKeys.has(key) ? "Unhide" : "Hide"}
+                    {hiddenExceptions[key] ? "Unhide" : "Hide"}
                 </button>
             </td>
           </tr>

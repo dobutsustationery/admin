@@ -43,10 +43,14 @@ export interface InventoryState {
   salesEvents: { [key: string]: OrderInfo };
   orderIdToOrder: { [key: string]: OrderInfo };
   shopifyUrlToDriveUrl: { [key: string]: string }; // [shopifyUrl] -> driveUrl
+  hiddenExceptions?: { [key: string]: boolean };
   initialized: boolean;
 }
 
 export const inventory_synced = createAction("inventory_synced");
+
+export const hide_exception = createAction<{ itemKey: string }>("hide_exception");
+export const show_exception = createAction<{ itemKey: string }>("show_exception");
 
 export const update_item = createAction<{ id: string; item: Item }>(
   "update_item",
@@ -345,6 +349,15 @@ export const initialState: InventoryState = {
 export const inventory = createReducer(initialState, (r) => {
   r.addCase(inventory_synced, (state) => {
     state.initialized = true;
+  });
+  r.addCase(hide_exception, (state, action) => {
+      if (!state.hiddenExceptions) state.hiddenExceptions = {};
+      state.hiddenExceptions[action.payload.itemKey] = true;
+  });
+  r.addCase(show_exception, (state, action) => {
+      if (state.hiddenExceptions) {
+          delete state.hiddenExceptions[action.payload.itemKey];
+      }
   });
   r.addCase(update_item, (state, action) => {
     applyInventoryUpdate(
