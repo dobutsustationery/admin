@@ -167,11 +167,11 @@
           const driveFile = await uploadImageToDrive(blob, driveFilename, folderId, driveAccessToken);
           
           // Determine Permanent URL
-          // Use strict API URL first
-          const permanentUrl = driveFile.apiUrl || driveFile.thumbnailLink || driveFile.webContentLink;
-          
+          // Keep the canonical Drive API media URL so downstream flows always reference
+          // the full-size original bytes rather than an expiring/resized thumbnail URL.
+          const permanentUrl = driveFile.apiUrl;
           if (!permanentUrl) {
-              throw new Error("No permanent URL returned from Drive");
+              throw new Error("No Drive API media URL returned from upload");
           }
           
           // Broadcast Success

@@ -23,6 +23,25 @@ function extractLastJsonObject(output: string): any {
   throw new Error('No JSON payload found in sandbox creation output.');
 }
 
+function createSandboxWithRetries(maxAttempts = 4): any {
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const stdout = execSync('bun scripts/google-fixtures/create-run-sandbox.ts', {
+        encoding: 'utf-8',
+        env: process.env,
+      });
+      return extractLastJsonObject(stdout);
+    } catch (error: any) {
+      lastError = error;
+      const delayMs = attempt * 1000;
+      console.warn(`⚠️ [Live Fixture] Sandbox create failed (attempt ${attempt}/${maxAttempts}). Retrying in ${delayMs}ms...`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+    }
+  }
+  throw lastError;
+}
+
 async function resetFirestoreEmulator() {
   const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080';
   const projectCandidates = [
@@ -55,12 +74,17 @@ export const test = base.extend<LiveFixtures>({
   sandboxId: async ({ page }, use) => {
     await resetFirestoreEmulator();
 
-    // Create a fresh Drive/Photos sandbox for each test execution
-    const stdout = execSync('bun scripts/google-fixtures/create-run-sandbox.ts', {
-      encoding: 'utf-8',
-      env: process.env,
+    // Start each run from a clean client cache so broadcast replay does not accumulate.
+    await page.addInitScript(() => {
+      try {
+        window.indexedDB.deleteDatabase('dobutsu_actions_db');
+      } catch {
+        // Best effort only.
+      }
     });
-    const sandboxData = extractLastJsonObject(stdout);
+
+    // Create a fresh Drive/Photos sandbox for each test execution
+    const sandboxData = createSandboxWithRetries(4);
     const activeDriveFolderId = sandboxData.driveFolderId || '';
     
     // Inject into window
@@ -105,10 +129,29 @@ export const test = base.extend<LiveFixtures>({
         headers.authorization = `Bearer ${photosAccessToken}`;
       }
 
-      const upstream = await page.request.fetch(request.url(), {
-        method: request.method(),
-        headers,
-      });
+      let upstream: any = null;
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          upstream = await page.request.fetch(request.url(), {
+            method: request.method(),
+            headers,
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 3) {
+            await page.waitForTimeout(150 * attempt);
+          }
+        }
+      }
+
+      if (!upstream) {
+        console.warn(`⚠️ [Live Fixture] lh3 proxy failed after retries for ${request.url()}:`, lastError);
+        await route.continue();
+        return;
+      }
+
       const upstreamHeaders = upstream.headers();
       await route.fulfill({
         status: upstream.status(),

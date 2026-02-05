@@ -97,8 +97,11 @@
           const result = await uploadImageToDrive(file, `replaced_${photoId}_${Date.now()}.jpg`, folders.processedId, token.access_token);
           
           // 5. Complete Upload & Update History
-          // Prefer Drive API/media URL for reliable in-app rendering via SecureImage.
-          const permanentUrl = result.apiUrl || result.thumbnailLink || result.webContentLink || result.webViewLink;
+          // Persist canonical full-size Drive media URL only.
+          const permanentUrl = result.apiUrl;
+          if (!permanentUrl) {
+              throw new Error("Upload succeeded but returned no Drive API media URL.");
+          }
 
           const action = complete_upload({ 
               id: photoId, 
@@ -238,6 +241,15 @@
   async function handleManualOp(url: string, op: 'color' | 'bg' | 'smart_crop') {
       if (processingOp) return;
       processingOp = url + '_' + op;
+
+      // Optional live E2E hook: pause exactly after entering in-progress UI state.
+      // This keeps screenshots deterministic without mocking or skipping real work.
+      if (typeof window !== "undefined") {
+          const pauseHook = (window as any).__E2E_PAUSE_OPERATION_AT_START__;
+          if (typeof pauseHook === "function") {
+              await pauseHook({ photoId, url, op, processingOp });
+          }
+      }
       
       try {
           // 1. Get Safe Source
@@ -307,9 +319,9 @@
           
           const result = await uploadImageToDrive(file, filename, folders.processedId, token.access_token);
           
-          const safeUrl = result.apiUrl || result.thumbnailLink || result.webContentLink || result.webViewLink;
+          const safeUrl = result.apiUrl;
           if (!safeUrl) {
-              throw new Error("Upload succeeded but returned no usable URL.");
+              throw new Error("Upload succeeded but returned no Drive API media URL.");
           }
 
            const action = complete_upload({ 

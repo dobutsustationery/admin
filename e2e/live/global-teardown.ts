@@ -1,4 +1,3 @@
-import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -11,26 +10,8 @@ async function globalTeardown() {
     return;
   }
 
-  const sandboxData = JSON.parse(fs.readFileSync(envFile, 'utf-8'));
-  const folderId = sandboxData.driveFolderId;
-
-  if (folderId) {
-     try {
-        console.log(`Deleting Sandbox Folder: ${folderId}`);
-        // Run cleanup script targeting this folder
-        // We modified `cleanup-run-sandbox.ts` to accept an argument?
-        // "cleanup-run-sandbox.ts" accepts args to `process.argv`.
-        // `const targetId = args.find(a => !a.startsWith('-'));`
-        execSync(`bun scripts/google-fixtures/cleanup-run-sandbox.ts ${folderId}`, {
-            stdio: 'inherit',
-            env: process.env
-        });
-     } catch (e) {
-         console.error('❌ Failed to cleanup:', e);
-     }
-  }
-  
-  // Delete env file
+  // Sandbox cleanup is done per-test in e2e/live/fixtures.ts.
+  // Keep teardown best-effort and non-destructive.
   try {
     fs.unlinkSync(envFile);
   } catch {
