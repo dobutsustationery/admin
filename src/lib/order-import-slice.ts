@@ -55,7 +55,8 @@ const findHSCode = (row: any): string => {
        if (/[a-zA-Z]/.test(v)) continue;
        if (!/\d/.test(v)) continue;
        if (/^[\d\.\s\-/]+$/.test(v)) {
-           return v;
+           // Return without spaces
+           return v.replace(/\s+/g, "");
        }
    }
    return "";
