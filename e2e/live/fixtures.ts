@@ -1,22 +1,72 @@
 import { test as base } from '@playwright/test';
-import * as fs from 'fs';
-import * as path from 'path';
+import { execSync } from 'child_process';
+import { OAuth2Client } from 'google-auth-library';
 
 type LiveFixtures = {
   sandboxId: string;
 };
 
+function extractLastJsonObject(output: string): any {
+  const lines = output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(lines[i]);
+    } catch {
+      // continue scanning
+    }
+  }
+
+  throw new Error('No JSON payload found in sandbox creation output.');
+}
+
+async function resetFirestoreEmulator() {
+  const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080';
+  const projectCandidates = [
+    process.env.VITE_FIREBASE_LOCAL_PROJECT_ID,
+    process.env.VITE_FIREBASE_PROJECT_ID,
+    'dobutsu-admin',
+    'demo-test-project',
+  ].filter(Boolean) as string[];
+  const projects = Array.from(new Set(projectCandidates));
+
+  let clearedAnyProject = false;
+  for (const projectId of projects) {
+    const clearUrl = `http://${emulatorHost}/emulator/v1/projects/${projectId}/databases/(default)/documents`;
+    const clearResponse = await fetch(clearUrl, { method: 'DELETE' });
+    if (!clearResponse.ok) {
+      console.warn(
+        `⚠️ [Live Fixture] Firestore clear failed for project ${projectId}: ${clearResponse.status} ${clearResponse.statusText}`,
+      );
+      continue;
+    }
+    clearedAnyProject = true;
+  }
+
+  if (!clearedAnyProject) {
+    throw new Error('Failed to clear Firestore emulator for any configured project ID.');
+  }
+}
+
 export const test = base.extend<LiveFixtures>({
   sandboxId: async ({ page }, use) => {
-    // Read Sandbox ID from global setup file
-    const envPath = path.resolve(process.cwd(), 'e2e/live/.env.live.json');
-    let sandboxData: any = {};
-    if (fs.existsSync(envPath)) {
-        sandboxData = JSON.parse(fs.readFileSync(envPath, 'utf-8'));
-    }
+    await resetFirestoreEmulator();
+
+    // Create a fresh Drive/Photos sandbox for each test execution
+    const stdout = execSync('bun scripts/google-fixtures/create-run-sandbox.ts', {
+      encoding: 'utf-8',
+      env: process.env,
+    });
+    const sandboxData = extractLastJsonObject(stdout);
+    const activeDriveFolderId = sandboxData.driveFolderId || '';
     
     // Inject into window
     await page.addInitScript((data) => {
+      Date.now = () => data.fixedNow;
+
         (window as any).__GOOGLE_DRIVE_FOLDER_ID__ = data.driveFolderId;
         (window as any).__GOOGLE_DRIVE_CLIENT_ID__ = data.clientId;
         (window as any).__GOOGLE_PHOTOS_ALBUM_ID__ = data.photosAlbumId;
@@ -24,12 +74,68 @@ export const test = base.extend<LiveFixtures>({
         (window as any).__GOOGLE_DRIVE_SCOPES__ = "https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/photoslibrary.readonly";
         console.log("💉 Injected Sandbox FOLDER_ID:", data.driveFolderId);
     }, {
-        driveFolderId: sandboxData.driveFolderId,
+        driveFolderId: activeDriveFolderId,
         clientId: process.env.E2E_GOOGLE_CLIENT_ID,
         photosAlbumId: process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID || sandboxData.photosAlbumId,
+        fixedNow: Date.UTC(2026, 0, 15, 12, 0, 0),
     });
 
-    await use(sandboxData.driveFolderId);
+    // Proxy Googleusercontent image requests through Playwright's API context.
+    // This preserves real upstream bytes while avoiding browser CORS restrictions in headless runs.
+    const clientId = process.env.E2E_GOOGLE_CLIENT_ID || '';
+    const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET || '';
+    const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN || '';
+    let photosAccessToken: string | null = null;
+    if (clientId && clientSecret && photosRefreshToken) {
+      const oauth = new OAuth2Client(clientId, clientSecret);
+      oauth.setCredentials({ refresh_token: photosRefreshToken });
+      photosAccessToken = (await oauth.getAccessToken()).token || null;
+    }
+
+    await page.route('https://lh3.googleusercontent.com/**', async (route) => {
+      const request = route.request();
+      if (!['GET', 'HEAD'].includes(request.method())) {
+        await route.continue();
+        return;
+      }
+
+      const headers = { ...request.headers() };
+      delete (headers as any).host;
+      if (photosAccessToken) {
+        headers.authorization = `Bearer ${photosAccessToken}`;
+      }
+
+      const upstream = await page.request.fetch(request.url(), {
+        method: request.method(),
+        headers,
+      });
+      const upstreamHeaders = upstream.headers();
+      await route.fulfill({
+        status: upstream.status(),
+        headers: {
+          ...upstreamHeaders,
+          'access-control-allow-origin': '*',
+          'access-control-allow-headers': '*',
+          'access-control-allow-methods': 'GET,HEAD,OPTIONS',
+        },
+        body: await upstream.body(),
+      });
+    });
+
+    try {
+      await use(activeDriveFolderId);
+    } finally {
+      if (activeDriveFolderId) {
+        try {
+          execSync(`bun scripts/google-fixtures/cleanup-run-sandbox.ts ${activeDriveFolderId}`, {
+            stdio: 'inherit',
+            env: process.env,
+          });
+        } catch (cleanupError) {
+          console.error('❌ [Live Fixture] Failed to cleanup sandbox folder:', cleanupError);
+        }
+      }
+    }
   }
 });
 

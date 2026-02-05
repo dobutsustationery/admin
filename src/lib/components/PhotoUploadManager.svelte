@@ -4,8 +4,9 @@
   import { user } from "$lib/user-store";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
-  import { getStoredToken } from "$lib/google-photos";
-  import { ensureFolderStructure, uploadImageToDrive } from "$lib/google-drive";
+  import { getStoredToken as getPhotosToken } from "$lib/google-photos";
+  import { getStoredToken as getDriveToken } from "$lib/google-drive";
+  import { ensureFolderStructure, uploadImageToDrive, getFolderId } from "$lib/google-drive";
   import { getUploadCandidates } from "$lib/upload-logic";
 
   let interval: ReturnType<typeof setInterval>;
@@ -27,10 +28,11 @@
   });
 
   async function processQueue() {
-    // Requirements: User signed in (Firebase) AND Google Token available
+    // Requirements: User signed in (Firebase) AND a Drive-capable token available
     if (!$user || !$user.uid) return;
-    const token = getStoredToken();
-    if (!token) return; // Cannot upload without token
+    const photosToken = getPhotosToken();
+    const driveToken = getDriveToken() || photosToken;
+    if (!driveToken) return;
 
     const state = $store.photos;
     const { selected, uploads } = state;
@@ -51,11 +53,16 @@
     // 2. Ensure Folder (One time setup)
     if (!cachedOriginalsId) {
         try {
-            const { originalsId } = await ensureFolderStructure(token.access_token);
+            const { originalsId } = await ensureFolderStructure(driveToken.access_token);
             cachedOriginalsId = originalsId;
         } catch (e) {
-            console.error("[UploadManager] Failed to ensure folder structure:", e);
-            return; // Abort this cycle
+            const fallbackFolderId = getFolderId();
+            if (!fallbackFolderId) {
+                console.error("[UploadManager] Failed to ensure folder structure:", e);
+                return; // Abort this cycle
+            }
+            console.warn("[UploadManager] Falling back to root folder for uploads:", e);
+            cachedOriginalsId = fallbackFolderId;
         }
     }
 
@@ -71,13 +78,13 @@
         processing.add(item.id);
         
         // Fire & Forget (async)
-        uploadItem(item, token.access_token, cachedOriginalsId!).finally(() => {
+        uploadItem(item, photosToken?.access_token, driveToken.access_token, cachedOriginalsId!).finally(() => {
             processing.delete(item.id);
         });
     }
   }
 
-  async function uploadItem(item: any, accessToken: string, folderId: string) {
+  async function uploadItem(item: any, photosAccessToken: string | undefined, driveAccessToken: string, folderId: string) {
       const uid = $user.uid!;
       
       try {
@@ -87,41 +94,64 @@
               payload: { id: item.id, timestamp: Date.now() }
           });
           
-          // Fetch Blob
-          // Use high-res URL if possible (Photos), otherwise use raw (Drive API)
+          // Fetch Blob using URL/header strategy that mirrors browser behavior.
           let fetchUrl = item.baseUrl;
-          // Photos Picker URLs need rendering options; without these, fetch can 403.
-          // `=d` requests downloadable original bytes and is suitable for Drive re-upload.
-          if (fetchUrl.includes("googleusercontent.com")) {
-              const base = fetchUrl.replace(/=[a-z0-9,-]+$/i, "");
-              fetchUrl = `${base}=d`;
-          } else if (!fetchUrl.includes("googleapis.com") && !fetchUrl.includes("drive.google.com")) {
+          const isGoogleusercontent = fetchUrl.includes("googleusercontent.com");
+          if (!isGoogleusercontent && !fetchUrl.includes("googleapis.com") && !fetchUrl.includes("drive.google.com")) {
               fetchUrl += HIGH_RES_SUFFIX;
           }
-          
-          // Debug
-          console.log(`[UploadManager] Fetching ${fetchUrl} for ${item.id}`);
 
-          // PPA URLs require Auth header and 'photospicker.mediaitems.readonly' scope.
-          const headers: any = {
-              Authorization: `Bearer ${accessToken}`
-          };
+          let resp: Response | null = null;
+          const candidateUrls = isGoogleusercontent
+              ? (() => {
+                    const base = item.baseUrl.replace(/=[a-z0-9,-]+$/i, "");
+                    // Strict mode: only fetch original bytes for Google Photos sources.
+                    return [`${base}=d`];
+                })()
+              : [fetchUrl];
 
-          const resp = await fetch(fetchUrl, { 
-              headers,
-              referrerPolicy: "no-referrer"
-          });
-          
-          if (!resp.ok) {
-              // Log the text body for 403 details if possible (though CORS might block reading it)
-              try {
-                  const errText = await resp.text();
-                  console.error(`[UploadManager] Fetch error body:`, errText);
-              } catch (e) { /* ignore cors block */ }
-              throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);
+          for (const candidate of candidateUrls) {
+              if (photosAccessToken) {
+                  // Google Photos PPA URLs require auth tied to the Photos account.
+                  const withAuth = await fetch(candidate, {
+                      headers: { Authorization: `Bearer ${photosAccessToken}` },
+                      referrerPolicy: "no-referrer",
+                  }).catch(() => null);
+                  if (withAuth?.ok) {
+                      resp = withAuth;
+                      break;
+                  }
+              }
+
+              // Fallback without auth for public/special cases.
+              const withoutAuth = await fetch(candidate, {
+                  referrerPolicy: "no-referrer",
+              }).catch(() => null);
+              if (withoutAuth?.ok) {
+                  resp = withoutAuth;
+                  break;
+              }
           }
-          
+
+          // Drive and API URLs require auth.
+          if (!resp && !isGoogleusercontent) {
+              const authResp = await fetch(fetchUrl, {
+                  headers: { Authorization: `Bearer ${driveAccessToken}` },
+                  referrerPolicy: "no-referrer",
+              }).catch(() => null);
+              if (authResp?.ok) {
+                  resp = authResp;
+              }
+          }
+
+          if (!resp) {
+              throw new Error(`Fetch failed for ${item.id}`);
+          }
+
           const blob = await resp.blob();
+          console.info(
+              `[UploadManager] Source fetch succeeded: id=${item.id} url=${candidateUrls[0]} bytes=${blob.size} type=${blob.type || "unknown"}`
+          );
           
           // Use Google Photos ID for uniqueness as requested
           // Sanitize ID just in case (though usually base64-like)
@@ -134,7 +164,7 @@
           // But for now, we just ensure the name is deterministic.
           
           // Upload
-          const driveFile = await uploadImageToDrive(blob, driveFilename, folderId, accessToken);
+          const driveFile = await uploadImageToDrive(blob, driveFilename, folderId, driveAccessToken);
           
           // Determine Permanent URL
           // Use strict API URL first

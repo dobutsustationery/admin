@@ -418,7 +418,8 @@ export async function listSessionMediaItems(
   allItems.sort((a, b) => {
     const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
     const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
-    return tA - tB; // Ascending: Oldest (Barcode) first
+    if (tA !== tB) return tA - tB; // Ascending: Oldest first
+    return (a.id || "").localeCompare(b.id || "");
   });
 
   if (allItems.length > 0) {
@@ -433,6 +434,73 @@ export async function listSessionMediaItems(
       allItems[allItems.length - 1].mediaMetadata?.creationTime,
     );
   }
+
+  return allItems;
+}
+
+/**
+ * List media items from a Google Photos album directly.
+ * Useful for non-interactive automated flows where Picker UI cannot be used.
+ */
+export async function listAlbumMediaItems(
+  albumId: string,
+  pageSize = 100,
+): Promise<MediaItem[]> {
+  const token = getStoredToken();
+  if (!token) throw new Error("Not authenticated");
+  if (!albumId) throw new Error("Missing album ID");
+
+  let allItems: MediaItem[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const response = await fetch(
+      "https://photoslibrary.googleapis.com/v1/mediaItems:search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          albumId,
+          pageSize,
+          pageToken,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Failed to list album media items: ${response.statusText} - ${errorText}`,
+      );
+    }
+
+    const data = await response.json();
+    const items = (data.mediaItems || []).map((item: any) => ({
+      id: item.id || "",
+      productUrl: item.productUrl || "",
+      baseUrl: item.baseUrl || "",
+      mimeType: item.mimeType || "",
+      filename: item.filename || "",
+      mediaMetadata: {
+        ...(item.mediaMetadata || {}),
+        creationTime: item.mediaMetadata?.creationTime || "",
+      },
+      description: item.description || "",
+    })) as MediaItem[];
+
+    allItems = allItems.concat(items);
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  allItems.sort((a, b) => {
+    const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
+    const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
+    if (tA !== tB) return tA - tB;
+    return (a.id || "").localeCompare(b.id || "");
+  });
 
   return allItems;
 }

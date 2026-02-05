@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from "$lib/store";
   import type { Item } from "$lib/inventory";
+  import SecureImage from "$lib/components/SecureImage.svelte";
 
   let skipOutOfStock = true;
   let itemsMissingData: { key: string; item: Item; missing: string[] }[] = [];
@@ -95,7 +96,9 @@
           <tr>
             <td>
               {#if item.image}
-                <img src={item.image} alt="Product" class="thumb"/>
+                <div class="thumb-wrap">
+                  <SecureImage src={item.image} alt="Product" className="thumb" />
+                </div>
               {:else}
                 <span class="no-img">No Img</span>
               {/if}
@@ -131,7 +134,12 @@
     text-align: left;
     vertical-align: top;
   }
-  .thumb {
+  .thumb-wrap {
+    width: 50px;
+    height: 50px;
+    overflow: hidden;
+  }
+  :global(.thumb) {
     width: 50px;
     height: 50px;
     object-fit: cover;

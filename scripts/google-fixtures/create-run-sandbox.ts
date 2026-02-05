@@ -25,6 +25,7 @@ async function main() {
   const driveRefreshToken = process.env.E2E_GOOGLE_DRIVE_REFRESH_TOKEN!;
   const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN!;
   const driveRootId = process.env.E2E_GOOGLE_DRIVE_FOLDER_ID!;
+  const sourceAlbumId = process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID || "";
 
   // 1. Create Drive Folder (Still create new for Drive isolation as it supports deletion)
   const runId = process.env.RUN_ID || randomUUID();
@@ -132,6 +133,50 @@ async function main() {
       
           const album = await response.json();
           photosAlbumId = album.id;
+      }
+
+      // Seed sandbox album from a stable source album so live tests start from known media.
+      if (sourceAlbumId && sourceAlbumId !== photosAlbumId) {
+          const searchRes = await fetch('https://photoslibrary.googleapis.com/v1/mediaItems:search', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${photosAccessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ albumId: sourceAlbumId, pageSize: 100 }),
+          });
+          if (!searchRes.ok) {
+              throw new Error(`Failed to read seed album ${sourceAlbumId}: ${searchRes.status} ${await searchRes.text()}`);
+          }
+          const searchData = await searchRes.json();
+          const seedItems = (searchData.mediaItems || [])
+              .map((item: any) => ({
+                  id: item.id,
+                  creationTime: item.mediaMetadata?.creationTime || "",
+              }))
+              .filter((item: any) => !!item.id)
+              .sort((a: any, b: any) => {
+                  const tA = new Date(a.creationTime || 0).getTime();
+                  const tB = new Date(b.creationTime || 0).getTime();
+                  if (tA !== tB) return tA - tB;
+                  return String(a.id).localeCompare(String(b.id));
+              })
+              .slice(0, 8)
+              .map((item: any) => item.id);
+
+          if (seedItems.length > 0) {
+              const addRes = await fetch(`https://photoslibrary.googleapis.com/v1/albums/${photosAlbumId}:batchAddMediaItems`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${photosAccessToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ mediaItemIds: seedItems }),
+              });
+              if (!addRes.ok) {
+                  throw new Error(`Failed to seed sandbox album ${photosAlbumId}: ${addRes.status} ${await addRes.text()}`);
+              }
+          }
       }
   } catch (error: any) {
     console.error('❌ Failed to create/reuse Photos sandbox album:', error.message);

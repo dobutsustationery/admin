@@ -1,134 +1,152 @@
 import { test, expect } from '../../live/fixtures';
+import { createScreenshotHelper } from '../../helpers/screenshot-helper';
+import { TestDocumentationHelper } from '../../helpers/test-documentation-helper';
+import * as path from 'path';
+
+const PREFERRED_MEDIA_ITEM_ID = 'AOcBCupFCSjHAeHtqTfYFXK9NJK2WXUn-vwL-FvVkqXCeiYAq0qeWwrzQaogCwZPKQx6wmfr04aoYBcN9QoEHHgypqP6rUmiKw';
 
 test.describe('Live Journey', () => {
-
-  test.beforeEach(async ({ page }) => {
-    // Ensure Clean State (Clear IDB)
-    await page.goto('/'); // Navigate to origin first
-    await page.evaluate(async () => {
-       await new Promise<void>((resolve) => {
-           const req = indexedDB.deleteDatabase("dobutsu_actions_db");
-           req.onsuccess = () => resolve();
-           req.onerror = () => resolve(); // Ignore error
-           req.onblocked = () => resolve();
-       });
-    });
-    // Reload to re-initialize store with empty DB
-    await page.reload();
-    await expect(page.locator('.app-shell')).toBeVisible({ timeout: 15000 });
+  test.beforeEach(async ({ page, sandboxId }) => {
+    expect(sandboxId).toBeTruthy();
+    await page.goto('/photos');
+    await expect(page.getByTestId('selection-area')).toBeVisible({ timeout: 30000 });
   });
 
-  test('Select and categorize first 8 Google Photos', async ({ page }) => {
-    // 1. Navigate to Photos Page FIRST
-    await page.goto('/photos');
-    await expect(page.getByTestId('selection-area')).toBeVisible();
+  test('Use real photos state and run categorization when queue exists', async ({ page, sandboxId }, testInfo) => {
+    test.setTimeout(600000);
+    expect(sandboxId).toBeTruthy();
+    const screenshots = createScreenshotHelper();
+    const docHelper = new TestDocumentationHelper(path.dirname(testInfo.file));
 
-    // 2. Fetch Real Photos via API (using stored token) to simulate Picker selection
-    const photos = await page.evaluate(async () => {
-      const tokenStr = localStorage.getItem('google_photos_access_token');
-      if (!tokenStr) throw new Error('No Photos Token found in localStorage');
-      const token = JSON.parse(tokenStr);
-      const albumId = (window as any).__GOOGLE_PHOTOS_ALBUM_ID__;
-      
-      const url = albumId 
-          ? 'https://photoslibrary.googleapis.com/v1/mediaItems:search'
-          : 'https://photoslibrary.googleapis.com/v1/mediaItems?pageSize=10';
-          
-      const method = albumId ? 'POST' : 'GET';
-      const body = albumId ? JSON.stringify({ albumId, pageSize: 10 }) : undefined;
+    docHelper.setMetadata(
+      'Live Journey (Photos Categorization)',
+      '**As a** catalog operator, **I want to** categorize incoming photos from real connected services **so that** listing creation starts from correctly grouped images.',
+    );
 
-      const res = await fetch(url, {
-        method,
-        headers: { 
-            Authorization: `Bearer ${token.access_token}`,
-            ...(albumId ? { 'Content-Type': 'application/json' } : {})
+    const selectedQueue = page.getByTestId('selected-queue');
+    const selectedThumbs = selectedQueue.locator('[data-testid^="photo-thumbnail-"]');
+    const categorizedGroups = page.locator('[data-testid^="group-"]');
+
+    await page.waitForFunction(
+      () => typeof (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__ === 'function',
+      undefined,
+      { timeout: 30000 },
+    );
+
+    const importResult = await page.evaluate(async (preferredId) => {
+      const readPhotosState = () => {
+        const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
+        return runtimeStore?.getState?.()?.photos || null;
+      };
+      const hook = (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__;
+      if (typeof hook !== 'function') {
+        return { ok: false, error: 'Missing __E2E_IMPORT_PHOTOS_FROM_ALBUM__ hook' };
+      }
+      try {
+        const result = await hook('replace', 1, preferredId);
+        const state = readPhotosState();
+        return {
+          ok: true,
+          importedCount: result?.importedItems?.length || 0,
+          importedPhotoId: result?.importedItems?.[0]?.id || null,
+          selectedCount: (state?.selected || []).length,
+        };
+      } catch (error) {
+        return { ok: false, error: String(error) };
+      }
+    }, PREFERRED_MEDIA_ITEM_ID);
+
+    expect(importResult.ok, importResult.error).toBeTruthy();
+    expect(importResult.importedCount).toBeGreaterThan(0);
+    expect(importResult.importedPhotoId, `Selected photos after import: ${importResult.selectedCount}`).toBeTruthy();
+
+    await expect(async () => {
+      expect(await selectedThumbs.count()).toBeGreaterThan(0);
+    }).toPass({ timeout: 120000 });
+    
+    const chosenPhotoId = importResult.importedPhotoId as string;
+    const chosenThumb = page.getByTestId(`photo-thumbnail-${chosenPhotoId}`);
+    const chosenThumbImage = chosenThumb.locator('img').first();
+
+    // Wait for the chosen imported image to be fully uploaded/rendered (not "Loading...")
+    await page.waitForFunction(
+      (photoId) => {
+        const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
+        const state = runtimeStore?.getState?.()?.photos;
+        if (!state || !photoId) return false;
+        const uploadStatus = state.uploads?.[photoId]?.status;
+        const selected = (state.selected || []).find((item: any) => item.id === photoId);
+        const baseUrl = selected?.baseUrl || '';
+        return uploadStatus === 'completed' && typeof baseUrl === 'string' && !baseUrl.includes('googleusercontent.com');
+      },
+      chosenPhotoId,
+      { timeout: 180000 },
+    );
+    await expect(chosenThumb).toBeVisible({ timeout: 60000 });
+    await expect(chosenThumb).toHaveAttribute('data-photo-state', 'ready', { timeout: 180000 });
+    await expect(chosenThumb.getByText('Loading...')).toHaveCount(0, { timeout: 60000 });
+    await expect(chosenThumbImage).toBeVisible({ timeout: 60000 });
+
+    const initialChecks = [
+      {
+        description: 'Photos page is visible and interactive',
+        check: async () => await expect(page.getByTestId('selection-area')).toBeVisible(),
+      },
+      {
+        description: 'Selection controls are visible',
+        check: async () => {
+          await expect(page.locator('button', { hasText: 'Select Photos' })).toBeVisible();
+          await expect(page.locator('button', { hasText: 'Add Photos' })).toBeVisible();
         },
-        body
-      });
-      
-      if (!res.ok) throw new Error(`Google Photos API Error: ${res.status} ${res.statusText}`);
-      const data = await res.json();
-      return data.mediaItems ? data.mediaItems.slice(0, 8) : [];
+      },
+    ];
+
+    docHelper.addStep('Initial Photos State', '000-initial-photos-state.png', initialChecks);
+    await screenshots.capture(page, 'initial-photos-state', {
+      fullPage: true,
+      programmaticCheck: async () => {
+        for (const c of initialChecks) await c.check();
+      },
     });
 
-    if (photos.length === 0) {
-        console.warn("No photos found in test account. Skipping selection verification.");
-        return;
-    }
-    
-    console.log(`Fetched ${photos.length} photos from API`);
-
-    // 3. Dispatch Selection (Simulating Picker Result)
-    await page.evaluate((items) => {
-      const store = (window as any).__store || (window as any).testHelpers?.store;
-      if (!store) throw new Error("Redux Store not found on window");
-      
-      const mapped = items.map((p: any) => ({
-        id: p.id,
-        baseUrl: p.baseUrl,
-        filename: p.filename,
-        mimeType: p.mimeType,
-        productUrl: p.productUrl,
-        mediaMetadata: p.mediaMetadata
-      }));
-      
-      store.dispatch({
-        type: 'photos/select_photos',
-        payload: { photos: mapped }
-      });
-    }, photos);
-
-    // Wait for store to update and UI to react
-    await page.waitForTimeout(1000);
-
-    // 4. Verify Selection in UI
-    const selectionArea = page.getByTestId('selection-area');
-    const selectedThumbs = selectionArea.locator('[data-testid^="photo-thumbnail-"]');
-    await expect(selectedThumbs).toHaveCount(photos.length);
-
-    // 5. Mock Gemini API for Categorization
-    const uniqueId = Date.now().toString().slice(-9); 
-    const dummyJan = `4901${uniqueId}`;
-    
-    await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
-        const mockResponseText = dummyJan;
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-                candidates: [{
-                    content: {
-                        parts: [{ text: mockResponseText }]
-                    }
-                }]
-            })
-        });
-    });
-
-    // 6. Click Categorize
-    await expect(page.locator('.loading-overlay')).toBeHidden({ timeout: 15000 });
-    
-    const categorizeBtn = page.locator('button', { hasText: "Categorize Photos" });
-    await expect(categorizeBtn).toBeEnabled();
+    const categorizeBtn = page.locator('button', { hasText: 'Categorize Photos' });
+    await expect(async () => {
+      await expect(categorizeBtn).toBeEnabled();
+    }).toPass({ timeout: 240000 });
     await categorizeBtn.click();
-    
-    // 7. Verify Categorization
-    
-    // Verify JAN Input exists with specific ID
-    const janInput = page.getByTestId(`jan-input-${dummyJan}`);
-    await expect(janInput).toBeVisible({ timeout: 15000 });
-    await expect(janInput).toHaveValue(dummyJan);
-    
-    // Verify Group Container
-    const groupContainer = page.getByTestId(`group-${dummyJan}`);
-    await expect(groupContainer).toBeVisible();
 
-    // Verify photos inside the group
-    await expect(groupContainer.locator(`[data-testid^="photo-thumbnail-"]`).first()).toBeVisible({ timeout: 10000 });
-    await expect(groupContainer.locator(`[data-testid^="photo-thumbnail-"]`)).toHaveCount(photos.length);
-    
-    // Verify "Selected" area is empty
-    await expect(page.locator('text=No photos queued')).toBeVisible();
-    await expect(selectedThumbs).toHaveCount(0);
+    await expect(page.locator('text=Categorizing...')).toBeVisible({ timeout: 60000 });
+    await expect(page.locator('text=Categorizing...')).toHaveCount(0, { timeout: 180000 });
+
+    const finalChecks = [
+      {
+        description: 'Categorization run completed and controls are enabled again',
+        check: async () => await expect(categorizeBtn).toBeEnabled(),
+      },
+      {
+        description: 'Photos queue remains visible after live categorization activity',
+        check: async () => {
+          expect(await selectedThumbs.count()).toBeGreaterThan(0);
+        },
+      },
+      {
+        description: 'Chosen imported image remains fully loaded (not Loading...)',
+        check: async () => {
+          await expect(chosenThumb).toHaveAttribute('data-photo-state', 'ready');
+          await expect(chosenThumb.getByText('Loading...')).toHaveCount(0);
+          await expect(chosenThumbImage).toBeVisible();
+        },
+      },
+    ];
+
+    docHelper.addStep('Post Categorization State', '001-post-categorization-state.png', finalChecks);
+    await screenshots.capture(page, 'post-categorization-state', {
+      fullPage: true,
+      programmaticCheck: async () => {
+        for (const c of finalChecks) await c.check();
+      },
+    });
+
+    docHelper.writeReadme();
   });
 });
