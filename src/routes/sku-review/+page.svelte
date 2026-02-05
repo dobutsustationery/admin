@@ -2,6 +2,7 @@
   import { store } from "$lib/store";
   import type { Item } from "$lib/inventory";
   import SecureImage from "$lib/components/SecureImage.svelte";
+  import { formatYen, formatEuro } from "$lib/formatters";
 
   let skipOutOfStock = true;
   let itemsMissingData: { key: string; item: Item; missing: string[] }[] = [];
@@ -87,6 +88,8 @@
           <th>Image</th>
           <th>JAN</th>
           <th>Subtype</th>
+          <th>Price</th>
+          <th>Cost</th>
           <th>Description</th>
           <th>Stock</th>
           <th>Missing</th>
@@ -106,6 +109,8 @@
             </td>
             <td>{item.janCode}</td>
             <td>{item.subtype}</td>
+            <td>{formatEuro(item.price)}</td>
+            <td>{formatYen(item.cost)}</td>
             <td class="desc">{item.description}</td>
             <td>{(item.qty || 0) - (item.shipped || 0)}</td>
             <td>
