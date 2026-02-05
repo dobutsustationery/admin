@@ -48,9 +48,10 @@ setup("authenticate", async ({ page, context }) => {
 
   // Create a real Firebase emulator user and inject auth persistence.
   const authEmulatorUrl = "http://localhost:9099";
-  const testEmail = `live-e2e-${Date.now()}@example.com`;
+  const testEmail = "live-e2e@example.com";
   const testPassword = "testpassword123";
 
+  let authData: any;
   const signUpResponse = await page.request.post(
     `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
     {
@@ -63,11 +64,31 @@ setup("authenticate", async ({ page, context }) => {
     },
   );
 
-  if (!signUpResponse.ok()) {
-    throw new Error(`Auth emulator sign-up failed: ${signUpResponse.status()}`);
-  }
+  if (signUpResponse.ok()) {
+    authData = await signUpResponse.json();
+  } else {
+    const signUpBody = await signUpResponse.json().catch(() => ({} as any));
+    const alreadyExists =
+      signUpBody?.error?.message === "EMAIL_EXISTS" || signUpBody?.error?.message === "EMAIL_EXISTS : Password hash should be specified.";
+    if (!alreadyExists) {
+      throw new Error(`Auth emulator sign-up failed: ${signUpResponse.status()} ${JSON.stringify(signUpBody)}`);
+    }
 
-  const authData = await signUpResponse.json();
+    const signInResponse = await page.request.post(
+      `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-api-key`,
+      {
+        data: {
+          email: testEmail,
+          password: testPassword,
+          returnSecureToken: true,
+        },
+      },
+    );
+    if (!signInResponse.ok()) {
+      throw new Error(`Auth emulator sign-in failed: ${signInResponse.status()}`);
+    }
+    authData = await signInResponse.json();
+  }
 
   await context.addInitScript(
     ({ drive, photos, authInfo }) => {
@@ -114,4 +135,3 @@ setup("authenticate", async ({ page, context }) => {
   fs.mkdirSync(authDir, { recursive: true });
   await context.storageState({ path: authFile });
 });
-

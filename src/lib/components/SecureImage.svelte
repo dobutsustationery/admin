@@ -28,15 +28,7 @@
       return;
     }
     
-    // Rewrite Google Drive API links to Thumbnail links (which handle Auth better via cookies/public access)
-    // and avoid CORS/Auth header issues with raw API fetch.
     let finalSrc = src;
-    if (src.includes("googleapis.com/drive/v3/files/")) {
-        const match = src.match(/files\/([a-zA-Z0-9_-]+)/);
-        if (match && match[1]) {
-            finalSrc = `https://drive.google.com/thumbnail?id=${match[1]}&sz=w3000`;
-        }
-    }
 
     // During pending picker->Drive migration we intentionally avoid rendering
     // fragile googleusercontent URLs and keep a loading spinner instead.
@@ -49,6 +41,26 @@
     
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
+    const driveFileIdMatch = finalSrc.match(/drive\/v3\/files\/([a-zA-Z0-9_-]+)/);
+    const driveThumbnailUrl =
+      driveFileIdMatch?.[1] ? `https://drive.google.com/thumbnail?id=${driveFileIdMatch[1]}&sz=w3000` : "";
+    const resolveDrivePreviewUrl = async () => {
+      if (!driveFileIdMatch?.[1]) return driveThumbnailUrl;
+      if (!token) return driveThumbnailUrl;
+      try {
+        const metaRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${driveFileIdMatch[1]}?fields=thumbnailLink`,
+          { headers: { Authorization: `Bearer ${token.access_token}` } }
+        );
+        if (metaRes.ok) {
+          const meta = await metaRes.json();
+          if (meta?.thumbnailLink) return meta.thumbnailLink as string;
+        }
+      } catch {
+        // Fall back to static Drive thumbnail URL.
+      }
+      return driveThumbnailUrl;
+    };
 
     // Only fetch googleapis endpoints. googleusercontent (PPA/lh3) does not provide
     // CORS headers for JS fetch, so it must load via plain <img src>.
@@ -86,10 +98,25 @@
              }
 
              const blob = await response.blob();
-             objectUrl = URL.createObjectURL(blob);
+             const mime = (blob.type || "").toLowerCase();
+             const isHeicLike = mime.includes("heic") || mime.includes("heif");
+             const isClearlyRenderableImage = /^image\/(png|jpe?g|webp|gif|bmp|svg\+xml|avif)$/.test(mime);
+             if (driveThumbnailUrl && (isHeicLike || !isClearlyRenderableImage)) {
+                 // Browsers often cannot render HEIC (or unknown binary) blobs directly; Drive thumbnail is renderable.
+                 objectUrl = await resolveDrivePreviewUrl();
+             } else {
+                 objectUrl = URL.createObjectURL(blob);
+             }
         });
     } catch (e: any) {
       console.error("SecureImage error:", e);
+
+      if (isGoogleApi && driveThumbnailUrl) {
+        // Fallback for transient Drive API auth/format failures.
+        objectUrl = await resolveDrivePreviewUrl();
+        error = "";
+        return;
+      }
 
       // Fallback for googleusercontent links: try direct image loading if auth-fetch fails.
       if (isGoogleusercontent) {

@@ -32,6 +32,30 @@
   $: selectedItem = $store.photos.selected?.find((p: any) => p.id === photoId);
   $: categorizedItem = findCategorizedItem(photoId, $store.photos.janCodeToPhotos);
   $: item = selectedItem || categorizedItem;
+  $: effectiveHistory = urlHistory.length > 0 ? urlHistory : (item?.baseUrl ? [item.baseUrl] : []);
+
+  function extractDriveFileId(url: string): string | null {
+      if (!url) return null;
+      const patterns = [
+          /[?&]id=([a-zA-Z0-9_-]+)/,
+          /\/d\/([a-zA-Z0-9_-]+)/,
+          /drive\/v3\/files\/([a-zA-Z0-9_-]+)/,
+      ];
+      for (const pattern of patterns) {
+          const match = url.match(pattern);
+          if (match?.[1]) return match[1];
+      }
+      return null;
+  }
+
+  function getDriveOpenLink(url: string): string | null {
+      const fileId = extractDriveFileId(url);
+      return fileId ? `https://drive.google.com/file/d/${fileId}/view` : null;
+  }
+
+  function isDriveBackedUrl(url: string): boolean {
+      return !!getDriveOpenLink(url);
+  }
   
   function findCategorizedItem(id: string, map: Record<string, any[]>): any {
       if (!map) return null;
@@ -73,8 +97,8 @@
           const result = await uploadImageToDrive(file, `replaced_${photoId}_${Date.now()}.jpg`, folders.processedId, token.access_token);
           
           // 5. Complete Upload & Update History
-          // Use the stable API URL if available, fallback to whatever we got.
-          const permanentUrl = result.thumbnailLink || result.webViewLink;
+          // Prefer Drive API/media URL for reliable in-app rendering via SecureImage.
+          const permanentUrl = result.apiUrl || result.thumbnailLink || result.webContentLink || result.webViewLink;
 
           const action = complete_upload({ 
               id: photoId, 
@@ -130,6 +154,7 @@
        const headers: any = {};
        
        let fetchUrl = url;
+       let candidateUrls: string[] = [];
        
        // 1. Robustly Rewrite Drive URLs to API URLs
        // Matches: id=XYZ (query param) or /d/XYZ (path)
@@ -143,10 +168,15 @@
        if (driveId) {
             fetchUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media`;
        } else if (fetchUrl.includes("googleusercontent.com")) {
-            // Force full resolution for Google Photos/Drive content URLs
-            // Strip existing params (e.g. =w200) and append =d (download original)
+            // Google Photos baseUrls are more reliable with explicit dimension suffixes.
             const base = fetchUrl.replace(/=[a-z0-9,-]+$/i, "");
-            fetchUrl = `${base}=d`;
+            candidateUrls = [
+                `${base}=w4096-h4096`,
+                `${base}=w2048-h2048`,
+                `${base}=d`,
+                url,
+            ];
+            fetchUrl = candidateUrls[0];
        }
 
        // 2. Configure Headers
@@ -161,12 +191,24 @@
            }
            headers.Authorization = `Bearer ${token.access_token}`;
        } else if (token && !isPhotosUrl) {
-           // For non-photos, non-drive URLs (if any), assume we attach token
+           // For non-photos, non-drive URLs (if any), attach token
            headers.Authorization = `Bearer ${token.access_token}`;
        }
               
-       const res = await fetch(fetchUrl, { headers });
-       if (!res.ok) throw new Error("Failed to load image source");
+       const urlsToTry = candidateUrls.length > 0 ? candidateUrls : [fetchUrl, url];
+       let res: Response | null = null;
+       for (const candidate of urlsToTry) {
+           try {
+               const attempt = await fetch(candidate, { headers, referrerPolicy: "no-referrer" });
+               if (attempt.ok) {
+                   res = attempt;
+                   break;
+               }
+           } catch {
+               // Try next URL candidate.
+           }
+       }
+       if (!res || !res.ok) throw new Error("Failed to load image source");
        const blob = await res.blob();
        
        return new Promise((resolve, reject) => {
@@ -265,7 +307,7 @@
           
           const result = await uploadImageToDrive(file, filename, folders.processedId, token.access_token);
           
-          const safeUrl = result.thumbnailLink || result.webViewLink;
+          const safeUrl = result.apiUrl || result.thumbnailLink || result.webContentLink || result.webViewLink;
           if (!safeUrl) {
               throw new Error("Upload succeeded but returned no usable URL.");
           }
@@ -338,20 +380,38 @@
             <!-- Current State (Left/Main) -->
             <div class="md:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 class="text-xl font-semibold mb-4">Current Image</h2>
-                {#if urlHistory.length > 0}
+                {#if effectiveHistory.length > 0}
                     <!-- Current Image: Max size 300x300, contained -->
                     <div class="flex justify-center mb-8">
                         <ImageThumbnail 
-                            src={urlHistory[0]} 
+                            src={effectiveHistory[0]} 
                             alt="Current" 
                             width="300px" 
                             height="300px" 
                             fit="contain"
                         />
                     </div>
-                     <div class="mt-4 text-xs text-gray-400 font-mono break-all text-center">
-                        {urlHistory[0]}
-                    </div>
+                     <div class="mt-4 text-xs text-gray-500 text-center w-full max-w-full overflow-hidden">
+                        {#if isDriveBackedUrl(effectiveHistory[0])}
+                            <a
+                                href={getDriveOpenLink(effectiveHistory[0]) || "#"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="underline hover:text-gray-700"
+                            >
+                                Open in Google Drive
+                            </a>
+                        {:else}
+                            <a
+                                href={effectiveHistory[0]}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="underline hover:text-gray-700 break-all"
+                            >
+                                Open source image
+                            </a>
+                        {/if}
+                     </div>
                 {:else}
                      <div class="p-12 text-center text-gray-400">No URL history available</div>
                 {/if}
@@ -387,12 +447,12 @@
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-fit">
                 <h2 class="text-xl font-semibold mb-6">History</h2>
                 
-                {#if urlHistory.length === 0}
+                {#if effectiveHistory.length === 0}
                     <div class="text-gray-400 italic">No history recorded</div>
                 {/if}
 
                 <div class="space-y-6 relative border-l-2 border-slate-200 ml-3">
-                  {#each urlHistory as url, i}
+                  {#each effectiveHistory as url, i}
                     <div class="relative flex items-start pl-6 group">
                          <!-- Dot -->
                         <div class="absolute -left-[9px] top-4 flex items-center justify-center w-5 h-5 rounded-full border-2 border-white bg-slate-300 group-first:bg-indigo-600 shadow z-10">
@@ -417,8 +477,26 @@
                                 />
                              </div>
                              
-                             <div class="text-xs text-gray-500 truncate font-mono mb-2">
-                                 {url}
+                             <div class="text-xs text-gray-500 mb-2 w-full max-w-full overflow-hidden">
+                                 {#if isDriveBackedUrl(url)}
+                                     <a
+                                         href={getDriveOpenLink(url) || "#"}
+                                         target="_blank"
+                                         rel="noopener noreferrer"
+                                         class="underline hover:text-gray-700"
+                                     >
+                                         Open in Google Drive
+                                     </a>
+                                 {:else}
+                                     <a
+                                         href={url}
+                                         target="_blank"
+                                         rel="noopener noreferrer"
+                                         class="underline hover:text-gray-700 break-all"
+                                     >
+                                         Open source image
+                                     </a>
+                                 {/if}
                              </div>
 
                              <div class="flex flex-wrap gap-2 mt-3">

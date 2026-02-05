@@ -15,12 +15,14 @@
     createPickerSession,
     pollPickerSession,
     listSessionMediaItems,
+    listAlbumMediaItems,
     getStoredToken,
     initiateOAuthFlow, 
     handleOAuthCallback,
     isAuthenticated as checkAuth 
   } from "$lib/google-photos";
   import type { MediaItem } from "$lib/google-photos";
+  import { listAllImages, getStoredToken as getDriveStoredToken } from "$lib/google-drive";
   import { processMediaItems, fetchImage } from "$lib/gemini-client";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { store } from "$lib/store";
@@ -68,7 +70,8 @@
     begin_categorize, 
     end_categorize, 
     merge_jan_groups,
-    rename_jan_group 
+    rename_jan_group,
+    set_generating
   } from "$lib/photos-slice";
 
   import { categorizeMediaItems } from "$lib/gemini-client"; 
@@ -269,6 +272,7 @@
   let isPolling = false;
   let loading = false;
   let pollInterval: ReturnType<typeof setInterval>;
+  let staleFlagInterval: ReturnType<typeof setInterval> | null = null;
   let pollAttempts = 0;
 
   const MAX_POLL_ATTEMPTS = 60; // 2 minutes (approx)
@@ -298,11 +302,39 @@
          console.log("Resetting stuck 'categorizing' state on mount.");
          store.dispatch(end_categorize());
      }
+     if ($store.photos.generating) {
+         console.log("Resetting stuck 'generating' state on mount.");
+         store.dispatch(set_generating(false));
+     }
+
+     staleFlagInterval = setInterval(() => {
+         if ($store.photos.categorizing && catProgress.total === 0) {
+             console.log("Resetting stale 'categorizing' state.");
+             store.dispatch(end_categorize());
+         }
+         if ($store.photos.generating && progress.total === 0) {
+             console.log("Resetting stale 'generating' state.");
+             store.dispatch(set_generating(false));
+         }
+     }, 1000);
+
+     (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__ = importPhotosFromConfiguredAlbum;
+     (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__ = importPhotosFromDrive;
   });
 
 
   onDestroy(() => {
     stopPolling();
+    if (staleFlagInterval) {
+      clearInterval(staleFlagInterval);
+      staleFlagInterval = null;
+    }
+    if (typeof window !== "undefined" && (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__) {
+      delete (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__;
+    }
+    if (typeof window !== "undefined" && (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__) {
+      delete (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__;
+    }
   });
 
   function checkAuthError(e: any): boolean {
@@ -420,6 +452,10 @@
       });
 
       if ($user.uid) {
+         store.dispatch({
+           type: "photos/select_photos",
+           payload: { photos: finalItems },
+         });
          // Broadcast selection.
          // This puts ephemeral URLs in the store.
          // PhotoUploadManager will detect them and initiate upload.
@@ -437,6 +473,139 @@
     }
   }
 
+  async function importPhotosFromConfiguredAlbum(
+    mode: "replace" | "add" = "replace",
+    maxItems = 24,
+    preferredPhoto: string | null = null,
+  ) {
+    const albumId = (window as any).__GOOGLE_PHOTOS_ALBUM_ID__;
+    if (!albumId) {
+      throw new Error("No configured Google Photos album ID for import.");
+    }
+
+    selectionMode = mode;
+    const albumItems = await listAlbumMediaItems(albumId);
+    const processableItems = albumItems.filter((item) => {
+      const mime = (item.mimeType || "").toLowerCase();
+      const filename = (item.filename || "").toLowerCase();
+      const extension = filename.includes(".") ? filename.split(".").pop() || "" : "";
+      const mimeProcessable = mime === "image/jpeg" || mime === "image/jpg" || mime === "image/png";
+      const extensionProcessable = extension === "jpg" || extension === "jpeg" || extension === "png";
+      return mimeProcessable || extensionProcessable;
+    });
+    const sourceItems = processableItems.length > 0 ? processableItems : albumItems;
+    const cappedCount = Math.max(1, maxItems);
+    let orderedSourceItems = sourceItems;
+    if (preferredPhoto) {
+      const preferredIndex = sourceItems.findIndex(
+        (item) => item.id === preferredPhoto || item.filename === preferredPhoto,
+      );
+      if (preferredIndex < 0) {
+        throw new Error(`Preferred photo "${preferredPhoto}" not found in configured album.`);
+      }
+      const preferredItem = sourceItems[preferredIndex];
+      orderedSourceItems = [
+        preferredItem,
+        ...sourceItems.filter((item) => item.id !== preferredItem.id),
+      ];
+    }
+    const limitedItems = orderedSourceItems.slice(0, cappedCount);
+
+    let finalItems: MediaItem[] = [];
+    if (selectionMode === "replace") {
+      finalItems = limitedItems;
+    } else {
+      const map = new Map<string, MediaItem>();
+      photos.forEach((p) => map.set(p.id, p));
+      limitedItems.forEach((p) => map.set(p.id, p));
+      finalItems = Array.from(map.values());
+    }
+
+    finalItems.sort((a, b) => {
+      const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
+      const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
+      return tA - tB;
+    });
+
+    if (!$user.uid) {
+      throw new Error("No signed-in user to broadcast selected photos.");
+    }
+
+    await broadcast(firestore, $user.uid, {
+      type: "photos/select_photos",
+      payload: { photos: finalItems },
+    });
+    store.dispatch({
+      type: "photos/select_photos",
+      payload: { photos: finalItems },
+    });
+
+    return {
+      importedItems: finalItems.map((item) => ({
+        id: item.id,
+        filename: item.filename,
+        mimeType: item.mimeType,
+      })),
+    };
+  }
+
+  async function importPhotosFromDrive(mode: "replace" | "add" = "replace", maxItems = 24) {
+    const driveToken = getDriveStoredToken();
+    if (!driveToken) {
+      throw new Error("No Google Drive token available for import.");
+    }
+
+    const driveItems = await listAllImages(driveToken.access_token);
+    const sourceItems = driveItems
+      .filter((item) => item.mimeType?.startsWith("image/") && !!(item.apiUrl || item.webViewLink || item.thumbnailLink))
+      .map((item) => ({
+        id: item.id,
+        description: "",
+        productUrl: item.webViewLink || "",
+        baseUrl: item.apiUrl || item.thumbnailLink || item.webViewLink || "",
+        mimeType: item.mimeType || "image/jpeg",
+        filename: item.name || item.id,
+        mediaMetadata: {
+          creationTime: item.modifiedTime || "",
+          width: "0",
+          height: "0",
+        },
+      })) as MediaItem[];
+
+    const limitedItems = sourceItems.slice(0, Math.max(1, maxItems));
+
+    let finalItems: MediaItem[] = [];
+    if (mode === "replace") {
+      finalItems = limitedItems;
+    } else {
+      const map = new Map<string, MediaItem>();
+      photos.forEach((p) => map.set(p.id, p));
+      limitedItems.forEach((p) => map.set(p.id, p));
+      finalItems = Array.from(map.values());
+    }
+
+    if (!$user.uid) {
+      throw new Error("No signed-in user to broadcast selected photos.");
+    }
+
+    await broadcast(firestore, $user.uid, {
+      type: "photos/select_photos",
+      payload: { photos: finalItems },
+    });
+    store.dispatch({
+      type: "photos/select_photos",
+      payload: { photos: finalItems },
+    });
+
+    return {
+      importedItems: limitedItems.map((item) => ({
+        id: item.id,
+        filename: item.filename,
+        mimeType: item.mimeType,
+      })),
+    };
+  }
+
   import type { LiveGroup } from "$lib/gemini-client";
 
   let analysisGroups: LiveGroup[] = [];
@@ -446,6 +615,10 @@
       if (confirm("Remove all selected photos?")) {
           // Clear via broadcast
           if ($user.uid) {
+            store.dispatch({
+              type: "photos/select_photos",
+              payload: { photos: [] },
+            });
             broadcast(firestore, $user.uid, {
               type: "photos/select_photos",
               payload: { photos: [] },
@@ -872,6 +1045,7 @@
         <!-- Thumbnails Row (Selected / Uncategorized) -->
         <div
           class="flex flex-row flex-wrap gap-4 mt-2 mb-6 p-4 min-h-[160px]"
+          data-testid="selected-queue"
           style="display: flex; flex-direction: row; flex-wrap: wrap;"
         >
           {#if photos.length > 0}
@@ -883,6 +1057,13 @@
                 role="button"
                 tabindex="0"
                 data-testid="photo-thumbnail-{photo.id}"
+                data-upload-status={uploads[photo.id]?.status || 'none'}
+                data-photo-state={
+                  ((!!uploads[photo.id] && uploads[photo.id].status === 'uploading') ||
+                  (!uploads[photo.id] && photo.baseUrl.includes("googleusercontent.com")))
+                    ? 'uploading'
+                    : 'ready'
+                }
                 aria-label="View photo history"
                 on:click={() => goto(`/photo-history?id=${photo.id}`)}
                 on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${photo.id}`)}
@@ -945,7 +1126,7 @@
       
       <!-- CATEGORIZED RESULTS -->
       {#if Object.keys(janCodeToPhotos).length > 0}
-        <div class="bg-white p-6 rounded-lg shadow-md mt-8 border-t-4 border-teal-500">
+        <div class="bg-white p-6 rounded-lg shadow-md mt-8 border-t-4 border-teal-500" data-testid="categorized-section">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold text-gray-800">Categorized Photos</h2>
                 <div class="flex gap-2">
@@ -1039,6 +1220,13 @@
                                         role="button"
                                         tabindex="0"
                                         data-testid="photo-thumbnail-{item.id}"
+                                        data-upload-status={uploads[item.id]?.status || 'none'}
+                                        data-photo-state={
+                                          ((!!uploads[item.id] && uploads[item.id].status === 'uploading') ||
+                                          (!uploads[item.id] && item.baseUrl.includes("googleusercontent.com")))
+                                            ? 'uploading'
+                                            : 'ready'
+                                        }
                                         aria-label="View photo history"
                                         on:click={() => goto(`/photo-history?id=${item.id}`)}
                                         on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${item.id}`)}
