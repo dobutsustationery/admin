@@ -456,6 +456,7 @@
   let useShopifyDescription = false;
   let useShopifyImages = false;
   let useShopifyHandles = false; // Toggle for handles
+  let useShopifyWeights = false; // Toggle for weights
   let currentFilter:
     | "ALL"
     | "MATCH"
@@ -793,6 +794,7 @@
                     useShopifyDescription,
                     useShopifyImages,
                     useShopifyHandles,
+                    useShopifyWeights, // Pass weights option
                     ignoreShopifyQty
                 }
             }));

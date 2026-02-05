@@ -189,6 +189,7 @@ export interface ImportBatchOptions {
     useShopifyImages?: boolean;
     ignoreShopifyQty?: boolean;
     useShopifyHandles?: boolean;
+    useShopifyWeights?: boolean;
 }
 
 export const computeShopifyImportBatch = (
@@ -232,6 +233,7 @@ export const computeShopifyImportBatch = (
     const useDesc = options?.useShopifyDescription ?? false;
     const useImg = options?.useShopifyImages ?? false;
     const useHandles = options?.useShopifyHandles ?? false;
+    const useWeights = options?.useShopifyWeights ?? false;
     const ignoreQty = options?.ignoreShopifyQty ?? false;
 
     state.rows.forEach((row, index) => {
@@ -283,7 +285,61 @@ export const computeShopifyImportBatch = (
         const parentJan = csvHandleToJan.get(item.handle || "");
         const isInventoryHandleMatch = storeHandle && parentJan && !!inventoryIdToItem[parentJan];
 
-        if (filter === "MATCH" && (matchingKeys.length > 0 || hasListingMatch || isInventoryHandleMatch)) {
+        // Conflict Detection logic
+        let hasConflict = false;
+        if (exists) {
+            const match = exists;
+            const shopifyToDriveMap = state.activeFile ? {} : {}; // TODO: pass this if needed, or assume empty for batch logic
+
+            if (!useDesc) {
+                const existDesc = match.description || "";
+                const newDesc = item.description || "";
+                if (existDesc.trim() !== "" && newDesc.trim() !== "" && existDesc.trim() !== newDesc.trim()) {
+                    hasConflict = true;
+                }
+            }
+
+            // Weight Conflict
+            if (!useWeights) {
+                const existWeight = match.weight;
+                const newWeight = item.weight;
+                if (existWeight && newWeight && existWeight !== newWeight) hasConflict = true;
+            }
+
+            const existPrice = match.price;
+            const newPrice = item.price;
+            if (existPrice && newPrice && existPrice !== newPrice) hasConflict = true;
+
+            if (!useImg) {
+                const existImage = match.image;
+                const newImage = item.image;
+                if (existImage && newImage && existImage !== newImage) {
+                    // Simple check for now (ignoring drive map in batch for simplicity unless critical)
+                    hasConflict = true;
+                }
+            }
+
+            if (!useHandles) {
+                const existHandle = match.handle || "";
+                const newHandle = item.handle || "";
+                if (existHandle.trim() !== newHandle.trim()) {
+                    // Check against computed default?
+                    // Batch logic doesn't import generateHandle easily (helper). 
+                    // Assume mismatch = conflict.
+                    hasConflict = true; 
+                }
+            }
+
+            if (!ignoreQty) {
+                const existTotal = match.qty || 0;
+                const existShipped = match.shipped || 0;
+                const existRemaining = existTotal - existShipped;
+                const newRemaining = item.qty; 
+                if (existRemaining !== newRemaining) hasConflict = true;
+            }
+        }
+
+        if (filter === "MATCH" && (matchingKeys.length > 0 || hasListingMatch || isInventoryHandleMatch) && !hasConflict) {
             
             // Apply updates to ALL matching keys
             matchingKeys.forEach(key => {
