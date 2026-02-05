@@ -114,7 +114,13 @@ const parseNumberish = (value: string | undefined): number | undefined => {
 };
 
 const mapImportItem = (row: any): ImportItem => {
-  const janCode = (row["jan code"] || row["jan_code"] || row["jancode"] || "")
+  const janCode = (
+    row["jan code"] ||
+    row["jan_code"] ||
+    row["jancode"] ||
+    row["bar-code no."] ||
+    ""
+  )
     .toString()
     .trim();
   const countryOfOrigin = getValueByHeaders(row, [
