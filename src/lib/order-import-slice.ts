@@ -143,8 +143,8 @@ const mapImportItem = (row: any): ImportItem => {
         qty: parseInt(row['total pcs'] || row['qty'] || row["order q'ty pcs"] || "0", 10),
         carton: row['carton number'] || row['carton'] || "",
         hsCode: findHSCode(row),
-        // Map CSV 'price' (supplier cost) to 'cost', NOT 'price' (selling price)
-        cost: row['price'] ? parseFloat(row['price'].replace(/[^0-9.]/g, "")) : undefined,
+        // Map CSV 'unit price (yen)' (supplier cost) to 'cost'. Strict match required.
+        cost: row['unit price (yen)'] ? parseFloat(row['unit price (yen)'].replace(/[^0-9.]/g, "")) : undefined,
         price: undefined, 
         weight,
         countryOfOrigin: countryOfOrigin || undefined,
