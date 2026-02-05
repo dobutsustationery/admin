@@ -68,6 +68,7 @@
 
 <div class="container">
   <h1>SKU Review</h1>
+  <h2 class="summary">{itemsMissingData.length} exceptions found.</h2>
   <p>Items missing required data or with invalid formatting.</p>
   
   <label>
@@ -128,6 +129,11 @@
 <style>
   .container {
     padding: 2rem;
+  }
+  .summary {
+      font-size: 1.25rem;
+      color: #b91c1c;
+      margin-bottom: 0.5rem;
   }
   table {
     width: 100%;
