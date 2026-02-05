@@ -9,6 +9,7 @@ export interface ImportItem {
   hsCode?: string;
   processed?: boolean;
   price?: number;
+  cost?: number;
   weight?: number; // in grams
   countryOfOrigin?: string;
 }
@@ -142,7 +143,9 @@ const mapImportItem = (row: any): ImportItem => {
         qty: parseInt(row['total pcs'] || row['qty'] || row["order q'ty pcs"] || "0", 10),
         carton: row['carton number'] || row['carton'] || "",
         hsCode: findHSCode(row),
-        price: row['price'] ? parseFloat(row['price'].replace(/[^0-9.]/g, "")) : undefined,
+        // Map CSV 'price' (supplier cost) to 'cost', NOT 'price' (selling price)
+        cost: row['price'] ? parseFloat(row['price'].replace(/[^0-9.]/g, "")) : undefined,
+        price: undefined, 
         weight,
         countryOfOrigin: countryOfOrigin || undefined,
     };
@@ -307,7 +310,7 @@ export const computeOrderImportBatch = (
                      ...existingItem, 
                      janCode: item.janCode,
                      qty: item.qty, // Delta
-                     price: item.price,
+                     cost: item.cost, // Update Cost
                      weight: item.weight,
                      hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode, 
                      countryOfOrigin: existingItem.countryOfOrigin ? existingItem.countryOfOrigin : item.countryOfOrigin

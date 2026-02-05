@@ -26,6 +26,7 @@
 
         // 2. Required Fields (excluding ignored ones)
         if (!item.price) missing.push("Price");
+        if (!item.cost) missing.push("Cost");
         if (!item.weight) missing.push("Weight");
         if (!item.image) missing.push("Image");
         if (!item.hsCode) missing.push("HS Code");
