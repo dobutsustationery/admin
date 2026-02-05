@@ -279,7 +279,23 @@ export const computeOrderImportBatch = (
 
         const matches = janToItems[item.janCode] || [];
         const exists = matches.length > 0;
-        const isConflict = matches.length > 1;
+        let isConflict = matches.length > 1;
+
+        if (exists && !isConflict) {
+            // Check for Data Mismatches (HS, Weight, COO) to match UI logic
+            const { item: existingItem } = matches[0];
+            
+            const existingHS = existingItem.hsCode;
+            const newHS = item.hsCode;
+            const existingWeight = existingItem.weight;
+            const newWeight = item.weight;
+            const existingCOO = existingItem.countryOfOrigin;
+            const newCOO = item.countryOfOrigin;
+
+            if (existingHS && newHS && existingHS !== newHS) isConflict = true;
+            if (existingWeight && newWeight && existingWeight !== newWeight) isConflict = true;
+            if (existingCOO && newCOO && existingCOO !== newCOO) isConflict = true;
+        }
 
         if (filter === "MATCH" && exists && !isConflict) {
              const { id, item: existingItem } = matches[0];
