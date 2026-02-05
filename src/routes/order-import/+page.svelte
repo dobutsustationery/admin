@@ -33,6 +33,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import { update_item, bulk_import_items } from "$lib/inventory";
   import Papa from "papaparse";
+  import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
 
   // --- State from Redux ---
   $: activeFile = $store.orderImport.activeFile;
@@ -658,6 +659,7 @@ interface AnalyzedItem extends ImportItem {
                   <thead>
                     <tr>
                       <th>Status</th>
+                      <th>Image</th>
                       <th>JAN</th>
                       <th>HS Code</th>
                       <th>Description</th>
@@ -672,6 +674,18 @@ interface AnalyzedItem extends ImportItem {
                           <span class="badge {item.status.toLowerCase()}"
                             >{item.status}</span
                           >
+                        </td>
+                        <td>
+                            {#if item.existingItem?.image}
+                                <ImageThumbnail 
+                                    src={item.existingItem.image} 
+                                    alt={item.description} 
+                                    width="40px" 
+                                    height="40px" 
+                                />
+                            {:else}
+                                <span class="text-muted">-</span>
+                            {/if}
                         </td>
                         <td>{item.janCode}</td>
                         <td>{item.hsCode || '-'}</td>
