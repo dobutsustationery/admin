@@ -335,22 +335,44 @@ export const computeOrderImportBatch = (
     }
 
     if (filter === "MATCH" && exists && !isConflict) {
-      const { id, item: existingItem } = matches[0];
-      updates.push({
-        type: "update",
-        id: id,
-        item: {
-          ...existingItem,
-          janCode: item.janCode,
-          qty: item.qty, // Delta
-          cost: item.cost, // Update Cost
-          weight: item.weight,
-          hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode,
-          countryOfOrigin: existingItem.countryOfOrigin
-            ? existingItem.countryOfOrigin
-            : item.countryOfOrigin,
-        },
-      });
+      // If Qty is 0 and multiple matches exist, update ALL matches (e.g. Cost update across splits)
+      if (item.qty === 0 && matches.length > 1) {
+          matches.forEach(({ id, item: existingItem }) => {
+              updates.push({
+                type: "update",
+                id: id,
+                item: {
+                  ...existingItem,
+                  janCode: item.janCode,
+                  qty: 0, // Delta is 0
+                  cost: item.cost, // Update Cost
+                  weight: item.weight,
+                  hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode,
+                  countryOfOrigin: existingItem.countryOfOrigin
+                    ? existingItem.countryOfOrigin
+                    : item.countryOfOrigin,
+                },
+              });
+          });
+      } else {
+          // Standard Single Match Update
+          const { id, item: existingItem } = matches[0];
+          updates.push({
+            type: "update",
+            id: id,
+            item: {
+              ...existingItem,
+              janCode: item.janCode,
+              qty: item.qty, // Delta
+              cost: item.cost, // Update Cost
+              weight: item.weight,
+              hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode,
+              countryOfOrigin: existingItem.countryOfOrigin
+                ? existingItem.countryOfOrigin
+                : item.countryOfOrigin,
+            },
+          });
+      }
       indices.push(index);
     } else if (filter === "NEW" && !exists) {
       updates.push({
