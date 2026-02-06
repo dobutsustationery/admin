@@ -676,11 +676,19 @@
       const listed = new Set<string>();
       const idToHandle = $store.listings.idToHandle || {};
       const idToItem = $store.inventory.idToItem || {};
+      const handleToListing = $store.listings.handleToListing || {};
       
       for (const itemId in idToHandle) {
           const item = idToItem[itemId];
-          if (item && item.janCode) {
-              listed.add(item.janCode);
+          const handle = idToHandle[itemId];
+          const listing = handleToListing[handle];
+          
+          if (item && item.janCode && listing) {
+              // Only consider "Listed" if it has images (implying it went through creation flow)
+              // This prevents placeholder listings (from inventory imports) from hiding the group.
+              if (listing.images && listing.images.length > 0) {
+                  listed.add(item.janCode);
+              }
           }
       }
       return listed;
