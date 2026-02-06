@@ -68,7 +68,7 @@ const normalizeHeaderKey = (key: string): string => {
     .normalize("NFKC")
     .replace(/\uFEFF/g, "")
     .toLowerCase()
-    .replace(/\r?\n/g, " ")
+    .replace(/[\r\n]+/g, " ") // Robust newline handling
     .replace(/\s+/g, " ")
     .trim();
 };
@@ -145,7 +145,7 @@ const mapImportItem = (row: any): ImportItem => {
           (h) => h === "qty",
           (h) => h.includes("q'ty"),
           (h) => h.includes("quantity"),
-          (h) => h.includes("order q'ty"),
+          (h) => /order\s*q'?ty/.test(h), // Regex for "order qty" or "order q'ty"
       ]) || "0",
       10
   );
