@@ -669,7 +669,25 @@
 
   let hoveredRowIndex: number | null = null;
   let hoveredColumn: "jan" | "photos" | null = null;
-  $: categorizedEntries = Object.entries(janCodeToPhotos) as [string, MediaItem[]][];
+  let showCompleted = false;
+
+  // Compute Listed JANs
+  $: listedJans = (() => {
+      const listed = new Set<string>();
+      const idToHandle = $store.listings.idToHandle || {};
+      const idToItem = $store.inventory.idToItem || {};
+      
+      for (const itemId in idToHandle) {
+          const item = idToItem[itemId];
+          if (item && item.janCode) {
+              listed.add(item.janCode);
+          }
+      }
+      return listed;
+  })();
+
+  $: categorizedEntries = (Object.entries(janCodeToPhotos) as [string, MediaItem[]][])
+      .filter(([jan, _]) => showCompleted || !listedJans.has(jan));
 
   // JAN Validation (EAN-13 Checksum)
   function isValidJan(code: string): boolean {
@@ -1129,7 +1147,12 @@
         <div class="bg-white p-6 rounded-lg shadow-md mt-8 border-t-4 border-teal-500" data-testid="categorized-section">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold text-gray-800">Categorized Photos</h2>
-                <div class="flex gap-2">
+                <div class="flex gap-4 items-center">
+                     <label class="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded border border-gray-200 cursor-pointer hover:bg-gray-100 transition">
+                         <input type="checkbox" bind:checked={showCompleted} class="rounded text-teal-600 focus:ring-teal-500">
+                         <span>Show completed groups</span>
+                     </label>
+
                      <button
                         on:click={handleProcessImages}
                         disabled={isEditing}
