@@ -1,10 +1,21 @@
+Importing the amifa order messes up conflicts because they get processed and
+discarded if we take new items. e.g. jan 4542804109245 Also JANs like 4542804129854
+are listed as matches but we think they are new products.
+
+Trying to merge in kalita products seemed to both not find enough of them
+in the big list, and confused the photos when they were pulled into create
+listings.
+
+Category is at the wrong level -- it is on each inventory item, but should be
+per listing, and *required* for every listing.
+
+In the standardized "working on this for automation" we aren't including cost,
+so now that is showing up as an exception on import.
+
 Listings are working! But lo, no categories :(
 
 SKU descriptions don't match the listing title, and probably should just to avoid
 confusion.
-
-Manual edits resize the photos small - whether we crop or remove bg - it should never
-resize.
 
 The processed image doesn't seem to update on the listing, which is wrong. The listing
 should pull the photo by its id so that future processing affects it.
@@ -17,9 +28,3 @@ all the handles equal, it only grouped the first two. I had to do it
 againt to get the full group?
 
 "Allocation" and "Stock" are the same frickin' thing.
-
-The batch complete animation happens more than once when it shouldn't.
-
-Unprocessed photos reappeared in the categorized rows, but when you click the history
-they look like the processed photos.
-

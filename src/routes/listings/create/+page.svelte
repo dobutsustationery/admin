@@ -12,7 +12,8 @@
       recalculate_batch_navigation,
       set_proposal_handle_thunk,
       clear_celebration,
-      mark_celebrated
+      mark_celebrated,
+      set_global_prompts
   } from "$lib/listing-creation-slice";
   import { goto } from '$app/navigation';
 
@@ -48,6 +49,9 @@
 
   let showDescPromptModal = false;
   let descPromptValue = "";
+
+  let showVariantPromptModal = false;
+  let variantPromptValue = "";
   
   let showCelebration = false;
   let showReturnToDashboard = false;
@@ -381,6 +385,17 @@
       showDescPromptModal = false;
   }
 
+  function openVariantPrompt() {
+      const prompt = listingCreation.globalVariantPrompt || "";
+      variantPromptValue = prompt;
+      showVariantPromptModal = true;
+  }
+
+  function saveVariantPrompt() {
+      store.dispatch(set_global_prompts({ variantPrompt: variantPromptValue }));
+      showVariantPromptModal = false;
+  }
+
   $: if (showBodyModal && bodyModalJan) {
       const next = $store.listingCreation.proposals[bodyModalJan]?.bodyHtml || "";
       if (next !== bodyModalValue) {
@@ -463,9 +478,16 @@
                 <br/>
             {/if}
 
-            <button on:click={handleGenerate} class="text-blue-600 hover:underline">
-                Scan for matched items
-            </button>
+            <div class="flex items-center justify-center gap-2">
+                <button on:click={handleGenerate} class="text-blue-600 hover:underline">
+                    Scan for matched items
+                </button>
+                <button on:click={openVariantPrompt} class="text-gray-400 hover:text-gray-600" title="Edit Subtype Prompt">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
+                    </svg>
+                </button>
+            </div>
         </div>
     {/if}
 </div>
@@ -510,6 +532,22 @@
             <div class="modal-actions">
                 <button class="btn-cancel" on:click={() => { showDescPromptModal = false; }}>Cancel</button>
                 <button class="btn-save" on:click={runDescriptionPrompt}>Generate</button>
+            </div>
+        </div>
+    </div>
+{/if}
+
+{#if showVariantPromptModal}
+    <div class="modal-backdrop prompt-backdrop">
+        <div class="modal prompt-modal">
+            <h3 class="modal-title">Edit Subtype Detection Prompt</h3>
+            <div class="mb-4 text-sm text-gray-500">
+                This prompt is used by Gemini to detect variants in photos. It must return strict JSON in the specified format.
+            </div>
+            <textarea class="body-textarea" bind:value={variantPromptValue}></textarea>
+            <div class="modal-actions">
+                <button class="btn-cancel" on:click={() => { showVariantPromptModal = false; }}>Cancel</button>
+                <button class="btn-save" on:click={saveVariantPrompt}>Save</button>
             </div>
         </div>
     </div>

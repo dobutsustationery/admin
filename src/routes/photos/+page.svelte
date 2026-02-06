@@ -23,7 +23,7 @@
   } from "$lib/google-photos";
   import type { MediaItem } from "$lib/google-photos";
   import { listAllImages, getStoredToken as getDriveStoredToken } from "$lib/google-drive";
-  import { processMediaItems, fetchImage } from "$lib/gemini-client";
+  import { fetchImage } from "$lib/gemini-client";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { store } from "$lib/store";
   import { broadcast } from "$lib/redux-firestore";
@@ -311,10 +311,6 @@
          if ($store.photos.categorizing && catProgress.total === 0) {
              console.log("Resetting stale 'categorizing' state.");
              store.dispatch(end_categorize());
-         }
-         if ($store.photos.generating && progress.total === 0) {
-             console.log("Resetting stale 'generating' state.");
-             store.dispatch(set_generating(false));
          }
      }, 1000);
 
@@ -606,11 +602,6 @@
     };
   }
 
-  import type { LiveGroup } from "$lib/gemini-client";
-
-  let analysisGroups: LiveGroup[] = [];
-  let progress = { current: 0, total: 0, message: "" };
-
   function handleClearPhotos() {
       if (confirm("Remove all selected photos?")) {
           // Clear via broadcast
@@ -625,74 +616,6 @@
             });
           }
       }
-  }
-
-  async function handleGenerate() {
-    if (photos.length === 0) return;
-    // ... rest of handleGenerate
-    
-    //store.dispatch({ type: "photos/set_generating", payload: true });
-    error = "";
-    analysisGroups = [];
-    progress = { current: 0, total: photos.length, message: "Initializing..." };
-
-    try {
-      // Use the stored token from Signin (localStorage)
-      const token = getStoredToken();
-      if (!token) throw new Error("Not authenticated");
-
-      console.log("Using token scopes:", token.scope);
-      const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
-
-      const results = await processMediaItems(
-        photos.map((p) => ({ baseUrl: p.baseUrl, id: p.id })),
-        token.access_token,
-        apiKey,
-        (groups, prog) => {
-          analysisGroups = groups;
-          progress = prog;
-        },
-      );
-
-      // Persist Splits to Redux
-      if ($user.uid && results.length > 0) {
-          const splitResults = results.filter(r => r.janCode.includes(':'));
-          
-          if (splitResults.length > 0) {
-              console.log(`[Generate] Persisting ${splitResults.length} split groups...`);
-              
-              // Helper to find photo object
-              const findPhoto = (id: string) => {
-                  return photos.find(p => p.id === id) || 
-                         Object.values(janCodeToPhotos).flat().find(p => p.id === id);
-              };
-
-              for (const group of splitResults) {
-                  // We need to move these photos to the new specific JAN key (e.g. "123:Blue")
-                  // categorize_photo handles moving/assigning.
-                  
-                  if (group.photoIds) {
-                      for (const id of group.photoIds) {
-                          const photo = findPhoto(id);
-                          if (photo) {
-                              broadcast(firestore, $user.uid, {
-                                  type: "photos/categorize_photo",
-                                  payload: { janCode: group.janCode, photo }
-                              });
-                          }
-                      }
-                  }
-              }
-          }
-      }
-    } catch (e: any) {
-      checkAuthError(e);
-      console.error("Generation error:", e);
-      error = e.message;
-    } finally {
-      store.dispatch({ type: "photos/set_generating", payload: false });
-      progress = { ...progress, message: "Done" };
-    }
   }
 
   // Merge Logic
@@ -730,9 +653,12 @@
 
   // JAN Validation (EAN-13 Checksum)
   function isValidJan(code: string): boolean {
-      if (!/^\d{13}$/.test(code)) return false; // Must be 13 digits for standard JAN
+      // Split to handle subtype suffix (e.g. "4542804104370:Blue")
+      const baseJan = code.split(':')[0];
       
-      const digits = code.split('').map(Number);
+      if (!/^\d{13}$/.test(baseJan)) return false; // Must be 13 digits for standard JAN
+      
+      const digits = baseJan.split('').map(Number);
       const checksum = digits.pop()!;
       
       const sum = digits.reduce((acc, curr, idx) => {
@@ -910,106 +836,6 @@
 
   <!-- CONTENT AREA -->
   <div class="bg-white p-6 rounded-lg shadow-md min-h-[400px]" data-testid="selection-area">
-    <!-- Progress Bar -->
-    {#if isGenerating || analysisGroups.length > 0}
-      <div class="mb-8">
-        <div class="flex justify-between text-sm text-gray-600 mb-2">
-          <span class="font-medium">{progress.message}</span>
-          <span>{progress.current} / {progress.total}</span>
-        </div>
-        <div class="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
-          <div
-            class="bg-blue-600 h-4 rounded-full transition-all duration-300 ease-out"
-            style="width: {progress.total
-              ? (progress.current / progress.total) * 100
-              : 0}%"
-          ></div>
-        </div>
-      </div>
-    {/if}
-
-    <!-- Analysis Groups / Results -->
-    {#if analysisGroups.length > 0}
-      <div class="space-y-8">
-        {#each analysisGroups as group}
-          <!-- ... existing group rendering ... -->
-          <div
-            class="bg-slate-50 relative"
-            style="margin: 1em; padding: 0.5em; border: 2px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"
-          >
-            <!-- JAN Badge -->
-            <div class="absolute -top-4 left-6">
-              <!-- ... badge content ... -->
-              <span
-                class="bg-blue-600 text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-2"
-              >
-                <span>JAN: {group.janCode}</span>
-                {#if group.status === "collecting"}
-                  <span
-                    class="w-2 h-2 bg-yellow-300 rounded-full animate-pulse"
-                    title="Collecting images"
-                  ></span>
-                {:else if group.status === "generating"}
-                  <span
-                    class="w-2 h-2 bg-purple-300 rounded-full animate-pulse"
-                    title="Generating"
-                  ></span>
-                {:else if group.status === "done"}
-                  <span class="w-2 h-2 bg-green-300 rounded-full" title="Done"
-                  ></span>
-                {/if}
-              </span>
-            </div>
-
-            <!-- Thumbnails -->
-            <div
-              class="flex flex-row flex-wrap gap-4 mt-6 mb-6 p-4"
-              style="display: flex; flex-direction: row; flex-wrap: wrap;"
-            >
-              {#each group.imageUrls as url, i}
-                <div
-                  class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative"
-                  style="width: 148px; height: 148px; flex-shrink: 0;"
-                >
-                  <SecureImage
-                    src={displayUrl(url, "=w296-h296-c")}
-                    alt="Product Thumbnail"
-                    className="w-full h-full object-cover"
-                  />
-                  <!-- Spinner Overlay -->
-                  {#if group.imageStatuses && group.imageStatuses[i] === "optimizing"}
-                    <div
-                      class="absolute inset-0 bg-white/70 flex items-center justify-center z-10 transition-opacity duration-300"
-                    >
-                      <div
-                        class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"
-                      ></div>
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-
-            <!-- Description -->
-            {#if group.description}
-              <div
-                class="prose prose-sm max-w-none bg-white p-5 rounded-lg border border-gray-200 shadow-inner"
-              >
-                {@html group.description}
-              </div>
-            {:else}
-              <div
-                class="h-24 flex items-center justify-center bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 text-gray-400 text-sm italic"
-              >
-                <span class="animate-pulse">Waiting for AI description...</span>
-              </div>
-            {/if}
-          </div>
-        {/each}
-      </div>
-    {/if}
-
-
 
     {#if error}
       <div class="p-4 bg-red-50 text-red-700 rounded mb-4 mt-6">
@@ -1017,7 +843,7 @@
       </div>
     {/if}
 
-    {#if !isGenerating && analysisGroups.length === 0}
+    {#if !isGenerating}
       <div
         class="bg-slate-50 relative mt-8"
         style="margin: 1em; padding: 0.5em; border: 2px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"
@@ -1072,14 +898,6 @@
                 class="bg-teal-600 text-white px-4 py-2 rounded-md font-medium hover:bg-teal-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
                 >
                 Categorize Photos
-                </button>
-                
-                <button
-                on:click={handleGenerate}
-                disabled={isGenerating || isCategorizing}
-                class="bg-purple-600 text-white px-4 py-2 rounded-md font-medium hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
-                >
-                Generate Descriptions
                 </button>
                 
              {/if}
