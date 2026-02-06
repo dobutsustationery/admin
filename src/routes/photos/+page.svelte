@@ -644,7 +644,7 @@
       console.log("Using token scopes:", token.scope);
       const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
 
-      await processMediaItems(
+      const results = await processMediaItems(
         photos.map((p) => ({ baseUrl: p.baseUrl, id: p.id })),
         token.access_token,
         apiKey,
@@ -653,6 +653,38 @@
           progress = prog;
         },
       );
+
+      // Persist Splits to Redux
+      if ($user.uid && results.length > 0) {
+          const splitResults = results.filter(r => r.janCode.includes(':'));
+          
+          if (splitResults.length > 0) {
+              console.log(`[Generate] Persisting ${splitResults.length} split groups...`);
+              
+              // Helper to find photo object
+              const findPhoto = (id: string) => {
+                  return photos.find(p => p.id === id) || 
+                         Object.values(janCodeToPhotos).flat().find(p => p.id === id);
+              };
+
+              for (const group of splitResults) {
+                  // We need to move these photos to the new specific JAN key (e.g. "123:Blue")
+                  // categorize_photo handles moving/assigning.
+                  
+                  if (group.photoIds) {
+                      for (const id of group.photoIds) {
+                          const photo = findPhoto(id);
+                          if (photo) {
+                              broadcast(firestore, $user.uid, {
+                                  type: "photos/categorize_photo",
+                                  payload: { janCode: group.janCode, photo }
+                              });
+                          }
+                      }
+                  }
+              }
+          }
+      }
     } catch (e: any) {
       checkAuthError(e);
       console.error("Generation error:", e);
