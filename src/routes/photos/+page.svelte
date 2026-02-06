@@ -684,9 +684,8 @@
           const listing = handleToListing[handle];
           
           if (item && item.janCode && listing) {
-              // Only consider "Listed" if it has images (implying it went through creation flow)
-              // This prevents placeholder listings (from inventory imports) from hiding the group.
-              if (listing.images && listing.images.length > 0) {
+              // Only consider "Listed" if it has a bodyHtml (implying description generated/listing created)
+              if (listing.bodyHtml) {
                   listed.add(item.janCode);
               }
           }
