@@ -47,7 +47,7 @@ export const initialState: OrderImportState = {
 // Heuristic to find HS Code in parsed columns if not explicitly named
 const findHSCode = (row: any): string => {
   const candidates = Object.entries(row).filter(([key, val]) => {
-    return /hs\s*code/.test(key.toLowerCase());
+    return /hs[\s-]*code/.test(key.toLowerCase());
   });
 
   for (const [key, val] of candidates) {
@@ -139,6 +139,17 @@ const mapImportItem = (row: any): ImportItem => {
     ]),
   );
 
+  const qty = parseInt(
+      getValueByHeaders(row, [
+          (h) => h === "total pcs",
+          (h) => h === "qty",
+          (h) => h.includes("q'ty"),
+          (h) => h.includes("quantity"),
+          (h) => h.includes("order q'ty"),
+      ]) || "0",
+      10
+  );
+
   return {
     janCode,
     description:
@@ -150,10 +161,7 @@ const mapImportItem = (row: any): ImportItem => {
       row["name"] ||
       row["product name（product number）"] ||
       "",
-    qty: parseInt(
-      row["total pcs"] || row["qty"] || row["order q'ty pcs"] || "0",
-      10,
-    ),
+    qty,
     carton: row["carton number"] || row["carton"] || "",
     hsCode: findHSCode(row),
     // Map CSV 'unit price (yen)' (supplier cost) to 'cost'. Strict match required.
