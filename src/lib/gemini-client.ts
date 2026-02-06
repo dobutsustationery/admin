@@ -188,6 +188,7 @@ export interface ProcessingResult {
   description: string;
   categories: string;
   imageUrls: string[];
+  photoIds: string[];
 }
 
 /**
@@ -196,6 +197,7 @@ export interface ProcessingResult {
 export interface LiveGroup {
   janCode: string;
   imageUrls: string[];
+  photoIds: string[];
   imageStatuses: ("pending" | "optimizing" | "done")[];
   description?: string;
   categories?: string;
@@ -214,6 +216,7 @@ export async function processMediaItems(
   const groups: {
     janCode: string;
     images: {
+      id: string;
       baseUrl: string;
       dataPromise: Promise<{ data: string; mimeType: string }>;
     }[];
@@ -276,6 +279,7 @@ export async function processMediaItems(
           liveGroups.push({
             janCode,
             imageUrls: [],
+            photoIds: [],
             imageStatuses: [],
             status: "collecting",
           });
@@ -289,6 +293,7 @@ export async function processMediaItems(
           liveGroups.push({
             janCode: "UNKNOWN",
             imageUrls: [],
+            photoIds: [],
             imageStatuses: [],
             status: "collecting",
           });
@@ -298,10 +303,12 @@ export async function processMediaItems(
 
       // Add image to group
       groups[targetGroupIdx].images.push({
+        id: item.id,
         baseUrl: item.baseUrl,
         dataPromise: imageDataPromise,
       });
       liveGroups[targetGroupIdx].imageUrls.push(item.baseUrl);
+      liveGroups[targetGroupIdx].photoIds.push(item.id);
       liveGroups[targetGroupIdx].imageStatuses.push("pending");
 
       notify(`Added to ${liveGroups[targetGroupIdx].janCode}`, processedCount);
@@ -425,6 +432,7 @@ export async function processMediaItems(
               newLiveGroupsToAdd.push({
                 janCode: newJan,
                 imageUrls: newImages.map((img) => img.baseUrl),
+                photoIds: newImages.map((img) => img.id),
                 imageStatuses: newImages.map(() => "pending"),
                 status: "generating",
               });
@@ -491,6 +499,7 @@ export async function processMediaItems(
       description: description || "Failed to generate",
       categories: categories,
       imageUrls: group.images.map((i) => i.baseUrl),
+      photoIds: group.images.map((i) => i.id),
     });
 
     // 3. Edit Images (Background Removal & Crop)
