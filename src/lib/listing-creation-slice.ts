@@ -2,9 +2,10 @@ import { createSlice, type PayloadAction, type ThunkAction } from "@reduxjs/tool
 import type { AnyAction } from "redux"; 
 import type { GlobalState } from "./store";
 import type { Item } from "./inventory";
-import { imagePrompt, fetchImage } from "./gemini-client";
+import { imagePrompt, fetchImage, detectVariants } from "./gemini-client";
 import { getStoredToken } from "./google-photos";
 import type { ListingImage } from "./listings-slice";
+import { categorize_photo, uncategorize_photo } from "./photos-slice";
 
 // Define AppThunk locally if not exported
 export type AppThunk<ReturnType = void> = ThunkAction<
@@ -70,6 +71,7 @@ export interface ListingCreationState {
   // Global Defaults (Persisted)
   globalTitlePrompt?: string;
   globalDescriptionPrompt?: string;
+  globalVariantPrompt?: string;
 }
 
 
@@ -83,7 +85,29 @@ export interface ListingCreationState {
     activeBatchCreatedAt: undefined,
     hasCelebrated: false,
     globalTitlePrompt: "Generate a concise, catchy product title for this product. Return ONLY the title text. No quotes.",
-    globalDescriptionPrompt: "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text."
+    globalDescriptionPrompt: "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.",
+    globalVariantPrompt: `You are a strict JSON generator. Look at these images.
+        Task: Group these images into Product Variants (e.g. Red vs Blue) based on their packaging.
+
+        RULES:
+        1. Identify variants based on **FRONT FACES ONLY**.
+        2. If there is only ONE unique front face (e.g. 1 Front + 3 Backs), return NO variants.
+        3. Ignore Backs, Ingredients, or Nutrition Labels for the purpose of *counting* variants.
+        4. If you find multiple variants, assign ALL images (Fronts AND Backs) to them.
+        
+        OUTPUT FORMAT:
+        If NO variants (Same Product):
+        { "variants": [] }
+
+        If YES (Multiple Variants):
+        {
+            "variants": [
+                { "name": "Variant Name", "indices": [0, 1] },
+                { "name": "Variant Name", "indices": [2, 3] }
+            ]
+        }
+        
+        Return ONLY valid JSON. No markdown. No conversation.`
   };
   
   // --- Slice ---
@@ -95,9 +119,10 @@ export interface ListingCreationState {
       set_drive_connection_status: (state, action: PayloadAction<'unknown' | 'connected' | 'disconnected'>) => {
           state.driveConnectionStatus = action.payload;
       },
-      set_global_prompts: (state, action: PayloadAction<{ titlePrompt?: string, descriptionPrompt?: string }>) => {
+      set_global_prompts: (state, action: PayloadAction<{ titlePrompt?: string, descriptionPrompt?: string, variantPrompt?: string }>) => {
           if (action.payload.titlePrompt) state.globalTitlePrompt = action.payload.titlePrompt;
           if (action.payload.descriptionPrompt) state.globalDescriptionPrompt = action.payload.descriptionPrompt;
+          if (action.payload.variantPrompt) state.globalVariantPrompt = action.payload.variantPrompt;
       },
       // Session / Batch
       add_proposals: (state, action: PayloadAction<ListingProposal[]>) => {
@@ -451,18 +476,106 @@ export default listingCreationSlice.reducer;
 // --- Thunks ---
 
 export const generate_proposals = (): AppThunk => async (dispatch, getState) => {
-    const { inventory, photos, listingCreation } = getState(); // Access listingCreation for globals
+    let { inventory, photos, listingCreation } = getState(); 
     
-    // 1. Get Access Token (Still needed for image fetching/Descriptions later, but not for discovery here)
+    // 1. Get Access Token
     const tokenData = getStoredToken();
+    
+    // Local copy of photos map to track splits synchronously
+    const localJanCodeToPhotos = { ...(photos.janCodeToPhotos || {}) };
+
     if (tokenData) {
          dispatch(set_drive_connection_status('connected'));
+         const accessToken = tokenData.access_token;
+         const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
+
+         // 1.5 Variant Detection (Auto-Split)
+         // Find candidates: Groups with > 1 image that are NOT already split (no colon)
+         // And check if they match an inventory item that needs splitting (single item)?
+         // For now, just analyze photo groups.
+         
+         const candidates = Object.entries(localJanCodeToPhotos).filter((entry): entry is [string, any[]] => {
+            const [key, images] = entry as [string, any[]];
+            return !key.includes(':') && images.length > 1;
+         });
+         
+         console.log(`[Generate] Candidates for variant detection (Group size > 1, no colon):`, candidates.map(c => c[0]));
+         
+         if (candidates.length > 0) {
+             console.log(`[Generate] Analyzing ${candidates.length} photo groups for variants...`);
+             console.log(`[Generate] Keys BEFORE split:`, Object.keys(localJanCodeToPhotos));
+             
+             for (const [janCode, groupImages] of candidates) {
+                 try {
+                     // Optimization: Only scan if we haven't already? (How to track?)
+                     // For now, scan every time. This is slow but correct.
+                     
+                     // Fetch images data
+                     // Limit to first 12 images to save tokens/time
+                     const imagesToScan = (groupImages as any[]).slice(0, 12);
+                     console.log(`[Generate] Scanning ${janCode}: ${imagesToScan.length} images.`);
+
+                     const imagePromises = imagesToScan.map((img: any) => {
+                         const url = img.baseUrl || img.productUrl;
+                         return fetchImage(url, accessToken);
+                     });
+                     
+                     const imagesData = await Promise.all(imagePromises);
+                     const prompt = listingCreation.globalVariantPrompt;
+                     const variants = await detectVariants(imagesData, accessToken, apiKey, prompt);
+                     
+                     console.log(`[Generate] Result for ${janCode}: ${variants.length} variants found.`);
+
+                     if (variants.length > 1) {
+                         console.log(`[Generate] Splitting ${janCode} into ${variants.length} variants:`, variants);
+                         
+                         // Apply Split
+                         for (const v of variants) {
+                             const safeName = (v.name || "Variant").trim();
+                             const newJan = `${janCode}:${safeName}`;
+                             const indices = v.indices;
+                             
+                             // Initialize new group in local map
+                             if (!localJanCodeToPhotos[newJan]) {
+                                 localJanCodeToPhotos[newJan] = [];
+                             }
+
+                             for (const idx of indices) {
+                                 if (idx < imagesToScan.length) {
+                                     const img = imagesToScan[idx]; // The specific media item
+                                     
+                                     // Add to new group (Local & Redux)
+                                     localJanCodeToPhotos[newJan].push(img);
+                                     dispatch(categorize_photo({ 
+                                         janCode: newJan, 
+                                         photo: img 
+                                     }));
+
+                                     // Remove from original group (Redux only - we delete the whole key locally later)
+                                     dispatch(uncategorize_photo({
+                                         janCode: janCode,
+                                         photoId: img.id
+                                     }));
+                                 }
+                             }
+                         }
+                         
+                         // Remove the original group from local map as it's now split
+                         delete localJanCodeToPhotos[janCode];
+                     }
+                 } catch (e) {
+                     console.error(`[Generate] Failed variant analysis for ${janCode}`, e);
+                 }
+             }
+             
+             console.log(`[Generate] Keys AFTER split (Local):`, Object.keys(localJanCodeToPhotos));
+         }
     } else {
          dispatch(set_drive_connection_status('disconnected'));
     }
 
     // 2. Group Photo Keys by Base JAN
-    const organizedJans = Object.keys(photos.janCodeToPhotos || {});
+    const organizedJans = Object.keys(localJanCodeToPhotos);
     const baseJanMap: Record<string, { key: string, subtype: string | null }[]> = {};
     
     organizedJans.forEach(key => {
@@ -470,6 +583,8 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
         if (!baseJanMap[base]) baseJanMap[base] = [];
         baseJanMap[base].push({ key, subtype });
     });
+    
+    console.log(`[Generate] Base JAN Map constructed:`, JSON.stringify(baseJanMap, null, 2));
 
     const candidates: ListingProposal[] = [];
     
@@ -489,8 +604,50 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
              const firstItem = inventoryItems[0].item;
              const inventoryIds = inventoryItems.map(x => x.id); // All available items for this JAN
 
-             // Determine Title
+             // Initial Title
              let title = `[DRAFT] ${firstItem.description || 'New Product'}`;
+             let bodyHtml = "<p><i>Generating description...</i></p>";
+             
+             // --- Generate Description & Title ---
+             // We use photos from the FIRST group (or all groups?)
+             // Use the first 6 images from the combined set for description generation
+             try {
+                 const tokenData = getStoredToken();
+                 const accessToken = tokenData?.access_token || "";
+                 
+                 const allImages = photoGroups.flatMap(pg => localJanCodeToPhotos[pg.key] || []);
+                 const imagesToUse = allImages.slice(0, 6);
+                 
+                 if (imagesToUse.length > 0) {
+                     console.log(`[Generate] Generating description for ${baseJan} using ${imagesToUse.length} images...`);
+                     const imagePromises = imagesToUse.map((img: any) => {
+                         const url = img.baseUrl || img.productUrl;
+                         return fetchImage(url, accessToken);
+                     });
+                     const imagesData = await Promise.all(imagePromises);
+                     
+                     // Generate Description
+                     const descPrompt = getState().listingCreation.globalDescriptionPrompt || "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML.";
+                     const genDesc = await imagePrompt(descPrompt, imagesData, accessToken);
+                     if (genDesc) {
+                         bodyHtml = genDesc.replace(/```html/g, "").replace(/```/g, "").trim();
+                         if (bodyHtml.indexOf("<") > -1) bodyHtml = bodyHtml.substring(bodyHtml.indexOf("<"));
+                     }
+
+                     // Generate Title
+                     const titlePrompt = `Generate a concise, catchy product title for this product. 
+                        Vendor: Dobutsu
+                        Product Category: Stationery
+                        Return ONLY the title text. No quotes.`;
+                     const genTitle = await imagePrompt(titlePrompt, imagesData, accessToken);
+                     if (genTitle) {
+                         title = genTitle.trim().replace(/^"|"$/g, '');
+                     }
+                 }
+             } catch (e) {
+                 console.error(`[Generate] Failed to generate description for ${baseJan}`, e);
+                 bodyHtml = `<p>Failed to generate description. ${e}</p>`;
+             }
              
              // Construct Variants
              // If we have multiple photo groups (subtypes), we create a variant for EACH.
@@ -501,6 +658,14 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
              
              // Sort groups to ensure deterministic order (e.g. "Blue", "Red")
              photoGroups.sort((a, b) => (a.subtype || "").localeCompare(b.subtype || ""));
+             
+             console.log(`[Generate] Processing ${baseJan}. Photo Groups: ${photoGroups.length}. Subtypes: ${photoGroups.map(g => g.subtype).join(', ')}`);
+
+             // Calculate Allocation
+             const totalQty = firstItem.qty || 0;
+             const variantCount = photoGroups.length;
+             const baseAllocation = Math.floor(totalQty / variantCount);
+             let remainder = totalQty % variantCount;
 
              photoGroups.forEach((pg, idx) => {
                  allPhotoGroupIds.push(pg.key);
@@ -512,6 +677,13 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                  
                  const optionValue = pg.subtype || firstItem.subtype || "Default";
                  
+                 // Assign Allocated Qty
+                 let allocatedQty = baseAllocation;
+                 if (remainder > 0) {
+                     allocatedQty += 1;
+                     remainder -= 1;
+                 }
+
                  // Assign Inventory Items
                  // If we have multiple inventory items, we could distribute them?
                  // For now, assign ALL inventory items to the Proposal, 
@@ -522,7 +694,8 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                      id: `${baseJan}:${optionValue}:${crypto.randomUUID().slice(0, 8)}`,
                      itemId: inventoryIds[0], // Point to the base item
                      option1Value: optionValue,
-                     photoGroupKey: pg.key
+                     photoGroupKey: pg.key,
+                     qty: allocatedQty
                  });
              });
              
@@ -535,7 +708,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                  inventoryItemIds: inventoryIds,
                  photoGroupIds: allPhotoGroupIds,
                  title: title,
-                 bodyHtml: "<p>Generated description from AI...</p>",
+                 bodyHtml: bodyHtml,
                  productCategory: "Stationery",
                  vendor: "Dobutsu",
                  tags: ["New Arrival"],
@@ -544,6 +717,8 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                  status: 'draft',
                  listingOnlyImages: [],
              });
+        } else {
+             console.log(`[Generate] No inventory items found for Base JAN ${baseJan}. Skipping.`);
         }
         
         // Limit

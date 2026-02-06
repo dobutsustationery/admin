@@ -191,6 +191,70 @@ export interface ProcessingResult {
   photoIds: string[];
 }
 
+export async function detectVariants(
+  images: { data: string; mimeType: string }[],
+  accessToken: string,
+  apiKey?: string,
+  customPrompt?: string,
+): Promise<{ name: string; indices: number[] }[]> {
+    const identificationPrompt = customPrompt || `
+        You are a strict JSON generator. Look at these ${images.length} images.
+        Task: Group these images into Product Variants (e.g. Red vs Blue) based on their packaging.
+
+        RULES:
+        1. Identify variants based on **FRONT FACES ONLY**.
+        2. If there is only ONE unique front face (e.g. 1 Front + 3 Backs), return NO variants.
+        3. Ignore Backs, Ingredients, or Nutrition Labels for the purpose of *counting* variants.
+        4. If you find multiple variants, assign ALL images (Fronts AND Backs) to them.
+        
+        OUTPUT FORMAT:
+        If NO variants (Same Product):
+        { "variants": [] }
+
+        If YES (Multiple Variants):
+        {
+            "variants": [
+                { "name": "Variant Name", "indices": [0, 1] },
+                { "name": "Variant Name", "indices": [2, 3] }
+            ]
+        }
+        
+        Return ONLY valid JSON. No markdown. No conversation.
+    `;
+
+    const variantJsonRaw = await imagePrompt(
+      identificationPrompt,
+      images,
+      accessToken,
+      apiKey,
+    );
+    
+    console.log(`[Variant Detection] Raw Response:`, variantJsonRaw);
+
+    if (variantJsonRaw) {
+      try {
+        let jsonStr = variantJsonRaw
+          .replace(/```json/g, "")
+          .replace(/```/g, "")
+          .trim();
+        const firstBrace = jsonStr.indexOf("{");
+        const lastBrace = jsonStr.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+        }
+
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.variants && Array.isArray(parsed.variants)) {
+          console.log(`[Variant Detection] Parsed Variants:`, parsed.variants);
+          return parsed.variants;
+        }
+      } catch (e) {
+        console.warn("Failed to parse variant JSON", e, variantJsonRaw);
+      }
+    }
+    return [];
+}
+
 /**
  * Process a list of media items to group by JAN code and generate descriptions.
  */
@@ -344,66 +408,11 @@ export async function processMediaItems(
     let description: string | null = "";
     let splitOccurred = false;
 
-    // Check for variants only if there are enough images to likely contain variants (Heuristic: > 2 images)
-    // User optimization: simple "Front + Back" (2 images) should skip this slow LLM check.
-    if (group.images.length > 2) {
+    // Check for variants only if there are enough images to likely contain variants (Heuristic: > 1 image)
+    if (group.images.length > 1) {
+      console.log(`[Variant Detection] Checking group ${group.janCode} with ${group.images.length} images...`);
       try {
-        // Ask AI if these are variants
-        const identificationPrompt = `
-                    You are a strict JSON generator. Look at these ${group.images.length} images.
-                    Task: Group these images into Product Variants (e.g. Red vs Blue) based on their packaging.
-
-                    RULES:
-                    1. Identify variants based on **FRONT FACES ONLY**.
-                    2. If there is only ONE unique front face (e.g. 1 Front + 3 Backs), return NO variants.
-                    3. Ignore Backs, Ingredients, or Nutrition Labels for the purpose of *counting* variants.
-                    4. If you find multiple variants, assign ALL images (Fronts AND Backs) to them.
-                    
-                    OUTPUT FORMAT:
-                    If NO variants (Same Product):
-                    { "variants": [] }
-
-                    If YES (Multiple Variants):
-                    {
-                        "variants": [
-                            { "name": "Variant Name", "indices": [0, 1] },
-                            { "name": "Variant Name", "indices": [2, 3] }
-                        ]
-                    }
-                    
-                    Return ONLY valid JSON. No markdown. No conversation.
-                `;
-
-        const variantJsonRaw = await imagePrompt(
-          identificationPrompt,
-          groupImagesData,
-          accessToken,
-          apiKey,
-        );
-
-        let variants: { name: string; indices: number[] }[] = [];
-        if (variantJsonRaw) {
-          try {
-            // Robust JSON extraction
-            let jsonStr = variantJsonRaw
-              .replace(/```json/g, "")
-              .replace(/```/g, "")
-              .trim();
-            // Find first '{' and last '}' to handle potential conversational preamble
-            const firstBrace = jsonStr.indexOf("{");
-            const lastBrace = jsonStr.lastIndexOf("}");
-            if (firstBrace !== -1 && lastBrace !== -1) {
-              jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
-            }
-
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.variants && Array.isArray(parsed.variants)) {
-              variants = parsed.variants;
-            }
-          } catch (e) {
-            console.warn("Failed to parse variant JSON", e, variantJsonRaw);
-          }
-        }
+        const variants = await detectVariants(groupImagesData, accessToken, apiKey);
 
         if (variants.length > 1) {
           console.log(
