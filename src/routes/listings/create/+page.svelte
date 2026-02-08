@@ -15,6 +15,7 @@
       mark_celebrated,
       set_global_prompts
   } from "$lib/listing-creation-slice";
+  import ProgressBar from "$lib/components/ProgressBar.svelte";
   import { goto } from '$app/navigation';
 
   import { initiateOAuthFlow, isAuthenticated } from "$lib/google-drive";
@@ -39,6 +40,8 @@
   $: visibleBatchJans = (originalBatchJans && originalBatchJans.length > 0) ? originalBatchJans : activeBatchJans;
   
   $: driveStatus = listingCreation.driveConnectionStatus;
+  $: isScanning = listingCreation.isScanning;
+  $: scanProgress = listingCreation.scanProgress;
 
   let showImagePicker = false;
   let imagePickerRow: any | null = null;
@@ -496,15 +499,29 @@
                 <br/>
             {/if}
 
-            <div class="flex items-center justify-center gap-2">
-                <button on:click={handleGenerate} class="text-blue-600 hover:underline">
-                    Scan for matched items
-                </button>
-                <button on:click={openVariantPrompt} class="text-gray-400 hover:text-gray-600" title="Edit Subtype Prompt">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
-                    </svg>
-                </button>
+            <div class="flex flex-col items-center justify-center gap-4 w-full">
+                {#if isScanning}
+                    <div class="w-full max-w-md">
+                         <ProgressBar 
+                            current={scanProgress?.current || 0} 
+                            total={scanProgress?.total || 0} 
+                            message={scanProgress?.message || "Scanning..."} 
+                            colorClass="bg-blue-600"
+                         />
+                    </div>
+                {:else}
+                    <div class="flex items-center justify-center gap-4">
+                        <button on:click={handleGenerate} class="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 font-bold shadow-lg transition-transform hover:scale-105">
+                            Scan for matched items
+                        </button>
+                        <button on:click={openVariantPrompt} class="bg-white text-gray-700 border border-gray-300 px-4 py-3 rounded hover:bg-gray-50 font-medium shadow-sm flex items-center gap-2 transition-colors" title="Edit Subtype Prompt">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
+                            </svg>
+                            <span>Edit Prompt</span>
+                        </button>
+                    </div>
+                {/if}
             </div>
         </div>
     {/if}
