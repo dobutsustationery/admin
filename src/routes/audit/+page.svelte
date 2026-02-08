@@ -19,6 +19,7 @@
   import { format } from "date-fns";
   import { ChevronLeft, ChevronRight, Search, Download } from "lucide-svelte";
   import { getAllCachedActions } from "$lib/action-cache";
+  import { rootReducer } from "$lib/root-reducer";
 
   let actions: any[] = [];
   let loading = true;
@@ -40,9 +41,37 @@
       if (viewMode === "search") {
          // Use local IndexedDB cache for search
          const cached = await getAllCachedActions();
-         // Sort by timestamp desc (cached actions are returned sorted by timestamp ASC usually or by insertion)
-         // Let's ensure descending sort for display.
-         // Also normalize timestamps.
+         
+         // DRY RUN REPLAY TO CAPTURE EPHEMERAL ACTIONS
+         // Sort Ascending for Replay
+         cached.sort((a, b) => {
+             const tA = a.timestamp?.seconds || (typeof a.timestamp === 'number' ? a.timestamp : 0);
+             const tB = b.timestamp?.seconds || (typeof b.timestamp === 'number' ? b.timestamp : 0);
+             return tA - tB;
+         });
+
+         let state = rootReducer(undefined, { type: '@@INIT' });
+         const parentToChildren = new Map<string, any[]>();
+
+         cached.forEach(action => {
+             const children: any[] = [];
+             // Logger signature: (action, state, timestamp)
+             const captureLogger = (childAction: any, _s: any, _t: any) => {
+                 children.push(childAction);
+             };
+             
+             try {
+                 state = rootReducer(state, action, captureLogger);
+             } catch (e) {
+                 console.warn("Dry run replay error:", e);
+             }
+             
+             if (children.length > 0) {
+                 parentToChildren.set(action.id, children);
+             }
+         });
+
+         // Sort by timestamp desc for display
          allSearchCandidates = cached.map(c => {
              let d: Date;
              if (c.timestamp?.toDate) {
@@ -50,18 +79,16 @@
              } else if (c.timestamp?.seconds) {
                  d = new Date(c.timestamp.seconds * 1000);
              } else {
-                 d = new Date(); // Fallback
+                 d = new Date(typeof c.timestamp === 'number' ? c.timestamp : 0);
              }
              return {
                  ...c,
+                 children: parentToChildren.get(c.id) || [],
                  displayTime: format(d, "yyyy-MM-dd")
              };
          }).sort((a, b) => {
-             // String comparison of displayTime is not enough, use raw keys if available or re-parse?
-             // Since we already have the Date object logic above, let's keep it simple.
-             // Ideally we sort by the raw timestamp values.
-             const tA = a.timestamp?.seconds || 0;
-             const tB = b.timestamp?.seconds || 0;
+             const tA = a.timestamp?.seconds || (typeof a.timestamp === 'number' ? a.timestamp : 0);
+             const tB = b.timestamp?.seconds || (typeof b.timestamp === 'number' ? b.timestamp : 0);
              return tB - tA; 
          });
          
@@ -99,10 +126,23 @@
           return;
       }
       const lower = searchTerm.toLowerCase();
+      
+      // Filter: Include Direct Matches OR Child Matches
       actions = allSearchCandidates.filter(item => {
           const desc = getAuditActionDescription(item).toLowerCase();
           const raw = JSON.stringify(item).toLowerCase();
-          return desc.includes(lower) || raw.includes(lower);
+          
+          if (desc.includes(lower) || raw.includes(lower)) return true;
+          
+          // Check Children (Ephemeral Actions)
+          if (item.children) {
+              const childMatch = item.children.some((child: any) => 
+                  JSON.stringify(child).toLowerCase().includes(lower)
+              );
+              if (childMatch) return true;
+          }
+          
+          return false;
       });
   }
   
@@ -278,6 +318,14 @@
           {#if expandedId === action.id}
             <div class="action-body">
               <pre>{JSON.stringify(action, null, 2)}</pre>
+              {#if action.children && action.children.length > 0}
+                  <div class="children-section">
+                      <h4>Derived Actions (Dry Run):</h4>
+                      {#each action.children as child}
+                          <pre class="child-action">{JSON.stringify(child, null, 2)}</pre>
+                      {/each}
+                  </div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -408,6 +456,18 @@
     border-top: 1px solid #ddd;
     background: #fff;
     overflow-x: auto;
+  }
+  
+  .children-section {
+      margin-top: 1rem;
+      border-top: 1px dashed #ccc;
+      padding-top: 0.5rem;
+  }
+  .child-action {
+      background: #f0fdf4;
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.8rem;
   }
 
   pre {
