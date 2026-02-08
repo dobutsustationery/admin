@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { onMount } from 'svelte';
   import { store } from '$lib/store';
   import { update_listing, add_listing_image, remove_listing_image, type ListingImage } from '$lib/listings-slice';
   import { 
@@ -48,6 +49,14 @@
   let searchTerm = '';
   let matchingHandles: string[] = [];
   let fileInput: HTMLInputElement;
+  
+  onMount(() => {
+      // Safety: Force reset stuck AI flags on load to prevent deadlocks
+      if (mode === 'create' && janCode) {
+          store.dispatch(update_proposal_field({ janCode, field: 'isGeneratingTitle', value: false }));
+          store.dispatch(update_proposal_field({ janCode, field: 'isGeneratingDescription', value: false }));
+      }
+  });
   
   // Prompt Modal State
   let showPromptModal = false;
