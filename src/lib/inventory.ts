@@ -738,10 +738,21 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(make_sales, (state, action) => {
     const archiveName = action.payload.archiveName;
     const orderID = archiveName;
+    
+    // Safety check for archive existence
+    let archive = state.archivedInventoryState[archiveName];
+    if (!archive && state.hiddenInventoryState[archiveName]) {
+        archive = state.hiddenInventoryState[archiveName];
+    }
+    
+    if (!archive) {
+        console.warn(`[Inventory] make_sales: Archive '${archiveName}' not found. Skipping.`);
+        return state;
+    }
+
     const items: LineItem[] = [];
-    for (const itemKey in state.archivedInventoryState[archiveName].idToItem) {
-      const preitem =
-        state.archivedInventoryState[archiveName].idToItem[itemKey];
+    for (const itemKey in archive.idToItem) {
+      const preitem = archive.idToItem[itemKey];
       const postitem = state.idToItem[itemKey];
       let preitemq = preitem.qty;
       if (preitem.pieces > 1) {

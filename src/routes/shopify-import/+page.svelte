@@ -120,7 +120,7 @@
     }
   }
   interface AnalyzedItem extends ShopifyImportItem {
-    status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE" | "IDENTICAL";
+    status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE" | "IDENTICAL" | "SKIPPED";
     existingItem?: any;
     actionLabel: string;
     resolvedActions?: any[];
@@ -154,11 +154,11 @@
 
     if (!item) {
       return {
-        status: "DONE",
+        status: "SKIPPED",
         janCode: "ERROR",
         description: rawRow.error || "Parse Error",
         qty: 0,
-        actionLabel: "Error",
+        actionLabel: "Skipped",
         originalIndex: index,
       } as AnalyzedItem;
     }
@@ -426,15 +426,28 @@
   });
   })();
 
-  $: visibleItems = analyzedPlan.filter(
-    (i: AnalyzedItem) => i.status !== "DONE",
-  );
-  $: allDone = analyzedPlan.length > 0 && visibleItems.length === 0;
+  $: visibleItems = analyzedPlan.filter((i: AnalyzedItem) => {
+      if (viewFilter === 'ALL') {
+          return i.status !== "DONE" && i.status !== "SKIPPED";
+      }
+      return i.status === viewFilter;
+  });
 
-  $: if (allDone && !processing && activeFile && $user && $user.uid) {
+  $: doneCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "DONE").length;
+  $: skippedCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "SKIPPED").length;
+  $: conflictCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "CONFLICT").length;
+  $: identicalCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "IDENTICAL").length;
+  $: matchCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "MATCH").length;
+  $: newCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "NEW").length;
+  $: resolvedCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "RESOLVED").length;
+  $: totalCount = analyzedPlan.length;
+
+  $: isImportComplete = totalCount > 0 && (doneCount + skippedCount === totalCount);
+
+  $: if (isImportComplete && !processing && activeFile && $user && $user.uid) {
     const u = $user.uid;
     setTimeout(() => {
-      if (analyzedPlan.length > 0 && visibleItems.length === 0) {
+      if (totalCount > 0 && (doneCount + skippedCount === totalCount)) {
         broadcast(firestore, u, finish_import());
         successMsg = "All items processed. Session finished.";
       }
@@ -454,18 +467,13 @@
   let successMsg = "";
   let processing = false;
   let analysisStatus: "idle" | "analyzing" = "idle";
+  
+  let viewFilter: "ALL" | "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "IDENTICAL" | "SKIPPED" | "DONE" = "ALL";
 
   let useShopifyDescription = false;
   let useShopifyImages = false;
   let useShopifyHandles = false; // Toggle for handles
   let useShopifyWeights = false; // Toggle for weights
-  let currentFilter:
-    | "ALL"
-    | "MATCH"
-    | "NEW"
-    | "CONFLICT"
-    | "RESOLVED"
-    | "IDENTICAL" = "ALL";
   let showConflictModal = false;
   let currentConflictItem: any = null;
   let currentConflictIndex = -1;
@@ -474,19 +482,6 @@
   let ignoreShopifyQty = false; // Add state
 
   // Helper to compute default handle
-
-  $: matchCount = analyzedPlan.filter(
-    (i: AnalyzedItem) => i.status === "MATCH",
-  ).length;
-  $: newCount = analyzedPlan.filter(
-    (i: AnalyzedItem) => i.status === "NEW",
-  ).length;
-  $: resolvedCount = analyzedPlan.filter(
-    (i: AnalyzedItem) => i.status === "RESOLVED",
-  ).length;
-  $: identicalCount = analyzedPlan.filter(
-    (i: AnalyzedItem) => i.status === "IDENTICAL",
-  ).length;
 
   onMount(async () => {
     driveConfigured = isDriveConfigured();
@@ -992,6 +987,42 @@
             {:else if analysisStatus === "analyzing"}
               <div class="loading">Analyzing {selectedFile.name}...</div>
             {:else if rawRows.length > 0}
+              <!-- Summary Dashboard -->
+              <div class="summary-dashboard">
+                  <button class="summary-card total" class:active={viewFilter === 'ALL'} on:click={() => viewFilter = 'ALL'}>
+                      <span class="label">Total Rows</span>
+                      <span class="value">{totalCount}</span>
+                  </button>
+                  <button class="summary-card match" class:active={viewFilter === 'MATCH'} on:click={() => viewFilter = 'MATCH'}>
+                      <span class="label">Matches</span>
+                      <span class="value">{matchCount}</span>
+                  </button>
+                  <button class="summary-card new" class:active={viewFilter === 'NEW'} on:click={() => viewFilter = 'NEW'}>
+                      <span class="label">New Items</span>
+                      <span class="value">{newCount}</span>
+                  </button>
+                  <button class="summary-card conflict" class:active={viewFilter === 'CONFLICT'} on:click={() => viewFilter = 'CONFLICT'}>
+                      <span class="label">Conflicts</span>
+                      <span class="value">{conflictCount}</span>
+                  </button>
+                  <button class="summary-card resolved" class:active={viewFilter === 'RESOLVED'} on:click={() => viewFilter = 'RESOLVED'}>
+                      <span class="label">Resolved</span>
+                      <span class="value">{resolvedCount}</span>
+                  </button>
+                  <button class="summary-card identical" class:active={viewFilter === 'IDENTICAL'} on:click={() => viewFilter = 'IDENTICAL'}>
+                      <span class="label">Identical</span>
+                      <span class="value">{identicalCount}</span>
+                  </button>
+                  <button class="summary-card skipped" class:active={viewFilter === 'SKIPPED'} on:click={() => viewFilter = 'SKIPPED'}>
+                      <span class="label">Skipped</span>
+                      <span class="value">{skippedCount}</span>
+                  </button>
+                  <button class="summary-card done" class:active={viewFilter === 'DONE'} on:click={() => viewFilter = 'DONE'}>
+                      <span class="label">Processed</span>
+                      <span class="value">{doneCount}</span>
+                  </button>
+              </div>
+
               <div class="preview-header">
                 <h2>Preview: {selectedFile.name}</h2>
 
@@ -1489,4 +1520,73 @@
     border-radius: 4px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   }
+
+  /* Summary Dashboard */
+  .summary-dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+  }
+  
+  .summary-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      outline: none;
+  }
+  
+  .summary-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+  
+  .summary-card.active {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px white, 0 0 0 4px #6366f1;
+      z-index: 10;
+  }
+  
+  .summary-card .label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #6b7280;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+  }
+  
+  .summary-card .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #111827;
+  }
+  
+  .summary-card.match .value { color: #166534; }
+  .summary-card.match { background: #f0fdf4; border-color: #bbf7d0; }
+  
+  .summary-card.new .value { color: #1e40af; }
+  .summary-card.new { background: #eff6ff; border-color: #bfdbfe; }
+  
+  .summary-card.conflict .value { color: #991b1b; }
+  .summary-card.conflict { background: #fef2f2; border-color: #fecaca; }
+  
+  .summary-card.resolved .value { color: #92400e; }
+  .summary-card.resolved { background: #fffbeb; border-color: #fde68a; }
+  
+  .summary-card.identical .value { color: #475569; }
+  .summary-card.identical { background: #f1f5f9; border-color: #cbd5e1; }
+  
+  .summary-card.skipped .value { color: #6b7280; }
+  .summary-card.skipped { background: #f3f4f6; border-color: #e5e7eb; }
+  
+  .summary-card.done .value { color: #374151; }
+  .summary-card.done { background: #f9fafb; border-color: #d1d5db; opacity: 0.8; }
 </style>

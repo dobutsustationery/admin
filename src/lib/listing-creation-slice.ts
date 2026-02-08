@@ -677,6 +677,9 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                  
                  const optionValue = pg.subtype || firstItem.subtype || "Default";
                  
+                 // Construct Variant SKU (JAN + Subtype, no separator)
+                 const variantSku = baseJan + optionValue.replace(/\s+/g, '');
+
                  // Assign Allocated Qty
                  let allocatedQty = baseAllocation;
                  if (remainder > 0) {
@@ -692,7 +695,7 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                  
                  variants.push({
                      id: `${baseJan}:${optionValue}:${crypto.randomUUID().slice(0, 8)}`,
-                     itemId: inventoryIds[0], // Point to the base item
+                     itemId: variantSku, // Proposed SKU
                      option1Value: optionValue,
                      photoGroupKey: pg.key,
                      qty: allocatedQty
