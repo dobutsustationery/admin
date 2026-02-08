@@ -82,7 +82,7 @@ const mapShopifyToInventory = (importItem: any): Item => {
 };
 
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
-export const rootReducer = (state: any, action: any) => {
+export const rootReducer = (state: any, action: any, logger = logAction) => {
   if (action.type === "HYDRATE") {
     return { ...state, ...action.payload };
   }
@@ -124,7 +124,7 @@ export const rootReducer = (state: any, action: any) => {
         ...nextState,
         inventory: inventory(nextState.inventory, internalAction),
       };
-      logAction(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
+      logger(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
 
       // Apply to Listings
       nextState = {
@@ -132,7 +132,7 @@ export const rootReducer = (state: any, action: any) => {
         listings: listings(nextState.listings, internalAction),
       };
       // Listings sub-log
-      logAction({ ...internalAction, type: 'bulk_import_items (listings)' }, nextState, action._timestamp); 
+      logger({ ...internalAction, type: 'bulk_import_items (listings)' }, nextState, action._timestamp); 
     }
 
     // Mark Items Done in Order Import Slice
@@ -142,7 +142,7 @@ export const rootReducer = (state: any, action: any) => {
         ...nextState,
         orderImport: orderImport(nextState.orderImport, markAction),
       };
-      logAction(markAction, nextState, action._timestamp); // LOG SUB-ACTION
+      logger(markAction, nextState, action._timestamp); // LOG SUB-ACTION
     }
   }
 
@@ -179,7 +179,7 @@ export const rootReducer = (state: any, action: any) => {
         inventory: inventory(nextState.inventory, internalAction),
         listings: listings(nextState.listings, internalAction),
       };
-      logAction(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
+      logger(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
     }
 
     if (listingUpdates && listingUpdates.length > 0) {
@@ -195,7 +195,7 @@ export const rootReducer = (state: any, action: any) => {
           // We must update nextState.listings locally to pass to next iteration
           // but we also want to capture the full state for the log.
           const intermediateState = { ...nextState, listings: nextListings };
-          logAction(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
+          logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
         } else if (u.type === "create_listing") {
           const internalAction = {
             ...create_listing({ listing: u.listing }),
@@ -204,7 +204,7 @@ export const rootReducer = (state: any, action: any) => {
           };
           nextListings = listings(nextListings, internalAction);
           const intermediateState = { ...nextState, listings: nextListings };
-          logAction(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
+          logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
         }
       });
       nextState = { ...nextState, listings: nextListings };
@@ -216,7 +216,7 @@ export const rootReducer = (state: any, action: any) => {
         ...nextState,
         shopifyImport: shopifyImport(nextState.shopifyImport, markAction),
       };
-      logAction(markAction, nextState, action._timestamp); // LOG SUB-ACTION
+      logger(markAction, nextState, action._timestamp); // LOG SUB-ACTION
     }
   }
 
@@ -248,7 +248,7 @@ export const rootReducer = (state: any, action: any) => {
               ...nextState,
               listingCreation: listingCreation(nextState.listingCreation, internalAction)
           };
-          logAction(internalAction, nextState, action._timestamp);
+          logger(internalAction, nextState, action._timestamp);
       }
   }
 
@@ -290,7 +290,7 @@ export const rootReducer = (state: any, action: any) => {
       ];
       
       if (criticalActions.includes(action.type)) {
-          logAction(action, nextState, action._timestamp);
+          logger(action, nextState, action._timestamp);
       }
   }
 
@@ -352,7 +352,7 @@ export const rootReducer = (state: any, action: any) => {
                        timestamp: action._timestamp
                    };
                    nextState = { ...nextState, inventory: inventory(nextState.inventory, splitAction) };
-                   logAction(splitAction, nextState, action._timestamp);
+                   logger(splitAction, nextState, action._timestamp);
                    
                    // Update variant references to new IDs locally
                    variants.forEach((v: any, i: number) => {
@@ -399,7 +399,7 @@ export const rootReducer = (state: any, action: any) => {
                        inventory: inventory(nextState.inventory, updateAction),
                        listings: listings(nextState.listings, updateAction)
                    };
-                   logAction(updateAction, nextState, action._timestamp);
+                   logger(updateAction, nextState, action._timestamp);
                });
            });
 
@@ -443,7 +443,7 @@ export const rootReducer = (state: any, action: any) => {
                timestamp: action._timestamp
            };
            nextState = { ...nextState, listings: listings(nextState.listings, createActionLocal) };
-           logAction(createActionLocal, nextState, action._timestamp);
+           logger(createActionLocal, nextState, action._timestamp);
 
            // 6. Cleanup ALL Merged Proposals
            mergedProposals.forEach(p => {
@@ -453,7 +453,7 @@ export const rootReducer = (state: any, action: any) => {
                    timestamp: action._timestamp
                };
                nextState = { ...nextState, listingCreation: listingCreation(nextState.listingCreation, removeAction) };
-               logAction(removeAction, nextState, action._timestamp);
+               logger(removeAction, nextState, action._timestamp);
            });
 
            // 7. Complete Batch Check
@@ -464,7 +464,7 @@ export const rootReducer = (state: any, action: any) => {
                    timestamp: action._timestamp
                };
                nextState = { ...nextState, listingCreation: listingCreation(nextState.listingCreation, completeAction) };
-               logAction(completeAction, nextState, action._timestamp);
+               logger(completeAction, nextState, action._timestamp);
            }
       }
   }
