@@ -323,9 +323,12 @@ export const rootReducer = (state: any, action: any) => {
 
            // 1. Inventory Splits
            const itemsToSplit = new Map<string, any[]>();
+           const variantIdToItemId = new Map<string, string>();
+
            proposal.variants.forEach((v: any) => {
                if (!itemsToSplit.has(v.itemId)) itemsToSplit.set(v.itemId, []);
                itemsToSplit.get(v.itemId)?.push(v);
+               variantIdToItemId.set(v.id, v.itemId);
            });
 
            itemsToSplit.forEach((variants, sourceId) => {
@@ -359,7 +362,7 @@ export const rootReducer = (state: any, action: any) => {
                    
                    // Update variant references to new IDs locally for subsequent steps
                    variants.forEach((v: any, i: number) => {
-                       v.itemId = splits[i].newId;
+                       variantIdToItemId.set(v.id, splits[i].newId);
                    });
                }
            });
@@ -371,6 +374,7 @@ export const rootReducer = (state: any, action: any) => {
            proposal.variants.forEach((v: any, i: number) => {
                // Update Fields
                const fields: any[] = [];
+               const currentItemId = variantIdToItemId.get(v.id) || v.itemId;
                
                if (proposal.price !== undefined) fields.push({ field: 'price', value: proposal.price });
                fields.push({ field: 'handle', value: finalHandle });
@@ -382,7 +386,7 @@ export const rootReducer = (state: any, action: any) => {
                    // Optimization: Check if update is needed?
                    // For now, apply all.
                    const updateAction = {
-                       ...update_field({ id: v.itemId, field: f.field, from: "", to: f.value }),
+                       ...update_field({ id: currentItemId, field: f.field, from: "", to: f.value }),
                        _ephemeral: true,
                        timestamp: action._timestamp
                    };

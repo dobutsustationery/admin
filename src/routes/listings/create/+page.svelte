@@ -140,6 +140,9 @@
             // Prioritize draft variant image override, then inventory image
             const variantThumb = v.image || inventoryItem?.image || null;
             
+            // Construct Display SKU
+            const variantSku = p.janCode + (v.option1Value || "").replace(/\s+/g, '');
+
             return {
                 ...p, // Spread Shared Listing Props (Title, Handle, Price, Body, etc.)
                 
@@ -149,7 +152,8 @@
 
                 // Row Identity
                 rowId: v.id || v.itemId, // Unique ID for the grid row (variant instance ID preferred)
-                id: v.itemId, // For Image Picker compatibility AND SKU Display
+                id: v.itemId, // For Image Picker compatibility (Inventory ID)
+                sku: variantSku, // For Display
                 janCode: p.janCode, // Reference to parent Proposal
                 
                 // Variant Specifics
@@ -260,7 +264,7 @@
       { field: 'allocatedQty', header: 'Stock', width: 80, type: 'number', align: 'right' },
 
       { field: 'price', header: 'Price', width: 100, type: 'number', align: 'right' },
-      { field: 'id', header: 'Variant SKU', width: 150, editable: false },
+      { field: 'sku', header: 'Variant SKU', width: 150, editable: false },
       { field: 'janCode', header: 'Barcode', width: 120, editable: false },
   ];
 

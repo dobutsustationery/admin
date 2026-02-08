@@ -86,11 +86,11 @@ describe("Listing Creation - Generate Proposals", () => {
     const blueVariant = proposal.variants.find((v: any) => v.option1Value === "Blue");
     expect(blueVariant).toBeDefined();
     expect(blueVariant.photoGroupKey).toBe("4542804104370:Blue");
-    expect(blueVariant.itemId).toBe("4542804104370Blue");
+    expect(blueVariant.itemId).toBe("item-1");
 
     const redVariant = proposal.variants.find((v: any) => v.option1Value === "Red");
     expect(redVariant).toBeDefined();
     expect(redVariant.photoGroupKey).toBe("4542804104370:Red");
-    expect(redVariant.itemId).toBe("4542804104370Red");
+    expect(redVariant.itemId).toBe("item-1");
   });
 });
