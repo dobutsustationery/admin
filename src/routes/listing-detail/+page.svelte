@@ -84,6 +84,7 @@
 
   let listingImages: ListingImage[] = [];
   let associatedItems: any[] = []; 
+  let siblingProposals: any[] = []; // Hoisted for shared updates
   
   // Image Upload State
   let uploadingImageId: string | null = null;
@@ -101,7 +102,7 @@
               const primaryHandle = primaryProposal.handle || generateHandle(primaryProposal.title, primaryProposal.janCode);
               
               // 2. Find all proposals in this group (Aggregation)
-              const siblingProposals = Object.values($store.listingCreation.proposals)
+              siblingProposals = Object.values($store.listingCreation.proposals)
                   .filter((p: any) => {
                       // Only check active batch if filtered, or all drafts? 
                       // Ideally we check all "in batch". But proposals are global.
@@ -300,7 +301,11 @@
   function handleUpdateTitle(e: CustomEvent<string>) {
       if (!$user.uid) return;
       if (mode === 'create' && janCode) {
-          dispatchBroadcast(update_proposal_field({ janCode, field: 'title', value: e.detail }));
+          // Sync Title across all siblings to keep them grouped
+          const targets = siblingProposals.length > 0 ? siblingProposals : [{ janCode }];
+          targets.forEach(p => {
+              dispatchBroadcast(update_proposal_field({ janCode: p.janCode, field: 'title', value: e.detail }));
+          });
       } else if (handle) {
            broadcast(firestore, $user.uid, update_listing({ handle, changes: { title: e.detail } }));
       }
@@ -309,7 +314,11 @@
   function handleUpdateDescription(e: CustomEvent<string>) {
        if (!$user.uid) return;
        if (mode === 'create' && janCode) {
-          dispatchBroadcast(update_proposal_field({ janCode, field: 'bodyHtml', value: e.detail }));
+          // Sync Body across all siblings
+          const targets = siblingProposals.length > 0 ? siblingProposals : [{ janCode }];
+          targets.forEach(p => {
+              dispatchBroadcast(update_proposal_field({ janCode: p.janCode, field: 'bodyHtml', value: e.detail }));
+          });
        } else if (handle) {
            broadcast(firestore, $user.uid, update_listing({ handle, changes: { bodyHtml: e.detail } }));
        }
