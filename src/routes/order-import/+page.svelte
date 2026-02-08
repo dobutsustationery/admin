@@ -46,7 +46,7 @@
   // This replaces the static "status" field in ImportItem
   
 interface AnalyzedItem extends ImportItem {
-      status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE";
+      status: "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "DONE" | "SKIPPED";
       existingItem?: any;
       subtypes?: any[];
       actionLabel: string;
@@ -61,14 +61,14 @@ interface AnalyzedItem extends ImportItem {
       const item = rawRow.parsed;
       
       if (!item) {
-          // Parsing error row
+          // Parsing error row -> SKIPPED
           return {
-             status: "DONE", // Treat error rows as inert/done for now or add ERROR status
+             status: "SKIPPED", 
              janCode: "ERROR",
              description: rawRow.error || "Parse Error",
              qty: 0,
              carton: "",
-             actionLabel: "Error",
+             actionLabel: "Skipped",
              originalIndex: index
           } as AnalyzedItem;
       }
@@ -179,17 +179,23 @@ interface AnalyzedItem extends ImportItem {
   });
 
   // Filter for display
-  $: visibleItems = analyzedPlan.filter((i: AnalyzedItem) => i.status !== "DONE");
+  $: visibleItems = analyzedPlan.filter((i: AnalyzedItem) => {
+      if (viewFilter === 'ALL') {
+          // Show everything EXCEPT 'DONE' (Processed) and 'SKIPPED' (Errors)
+          return i.status !== "DONE" && i.status !== "SKIPPED";
+      }
+      return i.status === viewFilter;
+  });
 
   // Auto-completion Logic
-  $: allDone = analyzedPlan.length > 0 && visibleItems.length === 0;
+  $: isImportComplete = totalCount > 0 && (doneCount + skippedCount === totalCount);
 
-  $: if (allDone && !processing && activeFile && $user && $user.uid) {
+  $: if (isImportComplete && !processing && activeFile && $user && $user.uid) {
        const u = $user.uid;
        // Debounce slightly to let animations play
        setTimeout(() => {
            // Check again
-           if (analyzedPlan.length > 0 && visibleItems.length === 0) {
+           if (totalCount > 0 && (doneCount + skippedCount === totalCount)) {
                console.log("Auto-finishing import");
                broadcast(firestore, u, finish_import());
                successMsg = "All items processed. Session finished.";
@@ -212,10 +218,16 @@ interface AnalyzedItem extends ImportItem {
   let successMsg = "";
   let processing = false;
   let analysisStatus: "idle" | "analyzing" = "idle";
+  
+  let viewFilter: "ALL" | "MATCH" | "NEW" | "CONFLICT" | "RESOLVED" | "SKIPPED" | "DONE" = "ALL";
 
   $: matchCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "MATCH").length;
   $: newCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "NEW").length;
+  $: conflictCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "CONFLICT").length;
   $: resolvedCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "RESOLVED").length;
+  $: skippedCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "SKIPPED").length;
+  $: doneCount = analyzedPlan.filter((i: AnalyzedItem) => i.status === "DONE").length;
+  $: totalCount = analyzedPlan.length;
 
   // Interactive State
   let showConflictModal = false;
@@ -696,6 +708,38 @@ interface AnalyzedItem extends ImportItem {
             {:else if analysisStatus === "analyzing"}
               <div class="loading">Analyzing {selectedFile.name}...</div>
             {:else if rawRows.length > 0}
+              <!-- Summary Dashboard -->
+              <div class="summary-dashboard">
+                  <button class="summary-card total" class:active={viewFilter === 'ALL'} on:click={() => viewFilter = 'ALL'}>
+                      <span class="label">Total Rows</span>
+                      <span class="value">{totalCount}</span>
+                  </button>
+                  <button class="summary-card match" class:active={viewFilter === 'MATCH'} on:click={() => viewFilter = 'MATCH'}>
+                      <span class="label">Matches</span>
+                      <span class="value">{matchCount}</span>
+                  </button>
+                  <button class="summary-card new" class:active={viewFilter === 'NEW'} on:click={() => viewFilter = 'NEW'}>
+                      <span class="label">Add to Inv.</span>
+                      <span class="value">{newCount}</span>
+                  </button>
+                  <button class="summary-card conflict" class:active={viewFilter === 'CONFLICT'} on:click={() => viewFilter = 'CONFLICT'}>
+                      <span class="label">Conflicts</span>
+                      <span class="value">{conflictCount}</span>
+                  </button>
+                  <button class="summary-card resolved" class:active={viewFilter === 'RESOLVED'} on:click={() => viewFilter = 'RESOLVED'}>
+                      <span class="label">Resolved</span>
+                      <span class="value">{resolvedCount}</span>
+                  </button>
+                  <button class="summary-card skipped" class:active={viewFilter === 'SKIPPED'} on:click={() => viewFilter = 'SKIPPED'}>
+                      <span class="label">Skipped</span>
+                      <span class="value">{skippedCount}</span>
+                  </button>
+                  <button class="summary-card done" class:active={viewFilter === 'DONE'} on:click={() => viewFilter = 'DONE'}>
+                      <span class="label">Processed</span>
+                      <span class="value">{doneCount}</span>
+                  </button>
+              </div>
+
               <div class="preview-header">
                 <h2>Preview: {selectedFile.name}</h2>
                 <div class="batch-actions">
@@ -711,7 +755,7 @@ interface AnalyzedItem extends ImportItem {
                     on:click={() => processBatch("NEW")}
                     disabled={processing}
                   >
-                    Create New ({newCount})
+                    ADD to inventory ({newCount})
                   </button>
                   <button
                     class="btn-secondary"
@@ -762,7 +806,7 @@ interface AnalyzedItem extends ImportItem {
                         <tr transition:slide|local>
                           <td>
                           <span class="badge {item.status.toLowerCase()}"
-                            >{item.status}</span
+                            >{item.status === "NEW" ? "ADD" : item.status}</span
                           >
                         </td>
                         <td>
@@ -1199,4 +1243,68 @@ interface AnalyzedItem extends ImportItem {
   .btn-icon { background: none; border: none; font-size: 1rem; cursor: pointer; color: #9ca3af; padding: 0.25rem; line-height: 1; border-radius: 4px; }
   .btn-icon:hover { background: #f3f4f6; color: #6b7280; }
   .btn-icon.ignore:hover { background: #fee2e2; color: #ef4444; }
+  .summary-dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+  }
+  
+  .summary-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      outline: none;
+  }
+  
+  .summary-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+  
+  .summary-card.active {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px white, 0 0 0 4px #6366f1;
+      z-index: 10;
+  }
+  
+  .summary-card .label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #6b7280;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+  }
+  
+  .summary-card .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #111827;
+  }
+  
+  .summary-card.match .value { color: #166534; }
+  .summary-card.match { background: #f0fdf4; border-color: #bbf7d0; }
+  
+  .summary-card.new .value { color: #1e40af; }
+  .summary-card.new { background: #eff6ff; border-color: #bfdbfe; }
+  
+  .summary-card.conflict .value { color: #991b1b; }
+  .summary-card.conflict { background: #fef2f2; border-color: #fecaca; }
+  
+  .summary-card.resolved .value { color: #92400e; }
+  .summary-card.resolved { background: #fffbeb; border-color: #fde68a; }
+  
+  .summary-card.skipped .value { color: #6b7280; }
+  .summary-card.skipped { background: #f3f4f6; border-color: #e5e7eb; }
+  
+  .summary-card.done .value { color: #374151; }
+  .summary-card.done { background: #f9fafb; border-color: #d1d5db; opacity: 0.8; }
 </style>

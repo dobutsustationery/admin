@@ -143,9 +143,9 @@ const mapImportItem = (row: any): ImportItem => {
       getValueByHeaders(row, [
           (h) => h === "total pcs",
           (h) => h === "qty",
-          (h) => h.includes("q'ty"),
-          (h) => h.includes("quantity"),
-          (h) => /order\s*q'?ty/.test(h), // Regex for "order qty" or "order q'ty"
+          (h) => h.includes("q'ty") && !h.includes("unit"),
+          (h) => h.includes("quantity") && !h.includes("unit"),
+          (h) => /order\s*q'?ty/.test(h) && !h.includes("unit"),
       ]) || "0",
       10
   );
@@ -270,11 +270,14 @@ export const computeOrderImportBatch = (
 ): { updates: any[]; indices: number[] } => {
   const updates: any[] = [];
   const indices: number[] = [];
-  const items = parseRows(orderState.headerRow, orderState.rawBody);
   const janToItems = buildJanMap(inventoryIdToItem);
 
-  items.forEach((item, index) => {
-    if (orderState.rows[index]?.processed) return;
+  // Use state.rows directly to ensure index alignment
+  orderState.rows.forEach((row, index) => {
+    if (row.processed) return;
+    
+    const item = row.parsed;
+    if (!item) return; // Skip error rows
 
     // RESOLVED Handling
     if (filter === "RESOLVED") {
@@ -285,15 +288,14 @@ export const computeOrderImportBatch = (
           const qty = res.payload.qty;
           const invItem = inventoryIdToItem[itemKey];
           if (invItem) {
-                          const payloadItem = {
-                            ...invItem,
-                            qty: qty,
-                            // Priority: Resolution > CSV > Existing
-                            hsCode: res.payload.hsCode !== undefined ? res.payload.hsCode : (item.hsCode || invItem.hsCode),
-                            weight: res.payload.weight !== undefined ? res.payload.weight : (item.weight || invItem.weight),
-                            countryOfOrigin: res.payload.countryOfOrigin !== undefined ? res.payload.countryOfOrigin : (item.countryOfOrigin || invItem.countryOfOrigin),
-                            cost: res.payload.cost !== undefined ? res.payload.cost : (item.cost !== undefined ? item.cost : invItem.cost),
-                          };
+              const payloadItem = {
+                ...invItem,
+                qty: qty,
+                hsCode: res.payload.hsCode !== undefined ? res.payload.hsCode : (item.hsCode || invItem.hsCode),
+                weight: res.payload.weight !== undefined ? res.payload.weight : (item.weight || invItem.weight),
+                countryOfOrigin: res.payload.countryOfOrigin !== undefined ? res.payload.countryOfOrigin : (item.countryOfOrigin || invItem.countryOfOrigin),
+                cost: res.payload.cost !== undefined ? res.payload.cost : (item.cost !== undefined ? item.cost : invItem.cost),
+              };
 
             updates.push({
               type: "update",
@@ -307,37 +309,50 @@ export const computeOrderImportBatch = (
       return;
     }
 
+    // Skip items with pending manual resolutions if we are in batch mode
     const resolutions = orderState.resolutions[index];
     if (resolutions && resolutions.length > 0) return;
 
-            const matches = janToItems[item.janCode] || [];
-            const exists = matches.length > 0;
-            let isConflict = matches.length > 1;
-            
-            // Special Case: Zero Qty Split -> Treat as Match (on first item)
-            if (isConflict && item.qty === 0) {
-                isConflict = false;
-            }
+    const matches = janToItems[item.janCode] || [];
+    const exists = matches.length > 0;
     
-            if (exists && !isConflict) {      // Check for Data Mismatches (HS, Weight, COO) to match UI logic
-      const { item: existingItem } = matches[0];
+    // --- Conflict Detection ---
+    let isConflict = false;
+    let isDataMismatch = false;
 
-      const existingHS = existingItem.hsCode;
-      const newHS = item.hsCode;
-      const existingWeight = existingItem.weight;
-      const newWeight = item.weight;
-      const existingCOO = existingItem.countryOfOrigin;
-      const newCOO = item.countryOfOrigin;
-
-      if (existingHS && newHS && existingHS !== newHS) isConflict = true;
-      if (existingWeight && newWeight && existingWeight !== newWeight)
-        isConflict = true;
-      if (existingCOO && newCOO && existingCOO !== newCOO) isConflict = true;
+    // 1. Subtype Conflict (Multiple Matches)
+    if (matches.length > 1) {
+        // Special Exception: If qty is 0, we allow it as a "Match" (updates cost/data on all)
+        if (item.qty !== 0) {
+            isConflict = true;
+        }
     }
 
+    // 2. Data Mismatch Conflict (Single Match OR Zero-Qty Multi-Match)
+    // We check the FIRST item as the representative for data consistency
+    if (exists) {
+        const { item: existingItem } = matches[0];
+        const existingHS = existingItem.hsCode;
+        const newHS = item.hsCode;
+        const existingWeight = existingItem.weight;
+        const newWeight = item.weight;
+        const existingCOO = existingItem.countryOfOrigin;
+        const newCOO = item.countryOfOrigin;
+
+        if (existingHS && newHS && existingHS !== newHS) isDataMismatch = true;
+        if (existingWeight && newWeight && existingWeight !== newWeight) isDataMismatch = true;
+        if (existingCOO && newCOO && existingCOO !== newCOO) isDataMismatch = true;
+    }
+    
+    if (isDataMismatch) {
+        isConflict = true;
+    }
+
+    // --- Action Generation ---
+
     if (filter === "MATCH" && exists && !isConflict) {
-      // If Qty is 0 and multiple matches exist, update ALL matches (e.g. Cost update across splits)
       if (item.qty === 0 && matches.length > 1) {
+          // Zero Qty Multi-Match: Update ALL matches
           matches.forEach(({ id, item: existingItem }) => {
               updates.push({
                 type: "update",
@@ -345,18 +360,16 @@ export const computeOrderImportBatch = (
                 item: {
                   ...existingItem,
                   janCode: item.janCode,
-                  qty: 0, // Delta is 0
-                  cost: item.cost, // Update Cost
+                  qty: 0, // No stock change
+                  cost: item.cost, 
                   weight: item.weight,
                   hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode,
-                  countryOfOrigin: existingItem.countryOfOrigin
-                    ? existingItem.countryOfOrigin
-                    : item.countryOfOrigin,
+                  countryOfOrigin: existingItem.countryOfOrigin ? existingItem.countryOfOrigin : item.countryOfOrigin,
                 },
               });
           });
       } else {
-          // Standard Single Match Update
+          // Standard Single Match
           const { id, item: existingItem } = matches[0];
           updates.push({
             type: "update",
@@ -364,18 +377,19 @@ export const computeOrderImportBatch = (
             item: {
               ...existingItem,
               janCode: item.janCode,
-              qty: item.qty, // Delta
-              cost: item.cost, // Update Cost
+              qty: item.qty, // Add stock
+              cost: item.cost,
               weight: item.weight,
               hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode,
-              countryOfOrigin: existingItem.countryOfOrigin
-                ? existingItem.countryOfOrigin
-                : item.countryOfOrigin,
+              countryOfOrigin: existingItem.countryOfOrigin ? existingItem.countryOfOrigin : item.countryOfOrigin,
             },
           });
       }
       indices.push(index);
     } else if (filter === "NEW" && !exists) {
+      // DEBUG: Why is this NEW?
+      console.log(`[ImportBatch] Processing NEW for CSV JAN: "${item.janCode}". Matches found: ${matches.length}`);
+      
       updates.push({
         type: "new",
         id: item.janCode,

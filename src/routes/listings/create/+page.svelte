@@ -93,17 +93,32 @@
        const variants = (p.variants && p.variants.length > 0) ? p.variants : [{ itemId: p.janCode, option1Value: "" }];
 
        return variants.map((v: any, idx: number) => {
-            const inventoryItem = $store.inventory.idToItem[v.itemId];
+            // Resolve Items:
+            // 1. Specific Variant Item (if exists in inventory, e.g. re-editing or existing item)
+            // 2. Source Item (if variant is new/split, use parent proposal's locked item)
+            let inventoryItem = $store.inventory.idToItem[v.itemId];
+            
+            // Fallback to source item if specific item not found (this happens for new split variants)
+            const sourceItem = (p.inventoryItemIds && p.inventoryItemIds.length > 0) 
+                ? $store.inventory.idToItem[p.inventoryItemIds[0]] 
+                : null;
+            
+            if (!inventoryItem) {
+                inventoryItem = sourceItem;
+            }
             
             // Photo Lookup Strategy:
             // 1. Explicit Photo Group Key (from Subtype Automation)
-            // 2. Specific Variant JAN
+            // 2. Specific Variant JAN (SKU)
             // 3. Linked Photo Groups (from split/merge)
             // 4. Proposal Key (Fallback)
             let photos: any[] = [];
             
             if (v.photoGroupKey && photosState?.janCodeToPhotos?.[v.photoGroupKey]) {
                 photos = photosState.janCodeToPhotos[v.photoGroupKey];
+            } else if (v.itemId && photosState?.janCodeToPhotos?.[v.itemId]) {
+                 // Check if photos exist for the Variant SKU (e.g. "123Red")
+                 photos = photosState.janCodeToPhotos[v.itemId];
             } else if (inventoryItem?.janCode && photosState?.janCodeToPhotos?.[inventoryItem.janCode]) {
                 photos = photosState.janCodeToPhotos[inventoryItem.janCode];
             } else if (p.photoGroupIds && p.photoGroupIds.length > 0) {
@@ -134,14 +149,14 @@
 
                 // Row Identity
                 rowId: v.id || v.itemId, // Unique ID for the grid row (variant instance ID preferred)
-                id: v.itemId, // For Image Picker compatibility
+                id: v.itemId, // For Image Picker compatibility AND SKU Display
                 janCode: p.janCode, // Reference to parent Proposal
                 
                 // Variant Specifics
                 variantId: v.id,
                 option1Value: v.option1Value,
                 allocatedQty: v.qty, // Allocated quantity for this variant
-                sourceQty: inventoryItem ? inventoryItem.qty : 0, // Total available
+                sourceQty: sourceItem ? sourceItem.qty : 0, // Total available from SOURCE
                 photoGroupKey: v.photoGroupKey,
                 
                 // Images: Variant image > Variant JAN Group Image
@@ -242,8 +257,7 @@
       { field: 'option1Name', header: 'Option1 Name', width: 120, type: 'text' }, 
       { field: 'option1Value', header: 'Option1 Value', width: 120, type: 'text' }, 
       { field: 'photoGroupKey', header: 'Photo Group', width: 120, editable: false },
-      { field: 'sourceQty', header: 'Stock', width: 80, editable: false, align: 'right' },
-      { field: 'allocatedQty', header: 'Allocated', width: 80, type: 'number', align: 'right' },
+      { field: 'allocatedQty', header: 'Stock', width: 80, type: 'number', align: 'right' },
 
       { field: 'price', header: 'Price', width: 100, type: 'number', align: 'right' },
       { field: 'id', header: 'Variant SKU', width: 150, editable: false },

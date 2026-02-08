@@ -1,3 +1,8 @@
+Make sure subtype AI work is only done for > 2 images, also don't
+bother at all if the JAN isn't in the inventory and can't create a listing
+
+Adding the fountain pen didn't work well 4562134108008
+
 Importing the amifa order messes up conflicts because they get processed and
 discarded if we take new items. e.g. jan 4542804109245 Also JANs like 4542804129854
 are listed as matches but we think they are new products.

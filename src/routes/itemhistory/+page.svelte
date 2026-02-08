@@ -15,7 +15,7 @@
   $: itemKey = $page.url.searchParams.get("itemKey");
   $: currentItem = itemKey && $store.inventory?.idToItem ? $store.inventory.idToItem[itemKey] : null;
 
-  $: searchResults = (searchQuery.length > 2 && $store.inventory?.idToItem
+  $: allMatches = (searchQuery.length > 2 && $store.inventory?.idToItem
       ? Object.entries($store.inventory.idToItem)
           .filter(([key, item]: [string, any]) => {
               const q = searchQuery.toLowerCase();
@@ -23,8 +23,10 @@
                      (item.description && item.description.toLowerCase().includes(q)) ||
                      key.toLowerCase().includes(q);
           })
-          .slice(0, 10) 
       : []) as [string, any][];
+
+  $: searchResults = allMatches.slice(0, 100);
+  $: truncatedCount = Math.max(0, allMatches.length - 100);
 
   function user(e: CustomEvent) {
     me = e.detail;
@@ -59,6 +61,11 @@
                         </div>
                     </button>
                 {/each}
+                {#if truncatedCount > 0}
+                    <div class="result-truncated">
+                        +{truncatedCount} more...
+                    </div>
+                {/if}
             </div>
         {/if}
     </div>
@@ -209,6 +216,15 @@
       white-space: nowrap;
       color: #666;
       font-size: 0.9rem;
+  }
+  
+  .result-truncated {
+      padding: 0.5rem 1rem;
+      text-align: center;
+      color: #666;
+      font-size: 0.85rem;
+      background: #f9f9f9;
+      border-top: 1px solid #eee;
   }
   
   .empty-state { text-align: center; color: #666; margin-top: 4rem; }

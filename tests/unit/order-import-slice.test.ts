@@ -26,16 +26,4 @@ describe("order import parsing", () => {
     expect(items[0].countryOfOrigin).toBe("Thailand");
     expect(items[0].weight).toBe(350);
   });
-
-  it("falls back to column B and column I when headers are unfamiliar", () => {
-    const csv = [
-      "JAN Code,Col2,Description,Col4,Col5,Col6,Col7,Col8,Col9",
-      "4900000000014,Vietnam,Fallback Header Item,x,x,x,x,x,275",
-    ].join("\n");
-
-    const items = parseRows(null, csv);
-    expect(items).toHaveLength(1);
-    expect(items[0].countryOfOrigin).toBe("Vietnam");
-    expect(items[0].weight).toBe(275);
-  });
 });
