@@ -376,10 +376,19 @@ export const rootReducer = (state: any, action: any) => {
                const fields: any[] = [];
                const currentItemId = variantIdToItemId.get(v.id) || v.itemId;
                
+               // Resolve Image: Override > Photo Group > Skip (Keep Existing)
+               let imageUrl = v.image;
+               if (!imageUrl && v.photoGroupKey) {
+                   const group = nextState.photos.janCodeToPhotos[v.photoGroupKey];
+                   if (group && group.length > 0) {
+                       imageUrl = group[0].baseUrl || group[0].productUrl || group[0].thumbnailLink;
+                   }
+               }
+               
                if (proposal.price !== undefined) fields.push({ field: 'price', value: proposal.price });
                fields.push({ field: 'handle', value: finalHandle });
                if (v.option1Value) fields.push({ field: 'subtype', value: v.option1Value });
-               if (v.image) fields.push({ field: 'image', value: v.image });
+               if (imageUrl) fields.push({ field: 'image', value: imageUrl });
                fields.push({ field: 'imagePosition', value: i + 1 }); // Persist Order
 
                fields.forEach(f => {
