@@ -155,6 +155,21 @@
           return;
       }
 
+      // Sort Ascending for Replay (Oldest First)
+      exportable.sort((a, b) => {
+          let tA = 0;
+          if (a.timestamp?.seconds) tA = a.timestamp.seconds;
+          else if (typeof a.timestamp === 'number') tA = a.timestamp;
+          else if (a.timestamp?.toDate) tA = a.timestamp.toDate().getTime();
+          
+          let tB = 0;
+          if (b.timestamp?.seconds) tB = b.timestamp.seconds;
+          else if (typeof b.timestamp === 'number') tB = b.timestamp;
+          else if (b.timestamp?.toDate) tB = b.timestamp.toDate().getTime();
+          
+          return tA - tB;
+      });
+
       const jsonl = exportable.map(a => JSON.stringify(a)).join('\n');
       const blob = new Blob([jsonl], { type: 'application/x-jsonlines' });
       const url = URL.createObjectURL(blob);
