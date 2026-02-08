@@ -1054,6 +1054,8 @@ export const regenerate_description = (janCode: string, customPrompt?: string): 
                  field: 'bodyHtml', 
                  value: `<p>Failed to generate description. Error: ${e.message}</p>` 
              }));
+    } finally {
+        dispatch(update_proposal_field({ janCode, field: 'isGeneratingDescription', value: false }));
     }
 };
 
