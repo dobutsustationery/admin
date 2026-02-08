@@ -969,12 +969,27 @@ export const regenerate_description = (janCode: string, customPrompt?: string): 
     
     // Iterate variants to find their JANs
     proposal.variants.forEach((v: ListingVariant) => {
+        // 1. Explicit Photo Group
+        if (v.photoGroupKey && janToPhotos[v.photoGroupKey]) {
+            allPhotos.push(...janToPhotos[v.photoGroupKey]);
+        }
+
+        // 2. Inventory Item JAN
         const item = state.inventory.idToItem[v.itemId];
         if (item && item.janCode) {
             const photos = janToPhotos[item.janCode] || [];
             allPhotos = [...allPhotos, ...photos];
         }
     });
+    
+    // 3. Proposal Photo Groups (e.g. Merged leftovers)
+    if (proposal.photoGroupIds) {
+        proposal.photoGroupIds.forEach(gid => {
+            if (janToPhotos[gid]) {
+                allPhotos.push(...janToPhotos[gid]);
+            }
+        });
+    }
     
     // Fallback: Check the proposal's own janCode just in case
     if (allPhotos.length === 0) {

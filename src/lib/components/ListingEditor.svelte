@@ -79,7 +79,7 @@
       if (hoveredImage) return hoveredImage;
       
       if (selectedSubtypeId) {
-          const item = associatedItems.find(i => i.id === selectedSubtypeId);
+          const item = associatedItems.find(i => (i.variantId || i.id) === selectedSubtypeId);
           if (item) {
               const targetUrl = item.variantImage || item.image;
               if (targetUrl) {
@@ -368,8 +368,8 @@
                            {#if subtypeImg}
                                <div class="subtype-thumb-wrapper">
                                    <button 
-                                      class="subtype-thumb-btn {selectedSubtypeId === item.id ? 'selected' : ''}"
-                                      on:click={() => isCreationMode ? dispatch('replaceSubtypeImage', item) : handleSubtypeSelect(item.id)}
+                                      class="subtype-thumb-btn {selectedSubtypeId === (item.variantId || item.id) ? 'selected' : ''}"
+                                      on:click={() => isCreationMode ? dispatch('replaceSubtypeImage', item) : handleSubtypeSelect(item.variantId || item.id)}
                                       title={isCreationMode ? "Click to Replace Image" : item.subtype}
                                    >
                                        <SecureImage src={subtypeImg.url} alt={item.subtype} className="thumbnail-img" />
@@ -446,10 +446,10 @@
                   <div class="options-list" role="list">
                       {#each displayedSubtypes as item (item.variantId || item.id)}
                           <button 
-                              class="option-btn {item.qty > 0 ? 'available' : 'unavailable'} {selectedSubtypeId === item.id ? 'active' : ''}"
+                              class="option-btn {item.qty > 0 ? 'available' : 'unavailable'} {selectedSubtypeId === (item.variantId || item.id) ? 'active' : ''}"
                               draggable={!readOnly}
                               animate:flip={{ duration: 300, easing: cubicOut }}
-                              on:click={() => handleSubtypeSelect(item.id)}
+                              on:click={() => handleSubtypeSelect(item.variantId || item.id)}
                               on:dragstart={(e) => handleSubtypeDragStart(e, item)}
                               on:dragover={(e) => handleSubtypeDragOver(e, item.variantId || item.id)}
                               on:drop={(e) => handleSubtypeDrop(e)}
