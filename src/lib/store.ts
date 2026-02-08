@@ -320,12 +320,26 @@ export const rootReducer = (state: any, action: any) => {
       
       if (proposal) {
            const finalHandle = proposal.handle || generateHandle(proposal.title, proposal.janCode);
+           const allProposals = nextState.listingCreation.proposals;
 
-           // 1. Inventory Splits
+           // 1. Identify Siblings (Merged Group)
+           // Robustly match sibling proposals by Handle OR by janCode (if handle is implicit/missing)
+           const mergedProposals = Object.values(allProposals)
+               .filter((p: any) => {
+                   const h = p.handle || generateHandle(p.title, p.janCode);
+                   if (h === finalHandle) return true;
+                   if (!p.handle && !proposal.handle && p.janCode === proposal.janCode) return true;
+                   return false;
+               }) as any[]; // Type assertion for Proposal
+
+           // 2. Aggregate Variants from ALL siblings for Inventory Operations
+           const allVariants = mergedProposals.flatMap(p => p.variants || []);
+
+           // 3. Inventory Splits
            const itemsToSplit = new Map<string, any[]>();
            const variantIdToItemId = new Map<string, string>();
 
-           proposal.variants.forEach((v: any) => {
+           allVariants.forEach((v: any) => {
                if (!itemsToSplit.has(v.itemId)) itemsToSplit.set(v.itemId, []);
                itemsToSplit.get(v.itemId)?.push(v);
                variantIdToItemId.set(v.id, v.itemId);
@@ -334,17 +348,12 @@ export const rootReducer = (state: any, action: any) => {
            itemsToSplit.forEach((variants, sourceId) => {
                if (variants.length > 1) {
                    const splits = variants.map((v: any) => {
-                        // Clean option value for ID generation
                         const cleanOption = (v.option1Value || 'Default').replace(/[^a-zA-Z0-9-_]/g, '');
-                        // Deterministic Variant ID generation relying on Proposal Variant IDs would be ideal,
-                        // but split_inventory_item needs NEW inventory IDs.
-                        // We use a deterministic naming scheme based on source + subtype to ensure replay stability if possible,
-                        // OR we rely on the fact that this interceptor runs during replay.
-                        // Ideally: sourceId + subtype.
-                        // Use Base JAN + Option for SKU (No colon, per user request)
-                        let uniqueId = `${proposal.janCode}${cleanOption}`;
-                        // Collision check logic is hard in pure replay without looking at *current* state.
-                        // We assume standard collision logic holds.
+                        // Use Source Item's JAN for SKU generation (safe even if sourceId is item-1)
+                        const sourceItem = nextState.inventory.idToItem[sourceId];
+                        const baseJan = sourceItem ? sourceItem.janCode : proposal.janCode;
+                        // JAN + Option (No colon)
+                        let uniqueId = `${baseJan}${cleanOption}`;
                         
                         return {
                            newId: uniqueId,
@@ -361,23 +370,21 @@ export const rootReducer = (state: any, action: any) => {
                    nextState = { ...nextState, inventory: inventory(nextState.inventory, splitAction) };
                    logAction(splitAction, nextState, action._timestamp);
                    
-                   // Update variant references to new IDs locally for subsequent steps
+                   // Update variant references to new IDs locally
                    variants.forEach((v: any, i: number) => {
                        variantIdToItemId.set(v.id, splits[i].newId);
                    });
                }
            });
 
-           // 2. Inventory Updates (Price, Handle, Subtype, Image, Position)
-           // Use a Set to avoid redundant updates on the same Item ID
+           // 4. Inventory Updates (Price, Handle, Subtype, Image, Position)
            const processedItemIds = new Set<string>();
            
-           proposal.variants.forEach((v: any, i: number) => {
-               // Update Fields
+           allVariants.forEach((v: any, i: number) => {
                const fields: any[] = [];
                const currentItemId = variantIdToItemId.get(v.id) || v.itemId;
                
-               // Resolve Image: Override > Photo Group > Skip (Keep Existing)
+               // Resolve Image: Override > Photo Group > Skip
                let imageUrl = v.image;
                if (!imageUrl && v.photoGroupKey) {
                    const group = nextState.photos.janCodeToPhotos[v.photoGroupKey];
@@ -386,22 +393,23 @@ export const rootReducer = (state: any, action: any) => {
                    }
                }
                
+               // Find which proposal this variant belongs to (for shared fields like price/title)
+               // Optimally we use the primary proposal's data for shared fields, 
+               // but variant-specific data (subtype) comes from v.
+               
                if (proposal.price !== undefined) fields.push({ field: 'price', value: proposal.price });
                fields.push({ field: 'handle', value: finalHandle });
                if (v.option1Value) fields.push({ field: 'subtype', value: v.option1Value });
                if (imageUrl) fields.push({ field: 'image', value: imageUrl });
-               fields.push({ field: 'imagePosition', value: i + 1 }); // Persist Order
+               fields.push({ field: 'imagePosition', value: i + 1 });
 
                fields.forEach(f => {
-                   // Optimization: Check if update is needed?
-                   // For now, apply all.
                    const updateAction = {
                        ...update_field({ id: currentItemId, field: f.field, from: "", to: f.value }),
                        _ephemeral: true,
                        timestamp: action._timestamp
                    };
                    
-                   // update_field affects Inventory AND Listings (if handle/title change)
                    nextState = { 
                        ...nextState, 
                        inventory: inventory(nextState.inventory, updateAction),
@@ -411,37 +419,14 @@ export const rootReducer = (state: any, action: any) => {
                });
            });
 
-           // 3. Create/Update Listing with Aggregated Images
-           // Identify siblings (all proposals sharing this handle)
-           const allProposals = nextState.listingCreation.proposals;
-           
-           // Use the proposal objects directly. Key might be variantId (split) or janCode.
-           // Mapping via janCode is unsafe if multiple proposals share janCode (splits).
-           const mergedProposals = Object.values(allProposals)
-               .filter((p: any) => {
-                   const h = p.handle || generateHandle(p.title, p.janCode);
-                   if (h === finalHandle) return true;
-                   
-                   // Fallback: If handles drifted (e.g. title edit without sync) but they share the same Base JAN
-                   // and rely on implicit handles, treat them as siblings.
-                   if (!p.handle && !proposal.handle && p.janCode === proposal.janCode) {
-                       return true;
-                   }
-                   return false;
-               }) as any[]; // Type assertion for Proposal
-
-           // We need to ensure the Approved Proposal is FIRST in the list so its listingImageOrder takes precedence
-           // Sort or find?
-           const primaryIndex = mergedProposals.findIndex(p => p === proposal);
+           // 5. Create/Update Listing with Aggregated Images
+           // Ensure Approved Proposal is FIRST for image ordering priority
+           const primaryIndex = mergedProposals.findIndex(p => p.janCode === proposal.janCode);
            if (primaryIndex > 0) {
                mergedProposals.splice(primaryIndex, 1);
                mergedProposals.unshift(proposal);
-           } else if (primaryIndex === -1) {
-               // Should not happen, but ensure it's included
-               mergedProposals.unshift(proposal);
            }
 
-           // Use Canonical Image Builder (supports siblings)
            const mergedImages = buildDraftListingImages(
                mergedProposals, 
                nextState.photos, 
@@ -462,13 +447,9 @@ export const rootReducer = (state: any, action: any) => {
                lastUpdated: Date.now()
            };
 
-           // Handle Merge with Existing
            const existingListing = nextState.listings.handleToListing[finalHandle];
            let finalListing = listingData;
            if (existingListing) {
-               // We overwrite the existing listing with the proposal data.
-               // Crucially, we REPLACE the images with the proposal's gallery (mergedImages),
-               // rather than appending, to ensure deletions in the draft are respected.
                finalListing = { ...existingListing, ...listingData };
            }
 
@@ -480,16 +461,18 @@ export const rootReducer = (state: any, action: any) => {
            nextState = { ...nextState, listings: listings(nextState.listings, createActionLocal) };
            logAction(createActionLocal, nextState, action._timestamp);
 
-           // 4. Cleanup Proposal (Primary Only)
-           const removeAction = {
-               ...remove_proposal({ janCode }),
-               _ephemeral: true,
-               timestamp: action._timestamp
-           };
-           nextState = { ...nextState, listingCreation: listingCreation(nextState.listingCreation, removeAction) };
-           logAction(removeAction, nextState, action._timestamp);
+           // 6. Cleanup ALL Merged Proposals
+           mergedProposals.forEach(p => {
+               const removeAction = {
+                   ...remove_proposal({ janCode: p.janCode }),
+                   _ephemeral: true,
+                   timestamp: action._timestamp
+               };
+               nextState = { ...nextState, listingCreation: listingCreation(nextState.listingCreation, removeAction) };
+               logAction(removeAction, nextState, action._timestamp);
+           });
 
-           // 5. Complete Batch Check
+           // 7. Complete Batch Check
            if (nextState.listingCreation.activeBatchJans.length === 0) {
                const completeAction = {
                    ...complete_batch(),
