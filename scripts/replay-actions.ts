@@ -74,14 +74,25 @@ export function diff<T extends Value | object>(a: T, b: T): Patch {
 // --- End Diff Logic ---
 
 const args = process.argv.slice(2);
-const file = args[0];
+let file = "";
+let limit = 4000; // Default limit
+
+for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--limit") {
+        limit = parseInt(args[i + 1], 10);
+        if (isNaN(limit)) limit = 4000;
+        i++;
+    } else {
+        file = args[i];
+    }
+}
 
 if (!file) {
-    console.error("Usage: bun scripts/replay-actions.ts <file.jsonl>");
+    console.error("Usage: bun scripts/replay-actions.ts <file.jsonl> [--limit NNN]");
     process.exit(1);
 }
 
-console.log(`Replaying actions from ${file}...`);
+console.log(`Replaying actions from ${file}... (Limit: ${limit === 0 ? 'Unlimited' : limit})`);
 const content = readFileSync(file, 'utf-8');
 const lines = content.split('\n').filter(l => l.trim());
 
@@ -110,7 +121,11 @@ lines.forEach((line, i) => {
         } else {
             console.log("*** STATE DIFF ***");
             const output = JSON.stringify(patch, null, 2);
-            console.log(output.length > 4000 ? output.slice(0, 4000) + "\n... (truncated)" : output);
+            if (limit > 0 && output.length > limit) {
+                console.log(output.slice(0, limit) + `\n... (truncated at ${limit}, use --limit to set)`);
+            } else {
+                console.log(output);
+            }
             console.log("*** STATE DIFF COMPLETE ***");
         }
         
