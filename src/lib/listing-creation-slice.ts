@@ -68,6 +68,10 @@ export interface ListingCreationState {
   lastCompletedBatchId?: string; // For UI celebration triggers
   hasCelebrated?: boolean; // Track if we've shown the confetti for the last completion
   
+  // Scanning State
+  isScanning?: boolean;
+  scanProgress?: { current: number; total: number; message: string };
+
   // Global Defaults (Persisted)
   globalTitlePrompt?: string;
   globalDescriptionPrompt?: string;
@@ -84,6 +88,8 @@ export interface ListingCreationState {
     activeBatchId: undefined,
     activeBatchCreatedAt: undefined,
     hasCelebrated: false,
+    isScanning: false,
+    scanProgress: { current: 0, total: 0, message: "" },
     globalTitlePrompt: "Generate a concise, catchy product title for this product. Return ONLY the title text. No quotes.",
     globalDescriptionPrompt: "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.",
     globalVariantPrompt: `You are a strict JSON generator. Look at these images.
@@ -123,6 +129,13 @@ export interface ListingCreationState {
           if (action.payload.titlePrompt) state.globalTitlePrompt = action.payload.titlePrompt;
           if (action.payload.descriptionPrompt) state.globalDescriptionPrompt = action.payload.descriptionPrompt;
           if (action.payload.variantPrompt) state.globalVariantPrompt = action.payload.variantPrompt;
+      },
+      set_scanning: (state, action: PayloadAction<boolean>) => {
+          state.isScanning = action.payload;
+          if (!action.payload) state.scanProgress = { current: 0, total: 0, message: "" };
+      },
+      set_scan_progress: (state, action: PayloadAction<{ current: number; total: number; message: string }>) => {
+          state.scanProgress = action.payload;
       },
       // Session / Batch
       add_proposals: (state, action: PayloadAction<ListingProposal[]>) => {
@@ -443,6 +456,8 @@ export interface ListingCreationState {
 export const { 
     set_drive_connection_status,
     set_global_prompts,
+    set_scanning,
+    set_scan_progress,
     add_proposals, 
     remove_proposal,
     start_batch, 
@@ -476,7 +491,11 @@ export default listingCreationSlice.reducer;
 // --- Thunks ---
 
 export const generate_proposals = (): AppThunk => async (dispatch, getState) => {
-    let { inventory, photos, listingCreation } = getState(); 
+    dispatch(set_scanning(true));
+    dispatch(set_scan_progress({ current: 0, total: 100, message: "Initializing..." }));
+
+    try {
+        let { inventory, photos, listingCreation } = getState(); 
     
     // 1. Get Access Token
     const tokenData = getStoredToken();
@@ -501,13 +520,21 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
          
          console.log(`[Generate] Candidates for variant detection (Group size > 1, no colon):`, candidates.map(c => c[0]));
          
-         if (candidates.length > 0) {
-             console.log(`[Generate] Analyzing ${candidates.length} photo groups for variants...`);
-             console.log(`[Generate] Keys BEFORE split:`, Object.keys(localJanCodeToPhotos));
-             
-             for (const [janCode, groupImages] of candidates) {
-                 try {
-                     // Optimization: Only scan if we haven't already? (How to track?)
+                      if (candidates.length > 0) {
+                          console.log(`[Generate] Analyzing ${candidates.length} photo groups for variants...`);
+                          console.log(`[Generate] Keys BEFORE split:`, Object.keys(localJanCodeToPhotos));
+                          
+                          let processedCount = 0;
+                          const totalCandidates = candidates.length;
+         
+                          for (const [janCode, groupImages] of candidates) {
+                              processedCount++;
+                              dispatch(set_scan_progress({ 
+                                  current: processedCount, 
+                                  total: totalCandidates, 
+                                  message: `Analyzing variants for ${janCode}...` 
+                              }));
+                              try {                     // Optimization: Only scan if we haven't already? (How to track?)
                      // For now, scan every time. This is slow but correct.
                      
                      // Fetch images data
@@ -587,9 +614,19 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
     console.log(`[Generate] Base JAN Map constructed:`, JSON.stringify(baseJanMap, null, 2));
 
     const candidates: ListingProposal[] = [];
+    const baseJanKeys = Object.entries(baseJanMap);
+    const totalBaseJans = baseJanKeys.length;
+    let processedBase = 0;
     
     // 3. Iterate Base JANs
-    for (const [baseJan, photoGroups] of Object.entries(baseJanMap)) {
+    for (const [baseJan, photoGroups] of baseJanKeys) {
+        processedBase++;
+        dispatch(set_scan_progress({ 
+            current: processedBase, 
+            total: totalBaseJans, 
+            message: `Generating proposal for ${baseJan}...` 
+        }));
+
         // Find matching inventory items for BASE JAN
         const inventoryItems: { id: string, item: Item }[] = [];
         
@@ -730,6 +767,11 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
         dispatch(add_proposals(candidates));
     } else {
         console.log("No candidates found. Ensure photos are organized in the Photos tab and Inventory items exist.");
+    }
+    } catch (e) {
+        console.error("Generate proposals failed", e);
+    } finally {
+        dispatch(set_scanning(false));
     }
 };
 

@@ -66,6 +66,7 @@
   $: isGenerating = $store.photos.generating;
   $: isCategorizing = $store.photos.categorizing;
 
+  import ProgressBar from "$lib/components/ProgressBar.svelte";
   import { 
     begin_categorize, 
     end_categorize, 
@@ -906,15 +907,12 @@
 
         <!-- Progress Bar for Categorization -->
         {#if isCategorizing}
-            <div class="px-4 py-2">
-                <div class="flex justify-between text-sm text-gray-600 mb-1">
-                    <span>Categorizing... {catProgress.message}</span>
-                    <span>{catProgress.current} / {catProgress.total}</span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                    <div class="bg-teal-500 h-2 rounded-full transition-all duration-300" style="width: {(catProgress.current / catProgress.total) * 100}%"></div>
-                </div>
-            </div>
+            <ProgressBar 
+                current={catProgress.current} 
+                total={catProgress.total} 
+                message={`Categorizing... ${catProgress.message}`} 
+                colorClass="bg-teal-500" 
+            />
         {/if}
 
         <!-- Thumbnails Row (Selected / Uncategorized) -->
