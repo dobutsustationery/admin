@@ -514,12 +514,7 @@
                         <button on:click={handleGenerate} class="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 font-bold shadow-lg transition-transform hover:scale-105">
                             Scan for matched items
                         </button>
-                        <button on:click={openVariantPrompt} class="bg-white text-gray-700 border border-gray-300 px-4 py-3 rounded hover:bg-gray-50 font-medium shadow-sm flex items-center gap-2 transition-colors" title="Edit Subtype Prompt">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
-                            </svg>
-                            <span>Edit Prompt</span>
-                        </button>
+                        <button on:click={openVariantPrompt} class="ai-btn icon-only" title="Edit Subtype Prompt">✎</button>
                     </div>
                 {/if}
             </div>
@@ -603,4 +598,8 @@
   .image-picker-item:hover { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
   .modal-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
   .btn-cancel { padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; background: white; cursor: pointer; }
+  
+  .ai-btn { background: white; border: 1px solid #d1d5db; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem; cursor: pointer; color: #374151; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; }
+  .ai-btn:hover { border-color: #10b981; color: #059669; }
+  .ai-btn.icon-only { padding: 0; width: 32px; height: 32px; font-size: 1.1rem; }
 </style>
