@@ -81,11 +81,22 @@
       if (selectedSubtypeId) {
           const item = associatedItems.find(i => (i.variantId || i.id) === selectedSubtypeId);
           if (item) {
-              const targetUrl = item.variantImage || item.image;
-              if (targetUrl) {
-                  // Find matching ListingImage if exists, else mock
-                  const existing = images.find((img) => img.url === targetUrl);
-                  return existing || { url: targetUrl, altText: item.subtype || 'Subtype Image', id: 'subtype-'+item.id, position: -1 };
+              // 1. Explicit Override
+              if (item.variantImage) {
+                  const existing = images.find(img => img.url === item.variantImage);
+                  return existing || { url: item.variantImage, altText: item.subtype, id: 'subtype-ovr-'+(item.variantId||item.id), position: -1 };
+              }
+              
+              // 2. Photo Group (from Gallery)
+              if (item.photoGroupKey) {
+                  const groupImg = images.find(img => img.sourceGroup === item.photoGroupKey);
+                  if (groupImg) return groupImg;
+              }
+
+              // 3. Inventory Image (Fallback)
+              if (item.image) {
+                  const existing = images.find(img => img.url === item.image);
+                  return existing || { url: item.image, altText: item.subtype, id: 'subtype-inv-'+(item.variantId||item.id), position: -1 };
               }
           }
       }
