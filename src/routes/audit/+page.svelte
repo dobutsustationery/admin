@@ -17,7 +17,7 @@
     type DateRangeView,
   } from "$lib/audit-helpers";
   import { format } from "date-fns";
-  import { ChevronLeft, ChevronRight, Search } from "lucide-svelte";
+  import { ChevronLeft, ChevronRight, Search, Download } from "lucide-svelte";
   import { getAllCachedActions } from "$lib/action-cache";
 
   let actions: any[] = [];
@@ -145,6 +145,27 @@
   function toggleExpand(id: string) {
     expandedId = expandedId === id ? null : id;
   }
+
+  function handleExport() {
+      // Filter for non-ephemeral actions only (as requested for reproduction replay)
+      const exportable = actions.filter(a => !a._ephemeral);
+      
+      if (exportable.length === 0) {
+          alert("No exportable (broadcast) actions found in current view.");
+          return;
+      }
+
+      const jsonl = exportable.map(a => JSON.stringify(a)).join('\n');
+      const blob = new Blob([jsonl], { type: 'application/x-jsonlines' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit-export-${format(new Date(), "yyyy-MM-dd-HHmm")}.jsonl`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+  }
 </script>
 
 <div class="audit-container">
@@ -170,6 +191,14 @@
           class="flex items-center gap-1"
         >
           <Search size={16} /> Search
+        </button>
+        
+        <button
+          on:click={handleExport}
+          class="flex items-center gap-1 export-btn"
+          title="Export filtered broadcast actions to JSONL"
+        >
+          <Download size={16} /> Export
         </button>
       </div>
 
