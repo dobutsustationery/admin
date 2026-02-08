@@ -1,53 +1,77 @@
 import { readFileSync } from 'fs';
 import { rootReducer } from '../src/lib/root-reducer';
 
-// Simple Diff Implementation
-function diff(obj1: any, obj2: any, path = ""): string[] {
-    const diffs: string[] = [];
-    if (obj1 === obj2) return diffs;
-    if (typeof obj1 !== typeof obj2) return [`${path}: ${JSON.stringify(obj1)} -> ${JSON.stringify(obj2)}`];
-    if (typeof obj1 !== 'object' || obj1 === null || obj2 === null) {
-        return [`${path}: ${JSON.stringify(obj1)} -> ${JSON.stringify(obj2)}`];
-    }
-    
-    // Arrays: just check length or basic equality for now to avoid noise
-    if (Array.isArray(obj1)) {
-        if (!Array.isArray(obj2)) return [`${path}: Array -> ${typeof obj2}`];
-        if (obj1.length !== obj2.length) diffs.push(`${path}.length: ${obj1.length} -> ${obj2.length}`);
-        // Shallow compare items? Or deep?
-        // Let's iterate if length is small?
-        if (obj1.length === obj2.length && obj1.length < 10) {
-             obj1.forEach((val, i) => {
-                 diffs.push(...diff(val, obj2[i], `${path}[${i}]`));
-             });
-             return diffs;
-        }
-        // If different, assume changed.
-        return diffs; // Use key iteration below for detailed object/array diff
-    }
+// --- Diff Logic from patch.ts ---
 
-    const keys = new Set([...Object.keys(obj1), ...Object.keys(obj2)]);
-    keys.forEach(key => {
-        const p = path ? `${path}.${key}` : key;
-        if (!(key in obj1)) {
-            diffs.push(`+ ${p}`);
-        } else if (!(key in obj2)) {
-            diffs.push(`- ${p}`);
-        } else {
-            // Optimization: Ignore huge maps if only one key changed?
-            // For now, recursive.
-            // Truncate huge strings
-            const v1 = obj1[key];
-            const v2 = obj2[key];
-            if (typeof v1 === 'string' && v1.length > 100 && v1 !== v2) {
-                 diffs.push(`${p}: "${v1.slice(0, 20)}..." -> "${v2.slice(0, 20)}..."`);
-            } else {
-                 diffs.push(...diff(v1, v2, p));
-            }
-        }
-    });
-    return diffs;
+export type Value = boolean | number | string | undefined;
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+type Patch = { [k: string]: any } | Value | null;
+
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+export function clone(o: any) {
+  if (typeof o === "object" && o !== null) {
+    const ret = Array.isArray(o) ? [...o] : { ...o };
+    for (const k in ret) {
+      ret[k] = clone(ret[k]);
+    }
+    return ret;
+  }
+  return o;
 }
+
+export function diff<T extends Value | object>(a: T, b: T): Patch {
+  if (a === b) {
+    return null;
+  }
+  if (a === undefined || typeof b !== "object" || typeof b !== typeof a) {
+    return b;
+  }
+  const oldA: { [k: string]: Value } = a as { [k: string]: Value };
+  const newA: { [k: string]: Value } = b as { [k: string]: Value };
+  if (typeof b === "object" && typeof a !== "object") {
+    // Should be caught by check above, but for type safety:
+    throw `type mismatch, ${typeof a} vs ${typeof b}`;
+  }
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  const ret: { [k: string]: any } = {};
+  let entries = 0;
+  
+  // Diff existing keys
+  for (const e of Object.entries(oldA)) {
+    // If key missing in newA, it's a deletion? 
+    // The provided logic relies on recursive diff.
+    // If newA[e[0]] is undefined (deleted), diff(val, undefined) -> undefined.
+    // The loop logic:
+    /*
+    const d = diff(oldA[e[0]], newA[e[0]]);
+    if (d !== null) {
+      ++entries;
+      ret[e[0]] = d === undefined ? null : d; // If d is undefined, set null (delete marker?)
+    }
+    */
+    // Wait, if newA[e[0]] is undefined, diff returns undefined?
+    // diff(val, undefined) -> undefined.
+    // So ret[key] = null.
+    
+    // Check if key exists in newA to distinguish "undefined value" vs "missing key" if needed?
+    // The provided code assumes:
+    const d = diff(oldA[e[0]], newA[e[0]]);
+    if (d !== null) {
+      ++entries;
+      ret[e[0]] = d === undefined ? null : d;
+    }
+  }
+  
+  // Diff new keys
+  for (const e of Object.entries(b).filter((e) => oldA[e[0]] === undefined)) {
+    ++entries;
+    ret[e[0]] = newA[e[0]];
+  }
+  if (entries === 0) return null;
+  return clone(ret);
+}
+
+// --- End Diff Logic ---
 
 const args = process.argv.slice(2);
 const file = args[0];
@@ -71,21 +95,23 @@ lines.forEach((line, i) => {
         // Skip metadata
         if (action.id && action.timestamp) {
             delete action.id;
-            delete action.timestamp; // Allow reducer to use its own or action's _timestamp
+            delete action.timestamp; 
         }
 
         const prevState = state;
         state = rootReducer(state, action);
         
         console.log(`\n--- Action ${i + 1}: ${action.type} ---`);
-        // console.log(JSON.stringify(action, null, 2).slice(0, 200)); 
         
-        const changes = diff(prevState, state);
-        if (changes.length === 0) {
+        const patch = diff(prevState, state);
+        
+        if (patch === null) {
             console.log("No state changes.");
         } else {
-            const output = changes.join('\n');
+            console.log("*** STATE DIFF ***");
+            const output = JSON.stringify(patch, null, 2);
             console.log(output.length > 4000 ? output.slice(0, 4000) + "\n... (truncated)" : output);
+            console.log("*** STATE DIFF COMPLETE ***");
         }
         
     } catch (e) {
