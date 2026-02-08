@@ -341,7 +341,8 @@ export const rootReducer = (state: any, action: any) => {
                         // We use a deterministic naming scheme based on source + subtype to ensure replay stability if possible,
                         // OR we rely on the fact that this interceptor runs during replay.
                         // Ideally: sourceId + subtype.
-                        let uniqueId = `${sourceId}:${cleanOption}`;
+                        // Use Base JAN + Option for SKU (No colon, per user request)
+                        let uniqueId = `${proposal.janCode}${cleanOption}`;
                         // Collision check logic is hard in pure replay without looking at *current* state.
                         // We assume standard collision logic holds.
                         
@@ -419,7 +420,14 @@ export const rootReducer = (state: any, action: any) => {
            const mergedProposals = Object.values(allProposals)
                .filter((p: any) => {
                    const h = p.handle || generateHandle(p.title, p.janCode);
-                   return h === finalHandle;
+                   if (h === finalHandle) return true;
+                   
+                   // Fallback: If handles drifted (e.g. title edit without sync) but they share the same Base JAN
+                   // and rely on implicit handles, treat them as siblings.
+                   if (!p.handle && !proposal.handle && p.janCode === proposal.janCode) {
+                       return true;
+                   }
+                   return false;
                }) as any[]; // Type assertion for Proposal
 
            // We need to ensure the Approved Proposal is FIRST in the list so its listingImageOrder takes precedence
