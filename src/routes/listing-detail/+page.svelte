@@ -280,7 +280,7 @@
   // Subtype Selection
   let selectedSubtypeId: string | null = null;
   $: if (associatedItems.length > 0 && selectedSubtypeId === null) {
-      selectedSubtypeId = associatedItems[0].id;
+      selectedSubtypeId = associatedItems[0].variantId || associatedItems[0].id;
   }
   
   function handleSelectSubtype(e: CustomEvent<string>) {
