@@ -630,13 +630,12 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
         // Find matching inventory items for BASE JAN
         const inventoryItems: { id: string, item: Item }[] = [];
         
-        for (const [id, val] of Object.entries(inventory.idToItem)) {
-            const item = val as Item;
-            if (item.janCode === baseJan && !item.handle) {
-                inventoryItems.push({ id, item });
-            }
-        }
-            
+                    for (const [id, val] of Object.entries(inventory.idToItem)) {
+                        const item = val as Item;
+                        if (item.janCode === baseJan && !item.handle && item.qty > 0) {
+                            inventoryItems.push({ id, item });
+                        }
+                    }            
         if (inventoryItems.length > 0) {
              const firstItem = inventoryItems[0].item;
              const inventoryIds = inventoryItems.map(x => x.id); // All available items for this JAN
