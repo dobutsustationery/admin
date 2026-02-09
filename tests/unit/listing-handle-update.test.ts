@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rootReducer } from "$lib/store";
+import { rootReducer } from "$lib/root-reducer";
 import { update_item, update_field, type Item } from "$lib/inventory";
 
 describe("listing handle update logic", () => {

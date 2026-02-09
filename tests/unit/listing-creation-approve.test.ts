@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { configureStore } from "@reduxjs/toolkit";
-import { rootReducer } from "$lib/store";
+import { rootReducer } from "$lib/root-reducer";
 import { approve_proposal_thunk, add_proposals } from "$lib/listing-creation-slice";
 import { update_item, type Item } from "$lib/inventory";
 import { categorize_photo } from "$lib/photos-slice";

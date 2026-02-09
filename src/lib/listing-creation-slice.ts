@@ -984,7 +984,7 @@ export const regenerate_description = (janCode: string, customPrompt?: string): 
     
     // 3. Proposal Photo Groups (e.g. Merged leftovers)
     if (proposal.photoGroupIds) {
-        proposal.photoGroupIds.forEach(gid => {
+        proposal.photoGroupIds.forEach((gid: string) => {
             if (janToPhotos[gid]) {
                 allPhotos.push(...janToPhotos[gid]);
             }
