@@ -592,6 +592,11 @@
       const candidates = new Map<string, { id: string; url: string; altText: string }>();
 
       if (mode === 'live' && handle) {
+          console.log("[ImagePicker] Live Mode. Handle:", handle);
+          console.log("[ImagePicker] Associated Items:", associatedItems);
+          const allKeys = Object.keys($store.photos.janCodeToPhotos || {});
+          console.log("[ImagePicker] Available Photo Keys:", allKeys);
+
           // Live Mode: Scan all associated JANs
           const seenJans = new Set<string>();
           associatedItems.forEach(item => {
@@ -850,7 +855,7 @@
               const newPos = index + 1;
               if (item && item.imagePosition !== newPos) {
                    broadcast(firestore, $user.uid, update_field({ 
-                       id, 
+                       id: id as string, 
                        field: 'imagePosition', 
                        from: item.imagePosition || 0, 
                        to: newPos 
@@ -1032,16 +1037,29 @@
   {/if}
 
   {#if showImagePicker}
+      {@const candidates = buildImagePickerCandidates()}
       <div class="modal-backdrop">
           <div class="modal image-picker-modal">
               <h3 class="modal-title">Select listing image</h3>
-              <div class="image-picker-grid">
-                  {#each buildImagePickerCandidates() as candidate}
-                      <button class="image-picker-item" on:click={() => handlePickListingImage(candidate)}>
-                          <SecureImage src={candidate.url} alt={candidate.altText} className="image-picker-img" />
-                      </button>
-                  {/each}
-              </div>
+              
+              {#if candidates.length > 0}
+                  <div class="image-picker-grid">
+                      {#each candidates as candidate}
+                          <button class="image-picker-item" on:click={() => handlePickListingImage(candidate)}>
+                              <SecureImage src={candidate.url} alt={candidate.altText} className="image-picker-img" />
+                          </button>
+                      {/each}
+                  </div>
+              {:else}
+                  <div class="p-8 text-center text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300 mt-4">
+                      <p class="font-medium">No photos found.</p>
+                      <p class="text-xs mt-2">Searched for photos associated with JAN codes:</p>
+                      <code class="text-xs block mt-1 bg-white p-1 rounded border">
+                          {associatedItems.map(i => i.janCode).join(', ') || 'None'}
+                      </code>
+                  </div>
+              {/if}
+
               <div class="modal-actions flex justify-end gap-2">
                   <button class="btn-cancel" on:click={() => { showImagePicker = false; imagePickerTargetJan = null; }}>Cancel</button>
               </div>

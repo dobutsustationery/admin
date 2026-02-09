@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { configureStore } from "@reduxjs/toolkit";
-import { rootReducer } from "$lib/store";
+import { rootReducer } from "$lib/root-reducer";
 import { add_proposals, split_variant } from "$lib/listing-creation-slice";
 
 describe("Listing Creation - Split Variant", () => {

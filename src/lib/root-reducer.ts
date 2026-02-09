@@ -385,7 +385,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                if (!imageUrl && v.photoGroupKey) {
                    const group = nextState.photos.janCodeToPhotos[v.photoGroupKey];
                    if (group && group.length > 0) {
-                       imageUrl = group[0].baseUrl || group[0].productUrl || group[0].thumbnailLink;
+                       imageUrl = group[0].baseUrl || group[0].productUrl || (group[0] as any).thumbnailLink;
                    }
                }
                

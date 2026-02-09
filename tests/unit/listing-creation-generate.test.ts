@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { configureStore } from "@reduxjs/toolkit";
-import { rootReducer } from "$lib/store";
+import { rootReducer } from "$lib/root-reducer";
 import { generate_proposals } from "$lib/listing-creation-slice";
 
 describe("Listing Creation - Generate Proposals", () => {
