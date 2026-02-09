@@ -18,7 +18,9 @@
   
   // Validation
   $: isPriceValid = associatedItems.length > 0 && (associatedItems[0].price || 0) > 0;
-  $: isCategoryValid = !!(listing && listing.productCategory);
+  $: normalizedCategories = knownCategories.map(c => c.trim()).filter(Boolean);
+  $: categorySet = new Set(normalizedCategories);
+  $: isCategoryValid = !!(listing && listing.productCategory && categorySet.has(listing.productCategory));
   $: isReadyToApprove = isPriceValid && isCategoryValid;
 
   // Category Autocomplete State
@@ -32,9 +34,10 @@
       }
   }
   
+  let categoryError = '';
   $: filteredCategories = categorySearchTerm 
-      ? knownCategories.filter(c => c.toLowerCase().includes(categorySearchTerm.toLowerCase())).slice(0, 100)
-      : knownCategories.slice(0, 20);
+      ? normalizedCategories.filter(c => c.toLowerCase().includes(categorySearchTerm.toLowerCase())).slice(0, 100)
+      : normalizedCategories.slice(0, 20);
 
   let hoveredImage: any | null = null;
   let draggingId: string | null = null;
@@ -223,8 +226,21 @@
       setTimeout(() => {
           showCategoryDropdown = false;
           isCategoryInteracting = false;
-          if (listing && categorySearchTerm !== listing.productCategory) {
-              dispatch('updateCategory', categorySearchTerm);
+          const trimmed = categorySearchTerm.trim();
+          if (!listing) return;
+          if (!trimmed) {
+              categoryError = "Category required";
+              categorySearchTerm = listing.productCategory || "";
+              return;
+          }
+          if (!categorySet.has(trimmed)) {
+              categoryError = "Select a valid Shopify category";
+              categorySearchTerm = listing.productCategory || "";
+              return;
+          }
+          categoryError = '';
+          if (trimmed !== listing.productCategory) {
+              dispatch('updateCategory', trimmed);
           }
       }, 200);
   }
@@ -232,11 +248,13 @@
   function handleCategoryInput(e: Event) {
       if (readOnly) return;
       categorySearchTerm = (e.target as HTMLInputElement).value;
+      categoryError = '';
       showCategoryDropdown = true;
   }
   
   function selectCategory(cat: string) {
       categorySearchTerm = cat;
+      categoryError = '';
       dispatch('updateCategory', cat);
       showCategoryDropdown = false;
       isCategoryInteracting = false;
@@ -506,7 +524,7 @@
                {#if readOnly}
                     <span class="category-val">{listing.productCategory || 'Uncategorized'}</span>
                {:else}
-                       <div class="category-input-wrapper {(!isCategoryValid) ? 'invalid' : ''}" style="position: relative;">
+                       <div class="category-input-wrapper {(!isCategoryValid || !!categoryError) ? 'invalid' : ''}" style="position: relative;">
                        <input 
                            type="text" 
                            class="category-input editable" 
@@ -516,22 +534,31 @@
                            on:blur={handleCategoryBlur}
                            placeholder="Search or type category..."
                        />
-                       {#if showCategoryDropdown && filteredCategories.length > 0}
+                       {#if showCategoryDropdown}
                            <div class="category-dropdown" role="listbox">
-                               {#each filteredCategories as cat}
-                                   <!-- svelte-ignore a11y-click-events-have-key-events -->
-                                   <div 
-                                       class="category-option" 
-                                       role="option" 
-                                       aria-selected={cat === categorySearchTerm}
-                                       on:mousedown|preventDefault={() => selectCategory(cat)}
-                                       on:keydown={(e) => e.key === 'Enter' && selectCategory(cat)}
-                                       tabindex="0"
-                                   >
-                                       {cat}
+                               {#if filteredCategories.length === 0}
+                                   <div class="category-option empty" aria-disabled="true">
+                                       No matching categories
                                    </div>
-                               {/each}
+                               {:else}
+                                   {#each filteredCategories as cat}
+                                       <!-- svelte-ignore a11y-click-events-have-key-events -->
+                                       <div 
+                                           class="category-option" 
+                                           role="option" 
+                                           aria-selected={cat === categorySearchTerm}
+                                           on:mousedown|preventDefault={() => selectCategory(cat)}
+                                           on:keydown={(e) => e.key === 'Enter' && selectCategory(cat)}
+                                           tabindex="0"
+                                       >
+                                           {cat}
+                                       </div>
+                                   {/each}
+                               {/if}
                            </div>
+                       {/if}
+                       {#if categoryError}
+                           <span class="category-error">{categoryError}</span>
                        {/if}
                    </div>
                {/if}
@@ -745,6 +772,16 @@
       text-align: left;
   }
   .category-option:hover { background: #f3f9ff; color: #2563eb; }
+  .category-option.empty {
+      color: #9ca3af;
+      cursor: default;
+  }
+  .category-error {
+      margin-top: 0.25rem;
+      font-size: 0.75rem;
+      color: #dc2626;
+      font-weight: 600;
+  }
 
   .description-block :global(p) { margin-bottom: 1em; line-height: 1.6; color: #4b5563; }
   .description-block :global(ul) { margin-bottom: 1em; padding-left: 1.5em; }
