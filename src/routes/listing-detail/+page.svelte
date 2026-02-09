@@ -657,9 +657,12 @@
 
             // 4. Remove Old Image
             // Use sourceGroup/sourceJan from the image object if available
-            // @ts-ignore
+            // Draft images have extra metadata injected by buildDraftListingImages
+            type DraftListingImage = ListingImage & { sourceGroup?: string; sourceJan?: string; isListingOnly?: boolean };
+            const oldImageTyped = oldImage as DraftListingImage;
+            
             const targetJan =
-              oldImage?.sourceGroup || oldImage?.sourceJan || janCode;
+              oldImageTyped?.sourceGroup || oldImageTyped?.sourceJan || janCode;
 
             if (isListingOnly) {
               dispatchBroadcast(
