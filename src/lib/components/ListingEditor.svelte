@@ -29,7 +29,15 @@
   // Split Images
   // Subtype Images: specific images linked to inventory items
   // We show ALL images in the gallery to allow reordering.
-  $: subtypeImageUrls = new Set(associatedItems.map(i => i.variantImage || i.image).filter(Boolean));
+  $: subtypeImageUrls = new Set(associatedItems.map(i => {
+      if (i.variantImage) return i.variantImage;
+      // Resolve implicit photo group image to ensure consistent filtering in Draft mode
+      if (i.photoGroupKey) {
+          const groupImg = images.find(img => img.sourceGroup === i.photoGroupKey);
+          if (groupImg) return groupImg.url;
+      }
+      return i.image;
+  }).filter(Boolean));
   
   // Dedupe images by ID to prevent crash
   $: uniqueImages = Array.from(new Map((images || []).map(img => [img.id, img])).values());
