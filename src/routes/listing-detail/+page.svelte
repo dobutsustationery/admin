@@ -854,7 +854,7 @@
               // imagePosition is 1-based usually
               const newPos = index + 1;
               if (item && item.imagePosition !== newPos) {
-                   broadcast(firestore, $user.uid, update_field({ 
+                   broadcast(firestore, $user.uid as string, update_field({ 
                        id: id as string, 
                        field: 'imagePosition', 
                        from: item.imagePosition || 0, 
