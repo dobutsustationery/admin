@@ -1,35 +1,3 @@
-Make sure subtype AI work is only done for > 2 images, also don't
-bother at all if the JAN isn't in the inventory and can't create a listing
-
-Adding the fountain pen didn't work well 4562134108008
-
-Importing the amifa order messes up conflicts because they get processed and
-discarded if we take new items. e.g. jan 4542804109245 Also JANs like 4542804129854
-are listed as matches but we think they are new products.
-
 Trying to merge in kalita products seemed to both not find enough of them
 in the big list, and confused the photos when they were pulled into create
 listings.
-
-Category is at the wrong level -- it is on each inventory item, but should be
-per listing, and *required* for every listing.
-
-In the standardized "working on this for automation" we aren't including cost,
-so now that is showing up as an exception on import.
-
-Listings are working! But lo, no categories :(
-
-SKU descriptions don't match the listing title, and probably should just to avoid
-confusion.
-
-The processed image doesn't seem to update on the listing, which is wrong. The listing
-should pull the photo by its id so that future processing affects it.
-
-In the shopify products bulk view, the columns are supposed to be sortable but aren't
-anymore.
-
-We imported the zebra brush photos, but in bulk edit even though I set
-all the handles equal, it only grouped the first two. I had to do it
-againt to get the full group?
-
-"Allocation" and "Stock" are the same frickin' thing.
