@@ -358,6 +358,16 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                    variants.forEach((v: any, i: number) => {
                        variantIdToItemId.set(v.id, splits[i].newId);
                    });
+
+                   // Clear handle on source item to prevent it from appearing in the listing (ghost row)
+                   const sourceHandle = nextState.inventory.idToItem[sourceId]?.handle || "";
+                   const clearHandleAction = {
+                       ...update_field({ id: sourceId, field: 'handle', from: sourceHandle, to: '' }),
+                       _ephemeral: true,
+                       timestamp: action._timestamp
+                   };
+                   nextState = { ...nextState, inventory: inventory(nextState.inventory, clearHandleAction) };
+                   logger(clearHandleAction, nextState, action._timestamp);
                }
            });
 
