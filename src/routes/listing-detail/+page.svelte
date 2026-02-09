@@ -417,6 +417,15 @@
     }
   }
 
+  function handleUpdateCategory(e: CustomEvent<string>) {
+    if (!$user.uid) return;
+    if (mode === "create" && janCode) {
+         dispatchBroadcast(update_proposal_field({ janCode, field: 'productCategory', value: e.detail }));
+    } else if (handle) {
+         broadcast(firestore, $user.uid, update_listing({ handle, changes: { productCategory: e.detail } }));
+    }
+  }
+
   function handleUpdatePrice(e: CustomEvent<number>) {
     const uid = $user.uid;
     if (!uid) return;
@@ -1338,6 +1347,7 @@
       listing={listingData}
       images={listingImages}
       {associatedItems}
+      knownCategories={$store.listings.knownCategories || []}
       bind:selectedSubtypeId
       readOnly={false}
       isCreationMode={mode === "create"}
@@ -1345,6 +1355,7 @@
       {isGeneratingDescription}
       on:updateTitle={handleUpdateTitle}
       on:updateDescription={handleUpdateDescription}
+      on:updateCategory={handleUpdateCategory}
       on:updatePrice={handleUpdatePrice}
       on:updateVariantQty={handleUpdateVariantQty}
       on:updateVariantValue={handleUpdateVariantValue}

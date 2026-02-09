@@ -27,14 +27,23 @@ export interface ListingsState {
   handleToListing: Record<string, Listing>;
   // Map inventory ID (item key) to Listing Handle to support partial updates/renames
   idToHandle: Record<string, string>; 
+  knownCategories: string[];
   initialized: boolean;
 }
 
 export const initialState: ListingsState = {
   handleToListing: {},
   idToHandle: {},
+  knownCategories: [],
   initialized: false,
 };
+
+function ensureCategory(state: ListingsState, category: string) {
+    if (category && !state.knownCategories.includes(category)) {
+        state.knownCategories.push(category);
+        state.knownCategories.sort();
+    }
+}
 
 // Actions
 export const create_listing = createAction<{ listing: Listing }>("create_listing");
@@ -49,6 +58,7 @@ export const listings = createReducer(initialState, (builder) => {
     .addCase(create_listing, (state, action) => {
       const { listing } = action.payload;
       state.handleToListing[listing.handle] = listing;
+      ensureCategory(state, listing.productCategory);
     })
     .addCase(update_listing, (state, action) => {
       const { handle, changes } = action.payload;
@@ -59,6 +69,7 @@ export const listings = createReducer(initialState, (builder) => {
            ...changes,
            lastUpdated: Date.now()
         };
+        if (changes.productCategory) ensureCategory(state, changes.productCategory);
       }
     })
     .addCase(delete_listing, (state, action) => {
@@ -138,6 +149,7 @@ export const listings = createReducer(initialState, (builder) => {
              listing.bodyHtml = String(to);
         } else if (fieldKey === 'productCategory') { // Legacy
              listing.productCategory = String(to);
+             ensureCategory(state, listing.productCategory);
         }
     });
 });
@@ -184,6 +196,7 @@ function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, 
           // Inject janCode property directly if flexible, or rely only on payload
            (listing as any).janCode = itemPayload.janCode;
 
+          if (listing.productCategory) ensureCategory(state, listing.productCategory);
           state.handleToListing[handle] = listing;
       }
 
@@ -241,7 +254,10 @@ function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, 
       // Optimization: Only update if payload has data.
       // During merge (replay), we don't want a variant with empty body to wipe the main product's body.
       if (itemPayload.bodyHtml) listing.bodyHtml = itemPayload.bodyHtml;
-      if (itemPayload.productCategory) listing.productCategory = itemPayload.productCategory;
+      if (itemPayload.productCategory) {
+          listing.productCategory = itemPayload.productCategory;
+          ensureCategory(state, listing.productCategory);
+      }
       
       // Handle Image
       if (itemPayload.image) {
