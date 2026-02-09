@@ -113,6 +113,7 @@ lines.forEach((line, i) => {
         state = rootReducer(state, action);
         
         console.log(`\n--- Action ${i + 1}: ${action.type} ---`);
+        console.log(JSON.stringify(action, null, 2)); 
         
         const patch = diff(prevState, state);
         
