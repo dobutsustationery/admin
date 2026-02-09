@@ -4,18 +4,22 @@
   import { cubicOut } from "svelte/easing";
   import SecureImage from '$lib/components/SecureImage.svelte';
   
-  export let listing: { title: string; bodyHtml: string; option1Name?: string } | null = null;
+  export let listing: { title: string; bodyHtml: string; option1Name?: string; productCategory?: string } | null = null;
   export let images: any[] = []; // ListingImage[]
   export let associatedItems: any[] = []; // (Item & {id: string})[]
+  export let knownCategories: string[] = [];
   export let selectedSubtypeId: string | null = null;
   export let readOnly = false;
   export let isCreationMode = false; // Toggle for "Approve" button vs "Add to cart"
   export let isGeneratingTitle: boolean = false;
   export let isGeneratingDescription = false;
-
+  
   const dispatch = createEventDispatcher();
   
-  // State for hover
+  // Validation
+  $: isPriceValid = associatedItems.length > 0 && (associatedItems[0].price || 0) > 0;
+  $: isCategoryValid = !!(listing && listing.productCategory);
+  $: isReadyToApprove = isPriceValid && isCategoryValid;
   let hoveredImage: any | null = null;
   let draggingId: string | null = null;
   let dragOverId: string | null = null;
@@ -189,6 +193,14 @@
       const newPrice = parseFloat(target.value);
       if (!isNaN(newPrice)) {
           dispatch('updatePrice', newPrice);
+      }
+  }
+
+  function handleCategoryChange(e: Event) {
+      if (readOnly) return;
+      const val = (e.target as HTMLInputElement).value;
+      if (listing && val !== listing.productCategory) {
+          dispatch('updateCategory', val);
       }
   }
 
@@ -450,6 +462,31 @@
                <div class="tax-note">Taxes included.</div>
            </div>
            
+           <!-- Product Category -->
+           <div class="category-block">
+               <span class="field-label">Category</span>
+               {#if readOnly}
+                    <span class="category-val">{listing.productCategory || 'Uncategorized'}</span>
+               {:else}
+                   <div class="category-input-wrapper {(!isCategoryValid) ? 'invalid' : ''}">
+                       <input 
+                           type="text" 
+                           list="category-list"
+                           class="category-input editable" 
+                           value={listing.productCategory || ''} 
+                           on:change={handleCategoryChange}
+                           on:blur={handleCategoryChange}
+                           placeholder="Search or type category..."
+                       />
+                       <datalist id="category-list">
+                           {#each knownCategories as cat}
+                               <option value={cat} />
+                           {/each}
+                       </datalist>
+                   </div>
+               {/if}
+           </div>
+           
            <div 
               class="description-block {readOnly ? '' : 'editable'}"
               contenteditable={!readOnly}
@@ -483,7 +520,7 @@
            <!-- Actions & Quantity -->
            {#if isCreationMode}
                <div class="actions-block">
-                   <button class="btn-buy-shop" on:click={() => dispatch('approve')} disabled={!isPriceValid}>
+                   <button class="btn-buy-shop" on:click={() => dispatch('approve')} disabled={!isReadyToApprove}>
                        Approve & Publish
                    </button>
                    <button class="btn-drop" on:click={() => dispatch('drop')}>
@@ -601,6 +638,29 @@
   }
   
   .tax-note { font-size: 0.875rem; color: #6b7280; margin-top: 0.25rem; }
+
+  /* Category Input */
+  .category-block { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.25rem; }
+  .field-label { font-size: 0.75rem; color: #6b7280; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+  .category-input-wrapper { display: flex; align-items: center; border: 1px solid #d1d5db; border-radius: 4px; overflow: hidden; }
+  .category-input { width: 100%; border: none; padding: 0.5rem; font-size: 0.9rem; color: #1f2937; }
+  .category-input:focus { outline: none; background: #f8fafc; }
+  
+  .category-input-wrapper.invalid {
+      border-color: #fca5a5;
+      background: #fef2f2;
+  }
+  .category-input-wrapper.invalid:after {
+      content: "Required";
+      display: block;
+      font-size: 0.7rem;
+      color: #dc2626;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding-right: 0.5rem;
+      white-space: nowrap;
+  }
+
   .description-block :global(p) { margin-bottom: 1em; line-height: 1.6; color: #4b5563; }
   .description-block :global(ul) { margin-bottom: 1em; padding-left: 1.5em; }
 
