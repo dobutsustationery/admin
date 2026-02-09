@@ -515,7 +515,17 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
          
          const candidates = Object.entries(localJanCodeToPhotos).filter((entry): entry is [string, any[]] => {
             const [key, images] = entry as [string, any[]];
-            return !key.includes(':') && images.length > 1;
+            
+            // 1. Check Group Size (> 2)
+            if (key.includes(':') || images.length <= 2) return false;
+
+            // 2. Check Inventory Existence
+            // We need to find at least one item with this JAN in inventory (and valid qty)
+            const inInventory = Object.values(inventory.idToItem).some((item: any) => 
+                item.janCode === key && (!item.handle) && (item.qty > 0)
+            );
+            
+            return inInventory;
          });
          
          console.log(`[Generate] Candidates for variant detection (Group size > 1, no colon):`, candidates.map(c => c[0]));
