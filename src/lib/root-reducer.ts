@@ -20,7 +20,7 @@ import {
   computeShopifyImportBatch,
   mark_items_done as markShopifyDone,
 } from "./shopify-import-slice";
-import { listings, add_listing_image, create_listing } from "./listings-slice";
+import { listings, add_listing_image, create_listing, update_listing } from "./listings-slice";
 import listingCreation, { 
   add_variants_internal,
   remove_proposal,
@@ -93,6 +93,96 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
   let nextState = combinedReducer(state, action);
 
   // 2. Interception & Composition
+
+  // Listing <-> Inventory Sync (Title/Description)
+  if (action.type === "update_field") {
+      const { id, field, to } = action.payload;
+      
+      // Case A: Linking (Handle Set)
+      if (field === 'handle') {
+          const handle = to;
+          const listing = nextState.listings.handleToListing[handle];
+          if (listing) {
+              if (nextState.inventory.idToItem[id].description !== listing.title) {
+                   const syncAction = {
+                       ...update_field({ id, field: 'description', from: nextState.inventory.idToItem[id].description, to: listing.title }),
+                       _ephemeral: true,
+                       timestamp: action._timestamp
+                   };
+                   nextState = { 
+                       ...nextState, 
+                       inventory: inventory(nextState.inventory, syncAction) 
+                   };
+                   logger(syncAction, nextState, action._timestamp);
+              }
+          }
+      }
+      
+      // Case B: Item Description Update -> Propagate to Listing & Siblings
+      if (field === 'description') {
+          const item = nextState.inventory.idToItem[id];
+          if (item && item.handle) {
+              const listing = nextState.listings.handleToListing[item.handle];
+              if (listing) {
+                  // 1. Update Listing Title (if not already updated by listings slice)
+                  if (listing.title !== to) {
+                      const updateListingAction = {
+                          ...update_listing({ handle: item.handle, changes: { title: to } }),
+                          _ephemeral: true,
+                          timestamp: action._timestamp
+                      };
+                      nextState = {
+                          ...nextState,
+                          listings: listings(nextState.listings, updateListingAction)
+                      };
+                      logger(updateListingAction, nextState, action._timestamp);
+                  }
+                  
+                  // 2. Update Siblings (Always check consistency)
+                  const handle = item.handle;
+                  const newTitle = to;
+                  for (const otherId in nextState.inventory.idToItem) {
+                      const otherItem = nextState.inventory.idToItem[otherId];
+                      if (otherItem.handle === handle && otherItem.description !== newTitle) {
+                           const syncSiblingAction = {
+                               ...update_field({ id: otherId, field: 'description', from: otherItem.description, to: newTitle }),
+                               _ephemeral: true,
+                               timestamp: action._timestamp
+                           };
+                           nextState = { 
+                               ...nextState, 
+                               inventory: inventory(nextState.inventory, syncSiblingAction) 
+                           };
+                           logger(syncSiblingAction, nextState, action._timestamp);
+                      }
+                  }
+              }
+          }
+      }
+  }
+
+  if (action.type === "update_listing") {
+      const { handle, changes } = action.payload;
+      if (changes.title) {
+          const newTitle = changes.title;
+          // Propagate to ALL items with this handle
+          for (const id in nextState.inventory.idToItem) {
+              const item = nextState.inventory.idToItem[id];
+              if (item.handle === handle && item.description !== newTitle) {
+                   const syncAction = {
+                       ...update_field({ id, field: 'description', from: item.description, to: newTitle }),
+                       _ephemeral: true,
+                       timestamp: action._timestamp
+                   };
+                   nextState = { 
+                       ...nextState, 
+                       inventory: inventory(nextState.inventory, syncAction) 
+                   };
+                   logger(syncAction, nextState, action._timestamp);
+              }
+          }
+      }
+  }
 
   // Order Import Batch
   if (action.type === "orderImport/import_batch" && state.orderImport) {
