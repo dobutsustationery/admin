@@ -1,7 +1,7 @@
 <script lang="ts">
   import ComboBox from "./ComboBox.svelte";
   import { firestore } from "./firebase";
-  import { user } from "./globals";
+  import { user } from "$lib/user-store";
   import { type Item, update_field } from "./inventory";
   import { broadcast } from "./redux-firestore";
   import { store } from "./store";
@@ -20,7 +20,7 @@
     return (e: any) => {
       const to = e.detail || e.target.value;
       const from = item[field];
-      if (to !== null && $user.uid) {
+      if (to !== null && $user && $user.uid) {
         broadcast(
           firestore,
           $user.uid,
