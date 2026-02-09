@@ -20,6 +20,20 @@
   $: isPriceValid = associatedItems.length > 0 && (associatedItems[0].price || 0) > 0;
   $: isCategoryValid = !!(listing && listing.productCategory);
   $: isReadyToApprove = isPriceValid && isCategoryValid;
+
+  // Category Autocomplete State
+  let showCategoryDropdown = false;
+  let categorySearchTerm = '';
+  // Initialize search term from prop if not interacting
+  let isCategoryInteracting = false;
+  $: if (listing && listing.productCategory !== undefined && !isCategoryInteracting) {
+      categorySearchTerm = listing.productCategory;
+  }
+  
+  $: filteredCategories = categorySearchTerm 
+      ? knownCategories.filter(c => c.toLowerCase().includes(categorySearchTerm.toLowerCase())).slice(0, 100)
+      : knownCategories.slice(0, 20);
+
   let hoveredImage: any | null = null;
   let draggingId: string | null = null;
   let dragOverId: string | null = null;
@@ -196,12 +210,34 @@
       }
   }
 
-  function handleCategoryChange(e: Event) {
+  function handleCategoryFocus() {
       if (readOnly) return;
-      const val = (e.target as HTMLInputElement).value;
-      if (listing && val !== listing.productCategory) {
-          dispatch('updateCategory', val);
-      }
+      isCategoryInteracting = true;
+      showCategoryDropdown = true;
+  }
+  
+  function handleCategoryBlur() {
+      // Delay to allow click on dropdown option
+      setTimeout(() => {
+          showCategoryDropdown = false;
+          isCategoryInteracting = false;
+          if (listing && categorySearchTerm !== listing.productCategory) {
+              dispatch('updateCategory', categorySearchTerm);
+          }
+      }, 200);
+  }
+  
+  function handleCategoryInput(e: Event) {
+      if (readOnly) return;
+      categorySearchTerm = (e.target as HTMLInputElement).value;
+      showCategoryDropdown = true;
+  }
+  
+  function selectCategory(cat: string) {
+      categorySearchTerm = cat;
+      dispatch('updateCategory', cat);
+      showCategoryDropdown = false;
+      isCategoryInteracting = false;
   }
 
   // Image Actions
@@ -468,21 +504,31 @@
                {#if readOnly}
                     <span class="category-val">{listing.productCategory || 'Uncategorized'}</span>
                {:else}
-                   <div class="category-input-wrapper {(!isCategoryValid) ? 'invalid' : ''}">
+                   <div class="category-input-wrapper {(!isCategoryValid) ? 'invalid' : ''}" style="position: relative;">
                        <input 
                            type="text" 
-                           list="category-list"
                            class="category-input editable" 
-                           value={listing.productCategory || ''} 
-                           on:change={handleCategoryChange}
-                           on:blur={handleCategoryChange}
+                           bind:value={categorySearchTerm}
+                           on:input={handleCategoryInput}
+                           on:focus={handleCategoryFocus}
+                           on:blur={handleCategoryBlur}
                            placeholder="Search or type category..."
                        />
-                       <datalist id="category-list">
-                           {#each knownCategories as cat}
-                               <option value={cat} />
-                           {/each}
-                       </datalist>
+                       {#if showCategoryDropdown && filteredCategories.length > 0}
+                           <div class="category-dropdown" role="listbox">
+                               {#each filteredCategories as cat}
+                                   <!-- svelte-ignore a11y-click-events-have-key-events -->
+                                   <div 
+                                       class="category-option" 
+                                       role="option" 
+                                       aria-selected={cat === categorySearchTerm}
+                                       on:click={() => selectCategory(cat)}
+                                   >
+                                       {cat}
+                                   </div>
+                               {/each}
+                           </div>
+                       {/if}
                    </div>
                {/if}
            </div>
@@ -661,6 +707,34 @@
       padding-right: 0.5rem;
       white-space: nowrap;
   }
+
+  /* Custom Category Dropdown */
+  .category-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      min-width: 100%;
+      width: max-content;
+      max-width: 80vw;
+      max-height: 300px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #d1d5db;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+      z-index: 50;
+      border-radius: 4px;
+      margin-top: 4px;
+  }
+  .category-option {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      border-bottom: 1px solid #f3f4f6;
+      white-space: normal;
+      font-size: 0.85rem;
+      color: #374151;
+      text-align: left;
+  }
+  .category-option:hover { background: #f3f9ff; color: #2563eb; }
 
   .description-block :global(p) { margin-bottom: 1em; line-height: 1.6; color: #4b5563; }
   .description-block :global(ul) { margin-bottom: 1em; padding-left: 1.5em; }
