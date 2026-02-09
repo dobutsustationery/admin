@@ -474,7 +474,8 @@
       <div class="details-column">
            <div class="title-block">
                <h1 
-                  class="listing-title {readOnly ? '' : 'editable'}" 
+                  class="listing-title {readOnly ? '' : 'editable'}"
+                  class:generating={isGeneratingTitle}
                   contenteditable={!readOnly}
                   on:blur={handleTitleBlur}
                >{listing.title}</h1>
@@ -661,6 +662,12 @@
   /* Typography & Details */
   .title-block { margin-bottom: 0.5rem; }
   .listing-title { font-size: 2.25rem; font-weight: 400; line-height: 1.1; color: #111827; margin: 0 0 0.5rem 0; }
+  .listing-title.generating { opacity: 0.65; animation: titlePulse 1.4s ease-in-out infinite; }
+  @keyframes titlePulse {
+      0% { opacity: 0.55; }
+      50% { opacity: 0.95; }
+      100% { opacity: 0.55; }
+  }
   
   /* Updated Price Styling */
   .listing-price-container { 

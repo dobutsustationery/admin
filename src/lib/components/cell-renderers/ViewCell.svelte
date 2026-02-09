@@ -5,6 +5,9 @@
   export let index: number = 0;
   export let col: any = null; // Column Config
 
+  $: colKey =
+      col?.field || col?.key || col?.header || col?.id || col?.title || "";
+
   function navigate() {
       // Prioritize Create Mode if context flag is set (Drafts/Proposals)
       if (item._viewMode === 'create' && item.janCode) {
@@ -24,7 +27,7 @@
   }
 </script>
 
-<div class="cell-container">
+<div class="cell-container" data-col={colKey} data-row={index}>
     <button class="view-btn" title="View Listing" on:click={navigate}>
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
