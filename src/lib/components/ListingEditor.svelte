@@ -333,7 +333,6 @@
       : 'Price not set';
       
   $: stockCount = associatedItems.reduce((sum, item) => sum + (item.qty || 0), 0);
-  $: isPriceValid = associatedItems.length > 0 && (associatedItems[0].price || 0) > 0;
 </script>
 
 {#if listing}
@@ -523,6 +522,8 @@
                                        role="option" 
                                        aria-selected={cat === categorySearchTerm}
                                        on:click={() => selectCategory(cat)}
+                                       on:keydown={(e) => e.key === 'Enter' && selectCategory(cat)}
+                                       tabindex="0"
                                    >
                                        {cat}
                                    </div>
