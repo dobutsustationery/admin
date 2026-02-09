@@ -84,6 +84,12 @@
   }
   
   function handleResizeEnd() {
+      if (resizingColumn) {
+          const col = columns.find(c => c.field === resizingColumn);
+          if (col) {
+              dispatch('resize', { field: resizingColumn, width: col.width });
+          }
+      }
       resizingColumn = null;
       window.removeEventListener('mousemove', handleResizeMove);
       window.removeEventListener('mouseup', handleResizeEnd);

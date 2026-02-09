@@ -30,6 +30,7 @@
   import { user } from "$lib/user-store";
   import { update_field } from "$lib/inventory";
   import SecureImage from "$lib/components/SecureImage.svelte";
+  import { set_column_width } from "$lib/ui-slice";
 
   // Subscribe to state
   $: listingCreation = $store.listingCreation;
@@ -253,7 +254,7 @@
   $: progressPercent = totalInBatch > 0 ? (doneInBatch / totalInBatch) * 100 : 0;
 
   // --- Bulk Editor Config ---
-  let columnConfig: ColumnConfig[] = [
+  const baseColumnConfig: ColumnConfig[] = [
       { field: 'view', header: 'View', width: 50, editable: false, type: 'component', component: ViewCell },
       { field: '_thumbnail', header: 'Image', width: 60, type: 'component', component: ImageCell, editable: false },
       
@@ -270,6 +271,15 @@
       { field: 'sku', header: 'Variant SKU', width: 150, editable: false },
       { field: 'janCode', header: 'Barcode', width: 120, editable: false },
   ];
+  
+  $: columnConfig = baseColumnConfig.map(c => {
+      const w = $store.ui?.columnWidths?.[`batch_${c.field}`];
+      return w ? { ...c, width: w } : c;
+  });
+  
+  function handleResize(e: CustomEvent<{ field: string; width: number }>) {
+      store.dispatch(set_column_width({ view: 'batch', field: e.detail.field, width: e.detail.width }));
+  }
 
   function handleCommit(rowId: string, field: string, value: any, index: number) {
       // Find the row data to get the real context
@@ -476,6 +486,7 @@
                 on:commit={handleBulkCommit}
                 on:imagePick={handleBulkImagePick}
                 on:editHtml={handleBulkEditHtml}
+                on:resize={handleResize}
              />
         </div>
     {:else if draftCount > 0}

@@ -15,6 +15,7 @@
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BulkEditor, { type ColumnConfig } from "$lib/components/BulkEditor.svelte";
   import ViewCell from "$lib/components/cell-renderers/ViewCell.svelte";
+  import { set_column_width } from "$lib/ui-slice";
 
 
   // --- Derived Data ---
@@ -214,9 +215,13 @@
   function handleBulkCommit(e: CustomEvent<{ id: string; field: string; value: any; index: number }>) {
       commitEdit(e.detail.id, e.detail.field, e.detail.value, e.detail.index);
   }
+  
+  function handleResize(e: CustomEvent<{ field: string; width: number }>) {
+      store.dispatch(set_column_width({ view: 'shopify', field: e.detail.field, width: e.detail.width }));
+  }
 
   // --- Column Config ---
-  let columnConfig: ColumnConfig[] = [
+  const baseColumnConfig: ColumnConfig[] = [
       { field: 'view', header: 'View', width: 50, editable: false, type: 'component', component: ViewCell },
       
       { field: 'handle', header: 'Handle', width: 200, type: 'text', placeholderField: 'computedHandle' },
@@ -235,6 +240,11 @@
       { field: 'imagePosition', header: 'Image Position', width: 80, type: 'number', align: 'right' },
       { field: 'imageAltText', header: 'Image Alt Text', width: 200, type: 'text' },
   ];
+  
+  $: columnConfig = baseColumnConfig.map(c => {
+      const w = $store.ui?.columnWidths?.[`shopify_${c.field}`];
+      return w ? { ...c, width: w } : c;
+  });
 
   function downloadCSV() {
       // 1. Group by Handle
@@ -375,6 +385,7 @@
             bind:sortHistory={sortHistory}
             on:sort={handleSort}
             on:commit={handleBulkCommit}
+            on:resize={handleResize}
          />
     </div>
 </div>

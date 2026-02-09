@@ -26,6 +26,7 @@ import listingCreation, {
   remove_proposal,
   complete_batch
 } from "./listing-creation-slice";
+import { ui } from "./ui-slice";
 import { logAction } from "./devtools-middleware";
 import { generateHandle } from "./handle-utils";
 import { buildDraftListingImages } from "./listing-image-logic";
@@ -39,6 +40,7 @@ const reducerObject = {
   shopifyImport,
   listings,
   listingCreation,
+  ui,
 };
 const combinedReducer = combineReducers(reducerObject);
 
