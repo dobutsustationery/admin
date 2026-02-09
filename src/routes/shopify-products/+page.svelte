@@ -217,7 +217,11 @@
   }
   
   function handleResize(e: CustomEvent<{ field: string; width: number }>) {
-      store.dispatch(set_column_width({ view: 'shopify', field: e.detail.field, width: e.detail.width }));
+      if ($user && $user.uid) {
+          broadcast(firestore, $user.uid, set_column_width({ view: 'shopify', field: e.detail.field, width: e.detail.width }));
+      } else {
+          store.dispatch(set_column_width({ view: 'shopify', field: e.detail.field, width: e.detail.width }));
+      }
   }
 
   // --- Column Config ---

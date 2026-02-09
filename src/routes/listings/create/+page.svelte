@@ -278,7 +278,7 @@
   });
   
   function handleResize(e: CustomEvent<{ field: string; width: number }>) {
-      store.dispatch(set_column_width({ view: 'batch', field: e.detail.field, width: e.detail.width }));
+      dispatchBroadcast(set_column_width({ view: 'batch', field: e.detail.field, width: e.detail.width }));
   }
 
   function handleCommit(rowId: string, field: string, value: any, index: number) {
