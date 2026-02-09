@@ -358,7 +358,7 @@
 
 </script>
 
-<div class="page text-sm">
+<div class="page">
     <div class="toolbar">
         <h1>Shopify Bulk Editor</h1>
         <div class="actions">
@@ -367,7 +367,7 @@
         </div>
     </div>
     
-    <div class="h-[calc(100vh-60px)] -mx-6">
+    <div class="editor-container">
          <BulkEditor 
             data={visibleItems}
             columns={columnConfig}
@@ -385,8 +385,14 @@
         flex-direction: column;
         height: 100vh;
         background: white;
-        padding-left: 1.5rem; /* Match container padding hack -mx-6 */
+        padding-left: 1.5rem; 
         padding-right: 1.5rem;
+        font-size: 0.875rem; /* text-sm */
+    }
+    .editor-container {
+        height: calc(100vh - 60px);
+        margin-left: -1.5rem;
+        margin-right: -1.5rem;
     }
     .toolbar {
         padding: 1rem 0;
