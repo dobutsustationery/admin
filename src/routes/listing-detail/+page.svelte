@@ -510,15 +510,27 @@
                        }
                   }
               } else {
-                   if (uploadingImageId && replacingImagePosition !== null && handle) {
-                       broadcast(firestore, $user.uid, remove_listing_image({ handle, imageId: uploadingImageId }));
-                       const newImage: ListingImage = {
-                           id: crypto.randomUUID(),
-                           url: newUrl,
-                           position: replacingImagePosition,
-                           altText: listingData?.title || ''
-                       };
-                       broadcast(firestore, $user.uid, add_listing_image({ handle, image: newImage }));
+                   if (handle) {
+                       if (uploadingImageId && replacingImagePosition !== null) {
+                           // Replace existing
+                           broadcast(firestore, $user.uid, remove_listing_image({ handle, imageId: uploadingImageId }));
+                           const newImage: ListingImage = {
+                               id: crypto.randomUUID(),
+                               url: newUrl,
+                               position: replacingImagePosition,
+                               altText: listingData?.title || ''
+                           };
+                           broadcast(firestore, $user.uid, add_listing_image({ handle, image: newImage }));
+                       } else {
+                           // Add New
+                           const newImage: ListingImage = {
+                               id: crypto.randomUUID(),
+                               url: newUrl,
+                               position: listingImages.length + 1,
+                               altText: listingData?.title || ''
+                           };
+                           broadcast(firestore, $user.uid, add_listing_image({ handle, image: newImage }));
+                       }
                    }
               }
           }
@@ -567,9 +579,15 @@
   }
 
   function openImagePicker() {
-      if (mode !== 'create' || !janCode) return;
-      imagePickerTargetJan = janCode;
-      showImagePicker = true;
+      if (mode === 'create' && janCode) {
+          imagePickerTargetJan = janCode;
+          showImagePicker = true;
+      } else if (handle) {
+          // Live Mode: Trigger Upload for new image
+          uploadingImageId = null;
+          replacingImagePosition = null;
+          fileInput.click();
+      }
   }
 
   function buildImagePickerCandidates() {
@@ -774,6 +792,21 @@
   function handleReorderSubtypes(e: CustomEvent<{ order: string[] }>) {
       if (mode === 'create' && janCode) {
           dispatchBroadcast(reorder_variants({ janCode, newVariantOrder: e.detail.order }));
+      } else if (handle && $user?.uid) {
+          // Live Mode: Update imagePosition to persist order
+          e.detail.order.forEach((id, index) => {
+              const item = associatedItems.find(i => i.id === id);
+              // imagePosition is 1-based usually
+              const newPos = index + 1;
+              if (item && item.imagePosition !== newPos) {
+                   broadcast(firestore, $user.uid, update_field({ 
+                       id, 
+                       field: 'imagePosition', 
+                       from: item.imagePosition || 0, 
+                       to: newPos 
+                   }));
+              }
+          });
       }
   }
 
