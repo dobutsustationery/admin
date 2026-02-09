@@ -592,11 +592,6 @@
       const candidates = new Map<string, { id: string; url: string; altText: string }>();
 
       if (mode === 'live' && handle) {
-          console.log("[ImagePicker] Live Mode. Handle:", handle);
-          console.log("[ImagePicker] Associated Items:", associatedItems);
-          const allKeys = Object.keys($store.photos.janCodeToPhotos || {});
-          console.log("[ImagePicker] Available Photo Keys:", allKeys);
-
           // Live Mode: Scan all associated JANs
           const seenJans = new Set<string>();
           associatedItems.forEach(item => {
@@ -1057,6 +1052,9 @@
                       <code class="text-xs block mt-1 bg-white p-1 rounded border">
                           {associatedItems.map(i => i.janCode).join(', ') || 'None'}
                       </code>
+                      <p class="text-xs mt-2 text-gray-400">
+                          (Debug: Store has {Object.keys($store.photos.janCodeToPhotos || {}).length} photo groups)
+                      </p>
                   </div>
               {/if}
 
