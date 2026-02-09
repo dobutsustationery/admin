@@ -485,6 +485,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                
                if (proposal.price !== undefined) fields.push({ field: 'price', value: proposal.price });
                fields.push({ field: 'handle', value: finalHandle });
+               // Explicitly sync Description from Proposal Title
+               fields.push({ field: 'description', value: proposal.title });
                if (v.option1Value) fields.push({ field: 'subtype', value: v.option1Value });
                if (imageUrl) fields.push({ field: 'image', value: imageUrl });
                fields.push({ field: 'imagePosition', value: i + 1 });
