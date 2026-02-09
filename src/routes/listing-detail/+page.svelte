@@ -50,6 +50,7 @@
   $: janCode =
     $page.url.searchParams.get("janCode") || $page.url.searchParams.get("jan");
   $: handle = $page.url.searchParams.get("handle");
+  $: isLiveMode = mode === 'live' || (!!handle && mode !== 'create');
 
   // Batch Navigation State
   $: activeBatchJans = $store.listingCreation.activeBatchJans || [];
@@ -1192,7 +1193,7 @@
 
 <div class="container">
   <!-- Header / Navigation -->
-  {#if mode === "live"}
+  {#if isLiveMode}
     <div class="search-header">
       <div class="search-bar-row">
         <input
