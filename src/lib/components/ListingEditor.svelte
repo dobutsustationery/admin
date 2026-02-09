@@ -27,7 +27,9 @@
   // Initialize search term from prop if not interacting
   let isCategoryInteracting = false;
   $: if (listing && listing.productCategory !== undefined && !isCategoryInteracting) {
-      categorySearchTerm = listing.productCategory;
+      if (categorySearchTerm !== listing.productCategory) {
+          categorySearchTerm = listing.productCategory;
+      }
   }
   
   $: filteredCategories = categorySearchTerm 
@@ -503,7 +505,7 @@
                {#if readOnly}
                     <span class="category-val">{listing.productCategory || 'Uncategorized'}</span>
                {:else}
-                   <div class="category-input-wrapper {(!isCategoryValid) ? 'invalid' : ''}" style="position: relative;">
+                       <div class="category-input-wrapper {(!isCategoryValid) ? 'invalid' : ''}" style="position: relative;">
                        <input 
                            type="text" 
                            class="category-input editable" 
@@ -521,7 +523,7 @@
                                        class="category-option" 
                                        role="option" 
                                        aria-selected={cat === categorySearchTerm}
-                                       on:click={() => selectCategory(cat)}
+                                       on:mousedown|preventDefault={() => selectCategory(cat)}
                                        on:keydown={(e) => e.key === 'Enter' && selectCategory(cat)}
                                        tabindex="0"
                                    >
@@ -689,7 +691,7 @@
   /* Category Input */
   .category-block { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.25rem; }
   .field-label { font-size: 0.75rem; color: #6b7280; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
-  .category-input-wrapper { display: flex; align-items: center; border: 1px solid #d1d5db; border-radius: 4px; overflow: hidden; }
+  .category-input-wrapper { display: flex; align-items: center; border: 1px solid #d1d5db; border-radius: 4px; }
   @media (min-width: 768px) { .category-input-wrapper { min-width: 450px; } }
   .category-input { width: 100%; border: none; padding: 0.5rem; font-size: 0.9rem; color: #1f2937; text-overflow: ellipsis; }
   .category-input:focus { outline: none; background: #f8fafc; }

@@ -19,7 +19,7 @@ export interface Item {
 
   // Shopify specific
   handle?: string;
-  // bodyHtml, productCategory, etc. removed for Listings slice migration
+  // bodyHtml removed for Listings slice migration
   countryOfOrigin?: string;
   imagePosition?: number;
 }
@@ -297,9 +297,18 @@ function applyInventoryUpdate(
   const currentShipped = existingItem ? (existingItem.shipped || 0) : 0;
   const currentCreationDate = existingItem ? existingItem.creationDate : (globalDate + ` (${item.qty})`);
 
+  const {
+    bodyHtml,
+    productCategory,
+    listingImage,
+    imageAltText,
+    option1Value,
+    ...inventoryItem
+  } = item as any;
+
   state.idToItem[id] = {
     ...state.idToItem[id], // Preserve existing fields (e.g. price, handle)
-    ...item,
+    ...inventoryItem,
     janCode: item.janCode?.trim(),
     subtype: item.subtype?.trim() || "",
     hsCode: item.hsCode ? String(item.hsCode).replace(/\s+/g, "") : (state.idToItem[id]?.hsCode || ""),

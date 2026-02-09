@@ -36,12 +36,16 @@ export function generateShopifyCSV(products: ShopifyProduct[]): string {
 // Extended Item for Export (includes Listing fields overlay)
 export interface ExportableItem extends Item {
     bodyHtml?: string;
-    productCategory?: string;
     imageAltText?: string;
 }
 
 // Helper to map our Item to a base partial ShopifyProduct
-export function mapItemToProduct(item: ExportableItem, imagePos: number, option1Name: string = "Subtype"): ShopifyProduct {
+export function mapItemToProduct(
+  item: ExportableItem,
+  imagePos: number,
+  option1Name: string = "Subtype",
+  productCategory: string = "",
+): ShopifyProduct {
   // Use persisted fields or defaults
   // Handle: Required. If missing from item, caller must ensure it exists or we default? 
   // Ideally, valid items for export have handles.
@@ -54,7 +58,7 @@ export function mapItemToProduct(item: ExportableItem, imagePos: number, option1
     Title: title,
     "Body (HTML)": body,
     Vendor: "SPNSS Ltd.",
-    "Product Category": item.productCategory || "", 
+    "Product Category": productCategory, 
     Published: "true",
     "Option1 Name": option1Name,
     "Option1 Value": item.subtype || "Default",
