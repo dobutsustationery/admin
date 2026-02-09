@@ -217,11 +217,21 @@
       extensionHintIndex = -1;
   }
   
-  function getSortIndicator(field: string): string {
-      const idx = sortHistory.findIndex(r => r.field === field);
-      if (idx === 0) return sortHistory[0].dir === 'asc' ? '↑' : '↓';
-      return '';
-  }
+  $: sortIndicatorByField = new Map(
+      sortHistory.map((rule, idx) => {
+          const arrow = rule.dir === 'asc' ? '↑' : '↓';
+          return [rule.field, idx === 0 ? arrow : `${arrow}${idx + 1}`];
+      })
+  );
+
+  $: sortAriaByField = new Map<string, 'none' | 'ascending' | 'descending'>(
+      sortHistory.map((rule, idx) => [
+          rule.field,
+          idx === 0 ? (rule.dir === 'asc' ? 'ascending' : 'descending') : 'none'
+      ])
+  );
+
+  $: sortedFields = new Set(sortHistory.map(rule => rule.field));
 
   function handleCommit(e: Event, item: any, field: string, index: number) {
       const target = e.currentTarget as HTMLInputElement;
@@ -240,13 +250,15 @@
                 {#each columns as col}
                     <th 
                         class="header-cell"
+                        class:sorted={sortedFields.has(col.field)}
+                        aria-sort={sortAriaByField.get(col.field) || 'none'}
                         style="width: {col.width}px;" 
                         title={col.header}
                         on:click={() => handleHeaderClick(col.field)}
                     >
                         <div class="header-content">
                             <span class="header-text">{col.header}</span>
-                            <span class="sort-indicator">{getSortIndicator(col.field)}</span>
+                            <span class="sort-indicator">{sortIndicatorByField.get(col.field) || ''}</span>
                         </div>
                         
                         <!-- Resizer -->
@@ -351,6 +363,11 @@
         white-space: nowrap;
         overflow: hidden;
         z-index: 10;
+        cursor: pointer;
+    }
+
+    .header-cell.sorted {
+        color: #1f2937; /* gray-800 */
     }
     
     /* Sticky First Column (Header) */
@@ -365,21 +382,26 @@
     }
 
     .header-content {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        position: relative;
         pointer-events: none; /* Let clicks pass to TH */
     }
 
     .header-text {
+        display: block;
+        padding-right: 1.25rem;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
     .sort-indicator {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
         font-size: 0.75rem;
-        margin-left: 0.25rem;
         color: #6b7280;
+        min-width: 1rem;
+        text-align: right;
     }
 
     .col-resizer {
