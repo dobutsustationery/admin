@@ -292,6 +292,7 @@
 
   .main-content {
     flex: 1;
+    min-width: 0; /* Prevent flex item from expanding beyond viewport */
     padding: 1rem;
     padding-left: 250px; /* Width of nav */
     transition: padding-left 0.3s ease-in-out;
