@@ -181,6 +181,11 @@
                       return item ? { ...item, id } : null;
                   })
                   .filter((item): item is NonNullable<typeof item> => !!item)
+                  .filter(item => {
+                      // Filter out "Ghost" source items (empty & generic) that might persist due to handle updates
+                      if (item.qty <= 0 && (!item.subtype || item.subtype === 'Default')) return false;
+                      return true;
+                  })
                   .sort((a, b) => {
                       const posA = a.imagePosition !== undefined ? a.imagePosition : 9999;
                       const posB = b.imagePosition !== undefined ? b.imagePosition : 9999;
