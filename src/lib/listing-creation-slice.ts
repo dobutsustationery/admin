@@ -402,6 +402,55 @@ export interface ListingCreationState {
           state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
           state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
       },
+      merge_proposals: (state, action: PayloadAction<{ targetJan: string, sourceJans: string[] }>) => {
+          const { targetJan, sourceJans } = action.payload;
+          const target = state.proposals[targetJan];
+          if (!target) return;
+
+          const uniqueSources = Array.from(new Set(sourceJans)).filter(j => j && j !== targetJan);
+          if (uniqueSources.length === 0) return;
+
+          uniqueSources.forEach((sourceJan) => {
+              const source = state.proposals[sourceJan];
+              if (!source) return;
+
+              // Merge arrays with dedupe
+              target.inventoryItemIds = Array.from(new Set([...target.inventoryItemIds, ...source.inventoryItemIds]));
+              target.photoGroupIds = Array.from(new Set([...target.photoGroupIds, ...source.photoGroupIds]));
+
+              const variantsById = new Map<string, ListingVariant>();
+              target.variants.forEach(v => variantsById.set(v.id, v));
+              source.variants.forEach(v => {
+                  if (!variantsById.has(v.id)) variantsById.set(v.id, v);
+              });
+              target.variants = Array.from(variantsById.values());
+
+              if (source.listingOnlyImages) {
+                  const imagesById = new Map<string, ListingImage>();
+                  (target.listingOnlyImages || []).forEach(img => imagesById.set(img.id, img));
+                  source.listingOnlyImages.forEach(img => {
+                      if (!imagesById.has(img.id)) imagesById.set(img.id, img);
+                  });
+                  target.listingOnlyImages = Array.from(imagesById.values());
+              }
+
+              if (source.listingImageOrder) {
+                  const order = new Set(target.listingImageOrder || []);
+                  source.listingImageOrder.forEach(id => {
+                      if (!order.has(id)) order.add(id);
+                  });
+                  target.listingImageOrder = Array.from(order);
+              }
+
+              if (source.excludedPhotoIds) {
+                  target.excludedPhotoIds = Array.from(new Set([...(target.excludedPhotoIds || []), ...source.excludedPhotoIds]));
+              }
+
+              delete state.proposals[sourceJan];
+              state.activeBatchJans = state.activeBatchJans.filter(j => j !== sourceJan);
+              state.originalBatchJans = state.originalBatchJans.filter(j => j !== sourceJan);
+          });
+      },
       import_existing_variants: (state, action: PayloadAction<{ janCode: string, handle: string }>) => {
            // Represents the user intent to import existing variants for this handle.
            // The logic to find and add the items is handled by the root reducer / middleware.
@@ -475,6 +524,7 @@ export const {
     reorder_variants,
     move_variant,
     merge_proposal,
+    merge_proposals,
     import_existing_variants,
     add_variants_internal,
     approve_proposal,
@@ -1090,9 +1140,21 @@ export const set_proposal_handle_thunk = (janCode: string, variantId: string | u
         if (isMultiVariant && variantId) {
              // Move just this variant.
              dispatch(move_variant({ sourceJan: janCode, targetJan: target.janCode, variantId }));
+             if (targetGroup.length > 1) {
+                 const extraTargets = targetGroup
+                     .map(p => p.janCode)
+                     .filter(j => j !== target.janCode);
+                 if (extraTargets.length > 0) {
+                     dispatch(merge_proposals({ targetJan: target.janCode, sourceJans: extraTargets }));
+                 }
+             }
         } else {
-             // Merge entire proposal
-             dispatch(merge_proposal({ sourceJan: janCode, targetJan: target.janCode }));
+             // Merge all proposals that should share this handle at once.
+             const sourceJans = new Set<string>([janCode]);
+             targetGroup.forEach(p => {
+                 if (p.janCode !== target.janCode) sourceJans.add(p.janCode);
+             });
+             dispatch(merge_proposals({ targetJan: target.janCode, sourceJans: Array.from(sourceJans) }));
         }
     } else {
         // SCENARIO B: Check for Existing Listing (Store Persisted State)
@@ -1130,8 +1192,30 @@ export const set_proposal_handle_thunk = (janCode: string, variantId: string | u
 
             if (isMultiVariant && variantId) {
                  dispatch(split_variant({ janCode, variantId, newHandle }));
+                 const updatedState = getState();
+                 const freshProposals = Object.values(updatedState.listingCreation.proposals) as ListingProposal[];
+                 const matching = freshProposals.filter((p) => {
+                     const h = p.handle || generateHandle(p.title || "", p.janCode);
+                     return h === newHandle;
+                 });
+                 if (matching.length > 1) {
+                     const target = matching.find(p => p.janCode === variantId) || matching[0];
+                     const sources = matching.map(p => p.janCode).filter(j => j !== target.janCode);
+                     dispatch(merge_proposals({ targetJan: target.janCode, sourceJans: sources }));
+                 }
             } else {
                  dispatch(update_proposal_field({ janCode, field: 'handle', value: newHandle }));
+                 const updatedState = getState();
+                 const freshProposals = Object.values(updatedState.listingCreation.proposals) as ListingProposal[];
+                 const matching = freshProposals.filter((p) => {
+                     const h = p.handle || generateHandle(p.title || "", p.janCode);
+                     return h === newHandle;
+                 });
+                 if (matching.length > 1) {
+                     const target = matching.find(p => p.janCode === janCode) || matching[0];
+                     const sources = matching.map(p => p.janCode).filter(j => j !== target.janCode);
+                     dispatch(merge_proposals({ targetJan: target.janCode, sourceJans: sources }));
+                 }
             }
         }
     }
