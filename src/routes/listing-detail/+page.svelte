@@ -583,14 +583,38 @@
           imagePickerTargetJan = janCode;
           showImagePicker = true;
       } else if (handle) {
-          // Live Mode: Trigger Upload for new image
-          uploadingImageId = null;
-          replacingImagePosition = null;
-          fileInput.click();
+          // Live Mode: Open Picker
+          showImagePicker = true;
       }
   }
 
   function buildImagePickerCandidates() {
+      const candidates = new Map<string, { id: string; url: string; altText: string }>();
+
+      if (mode === 'live' && handle) {
+          // Live Mode: Scan all associated JANs
+          const seenJans = new Set<string>();
+          associatedItems.forEach(item => {
+              if (item.janCode && !seenJans.has(item.janCode)) {
+                  seenJans.add(item.janCode);
+                  
+                  // Find all keys starting with this JAN (Base + Subtypes)
+                  const allKeys = Object.keys($store.photos.janCodeToPhotos || {});
+                  const relatedKeys = allKeys.filter(k => k === item.janCode || k.startsWith(item.janCode + ":"));
+                  
+                  relatedKeys.forEach(k => {
+                      const photos = $store.photos.janCodeToPhotos[k] || [];
+                      photos.forEach((p: any, idx: number) => {
+                          const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+                          if (!url) return;
+                          candidates.set(url, { id: p.id || `group-${k}-${idx}`, url, altText: p.filename || `Photo Group ${k}` });
+                      });
+                  });
+              }
+          });
+          return Array.from(candidates.values());
+      }
+
       if (mode !== 'create' || !janCode) return [];
       const primary = $store.listingCreation.proposals[janCode];
       if (!primary) return [];
@@ -600,8 +624,6 @@
           const h = p.handle || generateHandle(p.title, p.janCode);
           return h === handleKey;
       });
-
-      const candidates = new Map<string, { id: string; url: string; altText: string }>();
       
       // 1. Photos from Base JAN
       const janPhotos = $store.photos.janCodeToPhotos?.[janCode] || [];
@@ -641,6 +663,34 @@
   }
 
   function handlePickListingImage(candidate: { id: string; url: string; altText: string }) {
+      if (mode === 'live' && handle) {
+          if (replacingSubtypeId) {
+              // Live Mode: Update Inventory Item
+              if ($user && $user.uid) {
+                  broadcast(firestore, $user.uid, update_field({ 
+                      id: replacingSubtypeId, 
+                      field: 'image', 
+                      from: '', 
+                      to: candidate.url 
+                  }));
+              }
+          } else {
+              // Add New Image to Listing
+              if ($user && $user.uid) {
+                  const newImage: ListingImage = {
+                       id: crypto.randomUUID(),
+                       url: candidate.url,
+                       position: listingImages.length + 1,
+                       altText: candidate.altText || ''
+                  };
+                  broadcast(firestore, $user.uid, add_listing_image({ handle, image: newImage }));
+              }
+          }
+          showImagePicker = false;
+          replacingSubtypeId = null;
+          return;
+      }
+
       if (!imagePickerTargetJan) return;
       
       if (replacingSubtypeId) {
