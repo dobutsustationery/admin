@@ -507,6 +507,44 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                });
            });
 
+           // 4.5 Ensure ALL merged items point to the final handle in listings state
+           // (Avoid stale idToHandle entries from previous handles after merges)
+           const mergedItemIds = new Set<string>();
+           allVariants.forEach((v: any) => {
+               const currentItemId = variantIdToItemId.get(v.id) || v.itemId;
+               if (currentItemId) mergedItemIds.add(currentItemId);
+           });
+           if (mergedItemIds.size > 0) {
+               const listingState = nextState.listings;
+               const nextIdToHandle = { ...listingState.idToHandle };
+               const nextHandleToListing = { ...listingState.handleToListing };
+               const priorHandles = new Set<string>();
+
+               mergedItemIds.forEach((id) => {
+                   const prior = nextIdToHandle[id];
+                   if (prior && prior !== finalHandle) priorHandles.add(prior);
+                   nextIdToHandle[id] = finalHandle;
+               });
+
+               // Clean up old handles if no longer used
+               priorHandles.forEach((handle) => {
+                   if (handle === finalHandle) return;
+                   const stillUsed = Object.values(nextIdToHandle).includes(handle);
+                   if (!stillUsed) {
+                       delete nextHandleToListing[handle];
+                   }
+               });
+
+               nextState = {
+                   ...nextState,
+                   listings: {
+                       ...listingState,
+                       idToHandle: nextIdToHandle,
+                       handleToListing: nextHandleToListing,
+                   },
+               };
+           }
+
            // 5. Create/Update Listing with Aggregated Images
            // Ensure Approved Proposal is FIRST for image ordering priority
            const primaryIndex = mergedProposals.findIndex(p => p.janCode === proposal.janCode);
