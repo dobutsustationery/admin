@@ -53,15 +53,17 @@
         // Explicitly ignored: subtype, handle, productType, tags, qty, janCode, pieces, shipped, creationDate, timestamp
         // Checking internal/Shopify optional fields that were likely intended by "Everything else"
         // If these are too noisy, we can remove them.
-        if (!item.productCategory) missing.push("Category"); 
-
         // Check if listing exists
         const idToHandle = $store.listings.idToHandle;
         const handleToListing = $store.listings.handleToListing;
         const handle = idToHandle[key];
         
-        if (!handle || !handleToListing[handle] || !handleToListing[handle].bodyHtml) {
+        const listing = handle ? handleToListing[handle] : undefined;
+        if (!listing || !listing.bodyHtml) {
              missing.push("Unlisted");
+        }
+        if (listing && !listing.productCategory) {
+            missing.push("Category");
         }
 
         const stock = (item.qty || 0) - (item.shipped || 0);

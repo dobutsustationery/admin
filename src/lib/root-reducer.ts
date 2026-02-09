@@ -165,10 +165,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       const { handle, changes } = action.payload;
       if (changes.title) {
           const newTitle = changes.title;
-          // Propagate to ALL items with this handle
+          // Propagate title to ALL items with this handle
           for (const id in nextState.inventory.idToItem) {
               const item = nextState.inventory.idToItem[id];
-              if (item.handle === handle && item.description !== newTitle) {
+              if (item.handle === handle && newTitle && item.description !== newTitle) {
                    const syncAction = {
                        ...update_field({ id, field: 'description', from: item.description, to: newTitle }),
                        _ephemeral: true,

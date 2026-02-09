@@ -104,6 +104,7 @@
   let listingData: {
     title: string;
     bodyHtml: string;
+    productCategory?: string;
     option1Name?: string;
     titlePrompt?: string;
     descriptionPrompt?: string;
@@ -144,6 +145,7 @@
         listingData = {
           title: primaryProposal.title,
           bodyHtml: primaryProposal.bodyHtml,
+          productCategory: primaryProposal.productCategory,
           option1Name: primaryProposal.option1Name,
           titlePrompt: primaryProposal.titlePrompt,
           descriptionPrompt: primaryProposal.descriptionPrompt,
@@ -420,9 +422,24 @@
   function handleUpdateCategory(e: CustomEvent<string>) {
     if (!$user.uid) return;
     if (mode === "create" && janCode) {
-         dispatchBroadcast(update_proposal_field({ janCode, field: 'productCategory', value: e.detail }));
+      // Sync Category across all siblings to keep them grouped
+      const targets =
+        siblingProposals.length > 0 ? siblingProposals : [{ janCode }];
+      targets.forEach((p) => {
+        dispatchBroadcast(
+          update_proposal_field({
+            janCode: p.janCode,
+            field: "productCategory",
+            value: e.detail,
+          }),
+        );
+      });
     } else if (handle) {
-         broadcast(firestore, $user.uid, update_listing({ handle, changes: { productCategory: e.detail } }));
+      broadcast(
+        firestore,
+        $user.uid,
+        update_listing({ handle, changes: { productCategory: e.detail } }),
+      );
     }
   }
 
