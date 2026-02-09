@@ -23,50 +23,40 @@ export function diff<T extends Value | object>(a: T, b: T): Patch {
   if (a === b) {
     return null;
   }
-  if (a === undefined || typeof b !== "object" || typeof b !== typeof a) {
+  if (a === undefined || b === undefined) {
     return b;
   }
-  const oldA: { [k: string]: Value } = a as { [k: string]: Value };
-  const newA: { [k: string]: Value } = b as { [k: string]: Value };
-  if (typeof b === "object" && typeof a !== "object") {
-    // Should be caught by check above, but for type safety:
-    throw `type mismatch, ${typeof a} vs ${typeof b}`;
+  if (a === null || b === null) {
+    return b;
   }
+  if (typeof a !== "object" || typeof b !== "object" || typeof b !== typeof a) {
+    return b;
+  }
+  const oldA = a as Record<string, any>;
+  const newA = b as Record<string, any>;
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   const ret: { [k: string]: any } = {};
   let entries = 0;
-  
-  // Diff existing keys
-  for (const e of Object.entries(oldA)) {
-    // If key missing in newA, it's a deletion? 
-    // The provided logic relies on recursive diff.
-    // If newA[e[0]] is undefined (deleted), diff(val, undefined) -> undefined.
-    // The loop logic:
-    /*
-    const d = diff(oldA[e[0]], newA[e[0]]);
+
+  const keys = new Set<string>([
+    ...Object.keys(oldA),
+    ...Object.keys(newA),
+  ]);
+
+  for (const key of keys) {
+    const hasNew = Object.prototype.hasOwnProperty.call(newA, key);
+    if (!hasNew) {
+      ++entries;
+      ret[key] = null;
+      continue;
+    }
+    const d = diff(oldA[key], newA[key]);
     if (d !== null) {
       ++entries;
-      ret[e[0]] = d === undefined ? null : d; // If d is undefined, set null (delete marker?)
-    }
-    */
-    // Wait, if newA[e[0]] is undefined, diff returns undefined?
-    // diff(val, undefined) -> undefined.
-    // So ret[key] = null.
-    
-    // Check if key exists in newA to distinguish "undefined value" vs "missing key" if needed?
-    // The provided code assumes:
-    const d = diff(oldA[e[0]], newA[e[0]]);
-    if (d !== null) {
-      ++entries;
-      ret[e[0]] = d === undefined ? null : d;
+      ret[key] = d;
     }
   }
-  
-  // Diff new keys
-  for (const e of Object.entries(b).filter((e) => oldA[e[0]] === undefined)) {
-    ++entries;
-    ret[e[0]] = newA[e[0]];
-  }
+
   if (entries === 0) return null;
   return clone(ret);
 }
@@ -96,20 +86,53 @@ console.log(`Replaying actions from ${file}... (Limit: ${limit === 0 ? 'Unlimite
 const content = readFileSync(file, 'utf-8');
 const lines = content.split('\n').filter(l => l.trim());
 
+type ParsedAction = { raw: string; action: any; index: number };
+const parsed: ParsedAction[] = lines.map((line, index) => {
+    try {
+        return { raw: line, action: JSON.parse(line), index };
+    } catch (e) {
+        console.error(`Failed to parse line ${index + 1}:`, e);
+        return { raw: line, action: null, index };
+    }
+}).filter(p => p.action);
+
+const getTimestampKey = (action: any): number | null => {
+    const ts = action?.timestamp;
+    if (ts?.seconds) {
+        const nanos = ts.nanoseconds || 0;
+        return ts.seconds * 1_000_000_000 + nanos;
+    }
+    if (typeof ts === 'number') {
+        return ts * 1_000_000_000;
+    }
+    if (ts?.toDate) {
+        return ts.toDate().getTime() * 1_000_000_000;
+    }
+    return null;
+};
+
+// Validate order: if timestamps exist, they must be non-decreasing.
+let lastKey: number | null = null;
+parsed.forEach((entry) => {
+    const key = getTimestampKey(entry.action);
+    if (key === null) return;
+    if (lastKey !== null && key < lastKey) {
+        throw new Error(
+            `Replay actions are out of order at line ${entry.index + 1}. ` +
+            `Expected non-decreasing timestamps.`
+        );
+    }
+    lastKey = key;
+});
+
 // Initialize State
 let state = rootReducer(undefined, { type: 'INIT' });
 
-lines.forEach((line, i) => {
+parsed.forEach((entry, i) => {
     try {
-        const action = JSON.parse(line);
+        const action = entry.action;
         
-        // Skip metadata
-        if (action.id && action.timestamp) {
-            delete action.id;
-            delete action.timestamp; 
-        }
-
-        const prevState = state;
+        const prevState = clone(state);
         state = rootReducer(state, action);
         
         console.log(`\n--- Action ${i + 1}: ${action.type} ---`);
@@ -131,7 +154,7 @@ lines.forEach((line, i) => {
         }
         
     } catch (e) {
-        console.error(`Error processing line ${i + 1}:`, e);
+        console.error(`Error processing line ${entry.index + 1}:`, e);
     }
 });
 

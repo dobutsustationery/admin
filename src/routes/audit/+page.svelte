@@ -195,20 +195,21 @@
           return;
       }
 
-      // Sort Ascending for Replay (Oldest First)
-      exportable.sort((a, b) => {
-          let tA = 0;
-          if (a.timestamp?.seconds) tA = a.timestamp.seconds;
-          else if (typeof a.timestamp === 'number') tA = a.timestamp;
-          else if (a.timestamp?.toDate) tA = a.timestamp.toDate().getTime();
-          
-          let tB = 0;
-          if (b.timestamp?.seconds) tB = b.timestamp.seconds;
-          else if (typeof b.timestamp === 'number') tB = b.timestamp;
-          else if (b.timestamp?.toDate) tB = b.timestamp.toDate().getTime();
-          
-          return tA - tB;
-      });
+      // Sort Ascending for Replay (Oldest First), with nanos for deterministic order
+      const getTimestampKey = (item: any) => {
+          if (item.timestamp?.seconds) {
+              const nanos = item.timestamp.nanoseconds || 0;
+              return item.timestamp.seconds * 1_000_000_000 + nanos;
+          }
+          if (typeof item.timestamp === 'number') {
+              return item.timestamp * 1_000_000_000;
+          }
+          if (item.timestamp?.toDate) {
+              return item.timestamp.toDate().getTime() * 1_000_000_000;
+          }
+          return 0;
+      };
+      exportable.sort((a, b) => getTimestampKey(a) - getTimestampKey(b));
 
       const jsonl = exportable.map(a => JSON.stringify(a)).join('\n');
       const blob = new Blob([jsonl], { type: 'application/x-jsonlines' });
