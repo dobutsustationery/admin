@@ -3,6 +3,7 @@
   import Celebration from "$lib/components/Celebration.svelte";
   // HMR Trigger
   import { onMount } from "svelte";
+  import { browser } from "$app/environment";
   import { 
       generate_proposals, 
       start_batch, 
@@ -39,6 +40,15 @@
   $: activeBatchJans = listingCreation.activeBatchJans;
   $: originalBatchJans = listingCreation.originalBatchJans;
   $: visibleBatchJans = (originalBatchJans && originalBatchJans.length > 0) ? originalBatchJans : activeBatchJans;
+
+  // Sort State (Bulk Editor)
+  type SortDir = 'asc' | 'desc';
+  interface SortRule {
+      field: string;
+      dir: SortDir;
+  }
+  const sortStorageKey = "bulk-editor-sort-batch";
+  let sortHistory: SortRule[] = [];
   
   $: driveStatus = listingCreation.driveConnectionStatus;
   $: isScanning = listingCreation.isScanning;
@@ -177,6 +187,68 @@
        });
   });
 
+  function handleSort(e: CustomEvent<{ field: string }>) {
+      const field = e.detail.field;
+      const existingIndex = sortHistory.findIndex(r => r.field === field);
+      const current = existingIndex === -1 ? null : sortHistory[existingIndex];
+
+      if (!current) {
+          sortHistory = [{ field, dir: 'asc' }, ...sortHistory];
+          return;
+      }
+
+      if (existingIndex === 0) {
+          if (current.dir === 'asc') {
+              sortHistory = [{ field, dir: 'desc' }, ...sortHistory.slice(1)];
+          } else {
+              sortHistory = sortHistory.slice(1);
+          }
+          return;
+      }
+
+      const cleanHistory = sortHistory.filter(r => r.field !== field);
+      sortHistory = [{ field, dir: current.dir }, ...cleanHistory];
+  }
+
+  function getSortValue(row: any, field: string) {
+      if (field === 'handle') return row.handle || row.computedHandle || "";
+      if (field === 'title') return row.title || "";
+      if (field === 'bodyHtml') return row.bodyHtml || "";
+      if (field === 'productCategory') return row.productCategory || "";
+      if (field === 'option1Name') return row.option1Name || "";
+      if (field === 'option1Value') return row.option1Value || "";
+      if (field === 'photoGroupKey') return row.photoGroupKey || "";
+      if (field === 'allocatedQty') return row.allocatedQty ?? 0;
+      if (field === 'price') return row.price ?? 0;
+      if (field === 'sku') return row.sku || "";
+      if (field === 'janCode') return row.janCode || "";
+      return row[field];
+  }
+
+  $: bulkRows = flattenedRows.filter(p => visibleBatchJans.includes(p.janCode));
+
+  $: sortedBulkRows = bulkRows
+      .map((row, index) => ({ ...row, _sortIndex: index }))
+      .sort((a, b) => {
+          if (sortHistory.length === 0) {
+              return a._sortIndex - b._sortIndex;
+          }
+          for (const rule of sortHistory) {
+              const valA = getSortValue(a, rule.field);
+              const valB = getSortValue(b, rule.field);
+              const aVal = valA ?? "";
+              const bVal = valB ?? "";
+              if (typeof aVal === 'number' && typeof bVal === 'number') {
+                  if (aVal < bVal) return rule.dir === 'asc' ? -1 : 1;
+                  if (aVal > bVal) return rule.dir === 'asc' ? 1 : -1;
+              } else {
+                  const cmp = String(aVal).localeCompare(String(bVal));
+                  if (cmp !== 0) return rule.dir === 'asc' ? cmp : -cmp;
+              }
+          }
+          return a._sortIndex - b._sortIndex;
+      });
+
   // Redirect if Active Proposal Found (and not in Bulk Mode)
   // Ensure we don't trigger this mid-state transition if index is invalid
   $: if (activeProposal && !isBulkEditMode && typeof listingCreation.currentStepIndex === 'number' && listingCreation.currentStepIndex >= 0) {
@@ -205,7 +277,25 @@
      if (activeBatchJans.length > 0 && listingCreation.currentStepIndex !== -1) {
          store.dispatch(set_current_step(-1));
      }
+
+     if (browser) {
+         const raw = localStorage.getItem(sortStorageKey);
+         if (raw) {
+             try {
+                 const parsed = JSON.parse(raw);
+                 if (Array.isArray(parsed)) {
+                     sortHistory = parsed.filter((r) => r && r.field && (r.dir === 'asc' || r.dir === 'desc'));
+                 }
+             } catch {
+                 localStorage.removeItem(sortStorageKey);
+             }
+         }
+     }
   });
+
+  $: if (browser) {
+      localStorage.setItem(sortStorageKey, JSON.stringify(sortHistory));
+  }
   
   function dispatchBroadcast(action: any) {
     if (typeof action === 'function') {
@@ -480,10 +570,12 @@
                 </button>
             </div>
              <BulkEditor 
-                data={flattenedRows.filter(p => visibleBatchJans.includes(p.janCode))}
+                data={sortedBulkRows}
                 columns={columnConfig}
                 keyField="rowId"
+                bind:sortHistory={sortHistory}
                 on:commit={handleBulkCommit}
+                on:sort={handleSort}
                 on:imagePick={handleBulkImagePick}
                 on:editHtml={handleBulkEditHtml}
                 on:resize={handleResize}

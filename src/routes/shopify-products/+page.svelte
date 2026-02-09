@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
+  import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
   import { slide } from "svelte/transition";
   import { generateHandle, generateSku } from "$lib/handle-utils";
@@ -27,20 +28,49 @@
       field: string;
       dir: SortDir;
   }
+  const sortStorageKey = "bulk-editor-sort-shopify";
   let sortHistory: SortRule[] = []; // [primary, secondary, tertiary...]
+  
+  onMount(() => {
+      if (!browser) return;
+      const raw = localStorage.getItem(sortStorageKey);
+      if (raw) {
+          try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                  sortHistory = parsed.filter((r) => r && r.field && (r.dir === 'asc' || r.dir === 'desc'));
+              }
+          } catch {
+              localStorage.removeItem(sortStorageKey);
+          }
+      }
+  });
+
+  $: if (browser) {
+      localStorage.setItem(sortStorageKey, JSON.stringify(sortHistory));
+  }
 
   function handleSort(e: CustomEvent<{ field: string }>) {
       const field = e.detail.field;
       const existingIndex = sortHistory.findIndex(r => r.field === field);
-      let newRule: SortRule = { field, dir: 'asc' };
-      
-      if (existingIndex === 0) {
-          newRule.dir = sortHistory[0].dir === 'asc' ? 'desc' : 'asc';
-          sortHistory = [newRule, ...sortHistory.slice(1)];
-      } else {
-          const cleanHistory = sortHistory.filter(r => r.field !== field);
-          sortHistory = [newRule, ...cleanHistory];
+      const current = existingIndex === -1 ? null : sortHistory[existingIndex];
+
+      if (!current) {
+          sortHistory = [{ field, dir: 'asc' }, ...sortHistory];
+          return;
       }
+
+      if (existingIndex === 0) {
+          if (current.dir === 'asc') {
+              sortHistory = [{ field, dir: 'desc' }, ...sortHistory.slice(1)];
+          } else {
+              sortHistory = sortHistory.slice(1);
+          }
+          return;
+      }
+
+      const cleanHistory = sortHistory.filter(r => r.field !== field);
+      sortHistory = [{ field, dir: current.dir }, ...cleanHistory];
   }
 
   // Flatten inventory with Listing Overlay
@@ -92,7 +122,11 @@
             (i.handle || "").toLowerCase().includes(q)
         );
     })
+    .map((item, index) => ({ ...item, __index: index }))
     .sort((a, b) => {
+        if (sortHistory.length === 0) {
+            return a.__index - b.__index;
+        }
         // Multi-column stable sort
         for (const rule of sortHistory) {
             const field = rule.field;
@@ -102,10 +136,10 @@
             if (field === 'handle') {
                  valA = a.handle || a.computedHandle;
                  valB = b.handle || b.computedHandle;
-            } else if (field === 'title') {
-                 valA = a.description;
-                 valB = b.description;
-            } else if (field === 'body') {
+            } else if (field === 'description') {
+                 valA = a.description || "";
+                 valB = b.description || "";
+            } else if (field === 'bodyHtml') {
                 valA = a.bodyHtml || "";
                 valB = b.bodyHtml || "";
             } else if (field === 'productCategory') {
@@ -132,6 +166,9 @@
             } else if (field === 'janCode') {
                 valA = a.janCode;
                 valB = b.janCode;
+            } else if (field === 'image') {
+                valA = a.image || "";
+                valB = b.image || "";
             } else if (field === 'imagePosition') {
                 valA = a.imagePosition || 0;
                 valB = b.imagePosition || 0;
@@ -148,7 +185,7 @@
         }
         
         // Final tie-breaker: ID/JanCode to ensure stability
-        return a.id.localeCompare(b.id);
+        return a.__index - b.__index;
     });
 
   // --- Actions ---
