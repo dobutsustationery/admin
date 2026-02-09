@@ -77,7 +77,10 @@
       // But we can also just mutate specifically or dispatch.
       // Since columns is an object array, mutation works if parent binds `bind:columns`.
       const col = columns.find(c => c.field === resizingColumn);
-      if (col) col.width = newWidth;
+      if (col) {
+          col.width = newWidth;
+          columns = columns; // Trigger reactivity
+      }
   }
   
   function handleResizeEnd() {
@@ -303,15 +306,18 @@
     .grid-container {
         width: 100%;
         height: 100%;
-        overflow: auto;
+        overflow: auto; /* Handles both X and Y scroll */
         background-color: #f9fafb; /* gray-50 */
         border: 1px solid #e5e7eb; /* gray-200 */
         border-radius: 0.5rem;
+        position: relative; /* Context for sticky */
     }
 
     .data-table {
-        width: 100%;
-        border-collapse: collapse; /* This is crucial for borders */
+        width: max-content; /* Allow table to expand beyond container width */
+        min-width: 100%;
+        border-collapse: separate; /* Use separate to allow sticky to work reliably */
+        border-spacing: 0;
         table-layout: fixed;
         background-color: white;
         font-size: 0.875rem; /* text-sm */
@@ -323,21 +329,29 @@
         top: 0;
         z-index: 10;
         background-color: #f3f4f6; /* gray-100 */
-        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     }
 
     .header-cell {
-        position: relative;
+        position: sticky;
+        top: 0;
         padding: 0.5rem;
         text-align: left;
         font-weight: 600;
         color: #374151; /* gray-700 */
         border-right: 1px solid #e5e7eb;
         border-bottom: 1px solid #e5e7eb;
+        background-color: #f3f4f6; /* Opaque background for sticky */
         user-select: none;
         white-space: nowrap;
         overflow: hidden;
-        background-clip: padding-box;
+        z-index: 10;
+    }
+    
+    /* Sticky First Column (Header) */
+    .header-cell:first-child {
+        left: 0;
+        z-index: 20; /* Above regular headers */
+        border-right: 2px solid #e5e7eb; /* Stronger border for frozen col */
     }
 
     .header-cell:last-child {
@@ -390,6 +404,15 @@
         border-bottom: 1px solid #e5e7eb;
         position: relative;
         height: 2.5rem; /* Enforce height */
+        background-color: white; /* Needed for sticky */
+    }
+    
+    /* Sticky First Column (Body) */
+    .data-cell:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 5; /* Above regular cells */
+        border-right: 2px solid #e5e7eb;
     }
     
     .data-cell:last-child {
