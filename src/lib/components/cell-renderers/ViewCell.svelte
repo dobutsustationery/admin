@@ -2,8 +2,8 @@
   import { goto } from "$app/navigation";
   
   export let item: any;
-  export const index: number = 0;
-  export const col: any = null; // Column Config
+  export let index: number = 0;
+  export let col: any = null; // Column Config
 
   function navigate() {
       // Prioritize Create Mode if context flag is set (Drafts/Proposals)
