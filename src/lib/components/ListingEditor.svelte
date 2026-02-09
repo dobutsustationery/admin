@@ -643,7 +643,8 @@
   .category-block { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.25rem; }
   .field-label { font-size: 0.75rem; color: #6b7280; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
   .category-input-wrapper { display: flex; align-items: center; border: 1px solid #d1d5db; border-radius: 4px; overflow: hidden; }
-  .category-input { width: 100%; border: none; padding: 0.5rem; font-size: 0.9rem; color: #1f2937; }
+  @media (min-width: 768px) { .category-input-wrapper { min-width: 450px; } }
+  .category-input { width: 100%; border: none; padding: 0.5rem; font-size: 0.9rem; color: #1f2937; text-overflow: ellipsis; }
   .category-input:focus { outline: none; background: #f8fafc; }
   
   .category-input-wrapper.invalid {
