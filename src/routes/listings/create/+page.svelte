@@ -513,7 +513,7 @@
   }
 
   function saveVariantPrompt() {
-      store.dispatch(set_global_prompts({ variantPrompt: variantPromptValue }));
+      dispatchBroadcast(set_global_prompts({ variantPrompt: variantPromptValue }));
       showVariantPromptModal = false;
   }
 
