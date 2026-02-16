@@ -1,47 +1,65 @@
 import { describe, expect, it } from "vitest";
 import { configureStore } from "@reduxjs/toolkit";
-import { rootReducer } from "$lib/root-reducer";
-import { add_proposals, split_variant } from "$lib/listing-creation-slice";
+import { rootReducer } from "../../src/lib/root-reducer";
+import { approve_proposal_thunk, add_proposals } from "../../src/lib/listing-creation-slice";
+import { update_item, type Item } from "../../src/lib/inventory";
 
-describe("Listing Creation - Split Variant", () => {
-  it("preserves photo group IDs when splitting a variant", () => {
+describe("Listing Creation - Split Inventory", () => {
+  it("should remove source item when split into variants", () => {
     const store = configureStore({ reducer: rootReducer });
-    const janCode = "JAN_A";
-    const variantId = "item-B";
-    const newHandle = "new-handle";
+    const janCode = "4542804117844";
+    const itemId = janCode;
 
-    // 1. Setup Proposal
+    // 1. Setup Inventory (Source Item)
+    const item: Item = {
+      janCode,
+      subtype: "",
+      description: "Source Product",
+      qty: 20,
+      price: 0,
+      handle: "",
+      shipped: 0,
+      pieces: 1,
+      creationDate: "2024-01-01",
+      timestamp: Date.now(),
+      hsCode: "1234.56",
+      image: ""
+    };
+    store.dispatch(update_item({ id: itemId, item }));
+
+    // 2. Setup Proposal with multiple variants for the SAME itemId
     store.dispatch(add_proposals([{
       janCode,
-      inventoryItemIds: ["item-A", variantId],
-      photoGroupIds: ["JAN_A", "JAN_EXTRA"],
-      title: "Product",
-      bodyHtml: "",
-      productCategory: "",
-      vendor: "",
-      tags: [],
-      option1Name: "Opt",
+      inventoryItemIds: [itemId],
+      photoGroupIds: [janCode],
+      title: "Split Product",
+      handle: "split-handle",
+      bodyHtml: "<p>Description</p>",
+      productCategory: "Stationery",
+      vendor: "Dobutsu",
+      tags: ["tag1"],
+      option1Name: "Subtype",
       variants: [
-          { id: "v1", itemId: "item-A", option1Value: "A" },
-          { id: "v2", itemId: variantId, option1Value: "B" }
+          { id: "v-blue", itemId, option1Value: "Blue", qty: 10 },
+          { id: "v-brown", itemId, option1Value: "Brown", qty: 10 }
       ],
-      status: 'draft'
+      status: 'draft',
+      price: 1500
     }]));
 
-    // 2. Split
-    const targetVariantId = "v2";
-    store.dispatch(split_variant({ janCode, variantId: targetVariantId, newHandle }));
+    // 3. Approve
+    store.dispatch(approve_proposal_thunk(janCode) as any);
 
-    // 3. Verify New Proposal
-    // The new proposal key is the variantId (as per current impl)
-    const newProposal = store.getState().listingCreation.proposals[targetVariantId];
-    expect(newProposal).toBeDefined();
+    // 4. Verify Inventory
+    const state = store.getState().inventory;
     
-    // Check JAN Code matches key (it does currently)
-    expect(newProposal.janCode).toBe(janCode);
-    
-    // CRITICAL: Check Photo Groups
-    expect(newProposal.photoGroupIds).toContain("JAN_A");
-    expect(newProposal.photoGroupIds).toContain("JAN_EXTRA");
+    // New items should exist
+    expect(state.idToItem[janCode + "Blue"]).toBeDefined();
+    expect(state.idToItem[janCode + "Brown"]).toBeDefined();
+    expect(state.idToItem[janCode + "Blue"].qty).toBe(10);
+    expect(state.idToItem[janCode + "Brown"].qty).toBe(10);
+
+    // Original item should be gone
+    expect(state.idToItem[itemId]).toBeUndefined();
   });
 });

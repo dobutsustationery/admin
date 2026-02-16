@@ -859,6 +859,11 @@ export const inventory = createReducer(initialState, (r) => {
             val
         });
     });
+
+    // 3. Cleanup Source Item if empty
+    if (sourceItem.qty <= 0) {
+        delete state.idToItem[sourceId];
+    }
   });
 
   r.addCase(bulk_import_items, (state, action) => {
