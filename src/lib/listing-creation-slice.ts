@@ -780,6 +780,20 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                      remainder -= 1;
                  }
 
+                 // Determine Variant Image
+                 // Prefer the SECOND image (index 1) as it is often the "Front" or "Detail"
+                 // while index 0 might be a barcode or group shot.
+                 const groupImages = localJanCodeToPhotos[pg.key] || [];
+                 let selectedImage: string | undefined = undefined;
+                 
+                 if (groupImages.length > 1) {
+                     const img = groupImages[1];
+                     selectedImage = img.baseUrl || img.productUrl;
+                 } else if (groupImages.length === 1) {
+                     const img = groupImages[0];
+                     selectedImage = img.baseUrl || img.productUrl;
+                 }
+
                  // Assign Inventory Items
                  // If we have multiple inventory items, we could distribute them?
                  // For now, assign ALL inventory items to the Proposal, 
@@ -791,7 +805,8 @@ export const generate_proposals = (): AppThunk => async (dispatch, getState) => 
                      itemId: inventoryIds[0], // Point to the base item
                      option1Value: optionValue,
                      photoGroupKey: pg.key,
-                     qty: allocatedQty
+                     qty: allocatedQty,
+                     image: selectedImage
                  });
              });
              
