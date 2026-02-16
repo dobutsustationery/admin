@@ -544,16 +544,31 @@
 
   function handleDeleteSubtypeImage(e: CustomEvent<any>) {
     if (!$user.uid) return;
-    broadcast(
-      firestore,
-      $user.uid,
-      update_field({
-        id: e.detail.id,
-        field: "image",
-        from: e.detail.image,
-        to: "",
-      }),
-    );
+    const { id, image } = e.detail;
+
+    if (mode === "create" && janCode) {
+      // Find item to get variantId if 'id' is a JAN
+      const item = associatedItems.find((i) => (i.variantId || i.id) === id);
+      const vId = item?.variantId || id;
+      dispatchBroadcast(
+        update_variant_image({
+          janCode,
+          variantId: vId,
+          image: "",
+        }),
+      );
+    } else {
+      broadcast(
+        firestore,
+        $user.uid,
+        update_field({
+          id,
+          field: "image",
+          from: image,
+          to: "",
+        }),
+      );
+    }
   }
 
   // Image Upload / Replace Logic
@@ -568,14 +583,14 @@
 
   function handleReplaceSubtypeImage(e: CustomEvent<any>) {
     const item = e.detail;
-    replacingSubtypeId = item.id;
+    // CRITICAL: Use variantId if available to avoid finding the first item with a shared JAN
+    replacingSubtypeId = item.variantId || item.id;
     uploadingImageId = null;
-    targetProposalJan = null;
-    // Open Image Picker instead of file upload
-    if (mode === "create" && janCode) {
-      imagePickerTargetJan = janCode;
-      showImagePicker = true;
-    }
+    targetProposalJan = mode === "create" ? janCode : null;
+
+    // Open Image Picker instead of file upload (supports both create and live mode)
+    imagePickerTargetJan = mode === "create" ? janCode : null;
+    showImagePicker = true;
   }
 
   async function handleFileUpload(event: Event) {
@@ -603,7 +618,7 @@
 
       if ($user.uid) {
         if (replacingSubtypeId) {
-          const item = associatedItems.find((i) => i.id === replacingSubtypeId);
+          const item = associatedItems.find((i) => (i.variantId || i.id) === replacingSubtypeId);
           if (item) {
             if (mode === "create" && janCode) {
               const vId = item.variantId || item.id;
@@ -973,7 +988,7 @@
       if ($user && $user.uid) {
         if (mode === "create" && janCode) {
           // Draft Mode: Update ListingVariant image override
-          const item = associatedItems.find((i) => i.id === replacingSubtypeId);
+          const item = associatedItems.find((i) => (i.variantId || i.id) === replacingSubtypeId);
           const vId = item?.variantId || replacingSubtypeId;
 
           dispatchBroadcast(
@@ -1155,7 +1170,7 @@
     }
 
     result.variantPositions.forEach(({ id, position }) => {
-      const item = associatedItems.find((i) => i?.id === id);
+      const item = associatedItems.find((i) => (i.variantId || i.id) === id);
       if (!item) return;
       dispatchBroadcast(
         update_field({
@@ -1176,7 +1191,7 @@
     } else if (handle && $user?.uid) {
       // Live Mode: Update imagePosition to persist order
       e.detail.order.forEach((id, index) => {
-        const item = associatedItems.find((i) => i.id === id);
+        const item = associatedItems.find((i) => (i.variantId || i.id) === id);
         // imagePosition is 1-based usually
         const newPos = index + 1;
         if (item && item.imagePosition !== newPos) {

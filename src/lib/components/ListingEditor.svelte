@@ -455,8 +455,10 @@
                                <div class="subtype-thumb-wrapper">
                                    <button 
                                       class="subtype-thumb-btn {selectedSubtypeId === (item.variantId || item.id) ? 'selected' : ''}"
-                                      on:click={() => isCreationMode ? dispatch('replaceSubtypeImage', item) : handleSubtypeSelect(item.variantId || item.id)}
-                                      title={isCreationMode ? "Click to Replace Image" : item.subtype}
+                                      on:click={() => !readOnly ? dispatch('replaceSubtypeImage', item) : handleSubtypeSelect(item.variantId || item.id)}
+                                      on:mouseenter={() => handleThumbnailHover(subtypeImg)}
+                                      on:mouseleave={handleThumbnailLeave}
+                                      title={!readOnly ? "Click to Replace Image" : item.subtype}
                                    >
                                        <SecureImage src={subtypeImg.url} alt={item.subtype} className="thumbnail-img" />
                                    </button>
@@ -475,9 +477,9 @@
                                <button 
                                    type="button"
                                    class="subtype-placeholder" 
-                                   on:click={() => isCreationMode ? dispatch('replaceSubtypeImage', item) : null} 
-                                   style="cursor: {isCreationMode ? 'pointer' : 'default'}"
-                                   disabled={!isCreationMode}
+                                   on:click={() => !readOnly ? dispatch('replaceSubtypeImage', item) : null} 
+                                   style="cursor: {!readOnly ? 'pointer' : 'default'}"
+                                   disabled={readOnly}
                                >
                                    No Image
                                </button>
