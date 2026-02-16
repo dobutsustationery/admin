@@ -94,6 +94,7 @@
 
   // Image Picker State (Listing Photos)
   let showImagePicker = false;
+  let showAllPhotos = false;
   let imagePickerTargetJan: string | null = null;
 
   // AI Loading State
@@ -827,7 +828,7 @@
     }
   }
 
-  function buildImagePickerCandidates() {
+  function buildImagePickerCandidates(showAll: boolean = false) {
     const candidates = new Map<
       string,
       { id: string; url: string; altText: string }
@@ -842,7 +843,29 @@
       janCode,
       "associatedItems:",
       associatedItems,
+      "showAll:",
+      showAll
     );
+
+    if (showAll) {
+      const allKeys = Object.keys($store.photos.janCodeToPhotos || {});
+      allKeys.forEach((k) => {
+        const photos = $store.photos.janCodeToPhotos[k] || [];
+        photos.forEach((p: any, idx: number) => {
+          const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+          if (!url) return;
+          if (!candidates.has(url)) {
+            candidates.set(url, {
+              id: p.id || `group-${k}-${idx}`,
+              url,
+              altText: p.filename || `Group ${k}`,
+            });
+          }
+        });
+      });
+      return Array.from(candidates.values());
+    }
+
     if (handle) {
       const allKeys = Object.keys($store.photos.janCodeToPhotos || {});
       console.log("[ImagePicker] All Store Keys:", allKeys);
@@ -1447,10 +1470,16 @@
   {/if}
 
   {#if showImagePicker}
-    {@const candidates = buildImagePickerCandidates()}
+    {@const candidates = buildImagePickerCandidates(showAllPhotos)}
     <div class="modal-backdrop">
       <div class="modal image-picker-modal">
-        <h3 class="modal-title">Select listing image</h3>
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="modal-title">Select listing image</h3>
+          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <input type="checkbox" bind:checked={showAllPhotos} />
+            Show all photos
+          </label>
+        </div>
 
         {#if candidates.length > 0}
           <div class="image-picker-grid">
