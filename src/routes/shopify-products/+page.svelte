@@ -269,7 +269,7 @@
       { field: 'description', header: 'Title', width: 300, type: 'text' }, 
       { field: 'bodyHtml', header: 'Body (HTML)', width: 300, type: 'text' },
       { field: 'productCategory', header: 'Product Category', width: 150, type: 'text' },
-      { field: 'subtype', header: 'Option1 Value', width: 100, editable: false },
+      { field: 'subtype', header: 'Option1 Value', width: 100, type: 'text' },
   
       { field: 'id', header: 'Variant SKU', width: 150, editable: false },
       { field: 'weight', header: 'Variant Grams', width: 80, type: 'number', align: 'right' },

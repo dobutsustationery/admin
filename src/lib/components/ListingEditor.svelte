@@ -437,8 +437,8 @@
                        }
                        <div class="subtype-row">
                            <span 
-                               class="subtype-label {isCreationMode ? 'editable' : ''}"
-                               contenteditable={isCreationMode}
+                               class="subtype-label {!readOnly ? 'editable' : ''}"
+                               contenteditable={!readOnly}
                                on:blur={(e) => handleSubtypeBlur(e, item)}
                            >{item.subtype || 'Default'}</span>
                            
