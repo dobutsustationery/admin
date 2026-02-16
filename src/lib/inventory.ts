@@ -388,17 +388,25 @@ export const inventory = createReducer(initialState, (r) => {
           ? Number(incomingValue)
           : incomingValue;
       const timestamp = (action as any).timestamp;
-      let creationDate = "Unknown";
       let val = 0;
+      let creationDate = "Invalid Date";
+      
       if (timestamp) {
-        const tsDate = new Date(timestamp.seconds * 1000);
-        val = tsDate.getTime();
-        creationDate = tsDate.toLocaleString("en", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        });
+        if (timestamp.seconds) {
+            val = new Date(timestamp.seconds * 1000).getTime();
+        } else if (typeof timestamp === 'number') {
+            val = timestamp;
+        }
+
+        if (val > 0) {
+            creationDate = new Date(val).toLocaleString("en", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            });
+        }
       }
+      
       state.idToHistory[action.payload.id].push({
         date: creationDate,
         desc: `${action.payload.field} changed from ${action.payload.from} to ${action.payload.to}`,
@@ -819,12 +827,24 @@ export const inventory = createReducer(initialState, (r) => {
     sourceItem.qty -= totalSplitQty;
     
     const timestamp = (action as any).timestamp;
-    const val = timestamp ? new Date(timestamp.seconds * 1000).getTime() : Date.now();
-    const dateStr = new Date(val).toLocaleString("en", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-    });
+    let val = 0;
+    let dateStr = "Invalid Date";
+
+    if (timestamp) {
+        if (timestamp.seconds) {
+             val = new Date(timestamp.seconds * 1000).getTime();
+        } else if (typeof timestamp === 'number') {
+             val = timestamp;
+        }
+        
+        if (val > 0) {
+            dateStr = new Date(val).toLocaleString("en", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+            });
+        }
+    }
 
     state.idToHistory[sourceId].push({
         date: dateStr,
