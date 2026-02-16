@@ -2,7 +2,9 @@
   import { createEventDispatcher } from 'svelte';
   import { flip } from "svelte/animate";
   import { cubicOut } from "svelte/easing";
+  import { fade } from "svelte/transition";
   import SecureImage from '$lib/components/SecureImage.svelte';
+  import CategoryBrowseModal from './CategoryBrowseModal.svelte';
   
   export let listing: { title: string; bodyHtml: string; option1Name?: string; productCategory?: string } | null = null;
   export let images: any[] = []; // ListingImage[]
@@ -25,6 +27,7 @@
 
   // Category Autocomplete State
   let showCategoryDropdown = false;
+  let showCategoryBrowser = false;
   let categorySearchTerm = '';
   // Initialize search term from prop if not interacting
   let isCategoryInteracting = false;
@@ -536,6 +539,14 @@
                            on:blur={handleCategoryBlur}
                            placeholder="Search or type category..."
                        />
+                       <button 
+                           class="category-add-btn" 
+                           type="button"
+                           title="Browse Shopify Taxonomy"
+                           on:click={() => showCategoryBrowser = true}
+                       >
+                           +
+                       </button>
                        {#if showCategoryDropdown}
                            <div class="category-dropdown" role="listbox">
                                {#if filteredCategories.length === 0}
@@ -866,4 +877,28 @@
   .add-btn { display: flex; align-items: center; justify-content: center; background: #f9fafb; border: 1px dashed #d1d5db; color: #9ca3af; transition: all 0.2s; }
   .add-btn:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
   .plus-icon { font-size: 2rem; font-weight: 300; line-height: 1; }
+
+  .category-add-btn {
+      background: none;
+      border: none;
+      border-left: 1px solid #d1d5db;
+      padding: 0 0.75rem;
+      font-size: 1.25rem;
+      color: #6b7280;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+  }
+  .category-add-btn:hover {
+      background: #f3f4f6;
+      color: #111827;
+  }
 </style>
+
+<CategoryBrowseModal 
+    bind:isOpen={showCategoryBrowser}
+    currentCategory={listing?.productCategory}
+    on:select={(e) => selectCategory(e.detail)}
+/>
