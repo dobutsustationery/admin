@@ -7,6 +7,7 @@ export interface ListingImage {
   url: string;
   position: number;
   altText: string;
+  isListingOnly?: boolean;
 }
 
 export interface Listing {
@@ -84,7 +85,7 @@ export const listings = createReducer(initialState, (builder) => {
         const { handle, image } = action.payload;
         const listing = state.handleToListing[handle];
         if (listing) {
-            const exists = listing.images.some(img => img.url === image.url);
+            const exists = listing.images.some(img => img.id === image.id);
             if (!exists) {
                 listing.images.push(image);
                 listing.lastUpdated = Date.now();
