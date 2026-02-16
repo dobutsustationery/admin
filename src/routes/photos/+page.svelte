@@ -643,6 +643,9 @@
               // Only consider "Listed" if it has a bodyHtml (implying description generated/listing created)
               if (listing.bodyHtml) {
                   listed.add(item.janCode);
+                  if (item.subtype) {
+                      listed.add(`${item.janCode}:${item.subtype}`);
+                  }
               }
           }
       }
