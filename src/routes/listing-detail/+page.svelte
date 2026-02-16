@@ -748,6 +748,7 @@
                 url: newUrl,
                 position: listingImages.length + 1,
                 altText: listingData?.title || "",
+                isListingOnly: true,
               };
               broadcast(
                 firestore,
@@ -816,9 +817,12 @@
   function openImagePicker() {
     if (mode === "create" && janCode) {
       imagePickerTargetJan = janCode;
+      replacingSubtypeId = null;
       showImagePicker = true;
     } else if (handle) {
-      // Live Mode: Open Picker
+      // Live Mode: Open Picker for Gallery Addition
+      imagePickerTargetJan = null;
+      replacingSubtypeId = null;
       showImagePicker = true;
     }
   }
@@ -968,6 +972,7 @@
             url: candidate.url,
             position: listingImages.length + 1,
             altText: candidate.altText || "",
+            isListingOnly: true,
           };
           broadcast(
             firestore,
@@ -1363,7 +1368,7 @@
 
         <span class="sep">|</span>
         <div class="btn-group">
-          {#if mode === "create"}
+          {#if mode === "create" || handle}
             <button class="ai-btn" on:click={openImagePicker}
               >Add Listing Photo</button
             >
