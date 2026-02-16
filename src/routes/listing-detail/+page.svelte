@@ -493,6 +493,19 @@
       dispatchBroadcast(
         update_variant_value({ janCode, variantId: id, value }),
       );
+    } else {
+      // Live Mode: Update Inventory Item
+      const currentItem = $store.inventory.idToItem[id];
+      const from = currentItem ? currentItem.subtype : "";
+      
+      dispatchBroadcast(
+        update_field({
+          id,
+          field: "subtype",
+          from,
+          to: value,
+        }),
+      );
     }
   }
 
