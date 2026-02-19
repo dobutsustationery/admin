@@ -5,7 +5,7 @@
   import { type Item, update_field } from "./inventory";
   import { broadcast } from "./redux-firestore";
   import { store } from "./store";
-  import SecureImage from "./components/SecureImage.svelte";
+  import ImageThumbnail from "./components/ImageThumbnail.svelte";
 
   export let key = "";
 
@@ -51,12 +51,9 @@
       /></td
     >
     <td>
-      <SecureImage 
-          src={item.image} 
-          alt="snapshot" 
-          style="height: 75px; width: auto; object-fit: contain;" 
-          className="rounded"
-      />
+      <div style="height: 75px; width: 75px;">
+        <ImageThumbnail src={item.image} alt="snapshot" />
+      </div>
     </td>
     <td
       ><ComboBox

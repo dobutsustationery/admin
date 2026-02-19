@@ -6,7 +6,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import type { Item } from "$lib/inventory";
   import { hide_exception, show_exception } from "$lib/inventory";
-  import SecureImage from "$lib/components/SecureImage.svelte";
+  import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import { formatYen, formatEuro } from "$lib/formatters";
 
   let skipOutOfStock = true;
@@ -138,7 +138,7 @@
             <td>
               {#if item.image}
                 <div class="thumb-wrap">
-                  <SecureImage src={item.image} alt="Product" className="thumb" />
+                  <ImageThumbnail src={item.image} alt="Product" />
                 </div>
               {:else}
                 <span class="no-img">No Img</span>

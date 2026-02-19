@@ -66,6 +66,7 @@
   $: isGenerating = $store.photos.generating;
   $: isCategorizing = $store.photos.categorizing;
 
+  import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import ProgressBar from "$lib/components/ProgressBar.svelte";
   import { 
     begin_categorize, 
@@ -712,45 +713,6 @@
       
       hoveredRowIndex = null;
   }
-
-  // --- PREVIEW LOGIC ---
-  let previewTimer: ReturnType<typeof setTimeout> | null = null;
-  let previewItem: MediaItem | null = null;
-  let previewStyle = ""; // For positioning
-
-  function handleThumbnailEnter(e: MouseEvent, item: MediaItem) {
-      if (previewTimer) clearTimeout(previewTimer);
-      
-      const target = e.currentTarget as HTMLElement;
-      const rect = target.getBoundingClientRect();
-      const mouseY = rect.top + (rect.height / 2); // Use center of thumbnail
-      
-      previewTimer = setTimeout(() => {
-          const winHeight = window.innerHeight;
-          const spaceAbove = mouseY;
-          const spaceBelow = winHeight - mouseY;
-          
-          let style = "left: 50%; transform: translateX(-50%); position: fixed; z-index: 100;";
-          
-          // Use space above if it's significantly larger or we are in bottom half
-          if (spaceAbove > spaceBelow) {
-              // Show ABOVE
-              style += ` bottom: ${winHeight - rect.top + 10}px; top: 20px;`;
-          } else {
-              // Show BELOW
-              style += ` top: ${rect.bottom + 10}px; bottom: 20px;`;
-          }
-          
-          previewStyle = style;
-          previewItem = item;
-      }, 200);
-  }
-
-  function handleThumbnailLeave() {
-      if (previewTimer) clearTimeout(previewTimer);
-      previewItem = null;
-  }
-
 </script>
 
 <div class="p-8 max-w-6xl mx-auto relative">
@@ -793,23 +755,6 @@
           </div>
       </div>
   {/if}
-  <!-- PREVIEW OVERLAY -->
-  {#if previewItem}
-      <div 
-        class="fixed bg-white p-2 rounded shadow-2xl border border-gray-200 pointer-events-none flex flex-col items-center"
-        style={previewStyle}
-        transition:fade={{ duration: 200 }}
-      >
-        <!-- Large Image -->
-        <SecureImage 
-            src={displayUrl(previewItem.baseUrl, "=w1024")}
-            className="w-auto h-full max-h-full object-contain rounded"
-        />
-        <!-- Optional Info -->
-        <div class="mt-2 text-xs text-gray-500 font-mono">{previewItem.filename}</div>
-      </div>
-  {/if}
-
   <div class="flex justify-between items-center mb-8">
     <div>
         <h1 class="text-3xl font-bold text-gray-800">Google Photos Import</h1>
@@ -944,10 +889,11 @@
                 on:click={() => goto(`/photo-history?id=${photo.id}`)}
                 on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${photo.id}`)}
               >
-                <SecureImage
-                  src={displayUrl(photo.baseUrl, "=w400-h400-c")}
-                  alt="Thumbnail"
-                  className="w-full h-full object-cover"
+                <ImageThumbnail
+                  src={photo.baseUrl}
+                  alt={photo.filename}
+                  width="100%"
+                  height="100%"
                   isUploading={
                       (!!uploads[photo.id] && uploads[photo.id].status === 'uploading') ||
                       (!uploads[photo.id] && photo.baseUrl.includes("googleusercontent.com"))
@@ -1111,12 +1057,12 @@
                                         aria-label="View photo history"
                                         on:click={() => goto(`/photo-history?id=${item.id}`)}
                                         on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${item.id}`)}
-                                        on:mouseenter={(e) => handleThumbnailEnter(e, item)}
-                                        on:mouseleave={handleThumbnailLeave}
                                     >
-                                        <SecureImage 
-                                            src={displayUrl(item.baseUrl, "=w160-h160-c")}
-                                            className="w-full h-full object-cover"
+                                        <ImageThumbnail 
+                                            src={item.baseUrl}
+                                            alt={item.filename}
+                                            width="100%"
+                                            height="100%"
                                             isUploading={!!uploads[item.id] && uploads[item.id].status === 'uploading'}
                                         />
                                         <!-- Filename Overlay -->

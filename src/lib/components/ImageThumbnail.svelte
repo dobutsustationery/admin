@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import SecureImage from "$lib/components/SecureImage.svelte";
+  import ImagePreviewOverlay from "$lib/components/ImagePreviewOverlay.svelte";
 
   export let src: string;
   export let alt: string = "";
@@ -18,6 +19,9 @@
   
   // Zoom functionality
   export let zoomable: boolean = true;
+  
+  // Upload status
+  export let isUploading: boolean = false;
 
   let isHovered = false;
   let hoverTimer: ReturnType<typeof setTimeout> | null = null;
@@ -31,14 +35,7 @@
     
     const target = e.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
-    const mouseY = rect.top + (rect.height / 2);
     const winHeight = window.innerHeight;
-    
-    // Calculate position
-    const outputRectWidth = 400; // Expected generic width of zoom tooltip
-    
-    // Default style: Centered vertically relative to mouse/element, but pushed to side?
-    // Inherited logic was Above/Below. Let's stick to that as it works well for grids.
     
     const spaceAbove = rect.top;
     const spaceBelow = winHeight - rect.bottom;
@@ -77,22 +74,6 @@
      if (hoverTimer) clearTimeout(hoverTimer);
      isHovered = false;
   }
-
-  // Compute high-res URL for zoom
-  $: zoomedSrc = (() => {
-      if (src.includes("drive.google.com/thumbnail")) {
-          // Force high resolution for Drive thumbnails
-          // Check if already has sz param? Assuming we append or replace.
-          // Simplest is to append, last param wins usually or it's unique.
-          return src.includes("sz=") ? src.replace(/sz=[^&]+/, "sz=w1600") : `${src}&sz=w1600`;
-      } 
-      if (src.includes("googleusercontent.com")) {
-          // Strip params and request high res
-          return src.replace(/=[a-z0-9,-]+$/i, "") + "=w1600";
-      }
-      // For others, use original source (often high res enough)
-      return src;
-  })();
 </script>
 
 <div 
@@ -106,29 +87,20 @@
     <SecureImage 
       {src} 
       {alt} 
+      {isUploading}
       className="secure-image"
       style="object-fit: {fit};"
     />
   </div>
 </div>
 
-{#if isHovered && zoomable}
-    <div 
-        class="zoom-overlay"
-        style={zoomStyle}
-        transition:fade={{ duration: 150 }}
-    >
-                <SecureImage
-                    src={zoomedSrc}
-                    alt={alt}
-                    className="zoomed-image"
-                />        {#if alt}
-            <div class="bg-black/70 text-white text-xs px-2 py-1 mt-1 rounded max-w-[300px] truncate">
-                {alt}
-            </div>
-        {/if}
-    </div>
-{/if}
+<ImagePreviewOverlay 
+    show={isHovered && zoomable}
+    {src}
+    {alt}
+    style={zoomStyle}
+    class="pointer-events-none"
+/>
 
 <style>
   .thumbnail-container {
@@ -147,27 +119,5 @@
     width: 100%;
     height: 100%;
     display: flex; /* flex needed to properly center absolute positioned children or contained images */
-  }
-  
-  .zoom-overlay {
-      background: white;
-      padding: 0.5rem;
-      border-radius: 0.5rem;
-      border: 1px solid #e5e7eb;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); /* shadow-xl */
-      pointer-events: none; /* Pass through clicks */
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      width: auto;
-      max-width: 90vw; /* Max constrained */
-  }
-  
-  /* Deep selector to constrain the image inside the overlay */
-  :global(.zoom-overlay .zoomed-image) {
-      max-height: var(--max-img-height, 85vh);
-      width: auto;
-      object-fit: contain;
-      border-radius: 0.25rem;
   }
 </style>

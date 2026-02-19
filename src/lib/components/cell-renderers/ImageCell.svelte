@@ -1,64 +1,52 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-  import SecureImage from "$lib/components/SecureImage.svelte";
+  import { createEventDispatcher } from 'svelte';
+  import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
 
   export let item: any;
-  export let col: any; // Column Config
-
-  $: src = item[col.field] || item._thumbnail;
+  export let col: any;
+  export let index: number;
 
   const dispatch = createEventDispatcher();
 
-  function handlePick() {
-      dispatch("imagePick", { item, col });
+  $: imageUrl = item[col.field];
+
+  function handleClick() {
+    dispatch("imagePick");
   }
 </script>
 
-<div class="cell-image-container">
-    {#if src}
-        <button class="cell-image-btn" on:click={handlePick} title="Pick image">
-            <SecureImage src={src} alt="Validation" className="cell-image" />
-        </button>
+<div 
+    class="image-cell" 
+    on:click={handleClick}
+    role="button"
+    tabindex="0"
+    on:keydown={(e) => e.key === 'Enter' && handleClick()}
+>
+    {#if imageUrl}
+        <ImageThumbnail src={imageUrl} alt="Thumbnail" />
     {:else}
-        <button class="no-image" on:click={handlePick} title="Pick image">No Img</button>
+        <span class="placeholder">Add</span>
     {/if}
 </div>
 
 <style>
-    .cell-image-container {
+    .image-cell {
         width: 100%;
         height: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
+        cursor: pointer;
         padding: 2px;
     }
-
-    :global(.cell-image) {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        border-radius: 2px;
+    
+    .image-cell:hover {
+        background-color: #f3f4f6;
     }
 
-    .cell-image-btn {
-        border: none;
-        background: transparent;
-        padding: 0;
-        cursor: pointer;
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .no-image {
-        font-size: 0.7rem;
+    .placeholder {
         color: #9ca3af;
-        border: none;
-        background: transparent;
-        cursor: pointer;
-        padding: 0;
+        font-size: 0.75rem;
+        font-style: italic;
     }
 </style>

@@ -42,7 +42,7 @@
   import { reorderListingImages } from "$lib/listing-image-ordering";
   import { buildDraftListingImages } from "$lib/listing-image-logic";
   import ListingEditor from "$lib/components/ListingEditor.svelte";
-  import SecureImage from "$lib/components/SecureImage.svelte";
+  import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
 
   // --- State ---
@@ -1501,10 +1501,9 @@
                 class="image-picker-item"
                 on:click={() => handlePickListingImage(candidate)}
               >
-                <SecureImage
+                <ImageThumbnail
                   src={candidate.url}
                   alt={candidate.altText}
-                  className="image-picker-img"
                 />
               </button>
             {/each}

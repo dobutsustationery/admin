@@ -4,6 +4,7 @@
   import type { Item } from "./inventory";
   import SelectBox from "./SelectBox.svelte";
   import { store } from "./store";
+  import ImageThumbnail from "./components/ImageThumbnail.svelte";
 
   export let key: string = "";
   export let row: number = -1;
@@ -46,7 +47,11 @@
     {#if showdates}
       <td>{item.creationDate}</td>
     {/if}
-    <td><img alt="snapshot" height="75" src={item.image} /></td>
+    <td>
+      <div style="height: 75px; width: 75px;">
+        <ImageThumbnail src={item.image} alt="snapshot" />
+      </div>
+    </td>
     <td>{item.description}</td>
     <td on:click={() => itemHistory(`${item?.janCode}${item?.subtype}`)}
       >{item.janCode}</td
