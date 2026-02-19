@@ -54,17 +54,21 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      width: auto;
-      max-width: 90vw;
+      justify-content: center;
       position: fixed;
       z-index: 9999;
+      box-sizing: border-box;
+      /* Dimensions are set via inline style */
   }
   
   :global(.image-preview-overlay .zoomed-image) {
-      max-height: var(--max-img-height, 85vh);
-      width: auto;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
       border-radius: 0.25rem;
+      flex-shrink: 1;
+      min-width: 0;
+      min-height: 0;
   }
 
   .alt-text {

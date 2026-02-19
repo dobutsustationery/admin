@@ -35,34 +35,88 @@
     
     const target = e.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
-    const winHeight = window.innerHeight;
-    
-    const spaceAbove = rect.top;
-    const spaceBelow = winHeight - rect.bottom;
-    
-    // Default style: Centered horizontally
-    let style = "left: 50%; transform: translateX(-50%); position: fixed; z-index: 9999;";
-    let availableHeight = 0;
+    const winHeight = document.documentElement.clientHeight;
+    const winWidth = document.documentElement.clientWidth;
 
-    // Prefer side with more space
-    if (spaceAbove > spaceBelow) {
-        // Show ABOVE
-        // Bottom is fixed to just above the element
-        const bottomPos = winHeight - rect.top + 10;
-        style += ` bottom: ${bottomPos}px; top: auto;`;
-        availableHeight = rect.top - 20; // 20px padding from screen top
-    } else {
-        // Show BELOW
-        const topPos = rect.bottom + 10;
-        style += ` top: ${topPos}px; bottom: auto;`;
-        availableHeight = winHeight - rect.bottom - 20; // 20px padding from screen bottom
+    // Get image aspect ratio
+    const img = target.querySelector('img');
+    const naturalWidth = img?.naturalWidth || 1;
+    const naturalHeight = img?.naturalHeight || 1;
+    const ratio = (naturalWidth && naturalHeight) ? naturalWidth / naturalHeight : 1;
+
+    // Define available spaces with 5% margin
+    const MARGIN_FACTOR = 0.95;
+
+    const spaces = [
+        {
+            name: 'top',
+            availableW: winWidth,
+            availableH: rect.top,
+            centerX: winWidth / 2,
+            centerY: rect.top / 2
+        },
+        {
+            name: 'bottom',
+            availableW: winWidth,
+            availableH: winHeight - rect.bottom,
+            centerX: winWidth / 2,
+            centerY: rect.bottom + (winHeight - rect.bottom) / 2
+        },
+        {
+            name: 'left',
+            availableW: rect.left,
+            availableH: winHeight,
+            centerX: rect.left / 2,
+            centerY: winHeight / 2
+        },
+        {
+            name: 'right',
+            availableW: winWidth - rect.right,
+            availableH: winHeight,
+            centerX: rect.right + (winWidth - rect.right) / 2,
+            centerY: winHeight / 2
+        }
+    ];
+
+    let bestSpace = spaces[0];
+    let maxArea = 0;
+    let bestFit = { width: 0, height: 0 };
+
+    for (const space of spaces) {
+        // Calculate max usable dimensions for the container in this space
+        const usableW = space.availableW * MARGIN_FACTOR;
+        const usableH = space.availableH * MARGIN_FACTOR;
+
+        // Calculate potential image dimensions within this space to determine area
+        let fitW = usableW;
+        let fitH = fitW / ratio;
+
+        if (fitH > usableH) {
+            fitH = usableH;
+            fitW = fitH * ratio;
+        }
+
+        const area = fitW * fitH;
+        if (area > maxArea) {
+            maxArea = area;
+            bestSpace = space;
+            bestFit = { width: fitW, height: fitH };
+        }
     }
+
+    // Apply style for the winner
+    // We position the center of the fixed overlay at the center of the available space
+    // And set the explicit size of the container to the fitted image size
     
-    // Pass constraint to image via CSS variable, reserving space for text/padding (approx 40px)
-    // We don't constrain the container height directly, we let content drive it up to the limit.
-    style += ` --max-img-height: ${Math.max(100, availableHeight - 40)}px;`;
-    
-    zoomStyle = style;
+    zoomStyle = `
+        left: ${bestSpace.centerX}px; 
+        top: ${bestSpace.centerY}px; 
+        width: ${bestFit.width}px;
+        height: ${bestFit.height}px;
+        transform: translate(-50%, -50%); 
+        position: fixed; 
+        z-index: 9999;
+    `;
 
     // Small delay to prevent flashing
     hoverTimer = setTimeout(() => {
