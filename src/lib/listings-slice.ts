@@ -1,5 +1,5 @@
 import { createAction, createReducer } from "@reduxjs/toolkit";
-import { update_item, update_field, bulk_import_items } from "./inventory";
+import { update_item, update_field, bulk_import_items, retype_item, rename_subtype } from "./inventory";
 import { generateHandle } from "./handle-utils";
 
 export interface ListingImage {
