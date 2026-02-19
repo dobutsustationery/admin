@@ -603,8 +603,27 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               if (existingListing && existingListing.images && existingListing.images.length > 0) {
                   console.log(`[RootReducer] Existing listing has ${existingListing.images.length} images.`);
                   // Identify Gallery Images (Not used by variants)
-                  const variantImageUrls = new Set(matchedItems.map(m => m.item.image).filter(Boolean));
-                  const galleryImages = existingListing.images.filter(img => !variantImageUrls.has(img.url));
+                  // Use a frequency map to consume images 1-to-1. 
+                  // If a URL is used by 1 variant but appears 2 times in the listing, 
+                  // we only filter it out ONCE, preserving the second as a gallery image.
+                  const variantImageCounts = new Map<string, number>();
+                  matchedItems.forEach(m => {
+                      if (m.item.image) {
+                          variantImageCounts.set(m.item.image, (variantImageCounts.get(m.item.image) || 0) + 1);
+                      }
+                  });
+                  
+                  const galleryImages: any[] = [];
+                  existingListing.images.forEach(img => {
+                      const count = variantImageCounts.get(img.url);
+                      if (count && count > 0) {
+                          // Claim this listing image for the variant
+                          variantImageCounts.set(img.url, count - 1);
+                      } else {
+                          // Not claimed (or surplus duplicate), keep as gallery image
+                          galleryImages.push(img);
+                      }
+                  });
                   
                   console.log(`[RootReducer] Found ${galleryImages.length} gallery images (not linked to variants).`);
                   
