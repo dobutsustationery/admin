@@ -1,11 +1,15 @@
-
-
 <!-- Add Imports -->
 <script context="module" lang="ts">
-    import { schedule_edit_batch, begin_edit, complete_edit, fail_edit, toggle_edit_status } from "$lib/photos-slice";
-    import { smartCrop, removeBackground } from "$lib/background-removal";
-    import { autoColorCorrect } from "$lib/color-correction";
-    import { uploadImageToDrive, ensureFolderStructure } from "$lib/google-drive";
+  import {
+    schedule_edit_batch,
+    begin_edit,
+    complete_edit,
+    fail_edit,
+    toggle_edit_status,
+  } from "$lib/photos-slice";
+  import { smartCrop, removeBackground } from "$lib/background-removal";
+  import { autoColorCorrect } from "$lib/color-correction";
+  import { uploadImageToDrive, ensureFolderStructure } from "$lib/google-drive";
 </script>
 
 <script lang="ts">
@@ -17,12 +21,15 @@
     listSessionMediaItems,
     listAlbumMediaItems,
     getStoredToken,
-    initiateOAuthFlow, 
+    initiateOAuthFlow,
     handleOAuthCallback,
-    isAuthenticated as checkAuth 
+    isAuthenticated as checkAuth,
   } from "$lib/google-photos";
   import type { MediaItem } from "$lib/google-photos";
-  import { listAllImages, getStoredToken as getDriveStoredToken } from "$lib/google-drive";
+  import {
+    listAllImages,
+    getStoredToken as getDriveStoredToken,
+  } from "$lib/google-drive";
   import { fetchImage } from "$lib/gemini-client";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { store } from "$lib/store";
@@ -30,244 +37,275 @@
   import { auth, firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
   import { signOut } from "firebase/auth";
-  
+
   // Local Auth State for UI
   let isPhotosAuthenticated = false;
   let connectedEmail: string | undefined = undefined;
-  
+
   function checkAuthStatus() {
-      const token = getStoredToken();
-      isPhotosAuthenticated = !!token;
-      connectedEmail = token?.user_email;
-      return isPhotosAuthenticated;
+    const token = getStoredToken();
+    isPhotosAuthenticated = !!token;
+    connectedEmail = token?.user_email;
+    return isPhotosAuthenticated;
   }
-  
-  function isAuthenticated() { return isPhotosAuthenticated; } // Helper for template
+
+  function isAuthenticated() {
+    return isPhotosAuthenticated;
+  } // Helper for template
 
   function isDirectRenderableUrl(url: string): boolean {
-      return url.startsWith("data:") ||
-          url.includes("drive.google.com") ||
-          url.includes("googleapis.com") ||
-          url.includes("googleusercontent.com");
+    return (
+      url.startsWith("data:") ||
+      url.includes("drive.google.com") ||
+      url.includes("googleapis.com") ||
+      url.includes("googleusercontent.com")
+    );
   }
 
   function displayUrl(url: string, suffix: string): string {
-      return isDirectRenderableUrl(url) ? url : `${url}${suffix}`;
+    return isDirectRenderableUrl(url) ? url : `${url}${suffix}`;
   }
-
 
   import type { PhotoEditQueue } from "$lib/photos-slice";
 
   // State from Redux Store
   $: photos = $store.photos.selected as MediaItem[];
   $: uploads = $store.photos.uploads || {};
-  $: janCodeToPhotos = ($store.photos.janCodeToPhotos || {}) as Record<string, MediaItem[]>;
+  $: janCodeToPhotos = ($store.photos.janCodeToPhotos || {}) as Record<
+    string,
+    MediaItem[]
+  >;
   $: edits = ($store.photos.edits || {}) as Record<string, PhotoEditQueue>;
   $: isGenerating = $store.photos.generating;
   $: isCategorizing = $store.photos.categorizing;
 
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import ProgressBar from "$lib/components/ProgressBar.svelte";
-  import { 
-    begin_categorize, 
-    end_categorize, 
+  import {
+    begin_categorize,
+    end_categorize,
     merge_jan_groups,
     rename_jan_group,
-    set_generating
+    set_generating,
   } from "$lib/photos-slice";
 
-  import { categorizeMediaItems } from "$lib/gemini-client"; 
+  import { categorizeMediaItems } from "$lib/gemini-client";
   let catProgress = { current: 0, total: 0, message: "" };
 
   async function handleCategorize() {
     if (photos.length === 0) return;
-    
+
     // Broadcast begin (Sets flag)
     if ($user.uid) {
-         broadcast(firestore, $user.uid, { type: "photos/begin_categorize" });
+      broadcast(firestore, $user.uid, { type: "photos/begin_categorize" });
     }
-    
+
     catProgress = { current: 0, total: photos.length, message: "Starting..." };
-    
+
     try {
-        const token = getStoredToken();
-        if (!token) throw new Error("Not authenticated");
-        const apiKey = import.meta.env.VITE_GOOGLE_API_KEY; // Optional
-        
-        // Pass a copy of photos to avoid mutation race conditions if UI updates
-        const itemsToProcess = photos.map(p => ({ baseUrl: p.baseUrl, id: p.id }));
-        
-        await categorizeMediaItems(
-           itemsToProcess,
-           token.access_token,
-           apiKey,
-           (item, janCode) => {
-               // On Match -> Broadcast Action to move item
-               if ($user.uid) {
-                   // We need the full MediaItem. Find it in current state (or known uploads)
-                   const fullItem = photos.find(p => p.id === item.id) || { ...item }; // Fallback
-                   
-                   broadcast(firestore, $user.uid, {
-                       type: "photos/categorize_photo",
-                       payload: { janCode, photo: fullItem }
-                   });
-               }
-           },
-           (current, total, message) => {
-               catProgress = { current, total, message };
-           }
-        );
-        
+      const token = getStoredToken();
+      if (!token) throw new Error("Not authenticated");
+      const apiKey = import.meta.env.VITE_GOOGLE_API_KEY; // Optional
+
+      // Pass a copy of photos to avoid mutation race conditions if UI updates
+      const itemsToProcess = photos.map((p) => ({
+        baseUrl: p.baseUrl,
+        id: p.id,
+      }));
+
+      await categorizeMediaItems(
+        itemsToProcess,
+        token.access_token,
+        apiKey,
+        (item, janCode) => {
+          // On Match -> Broadcast Action to move item
+          if ($user.uid) {
+            // We need the full MediaItem. Find it in current state (or known uploads)
+            const fullItem = photos.find((p) => p.id === item.id) || {
+              ...item,
+            }; // Fallback
+
+            broadcast(firestore, $user.uid, {
+              type: "photos/categorize_photo",
+              payload: { janCode, photo: fullItem },
+            });
+          }
+        },
+        (current, total, message) => {
+          catProgress = { current, total, message };
+        },
+      );
     } catch (e: any) {
-        checkAuthError(e);
-        console.error("Categorize Error:", e);
-        error = e.message;
+      checkAuthError(e);
+      console.error("Categorize Error:", e);
+      error = e.message;
     } finally {
-        if ($user.uid) {
-             broadcast(firestore, $user.uid, { type: "photos/end_categorize" });
-             store.dispatch(end_categorize()); // Also dispatch locally to be sure
-        }
+      if ($user.uid) {
+        broadcast(firestore, $user.uid, { type: "photos/end_categorize" });
+        store.dispatch(end_categorize()); // Also dispatch locally to be sure
+      }
     }
   }
 
   // --- EDIT QUEUE RUNNER ---
   let isEditing = false;
   // Reactive list of pending items
-  $: pendingEdits = Object.entries(edits).filter(([id, q]) => q.queue.length > 0 && !q.active);
+  $: pendingEdits = Object.entries(edits).filter(
+    ([id, q]) => q.queue.length > 0 && !q.active,
+  );
 
   // Trigger processing whenever we have pending items and are not busy
   $: if (!isEditing && pendingEdits.length > 0) {
-      processNextEdit();
+    processNextEdit();
   }
 
   async function processNextEdit() {
-      if (isEditing || pendingEdits.length === 0) return;
-      
-      isEditing = true;
-      const [id, q] = pendingEdits[0]; // Pick first
-      const operation = q.queue[0]; // Pick first op in queue
-      
-      console.log(`[EditQueue] Starting ${operation} on ${id}`);
-      
-      try {
-          const token = getStoredToken();
-          if (!token) throw new Error("Not authenticated");
-          
-          store.dispatch(begin_edit({ id, operation }));
-          
-          // 1. Get Image
-          // Need to find the item to get its baseUrl. 
-          // Could be in `selected` OR `janCodeToPhotos`?
-          // We need a lookup.
-          let item = photos.find(p => p.id === id);
-          if (!item) {
-              // Check JAN groups
-              for (const code in janCodeToPhotos) {
-                  const found = janCodeToPhotos[code].find(p => p.id === id);
-                  if (found) { item = found; break; }
-              }
-          }
-          if (!item) throw new Error("Photo not found in state");
-          
-          // Fetch logic (duplicated from gemini-client roughly)
-          // We rely on background-removal / color-correction taking URL or Base64.
-          // They need Base64 if we want to avoid CORS canvas taint.
-          // So we fetch to Base64 first using our proxy-friendly method.
-          
-          // Import fetchImage logic dynamically or duplicate? 
-          // Since it's inside `gemini-client` but not exported, let's duplicate the fetch logic briefly or move it helper.
-          // Getting it via `fetch` directly works for Drive/Photos IF we have headers.
-          // `background-removal` tries to load using `Image` tag which fails CORS for canvas.
-          // So we MUST fetch blob -> base64.
-          
-          const fetched = await fetchImage(item.baseUrl, token.access_token);
-          const base64 = fetched.data;
-          const mimeType = fetched.mimeType || "image/jpeg";
+    if (isEditing || pendingEdits.length === 0) return;
 
-          // 2. Process
-          let resultBase64: string | null = null;
-          if (operation === 'crop') {
-              resultBase64 = await smartCrop(base64);
-          } else if (operation === 'color_correct') {
-              resultBase64 = await autoColorCorrect(base64);
-          } else if (operation === 'remove_background') {
-              // Convert to data uri
-              resultBase64 = await removeBackground(`data:${mimeType};base64,${base64}`);
-          }
-          
-          if (!resultBase64) throw new Error("Operation returned no data");
-          
-          // 3. Upload
-          const folders = await ensureFolderStructure(token.access_token);
-          const filename = `edited_${operation}_${id}_${Date.now()}.png`;
-          // Convert base64 back to blob for upload
-          const byteChars = atob(resultBase64);
-          const byteNumbers = new Array(byteChars.length);
-          for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-          const byteArray = new Uint8Array(byteNumbers);
-          const uploadBlob = new Blob([byteArray], { type: 'image/png' });
-          
-          const uploaded = await uploadImageToDrive(uploadBlob, filename, folders.processedId, token.access_token);
-          
-          const finalUrl = uploaded.apiUrl || uploaded.thumbnailLink || uploaded.webViewLink;
-          
-          // 4. Complete & Broadcast
-          const completeAction = complete_edit({ id, operation, permanentUrl: finalUrl });
-          
-          if ($user.uid) {
-              console.log(`[Batch] Broadcasting complete_edit for ${id}`);
-              broadcast(firestore, $user.uid, completeAction);
-          } else {
-              store.dispatch(completeAction);
-          }
+    isEditing = true;
+    const [id, q] = pendingEdits[0]; // Pick first
+    const operation = q.queue[0]; // Pick first op in queue
 
-      } catch (e: any) {
-          console.error(`Edit failed for ${id}:`, e);
-          store.dispatch(fail_edit({ id, operation: operation as any, error: e.message }));
-      } finally {
-          isEditing = false;
+    console.log(`[EditQueue] Starting ${operation} on ${id}`);
+
+    try {
+      const token = getStoredToken();
+      if (!token) throw new Error("Not authenticated");
+
+      store.dispatch(begin_edit({ id, operation }));
+
+      // 1. Get Image
+      // Need to find the item to get its baseUrl.
+      // Could be in `selected` OR `janCodeToPhotos`?
+      // We need a lookup.
+      let item = photos.find((p) => p.id === id);
+      if (!item) {
+        // Check JAN groups
+        for (const code in janCodeToPhotos) {
+          const found = janCodeToPhotos[code].find((p) => p.id === id);
+          if (found) {
+            item = found;
+            break;
+          }
+        }
       }
-  }
-  
-  function scheduleBatch(op: 'crop' | 'color_correct' | 'remove_background') {
-      // Schedule for CATEGORIZED photos only (as per user request)
-      // Collect IDs from janCodeToPhotos only
-      const allIds = new Set<string>();
-      Object.values(janCodeToPhotos).flat().forEach(p => {
-          // Check if already done
-          const status = edits[p.id]?.status;
-          const isDone = status && status[op];
-          if (!isDone) {
-             allIds.add(p.id);
-          }
+      if (!item) throw new Error("Photo not found in state");
+
+      // Fetch logic (duplicated from gemini-client roughly)
+      // We rely on background-removal / color-correction taking URL or Base64.
+      // They need Base64 if we want to avoid CORS canvas taint.
+      // So we fetch to Base64 first using our proxy-friendly method.
+
+      // Import fetchImage logic dynamically or duplicate?
+      // Since it's inside `gemini-client` but not exported, let's duplicate the fetch logic briefly or move it helper.
+      // Getting it via `fetch` directly works for Drive/Photos IF we have headers.
+      // `background-removal` tries to load using `Image` tag which fails CORS for canvas.
+      // So we MUST fetch blob -> base64.
+
+      const fetched = await fetchImage(item.baseUrl, token.access_token);
+      const base64 = fetched.data;
+      const mimeType = fetched.mimeType || "image/jpeg";
+
+      // 2. Process
+      let resultBase64: string | null = null;
+      if (operation === "crop") {
+        resultBase64 = await smartCrop(base64);
+      } else if (operation === "color_correct") {
+        resultBase64 = await autoColorCorrect(base64);
+      } else if (operation === "remove_background") {
+        // Convert to data uri
+        resultBase64 = await removeBackground(
+          `data:${mimeType};base64,${base64}`,
+        );
+      }
+
+      if (!resultBase64) throw new Error("Operation returned no data");
+
+      // 3. Upload
+      const folders = await ensureFolderStructure(token.access_token);
+      const filename = `edited_${operation}_${id}_${Date.now()}.png`;
+      // Convert base64 back to blob for upload
+      const byteChars = atob(resultBase64);
+      const byteNumbers = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++)
+        byteNumbers[i] = byteChars.charCodeAt(i);
+      const byteArray = new Uint8Array(byteNumbers);
+      const uploadBlob = new Blob([byteArray], { type: "image/png" });
+
+      const uploaded = await uploadImageToDrive(
+        uploadBlob,
+        filename,
+        folders.processedId,
+        token.access_token,
+      );
+
+      const finalUrl =
+        uploaded.apiUrl || uploaded.thumbnailLink || uploaded.webViewLink;
+
+      // 4. Complete & Broadcast
+      const completeAction = complete_edit({
+        id,
+        operation,
+        permanentUrl: finalUrl,
       });
-      
-      const ids = Array.from(allIds);
-      if (ids.length === 0) {
-          alert("No categorized photos to process.");
-          return;
-      }
-      
-      const action = schedule_edit_batch({ ids, operation: op });
-      
+
       if ($user.uid) {
-          console.log(`[Batch] Broadcasting schedule batch ${op} for ${ids.length} items.`);
-          broadcast(firestore, $user.uid, action);
+        console.log(`[Batch] Broadcasting complete_edit for ${id}`);
+        broadcast(firestore, $user.uid, completeAction);
       } else {
-          console.warn("[Batch] No User UID! Dispatching locally only.");
-          store.dispatch(action);
+        store.dispatch(completeAction);
       }
+    } catch (e: any) {
+      console.error(`Edit failed for ${id}:`, e);
+      store.dispatch(
+        fail_edit({ id, operation: operation as any, error: e.message }),
+      );
+    } finally {
+      isEditing = false;
+    }
+  }
+
+  function scheduleBatch(op: "crop" | "color_correct" | "remove_background") {
+    // Schedule for CATEGORIZED photos only (as per user request)
+    // Collect IDs from janCodeToPhotos only
+    const allIds = new Set<string>();
+    Object.values(janCodeToPhotos)
+      .flat()
+      .forEach((p) => {
+        // Check if already done
+        const status = edits[p.id]?.status;
+        const isDone = status && status[op];
+        if (!isDone) {
+          allIds.add(p.id);
+        }
+      });
+
+    const ids = Array.from(allIds);
+    if (ids.length === 0) {
+      alert("No categorized photos to process.");
+      return;
+    }
+
+    const action = schedule_edit_batch({ ids, operation: op });
+
+    if ($user.uid) {
+      console.log(
+        `[Batch] Broadcasting schedule batch ${op} for ${ids.length} items.`,
+      );
+      broadcast(firestore, $user.uid, action);
+    } else {
+      console.warn("[Batch] No User UID! Dispatching locally only.");
+      store.dispatch(action);
+    }
   }
 
   function handleProcessImages() {
-      // Schedule Color Correct THEN Remove Background
-      scheduleBatch('color_correct');
-      scheduleBatch('remove_background');
-      
-      // Note: Progress is tracked via pendingEdits
+    // Schedule Color Correct THEN Remove Background
+    scheduleBatch("color_correct");
+    scheduleBatch("remove_background");
+
+    // Note: Progress is tracked via pendingEdits
   }
-
-
 
   // State
   let error = "";
@@ -280,46 +318,54 @@
   const MAX_POLL_ATTEMPTS = 60; // 2 minutes (approx)
   let pickerWindow: Window | null = null;
   // ... existing checkAuthError etc ...
-    // LIFECYCLE
+  // LIFECYCLE
   onMount(async () => {
-     console.log("Photos Page Mounted. Checking Auth...");
-     
-     // Handle OAuth Callback (hash parsing)
-     const tokenCaptured = await handleOAuthCallback();
-     if (tokenCaptured) {
-         console.log("OAuth Callback processed successfully. Token stored.", tokenCaptured);
-     } else {
-         console.log("No OAuth callback detected (or failed).");
-     }
+    console.log("Photos Page Mounted. Checking Auth...");
 
-     // Check Photos Auth
-     checkAuthStatus();
-     console.log("Final Auth Status:", isPhotosAuthenticated, "Email:", connectedEmail);
-     
-     // Trigger re-render explicit
-     isPhotosAuthenticated = isPhotosAuthenticated;
+    // Handle OAuth Callback (hash parsing)
+    const tokenCaptured = await handleOAuthCallback();
+    if (tokenCaptured) {
+      console.log(
+        "OAuth Callback processed successfully. Token stored.",
+        tokenCaptured,
+      );
+    } else {
+      console.log("No OAuth callback detected (or failed).");
+    }
 
-     // Safety: Reset categorization state if it was stuck from a previous session/reload
-     if ($store.photos.categorizing) {
-         console.log("Resetting stuck 'categorizing' state on mount.");
-         store.dispatch(end_categorize());
-     }
-     if ($store.photos.generating) {
-         console.log("Resetting stuck 'generating' state on mount.");
-         store.dispatch(set_generating(false));
-     }
+    // Check Photos Auth
+    checkAuthStatus();
+    console.log(
+      "Final Auth Status:",
+      isPhotosAuthenticated,
+      "Email:",
+      connectedEmail,
+    );
 
-     staleFlagInterval = setInterval(() => {
-         if ($store.photos.categorizing && catProgress.total === 0) {
-             console.log("Resetting stale 'categorizing' state.");
-             store.dispatch(end_categorize());
-         }
-     }, 1000);
+    // Trigger re-render explicit
+    isPhotosAuthenticated = isPhotosAuthenticated;
 
-     (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__ = importPhotosFromConfiguredAlbum;
-     (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__ = importPhotosFromDrive;
+    // Safety: Reset categorization state if it was stuck from a previous session/reload
+    if ($store.photos.categorizing) {
+      console.log("Resetting stuck 'categorizing' state on mount.");
+      store.dispatch(end_categorize());
+    }
+    if ($store.photos.generating) {
+      console.log("Resetting stuck 'generating' state on mount.");
+      store.dispatch(set_generating(false));
+    }
+
+    staleFlagInterval = setInterval(() => {
+      if ($store.photos.categorizing && catProgress.total === 0) {
+        console.log("Resetting stale 'categorizing' state.");
+        store.dispatch(end_categorize());
+      }
+    }, 1000);
+
+    (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__ =
+      importPhotosFromConfiguredAlbum;
+    (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__ = importPhotosFromDrive;
   });
-
 
   onDestroy(() => {
     stopPolling();
@@ -327,10 +373,16 @@
       clearInterval(staleFlagInterval);
       staleFlagInterval = null;
     }
-    if (typeof window !== "undefined" && (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__) {
+    if (
+      typeof window !== "undefined" &&
+      (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__
+    ) {
       delete (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__;
     }
-    if (typeof window !== "undefined" && (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__) {
+    if (
+      typeof window !== "undefined" &&
+      (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__
+    ) {
       delete (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__;
     }
   });
@@ -418,18 +470,16 @@
     }, 2000);
   }
 
-
-  
   // ... imports ...
 
   async function loadSelectedPhotos(sessionId: string) {
     try {
       const newItems = await listSessionMediaItems(sessionId);
-      
+
       // Filter or Map items?
       // Just pass raw items (with their ephemeral baseUrl).
       // The background worker will pick them up and upload them.
-      
+
       let finalItems: MediaItem[] = [];
 
       if (selectionMode === "replace") {
@@ -441,28 +491,27 @@
         newItems.forEach((p) => map.set(p.id, p));
         finalItems = Array.from(map.values());
       }
-      
+
       // Sort
       finalItems.sort((a, b) => {
-         const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
-         const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
-         return tA - tB;
+        const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
+        const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
+        return tA - tB;
       });
 
       if ($user.uid) {
-         store.dispatch({
-           type: "photos/select_photos",
-           payload: { photos: finalItems },
-         });
-         // Broadcast selection.
-         // This puts ephemeral URLs in the store.
-         // PhotoUploadManager will detect them and initiate upload.
-         broadcast(firestore, $user.uid, {
-           type: "photos/select_photos",
-           payload: { photos: finalItems },
-         });
+        store.dispatch({
+          type: "photos/select_photos",
+          payload: { photos: finalItems },
+        });
+        // Broadcast selection.
+        // This puts ephemeral URLs in the store.
+        // PhotoUploadManager will detect them and initiate upload.
+        broadcast(firestore, $user.uid, {
+          type: "photos/select_photos",
+          payload: { photos: finalItems },
+        });
       }
-      
     } catch (e: any) {
       checkAuthError(e);
       error = "Failed to load photos: " + e.message;
@@ -486,20 +535,28 @@
     const processableItems = albumItems.filter((item) => {
       const mime = (item.mimeType || "").toLowerCase();
       const filename = (item.filename || "").toLowerCase();
-      const extension = filename.includes(".") ? filename.split(".").pop() || "" : "";
-      const mimeProcessable = mime === "image/jpeg" || mime === "image/jpg" || mime === "image/png";
-      const extensionProcessable = extension === "jpg" || extension === "jpeg" || extension === "png";
+      const extension = filename.includes(".")
+        ? filename.split(".").pop() || ""
+        : "";
+      const mimeProcessable =
+        mime === "image/jpeg" || mime === "image/jpg" || mime === "image/png";
+      const extensionProcessable =
+        extension === "jpg" || extension === "jpeg" || extension === "png";
       return mimeProcessable || extensionProcessable;
     });
-    const sourceItems = processableItems.length > 0 ? processableItems : albumItems;
+    const sourceItems =
+      processableItems.length > 0 ? processableItems : albumItems;
     const cappedCount = Math.max(1, maxItems);
     let orderedSourceItems = sourceItems;
     if (preferredPhoto) {
       const preferredIndex = sourceItems.findIndex(
-        (item) => item.id === preferredPhoto || item.filename === preferredPhoto,
+        (item) =>
+          item.id === preferredPhoto || item.filename === preferredPhoto,
       );
       if (preferredIndex < 0) {
-        throw new Error(`Preferred photo "${preferredPhoto}" not found in configured album.`);
+        throw new Error(
+          `Preferred photo "${preferredPhoto}" not found in configured album.`,
+        );
       }
       const preferredItem = sourceItems[preferredIndex];
       orderedSourceItems = [
@@ -547,7 +604,10 @@
     };
   }
 
-  async function importPhotosFromDrive(mode: "replace" | "add" = "replace", maxItems = 24) {
+  async function importPhotosFromDrive(
+    mode: "replace" | "add" = "replace",
+    maxItems = 24,
+  ) {
     const driveToken = getDriveStoredToken();
     if (!driveToken) {
       throw new Error("No Google Drive token available for import.");
@@ -555,7 +615,11 @@
 
     const driveItems = await listAllImages(driveToken.access_token);
     const sourceItems = driveItems
-      .filter((item) => item.mimeType?.startsWith("image/") && !!(item.apiUrl || item.webViewLink || item.thumbnailLink))
+      .filter(
+        (item) =>
+          item.mimeType?.startsWith("image/") &&
+          !!(item.apiUrl || item.webViewLink || item.thumbnailLink),
+      )
       .map((item) => ({
         id: item.id,
         description: "",
@@ -605,23 +669,23 @@
   }
 
   function handleClearPhotos() {
-      if (confirm("Remove all selected photos?")) {
-          // Clear via broadcast
-          if ($user.uid) {
-            store.dispatch({
-              type: "photos/select_photos",
-              payload: { photos: [] },
-            });
-            broadcast(firestore, $user.uid, {
-              type: "photos/select_photos",
-              payload: { photos: [] },
-            });
-          }
+    if (confirm("Remove all selected photos?")) {
+      // Clear via broadcast
+      if ($user.uid) {
+        store.dispatch({
+          type: "photos/select_photos",
+          payload: { photos: [] },
+        });
+        broadcast(firestore, $user.uid, {
+          type: "photos/select_photos",
+          payload: { photos: [] },
+        });
       }
+    }
   }
 
   // Merge Logic
-  import { fade } from 'svelte/transition';
+  import { fade } from "svelte/transition";
   import { goto } from "$app/navigation";
 
   let hoveredRowIndex: number | null = null;
@@ -630,162 +694,182 @@
 
   // Compute Listed JANs
   $: listedJans = (() => {
-      const listed = new Set<string>();
-      const idToHandle = $store.listings.idToHandle || {};
-      const idToItem = $store.inventory.idToItem || {};
-      const handleToListing = $store.listings.handleToListing || {};
-      
-      for (const itemId in idToHandle) {
-          const item = idToItem[itemId];
-          const handle = idToHandle[itemId];
-          const listing = handleToListing[handle];
-          
-          if (item && item.janCode && listing) {
-              // Only consider "Listed" if it has a bodyHtml (implying description generated/listing created)
-              if (listing.bodyHtml) {
-                  listed.add(item.janCode);
-                  if (item.subtype) {
-                      listed.add(`${item.janCode}:${item.subtype}`);
-                  }
-              }
+    const listed = new Set<string>();
+    const idToHandle = $store.listings.idToHandle || {};
+    const idToItem = $store.inventory.idToItem || {};
+    const handleToListing = $store.listings.handleToListing || {};
+
+    // Iterate all items in inventory
+    for (const itemId in idToItem) {
+      const item = idToItem[itemId];
+      // Check if this item is linked to a listing
+      const handle = idToHandle[itemId];
+      const listing = handle ? handleToListing[handle] : null;
+
+      if (item && item.janCode && listing) {
+        // Only consider "Listed" if it has a bodyHtml (implying description generated/listing created)
+        if (listing.bodyHtml) {
+          // Add base JAN
+          listed.add(item.janCode);
+          // Add subtype-specific key if applicable
+          if (item.subtype) {
+            listed.add(`${item.janCode}:${item.subtype}`);
           }
+        }
       }
-      return listed;
+    }
+    return listed;
   })();
 
-  $: categorizedEntries = (Object.entries(janCodeToPhotos) as [string, MediaItem[]][])
-      .filter(([jan, _]) => showCompleted || !listedJans.has(jan));
+  $: categorizedEntries = (
+    Object.entries(janCodeToPhotos) as [string, MediaItem[]][]
+  ).filter(([jan, _]) => showCompleted || !listedJans.has(jan));
 
   // JAN Validation (EAN-13 Checksum)
   function isValidJan(code: string): boolean {
-      // Split to handle subtype suffix (e.g. "4542804104370:Blue")
-      const baseJan = code.split(':')[0];
-      
-      if (!/^\d{13}$/.test(baseJan)) return false; // Must be 13 digits for standard JAN
-      
-      const digits = baseJan.split('').map(Number);
-      const checksum = digits.pop()!;
-      
-      const sum = digits.reduce((acc, curr, idx) => {
-          // Even index (0, 2...) -> Odd Position (1st, 3rd...) -> x1
-          // Odd index (1, 3...) -> Even Position (2nd, 4th...) -> x3
-          const weight = (idx % 2 === 0) ? 1 : 3;
-          return acc + (curr * weight);
-      }, 0);
-      
-      const calcChecksum = (10 - (sum % 10)) % 10;
-      return calcChecksum === checksum;
+    // Split to handle subtype suffix (e.g. "4542804104370:Blue")
+    const baseJan = code.split(":")[0];
+
+    if (!/^\d{13}$/.test(baseJan)) return false; // Must be 13 digits for standard JAN
+
+    const digits = baseJan.split("").map(Number);
+    const checksum = digits.pop()!;
+
+    const sum = digits.reduce((acc, curr, idx) => {
+      // Even index (0, 2...) -> Odd Position (1st, 3rd...) -> x1
+      // Odd index (1, 3...) -> Even Position (2nd, 4th...) -> x3
+      const weight = idx % 2 === 0 ? 1 : 3;
+      return acc + curr * weight;
+    }, 0);
+
+    const calcChecksum = (10 - (sum % 10)) % 10;
+    return calcChecksum === checksum;
   }
 
   function handleJanRename(oldJan: string, newJan: string) {
-      newJan = newJan.trim();
-      if (newJan === oldJan) return; // Allow empty!
+    newJan = newJan.trim();
+    if (newJan === oldJan) return; // Allow empty!
 
-      if ($user.uid) {
-           broadcast(firestore, $user.uid, {
-               type: "photos/rename_jan_group",
-               payload: { oldJan, newJan }
-           });
-      }
-      store.dispatch(rename_jan_group({ oldJan, newJan }));
+    if ($user.uid) {
+      broadcast(firestore, $user.uid, {
+        type: "photos/rename_jan_group",
+        payload: { oldJan, newJan },
+      });
+    }
+    store.dispatch(rename_jan_group({ oldJan, newJan }));
   }
 
   function handleInputKey(e: KeyboardEvent, oldJan: string) {
-      if (e.key === 'Enter') {
-          (e.target as HTMLInputElement).blur();
-      }
+    if (e.key === "Enter") {
+      (e.target as HTMLInputElement).blur();
+    }
   }
 
   function handleMergeUp(index: number) {
-      if (index <= 0) return;
-      
-      const [sourceJan] = categorizedEntries[index];
-      const [targetJan] = categorizedEntries[index - 1];
-      
-      if ($user.uid) {
-           broadcast(firestore, $user.uid, {
-               type: "photos/merge_jan_groups",
-               payload: { sourceJan, targetJan }
-           });
-      }
-      // Optimistic
-      store.dispatch(merge_jan_groups({ sourceJan, targetJan }));
-      
-      hoveredRowIndex = null;
+    if (index <= 0) return;
+
+    const [sourceJan] = categorizedEntries[index];
+    const [targetJan] = categorizedEntries[index - 1];
+
+    if ($user.uid) {
+      broadcast(firestore, $user.uid, {
+        type: "photos/merge_jan_groups",
+        payload: { sourceJan, targetJan },
+      });
+    }
+    // Optimistic
+    store.dispatch(merge_jan_groups({ sourceJan, targetJan }));
+
+    hoveredRowIndex = null;
   }
 </script>
 
 <div class="p-8 max-w-6xl mx-auto relative">
   <!-- BATCH PROGRESS OVERLAY -->
   {#if isEditing}
-      {@const activeEntry = Object.entries(edits).find(([_, q]) => q.active)}
-      {@const activeId = activeEntry ? activeEntry[0] : null}
-      {@const activeOp = activeEntry ? activeEntry[1].active?.operation : null}
-      
-      <div class="batch-progress-overlay" transition:fade>
-          <div class="overlay-content">
-              <div class="status-indicator">
-                  <div class="relative">
-                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                       <span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
-                  </div>
-                  <div>
-                      <h3>Processing Images</h3>
-                      <p>{pendingEdits.length} task(s) remaining in queue</p>
-                  </div>
-              </div>
+    {@const activeEntry = Object.entries(edits).find(([_, q]) => q.active)}
+    {@const activeId = activeEntry ? activeEntry[0] : null}
+    {@const activeOp = activeEntry ? activeEntry[1].active?.operation : null}
 
-              {#if activeId}
-                 {@const item = photos.find(p => p.id === activeId) || Object.values(janCodeToPhotos).flat().find(p => p.id === activeId)}
-                 {#if item}
-                    <div class="active-item-card">
-                        <div class="thumbnail-wrapper">
-                             <SecureImage 
-                                src={displayUrl(item.baseUrl, "=w64-h64-c")}
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-                        <div class="operation-details">
-                            <span class="op-label">Current Operation</span>
-                            <span class="op-value">{activeOp?.replace('_', ' ')}</span>
-                        </div>
-                    </div>
-                 {/if}
-              {/if}
+    <div class="batch-progress-overlay" transition:fade>
+      <div class="overlay-content">
+        <div class="status-indicator">
+          <div class="relative">
+            <span
+              class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"
+            ></span>
+            <span
+              class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"
+            ></span>
           </div>
+          <div>
+            <h3>Processing Images</h3>
+            <p>{pendingEdits.length} task(s) remaining in queue</p>
+          </div>
+        </div>
+
+        {#if activeId}
+          {@const item =
+            photos.find((p) => p.id === activeId) ||
+            Object.values(janCodeToPhotos)
+              .flat()
+              .find((p) => p.id === activeId)}
+          {#if item}
+            <div class="active-item-card">
+              <div class="thumbnail-wrapper">
+                <SecureImage
+                  src={displayUrl(item.baseUrl, "=w64-h64-c")}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div class="operation-details">
+                <span class="op-label">Current Operation</span>
+                <span class="op-value">{activeOp?.replace("_", " ")}</span>
+              </div>
+            </div>
+          {/if}
+        {/if}
       </div>
+    </div>
   {/if}
   <div class="flex justify-between items-center mb-8">
     <div>
-        <h1 class="text-3xl font-bold text-gray-800">Google Photos Import</h1>
-        <div class="mt-2 flex items-center gap-3">
-             <!-- Status Indicator -->
-             {#if isPhotosAuthenticated}
-                 <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-green-100 text-green-800" title={connectedEmail}>
-                     <span class="w-2 h-2 rounded-full bg-green-600"></span>
-                     Connected {connectedEmail ? `as ${connectedEmail}` : ''}
-                 </span>
-             {:else}
-                 <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
-                     <span class="w-2 h-2 rounded-full bg-gray-400"></span>
-                     Not Connected
-                 </span>
-             {/if}
-             
-             <!-- Switch Button -->
-             <button 
-                on:click={() => initiateOAuthFlow(true)} 
-                class="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium"
-             >
-                {isPhotosAuthenticated ? "Switch Account" : "Connect Account"}
-             </button>
-        </div>
+      <h1 class="text-3xl font-bold text-gray-800">Google Photos Import</h1>
+      <div class="mt-2 flex items-center gap-3">
+        <!-- Status Indicator -->
+        {#if isPhotosAuthenticated}
+          <span
+            class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-green-100 text-green-800"
+            title={connectedEmail}
+          >
+            <span class="w-2 h-2 rounded-full bg-green-600"></span>
+            Connected {connectedEmail ? `as ${connectedEmail}` : ""}
+          </span>
+        {:else}
+          <span
+            class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800"
+          >
+            <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+            Not Connected
+          </span>
+        {/if}
+
+        <!-- Switch Button -->
+        <button
+          on:click={() => initiateOAuthFlow(true)}
+          class="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium"
+        >
+          {isPhotosAuthenticated ? "Switch Account" : "Connect Account"}
+        </button>
+      </div>
     </div>
   </div>
 
   <!-- CONTENT AREA -->
-  <div class="bg-white p-6 rounded-lg shadow-md min-h-[400px]" data-testid="selection-area">
-
+  <div
+    class="bg-white p-6 rounded-lg shadow-md min-h-[400px]"
+    data-testid="selection-area"
+  >
     {#if error}
       <div class="p-4 bg-red-50 text-red-700 rounded mb-4 mt-6">
         {error}
@@ -800,12 +884,12 @@
         <!-- Controls area inside card -->
         <div class="flex justify-between items-center px-4 pt-4 pb-2">
           <div class="flex gap-2">
-            <button 
-                on:click={handleClearPhotos}
-                class="bg-red-100 text-red-700 px-3 py-2 rounded-md font-medium hover:bg-red-200 transition text-sm mr-2"
-                title="Remove all photos"
+            <button
+              on:click={handleClearPhotos}
+              class="bg-red-100 text-red-700 px-3 py-2 rounded-md font-medium hover:bg-red-200 transition text-sm mr-2"
+              title="Remove all photos"
             >
-                Clear
+              Clear
             </button>
 
             <button
@@ -840,27 +924,26 @@
           </div>
 
           <div class="flex gap-2">
-             {#if photos.length > 0}
-                <button
+            {#if photos.length > 0}
+              <button
                 on:click={handleCategorize}
                 disabled={isCategorizing || isGenerating}
                 class="bg-teal-600 text-white px-4 py-2 rounded-md font-medium hover:bg-teal-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
-                >
+              >
                 Categorize Photos
-                </button>
-                
-             {/if}
+              </button>
+            {/if}
           </div>
         </div>
 
         <!-- Progress Bar for Categorization -->
         {#if isCategorizing}
-            <ProgressBar 
-                current={catProgress.current} 
-                total={catProgress.total} 
-                message={`Categorizing... ${catProgress.message}`} 
-                colorClass="bg-teal-500" 
-            />
+          <ProgressBar
+            current={catProgress.current}
+            total={catProgress.total}
+            message={`Categorizing... ${catProgress.message}`}
+            colorClass="bg-teal-500"
+          />
         {/if}
 
         <!-- Thumbnails Row (Selected / Uncategorized) -->
@@ -878,56 +961,74 @@
                 role="button"
                 tabindex="0"
                 data-testid="photo-thumbnail-{photo.id}"
-                data-upload-status={uploads[photo.id]?.status || 'none'}
-                data-photo-state={
-                  ((!!uploads[photo.id] && uploads[photo.id].status === 'uploading') ||
-                  (!uploads[photo.id] && photo.baseUrl.includes("googleusercontent.com")))
-                    ? 'uploading'
-                    : 'ready'
-                }
+                data-upload-status={uploads[photo.id]?.status || "none"}
+                data-photo-state={(!!uploads[photo.id] &&
+                  uploads[photo.id].status === "uploading") ||
+                (!uploads[photo.id] &&
+                  photo.baseUrl.includes("googleusercontent.com"))
+                  ? "uploading"
+                  : "ready"}
                 aria-label="View photo history"
                 on:click={() => goto(`/photo-history?id=${photo.id}`)}
-                on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${photo.id}`)}
+                on:keydown={(e) =>
+                  e.key === "Enter" && goto(`/photo-history?id=${photo.id}`)}
               >
                 <ImageThumbnail
                   src={photo.baseUrl}
                   alt={photo.filename}
                   width="100%"
                   height="100%"
-                  isUploading={
-                      (!!uploads[photo.id] && uploads[photo.id].status === 'uploading') ||
-                      (!uploads[photo.id] && photo.baseUrl.includes("googleusercontent.com"))
-                  }
+                  isUploading={(!!uploads[photo.id] &&
+                    uploads[photo.id].status === "uploading") ||
+                    (!uploads[photo.id] &&
+                      photo.baseUrl.includes("googleusercontent.com"))}
                 />
-                
+
                 <!-- Edit Status Overlay -->
                 {#if edits[photo.id]}
-                   {@const q = edits[photo.id]}
-                   {#if q.active}
-                       <div class="absolute inset-0 bg-blue-600/40 flex items-center justify-center z-20 backdrop-blur-[1px]">
-                           <div class="text-white text-xs font-bold flex flex-col items-center drop-shadow-md">
-                              <span class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mb-1"></span>
-                              <span class="uppercase tracking-wider text-[10px]">{q.active.operation.replace('_', ' ')}</span>
-                           </div>
-                       </div>
-                   {:else if q.queue.length > 0}
-                       <div class="absolute top-1 right-1 bg-yellow-400 text-yellow-900 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-20 border border-yellow-500">
-                           {q.queue.length}
-                       </div>
-                   {/if}
+                  {@const q = edits[photo.id]}
+                  {#if q.active}
+                    <div
+                      class="absolute inset-0 bg-blue-600/40 flex items-center justify-center z-20 backdrop-blur-[1px]"
+                    >
+                      <div
+                        class="text-white text-xs font-bold flex flex-col items-center drop-shadow-md"
+                      >
+                        <span
+                          class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mb-1"
+                        ></span>
+                        <span class="uppercase tracking-wider text-[10px]"
+                          >{q.active.operation.replace("_", " ")}</span
+                        >
+                      </div>
+                    </div>
+                  {:else if q.queue.length > 0}
+                    <div
+                      class="absolute top-1 right-1 bg-yellow-400 text-yellow-900 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-20 border border-yellow-500"
+                    >
+                      {q.queue.length}
+                    </div>
+                  {/if}
                 {/if}
 
                 <!-- Upload Status Overlay -->
                 {#if uploads[photo.id]}
-                    {#if uploads[photo.id].status === 'uploading'}
-                        <div class="absolute inset-0 bg-black/30 flex items-center justify-center">
-                            <span class="animate-spin h-6 w-6 border-2 border-white border-t-transparent rounded-full"></span>
-                        </div>
-                    {:else if uploads[photo.id].status === 'failed'}
-                         <div class="absolute inset-0 bg-red-500/30 flex items-center justify-center" title={uploads[photo.id].error}>
-                            <span class="text-white font-bold text-xl">!</span>
-                        </div>
-                    {/if}
+                  {#if uploads[photo.id].status === "uploading"}
+                    <div
+                      class="absolute inset-0 bg-black/30 flex items-center justify-center"
+                    >
+                      <span
+                        class="animate-spin h-6 w-6 border-2 border-white border-t-transparent rounded-full"
+                      ></span>
+                    </div>
+                  {:else if uploads[photo.id].status === "failed"}
+                    <div
+                      class="absolute inset-0 bg-red-500/30 flex items-center justify-center"
+                      title={uploads[photo.id].error}
+                    >
+                      <span class="text-white font-bold text-xl">!</span>
+                    </div>
+                  {/if}
                 {/if}
               </div>
             {/each}
@@ -936,8 +1037,10 @@
               <p>Selection in progress...</p>
             </div>
           {:else if isCategorizing}
-             <!-- While categorizing, list empties, so this might show temporarily. -->
-             <div class="w-full text-center py-10 text-gray-500 italic">Processing...</div>
+            <!-- While categorizing, list empties, so this might show temporarily. -->
+            <div class="w-full text-center py-10 text-gray-500 italic">
+              Processing...
+            </div>
           {:else}
             <div class="w-full text-center py-10 text-gray-400 italic">
               No photos queued. Select or Add photos to begin.
@@ -945,279 +1048,344 @@
           {/if}
         </div>
       </div>
-      
+
       <!-- CATEGORIZED RESULTS -->
       {#if Object.keys(janCodeToPhotos).length > 0}
-        <div class="bg-white p-6 rounded-lg shadow-md mt-8 border-t-4 border-teal-500" data-testid="categorized-section">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-gray-800">Categorized Photos</h2>
-                <div class="flex gap-4 items-center">
-                     <label class="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded border border-gray-200 cursor-pointer hover:bg-gray-100 transition">
-                         <input type="checkbox" bind:checked={showCompleted} class="rounded text-teal-600 focus:ring-teal-500">
-                         <span>Show completed groups</span>
-                     </label>
+        <div
+          class="bg-white p-6 rounded-lg shadow-md mt-8 border-t-4 border-teal-500"
+          data-testid="categorized-section"
+        >
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-gray-800">Categorized Photos</h2>
+            <div class="flex gap-4 items-center">
+              <label
+                class="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded border border-gray-200 cursor-pointer hover:bg-gray-100 transition"
+              >
+                <input
+                  type="checkbox"
+                  bind:checked={showCompleted}
+                  class="rounded text-teal-600 focus:ring-teal-500"
+                />
+                <span>Show completed groups</span>
+              </label>
 
-                     <button
-                        on:click={handleProcessImages}
-                        disabled={isEditing}
-                        class="bg-indigo-600 text-white px-4 py-2 rounded-md font-bold hover:bg-indigo-700 transition disabled:opacity-50 text-sm flex items-center gap-2 shadow-sm"
-                        title="Auto-process all categorized images (Color Correct + Remove Background)"
-                        >
-                        {#if isEditing}
-                             <span class="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></span>
-                        {/if}
-                        <span>Process Images</span>
-                    </button>
+              <button
+                on:click={handleProcessImages}
+                disabled={isEditing}
+                class="bg-indigo-600 text-white px-4 py-2 rounded-md font-bold hover:bg-indigo-700 transition disabled:opacity-50 text-sm flex items-center gap-2 shadow-sm"
+                title="Auto-process all categorized images (Color Correct + Remove Background)"
+              >
+                {#if isEditing}
+                  <span
+                    class="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"
+                  ></span>
+                {/if}
+                <span>Process Images</span>
+              </button>
 
-                    <button
-                        on:click={() => goto('/listings/create')}
-                        class="bg-green-600 text-white px-4 py-2 rounded-md font-bold hover:bg-green-700 transition text-sm flex items-center gap-2 shadow-sm"
-                        title="Create listings from these photos"
-                    >
-                        <span>Create Listings →</span>
-                    </button>
-                </div>
+              <button
+                on:click={() => goto("/listings/create")}
+                class="bg-green-600 text-white px-4 py-2 rounded-md font-bold hover:bg-green-700 transition text-sm flex items-center gap-2 shadow-sm"
+                title="Create listings from these photos"
+              >
+                <span>Create Listings →</span>
+              </button>
             </div>
-            <div class="border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
-                <!-- Header -->
-                <div class="flex flex-row bg-slate-200 border-b-2 border-slate-300 text-slate-700" style="display: flex; flex-direction: row;">
-                    <div class="w-48 flex-none p-4 font-bold text-center uppercase tracking-wide text-sm" style="width: 200px; flex: none;">JAN Code</div>
-                    <div class="flex-1 p-4 font-bold text-sm uppercase tracking-wide" style="flex: 1;">Photos</div>
-                </div>
-                
-                {#each categorizedEntries as [jan, items], index}
-                    <!-- 
+          </div>
+          <div
+            class="border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm"
+          >
+            <!-- Header -->
+            <div
+              class="flex flex-row bg-slate-200 border-b-2 border-slate-300 text-slate-700"
+              style="display: flex; flex-direction: row;"
+            >
+              <div
+                class="w-48 flex-none p-4 font-bold text-center uppercase tracking-wide text-sm"
+                style="width: 200px; flex: none;"
+              >
+                JAN Code
+              </div>
+              <div
+                class="flex-1 p-4 font-bold text-sm uppercase tracking-wide"
+                style="flex: 1;"
+              >
+                Photos
+              </div>
+            </div>
+
+            {#each categorizedEntries as [jan, items], index}
+              <!-- 
                         Highlight Logic:
                         - Current Row Hover: Handled by .categorized-row:hover (CSS)
                         - Previous Row (Highlight): IF `hoveredRowIndex` is `index + 1` (the row below this one), highlight THIS one.
                         - AND `hoveredColumn` must be 'photos' as requested.
                     -->
-                    <div 
-                        class="flex flex-row categorized-row group" 
-                        class:related-highlight={hoveredRowIndex === index + 1 && hoveredColumn === 'photos'}
-                        style="display: flex; flex-direction: row relative;"
-                        role="group"
-                        data-testid="group-{jan}"
-                        on:mouseleave={() => { hoveredRowIndex = null; hoveredColumn = null; }}
+              <div
+                class="flex flex-row categorized-row group"
+                class:related-highlight={hoveredRowIndex === index + 1 &&
+                  hoveredColumn === "photos"}
+                style="display: flex; flex-direction: row relative;"
+                role="group"
+                data-testid="group-{jan}"
+                on:mouseleave={() => {
+                  hoveredRowIndex = null;
+                  hoveredColumn = null;
+                }}
+              >
+                <!-- JAN Column -->
+                <div
+                  class="w-48 flex-none p-4 font-mono text-lg font-medium text-teal-700 break-all bg-gray-50/50 group-hover:bg-transparent transition-colors z-10"
+                  class:bg-red-100={!isValidJan(jan)}
+                  class:text-red-800={!isValidJan(jan)}
+                  style="width: 200px; flex: none; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e2e8f0; {!isValidJan(
+                    jan,
+                  )
+                    ? 'background-color: #fee2e2;'
+                    : ''}"
+                  role="group"
+                  on:mouseenter={() => {
+                    hoveredRowIndex = index;
+                    hoveredColumn = "jan";
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={jan}
+                    class="editable-jan"
+                    data-testid="jan-input-{jan}"
+                    on:blur={(e) => handleJanRename(jan, e.currentTarget.value)}
+                    on:keyup={(e) => handleInputKey(e, jan)}
+                  />
+                </div>
+
+                <!-- Photos Column: The Merge Trigger Zone -->
+                <div
+                  class="flex-1 p-4 min-w-0 relative"
+                  style="flex: 1; min-width: 0; position: relative;"
+                  role="group"
+                  on:mouseenter={() => {
+                    hoveredRowIndex = index;
+                    hoveredColumn = "photos";
+                  }}
+                >
+                  <!-- Merge Trigger Button (Only if NOT the first row) -->
+                  {#if hoveredRowIndex === index && hoveredColumn === "photos" && index > 0}
+                    <button
+                      class="absolute -top-3 right-4 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 border border-yellow-300 rounded-full px-3 py-1 text-xs font-bold shadow-sm z-50 flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                      style="position: absolute; top: -12px; right: 16px;"
+                      on:click|stopPropagation={() => handleMergeUp(index)}
+                      title="Merge these photos into the previous group"
+                      transition:fade={{ duration: 100 }}
                     >
-                        <!-- JAN Column -->
-                        <div 
-                            class="w-48 flex-none p-4 font-mono text-lg font-medium text-teal-700 break-all bg-gray-50/50 group-hover:bg-transparent transition-colors z-10"
-                            class:bg-red-100={!isValidJan(jan)} 
-                            class:text-red-800={!isValidJan(jan)}
-                            style="width: 200px; flex: none; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e2e8f0; { !isValidJan(jan) ? 'background-color: #fee2e2;' : '' }"
-                            role="group"
-                            on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'jan'; }}
+                      <span>↑ Merge Up</span>
+                    </button>
+                  {/if}
+
+                  <div
+                    class="flex flex-row flex-wrap gap-4 mt-6 mb-6 p-4"
+                    style="display: flex; flex-direction: row; flex-wrap: wrap;"
+                  >
+                    {#each items as item}
+                      <div
+                        class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group/item cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
+                        style="width: 80px; height: 80px; flex-shrink: 0;"
+                        role="button"
+                        tabindex="0"
+                        data-testid="photo-thumbnail-{item.id}"
+                        data-upload-status={uploads[item.id]?.status || "none"}
+                        data-photo-state={(!!uploads[item.id] &&
+                          uploads[item.id].status === "uploading") ||
+                        (!uploads[item.id] &&
+                          item.baseUrl.includes("googleusercontent.com"))
+                          ? "uploading"
+                          : "ready"}
+                        aria-label="View photo history"
+                        on:click={() => goto(`/photo-history?id=${item.id}`)}
+                        on:keydown={(e) =>
+                          e.key === "Enter" &&
+                          goto(`/photo-history?id=${item.id}`)}
+                      >
+                        <ImageThumbnail
+                          src={item.baseUrl}
+                          alt={item.filename}
+                          width="100%"
+                          height="100%"
+                          isUploading={!!uploads[item.id] &&
+                            uploads[item.id].status === "uploading"}
+                        />
+                        <!-- Filename Overlay -->
+                        <div
+                          class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] p-0.5 truncate opacity-0 group-hover/item:opacity-100 transition-opacity"
                         >
-                            <input 
-                                type="text" 
-                                value={jan} 
-                                class="editable-jan"
-                                data-testid="jan-input-{jan}"
-                                on:blur={(e) => handleJanRename(jan, e.currentTarget.value)}
-                                on:keyup={(e) => handleInputKey(e, jan)}
-                            />
+                          {item.filename}
                         </div>
-                        
-                        <!-- Photos Column: The Merge Trigger Zone -->
-                        <div 
-                            class="flex-1 p-4 min-w-0 relative" 
-                            style="flex: 1; min-width: 0; position: relative;"
-                            role="group"
-                            on:mouseenter={() => { hoveredRowIndex = index; hoveredColumn = 'photos'; }}
+
+                        <!-- Status Icons -->
+                        <div
+                          class="absolute top-1 right-1 flex flex-col gap-0.5"
                         >
-                            <!-- Merge Trigger Button (Only if NOT the first row) -->
-                            {#if hoveredRowIndex === index && hoveredColumn === 'photos' && index > 0}
-                                <button 
-                                    class="absolute -top-3 right-4 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 border border-yellow-300 rounded-full px-3 py-1 text-xs font-bold shadow-sm z-50 flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
-                                    style="position: absolute; top: -12px; right: 16px;"
-                                    on:click|stopPropagation={() => handleMergeUp(index)}
-                                    title="Merge these photos into the previous group"
-                                    transition:fade={{ duration: 100 }}
-                                >
-                                    <span>↑ Merge Up</span>
-                                </button>
-                            {/if}
+                          {#if edits[item.id]?.status?.crop}
+                            <div
+                              class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-sm border border-white"
+                              title="Cropped"
+                            ></div>
+                          {/if}
+                          {#if edits[item.id]?.status?.color_correct}
+                            <div
+                              class="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm border border-white"
+                              title="Color Corrected"
+                            ></div>
+                          {/if}
+                          {#if edits[item.id]?.status?.remove_background}
+                            <div
+                              class="w-1.5 h-1.5 rounded-full bg-pink-500 shadow-sm border border-white"
+                              title="BG Removed"
+                            ></div>
+                          {/if}
+                        </div>
 
-                            <div class="flex flex-row flex-wrap gap-4 mt-6 mb-6 p-4" style="display: flex; flex-direction: row; flex-wrap: wrap;">
-                                {#each items as item}
-                                    <div 
-                                        class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group/item cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
-                                        style="width: 80px; height: 80px; flex-shrink: 0;"
-                                        role="button"
-                                        tabindex="0"
-                                        data-testid="photo-thumbnail-{item.id}"
-                                        data-upload-status={uploads[item.id]?.status || 'none'}
-                                        data-photo-state={
-                                          ((!!uploads[item.id] && uploads[item.id].status === 'uploading') ||
-                                          (!uploads[item.id] && item.baseUrl.includes("googleusercontent.com")))
-                                            ? 'uploading'
-                                            : 'ready'
-                                        }
-                                        aria-label="View photo history"
-                                        on:click={() => goto(`/photo-history?id=${item.id}`)}
-                                        on:keydown={(e) => e.key === 'Enter' && goto(`/photo-history?id=${item.id}`)}
-                                    >
-                                        <ImageThumbnail 
-                                            src={item.baseUrl}
-                                            alt={item.filename}
-                                            width="100%"
-                                            height="100%"
-                                            isUploading={!!uploads[item.id] && uploads[item.id].status === 'uploading'}
-                                        />
-                                        <!-- Filename Overlay -->
-                                        <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] p-0.5 truncate opacity-0 group-hover/item:opacity-100 transition-opacity">
-                                            {item.filename}
-                                        </div>
-
-                                        <!-- Status Icons -->
-                                        <div class="absolute top-1 right-1 flex flex-col gap-0.5">
-                                             {#if edits[item.id]?.status?.crop}
-                                                <div class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-sm border border-white" title="Cropped"></div>
-                                             {/if}
-                                             {#if edits[item.id]?.status?.color_correct}
-                                                <div class="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm border border-white" title="Color Corrected"></div>
-                                             {/if}
-                                             {#if edits[item.id]?.status?.remove_background}
-                                                <div class="w-1.5 h-1.5 rounded-full bg-pink-500 shadow-sm border border-white" title="BG Removed"></div>
-                                             {/if}
-                                        </div>
-
-                                        {#if uploads[item.id]}
-                                            {#if uploads[item.id].status === 'uploading'}
-                                                <div class="absolute inset-0 bg-black/30 flex items-center justify-center">
-                                                    <span class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>
-                                                </div>
-                                            {:else if uploads[item.id].status === 'failed'}
-                                                <div class="absolute inset-0 bg-red-500/30 flex items-center justify-center font-bold text-white text-xs">!</div>
-                                            {/if}
-                                        {/if}
-                                    </div>
-                                {/each}
+                        {#if uploads[item.id]}
+                          {#if uploads[item.id].status === "uploading"}
+                            <div
+                              class="absolute inset-0 bg-black/30 flex items-center justify-center"
+                            >
+                              <span
+                                class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"
+                              ></span>
                             </div>
-                        </div>
-                    </div>
-                {/each}
-            </div>
+                          {:else if uploads[item.id].status === "failed"}
+                            <div
+                              class="absolute inset-0 bg-red-500/30 flex items-center justify-center font-bold text-white text-xs"
+                            >
+                              !
+                            </div>
+                          {/if}
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              </div>
+            {/each}
+          </div>
         </div>
-
       {/if}
-      
     {/if}
   </div>
 
   <!-- BATCH PROGRESS OVERLAY -->
-
 </div>
 
 <style>
+  .categorized-row {
+    border-bottom: 1px solid #e2e8f0;
+    transition: background-color 0.1s;
+  }
+  .categorized-row:hover {
+    background-color: #eff6ff; /* blue-50 */
+  }
+  .related-highlight {
+    background-color: #fef9c3 !important; /* yellow-100 */
+    border: 2px dashed #facc15 !important; /* yellow-400 */
+  }
 
-    .categorized-row {
-        border-bottom: 1px solid #e2e8f0;
-        transition: background-color 0.1s;
-    }
-    .categorized-row:hover {
-        background-color: #eff6ff; /* blue-50 */
-    }
-    .related-highlight {
-        background-color: #fef9c3 !important; /* yellow-100 */
-        border: 2px dashed #facc15 !important; /* yellow-400 */
-    }
-    
-    .editable-jan {
-        width: 100%;
-        text-align: center;
-        background-color: transparent;
-        border: 1px solid transparent; /* Reserve space for border */
-        border-radius: 4px;
-        padding: 2px 4px;
-        outline: none;
-        transition: all 0.2s;
-    }
-    .editable-jan:hover {
-        background-color: white;
-        border-color: #d1d5db; /* gray-300 */
-    }
-    .editable-jan:focus {
-        background-color: white;
-        border-color: #14b8a6; /* teal-500 */
-        box-shadow: 0 0 0 1px #14b8a6;
-    }
-    /* Let's fix the highlighting logic in the HTML block instead of CSS tricks */
-    
-    .batch-progress-overlay {
-        position: sticky;
-        top: 0;
-        left: 0;
-        right: 0;
-        background-color: rgba(17, 24, 39, 0.9); /* gray-900 / 90% */
-        color: white;
-        padding: 1rem;
-        z-index: 50;
-        backdrop-filter: blur(4px);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        border-bottom-left-radius: 0.5rem;
-        border-bottom-right-radius: 0.5rem;
-        margin-bottom: 1.5rem;
-        margin-left: -1rem;
-        margin-right: -1rem;
-        margin-top: -1rem;
-        transition: transform 0.3s;
-    }
-    .overlay-content {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .status-indicator {
-        display: flex;
-        align-items: center;
-        gap: 1.5rem;
-    }
-    .status-indicator h3 {
-        font-weight: 700;
-        font-size: 1.125rem;
-    }
-    .status-indicator p {
-        color: #d1d5db; /* gray-300 */
-        font-size: 0.875rem;
-    }
-    .active-item-card {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        background-color: #1f2937; /* gray-800 */
-        border-radius: 0.5rem;
-        padding: 0.5rem;
-        padding-right: 1rem;
-        box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
-        border: 1px solid #374151; /* gray-700 */
-    }
-    .thumbnail-wrapper {
-        width: 2.5rem; /* 10 */
-        height: 2.5rem;
-        flex-shrink: 0;
-        border-radius: 0.25rem;
-        overflow: hidden;
-        background-color: #374151;
-        position: relative;
-        border: 1px solid #4b5563; /* gray-600 */
-    }
-    .operation-details {
-        display: flex;
-        flex-direction: column;
-    }
-    .op-label {
-        font-size: 0.625rem; /* 10px */
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #9ca3af; /* gray-400 */
-        font-weight: 700;
-    }
-    .op-value {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        font-size: 0.75rem; /* xs */
-        color: #a5b4fc; /* indigo-300 */
-        white-space: nowrap;
-    }
+  .editable-jan {
+    width: 100%;
+    text-align: center;
+    background-color: transparent;
+    border: 1px solid transparent; /* Reserve space for border */
+    border-radius: 4px;
+    padding: 2px 4px;
+    outline: none;
+    transition: all 0.2s;
+  }
+  .editable-jan:hover {
+    background-color: white;
+    border-color: #d1d5db; /* gray-300 */
+  }
+  .editable-jan:focus {
+    background-color: white;
+    border-color: #14b8a6; /* teal-500 */
+    box-shadow: 0 0 0 1px #14b8a6;
+  }
+  /* Let's fix the highlighting logic in the HTML block instead of CSS tricks */
+
+  .batch-progress-overlay {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(17, 24, 39, 0.9); /* gray-900 / 90% */
+    color: white;
+    padding: 1rem;
+    z-index: 50;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    border-bottom-left-radius: 0.5rem;
+    border-bottom-right-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    margin-top: -1rem;
+    transition: transform 0.3s;
+  }
+  .overlay-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  .status-indicator h3 {
+    font-weight: 700;
+    font-size: 1.125rem;
+  }
+  .status-indicator p {
+    color: #d1d5db; /* gray-300 */
+    font-size: 0.875rem;
+  }
+  .active-item-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background-color: #1f2937; /* gray-800 */
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    padding-right: 1rem;
+    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+    border: 1px solid #374151; /* gray-700 */
+  }
+  .thumbnail-wrapper {
+    width: 2.5rem; /* 10 */
+    height: 2.5rem;
+    flex-shrink: 0;
+    border-radius: 0.25rem;
+    overflow: hidden;
+    background-color: #374151;
+    position: relative;
+    border: 1px solid #4b5563; /* gray-600 */
+  }
+  .operation-details {
+    display: flex;
+    flex-direction: column;
+  }
+  .op-label {
+    font-size: 0.625rem; /* 10px */
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #9ca3af; /* gray-400 */
+    font-weight: 700;
+  }
+  .op-value {
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    font-size: 0.75rem; /* xs */
+    color: #a5b4fc; /* indigo-300 */
+    white-space: nowrap;
+  }
 </style>

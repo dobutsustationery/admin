@@ -9,7 +9,7 @@ import {
   split_inventory_item
 } from "./inventory";
 import { names } from "./names";
-import { photos } from "./photos-slice";
+import { photos, rename_jan_group } from "./photos-slice";
 import {
   orderImport,
   computeOrderImportBatch,
@@ -23,6 +23,7 @@ import {
 import { listings, add_listing_image, create_listing, update_listing } from "./listings-slice";
 import listingCreation, { 
   add_variants_internal,
+  update_variant_value,
   remove_proposal,
   complete_batch
 } from "./listing-creation-slice";
@@ -93,6 +94,117 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
   let nextState = combinedReducer(state, action);
 
   // 2. Interception & Composition
+
+  // Synchronize Listings idToHandle and Photo Groups when item keys change
+  const isRetype = action.type === "retype_item";
+  const isRename = action.type === "rename_subtype";
+  const isSubtypeUpdate = action.type === "update_field" && action.payload.field === 'subtype';
+  const isVariantValueUpdate = action.type === "listingCreation/update_variant_value";
+
+  if (isRetype || isRename || isSubtypeUpdate || isVariantValueUpdate) {
+      let oldItemId = "";
+      let newItemId = "";
+      let baseJan = "";
+      let oldSubtype = "";
+      let newSubtype = "";
+
+      if (isRetype) {
+          const { itemKey, janCode, subtype } = action.payload;
+          oldItemId = itemKey;
+          baseJan = janCode;
+          newSubtype = subtype?.trim() || "";
+          newItemId = `${baseJan}${newSubtype}`;
+          const oldItem = state.inventory.idToItem[oldItemId];
+          if (oldItem) oldSubtype = oldItem.subtype;
+      } else if (isRename) {
+          const { itemKey, subtype } = action.payload;
+          oldItemId = itemKey;
+          newSubtype = subtype?.trim() || "";
+          const item = state.inventory.idToItem[itemKey];
+          if (item) {
+              baseJan = item.janCode;
+              oldSubtype = item.subtype;
+              newItemId = `${baseJan}${newSubtype}`;
+          }
+      } else if (isSubtypeUpdate) {
+          const { id: itemKey, to: subtype } = action.payload;
+          oldItemId = itemKey;
+          newSubtype = (subtype as string)?.trim() || "";
+          const item = state.inventory.idToItem[itemKey];
+          if (item) {
+              baseJan = item.janCode;
+              oldSubtype = item.subtype;
+              newItemId = `${baseJan}${newSubtype}`;
+          }
+      }
+
+      if (oldItemId && newItemId && oldItemId !== newItemId) {
+          // 1. Sync idToHandle (Listings)
+          const handle = state.listings.idToHandle[oldItemId];
+          if (handle) {
+              const listingState = nextState.listings;
+              const nextIdToHandle = { ...listingState.idToHandle, [newItemId]: handle };
+              delete nextIdToHandle[oldItemId];
+              nextState = {
+                  ...nextState,
+                  listings: { ...listingState, idToHandle: nextIdToHandle }
+              };
+          }
+
+          // 2. Sync Photo Groups (Photos)
+          const candidates = [oldItemId, `${baseJan}:${oldSubtype}`];
+          const found = candidates.find(c => state.photos.janCodeToPhotos[c]);
+          if (found) {
+              const newPhotoKey = newSubtype ? `${baseJan}:${newSubtype}` : baseJan;
+              if (found !== newPhotoKey) {
+                  const renameAction = {
+                      ...rename_jan_group({ oldJan: found, newJan: newPhotoKey }),
+                      _ephemeral: true,
+                      timestamp: action.timestamp || action._timestamp
+                  };
+                  nextState = {
+                      ...nextState,
+                      photos: photos(nextState.photos, renameAction)
+                  };
+                  logger(renameAction, nextState, action._timestamp);
+              }
+          }
+      }
+
+      // Handle variant value update separately (Listing Creation)
+      if (isVariantValueUpdate) {
+          const { janCode, variantId, value } = action.payload;
+          const proposal = state.listingCreation.proposals[janCode];
+          if (proposal) {
+              const variant = proposal.variants.find((v: any) => v.id === variantId || v.itemId === variantId);
+              if (variant && variant.photoGroupKey) {
+                  const oldPhotoKey = variant.photoGroupKey;
+                  const cleanSubtype = value?.trim() || "";
+                  const newPhotoKey = cleanSubtype ? `${proposal.janCode}:${cleanSubtype}` : proposal.janCode;
+                  
+                  if (state.photos.janCodeToPhotos[oldPhotoKey] && oldPhotoKey !== newPhotoKey) {
+                      const renameAction = {
+                          ...rename_jan_group({ oldJan: oldPhotoKey, newJan: newPhotoKey }),
+                          _ephemeral: true,
+                          timestamp: action.timestamp || action._timestamp
+                      };
+                      nextState = {
+                          ...nextState,
+                          photos: photos(nextState.photos, renameAction)
+                      };
+                      logger(renameAction, nextState, action._timestamp);
+
+                      // Also ensure nextState variant reflects the new key
+                      const nextProposal = nextState.listingCreation.proposals[janCode];
+                      const nextVariant = nextProposal?.variants.find((v: any) => v.id === variantId || v.itemId === variantId);
+                      if (nextVariant) {
+                          nextVariant.photoGroupKey = newPhotoKey;
+                      }
+                  }
+              }
+          }
+      }
+  }
 
   // Listing <-> Inventory Sync (Title/Description)
   if (action.type === "update_field") {
