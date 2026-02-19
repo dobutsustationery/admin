@@ -11,7 +11,7 @@
   $: imageUrl = item[col.field];
 
   function handleClick() {
-    dispatch("imagePick");
+    dispatch("imagePick", { item, col });
   }
 </script>
 

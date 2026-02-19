@@ -157,14 +157,26 @@
       <div class="{dropdownOpen} dropdown">
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-        <div style="height: 40px; width: 40px;" on:click={toggleDropdown}>
+        <div 
+          style="height: 40px; width: 40px;" 
+          on:click={toggleDropdown} 
+          role="button" 
+          tabindex="0"
+          on:keydown={(e) => e.key === 'Enter' && toggleDropdown()}
+        >
           <ImageThumbnail src={item.image} alt={item.description} />
         </div>
         <div class="dropdown-content">
           {#each imageItems as imageInfo, i (imageInfo.link)}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-            <div style="height: 40px; width: 40px; margin-bottom: 4px;" on:click={chooseImage(i)}>
+            <div 
+              style="height: 40px; width: 40px; margin-bottom: 4px;" 
+              on:click={chooseImage(i)}
+              role="button"
+              tabindex="0"
+              on:keydown={(e) => e.key === 'Enter' && chooseImage(i)()}
+            >
               <ImageThumbnail src={imageInfo.link} alt="sr" />
             </div>
           {/each}
@@ -240,9 +252,6 @@
     min-width: 160px;
     box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.2);
     z-index: 1;
-  }
-  .dropdown-content img {
-    display: block;
   }
 
   .ddopen .dropdown-content {
