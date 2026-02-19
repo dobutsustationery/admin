@@ -605,13 +605,33 @@
 
             <div class="flex flex-col items-center justify-center gap-4 w-full">
                 {#if isScanning}
+                    {@const now = Date.now()}
+                    {@const lastUpdate = scanProgress?.lastUpdate || 0}
+                    {@const isStalled = lastUpdate === 0 || (now - lastUpdate > 30000)}
                     <div class="w-full max-w-md">
                          <ProgressBar 
                             current={scanProgress?.current || 0} 
                             total={scanProgress?.total || 0} 
                             message={scanProgress?.message || "Scanning..."} 
-                            colorClass="bg-blue-600"
+                            colorClass={isStalled ? "bg-orange-500" : "bg-blue-600"}
                          />
+                         {#if isStalled}
+                            <div class="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-md">
+                                <p class="text-orange-800 text-sm mb-3">
+                                    {#if lastUpdate === 0}
+                                        The scan state was restored but it doesn't seem to be running.
+                                    {:else}
+                                        The scan seems to have stalled (no updates for {Math.round((now - lastUpdate)/1000)}s).
+                                    {/if}
+                                </p>
+                                <button 
+                                    on:click={handleGenerate}
+                                    class="bg-orange-600 text-white px-4 py-2 rounded font-bold hover:bg-orange-700 transition shadow-sm"
+                                >
+                                    Resume / Force Restart
+                                </button>
+                            </div>
+                         {/if}
                     </div>
                 {:else}
                     <div class="flex items-center justify-center gap-4">
