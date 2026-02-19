@@ -492,14 +492,69 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       console.log(`[RootReducer] Found ${matchedItems.length} existing items for handle ${handle}`);
 
       if (matchedItems.length > 0) {
+          // 0. Ensure Photos Exist in Photos Slice (for Image Picker)
+          const photosState = nextState.photos;
+          let nextJanCodeToPhotos = { ...photosState.janCodeToPhotos };
+          let photosUpdated = false;
+
+          matchedItems.forEach(({ item }) => {
+              if (!item.image) return;
+              
+              const photoKey = item.subtype ? `${item.janCode}:${item.subtype}` : item.janCode;
+              const group = nextJanCodeToPhotos[photoKey] || [];
+              
+              // Check if image already exists in group
+              const exists = group.some(p => p.baseUrl === item.image || p.productUrl === item.image);
+              
+              if (!exists) {
+                  console.log(`[RootReducer] Backfilling photo for ${photoKey}: ${item.image}`);
+                  if (!nextJanCodeToPhotos[photoKey]) nextJanCodeToPhotos[photoKey] = [];
+                  
+                  const syntheticPhoto = {
+                      id: `synthetic-${crypto.randomUUID()}`,
+                      baseUrl: item.image,
+                      productUrl: item.image,
+                      mimeType: "image/jpeg",
+                      filename: "imported.jpg",
+                      mediaMetadata: { 
+                          creationTime: new Date().toISOString(), 
+                          width: "0", 
+                          height: "0" 
+                      }
+                  };
+                  
+                  nextJanCodeToPhotos[photoKey] = [...nextJanCodeToPhotos[photoKey], syntheticPhoto];
+                  photosUpdated = true;
+                  
+                  // Log synthetic action
+                  logger({ 
+                      type: 'photos/categorize_photo (synthetic)', 
+                      payload: { janCode: photoKey, photo: syntheticPhoto }, 
+                      _ephemeral: true 
+                  }, nextState, action._timestamp);
+              }
+          });
+
+          if (photosUpdated) {
+              nextState = {
+                  ...nextState,
+                  photos: {
+                      ...photosState,
+                      janCodeToPhotos: nextJanCodeToPhotos
+                  }
+              };
+          }
+
           // 1. Add Variants
           const variants = matchedItems.map(({ id, item }) => {
               console.log(`[RootReducer] Mapping existing item ${id}. Image: ${item.image}`);
+              const photoGroupKey = item.subtype ? `${item.janCode}:${item.subtype}` : item.janCode;
               return {
                   id: `${item.janCode}:${item.subtype || "Default"}:${crypto.randomUUID().slice(0, 8)}`,
                   itemId: id,
                   option1Value: item.subtype || "Default",
                   image: item.image, // Preserve existing photo
+                  photoGroupKey, // Link to photo group
                   qty: item.qty // Initialize allocation to match current inventory
               };
           });
