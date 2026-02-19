@@ -203,7 +203,9 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               if (variant && variant.photoGroupKey) {
                   const oldPhotoKey = variant.photoGroupKey;
                   const cleanSubtype = value?.trim() || "";
-                  const newPhotoKey = cleanSubtype ? `${proposal.janCode}:${cleanSubtype}` : proposal.janCode;
+                  // Use the JAN from the OLD photo key to support merged proposals with multiple JANs
+                  const baseJan = oldPhotoKey.split(':')[0];
+                  const newPhotoKey = cleanSubtype ? `${baseJan}:${cleanSubtype}` : baseJan;
                   
                   if (state.photos.janCodeToPhotos[oldPhotoKey] && oldPhotoKey !== newPhotoKey) {
                       // 1. Rename the actual photo group
