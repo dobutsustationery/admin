@@ -25,12 +25,13 @@
   import { generateHandle } from "$lib/handle-utils";
   import ViewCell from "$lib/components/cell-renderers/ViewCell.svelte";
   import BodyHtmlCell from "$lib/components/cell-renderers/BodyHtmlCell.svelte";
+  import ImageCell from "$lib/components/cell-renderers/ImageCell.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
   import { update_field } from "$lib/inventory";
-  import SecureImage from "$lib/components/SecureImage.svelte";
+  import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import { set_column_width } from "$lib/ui-slice";
 
   // Subscribe to state
@@ -632,7 +633,7 @@
             <div class="image-picker-grid">
                 {#each buildImagePickerCandidates(imagePickerRow) as candidate}
                     <button class="image-picker-item" on:click={() => handlePickVariantImage(candidate)}>
-                        <SecureImage src={candidate.url} alt={candidate.altText} className="image-picker-img" />
+                        <ImageThumbnail src={candidate.url} alt={candidate.altText} />
                     </button>
                 {/each}
             </div>

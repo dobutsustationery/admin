@@ -16,6 +16,7 @@
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BulkEditor, { type ColumnConfig } from "$lib/components/BulkEditor.svelte";
   import ViewCell from "$lib/components/cell-renderers/ViewCell.svelte";
+  import ImageCell from "$lib/components/cell-renderers/ImageCell.svelte";
   import { set_column_width } from "$lib/ui-slice";
 
 
@@ -264,6 +265,7 @@
   // --- Column Config ---
   const baseColumnConfig: ColumnConfig[] = [
       { field: 'view', header: 'View', width: 50, editable: false, type: 'component', component: ViewCell },
+      { field: 'image', header: 'Image', width: 60, type: 'component', component: ImageCell, editable: false },
       
       { field: 'handle', header: 'Handle', width: 200, type: 'text', placeholderField: 'computedHandle' },
       { field: 'description', header: 'Title', width: 300, type: 'text' }, 

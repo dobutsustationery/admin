@@ -4,6 +4,7 @@
   import { cubicOut } from "svelte/easing";
   import { fade } from "svelte/transition";
   import SecureImage from '$lib/components/SecureImage.svelte';
+  import ImageThumbnail from '$lib/components/ImageThumbnail.svelte';
   import CategoryBrowseModal from './CategoryBrowseModal.svelte';
   
   export let listing: { title: string; bodyHtml: string; option1Name?: string; productCategory?: string } | null = null;
@@ -140,6 +141,7 @@
 
   // Interaction Handlers
   function handleSubtypeSelect(id: string) {
+      hoveredImage = null;
       dispatch('selectSubtype', id);
   }
 
@@ -392,7 +394,7 @@
                             on:mouseleave={handleThumbnailLeave}
                        >
                            <div class="thumbnail-btn">
-                               <SecureImage src={img.url} alt={img.altText} className="thumbnail-img" />
+                               <ImageThumbnail src={img.url} alt={img.altText} />
                            </div>
                            
                            <!-- Hover Overlay -->
@@ -463,7 +465,7 @@
                                       on:mouseleave={handleThumbnailLeave}
                                       title={!readOnly ? "Click to Replace Image" : item.subtype}
                                    >
-                                       <SecureImage src={subtypeImg.url} alt={item.subtype} className="thumbnail-img" />
+                                       <ImageThumbnail src={subtypeImg.url} alt={item.subtype} />
                                    </button>
                                    {#if !readOnly}
                                    <div class="subtype-overlay">

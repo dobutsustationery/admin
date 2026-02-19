@@ -12,6 +12,7 @@
   } from "./inventory";
   import { broadcast } from "./redux-firestore";
   import { store } from "./store";
+  import ImageThumbnail from "./components/ImageThumbnail.svelte";
 
   export let code: string = "";
   export let subtype: string = "";
@@ -156,22 +157,16 @@
       <div class="{dropdownOpen} dropdown">
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-        <img
-          src={item.image}
-          alt={item.description}
-          height="40px"
-          on:click={toggleDropdown}
-        />
+        <div style="height: 40px; width: 40px;" on:click={toggleDropdown}>
+          <ImageThumbnail src={item.image} alt={item.description} />
+        </div>
         <div class="dropdown-content">
           {#each imageItems as imageInfo, i (imageInfo.link)}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-            <img
-              on:click={chooseImage(i)}
-              height="40px"
-              src={imageInfo.link}
-              alt="sr"
-            />
+            <div style="height: 40px; width: 40px; margin-bottom: 4px;" on:click={chooseImage(i)}>
+              <ImageThumbnail src={imageInfo.link} alt="sr" />
+            </div>
           {/each}
         </div>
       </div>
