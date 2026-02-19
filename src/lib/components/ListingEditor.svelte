@@ -20,11 +20,24 @@
   const dispatch = createEventDispatcher();
   
   // Validation
+  $: sourceAllocations = associatedItems.reduce((acc, item) => {
+      const sourceId = item.id; // Inventory Item ID
+      const alloc = item.allocatedQty || 0;
+      acc[sourceId] = (acc[sourceId] || 0) + alloc;
+      return acc;
+  }, {} as Record<string, number>);
+
+  $: isAllocationValid = !isCreationMode || associatedItems.every(item => {
+      const totalAlloc = sourceAllocations[item.id] || 0;
+      const avail = item.qty || 0;
+      return totalAlloc === avail;
+  });
+
   $: isPriceValid = associatedItems.length > 0 && (associatedItems[0].price || 0) > 0;
   $: normalizedCategories = knownCategories.map(c => c.trim()).filter(Boolean);
   $: categorySet = new Set(normalizedCategories);
   $: isCategoryValid = !!(listing && listing.productCategory && categorySet.has(listing.productCategory));
-  $: isReadyToApprove = isPriceValid && isCategoryValid;
+  $: isReadyToApprove = isPriceValid && isCategoryValid && isAllocationValid;
 
   // Category Autocomplete State
   let showCategoryDropdown = false;
@@ -428,6 +441,7 @@
                    <div class="subtype-header-row">
                        <span class="subtype-label-header">Variant</span>
                        <span class="subtype-qty-header">Alloc.</span>
+                       <span class="subtype-qty-header">Inv.</span>
                        <span class="subtype-img-header">Image</span>
                    </div>
                {/if}
@@ -445,15 +459,21 @@
                            >{item.subtype || 'Default'}</span>
                            
                            {#if isCreationMode}
+                               {@const totalAlloc = sourceAllocations[item.id] || 0}
+                               {@const avail = item.qty || 0}
+                               {@const statusClass = totalAlloc > avail ? 'over-allocated' : (totalAlloc < avail ? 'under-allocated' : 'valid-allocated')}
                                <input 
                                    type="number" 
                                    min="0" 
-                                   class="subtype-qty-input"
+                                   class="subtype-qty-input {statusClass}"
                                    value={item.allocatedQty !== undefined ? item.allocatedQty : 0}
                                    on:input={(e) => handleQtyChange(e, item)}
                                    placeholder="Qty"
-                                   title="Allocated Quantity"
+                                   title={totalAlloc > avail ? `Over-allocated! ${totalAlloc}/${avail}` : (totalAlloc < avail ? `Under-allocated: ${totalAlloc}/${avail} (remainder stays on source)` : "Fully allocated")}
                                />
+                               <span class="subtype-qty-display" title="Final Inventory Count">
+                                   {item.allocatedQty !== undefined ? item.allocatedQty : (item.qty || 0)}
+                               </span>
                            {/if}
 
                            {#if subtypeImg}
@@ -843,6 +863,10 @@
   .subtype-row { display: flex; align-items: center; gap: 1rem; padding: 0.25rem 0; }
   .subtype-label { font-size: 0.875rem; font-weight: 500; color: #374151; width: 80px; text-align: right; }
   .subtype-qty-input { width: 60px; padding: 0.25rem; border: 1px solid #d1d5db; border-radius: 4px; text-align: center; }
+  .subtype-qty-input.over-allocated { border-color: #ef4444; color: #b91c1c; background-color: #fef2f2; }
+  .subtype-qty-input.under-allocated { border-color: #22c55e; color: #15803d; background-color: #f0fdf4; }
+  .subtype-qty-input.valid-allocated { border-color: #3b82f6; color: #1e40af; background-color: #eff6ff; }
+  .subtype-qty-display { width: 60px; text-align: center; font-size: 0.875rem; color: #6b7280; font-weight: 500; }
   .subtype-thumb-btn { width: 64px; height: 64px; border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; cursor: pointer; padding: 0; background: white; opacity: 0.8; transition: all 0.2s; }
   .subtype-thumb-btn:hover { opacity: 1; border-color: #9ca3af; }
   .subtype-thumb-btn.selected { opacity: 1; border-color: #3b82f6; box-shadow: 0 0 0 2px #3b82f6; }
