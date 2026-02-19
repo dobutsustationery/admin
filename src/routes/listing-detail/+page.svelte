@@ -604,6 +604,7 @@
 
     // Open Image Picker instead of file upload (supports both create and live mode)
     imagePickerTargetJan = mode === "create" ? janCode : null;
+    showAllPhotos = false;
     showImagePicker = true;
   }
 
@@ -829,6 +830,7 @@
   }
 
   function openImagePicker() {
+    showAllPhotos = false;
     if (mode === "create" && janCode) {
       imagePickerTargetJan = janCode;
       replacingSubtypeId = null;
