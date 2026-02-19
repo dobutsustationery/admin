@@ -24,6 +24,7 @@ import { listings, add_listing_image, create_listing, update_listing } from "./l
 import listingCreation, { 
   add_variants_internal,
   update_variant_value,
+  set_variant_photo_group,
   remove_proposal,
   complete_batch
 } from "./listing-creation-slice";
@@ -104,37 +105,43 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
   if (isRetype || isRename || isSubtypeUpdate || isVariantValueUpdate) {
       let oldItemId = "";
       let newItemId = "";
-      let baseJan = "";
+      let oldBaseJan = "";
+      let newBaseJan = "";
       let oldSubtype = "";
       let newSubtype = "";
 
       if (isRetype) {
           const { itemKey, janCode, subtype } = action.payload;
           oldItemId = itemKey;
-          baseJan = janCode;
+          newBaseJan = janCode;
           newSubtype = subtype?.trim() || "";
-          newItemId = `${baseJan}${newSubtype}`;
+          newItemId = `${newBaseJan}${newSubtype}`;
           const oldItem = state.inventory.idToItem[oldItemId];
-          if (oldItem) oldSubtype = oldItem.subtype;
+          if (oldItem) {
+              oldBaseJan = oldItem.janCode;
+              oldSubtype = oldItem.subtype;
+          }
       } else if (isRename) {
           const { itemKey, subtype } = action.payload;
           oldItemId = itemKey;
           newSubtype = subtype?.trim() || "";
-          const item = state.inventory.idToItem[itemKey];
-          if (item) {
-              baseJan = item.janCode;
-              oldSubtype = item.subtype;
-              newItemId = `${baseJan}${newSubtype}`;
+          const oldItem = state.inventory.idToItem[oldItemId];
+          if (oldItem) {
+              oldBaseJan = oldItem.janCode;
+              newBaseJan = oldBaseJan;
+              oldSubtype = oldItem.subtype;
+              newItemId = `${newBaseJan}${newSubtype}`;
           }
       } else if (isSubtypeUpdate) {
           const { id: itemKey, to: subtype } = action.payload;
           oldItemId = itemKey;
           newSubtype = (subtype as string)?.trim() || "";
-          const item = state.inventory.idToItem[itemKey];
-          if (item) {
-              baseJan = item.janCode;
-              oldSubtype = item.subtype;
-              newItemId = `${baseJan}${newSubtype}`;
+          const oldItem = state.inventory.idToItem[oldItemId];
+          if (oldItem) {
+              oldBaseJan = oldItem.janCode;
+              newBaseJan = oldBaseJan;
+              oldSubtype = oldItem.subtype;
+              newItemId = `${newBaseJan}${newSubtype}`;
           }
       }
 
@@ -152,21 +159,37 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           }
 
           // 2. Sync Photo Groups (Photos)
-          const candidates = [oldItemId, `${baseJan}:${oldSubtype}`];
+          // Try OldItemID first, then OldBaseJan:OldSubtype
+          const candidates = [oldItemId, `${oldBaseJan}:${oldSubtype}`];
           const found = candidates.find(c => state.photos.janCodeToPhotos[c]);
           if (found) {
-              const newPhotoKey = newSubtype ? `${baseJan}:${newSubtype}` : baseJan;
+              const newPhotoKey = newSubtype ? `${newBaseJan}:${newSubtype}` : newBaseJan;
               if (found !== newPhotoKey) {
-                  const renameAction = {
-                      ...rename_jan_group({ oldJan: found, newJan: newPhotoKey }),
-                      _ephemeral: true,
-                      timestamp: action.timestamp || action._timestamp
-                  };
-                  nextState = {
-                      ...nextState,
-                      photos: photos(nextState.photos, renameAction)
-                  };
-                  logger(renameAction, nextState, action._timestamp);
+                  console.log(`[RootReducer] Orchestrating photo group rename: ${found} -> ${newPhotoKey}`);
+                  
+                  // Update Photos State immutably
+                  const photosState = nextState.photos;
+                  const nextJanCodeToPhotos = { ...photosState.janCodeToPhotos };
+                  const groupPhotos = nextJanCodeToPhotos[found] || [];
+                  
+                  if (groupPhotos.length > 0) {
+                      if (!nextJanCodeToPhotos[newPhotoKey]) {
+                          nextJanCodeToPhotos[newPhotoKey] = [];
+                      }
+                      nextJanCodeToPhotos[newPhotoKey] = [...nextJanCodeToPhotos[newPhotoKey], ...groupPhotos];
+                      delete nextJanCodeToPhotos[found];
+                      
+                      nextState = {
+                          ...nextState,
+                          photos: {
+                              ...photosState,
+                              janCodeToPhotos: nextJanCodeToPhotos
+                          }
+                      };
+                      
+                      // Log a synthetic action for clarity in devtools
+                      logger({ type: 'photos/rename_jan_group (synthetic)', payload: { oldJan: found, newJan: newPhotoKey }, _ephemeral: true }, nextState, action._timestamp);
+                  }
               }
           }
       }
@@ -183,22 +206,52 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                   const newPhotoKey = cleanSubtype ? `${proposal.janCode}:${cleanSubtype}` : proposal.janCode;
                   
                   if (state.photos.janCodeToPhotos[oldPhotoKey] && oldPhotoKey !== newPhotoKey) {
-                      const renameAction = {
-                          ...rename_jan_group({ oldJan: oldPhotoKey, newJan: newPhotoKey }),
-                          _ephemeral: true,
-                          timestamp: action.timestamp || action._timestamp
-                      };
-                      nextState = {
-                          ...nextState,
-                          photos: photos(nextState.photos, renameAction)
-                      };
-                      logger(renameAction, nextState, action._timestamp);
-
-                      // Also ensure nextState variant reflects the new key
-                      const nextProposal = nextState.listingCreation.proposals[janCode];
-                      const nextVariant = nextProposal?.variants.find((v: any) => v.id === variantId || v.itemId === variantId);
-                      if (nextVariant) {
-                          nextVariant.photoGroupKey = newPhotoKey;
+                      // 1. Rename the actual photo group
+                      const photosState = nextState.photos;
+                      const nextJanCodeToPhotos = { ...photosState.janCodeToPhotos };
+                      const groupPhotos = nextJanCodeToPhotos[oldPhotoKey] || [];
+                      
+                      if (groupPhotos.length > 0) {
+                          if (!nextJanCodeToPhotos[newPhotoKey]) {
+                              nextJanCodeToPhotos[newPhotoKey] = [];
+                          }
+                          nextJanCodeToPhotos[newPhotoKey] = [...nextJanCodeToPhotos[newPhotoKey], ...groupPhotos];
+                          delete nextJanCodeToPhotos[oldPhotoKey];
+                          
+                          nextState = {
+                              ...nextState,
+                              photos: {
+                                  ...photosState,
+                                  janCodeToPhotos: nextJanCodeToPhotos
+                              }
+                          };
+                          logger({ type: 'photos/rename_jan_group (synthetic)', payload: { oldJan: oldPhotoKey, newJan: newPhotoKey }, _ephemeral: true }, nextState, action._timestamp);
+                      }
+                      
+                      // 2. Update variant's photoGroupKey reference (Listings Creation)
+                      const listingCreationState = nextState.listingCreation;
+                      const nextProposal = listingCreationState.proposals[janCode];
+                      if (nextProposal) {
+                          const nextVariants = nextProposal.variants.map((v: any) => {
+                              if (v.id === variantId || v.itemId === variantId) {
+                                  return { ...v, photoGroupKey: newPhotoKey };
+                              }
+                              return v;
+                          });
+                          
+                          nextState = {
+                              ...nextState,
+                              listingCreation: {
+                                  ...listingCreationState,
+                                  proposals: {
+                                      ...listingCreationState.proposals,
+                                      [janCode]: {
+                                          ...nextProposal,
+                                          variants: nextVariants
+                                      }
+                                  }
+                              }
+                          };
                       }
                   }
               }
@@ -427,6 +480,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
   // Import Existing Variants (Listing Creation)
   if (action.type === "listingCreation/import_existing_variants" && state.inventory) {
       const { janCode, handle } = action.payload;
+      console.log(`[RootReducer] Importing variants for ${janCode} from handle ${handle}`);
       
       const matchedItems: { id: string, item: Item }[] = [];
       Object.entries(state.inventory.idToItem).forEach(([id, item]) => {
@@ -434,15 +488,22 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                matchedItems.push({ id, item: item as Item });
           }
       });
+      
+      console.log(`[RootReducer] Found ${matchedItems.length} existing items for handle ${handle}`);
 
       if (matchedItems.length > 0) {
-          const variants = matchedItems.map(({ id, item }) => ({
-              id: `${item.janCode}:${item.subtype || "Default"}:${crypto.randomUUID().slice(0, 8)}`,
-              itemId: id,
-              option1Value: item.subtype || "Default"
-          }));
+          // 1. Add Variants
+          const variants = matchedItems.map(({ id, item }) => {
+              console.log(`[RootReducer] Mapping existing item ${id}. Image: ${item.image}`);
+              return {
+                  id: `${item.janCode}:${item.subtype || "Default"}:${crypto.randomUUID().slice(0, 8)}`,
+                  itemId: id,
+                  option1Value: item.subtype || "Default",
+                  image: item.image // Preserve existing photo
+              };
+          });
 
-          const internalAction = {
+          const addVariantsAction = {
               ...add_variants_internal({ janCode, variants }),
               _ephemeral: true,
               timestamp: action.timestamp || action._timestamp
@@ -450,9 +511,79 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           
           nextState = {
               ...nextState,
-              listingCreation: listingCreation(nextState.listingCreation, internalAction)
+              listingCreation: listingCreation(nextState.listingCreation, addVariantsAction)
           };
-          logger(internalAction, nextState, action._timestamp);
+          logger(addVariantsAction, nextState, action._timestamp);
+
+          // 2. Sync Price & Gallery Images (Logic moved from Thunk to Reducer for Event Sourcing/Replay)
+          const existingPrice = matchedItems[0].item.price;
+          console.log(`[RootReducer] Existing Price from first item: ${existingPrice}`);
+          
+          const currentProposal = nextState.listingCreation.proposals[janCode];
+          
+          if (currentProposal) {
+              // Sync Price if proposal doesn't have one set (or if we trust the merge target more?)
+              // Generally, if we are merging into an existing listing, that listing's price is the truth.
+              if (existingPrice !== undefined && currentProposal.price === undefined) {
+                  console.log(`[RootReducer] Syncing price to proposal: ${existingPrice}`);
+                  const syncPriceAction = {
+                      type: "listingCreation/update_proposal_field",
+                      payload: { janCode, field: 'price', value: existingPrice },
+                      _ephemeral: true,
+                      timestamp: action.timestamp || action._timestamp
+                  };
+                  nextState = {
+                      ...nextState,
+                      listingCreation: listingCreation(nextState.listingCreation, syncPriceAction)
+                  };
+                  logger(syncPriceAction, nextState, action._timestamp);
+              }
+
+              // Sync Gallery Images
+              // Need to look up the listing from `nextState.listings`
+              const existingListing = nextState.listings.handleToListing[handle];
+              console.log(`[RootReducer] Looking up existing listing for handle '${handle}': ${!!existingListing}`);
+              
+              if (existingListing && existingListing.images && existingListing.images.length > 0) {
+                  console.log(`[RootReducer] Existing listing has ${existingListing.images.length} images.`);
+                  // Identify Gallery Images (Not used by variants)
+                  const variantImageUrls = new Set(matchedItems.map(m => m.item.image).filter(Boolean));
+                  const galleryImages = existingListing.images.filter(img => !variantImageUrls.has(img.url));
+                  
+                  console.log(`[RootReducer] Found ${galleryImages.length} gallery images (not linked to variants).`);
+                  
+                  if (galleryImages.length > 0) {
+                      const listingOnlyImages = galleryImages.map(img => ({ ...img, isListingOnly: true }));
+                      
+                      // We need to set listingOnlyImages AND listingImageOrder
+                      // We can construct actions for `update_proposal_field`.
+                      
+                      const syncImagesAction = {
+                          type: "listingCreation/update_proposal_field",
+                          payload: { janCode, field: 'listingOnlyImages', value: listingOnlyImages },
+                          _ephemeral: true,
+                          timestamp: action.timestamp || action._timestamp
+                      };
+                      nextState = {
+                          ...nextState,
+                          listingCreation: listingCreation(nextState.listingCreation, syncImagesAction)
+                      };
+                      logger(syncImagesAction, nextState, action._timestamp);
+
+                      const syncOrderAction = {
+                          type: "listingCreation/update_proposal_field",
+                          payload: { janCode, field: 'listingImageOrder', value: existingListing.images.map(img => img.id) },
+                          _ephemeral: true,
+                          timestamp: action.timestamp || action._timestamp
+                      };
+                      nextState = {
+                          ...nextState,
+                          listingCreation: listingCreation(nextState.listingCreation, syncOrderAction)
+                      };
+                      logger(syncOrderAction, nextState, action._timestamp);
+                  }
+              }
+          }
       }
   }
 
@@ -601,9 +732,12 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                fields.push({ field: 'handle', value: finalHandle });
                // Explicitly sync Description from Proposal Title
                fields.push({ field: 'description', value: proposal.title });
-               if (v.option1Value) fields.push({ field: 'subtype', value: v.option1Value });
                if (imageUrl) fields.push({ field: 'image', value: imageUrl });
                fields.push({ field: 'imagePosition', value: i + 1 });
+               
+               // Update Subtype LAST because it triggers a rename (retype_item logic in update_field reducer),
+               // which invalidates the currentItemId. All other updates must happen on the old ID first.
+               if (v.option1Value) fields.push({ field: 'subtype', value: v.option1Value });
 
                fields.forEach(f => {
                    const updateAction = {

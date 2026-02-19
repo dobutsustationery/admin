@@ -931,21 +931,32 @@
       return h === handleKey;
     });
 
-    // 1. Photos from Base JAN
-    const janPhotos = $store.photos.janCodeToPhotos?.[janCode] || [];
-    janPhotos.forEach((p: any, idx: number) => {
-      const url = p.baseUrl || p.thumbnailLink || p.productUrl;
-      if (!url) return;
-      candidates.set(url, {
-        id: p.id || `jan-${idx}`,
-        url,
-        altText: p.filename || "JAN photo",
+    // 1. Photos from related groups (Base JAN prefix search)
+    const allPhotoKeys = Object.keys($store.photos.janCodeToPhotos || {});
+    const searchPrefix = primary.janCode.toString().trim();
+    const relatedKeys = allPhotoKeys.filter(
+      (k) => k === searchPrefix || k.startsWith(searchPrefix + ":"),
+    );
+
+    relatedKeys.forEach((k) => {
+      const photos = $store.photos.janCodeToPhotos[k] || [];
+      photos.forEach((p: any, idx: number) => {
+        const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+        if (!url) return;
+        if (!candidates.has(url)) {
+          candidates.set(url, {
+            id: p.id || `group-${k}-${idx}`,
+            url,
+            altText: p.filename || `Photo Group ${k}`,
+          });
+        }
       });
     });
 
-    // 2. Photos from Linked Photo Groups (Subtypes)
+    // 2. Photos from Linked Photo Groups (Explicitly mentioned ones that might not match prefix)
     if (primary.photoGroupIds) {
       primary.photoGroupIds.forEach((gid: string) => {
+        if (relatedKeys.includes(gid)) return; // Already added
         const groupPhotos = $store.photos.janCodeToPhotos?.[gid] || [];
         groupPhotos.forEach((p: any, idx: number) => {
           const url = p.baseUrl || p.thumbnailLink || p.productUrl;

@@ -336,8 +336,6 @@
       initiateOAuthFlow(window.location.href);
   }
 
-  import ImageCell from "$lib/components/cell-renderers/ImageCell.svelte";
-
   // --- Progress ---
   $: totalInBatch = originalBatchJans ? originalBatchJans.length : 0;
   $: remainingInBatch = activeBatchJans.length;
@@ -427,15 +425,46 @@
 
       const candidates = new Map<string, { id: string; url: string; altText: string }>();
       
-      // Aggregate photos from all linked groups (handles split/merge)
-      const photoGroups = targetProposal.photoGroupIds || [janCode];
-      const janPhotos = photoGroups.flatMap((gid: string) => photosState?.janCodeToPhotos?.[gid] || []);
-      
-      janPhotos.forEach((p: any, idx: number) => {
-          const url = p.baseUrl || p.thumbnailLink || p.productUrl;
-          if (!url) return;
-          candidates.set(url, { id: p.id || `jan-${idx}`, url, altText: p.filename || 'JAN photo' });
+      // 1. Photos from related groups (Base JAN prefix search)
+      const allPhotoKeys = Object.keys(photosState?.janCodeToPhotos || {});
+      const searchPrefix = targetProposal.janCode.toString().trim();
+      const relatedKeys = allPhotoKeys.filter(
+          (k) => k === searchPrefix || k.startsWith(searchPrefix + ":")
+      );
+
+      relatedKeys.forEach((k) => {
+          const photos = photosState.janCodeToPhotos[k] || [];
+          photos.forEach((p: any, idx: number) => {
+              const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+              if (!url) return;
+              if (!candidates.has(url)) {
+                  candidates.set(url, {
+                      id: p.id || `group-${k}-${idx}`,
+                      url,
+                      altText: p.filename || `Photo Group ${k}`
+                  });
+              }
+          });
       });
+
+      // 2. Photos from explicitly linked Photo Groups (that might not match prefix)
+      if (targetProposal.photoGroupIds) {
+          targetProposal.photoGroupIds.forEach((gid: string) => {
+              if (relatedKeys.includes(gid)) return; // Already added
+              const groupPhotos = photosState?.janCodeToPhotos?.[gid] || [];
+              groupPhotos.forEach((p: any, idx: number) => {
+                  const url = p.baseUrl || p.thumbnailLink || p.productUrl;
+                  if (!url) return;
+                  if (!candidates.has(url)) {
+                      candidates.set(url, {
+                          id: p.id || `group-${gid}-${idx}`,
+                          url,
+                          altText: p.filename || `Photo Group ${gid}`
+                      });
+                  }
+              });
+          });
+      }
 
       siblings.forEach(p => {
           p.inventoryItemIds?.forEach((id: string) => {
