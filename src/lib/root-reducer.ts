@@ -499,7 +499,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                   id: `${item.janCode}:${item.subtype || "Default"}:${crypto.randomUUID().slice(0, 8)}`,
                   itemId: id,
                   option1Value: item.subtype || "Default",
-                  image: item.image // Preserve existing photo
+                  image: item.image, // Preserve existing photo
+                  qty: item.qty // Initialize allocation to match current inventory
               };
           });
 
