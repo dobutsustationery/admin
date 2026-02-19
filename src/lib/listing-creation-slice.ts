@@ -74,7 +74,9 @@ export interface ListingCreationState {
 
   // Scanning State
   isScanning?: boolean;
-  scanProgress?: { current: number; total: number; message: string };
+  scanProgress?: { current: number; total: number; message: string; lastUpdate: number };
+  lastScanTimestamp?: number;
+  lastScanJan?: string;
 
   // Global Defaults (Persisted)
   globalTitlePrompt?: string;
@@ -92,7 +94,7 @@ const initialState: ListingCreationState = {
   activeBatchCreatedAt: undefined,
   hasCelebrated: false,
   isScanning: false,
-  scanProgress: { current: 0, total: 0, message: "" },
+  scanProgress: { current: 0, total: 0, message: "", lastUpdate: 0 },
   globalTitlePrompt:
     "Generate a concise, catchy product title for this product. Return ONLY the title text. No quotes.",
   globalDescriptionPrompt:
@@ -151,8 +153,13 @@ const listingCreationSlice = createSlice({
     },
     set_scanning: (state, action: PayloadAction<boolean>) => {
       state.isScanning = action.payload;
-      if (!action.payload)
-        state.scanProgress = { current: 0, total: 0, message: "" };
+      if (action.payload) {
+          state.lastScanTimestamp = Date.now();
+      } else {
+          state.scanProgress = { current: 0, total: 0, message: "", lastUpdate: 0 };
+          state.lastScanTimestamp = undefined;
+          state.lastScanJan = undefined;
+      }
     },
     set_scan_progress: (
       state,
@@ -160,9 +167,17 @@ const listingCreationSlice = createSlice({
         current: number;
         total: number;
         message: string;
+        janCode?: string;
       }>,
     ) => {
-      state.scanProgress = action.payload;
+      state.scanProgress = {
+          ...action.payload,
+          lastUpdate: Date.now()
+      };
+      state.lastScanTimestamp = Date.now();
+      if (action.payload.janCode) {
+          state.lastScanJan = action.payload.janCode;
+      }
     },
     // Session / Batch
     add_proposals: (state, action: PayloadAction<ListingProposal[]>) => {
@@ -724,9 +739,26 @@ export default listingCreationSlice.reducer;
 
 export const generate_proposals =
   (): AppThunk => async (dispatch, getState) => {
+    const currentState = getState().listingCreation;
+    const now = Date.now();
+    
+    // Stall detection: If scanning and no update for > 30 seconds, it's likely stuck.
+    // If lastUpdate is missing (undefined/0), we treat it as stalled if isScanning is true.
+    const lastUpdate = currentState.scanProgress?.lastUpdate || 0;
+    const isStalled = currentState.isScanning && (now - lastUpdate > 30000);
+
+    if (currentState.isScanning && !isStalled) {
+        console.log("[Generate] Scan already in flight and active. Skipping new trigger.");
+        return;
+    }
+
+    if (isStalled) {
+        console.warn(`[Generate] Detected stalled scan (last update ${Math.round((now - currentState.scanProgress!.lastUpdate)/1000)}s ago). Resuming/Restarting.`);
+    }
+
     dispatch(set_scanning(true));
     dispatch(
-      set_scan_progress({ current: 0, total: 100, message: "Initializing..." }),
+      set_scan_progress({ current: 0, total: 100, message: "Initializing...", lastUpdate: Date.now() } as any),
     );
 
     try {
@@ -790,6 +822,7 @@ export const generate_proposals =
                 current: processedCount,
                 total: totalCandidates,
                 message: `Analyzing variants for ${janCode}...`,
+                janCode
               }),
             );
             try {
@@ -915,6 +948,7 @@ export const generate_proposals =
             current: processedBase,
             total: totalBaseJans,
             message: `Generating proposal for ${baseJan}...`,
+            janCode: baseJan
           }),
         );
 
