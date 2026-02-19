@@ -377,14 +377,72 @@ export const inventory = createReducer(initialState, (r) => {
     );
   });
   r.addCase(update_field, (state, action) => {
-    if (state.idToItem[action.payload.id]) {
-      const incomingValue = action.payload.to;
-      (state.idToItem[action.payload.id] as any)[action.payload.field] =
-        action.payload.field === "qty" ||
-        action.payload.field === "shipped" ||
-        action.payload.field === "price" ||
-        action.payload.field === "cost" ||
-        action.payload.field === "weight"
+    const { id: itemKey, field, to: incomingValue, from } = action.payload;
+    if (state.idToItem[itemKey]) {
+      if (field === "subtype") {
+        const subtype = (incomingValue as string)?.trim() || "";
+        const mergeItemKey = `${state.idToItem[itemKey].janCode}${subtype}`;
+        
+        if (itemKey === mergeItemKey) {
+          const ts = (action as any).timestamp;
+          const val = state.idToItem[itemKey].timestamp || (ts ? new Date(ts.seconds * 1000).getTime() : 0);
+          state.idToHistory[itemKey].push({
+            date: state.idToItem[itemKey].creationDate,
+            desc: `Subtype update ignored (identical): ${subtype}`,
+            val,
+          });
+          return state;
+        }
+
+        if (state.idToItem[mergeItemKey] !== undefined) {
+          const mergeItem = state.idToItem[mergeItemKey];
+          const oldItem = state.idToItem[itemKey];
+          if (!itemsLookIdentical(oldItem, mergeItem)) {
+            console.error("Merge conflict on subtype update", oldItem, mergeItem);
+            return state;
+          }
+          mergeItem.qty += oldItem.qty;
+          mergeItem.shipped += oldItem.shipped;
+        } else {
+          state.idToItem[mergeItemKey] = {
+            ...state.idToItem[itemKey],
+            subtype,
+          };
+        }
+
+        // Update orders
+        for (const orderID in state.orderIdToOrder) {
+          const existingItems = state.orderIdToOrder[orderID].items.filter(i => i.itemKey === itemKey);
+          for (const item of existingItems) {
+            item.itemKey = mergeItemKey;
+          }
+        }
+
+        // Merge history
+        const oldHistory = state.idToHistory[itemKey] || [];
+        if (!state.idToHistory[mergeItemKey]) state.idToHistory[mergeItemKey] = [];
+        const combined = [...state.idToHistory[mergeItemKey], ...oldHistory.map(h => ({ ...h, desc: `[${itemKey}] ${h.desc}` }))];
+        combined.sort((a, b) => (a.val || 0) - (b.val || 0));
+        state.idToHistory[mergeItemKey] = combined;
+
+        delete state.idToItem[itemKey];
+
+        const ts = (action as any).timestamp;
+        const val = ts ? new Date(ts.seconds * 1000).getTime() : Date.now();
+        state.idToHistory[mergeItemKey].push({
+          date: new Date(val).toLocaleString("en", { year: "numeric", month: "short", day: "numeric" }),
+          desc: `Subtype updated via update_field from '${from}' to '${subtype}' (Key: ${itemKey} -> ${mergeItemKey})`,
+          val,
+        });
+        return state;
+      }
+
+      (state.idToItem[itemKey] as any)[field] =
+        field === "qty" ||
+        field === "shipped" ||
+        field === "price" ||
+        field === "cost" ||
+        field === "weight"
           ? Number(incomingValue)
           : incomingValue;
       const timestamp = (action as any).timestamp;
@@ -407,13 +465,13 @@ export const inventory = createReducer(initialState, (r) => {
         }
       }
       
-      state.idToHistory[action.payload.id].push({
+      state.idToHistory[itemKey].push({
         date: creationDate,
-        desc: `${action.payload.field} changed from ${action.payload.from} to ${action.payload.to}`,
+        desc: `${field} changed from ${from} to ${incomingValue}`,
         val,
       });
-      if (action.payload.field === "qty") {
-        const q = state.idToItem[action.payload.id][action.payload.field];
+      if (field === "qty") {
+        const q = state.idToItem[itemKey][field];
         // type mismatch issue TODO
         if (q == 0) {
           // remove item from inventory
@@ -424,7 +482,7 @@ export const inventory = createReducer(initialState, (r) => {
       }
     } else {
       console.warn(
-        `Skipping update_field for missing item: ${action.payload.id}`,
+        `Skipping update_field for missing item: ${itemKey}`,
       );
     }
   });
