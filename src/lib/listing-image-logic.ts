@@ -122,6 +122,8 @@ export function buildDraftListingImages(
         mergedImages = [...ordered, ...Array.from(byId.values())];
     }
 
-    // 6. Final canonicalization (dedupe by URL + reindex)
-    return canonicalizeListingImages(mergedImages as ListingImage[]);
+    // 6. Final re-index only.
+    // Keep exact ordered image list (including duplicates) so draft editing and
+    // approved listing persistence operate on the same explicit data.
+    return (mergedImages as ListingImage[]).map((img, i) => ({ ...img, position: i + 1 }));
 }

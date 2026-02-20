@@ -79,13 +79,8 @@
       return i.image;
   }).filter(Boolean));
   
-  // Dedupe images by ID to prevent crash
-  $: uniqueImages = Array.from(new Map((images || []).map(img => [img.id, img])).values());
-  
-  // Show all listing images in gallery (deduped by id) so valid listing images are never hidden
-  // just because they are also linked to a subtype.
-  $: galleryImages = uniqueImages
-      .sort((a, b) => a.position - b.position);
+  // Render images exactly in the order provided by listing data.
+  $: galleryImages = images || [];
 
   $: displayedGalleryImages = (() => {
       if (!previewOrderIds || previewOrderIds.length === 0) {
