@@ -959,16 +959,25 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                nextState.photos, 
                nextState.inventory
            );
+           // Dedupe by URL while preserving the LAST occurrence in ordered images.
+           // This keeps user-reordered listing-only duplicates authoritative.
            const seenImageUrls = new Set<string>();
-           const mergedImages = mergedImagesRaw
-               .filter((img) => {
-                   const key = (img.url || img.id || "").trim();
-                   if (!key) return true;
-                   if (seenImageUrls.has(key)) return false;
-                   seenImageUrls.add(key);
-                   return true;
-               })
-               .map((img, idx) => ({ ...img, position: idx + 1 }));
+           const dedupedFromRight: any[] = [];
+           for (let i = mergedImagesRaw.length - 1; i >= 0; i--) {
+               const img = mergedImagesRaw[i];
+               const key = (img.url || img.id || "").trim();
+               if (!key) {
+                   dedupedFromRight.push(img);
+                   continue;
+               }
+               if (seenImageUrls.has(key)) continue;
+               seenImageUrls.add(key);
+               dedupedFromRight.push(img);
+           }
+           const mergedImages = dedupedFromRight.reverse().map((img, idx) => ({
+               ...img,
+               position: idx + 1,
+           }));
 
            const listingData = {
                handle: finalHandle,
