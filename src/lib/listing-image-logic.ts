@@ -76,7 +76,10 @@ export function buildDraftListingImages(
 
     groupIds.forEach(gid => {
         const pPhotos = janToPhotos[gid] || [];
-        pPhotos.forEach((ph: any) => {
+        const rotatedPhotos =
+            pPhotos.length > 1 ? [...pPhotos.slice(1), pPhotos[0]] : pPhotos;
+
+        rotatedPhotos.forEach((ph: any) => {
             if (!seenPhotoIds.has(ph.id) && !excludedIds.has(ph.id)) {
                 seenPhotoIds.add(ph.id);
                 allPhotos.push({ ...ph, sourceGroup: gid }); 
