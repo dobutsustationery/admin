@@ -1,6 +1,6 @@
 # Shopify Integration - Design Document
 
-> **Status: Implemented** - Shopify integration is available with product management at `/shopify-products` and import at `/shopify-import`. The listings slice and Shopify export functionality are in place.
+> **Status: Implemented (with CLI sync)** - Shopify integration is available with product management at `/shopify-products`, import at `/shopify-import`, and inventory API sync via `scripts/shopify-sync.ts`.
 
 ## Overview
 
@@ -130,6 +130,14 @@ interface ListingsState {
 4.  **Push**: If different, call Shopify API `inventory_levels/set`.
 5.  **Log**: Dispatch `shopify_api_log` with the result.
 
+**Current implementation**: `bun scripts/shopify-sync.ts`
+- Replays `broadcast` to derive current inventory state.
+- Computes `Available Stock = qty - shipped` per SKU.
+- Fetches Shopify variants and diffs against both:
+  - latest successful `shopify_api_log` target quantity
+  - current Shopify inventory quantity
+- Writes `shopify_api_log` actions for fetch + inventory sync attempts.
+
 ### C. Order Import (Shopify -> Admin)
 *Goal: Record orders as actions.*
 
@@ -164,6 +172,21 @@ VITE_SHOPIFY_API_VERSION=2024-01
 SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxx
 SHOPIFY_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxx
 SHOPIFY_SYNC_ENABLED=true
+```
+
+### Running Inventory Sync
+
+> **Note:** The CLI sync implementation is currently **untested** against production/staging stores.
+
+```bash
+# Dry run (default): computes diffs, sends no writes
+npm run shopify:sync -- --firestore-env production
+
+# Apply changes to Shopify
+npm run shopify:sync -- --firestore-env production --apply
+
+# Optional: target one location + cap updates
+npm run shopify:sync -- --firestore-env production --apply --shopify-location-id 123456789 --limit 50
 ```
 
 ### Creating Shopify Credentials (Custom App)
