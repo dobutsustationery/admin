@@ -176,7 +176,11 @@
                 option1Value: v.option1Value,
                 allocatedQty: (() => {
                     if (v.qty !== undefined) return v.qty;
-                    // Compute default allocation if not persisted
+                    // Prefer per-variant inventory qty when available.
+                    if (inventoryItem && typeof inventoryItem.qty === 'number') {
+                        return inventoryItem.qty;
+                    }
+                    // Fallback: compute split allocation from parent source qty.
                     const total = sourceItem ? sourceItem.qty : 0;
                     const count = (p.variants && p.variants.length > 0) ? p.variants.length : 1;
                     const base = Math.floor(total / count);
@@ -389,10 +393,11 @@
       }
       
       const janCode = row.janCode;
-
       if (field === 'handle') {
            const newHandle = value;
-           dispatchBroadcast(set_proposal_handle_thunk(janCode, row.variantId, newHandle));
+           // In batch view, Handle is a proposal-level field. Passing variantId here can
+           // trigger split behavior and create hidden duplicate-handle proposals.
+           dispatchBroadcast(set_proposal_handle_thunk(janCode, undefined, newHandle));
       } else if (field === 'option1Value') {
            if (row.variantId) {
                dispatchBroadcast(update_variant_value({ janCode, variantId: row.variantId, value }));

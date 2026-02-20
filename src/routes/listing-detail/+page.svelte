@@ -162,6 +162,38 @@
         // 3. Map Variants to Items & Photos
         // We now iterate VARIANTS to support splitting one item into multiple.
         const variants = primaryProposal.variants || [];
+        const derivedQtyByVariantId = new Map<string, number>();
+
+        // Derive deterministic allocation fallbacks for variants missing qty.
+        // This keeps computed allocation in reducer/view logic instead of persisted events.
+        const variantsByItemId = new Map<string, any[]>();
+        variants.forEach((v: any) => {
+          if (!variantsByItemId.has(v.itemId)) variantsByItemId.set(v.itemId, []);
+          variantsByItemId.get(v.itemId)!.push(v);
+        });
+
+        variantsByItemId.forEach((itemVariants, itemId) => {
+          const inventoryItem = $store.inventory.idToItem[itemId];
+          const totalQty = Number(inventoryItem?.qty || 0);
+          const explicitQtyTotal = itemVariants.reduce(
+            (sum: number, v: any) =>
+              sum + (v.qty !== undefined ? Number(v.qty) || 0 : 0),
+            0,
+          );
+          const remainingQty = Math.max(totalQty - explicitQtyTotal, 0);
+          const missingQtyVariants = itemVariants.filter(
+            (v: any) => v.qty === undefined,
+          );
+
+          if (missingQtyVariants.length === 1) {
+            derivedQtyByVariantId.set(missingQtyVariants[0].id, remainingQty);
+          } else if (missingQtyVariants.length > 1) {
+            // Ambiguous split in persisted state; assign remaining qty to first missing variant.
+            missingQtyVariants.forEach((v: any, index: number) => {
+              derivedQtyByVariantId.set(v.id, index === 0 ? remainingQty : 0);
+            });
+          }
+        });
 
         variants.forEach((v: any) => {
           const item = $store.inventory.idToItem[v.itemId];
@@ -175,7 +207,8 @@
                   ? primaryProposal.price
                   : item.price,
               subtype: v.option1Value || item.subtype,
-              allocatedQty: v.qty, // For splitting
+              allocatedQty:
+                v.qty !== undefined ? v.qty : derivedQtyByVariantId.get(v.id), // For splitting
               photoGroupKey: v.photoGroupKey,
               variantImage: v.image,
             });

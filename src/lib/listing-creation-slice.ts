@@ -454,6 +454,11 @@ const listingCreationSlice = createSlice({
       const { janCode, variantId, newHandle } = action.payload;
       const source = state.proposals[janCode];
       if (!source) return;
+      const sourceHandle =
+        source.handle || generateHandle(source.title || "", source.janCode);
+      if (sourceHandle === newHandle) {
+        return;
+      }
 
       // If it's the only variant, just update the handle (standard update)
       if (source.variants.length <= 1) {
@@ -1539,6 +1544,14 @@ export const set_proposal_handle_thunk =
     ) as ListingProposal[];
     const sourceProposal = state.listingCreation.proposals[janCode];
     if (!sourceProposal) return;
+    const currentHandle =
+      sourceProposal.handle || generateHandle(sourceProposal.title || "", sourceProposal.janCode);
+
+    // No-op guard: avoid creating synthetic split proposals when the handle is unchanged.
+    // This can otherwise create hidden batch entries (same handle) and corrupt progress math.
+    if (currentHandle === newHandle) {
+      return;
+    }
 
     // 1. Check for Merge Target (Active Proposal)
     const targetGroup = proposals.filter((p: ListingProposal) => {

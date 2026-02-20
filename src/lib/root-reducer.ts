@@ -482,7 +482,6 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
   // Add Proposals (Interception & Enrichment)
   if (action.type === "listingCreation/add_proposals") {
-      console.log("[RootReducer] Intercepting add_proposals to enrich with inventory data");
       const cleanProposals = action.payload;
       
       const enrichedProposals = cleanProposals.map((p: any) => {
@@ -507,7 +506,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               }))
           };
       });
-      
+
       const internalAction = {
           ...add_proposals_internal(enrichedProposals),
           _ephemeral: true,
@@ -832,7 +831,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
            
            allVariants.forEach((v: any, i: number) => {
                const fields: any[] = [];
-               const currentItemId = variantIdToItemId.get(v.id) || v.itemId;
+               let currentItemId = variantIdToItemId.get(v.id) || v.itemId;
                
                // Resolve Image: Override > Photo Group > Skip
                let imageUrl = v.image;
@@ -859,6 +858,11 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                if (v.option1Value) fields.push({ field: 'subtype', value: v.option1Value });
 
                fields.forEach(f => {
+                   const itemBeforeUpdate = nextState.inventory.idToItem[currentItemId];
+                   const janBeforeUpdate =
+                       itemBeforeUpdate?.janCode ||
+                       String(currentItemId).match(/^\d+/)?.[0] ||
+                       proposal.janCode;
                    const updateAction = {
                        ...update_field({ id: currentItemId, field: f.field, from: "", to: f.value }),
                        _ephemeral: true,
@@ -871,6 +875,36 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                        listings: listings(nextState.listings, updateAction)
                    };
                    logger(updateAction, nextState, action._timestamp);
+
+                   // Subtype updates can re-key inventory IDs (jan+subtype). Keep local references in sync
+                   // so downstream idToHandle aggregation includes renamed keys (required for subtype pills).
+                   if (f.field === "subtype") {
+                       const subtype = (f.value as string)?.trim() || "";
+                       const baseJan = janBeforeUpdate;
+                       const renamedItemId = `${baseJan}${subtype}`;
+                       if (
+                           renamedItemId &&
+                           renamedItemId !== currentItemId &&
+                           nextState.inventory.idToItem[renamedItemId]
+                       ) {
+                           const listingState = nextState.listings;
+                           const nextIdToHandle = { ...listingState.idToHandle };
+                           const mappedHandle = nextIdToHandle[currentItemId] || finalHandle;
+                           nextIdToHandle[renamedItemId] = mappedHandle;
+                           delete nextIdToHandle[currentItemId];
+
+                           nextState = {
+                               ...nextState,
+                               listings: {
+                                   ...listingState,
+                                   idToHandle: nextIdToHandle,
+                               },
+                           };
+
+                           currentItemId = renamedItemId;
+                           variantIdToItemId.set(v.id, renamedItemId);
+                       }
+                   }
                });
            });
 
@@ -920,11 +954,21 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                mergedProposals.unshift(proposal);
            }
 
-           const mergedImages = buildDraftListingImages(
+           const mergedImagesRaw = buildDraftListingImages(
                mergedProposals, 
                nextState.photos, 
                nextState.inventory
            );
+           const seenImageUrls = new Set<string>();
+           const mergedImages = mergedImagesRaw
+               .filter((img) => {
+                   const key = (img.url || img.id || "").trim();
+                   if (!key) return true;
+                   if (seenImageUrls.has(key)) return false;
+                   seenImageUrls.add(key);
+                   return true;
+               })
+               .map((img, idx) => ({ ...img, position: idx + 1 }));
 
            const listingData = {
                handle: finalHandle,
@@ -933,7 +977,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                productCategory: proposal.productCategory,
                vendor: proposal.vendor,
                tags: proposal.tags,
-               option1Name: proposal.option1Name,
+               option1Name: proposal.option1Name || "Subtype",
                images: mergedImages,
                productType: "", 
                status: 'active' as const,
