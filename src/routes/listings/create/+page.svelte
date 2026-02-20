@@ -174,7 +174,17 @@
                 // Variant Specifics
                 variantId: v.id,
                 option1Value: v.option1Value,
-                allocatedQty: v.qty, // Allocated quantity for this variant
+                allocatedQty: (() => {
+                    if (v.qty !== undefined) return v.qty;
+                    // Compute default allocation if not persisted
+                    const total = sourceItem ? sourceItem.qty : 0;
+                    const count = (p.variants && p.variants.length > 0) ? p.variants.length : 1;
+                    const base = Math.floor(total / count);
+                    const remainder = total % count;
+                    // We need a stable index. idx is stable for this map.
+                    const extra = idx < remainder ? 1 : 0;
+                    return base + extra;
+                })(),
                 sourceQty: sourceItem ? sourceItem.qty : 0, // Total available from SOURCE
                 photoGroupKey: v.photoGroupKey,
                 

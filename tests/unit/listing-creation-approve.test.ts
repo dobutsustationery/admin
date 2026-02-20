@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { configureStore } from "@reduxjs/toolkit";
 import { rootReducer } from "$lib/root-reducer";
-import { approve_proposal_thunk, add_proposals } from "$lib/listing-creation-slice";
+import { approve_proposal_thunk, add_proposals_internal } from "$lib/listing-creation-slice";
 import { update_item, type Item } from "$lib/inventory";
 import { categorize_photo } from "$lib/photos-slice";
 import type { MediaItem } from "$lib/google-photos";
@@ -44,7 +44,7 @@ describe("Listing Creation - Approve Proposal", () => {
     store.dispatch(categorize_photo({ janCode, photo }));
 
     // 4. Setup Proposal
-    store.dispatch(add_proposals([{
+    store.dispatch(add_proposals_internal([{
       janCode,
       inventoryItemIds: [itemId],
       photoGroupIds: [janCode],
@@ -92,7 +92,7 @@ describe("Listing Creation - Approve Proposal", () => {
 
     // 3. Setup Proposals (Merged via handle)
     const baseProp = { bodyHtml: "", productCategory: "", vendor: "", tags: [], option1Name: "Type", variants: [], status: 'draft' as const };
-    store.dispatch(add_proposals([
+    store.dispatch(add_proposals_internal([
         { ...baseProp, janCode: janA, inventoryItemIds: ["item-A"], photoGroupIds: [janA], title: "Product", handle, variants: [{ id: "vA", itemId: "item-A", option1Value: "A" }] },
         { ...baseProp, janCode: janB, inventoryItemIds: ["item-B"], photoGroupIds: [janB], title: "Product", handle, variants: [{ id: "vB", itemId: "item-B", option1Value: "B" }] }
     ]));

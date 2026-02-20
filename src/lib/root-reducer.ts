@@ -23,6 +23,7 @@ import {
 import { listings, add_listing_image, create_listing, update_listing } from "./listings-slice";
 import listingCreation, { 
   add_variants_internal,
+  add_proposals_internal,
   update_variant_value,
   set_variant_photo_group,
   remove_proposal,
@@ -477,6 +478,47 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       };
       logger(markAction, nextState, action._timestamp); // LOG SUB-ACTION
     }
+  }
+
+  // Add Proposals (Interception & Enrichment)
+  if (action.type === "listingCreation/add_proposals") {
+      console.log("[RootReducer] Intercepting add_proposals to enrich with inventory data");
+      const cleanProposals = action.payload;
+      
+      const enrichedProposals = cleanProposals.map((p: any) => {
+          // Find matching inventory items
+          const inventoryItems: { id: string, item: any }[] = [];
+          for (const [id, val] of Object.entries(state.inventory.idToItem)) {
+              const item = val as any;
+              if (item.janCode === p.janCode && !item.handle && item.qty > 0) {
+                  inventoryItems.push({ id, item });
+              }
+          }
+          const inventoryItemIds = inventoryItems.map(x => x.id);
+          // Default to empty string if no inventory items found (shouldn't happen if scan logic was correct)
+          const baseItemId = inventoryItemIds.length > 0 ? inventoryItemIds[0] : ""; 
+          
+          return {
+              ...p,
+              inventoryItemIds,
+              variants: p.variants.map((v: any) => ({
+                  ...v,
+                  itemId: baseItemId // Enrich variant with inventory link
+              }))
+          };
+      });
+      
+      const internalAction = {
+          ...add_proposals_internal(enrichedProposals),
+          _ephemeral: true,
+          timestamp: action.timestamp || action._timestamp
+      };
+      
+      nextState = {
+          ...nextState,
+          listingCreation: listingCreation(nextState.listingCreation, internalAction)
+      };
+      logger(internalAction, nextState, action._timestamp);
   }
 
   // Import Existing Variants (Listing Creation)

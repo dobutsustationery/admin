@@ -26,7 +26,8 @@ export interface PhotosState {
   uploads: Record<string, UploadState>;
   urlHistory: Record<string, string[]>; 
   janCodeToPhotos: Record<string, MediaItem[]>;
-  edits: Record<string, PhotoEditQueue>; // New State
+  edits: Record<string, PhotoEditQueue>;
+  registry: Record<string, MediaItem>; // Cache/Registry of known items
   generating: boolean;
   categorizing: boolean;
 }
@@ -37,6 +38,7 @@ const initialState: PhotosState = {
   urlHistory: {},
   janCodeToPhotos: {},
   edits: {},
+  registry: {},
   generating: false,
   categorizing: false,
 };
@@ -50,26 +52,40 @@ const photosSlice = createSlice({
   initialState,
   reducers: {
     // ... existing reducers ...
-    select_photos: (state, action: PayloadAction<{ photos: MediaItem[] }>) => {
+    // Register media items (Fact/Cache) - Persisted to ensure availability
+    register_media_items: (state, action: PayloadAction<{ items: MediaItem[] }>) => {
+        if (!state.registry) state.registry = {};
+        if (!state.urlHistory) state.urlHistory = {};
+        
+        action.payload.items.forEach(item => {
+            state.registry[item.id] = item;
+            if (!state.urlHistory[item.id]) {
+                state.urlHistory[item.id] = isEphemeralPhotosUrl(item.baseUrl) ? [] : [item.baseUrl];
+            }
+        });
+    },
+
+    // REPLACE operation (Intent: Selection)
+    select_photos: (state, action: PayloadAction<{ ids: string[] }>) => {
       // Hydration safety
       if (!state.selected) state.selected = [];
+      if (!state.registry) state.registry = {};
       if (!state.urlHistory) state.urlHistory = {};
       if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
       if (!state.edits) state.edits = {};
 
-      console.log(`[Reducer] Select Photos: merging ${action.payload.photos.length} items.`);
+      console.log(`[Reducer] Select Photos (Replace): setting ${action.payload.ids.length} items.`);
 
-      // Construct new list
-      state.selected = action.payload.photos.map(newItem => {
-          if (!state.urlHistory[newItem.id]) {
-               state.urlHistory[newItem.id] = isEphemeralPhotosUrl(newItem.baseUrl) ? [] : [newItem.baseUrl];
-          }
-          const currentBestUrl = state.urlHistory[newItem.id][0] || newItem.baseUrl;
-          return {
-              ...newItem,
-              baseUrl: currentBestUrl,
-          };
-      });
+      // Hydrate from Registry
+      state.selected = action.payload.ids
+          .map(id => state.registry[id])
+          .filter(item => !!item) // Filter out missing items
+          .map(item => {
+              // Ensure we use best known URL
+              const hist = state.urlHistory[item.id] || [];
+              const currentBestUrl = hist[0] || item.baseUrl;
+              return { ...item, baseUrl: currentBestUrl };
+          });
       
       const newIds = new Set(state.selected.map(p => p.id));
       
@@ -83,11 +99,36 @@ const photosSlice = createSlice({
           if (!newIds.has(id)) delete state.uploads[id];
       }
       
-      // Clean edits? Maybe keep them for history? Let's clean for now to save memory
       if (!state.edits) state.edits = {};
       for (const id in state.edits) {
           if (!newIds.has(id)) delete state.edits[id];
       }
+    },
+    
+    // APPEND operation (Intent: Selection)
+    add_selected_photos: (state, action: PayloadAction<{ ids: string[] }>) => {
+        if (!state.selected) state.selected = [];
+        if (!state.registry) state.registry = {};
+        if (!state.urlHistory) state.urlHistory = {};
+        
+        console.log(`[Reducer] Add Selected Photos: appending ${action.payload.ids.length} items.`);
+        
+        const existingIds = new Set(state.selected.map(p => p.id));
+        const newIds = action.payload.ids.filter(id => !existingIds.has(id));
+        
+        newIds.forEach(id => {
+            const item = state.registry[id];
+            if (item) {
+                const hist = state.urlHistory[id] || [];
+                const currentBestUrl = hist[0] || item.baseUrl;
+                state.selected.push({
+                    ...item,
+                    baseUrl: currentBestUrl
+                });
+            }
+        });
+        
+        // No cleanup needed for adds
     },
     // ...
 
@@ -189,6 +230,7 @@ const photosSlice = createSlice({
         if (!state.uploads) state.uploads = {}; 
         if (!state.urlHistory) state.urlHistory = {};
         if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
+        if (!state.registry) state.registry = {};
         
         // Update Metadata
         if (state.uploads[id]) {
@@ -203,6 +245,14 @@ const photosSlice = createSlice({
         }
         // Unshift to front (Current Best)
         state.urlHistory[id].unshift(permanentUrl);
+
+        // Update Registry
+        if (state.registry[id]) {
+            state.registry[id].baseUrl = permanentUrl;
+            if (webViewLink) {
+                state.registry[id].productUrl = webViewLink;
+            }
+        }
 
         // Update the actual item in selected list
         const itemIndex = state.selected.findIndex(p => p.id === id);
@@ -294,9 +344,15 @@ const photosSlice = createSlice({
         
         // 2. Update URL History & Selected Item (Similar to complete_upload)
         if (!state.urlHistory) state.urlHistory = {};
+        if (!state.registry) state.registry = {};
         if (!state.urlHistory[id]) state.urlHistory[id] = [];
         state.urlHistory[id].unshift(permanentUrl);
         
+        // Update Registry
+        if (state.registry[id]) {
+            state.registry[id].baseUrl = permanentUrl;
+        }
+
         const itemIndex = state.selected.findIndex(p => p.id === id);
         if (itemIndex >= 0) {
             state.selected[itemIndex].baseUrl = permanentUrl;
@@ -337,7 +393,9 @@ const photosSlice = createSlice({
 });
 
 export const {
-    select_photos, 
+    select_photos,
+    add_selected_photos,
+    register_media_items,
     clear_photos, 
     set_generating,
     begin_categorize,

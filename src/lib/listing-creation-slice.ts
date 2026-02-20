@@ -61,6 +61,12 @@ export interface ListingProposal {
   status: "draft" | "approved" | "skipped";
 }
 
+export interface CleanListingVariant extends Omit<ListingVariant, 'itemId'> {}
+
+export interface CleanListingProposal extends Omit<ListingProposal, 'inventoryItemIds' | 'variants'> {
+    variants: CleanListingVariant[];
+}
+
 export interface ListingCreationState {
   proposals: Record<string, ListingProposal>;
   activeBatchJans: string[];
@@ -180,10 +186,14 @@ const listingCreationSlice = createSlice({
       }
     },
     // Session / Batch
-    add_proposals: (state, action: PayloadAction<ListingProposal[]>) => {
+    add_proposals_internal: (state, action: PayloadAction<ListingProposal[]>) => {
       action.payload.forEach((p) => {
         state.proposals[p.janCode] = p;
       });
+    },
+    // Intent-only action (Handled by RootReducer to enrich with Inventory Data)
+    add_proposals: (state, action: PayloadAction<CleanListingProposal[]>) => {
+        // No-op in slice
     },
     remove_proposal: (state, action: PayloadAction<{ janCode: string }>) => {
       const { janCode } = action.payload;
@@ -705,6 +715,7 @@ export const {
   set_scanning,
   set_scan_progress,
   add_proposals,
+  add_proposals_internal,
   remove_proposal,
   start_batch,
   update_proposal_field,
@@ -935,7 +946,7 @@ export const generate_proposals =
         JSON.stringify(baseJanMap, null, 2),
       );
 
-      const candidates: ListingProposal[] = [];
+      const candidates: CleanListingProposal[] = [];
       const baseJanKeys = Object.entries(baseJanMap);
       const totalBaseJans = baseJanKeys.length;
       let processedBase = 0;
@@ -1035,7 +1046,7 @@ export const generate_proposals =
           // If we have multiple photo groups (subtypes), we create a variant for EACH.
           // If we have single photo group (no subtype), we create one variant.
 
-          const variants: ListingVariant[] = [];
+          const variants: CleanListingVariant[] = [];
           const allPhotoGroupIds: string[] = [];
 
           // Sort groups to ensure deterministic order (e.g. "Blue", "Red")
@@ -1047,11 +1058,9 @@ export const generate_proposals =
             `[Generate] Processing ${baseJan}. Photo Groups: ${photoGroups.length}. Subtypes: ${photoGroups.map((g) => g.subtype).join(", ")}`,
           );
 
-          // Calculate Allocation
-          const totalQty = firstItem.qty || 0;
-          const variantCount = photoGroups.length;
-          const baseAllocation = Math.floor(totalQty / variantCount);
-          let remainder = totalQty % variantCount;
+          // Calculate Allocation (Removed: Computed in UI/Selectors)
+          // const totalQty = firstItem.qty || 0;
+          // ...
 
           photoGroups.forEach((pg, idx) => {
             allPhotoGroupIds.push(pg.key);
@@ -1063,12 +1072,7 @@ export const generate_proposals =
 
             const optionValue = pg.subtype || firstItem.subtype || "Default";
 
-            // Assign Allocated Qty
-            let allocatedQty = baseAllocation;
-            if (remainder > 0) {
-              allocatedQty += 1;
-              remainder -= 1;
-            }
+            // Allocation logic moved to UI derivation
 
             // Determine Variant Image
             // Prefer the SECOND image (index 1) as it is often the "Front" or "Detail"
@@ -1092,10 +1096,10 @@ export const generate_proposals =
 
             variants.push({
               id: `${baseJan}:${optionValue}:${crypto.randomUUID().slice(0, 8)}`,
-              itemId: inventoryIds[0], // Point to the base item
+              // itemId: inventoryIds[0], // Enriched by RootReducer
               option1Value: optionValue,
               photoGroupKey: pg.key,
-              qty: allocatedQty,
+              // qty: undefined, // Calculated in UI
               image: selectedImage,
             });
           });
@@ -1106,7 +1110,7 @@ export const generate_proposals =
           // Create Proposal
           candidates.push({
             janCode: baseJan, // Use Base JAN (Correct Semantics)
-            inventoryItemIds: inventoryIds,
+            // inventoryItemIds: inventoryIds, // Enriched by RootReducer
             photoGroupIds: allPhotoGroupIds,
             title: title,
             bodyHtml: bodyHtml,
@@ -1114,7 +1118,7 @@ export const generate_proposals =
             vendor: "Dobutsu",
             tags: ["New Arrival"],
             option1Name: "Subtype", // Default option name
-            variants: variants,
+            variants: variants as any, // Cast to match CleanListingVariant
             status: "draft",
             listingOnlyImages: [],
           });

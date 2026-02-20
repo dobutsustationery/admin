@@ -76,8 +76,29 @@
     MediaItem[]
   >;
   $: edits = ($store.photos.edits || {}) as Record<string, PhotoEditQueue>;
+  $: registry = ($store.photos.registry || {}) as Record<string, MediaItem>;
   $: isGenerating = $store.photos.generating;
   $: isCategorizing = $store.photos.categorizing;
+
+  function isEphemeral(url: string) {
+      return url && url.includes("googleusercontent.com");
+  }
+
+  function cleanMediaItem(item: MediaItem): MediaItem {
+      return {
+          id: item.id,
+          baseUrl: item.baseUrl,
+          productUrl: item.productUrl,
+          mimeType: item.mimeType,
+          filename: item.filename,
+          description: item.description,
+          mediaMetadata: {
+              creationTime: item.mediaMetadata.creationTime,
+              width: item.mediaMetadata.width,
+              height: item.mediaMetadata.height
+          }
+      };
+  }
 
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import ProgressBar from "$lib/components/ProgressBar.svelte";
@@ -87,6 +108,9 @@
     merge_jan_groups,
     rename_jan_group,
     set_generating,
+    select_photos,
+    add_selected_photos,
+    register_media_items,
   } from "$lib/photos-slice";
 
   import { categorizeMediaItems } from "$lib/gemini-client";
@@ -476,41 +500,53 @@
     try {
       const newItems = await listSessionMediaItems(sessionId);
 
-      // Filter or Map items?
-      // Just pass raw items (with their ephemeral baseUrl).
-      // The background worker will pick them up and upload them.
-
-      let finalItems: MediaItem[] = [];
-
-      if (selectionMode === "replace") {
-        finalItems = newItems;
-      } else {
-        // ADD mode: Merge with existing photos
-        const map = new Map<string, MediaItem>();
-        photos.forEach((p) => map.set(p.id, p));
-        newItems.forEach((p) => map.set(p.id, p));
-        finalItems = Array.from(map.values());
-      }
-
-      // Sort
-      finalItems.sort((a, b) => {
+      // Sort New Items
+      newItems.sort((a, b) => {
         const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
         const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
         return tA - tB;
       });
 
       if ($user.uid) {
-        store.dispatch({
-          type: "photos/select_photos",
-          payload: { photos: finalItems },
+        // 1. Register (Fact) - Filtered
+        const itemsToRegister = newItems.filter(item => {
+            const existing = registry[item.id];
+            if (!existing) return true;
+            if (!isEphemeral(item.baseUrl)) return true;
+            return isEphemeral(existing.baseUrl);
         });
-        // Broadcast selection.
-        // This puts ephemeral URLs in the store.
-        // PhotoUploadManager will detect them and initiate upload.
-        broadcast(firestore, $user.uid, {
-          type: "photos/select_photos",
-          payload: { photos: finalItems },
-        });
+
+        if (itemsToRegister.length > 0) {
+            const cleanItems = itemsToRegister.map(cleanMediaItem);
+            store.dispatch(register_media_items({ items: cleanItems }));
+            broadcast(firestore, $user.uid, {
+                type: "photos/register_media_items",
+                payload: { items: cleanItems },
+            });
+        }
+
+        // 2. Select (Intent)
+        const ids = newItems.map(p => p.id);
+        if (selectionMode === "replace") {
+            store.dispatch({
+                type: "photos/select_photos",
+                payload: { ids },
+            });
+            broadcast(firestore, $user.uid, {
+                type: "photos/select_photos",
+                payload: { ids },
+            });
+        } else {
+            // ADD Mode: Append Only
+            store.dispatch({
+                type: "photos/add_selected_photos",
+                payload: { ids },
+            });
+            broadcast(firestore, $user.uid, {
+                type: "photos/add_selected_photos",
+                payload: { ids },
+            });
+        }
       }
     } catch (e: any) {
       checkAuthError(e);
@@ -566,17 +602,8 @@
     }
     const limitedItems = orderedSourceItems.slice(0, cappedCount);
 
-    let finalItems: MediaItem[] = [];
-    if (selectionMode === "replace") {
-      finalItems = limitedItems;
-    } else {
-      const map = new Map<string, MediaItem>();
-      photos.forEach((p) => map.set(p.id, p));
-      limitedItems.forEach((p) => map.set(p.id, p));
-      finalItems = Array.from(map.values());
-    }
-
-    finalItems.sort((a, b) => {
+    // Sort limitedItems
+    limitedItems.sort((a, b) => {
       const tA = new Date(a.mediaMetadata?.creationTime || 0).getTime();
       const tB = new Date(b.mediaMetadata?.creationTime || 0).getTime();
       return tA - tB;
@@ -586,17 +613,47 @@
       throw new Error("No signed-in user to broadcast selected photos.");
     }
 
-    await broadcast(firestore, $user.uid, {
-      type: "photos/select_photos",
-      payload: { photos: finalItems },
-    });
-    store.dispatch({
-      type: "photos/select_photos",
-      payload: { photos: finalItems },
+    // 1. Register (Filtered)
+    const itemsToRegister = limitedItems.filter(item => {
+        const existing = registry[item.id];
+        if (!existing) return true;
+        if (!isEphemeral(item.baseUrl)) return true;
+        return isEphemeral(existing.baseUrl);
     });
 
+    if (itemsToRegister.length > 0) {
+        const cleanItems = itemsToRegister.map(cleanMediaItem);
+        await broadcast(firestore, $user.uid, {
+            type: "photos/register_media_items",
+            payload: { items: cleanItems },
+        });
+        store.dispatch(register_media_items({ items: cleanItems }));
+    }
+
+    // 2. Select
+    const ids = limitedItems.map(p => p.id);
+    if (selectionMode === "replace") {
+        await broadcast(firestore, $user.uid, {
+            type: "photos/select_photos",
+            payload: { ids },
+        });
+        store.dispatch({
+            type: "photos/select_photos",
+            payload: { ids },
+        });
+    } else {
+        await broadcast(firestore, $user.uid, {
+            type: "photos/add_selected_photos",
+            payload: { ids },
+        });
+        store.dispatch({
+            type: "photos/add_selected_photos",
+            payload: { ids },
+        });
+    }
+
     return {
-      importedItems: finalItems.map((item) => ({
+      importedItems: limitedItems.map((item) => ({
         id: item.id,
         filename: item.filename,
         mimeType: item.mimeType,
@@ -636,28 +693,48 @@
 
     const limitedItems = sourceItems.slice(0, Math.max(1, maxItems));
 
-    let finalItems: MediaItem[] = [];
-    if (mode === "replace") {
-      finalItems = limitedItems;
-    } else {
-      const map = new Map<string, MediaItem>();
-      photos.forEach((p) => map.set(p.id, p));
-      limitedItems.forEach((p) => map.set(p.id, p));
-      finalItems = Array.from(map.values());
-    }
-
     if (!$user.uid) {
       throw new Error("No signed-in user to broadcast selected photos.");
     }
+    
+    // 1. Register (Filtered)
+    const itemsToRegister = limitedItems.filter(item => {
+        const existing = registry[item.id];
+        if (!existing) return true;
+        if (!isEphemeral(item.baseUrl)) return true;
+        return isEphemeral(existing.baseUrl);
+    });
 
-    await broadcast(firestore, $user.uid, {
-      type: "photos/select_photos",
-      payload: { photos: finalItems },
-    });
-    store.dispatch({
-      type: "photos/select_photos",
-      payload: { photos: finalItems },
-    });
+    if (itemsToRegister.length > 0) {
+        const cleanItems = itemsToRegister.map(cleanMediaItem);
+        await broadcast(firestore, $user.uid, {
+            type: "photos/register_media_items",
+            payload: { items: cleanItems },
+        });
+        store.dispatch(register_media_items({ items: cleanItems }));
+    }
+
+    // 2. Select
+    const ids = limitedItems.map(p => p.id);
+    if (mode === "replace") {
+        await broadcast(firestore, $user.uid, {
+            type: "photos/select_photos",
+            payload: { ids },
+        });
+        store.dispatch({
+            type: "photos/select_photos",
+            payload: { ids },
+        });
+    } else {
+        await broadcast(firestore, $user.uid, {
+            type: "photos/add_selected_photos",
+            payload: { ids },
+        });
+        store.dispatch({
+            type: "photos/add_selected_photos",
+            payload: { ids },
+        });
+    }
 
     return {
       importedItems: limitedItems.map((item) => ({
@@ -674,11 +751,11 @@
       if ($user.uid) {
         store.dispatch({
           type: "photos/select_photos",
-          payload: { photos: [] },
+          payload: { ids: [] },
         });
         broadcast(firestore, $user.uid, {
           type: "photos/select_photos",
-          payload: { photos: [] },
+          payload: { ids: [] },
         });
       }
     }

@@ -39,7 +39,38 @@ function stripUndefined(obj: any): any {
   return obj;
 }
 
+function validateAction(action: any) {
+    if (action.type === "listingCreation/add_proposals") {
+        if (Array.isArray(action.payload)) {
+            for (const p of action.payload) {
+                if ('inventoryItemIds' in p) throw new Error("Dirty payload: add_proposals contains inventoryItemIds");
+                if (p.variants) {
+                    for (const v of p.variants) {
+                        if ('qty' in v) throw new Error("Dirty payload: add_proposals contains qty");
+                        if ('itemId' in v) throw new Error("Dirty payload: add_proposals contains itemId");
+                    }
+                }
+            }
+        }
+    }
+    if (action.type === "orderImport/resolve_conflict") {
+        const res = action.payload?.resolution;
+        if (res && res.type === 'data_mismatch') {
+            if ('qty' in res) throw new Error("Dirty payload: data_mismatch resolution contains qty");
+        }
+    }
+    if (action.type === "photos/select_photos" || action.type === "photos/add_selected_photos") {
+        if ('photos' in action.payload) throw new Error(`Dirty payload: ${action.type} contains 'photos' array (should be 'ids')`);
+        if (!('ids' in action.payload)) throw new Error(`Invalid payload: ${action.type} missing 'ids'`);
+    }
+    if (action.type === "photos/register_media_items") {
+        if (!('items' in action.payload)) throw new Error("Invalid payload: photos/register_media_items missing 'items'");
+        if (!Array.isArray(action.payload.items)) throw new Error("Invalid payload: photos/register_media_items 'items' must be an array");
+    }
+}
+
 export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
+  validateAction(action);
   if ((action as any)._ephemeral) {
       console.warn("[Broadcast] Blocked ephemeral action from persistence:", action.type);
       return; 
