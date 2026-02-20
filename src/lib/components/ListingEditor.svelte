@@ -82,8 +82,9 @@
   // Dedupe images by ID to prevent crash
   $: uniqueImages = Array.from(new Map((images || []).map(img => [img.id, img])).values());
   
+  // Show all listing images in gallery (deduped by id) so valid listing images are never hidden
+  // just because they are also linked to a subtype.
   $: galleryImages = uniqueImages
-      .filter((img) => !subtypeImageUrls.has(img.url) || img.isListingOnly)
       .sort((a, b) => a.position - b.position);
 
   $: displayedGalleryImages = (() => {
