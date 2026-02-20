@@ -1300,18 +1300,16 @@
       dispatchBroadcast(
         reorder_variants({ janCode, newVariantOrder: e.detail.order }),
       );
-    } else if (handle && $user?.uid) {
+    } else if (handle) {
       // Live Mode: Update imagePosition to persist order
       e.detail.order.forEach((id, index) => {
         const item = associatedItems.find((i) => (i.variantId || i.id) === id);
         // imagePosition is 1-based usually
         const newPos = index + 1;
         if (item && item.imagePosition !== newPos) {
-          broadcast(
-            firestore,
-            $user.uid as string,
+          dispatchBroadcast(
             update_field({
-              id: id as string,
+              id: item.id as string,
               field: "imagePosition",
               from: item.imagePosition || 0,
               to: newPos,
