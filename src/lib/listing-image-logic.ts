@@ -3,6 +3,42 @@ import type { PhotosState } from "./photos-slice";
 import type { InventoryState } from "./inventory";
 import type { ListingImage } from "./listings-slice";
 
+export function canonicalizeListingImages(images: ListingImage[]): ListingImage[] {
+    const keyed = new Map<string, { img: ListingImage; idx: number }>();
+    const unkeyed: Array<{ img: ListingImage; idx: number }> = [];
+
+    images.forEach((img, idx) => {
+        const key = (img.url || "").trim();
+        if (!key) {
+            unkeyed.push({ img, idx });
+            return;
+        }
+        const existing = keyed.get(key);
+        if (!existing) {
+            keyed.set(key, { img, idx });
+            return;
+        }
+
+        const currentIsListingOnly = !!img.isListingOnly;
+        const existingIsListingOnly = !!existing.img.isListingOnly;
+
+        // Prefer listing-only instances when URL duplicates exist; this mirrors user intent
+        // when they curated/reordered listing-only images in draft.
+        if (currentIsListingOnly && !existingIsListingOnly) {
+            keyed.set(key, { img, idx });
+        }
+    });
+
+    const deduped = [
+        ...Array.from(keyed.values()),
+        ...unkeyed,
+    ]
+        .sort((a, b) => a.idx - b.idx)
+        .map((entry) => entry.img);
+
+    return deduped.map((img, i) => ({ ...img, position: i + 1 }));
+}
+
 export function buildDraftListingImages(
     proposals: ListingProposal[],
     photosState: PhotosState,
@@ -86,6 +122,6 @@ export function buildDraftListingImages(
         mergedImages = [...ordered, ...Array.from(byId.values())];
     }
 
-    // 6. Final Re-index
-    return mergedImages.map((img, i) => ({ ...img, position: i + 1 }));
+    // 6. Final canonicalization (dedupe by URL + reindex)
+    return canonicalizeListingImages(mergedImages as ListingImage[]);
 }
