@@ -974,8 +974,32 @@
       });
     }
 
-    // 3. Current Variant Images (from Siblings)
+    // 3. Photos from Variant Photo Groups (Aggregation from all variants)
     siblings.forEach((p: any) => {
+      // New: Check variants for photo groups
+      if (p.variants) {
+        p.variants.forEach((v: any) => {
+          if (v.photoGroupKey) {
+            // Avoid duplicates if already processed via relatedKeys
+            if (relatedKeys.includes(v.photoGroupKey)) return;
+            
+            const groupPhotos = $store.photos.janCodeToPhotos?.[v.photoGroupKey] || [];
+            groupPhotos.forEach((photo: any, idx: number) => {
+              const url = photo.baseUrl || photo.thumbnailLink || photo.productUrl;
+              if (!url) return;
+              if (!candidates.has(url)) {
+                candidates.set(url, {
+                  id: photo.id || `group-${v.photoGroupKey}-${idx}`,
+                  url,
+                  altText: photo.filename || `Photo Group ${v.photoGroupKey}`,
+                });
+              }
+            });
+          }
+        });
+      }
+
+      // Existing: Check Inventory Item Images
       p.inventoryItemIds.forEach((id: string) => {
         const item = $store.inventory.idToItem[id];
         if (!item?.image) return;
