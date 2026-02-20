@@ -18,6 +18,8 @@ type InventoryTarget = {
   subtype: string;
   handle: string;
   available: number;
+  price: number;
+  weight: number;
 };
 
 type ShopifyVariant = {
@@ -29,12 +31,29 @@ type ShopifyVariant = {
   inventoryQuantity: number | null;
 };
 
+type ShopifyProduct = {
+  id: number;
+  handle: string;
+  variants: Array<{
+    id: number;
+    sku: string;
+    inventory_item_id?: number;
+    inventory_quantity?: number;
+  }>;
+};
+
 type SyncResult = {
   sku: string;
   targetQty: number;
   inventoryItemId: number;
   success: boolean;
   response: unknown;
+};
+
+type ReplayResult = {
+  state: any;
+  lastSuccessfulTargetBySku: Map<string, number>;
+  pendingListingRequests: string[];
 };
 
 function parseArgs(argv: string[]): Args {
@@ -70,17 +89,24 @@ function getStringArg(args: Args, key: string, defaultValue?: string): string {
 }
 
 function showHelp() {
-  console.log(`Shopify inventory sync (event-sourced, broadcast-backed)
+  console.log(`Shopify sync (event-sourced, broadcast-backed)
 
 Usage:
   bun scripts/shopify-sync.ts [options]
 
 Options:
-  --apply                     Actually push inventory updates to Shopify (default: false)
-  --firestore-env <env>       Firestore source: emulator | staging | production (default: from env, fallback emulator)
-  --shopify-location-id <id>  Explicit Shopify location ID (default: auto-detect first location)
-  --limit <n>                 Maximum SKU updates to push when --apply is enabled
-  --help                      Show this help
+  --apply                           Actually push writes to Shopify (default: false)
+  --firestore-env <env>             Firestore source: emulator | staging | production
+  --shopify-location-id <id>        Explicit Shopify location ID (default: auto-detect)
+  --limit <n>                       Max SKU updates in inventory sync mode
+  --sync-listing-handle <handle>    Sync exactly one listing (upsert product + inventory)
+  --process-requests                Process queued listing requests from broadcast actions
+  --help                            Show this help
+
+Modes:
+  1) Inventory diff sync (default): compares internal available stock to Shopify and logs.
+  2) Single listing sync: use --sync-listing-handle.
+  3) Queue processing: use --process-requests (consumes shopify_sync_listing_request actions).
 
 Required environment variables:
   SHOPIFY_ACCESS_TOKEN
@@ -120,9 +146,20 @@ function toNumberOrNull(value: unknown): number | null {
   return null;
 }
 
+function toTagsString(tags: unknown): string {
+  if (!Array.isArray(tags)) return "";
+  return tags
+    .map((t) => String(t || "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
 async function initFirestore(firestoreEnv: string) {
   if (firestoreEnv === "emulator") {
-    const app = initializeApp({ projectId: process.env.FIREBASE_EMULATOR_PROJECT_ID || "dobutsu-admin" }, `shopify-sync-${Date.now()}`);
+    const app = initializeApp(
+      { projectId: process.env.FIREBASE_EMULATOR_PROJECT_ID || "dobutsu-admin" },
+      `shopify-sync-${Date.now()}`,
+    );
     const db = getFirestore(app);
     db.settings({
       host: process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8080",
@@ -137,7 +174,10 @@ async function initFirestore(firestoreEnv: string) {
   }
 
   const serviceAccount = JSON.parse(readFileSync(keyPath, "utf8"));
-  const app = initializeApp({ credential: cert(serviceAccount) }, `shopify-sync-${firestoreEnv}-${Date.now()}`);
+  const app = initializeApp(
+    { credential: cert(serviceAccount) },
+    `shopify-sync-${firestoreEnv}-${Date.now()}`,
+  );
   return getFirestore(app);
 }
 
@@ -145,7 +185,7 @@ async function writeApiLog(
   db: any,
   creator: string,
   payload: {
-    requestType: "inventory_sync" | "fetch_listings";
+    requestType: "inventory_sync" | "fetch_listings" | "product_update";
     endpoint: string;
     success: boolean;
     response: unknown;
@@ -163,28 +203,59 @@ async function writeApiLog(
   });
 }
 
-async function replayStateAndLastLogs(db: any) {
+async function replayStateAndLogs(db: any): Promise<ReplayResult> {
   const snapshot = await db.collection("broadcast").orderBy("timestamp").get();
 
   let state = rootReducer(undefined, { type: "INIT" });
   const lastSuccessfulTargetBySku = new Map<string, number>();
+  const latestRequestAtByHandle = new Map<string, number>();
+  const latestSuccessfulProductSyncAtByHandle = new Map<string, number>();
 
-  snapshot.docs.forEach((doc) => {
+  snapshot.docs.forEach((doc: any) => {
     const action = doc.data() as any;
     state = rootReducer(state, action);
 
-    if (action?.type !== "shopify_api_log") return;
-    const payload = action?.payload;
-    if (!payload || payload.requestType !== "inventory_sync" || !payload.success) return;
+    if (action?.type === "shopify_api_log") {
+      const payload = action?.payload;
+      if (payload?.requestType === "inventory_sync" && payload?.success) {
+        const sku = payload?.context?.sku;
+        const targetQty = payload?.context?.targetQty;
+        if (typeof sku === "string" && Number.isFinite(targetQty)) {
+          lastSuccessfulTargetBySku.set(sku, targetQty);
+        }
+      }
+      if (payload?.requestType === "product_update" && payload?.success) {
+        const handle = String(payload?.context?.handle || "").trim();
+        const loggedAt = Number(payload?.timestamp || 0);
+        if (handle && loggedAt > 0) {
+          latestSuccessfulProductSyncAtByHandle.set(handle, loggedAt);
+        }
+      }
+      return;
+    }
 
-    const sku = payload?.context?.sku;
-    const targetQty = payload?.context?.targetQty;
-    if (typeof sku === "string" && Number.isFinite(targetQty)) {
-      lastSuccessfulTargetBySku.set(sku, targetQty);
+    if (action?.type === "shopify_sync_listing_request") {
+      const reqHandle = String(action?.payload?.handle || "").trim();
+      const requestedAt = Number(action?.payload?.requestedAt || 0);
+      if (reqHandle && requestedAt > 0) {
+        const current = latestRequestAtByHandle.get(reqHandle) || 0;
+        if (requestedAt > current) latestRequestAtByHandle.set(reqHandle, requestedAt);
+      }
     }
   });
 
-  return { state, lastSuccessfulTargetBySku };
+  const pendingListingRequests = Array.from(latestRequestAtByHandle.entries())
+    .filter(([handle, requestedAt]) => {
+      const lastSuccessAt = latestSuccessfulProductSyncAtByHandle.get(handle) || 0;
+      return requestedAt > lastSuccessAt;
+    })
+    .map(([handle]) => handle);
+
+  return {
+    state,
+    lastSuccessfulTargetBySku,
+    pendingListingRequests,
+  };
 }
 
 function computeTargets(state: any): Map<string, InventoryTarget> {
@@ -211,10 +282,23 @@ function computeTargets(state: any): Map<string, InventoryTarget> {
       subtype,
       handle: String(idToHandle[itemId] || item?.handle || ""),
       available,
+      price: Number(item?.price || 0),
+      weight: Number(item?.weight || 0),
     });
   }
 
   return targets;
+}
+
+function collectListingTargets(state: any, handle: string): InventoryTarget[] {
+  const allTargets = computeTargets(state);
+  return Array.from(allTargets.values())
+    .filter((t) => t.handle === handle)
+    .sort((a, b) => {
+      const subtypeCmp = a.subtype.localeCompare(b.subtype);
+      if (subtypeCmp !== 0) return subtypeCmp;
+      return a.itemId.localeCompare(b.itemId);
+    });
 }
 
 async function fetchAllShopifyVariants(
@@ -243,7 +327,7 @@ async function fetchAllShopifyVariants(
     const products = json.products || [];
 
     for (const product of products) {
-      const handle = String(product?.handle || "");
+      const productHandle = String(product?.handle || "");
       const variants = Array.isArray(product?.variants) ? product.variants : [];
 
       for (const variant of variants) {
@@ -253,7 +337,7 @@ async function fetchAllShopifyVariants(
         variantsBySku.set(sku, {
           sku,
           productId: Number(product?.id),
-          productHandle: handle,
+          productHandle,
           variantId: Number(variant?.id),
           inventoryItemId: toNumberOrNull(variant?.inventory_item_id),
           inventoryQuantity: toNumberOrNull(variant?.inventory_quantity),
@@ -265,6 +349,44 @@ async function fetchAllShopifyVariants(
   }
 
   return variantsBySku;
+}
+
+async function findProductByHandle(
+  storeUrl: string,
+  apiVersion: string,
+  accessToken: string,
+  handle: string,
+): Promise<ShopifyProduct | null> {
+  let url = `https://${storeUrl}/admin/api/${apiVersion}/products.json?limit=250&status=any&fields=id,handle,variants`;
+
+  while (url) {
+    const res = await fetch(url, {
+      headers: {
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Product lookup failed (${res.status}): ${text}`);
+    }
+
+    const json = (await res.json()) as { products?: any[] };
+    const products = json.products || [];
+    const found = products.find((p) => String(p?.handle || "") === handle);
+    if (found) {
+      return {
+        id: Number(found.id),
+        handle: String(found.handle || ""),
+        variants: Array.isArray(found.variants) ? found.variants : [],
+      };
+    }
+
+    url = parseNextLink(res.headers.get("link"));
+  }
+
+  return null;
 }
 
 async function resolveLocationId(
@@ -335,43 +457,279 @@ async function setInventoryLevel(
   return payload;
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+function mapStatus(input: unknown): "active" | "archived" | "draft" {
+  const status = String(input || "active");
+  if (status === "archived") return "archived";
+  if (status === "draft") return "draft";
+  return "active";
+}
 
-  if (args.help) {
-    showHelp();
+async function upsertListingProduct(
+  storeUrl: string,
+  apiVersion: string,
+  accessToken: string,
+  state: any,
+  handle: string,
+): Promise<ShopifyProduct> {
+  const listing = state?.listings?.handleToListing?.[handle];
+  if (!listing) {
+    throw new Error(`Listing not found in state for handle: ${handle}`);
+  }
+
+  const listingTargets = collectListingTargets(state, handle);
+  if (listingTargets.length === 0) {
+    throw new Error(`No inventory variants found for listing handle: ${handle}`);
+  }
+
+  const existing = await findProductByHandle(storeUrl, apiVersion, accessToken, handle);
+  const existingVariantIdBySku = new Map<string, number>();
+  if (existing) {
+    existing.variants.forEach((v) => {
+      const sku = String(v?.sku || "").trim();
+      if (!sku) return;
+      const id = toNumberOrNull(v?.id);
+      if (id) existingVariantIdBySku.set(sku, id);
+    });
+  }
+
+  const imagePayload = (Array.isArray(listing.images) ? listing.images : [])
+    .slice()
+    .sort((a: any, b: any) => (a.position || 0) - (b.position || 0))
+    .map((img: any, index: number) => ({
+      src: String(img?.url || ""),
+      position: Number(img?.position || index + 1),
+      alt: String(img?.altText || ""),
+    }))
+    .filter((img: any) => !!img.src);
+
+  const optionName = String(listing.option1Name || "Subtype").trim() || "Subtype";
+
+  const variantsPayload = listingTargets.map((target) => {
+    const variantBase: Record<string, unknown> = {
+      sku: target.sku,
+      option1: target.subtype || "Default",
+      price: String(target.price || 0),
+      barcode: target.janCode,
+      grams: Number(target.weight || 0),
+      weight: Number(target.weight || 0),
+      weight_unit: "g",
+      inventory_management: "shopify",
+      inventory_policy: "deny",
+      fulfillment_service: "manual",
+      taxable: true,
+      requires_shipping: true,
+    };
+
+    const existingVariantId = existingVariantIdBySku.get(target.sku);
+    if (existingVariantId) {
+      variantBase.id = existingVariantId;
+    }
+
+    return variantBase;
+  });
+
+  const productPayload: Record<string, unknown> = {
+    handle,
+    title: String(listing.title || "Untitled"),
+    body_html: String(listing.bodyHtml || ""),
+    vendor: String(listing.vendor || "SPNSS Ltd."),
+    product_type: String(listing.productType || ""),
+    tags: toTagsString(listing.tags),
+    status: mapStatus(listing.status),
+    options: [{ name: optionName }],
+    images: imagePayload,
+    variants: variantsPayload,
+  };
+
+  const endpoint = existing
+    ? `https://${storeUrl}/admin/api/${apiVersion}/products/${existing.id}.json`
+    : `https://${storeUrl}/admin/api/${apiVersion}/products.json`;
+
+  const res = await fetch(endpoint, {
+    method: existing ? "PUT" : "POST",
+    headers: {
+      "X-Shopify-Access-Token": accessToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      product: existing ? { id: existing.id, ...productPayload } : productPayload,
+    }),
+  });
+
+  const json = (await res.json().catch(async () => ({ raw: await res.text() }))) as any;
+  if (!res.ok) {
+    throw new Error(`Product upsert failed (${res.status}): ${JSON.stringify(json)}`);
+  }
+
+  const product = json?.product;
+  if (!product || !product.id) {
+    throw new Error(`Product upsert response missing product data: ${JSON.stringify(json)}`);
+  }
+
+  return {
+    id: Number(product.id),
+    handle: String(product.handle || handle),
+    variants: Array.isArray(product.variants) ? product.variants : [],
+  };
+}
+
+async function syncSingleListing(
+  db: any,
+  creator: string,
+  config: {
+    storeUrl: string;
+    apiVersion: string;
+    accessToken: string;
+    locationId: number;
+    state: any;
+    handle: string;
+    apply: boolean;
+  },
+) {
+  const { storeUrl, apiVersion, accessToken, locationId, state, handle, apply } = config;
+  const listingTargets = collectListingTargets(state, handle);
+  if (listingTargets.length === 0) {
+    throw new Error(`No variants found for listing handle: ${handle}`);
+  }
+
+  if (!apply) {
+    console.log(`[Shopify Sync] Dry run listing mode for '${handle}'. Variants=${listingTargets.length}`);
     return;
   }
 
-  const apply = getBooleanArg(args, "apply", false);
-  const limitArg = getStringArg(args, "limit", "0");
-  const limit = Math.max(0, Number(limitArg) || 0);
+  const productEndpoint = `/admin/api/${apiVersion}/products`;
 
-  const firestoreEnv = getStringArg(
-    args,
-    "firestore-env",
-    process.env.SHOPIFY_SYNC_FIRESTORE_ENV || process.env.VITE_FIREBASE_ENV || "emulator",
-  );
+  try {
+    const product = await upsertListingProduct(storeUrl, apiVersion, accessToken, state, handle);
 
-  const rawStoreUrl = process.env.SHOPIFY_STORE_URL || process.env.VITE_SHOPIFY_STORE_URL;
-  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
-  const apiVersion = process.env.SHOPIFY_API_VERSION || process.env.VITE_SHOPIFY_API_VERSION || "2024-01";
-  const creator = process.env.SHOPIFY_SYNC_CREATOR_UID || "shopify-sync-script";
+    await writeApiLog(db, creator, {
+      requestType: "product_update",
+      endpoint: productEndpoint,
+      success: true,
+      response: { productId: product.id, handle: product.handle, variantCount: product.variants.length },
+      context: {
+        handle,
+        productId: product.id,
+      },
+    });
 
-  if (!rawStoreUrl) throw new Error("Missing SHOPIFY_STORE_URL (or VITE_SHOPIFY_STORE_URL)");
-  if (!accessToken) throw new Error("Missing SHOPIFY_ACCESS_TOKEN");
+    const responseVariantBySku = new Map<string, any>();
+    product.variants.forEach((variant: any) => {
+      const sku = String(variant?.sku || "").trim();
+      if (!sku) return;
+      responseVariantBySku.set(sku, variant);
+    });
 
-  const storeUrl = normalizeStoreUrl(rawStoreUrl);
-  const endpoint = `/admin/api/${apiVersion}/inventory_levels/set.json`;
+    for (let i = 0; i < listingTargets.length; i++) {
+      const target = listingTargets[i];
+      const variant = responseVariantBySku.get(target.sku);
+      const inventoryItemId = toNumberOrNull(variant?.inventory_item_id);
 
-  console.log(`[Shopify Sync] Firestore env: ${firestoreEnv}`);
-  console.log(`[Shopify Sync] Store: ${storeUrl}`);
-  console.log(`[Shopify Sync] Mode: ${apply ? "APPLY" : "DRY RUN"}`);
+      if (!inventoryItemId) {
+        await writeApiLog(db, creator, {
+          requestType: "inventory_sync",
+          endpoint: `/admin/api/${apiVersion}/inventory_levels/set.json`,
+          success: false,
+          response: { error: "Missing inventory_item_id after product upsert" },
+          context: {
+            handle,
+            sku: target.sku,
+            targetQty: target.available,
+            locationId,
+          },
+        });
+        console.error(`[${i + 1}/${listingTargets.length}] ${target.sku}: missing inventory_item_id`);
+        continue;
+      }
 
-  const db = await initFirestore(firestoreEnv);
-  const { state, lastSuccessfulTargetBySku } = await replayStateAndLastLogs(db);
+      try {
+        const response = await setInventoryLevel(
+          storeUrl,
+          apiVersion,
+          accessToken,
+          locationId,
+          inventoryItemId,
+          target.available,
+        );
+
+        await writeApiLog(db, creator, {
+          requestType: "inventory_sync",
+          endpoint: `/admin/api/${apiVersion}/inventory_levels/set.json`,
+          success: true,
+          response,
+          context: {
+            handle,
+            sku: target.sku,
+            targetQty: target.available,
+            inventoryItemId,
+            locationId,
+          },
+        });
+
+        console.log(`[${i + 1}/${listingTargets.length}] Synced ${target.sku} -> ${target.available}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await writeApiLog(db, creator, {
+          requestType: "inventory_sync",
+          endpoint: `/admin/api/${apiVersion}/inventory_levels/set.json`,
+          success: false,
+          response: { error: message },
+          context: {
+            handle,
+            sku: target.sku,
+            targetQty: target.available,
+            inventoryItemId,
+            locationId,
+          },
+        });
+        console.error(`[${i + 1}/${listingTargets.length}] Failed ${target.sku}: ${message}`);
+      }
+
+      await sleep(550);
+    }
+
+    console.log(`[Shopify Sync] Listing sync complete for '${handle}'.`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await writeApiLog(db, creator, {
+      requestType: "product_update",
+      endpoint: productEndpoint,
+      success: false,
+      response: { error: message },
+      context: {
+        handle,
+      },
+    });
+    throw error;
+  }
+}
+
+async function runInventoryDiffSync(
+  db: any,
+  creator: string,
+  config: {
+    storeUrl: string;
+    apiVersion: string;
+    accessToken: string;
+    locationId: number;
+    state: any;
+    lastSuccessfulTargetBySku: Map<string, number>;
+    apply: boolean;
+    limit: number;
+  },
+) {
+  const {
+    storeUrl,
+    apiVersion,
+    accessToken,
+    locationId,
+    state,
+    lastSuccessfulTargetBySku,
+    apply,
+    limit,
+  } = config;
+
   const desiredTargets = computeTargets(state);
-
   console.log(`[Shopify Sync] Internal SKUs: ${desiredTargets.size}`);
 
   let variantsBySku: Map<string, ShopifyVariant>;
@@ -397,15 +755,7 @@ async function main() {
     throw error;
   }
 
-  const locationId = await resolveLocationId(
-    storeUrl,
-    apiVersion,
-    accessToken,
-    getStringArg(args, "shopify-location-id") || process.env.SHOPIFY_LOCATION_ID,
-  );
-
   console.log(`[Shopify Sync] Shopify SKUs: ${variantsBySku.size}`);
-  console.log(`[Shopify Sync] Location ID: ${locationId}`);
 
   const missingInShopify: string[] = [];
   const needsSync: Array<InventoryTarget & { shopify: ShopifyVariant; reason: string }> = [];
@@ -437,7 +787,10 @@ async function main() {
     needsSync.push({
       ...target,
       shopify: shopifyVariant,
-      reason: typeof loggedQty === "number" ? `log=${loggedQty}, shopify=${shopifyVariant.inventoryQuantity}` : `no_log, shopify=${shopifyVariant.inventoryQuantity}`,
+      reason:
+        typeof loggedQty === "number"
+          ? `log=${loggedQty}, shopify=${shopifyVariant.inventoryQuantity}`
+          : `no_log, shopify=${shopifyVariant.inventoryQuantity}`,
     });
   }
 
@@ -474,7 +827,7 @@ async function main() {
 
       await writeApiLog(db, creator, {
         requestType: "inventory_sync",
-        endpoint,
+        endpoint: `/admin/api/${apiVersion}/inventory_levels/set.json`,
         success: true,
         response,
         context: {
@@ -502,7 +855,7 @@ async function main() {
 
       await writeApiLog(db, creator, {
         requestType: "inventory_sync",
-        endpoint,
+        endpoint: `/admin/api/${apiVersion}/inventory_levels/set.json`,
         success: false,
         response: { error: message },
         context: {
@@ -527,13 +880,104 @@ async function main() {
       console.error(`[${i + 1}/${queue.length}] Failed ${job.sku}: ${message}`);
     }
 
-    // Basic throttling for Shopify API limits.
     await sleep(550);
   }
 
   const ok = results.filter((r) => r.success).length;
   const failed = results.length - ok;
   console.log(`\n[Shopify Sync] Apply complete. Success=${ok}, Failed=${failed}, Attempted=${results.length}`);
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.help) {
+    showHelp();
+    return;
+  }
+
+  const apply = getBooleanArg(args, "apply", false);
+  const limitArg = getStringArg(args, "limit", "0");
+  const limit = Math.max(0, Number(limitArg) || 0);
+
+  const firestoreEnv = getStringArg(
+    args,
+    "firestore-env",
+    process.env.SHOPIFY_SYNC_FIRESTORE_ENV || process.env.VITE_FIREBASE_ENV || "emulator",
+  );
+
+  const rawStoreUrl = process.env.SHOPIFY_STORE_URL || process.env.VITE_SHOPIFY_STORE_URL;
+  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+  const apiVersion = process.env.SHOPIFY_API_VERSION || process.env.VITE_SHOPIFY_API_VERSION || "2024-01";
+  const creator = process.env.SHOPIFY_SYNC_CREATOR_UID || "shopify-sync-script";
+
+  if (!rawStoreUrl) throw new Error("Missing SHOPIFY_STORE_URL (or VITE_SHOPIFY_STORE_URL)");
+  if (!accessToken) throw new Error("Missing SHOPIFY_ACCESS_TOKEN");
+
+  const storeUrl = normalizeStoreUrl(rawStoreUrl);
+  console.log(`[Shopify Sync] Firestore env: ${firestoreEnv}`);
+  console.log(`[Shopify Sync] Store: ${storeUrl}`);
+  console.log(`[Shopify Sync] Mode: ${apply ? "APPLY" : "DRY RUN"}`);
+
+  const db = await initFirestore(firestoreEnv);
+  const { state, lastSuccessfulTargetBySku, pendingListingRequests } = await replayStateAndLogs(db);
+
+  const locationId = await resolveLocationId(
+    storeUrl,
+    apiVersion,
+    accessToken,
+    getStringArg(args, "shopify-location-id") || process.env.SHOPIFY_LOCATION_ID,
+  );
+
+  console.log(`[Shopify Sync] Location ID: ${locationId}`);
+
+  const explicitHandle = getStringArg(args, "sync-listing-handle").trim();
+  const processRequests = getBooleanArg(args, "process-requests", false);
+
+  if (explicitHandle) {
+    await syncSingleListing(db, creator, {
+      storeUrl,
+      apiVersion,
+      accessToken,
+      locationId,
+      state,
+      handle: explicitHandle,
+      apply,
+    });
+    return;
+  }
+
+  if (processRequests) {
+    if (pendingListingRequests.length === 0) {
+      console.log("[Shopify Sync] No queued listing sync requests found.");
+      return;
+    }
+
+    console.log(`[Shopify Sync] Processing ${pendingListingRequests.length} queued listing request(s).`);
+    for (const requestedHandle of pendingListingRequests) {
+      await syncSingleListing(db, creator, {
+        storeUrl,
+        apiVersion,
+        accessToken,
+        locationId,
+        state,
+        handle: requestedHandle,
+        apply,
+      });
+    }
+    return;
+  }
+
+  await runInventoryDiffSync(db, creator, {
+    storeUrl,
+    apiVersion,
+    accessToken,
+    locationId,
+    state,
+    lastSuccessfulTargetBySku,
+    apply,
+    limit,
+  });
 }
 
 main().catch((error) => {
