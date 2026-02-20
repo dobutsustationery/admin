@@ -40,7 +40,7 @@
     initiateOAuthFlow,
   } from "$lib/google-drive";
   import { reorderListingImages } from "$lib/listing-image-ordering";
-  import { buildDraftListingImages } from "$lib/listing-image-logic";
+  import { buildDraftListingImages, canonicalizeListingImages } from "$lib/listing-image-logic";
   import ListingEditor from "$lib/components/ListingEditor.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
@@ -246,7 +246,7 @@
         : null;
       if (liveListing) {
         listingData = liveListing;
-        listingImages = liveListing.images;
+        listingImages = canonicalizeListingImages(liveListing.images || []);
         associatedItems = Object.entries($store.listings.idToHandle || {})
           .filter(([id, h]) => h === handle)
           .map(([id]) => {
