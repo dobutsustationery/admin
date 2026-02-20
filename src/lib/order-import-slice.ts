@@ -21,10 +21,13 @@ export interface RawRow {
   processed?: boolean;
 }
 
-export interface ResolutionAction {
-  type: string;
-  payload: any;
-}
+export type ResolutionIntent =
+  | { type: "split"; allocations: Record<string, number> }
+  | {
+      type: "data_mismatch";
+      itemKey: string;
+      fieldResolutions: Record<string, "incoming" | "existing">;
+    };
 
 export interface OrderImportState {
   activeFile: { id: string; name: string } | null;
@@ -32,7 +35,7 @@ export interface OrderImportState {
   headerRow: string | null;
   rawBody: string; // Full accumulated CSV body
   rows: RawRow[];
-  resolutions: Record<number, ResolutionAction[]>;
+  resolutions: Record<number, ResolutionIntent>;
 }
 
 export const initialState: OrderImportState = {
@@ -281,37 +284,73 @@ export const computeOrderImportBatch = (
 
     // RESOLVED Handling
     if (filter === "RESOLVED") {
-      const resolutions = orderState.resolutions[index];
-      if (resolutions && resolutions.length > 0) {
-        resolutions.forEach((res) => {
-          const itemKey = res.payload.itemKey;
-          const qty = res.payload.qty;
+      const resolution = orderState.resolutions[index];
+      if (resolution) {
+        if (resolution.type === "split") {
+          Object.entries(resolution.allocations).forEach(([itemKey, qty]) => {
+            if (qty > 0) {
+              const invItem = inventoryIdToItem[itemKey];
+              if (invItem) {
+                updates.push({
+                  type: "update",
+                  id: itemKey,
+                  item: {
+                    ...invItem,
+                    qty: qty,
+                    // Propagate incoming data (Cost, etc.) to the split items?
+                    cost: item.cost !== undefined ? item.cost : invItem.cost,
+                  },
+                });
+              }
+            }
+          });
+          indices.push(index);
+        } else if (resolution.type === "data_mismatch") {
+          const { itemKey, fieldResolutions } = resolution;
           const invItem = inventoryIdToItem[itemKey];
           if (invItem) {
-              const payloadItem = {
-                ...invItem,
-                qty: qty,
-                hsCode: res.payload.hsCode !== undefined ? res.payload.hsCode : (item.hsCode || invItem.hsCode),
-                weight: res.payload.weight !== undefined ? res.payload.weight : (item.weight || invItem.weight),
-                countryOfOrigin: res.payload.countryOfOrigin !== undefined ? res.payload.countryOfOrigin : (item.countryOfOrigin || invItem.countryOfOrigin),
-                cost: res.payload.cost !== undefined ? res.payload.cost : (item.cost !== undefined ? item.cost : invItem.cost),
-              };
+            const newItem = { ...invItem, qty: item.qty };
+
+            // Apply field resolutions
+            if (fieldResolutions["HS Code"]) {
+              newItem.hsCode =
+                fieldResolutions["HS Code"] === "incoming"
+                  ? item.hsCode
+                  : invItem.hsCode;
+            }
+            if (fieldResolutions["Weight"]) {
+              newItem.weight =
+                fieldResolutions["Weight"] === "incoming"
+                  ? item.weight
+                  : invItem.weight;
+            }
+            if (fieldResolutions["Country of Origin"]) {
+              newItem.countryOfOrigin =
+                fieldResolutions["Country of Origin"] === "incoming"
+                  ? item.countryOfOrigin
+                  : invItem.countryOfOrigin;
+            }
+
+            // Always update cost if present in CSV
+            if (item.cost !== undefined) {
+              newItem.cost = item.cost;
+            }
 
             updates.push({
               type: "update",
               id: itemKey,
-              item: payloadItem,
+              item: newItem,
             });
+            indices.push(index);
           }
-        });
-        indices.push(index);
+        }
       }
       return;
     }
 
     // Skip items with pending manual resolutions if we are in batch mode
-    const resolutions = orderState.resolutions[index];
-    if (resolutions && resolutions.length > 0) return;
+    const resolution = orderState.resolutions[index];
+    if (resolution) return;
 
     const matches = janToItems[item.janCode] || [];
     const exists = matches.length > 0;
@@ -440,10 +479,10 @@ const orderImportSlice = createSlice({
 
     resolve_conflict: (
       state,
-      action: PayloadAction<{ index: number; resolvedActions: any[] }>,
+      action: PayloadAction<{ index: number; resolution: ResolutionIntent }>,
     ) => {
-      const { index, resolvedActions } = action.payload;
-      state.resolutions[index] = resolvedActions;
+      const { index, resolution } = action.payload;
+      state.resolutions[index] = resolution;
     },
 
     mark_items_done: (state, action: PayloadAction<{ indices: number[] }>) => {

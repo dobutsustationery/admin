@@ -271,27 +271,16 @@ interface AnalyzedItem extends ImportItem {
               // Safer: Just set the HS resolution preference in a local map and let the user click "Process"? 
               // But prompt says "apply that resolution".
               
-              // Let's just create the resolution payload.
-              const payload: any = {
+              // Construct resolution intent
+              const resolution: any = {
+                  type: 'data_mismatch',
                   itemKey: existingItem.key,
-                  qty: item.qty, // Assume we take incoming qty for match?
-                  hsCode: finalHS
-              };
-              
-              // Preserve other existing values if not specified
-              // Or better, trigger the same logic as confirmSplit but automated.
-              
-              // Simplified: We assume this is a "MATCH" scenario but with HS conflict.
-              // We dispatch resolve_conflict.
-              
-              const action = {
-                  type: "update_item",
-                  payload
+                  fieldResolutions: { 'HS Code': strategy }
               };
               
               broadcast(firestore, $user.uid!, resolve_conflict({ 
                   index: item.originalIndex, 
-                  resolvedActions: [action] 
+                  resolution
               }));
           }
       });
@@ -514,65 +503,30 @@ interface AnalyzedItem extends ImportItem {
     }
 
     // Apply Resolution via Redux
-    let resolvedActions: any[] = [];
+    let resolution: any; // Type: ResolutionIntent
     
     if (currentConflictItem.conflictType === "DATA_MISMATCH") {
           const itemKey = currentConflictItem.existingItem?.key;
           if (itemKey) {
-              // Construct update payload based on decisions
-              const payload: any = {
-                  itemKey: itemKey,
-                  qty: currentConflictItem.qty
+              resolution = {
+                  type: 'data_mismatch',
+                  itemKey,
+                  fieldResolutions: { ...fieldResolutions }
               };
-              
-              // Apply decisions for each conflicting field
-              if (currentConflictItem.conflictingFields) {
-                  currentConflictItem.conflictingFields.forEach(field => {
-                      const choice = fieldResolutions[field]; // 'incoming' or 'existing'
-                      const incomingVal = field === 'HS Code' ? currentConflictItem?.hsCode :
-                                          field === 'Weight' ? currentConflictItem?.weight :
-                                          field === 'Country of Origin' ? currentConflictItem?.countryOfOrigin : undefined;
-                                          
-                      const existingVal = field === 'HS Code' ? currentConflictItem?.existingItem.hsCode :
-                                          field === 'Weight' ? currentConflictItem?.existingItem.weight :
-                                          field === 'Country of Origin' ? currentConflictItem?.existingItem.countryOfOrigin : undefined;
-
-                      const finalVal = choice === 'incoming' ? incomingVal : existingVal;
-                      
-                      // Map back to Item property names
-                      const prop = field === 'HS Code' ? 'hsCode' :
-                                   field === 'Weight' ? 'weight' :
-                                   field === 'Country of Origin' ? 'countryOfOrigin' : null;
-                                   
-                      if (prop) {
-                          payload[prop] = finalVal;
-                      }
-                  });
-              }
-
-              resolvedActions.push({
-                  type: "update_item",
-                  payload
-              });
           }
     } else {
         // Subtype split logic
-        resolvedActions = Object.entries(splitAllocations)
-          .filter(([_, qty]) => qty > 0)
-          .map(([path, qty]) => ({
-            type: "update_item",
-            payload: {
-              itemKey: path,
-              qty: qty,
-            },
-          }));
+        resolution = {
+            type: 'split',
+            allocations: { ...splitAllocations }
+        };
     }
     
     // Broadcast resolution choice
-    if ($user && $user.uid) {
+    if ($user && $user.uid && resolution) {
         broadcast(firestore, $user.uid, resolve_conflict({ 
             index: conflictIndex, 
-            resolvedActions 
+            resolution 
         }));
     }
 

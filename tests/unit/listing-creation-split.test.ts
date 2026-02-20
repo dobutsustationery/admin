@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { configureStore } from "@reduxjs/toolkit";
 import { rootReducer } from "../../src/lib/root-reducer";
-import { approve_proposal_thunk, add_proposals } from "../../src/lib/listing-creation-slice";
+import { approve_proposal_thunk, add_proposals_internal } from "../../src/lib/listing-creation-slice";
 import { update_item, type Item } from "../../src/lib/inventory";
 
 describe("Listing Creation - Split Inventory", () => {
@@ -28,7 +28,7 @@ describe("Listing Creation - Split Inventory", () => {
     store.dispatch(update_item({ id: itemId, item }));
 
     // 2. Setup Proposal with multiple variants for the SAME itemId
-    store.dispatch(add_proposals([{
+    store.dispatch(add_proposals_internal([{
       janCode,
       inventoryItemIds: [itemId],
       photoGroupIds: [janCode],
