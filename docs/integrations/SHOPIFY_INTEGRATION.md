@@ -130,13 +130,19 @@ interface ListingsState {
 4.  **Push**: If different, call Shopify API `inventory_levels/set`.
 5.  **Log**: Dispatch `shopify_api_log` with the result.
 
-**Current implementation**: `bun scripts/shopify-sync.ts`
+**Current implementation**:
+- **Primary path (browser-triggered):** User clicks **Sync This Listing** in `/listing-detail` (live mode), which emits `shopify_sync_listing_request`. A Firebase Firestore trigger (`functions/index.js`) upserts the Shopify product and syncs inventory.
+- **Secondary path (CLI):** `bun scripts/shopify-sync.ts` (manual/ops fallback).
+
+**CLI capabilities**:
 - Replays `broadcast` to derive current inventory state.
 - Computes `Available Stock = qty - shipped` per SKU.
 - Fetches Shopify variants and diffs against both:
   - latest successful `shopify_api_log` target quantity
   - current Shopify inventory quantity
 - Writes `shopify_api_log` actions for fetch + inventory sync attempts.
+- Supports single-listing upsert via `--sync-listing-handle <handle>`.
+- Supports queue processing for UI-triggered requests via `--process-requests`.
 
 ### C. Order Import (Shopify -> Admin)
 *Goal: Record orders as actions.*
@@ -178,6 +184,22 @@ SHOPIFY_SYNC_ENABLED=true
 
 > **Note:** The CLI sync implementation is currently **untested** against production/staging stores.
 
+### Browser-triggered Listing Sync (no CLI)
+
+1. Open `/listing-detail?mode=live&handle=<your-handle>`.
+2. Click **Sync This Listing**.
+3. The app writes a `shopify_sync_listing_request` action to `broadcast`.
+4. Firebase Function `syncShopifyListingRequest` processes it and writes:
+   - `shopify_api_log` actions
+   - `shopify_sync_listing_result` action
+
+### Firebase Functions Setup
+
+Provide runtime env vars for the functions deployment:
+- `SHOPIFY_STORE_URL`
+- `SHOPIFY_ACCESS_TOKEN`
+- `SHOPIFY_API_VERSION`
+
 ```bash
 # Dry run (default): computes diffs, sends no writes
 npm run shopify:sync -- --firestore-env production
@@ -187,6 +209,12 @@ npm run shopify:sync -- --firestore-env production --apply
 
 # Optional: target one location + cap updates
 npm run shopify:sync -- --firestore-env production --apply --shopify-location-id 123456789 --limit 50
+
+# Sync one listing by handle
+npm run shopify:sync -- --firestore-env production --sync-listing-handle your-listing-handle --apply
+
+# Process queued listing sync requests emitted from listing-detail UI
+npm run shopify:sync -- --firestore-env production --process-requests --apply
 ```
 
 ### Creating Shopify Credentials (Custom App)

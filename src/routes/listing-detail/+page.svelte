@@ -32,7 +32,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
-  import { generateHandle } from "$lib/handle-utils";
+  import { generateHandle, generateSku } from "$lib/handle-utils";
   import {
     ensureFolderStructure,
     uploadImageToDrive,
@@ -100,6 +100,8 @@
   // AI Loading State
   let isGeneratingTitle = false;
   let isGeneratingDescription = false;
+  let syncMessage = "";
+  let isQueueingSync = false;
 
   // Polymorphic Data Load
   let listingData: {
@@ -389,6 +391,86 @@
       }
     }
     showPromptModal = false;
+  }
+
+  async function queueShopifyListingSync() {
+    if (!handle) return;
+
+    const uid = $user?.uid;
+    if (!uid) {
+      syncMessage = "Sign in to queue a Shopify sync request.";
+      return;
+    }
+
+    const requestId = `listing-sync-${Date.now()}-${uid}`;
+    const listingSnapshot = {
+      handle,
+      title: listingData?.title || "",
+      bodyHtml: listingData?.bodyHtml || "",
+      productCategory: listingData?.productCategory || "",
+      option1Name: listingData?.option1Name || "Subtype",
+      images: (listingImages || []).map((img) => ({
+        id: img.id,
+        url: img.url,
+        position: img.position,
+        altText: img.altText || "",
+      })),
+    };
+
+    const variantsSnapshot = (associatedItems || [])
+      .map((item: any) => {
+        const janCode = String(item?.janCode || "").trim();
+        const subtype = String(item?.subtype || "").trim();
+        const sku = generateSku(janCode, subtype);
+        const qty = Number(item?.qty || 0);
+        const shipped = Number(item?.shipped || 0);
+        const available = Math.max(0, qty - shipped);
+
+        return {
+          itemId: item?.id || "",
+          sku,
+          janCode,
+          subtype,
+          available,
+          price: Number(item?.price || 0),
+          weight: Number(item?.weight || 0),
+          image: String(item?.image || ""),
+        };
+      })
+      .filter((v) => !!v.itemId && !!v.sku && !!v.janCode);
+
+    if (variantsSnapshot.length === 0) {
+      syncMessage = "Cannot sync: listing has no inventory variants.";
+      return;
+    }
+
+    const action = {
+      type: "shopify_sync_listing_request",
+      payload: {
+        requestId,
+        handle,
+        listing: listingSnapshot,
+        variants: variantsSnapshot,
+        source: "listing-detail",
+        requestedBy: uid,
+        requestedAt: Date.now(),
+      },
+    };
+
+    isQueueingSync = true;
+    syncMessage = "";
+
+    try {
+      await broadcast(firestore, uid, action as any);
+      syncMessage = `Queued Shopify sync for '${handle}'. It will sync automatically.`;
+    } catch (error) {
+      syncMessage =
+        error instanceof Error
+          ? `Failed to queue sync: ${error.message}`
+          : "Failed to queue sync request.";
+    } finally {
+      isQueueingSync = false;
+    }
   }
 
   function goToJan(targetJan: string) {
@@ -1481,9 +1563,23 @@
           <button class="ai-btn" on:click={openBodyModal}
             >Edit Description</button
           >
+          {#if mode !== "create" && handle}
+            <button
+              class="ai-btn"
+              disabled={isQueueingSync}
+              on:click={queueShopifyListingSync}
+              title="Queue this listing for Shopify API sync via CLI"
+            >
+              {isQueueingSync ? "Queueing..." : "Sync This Listing"}
+            </button>
+          {/if}
         </div>
       </div>
     </div>
+
+    {#if syncMessage}
+      <div class="sync-message">{syncMessage}</div>
+    {/if}
 
     <ListingEditor
       listing={listingData}
@@ -1785,6 +1881,16 @@
   .ai-btn:hover {
     border-color: #10b981;
     color: #059669;
+  }
+  .ai-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .sync-message {
+    margin-top: -0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: #065f46;
   }
   .sep {
     color: #d1d5db;
