@@ -42,6 +42,7 @@
   } from "$lib/google-drive";
   import { reorderListingImages } from "$lib/listing-image-ordering";
   import { buildDraftListingImages } from "$lib/listing-image-logic";
+  import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import ListingEditor from "$lib/components/ListingEditor.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
@@ -549,7 +550,7 @@
       option1Name: listingData?.option1Name || "Subtype",
       images: (listingImages || []).map((img) => ({
         id: img.id,
-        url: img.url,
+        url: toGoogleDrivePublicImageUrl(String(img.url || "")),
         position: img.position,
         altText: img.altText || "",
       })),
@@ -572,7 +573,7 @@
           available,
           price: Number(item?.price || 0),
           weight: Number(item?.weight || 0),
-          image: String(item?.image || ""),
+          image: toGoogleDrivePublicImageUrl(String(item?.image || "")),
         };
       })
       .filter((v) => !!v.itemId && !!v.sku && !!v.janCode);
@@ -890,7 +891,9 @@
         folders.processedId,
         token.access_token,
       );
-      const newUrl = result.thumbnailLink || result.webViewLink || "";
+      const newUrl = toGoogleDrivePublicImageUrl(
+        result.publicUrl || result.apiUrl || result.thumbnailLink || result.webViewLink || "",
+      );
 
       if ($user.uid) {
         if (replacingSubtypeId) {
@@ -1283,6 +1286,8 @@
     url: string;
     altText: string;
   }) {
+    const candidateUrl = toGoogleDrivePublicImageUrl(candidate.url || "");
+
     if (handle) {
       if (replacingSubtypeId) {
         // Live Mode: Update Inventory Item
@@ -1294,7 +1299,7 @@
               id: replacingSubtypeId,
               field: "image",
               from: "",
-              to: candidate.url,
+              to: candidateUrl,
             }),
           );
         }
@@ -1303,7 +1308,7 @@
         if ($user && $user.uid) {
           const newImage: ListingImage = {
             id: crypto.randomUUID(),
-            url: candidate.url,
+            url: candidateUrl,
             position: listingImages.length + 1,
             altText: candidate.altText || "",
             isListingOnly: true,
@@ -1334,7 +1339,7 @@
             update_variant_image({
               janCode,
               variantId: vId,
-              image: candidate.url,
+              image: candidateUrl,
             }),
           );
         } else {
@@ -1346,7 +1351,7 @@
               id: replacingSubtypeId,
               field: "image",
               from: "",
-              to: candidate.url,
+              to: candidateUrl,
             }),
           );
         }
@@ -1387,7 +1392,7 @@
             : `img-${Date.now()}`;
         const image = {
           id: imageId,
-          url: candidate.url,
+          url: candidateUrl,
           altText: candidate.altText || "",
           position: listingImages.length + 1,
         };

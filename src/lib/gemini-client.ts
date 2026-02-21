@@ -1,5 +1,6 @@
 import { removeBackground } from "./background-removal";
 import { ensureFolderStructure, uploadImageToDrive } from "$lib/google-drive";
+import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
@@ -16,23 +17,20 @@ export async function fetchImage(
   // We must convert them to the Drive API 'get media' endpoint:
   // https://www.googleapis.com/drive/v3/files/{fileId}?alt=media
   
-  let fetchUrl = url;
+  let fetchUrl = toGoogleDrivePublicImageUrl(url);
   
   // Extract ID from drive thumbnail link or standard public export link
   // Matches:
   // 1. drive.google.com/thumbnail?id=XYZ
   // 2. drive.google.com/uc?id=XYZ
   // 3. drive.google.com/uc?export=view&id=XYZ
-  const driveIdMatch = url.match(/drive\.google\.com\/(?:thumbnail|uc)\?.*id=([^&]+)/);
+  const driveIdMatch = fetchUrl.match(/drive\.google\.com\/(?:thumbnail|uc)\?.*id=([^&]+)/);
+  let driveApiUrl = "";
   if (driveIdMatch && driveIdMatch[1]) {
       const fileId = driveIdMatch[1];
-      // If we have a token, we prefer the API endpoint to avoid CORS issues in browser
-      if (token) {
-          fetchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-      }
-      // If NO token, we keep the original public URL and hope it works (or use a proxy if needed).
-      // Public 'uc' links usually block XHR/Fetch, so this might fail client-side without a token,
-      // but it aligns with "unauthenticated access" needs.
+      // Prefer public URL first to avoid unnecessary auth failures/noise.
+      driveApiUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+      fetchUrl = toGoogleDrivePublicImageUrl(fetchUrl);
       
   } else if (url.includes("googleusercontent.com")) {
       // Normalize to full-resolution download form. If a resized suffix was persisted
@@ -42,17 +40,28 @@ export async function fetchImage(
   }
 
   const headers: Record<string, string> = {};
-  if (token) {
+  if (token && fetchUrl.includes("googleapis.com/drive/v3/files/")) {
       headers['Authorization'] = `Bearer ${token}`;
   }
 
   try {
-      const response = await fetch(fetchUrl, {
+      let response = await fetch(fetchUrl, {
         headers,
         referrerPolicy: "no-referrer"
       });
 
       if (!response.ok) {
+        // For Drive links, fallback to API endpoint when token is available.
+        if (token && driveIdMatch && (response.status === 401 || response.status === 403 || response.status === 0)) {
+            const apiResponse = await fetch(driveApiUrl, {
+                headers: { Authorization: `Bearer ${token}` },
+                referrerPolicy: "no-referrer",
+            });
+            if (apiResponse.ok) {
+                return processResponse(apiResponse);
+            }
+        }
+
         if (url.includes("googleusercontent.com") && fetchUrl !== url) {
             const rawResponse = await fetch(url, {
                 headers,
@@ -63,24 +72,6 @@ export async function fetchImage(
             }
         }
 
-        // If we used a token and got 401/403, maybe the token is bad/expired/wrong scope.
-        // Fallback to trying the original public URL (no auth headers).
-        if (token && (response.status === 401 || response.status === 403) && fetchUrl.includes("googleapis.com")) {
-            console.warn(`Token rejected (${response.status}) for ${fetchUrl}. Attempting fallback to public URL: ${url}`);
-            // Still try the public URL directly - it might work if cached or if browser security context allows (e.g. extension)
-            // But likely will fail with CORS in strict browser env.
-            try {
-                const publicResponse = await fetch(url, { referrerPolicy: "no-referrer" });
-                if (publicResponse.ok) {
-                    return processResponse(publicResponse);
-                }
-            } catch (fallbackErr) {
-                 console.warn("Public URL fallback failed (likely CORS):", fallbackErr);
-            }
-            
-            throw new Error(`Authentication failed (${response.status}) and public fallback blocked. Please refresh your Google Drive token.`);
-        }
-        
         throw new Error(`Failed to fetch image (${response.status}): ${response.statusText}`);
       }
       return processResponse(response);

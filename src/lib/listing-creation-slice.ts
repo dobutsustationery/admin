@@ -10,6 +10,7 @@ import { imagePrompt, fetchImage, detectVariants } from "./gemini-client";
 import { getStoredToken } from "./google-photos";
 import type { ListingImage } from "./listings-slice";
 import { categorize_photo, uncategorize_photo } from "./photos-slice";
+import { toGoogleDrivePublicImageUrl } from "./drive-url";
 
 // Define AppThunk locally if not exported
 export type AppThunk<ReturnType = void> = ThunkAction<
@@ -1246,7 +1247,9 @@ export const generate_descriptions_for_batch =
         const imagePromises = imagesToUse.map((f: any) => {
           // MediaItem from photos-slice uses baseUrl. DriveFile uses apiUrl/thumbnailLink.
           // We prioritize baseUrl as per MediaItem interface.
-          const url = f.baseUrl || f.productUrl || f.apiUrl || f.thumbnailLink;
+          const url = toGoogleDrivePublicImageUrl(
+            f.baseUrl || f.productUrl || f.publicUrl || f.apiUrl || f.thumbnailLink || "",
+          );
           // Ensure we have a valid string. If no direct link, construct API link?
           // google-drive.ts list function asks for these fields.
           return fetchImage(url, accessToken);
@@ -1361,7 +1364,9 @@ export const regenerate_title =
       if (driveGroup.length > 0) {
         const imagesToUse = driveGroup.slice(0, 3);
         const imagePromises = imagesToUse.map((f: any) => {
-          const url = f.baseUrl || f.productUrl || f.apiUrl || f.thumbnailLink;
+          const url = toGoogleDrivePublicImageUrl(
+            f.baseUrl || f.productUrl || f.publicUrl || f.apiUrl || f.thumbnailLink || "",
+          );
           return fetchImage(url, accessToken);
         });
         const imagesData = await Promise.all(imagePromises);
@@ -1479,7 +1484,9 @@ export const regenerate_description =
 
       const imagesToUse = allPhotos.slice(0, 5);
       const imagePromises = imagesToUse.map((f: any) => {
-        const url = f.baseUrl || f.productUrl || f.apiUrl || f.thumbnailLink;
+      const url = toGoogleDrivePublicImageUrl(
+        f.baseUrl || f.productUrl || f.publicUrl || f.apiUrl || f.thumbnailLink || "",
+      );
         return fetchImage(url, accessToken);
       });
 

@@ -2,6 +2,10 @@
   import { onMount, onDestroy } from "svelte";
   import { getStoredToken } from "$lib/google-photos";
   import { getStoredToken as getDriveToken } from "$lib/google-drive";
+  import {
+    extractGoogleDriveFileId,
+    toGoogleDrivePublicImageUrl,
+  } from "$lib/drive-url";
 
   export let src: string; // The base URL
   export let alt: string = "";
@@ -55,20 +59,13 @@
       return;
     }
     
-    let finalSrc = src;
-    const driveQueryIdMatch = finalSrc.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    const drivePathIdMatch = finalSrc.match(/\/d\/([a-zA-Z0-9_-]+)/);
-    const driveApiIdMatch = finalSrc.match(/drive\/v3\/files\/([a-zA-Z0-9_-]+)/);
-    const driveFileId = driveApiIdMatch?.[1] || driveQueryIdMatch?.[1] || drivePathIdMatch?.[1] || "";
-
-    // Normalize Drive URLs so we can always do an authenticated fetch.
-    if (driveFileId && !finalSrc.includes("googleapis.com/drive/v3/files/")) {
-      finalSrc = `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`;
-    }
+    let finalSrc = toGoogleDrivePublicImageUrl(src);
+    const driveFileId = extractGoogleDriveFileId(finalSrc);
 
     // During pending picker->Drive migration we intentionally avoid rendering
-    // fragile googleusercontent URLs and keep a loading spinner instead.
-    if (isUploading && finalSrc.includes("googleusercontent.com")) {
+    // fragile expiring googleusercontent URLs and keep a loading spinner instead.
+    const isStableDriveGoogleusercontent = finalSrc.includes("googleusercontent.com/d/");
+    if (isUploading && finalSrc.includes("googleusercontent.com") && !isStableDriveGoogleusercontent) {
       if (shouldRun && seq === loadSeq) {
         loading = true;
         error = "";
@@ -79,16 +76,28 @@
     
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
-    const driveFileIdMatch = finalSrc.match(/drive\/v3\/files\/([a-zA-Z0-9_-]+)/);
-    const driveThumbnailUrl =
-      driveFileIdMatch?.[1] ? `https://drive.google.com/thumbnail?id=${driveFileIdMatch[1]}&sz=w3000` : "";
+    const driveFullSizeUrl = driveFileId
+      ? `https://lh3.googleusercontent.com/d/${driveFileId}=s0`
+      : "";
 
     // Prefer fetching Google URLs and render via object URLs. This avoids flaky
     // direct-image auth behavior on Drive/Photos links. For googleusercontent,
     // we still fall back to direct <img> if fetch path fails.
     const isGoogleApi = finalSrc.includes("googleapis.com");
     const isGoogleusercontent = finalSrc.includes("googleusercontent.com");
+    const isDrivePublic =
+      finalSrc.includes("drive.google.com/") ||
+      finalSrc.includes("drive.usercontent.google.com/") ||
+      finalSrc.includes("lh3.googleusercontent.com/d/");
     const shouldFetch = isGoogleApi || isGoogleusercontent;
+    const requestSrc = isDrivePublic && driveFullSizeUrl ? driveFullSizeUrl : finalSrc;
+
+    // Drive public images must be loaded directly via <img>; browser fetch() is CORS-blocked.
+    if (isDrivePublic) {
+      objectUrl = requestSrc;
+      loading = false;
+      return;
+    }
 
     if (!shouldFetch) {
         // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
@@ -101,15 +110,17 @@
     try {
         await imageQueue.add(async () => {
              const driveToken = getDriveToken();
-             const authCandidates = Array.from(
-               new Set(
-                 [token?.access_token, driveToken?.access_token]
-                   .filter(Boolean) as string[]
-               )
-             );
+             const authCandidates = isDrivePublic
+               ? []
+               : Array.from(
+                   new Set(
+                     [token?.access_token, driveToken?.access_token]
+                       .filter(Boolean) as string[]
+                   )
+                 );
              const tryFetch = async (authHeader?: string) =>
                await fetchWithRetries(
-                 finalSrc,
+                 requestSrc,
                  {
                    headers: authHeader ? { Authorization: authHeader } : {},
                    referrerPolicy: "no-referrer",
@@ -131,13 +142,10 @@
              }
 
              if (!response) {
-               // For non-Drive resources, allow one anonymous attempt as fallback.
-               if (!isGoogleApi) {
-                 try {
-                   response = await tryFetch();
-                 } catch (error) {
-                   lastError = error;
-                 }
+               try {
+                 response = await tryFetch();
+               } catch (error) {
+                 lastError = error;
                }
              }
 
@@ -146,29 +154,12 @@
              }
 
              const blob = await response.blob();
-             const mime = (blob.type || "").toLowerCase();
-             const isHeicLike = mime.includes("heic") || mime.includes("heif");
-             // If MIME is missing, try rendering bytes first; do not assume non-renderable.
-             const hasKnownRenderableMime = mime
-               ? /^image\/(png|jpe?g|webp|gif|bmp|svg\+xml|avif)$/.test(mime)
-               : true;
-             if (driveThumbnailUrl && (isHeicLike || !hasKnownRenderableMime)) {
-                 // Browsers often cannot render HEIC (or unknown binary) blobs directly; Drive thumbnail is renderable.
-                 if (shouldRun && seq === loadSeq) objectUrl = driveThumbnailUrl;
-             } else {
-                 if (shouldRun && seq === loadSeq) objectUrl = URL.createObjectURL(blob);
-             }
+             if (shouldRun && seq === loadSeq) objectUrl = URL.createObjectURL(blob);
         });
     } catch (e: any) {
       console.error("SecureImage error:", e);
 
-      // Fallback for googleusercontent links: direct image load when fetch path fails.
-      if (isGoogleusercontent) {
-        if (shouldRun && seq === loadSeq) {
-          objectUrl = finalSrc;
-          error = "";
-        }
-      } else if (e.message.includes("403")) {
+      if (e.message.includes("403")) {
         if (shouldRun && seq === loadSeq) {
           if (finalSrc.includes("/ppa/")) {
             error = "Link Expired";
@@ -191,6 +182,11 @@
   // Determine crossorigin attribute: 'anonymous' for known CORS-supporting hosts (e.g. Shopify),
   // but NULL for drive.google.com (cookies) and googleusercontent.com (PPA - often fails CORS check or requires no-header).
   $: crossOriginVal = ((objectUrl && objectUrl.includes("cdn.shopify.com")) ? "anonymous" : null) as "anonymous" | null;
+  $: referrerPolicyVal = (
+    objectUrl && objectUrl.includes("lh3.googleusercontent.com/d/")
+      ? undefined
+      : "no-referrer"
+  ) as ReferrerPolicy | undefined;
 
   onDestroy(() => {
     shouldRun = false;
@@ -221,7 +217,7 @@
     aria-busy={isUploading}
     class={className}
     style="width: 100%; height: 100%; display: block; {style}"
-    referrerpolicy="no-referrer"
+    referrerpolicy={referrerPolicyVal}
     crossorigin={crossOriginVal}
     on:error={() => {
         if (isUploading && objectUrl.includes("googleusercontent.com")) {
