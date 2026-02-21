@@ -4,12 +4,23 @@ This folder contains Firebase Functions for Shopify sync processing.
 
 ## Function
 
-- `syncShopifyListingRequest`
-  - Trigger: Firestore `broadcast/{actionId}` create
-  - Filters for action type `shopify_sync_listing_request`
+- `syncShopifyRequest`
+  - Trigger: Firestore `shopify_sync/{requestId}` create
+  - Processes only events where `eventType === sync_requested`
+  - Emits append-only follow-up events in `shopify_sync`:
+    - `sync_claimed`
+    - `sync_api_call`
+    - `sync_completed` / `sync_partial_failed` / `sync_failed`
   - Upserts Shopify product by handle
   - Syncs inventory levels for request variants
-  - Writes `shopify_api_log` and `shopify_sync_listing_result` actions
+  - Writes API logs to `broadcast` as `shopify_api_log`
+
+## Shared Logic
+
+Shared modules used by both cloud function and CLI worker:
+
+- `functions/shared/shopify-sync-core.cjs` (Shopify API primitives)
+- `functions/shared/shopify-sync-worker.cjs` (request claim/process orchestration)
 
 ## Required Runtime Environment Variables
 

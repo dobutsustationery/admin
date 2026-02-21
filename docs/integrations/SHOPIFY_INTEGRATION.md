@@ -131,18 +131,13 @@ interface ListingsState {
 5.  **Log**: Dispatch `shopify_api_log` with the result.
 
 **Current implementation**:
-- **Primary path (browser-triggered):** User clicks **Sync This Listing** in `/listing-detail` (live mode), which emits `shopify_sync_listing_request`. A Firebase Firestore trigger (`functions/index.js`) upserts the Shopify product and syncs inventory.
-- **Secondary path (CLI):** `bun scripts/shopify-sync.ts` (manual/ops fallback).
+- **Primary path (browser-triggered):** User clicks **Sync This Listing** in `/listing-detail` (live mode), which writes a `sync_requested` event document in `shopify_sync`. A Firebase Firestore trigger (`functions/index.js`) listens on `shopify_sync/{eventId}` and executes sync.
+- **Secondary path (CLI):** CLI tools can enqueue and/or execute `shopify_sync` requests (same shared logic as the function).
 
 **CLI capabilities**:
-- Replays `broadcast` to derive current inventory state.
-- Computes `Available Stock = qty - shipped` per SKU.
-- Fetches Shopify variants and diffs against both:
-  - latest successful `shopify_api_log` target quantity
-  - current Shopify inventory quantity
-- Writes `shopify_api_log` actions for fetch + inventory sync attempts.
-- Supports single-listing upsert via `--sync-listing-handle <handle>`.
-- Supports queue processing for UI-triggered requests via `--process-requests`.
+- Queue a request into `shopify_sync`.
+- Execute queued requests from `shopify_sync`.
+- Uses the same shared sync core as the cloud function (`functions/shared/shopify-sync-core.cjs` and `functions/shared/shopify-sync-worker.cjs`).
 
 ### C. Order Import (Shopify -> Admin)
 *Goal: Record orders as actions.*
@@ -188,10 +183,13 @@ SHOPIFY_SYNC_ENABLED=true
 
 1. Open `/listing-detail?mode=live&handle=<your-handle>`.
 2. Click **Sync This Listing**.
-3. The app writes a `shopify_sync_listing_request` action to `broadcast`.
-4. Firebase Function `syncShopifyListingRequest` processes it and writes:
-   - `shopify_api_log` actions
-   - `shopify_sync_listing_result` action
+3. The app writes `sync_requested` event to `shopify_sync`.
+4. Firebase Function `syncShopifyRequest` processes and appends follow-up events (no in-place mutation):
+   - `sync_claimed`
+   - `sync_api_call` (one per API call)
+   - `sync_completed` or `sync_partial_failed` or `sync_failed`
+5. `shopify_api_log` actions are also appended to `broadcast`.
+6. Monitor progress in `/sync-status` (derived by reducing `shopify_sync` events by `requestId`).
 
 ### Firebase Functions Setup
 
@@ -200,21 +198,18 @@ Provide runtime env vars for the functions deployment:
 - `SHOPIFY_ACCESS_TOKEN`
 - `SHOPIFY_API_VERSION`
 
+For a full step-by-step local setup and validation flow (Firebase emulators + functions + Shopify development store), see:
+- [Shopify Sync Runbook (Emulators + Dev Store)](./SHOPIFY_SYNC_EMULATOR_DEVSTORE_RUNBOOK.md)
+
 ```bash
-# Dry run (default): computes diffs, sends no writes
-npm run shopify:sync -- --firestore-env production
+# Queue a listing sync request from CLI (same queue as browser writes)
+npm run shopify:sync:request -- --firestore-env production --handle your-listing-handle
 
-# Apply changes to Shopify
-npm run shopify:sync -- --firestore-env production --apply
+# Execute queued requests from CLI worker
+npm run shopify:sync:worker -- --firestore-env production --limit 20
 
-# Optional: target one location + cap updates
-npm run shopify:sync -- --firestore-env production --apply --shopify-location-id 123456789 --limit 50
-
-# Sync one listing by handle
-npm run shopify:sync -- --firestore-env production --sync-listing-handle your-listing-handle --apply
-
-# Process queued listing sync requests emitted from listing-detail UI
-npm run shopify:sync -- --firestore-env production --process-requests --apply
+# Execute one request document by id
+npm run shopify:sync:worker -- --firestore-env production --request-doc-id <docId>
 ```
 
 ### Creating Shopify Credentials (Custom App)
