@@ -45,6 +45,7 @@
   import ListingEditor from "$lib/components/ListingEditor.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
+  import type { ShopifySyncRequestView } from "$lib/shopify-sync-model";
 
   // --- State ---
   $: mode = $page.url.searchParams.get("mode");
@@ -102,7 +103,17 @@
   let isGeneratingTitle = false;
   let isGeneratingDescription = false;
   let syncMessage = "";
+  let syncMessageLevel: "info" | "success" | "error" = "info";
   let isQueueingSync = false;
+  let trackedSyncRequestId: string | null = null;
+  let syncDetailsHref = "/sync-status";
+  let successMessageTimeout: ReturnType<typeof setTimeout> | null = null;
+  let dismissedSuccessRequestId: string | null = null;
+  let syncState: any = {};
+  let latestSyncRequestIdForHandle: string | null = null;
+  let activeSyncRequestId: string | null = null;
+  let activeSyncRequest: ShopifySyncRequestView | null = null;
+  let lastObservedHandle: string | null = null;
 
   // Polymorphic Data Load
   let listingData: {
@@ -394,6 +405,132 @@
     showPromptModal = false;
   }
 
+  function clearSuccessMessageTimer() {
+    if (successMessageTimeout) {
+      clearTimeout(successMessageTimeout);
+      successMessageTimeout = null;
+    }
+  }
+
+  function getLatestApiCall(request: ShopifySyncRequestView) {
+    if (!request.apiCalls || request.apiCalls.length === 0) return null;
+    return [...request.apiCalls].sort((a, b) => b.loggedAt - a.loggedAt)[0];
+  }
+
+  function buildSyncMessageFromRequest(request: ShopifySyncRequestView, syncHandle: string) {
+    if (request.status === "queued") {
+      return {
+        level: "info" as const,
+        text: `Sync requested for '${syncHandle}'. Waiting for processor claim...`,
+      };
+    }
+
+    if (request.status === "processing") {
+      const latestCall = getLatestApiCall(request);
+      if (!latestCall) {
+        return {
+          level: "info" as const,
+          text: `Sync in progress for '${syncHandle}'...`,
+        };
+      }
+
+      if (latestCall.success) {
+        return {
+          level: "info" as const,
+          text: `Sync in progress: ${latestCall.requestType} completed.`,
+        };
+      }
+
+      const apiError = latestCall?.response?.error
+        ? ` (${String(latestCall.response.error)})`
+        : "";
+      return {
+        level: "info" as const,
+        text: `Sync in progress: ${latestCall.requestType} failed${apiError}. Awaiting final status...`,
+      };
+    }
+
+    if (request.status === "success") {
+      return {
+        level: "success" as const,
+        text: `Sync completed successfully for '${syncHandle}'.`,
+      };
+    }
+
+    const finalError =
+      typeof request.result?.error === "string" ? request.result.error : "";
+    return {
+      level: "error" as const,
+      text: finalError
+        ? `Sync failed for '${syncHandle}': ${finalError}`
+        : `Sync failed for '${syncHandle}'.`,
+    };
+  }
+
+  $: {
+    const nextHandle = handle || null;
+    if (nextHandle !== lastObservedHandle) {
+      lastObservedHandle = nextHandle;
+      trackedSyncRequestId = null;
+      dismissedSuccessRequestId = null;
+      clearSuccessMessageTimer();
+    }
+  }
+
+  $: syncState = ($store as any).shopifySync || {};
+  $: latestSyncRequestIdForHandle = handle
+    ? (syncState.handleToLatestRequestId?.[handle] ?? null)
+    : null;
+  $: activeSyncRequestId = trackedSyncRequestId || latestSyncRequestIdForHandle || null;
+  $: activeSyncRequest = activeSyncRequestId
+    ? ((syncState.requestsById?.[activeSyncRequestId] as ShopifySyncRequestView) || null)
+    : null;
+  $: syncDetailsHref = activeSyncRequestId
+    ? `/sync-status?requestId=${encodeURIComponent(activeSyncRequestId)}`
+    : "/sync-status";
+  $: {
+    if (
+      trackedSyncRequestId &&
+      latestSyncRequestIdForHandle &&
+      trackedSyncRequestId !== latestSyncRequestIdForHandle
+    ) {
+      trackedSyncRequestId = null;
+    }
+  }
+
+  $: {
+    const syncHandle = handle || "";
+    if (!syncHandle || !activeSyncRequestId) {
+      // Keep the last non-sync-specific message (for example queue failures).
+    } else if (!activeSyncRequest) {
+      syncMessageLevel = "info";
+      syncMessage = `Sync requested for '${syncHandle}'. Waiting for processor claim...`;
+    } else if (
+      activeSyncRequest.status === "success" &&
+      dismissedSuccessRequestId === activeSyncRequest.requestId
+    ) {
+      syncMessage = "";
+    } else {
+      const next = buildSyncMessageFromRequest(activeSyncRequest, syncHandle);
+      syncMessageLevel = next.level;
+      syncMessage = next.text;
+    }
+  }
+
+  $: {
+    if (!activeSyncRequest || activeSyncRequest.status !== "success") {
+      clearSuccessMessageTimer();
+    } else if (dismissedSuccessRequestId === activeSyncRequest.requestId) {
+      clearSuccessMessageTimer();
+    } else {
+      const requestId = activeSyncRequest.requestId;
+      clearSuccessMessageTimer();
+      successMessageTimeout = setTimeout(() => {
+        dismissedSuccessRequestId = requestId;
+      }, 30_000);
+    }
+  }
+
   async function queueShopifyListingSync() {
     if (!handle) return;
 
@@ -447,6 +584,9 @@
 
     isQueueingSync = true;
     syncMessage = "";
+    syncMessageLevel = "info";
+    dismissedSuccessRequestId = null;
+    clearSuccessMessageTimer();
 
     try {
       await addDoc(collection(firestore, "shopify_sync"), {
@@ -463,12 +603,16 @@
         createdAt: serverTimestamp(),
         timestamp: serverTimestamp(),
       });
-      syncMessage = `Queued Shopify sync for '${handle}'. It will sync automatically.`;
+      trackedSyncRequestId = requestId;
+      syncMessage = `Sync requested for '${handle}'. Waiting for processor claim...`;
+      syncMessageLevel = "info";
     } catch (error) {
+      trackedSyncRequestId = null;
       syncMessage =
         error instanceof Error
           ? `Failed to queue sync: ${error.message}`
           : "Failed to queue sync request.";
+      syncMessageLevel = "error";
     } finally {
       isQueueingSync = false;
     }
@@ -1569,7 +1713,7 @@
               class="ai-btn"
               disabled={isQueueingSync}
               on:click={queueShopifyListingSync}
-              title="Queue this listing for Shopify API sync via CLI"
+              title="Queue this listing for Shopify API sync"
             >
               {isQueueingSync ? "Queueing..." : "Sync This Listing"}
             </button>
@@ -1579,7 +1723,12 @@
     </div>
 
     {#if syncMessage}
-      <div class="sync-message">{syncMessage}</div>
+      <div class={`sync-message ${syncMessageLevel}`}>
+        <span>{syncMessage}</span>
+        {#if activeSyncRequestId}
+          <a class="sync-link" href={syncDetailsHref}>View details</a>
+        {/if}
+      </div>
     {/if}
 
     <ListingEditor
@@ -1891,7 +2040,33 @@
     margin-top: -0.75rem;
     margin-bottom: 1rem;
     font-size: 0.9rem;
+    border-radius: 6px;
+    padding: 0.55rem 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .sync-message.info {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e3a8a;
+  }
+  .sync-message.success {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
     color: #065f46;
+  }
+  .sync-message.error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+  .sync-link {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    white-space: nowrap;
   }
   .sep {
     color: #d1d5db;
