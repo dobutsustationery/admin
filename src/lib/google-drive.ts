@@ -6,6 +6,7 @@
  */
 
 import type { drive_v3 } from "googleapis";
+import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 
 // Environment configuration
 const CLIENT_ID = (typeof window !== 'undefined' && (window as any).__GOOGLE_DRIVE_CLIENT_ID__) || import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
@@ -39,7 +40,7 @@ export interface DriveFileInfo {
   webViewLink: string;
   webContentLink?: string;
   thumbnailLink?: string;
-  publicUrl?: string; // View link (drive.google.com/uc?...)
+  publicUrl?: string; // Public image link (lh3.googleusercontent.com/d/{id}=s0)
   apiUrl?: string;    // API Media link (googleapis.com/.../files/{id}?alt=media)
 }
 
@@ -339,10 +340,15 @@ export async function listAllImages(
         }
 
         // Return combined with apiUrl hydrated
-        const hydrate = (files: DriveFile[]) => files.map(f => ({
-            ...f,
-            apiUrl: `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`
-        }));
+        const hydrate = (files: DriveFile[]) =>
+          files.map((f) => {
+            const apiUrl = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
+            return {
+              ...f,
+              publicUrl: toGoogleDrivePublicImageUrl(apiUrl),
+              apiUrl,
+            };
+          });
 
         return [...hydrate(rootImages), ...hydrate(imagesFolderImages), ...hydrate(originalsImages), ...hydrate(processedImages)];
         
@@ -696,8 +702,8 @@ export async function uploadImageToDrive(
   // This ensures the URL stored in our DB works forever.
   if (fileData.id) {
      details.thumbnailLink = `https://drive.google.com/thumbnail?id=${fileData.id}`;
-     // Add standard public view/download link for external systems (e.g. Shopify)
-     details.publicUrl = `https://drive.google.com/uc?export=view&id=${fileData.id}`;
+     // Add stable full-size public image URL for app + external systems (e.g. Shopify)
+     details.publicUrl = toGoogleDrivePublicImageUrl(String(fileData.id));
      // Add stable API URL for internal app usage (SecureImage)
      details.apiUrl = `https://www.googleapis.com/drive/v3/files/${fileData.id}?alt=media`;
   }

@@ -264,7 +264,7 @@
       );
 
       const finalUrl =
-        uploaded.apiUrl || uploaded.thumbnailLink || uploaded.webViewLink;
+        uploaded.publicUrl || uploaded.apiUrl || uploaded.thumbnailLink || uploaded.webViewLink;
 
       // 4. Complete & Broadcast
       const completeAction = complete_edit({
@@ -675,13 +675,13 @@
       .filter(
         (item) =>
           item.mimeType?.startsWith("image/") &&
-          !!(item.apiUrl || item.webViewLink || item.thumbnailLink),
+          !!(item.publicUrl || item.apiUrl || item.webViewLink || item.thumbnailLink),
       )
       .map((item) => ({
         id: item.id,
         description: "",
         productUrl: item.webViewLink || "",
-        baseUrl: item.apiUrl || item.thumbnailLink || item.webViewLink || "",
+        baseUrl: item.publicUrl || item.apiUrl || item.thumbnailLink || item.webViewLink || "",
         mimeType: item.mimeType || "image/jpeg",
         filename: item.name || item.id,
         mediaMetadata: {

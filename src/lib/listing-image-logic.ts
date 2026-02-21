@@ -2,6 +2,7 @@ import type { ListingProposal, ListingVariant } from "./listing-creation-slice";
 import type { PhotosState } from "./photos-slice";
 import type { InventoryState } from "./inventory";
 import type { ListingImage } from "./listings-slice";
+import { toGoogleDrivePublicImageUrl } from "./drive-url";
 
 export function canonicalizeListingImages(images: ListingImage[]): ListingImage[] {
     const keyed = new Map<string, { img: ListingImage; idx: number }>();
@@ -89,7 +90,7 @@ export function buildDraftListingImages(
 
     // 3. Convert to ListingImage format (Preserve metadata)
     const photoImages = allPhotos.map((f: any, i: number) => ({
-        url: f.baseUrl || f.productUrl || f.url, 
+        url: toGoogleDrivePublicImageUrl(f.baseUrl || f.productUrl || f.url || ""), 
         id: f.id || `img-${i}`,
         altText: f.filename || f.name,
         position: i + 1,
@@ -105,7 +106,10 @@ export function buildDraftListingImages(
         }))
     );
 
-    let mergedImages = [...photoImages, ...listingOnly];
+    let mergedImages = [...photoImages, ...listingOnly].map((img: any) => ({
+        ...img,
+        url: toGoogleDrivePublicImageUrl(img?.url || ""),
+    }));
 
     // 5. Apply Order (Use Primary's order)
     const order = primary.listingImageOrder || [];

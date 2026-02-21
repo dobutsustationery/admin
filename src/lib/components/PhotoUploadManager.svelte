@@ -169,9 +169,9 @@
           // Determine Permanent URL
           // Keep the canonical Drive API media URL so downstream flows always reference
           // the full-size original bytes rather than an expiring/resized thumbnail URL.
-          const permanentUrl = driveFile.apiUrl;
+          const permanentUrl = driveFile.publicUrl || driveFile.apiUrl;
           if (!permanentUrl) {
-              throw new Error("No Drive API media URL returned from upload");
+              throw new Error("No Drive public URL returned from upload");
           }
           
           // Broadcast Success

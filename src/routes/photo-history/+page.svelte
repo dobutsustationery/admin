@@ -13,6 +13,7 @@
   import ManualCropModal from "$lib/components/ManualCropModal.svelte";
   import { removeBackground } from "$lib/background-removal";
   import { autoColorCorrect } from "$lib/color-correction";
+  import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import { RawImage } from "@xenova/transformers"; // For color correct if needed or use simple canvas
 
   
@@ -98,9 +99,9 @@
           
           // 5. Complete Upload & Update History
           // Persist canonical full-size Drive media URL only.
-          const permanentUrl = result.apiUrl;
+          const permanentUrl = toGoogleDrivePublicImageUrl(result.publicUrl || result.apiUrl || "");
           if (!permanentUrl) {
-              throw new Error("Upload succeeded but returned no Drive API media URL.");
+              throw new Error("Upload succeeded but returned no Drive public URL.");
           }
 
           const action = complete_upload({ 
@@ -132,8 +133,8 @@
       // Re-dispatching as a completed upload effectively pushes this URL to the front
       const action = complete_upload({
           id: photoId,
-          permanentUrl: url,
-          webViewLink: url 
+          permanentUrl: toGoogleDrivePublicImageUrl(url),
+          webViewLink: toGoogleDrivePublicImageUrl(url) 
       });
 
       if ($user.uid) {
@@ -156,10 +157,10 @@
        const token = getStoredToken();
        const headers: any = {};
        
-       let fetchUrl = url;
+       let fetchUrl = toGoogleDrivePublicImageUrl(url);
        let candidateUrls: string[] = [];
        
-       // 1. Robustly Rewrite Drive URLs to API URLs
+       // 1. Normalize Drive URLs to public format first.
        // Matches: id=XYZ (query param) or /d/XYZ (path)
        let driveId = null;
        const idMatch = fetchUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
@@ -168,9 +169,11 @@
        const pathMatch = fetchUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
        if (pathMatch) driveId = pathMatch[1];
 
-       if (driveId) {
-            fetchUrl = `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media`;
-       } else if (fetchUrl.includes("googleusercontent.com")) {
+       const driveApiUrl = driveId
+         ? `https://www.googleapis.com/drive/v3/files/${driveId}?alt=media`
+         : "";
+
+       if (fetchUrl.includes("googleusercontent.com")) {
             // Google Photos baseUrls are more reliable with explicit dimension suffixes.
             const base = fetchUrl.replace(/=[a-z0-9,-]+$/i, "");
             candidateUrls = [
@@ -183,7 +186,6 @@
        }
 
        // 2. Configure Headers
-       // If it's the Drive API (googleapis.com), we NEED the token.
        // If it's a Photos Base URL (googleusercontent.com), we MUST NOT send the token (CORS).
        const isDriveApi = fetchUrl.includes("googleapis.com/drive");
        const isPhotosUrl = fetchUrl.includes("googleusercontent.com");
@@ -209,6 +211,18 @@
                }
            } catch {
                // Try next URL candidate.
+           }
+       }
+       if ((!res || !res.ok) && driveApiUrl) {
+           if (!token) {
+               throw new Error("Authentication missing. Please Switch Account to grant Drive permission.");
+           }
+           const apiAttempt = await fetch(driveApiUrl, {
+               headers: { Authorization: `Bearer ${token.access_token}` },
+               referrerPolicy: "no-referrer",
+           });
+           if (apiAttempt.ok) {
+               res = apiAttempt;
            }
        }
        if (!res || !res.ok) throw new Error("Failed to load image source");
@@ -319,9 +333,9 @@
           
           const result = await uploadImageToDrive(file, filename, folders.processedId, token.access_token);
           
-          const safeUrl = result.apiUrl;
+          const safeUrl = toGoogleDrivePublicImageUrl(result.publicUrl || result.apiUrl || "");
           if (!safeUrl) {
-              throw new Error("Upload succeeded but returned no Drive API media URL.");
+              throw new Error("Upload succeeded but returned no Drive public URL.");
           }
 
            const action = complete_upload({ 
