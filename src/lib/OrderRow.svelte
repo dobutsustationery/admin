@@ -2,6 +2,7 @@
   import { createEventDispatcher } from "svelte";
   import { goto } from "$app/navigation";
   import type { Item } from "./inventory";
+  import { makeInventoryItemKey } from "./sku";
   import SelectBox from "./SelectBox.svelte";
   import { store } from "./store";
   import ImageThumbnail from "./components/ImageThumbnail.svelte";
@@ -53,7 +54,7 @@
       </div>
     </td>
     <td>{item.description}</td>
-    <td on:click={() => itemHistory(`${item?.janCode}${item?.subtype}`)}
+    <td on:click={() => itemHistory(makeInventoryItemKey(item?.janCode || "", item?.subtype || ""))}
       >{item.janCode}</td
     >
     <td

@@ -34,6 +34,7 @@ import { ui } from "./ui-slice";
 import { logAction } from "./devtools-middleware";
 import { generateHandle } from "./handle-utils";
 import { buildDraftListingImages } from "./listing-image-logic";
+import { makeInventoryItemKey } from "./sku";
 
 const reducerObject = {
   names,
@@ -118,7 +119,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           oldItemId = itemKey;
           newBaseJan = janCode;
           newSubtype = subtype?.trim() || "";
-          newItemId = `${newBaseJan}${newSubtype}`;
+          newItemId = makeInventoryItemKey(newBaseJan, newSubtype);
           const oldItem = state.inventory.idToItem[oldItemId];
           if (oldItem) {
               oldBaseJan = oldItem.janCode;
@@ -133,7 +134,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               oldBaseJan = oldItem.janCode;
               newBaseJan = oldBaseJan;
               oldSubtype = oldItem.subtype;
-              newItemId = `${newBaseJan}${newSubtype}`;
+              newItemId = makeInventoryItemKey(newBaseJan, newSubtype);
           }
       } else if (isSubtypeUpdate) {
           const { id: itemKey, to: subtype } = action.payload;
@@ -144,7 +145,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               oldBaseJan = oldItem.janCode;
               newBaseJan = oldBaseJan;
               oldSubtype = oldItem.subtype;
-              newItemId = `${newBaseJan}${newSubtype}`;
+              newItemId = makeInventoryItemKey(newBaseJan, newSubtype);
           }
       }
 
@@ -792,7 +793,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                         const sourceItem = nextState.inventory.idToItem[sourceId];
                         const baseJan = sourceItem ? sourceItem.janCode : proposal.janCode;
                         // JAN + Option (No colon)
-                        let uniqueId = `${baseJan}${cleanOption}`;
+                        let uniqueId = makeInventoryItemKey(baseJan, cleanOption);
                         
                         return {
                            newId: uniqueId,
@@ -883,7 +884,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                    if (f.field === "subtype") {
                        const subtype = (f.value as string)?.trim() || "";
                        const baseJan = janBeforeUpdate;
-                       const renamedItemId = `${baseJan}${subtype}`;
+                       const renamedItemId = makeInventoryItemKey(baseJan, subtype);
                        if (
                            renamedItemId &&
                            renamedItemId !== currentItemId &&

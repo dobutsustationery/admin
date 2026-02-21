@@ -10,6 +10,7 @@
     rename_subtype,
     update_field,
   } from "./inventory";
+  import { makeInventoryItemKey } from "./sku";
   import { broadcast } from "./redux-firestore";
   import { store } from "./store";
   import ImageThumbnail from "./components/ImageThumbnail.svelte";
@@ -18,7 +19,7 @@
   export let subtype: string = "";
   export let otherTypes: string[] = [];
 
-  const key = `${code}${subtype}`;
+  const key = makeInventoryItemKey(code, subtype);
   let state = store.getState();
   let item: Item | null = null;
   let matched = true;
@@ -36,7 +37,7 @@
         links[item!.image] = true;
         matched = true;
         for (const otherType of otherTypes) {
-          const otherKey = `${code}${otherType}`;
+          const otherKey = makeInventoryItemKey(code, otherType);
           const otherItem = state.inventory.idToItem[otherKey];
           if (otherItem) {
              if (!links[otherItem.image]) {
@@ -88,7 +89,7 @@
       const from = item[field];
       if (to !== null && $user?.uid) {
         for (const otherType of otherTypes) {
-          const otherKey = `${code}${otherType}`;
+          const otherKey = makeInventoryItemKey(code, otherType);
           broadcast(
             firestore,
             $user.uid,
@@ -106,7 +107,7 @@
   }
   function updateSubtype(item: Item) {
     return (e: any) => {
-      const itemKey = `${code}${item.subtype}`;
+      const itemKey = makeInventoryItemKey(code, item.subtype);
       const subtype = e.detail || e.target.value;
       if ($user?.uid) {
         broadcast(firestore, $user.uid, rename_subtype({ itemKey, subtype }));
@@ -125,7 +126,7 @@
       if (selectedPic !== 0) {
         const to = imageItems[selectedPic].link;
         for (const otherType of otherTypes) {
-          const otherKey = `${code}${otherType}`;
+          const otherKey = makeInventoryItemKey(code, otherType);
           if ($user?.uid) {
             broadcast(
               firestore,
@@ -151,7 +152,7 @@
 </script>
 
 {#if key && item !== null}
-  {@const item = state.inventory.idToItem[`${code}${subtype}`]}
+  {@const item = state.inventory.idToItem[key]}
   <tr>
     <td>
       <div class="{dropdownOpen} dropdown">

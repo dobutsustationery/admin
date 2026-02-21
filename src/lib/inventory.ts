@@ -1,5 +1,10 @@
 import { createAction, createReducer } from "@reduxjs/toolkit";
 import { formatYen } from "./formatters";
+import {
+  type InventoryItemKey,
+  canonicalizeInventoryItemKey,
+  makeInventoryItemKey,
+} from "./sku";
 
 // TODO hceck item history for 4542804115635Silver
 export interface Item {
@@ -24,7 +29,7 @@ export interface Item {
   imagePosition?: number;
 }
 export interface LineItem {
-  itemKey: string;
+  itemKey: InventoryItemKey;
   qty: number;
 }
 export interface OrderInfo {
@@ -49,8 +54,8 @@ export interface InventoryState {
 
 export const inventory_synced = createAction("inventory_synced");
 
-export const hide_exception = createAction<{ itemKey: string }>("hide_exception");
-export const show_exception = createAction<{ itemKey: string }>("show_exception");
+export const hide_exception = createAction<{ itemKey: InventoryItemKey | string }>("hide_exception");
+export const show_exception = createAction<{ itemKey: InventoryItemKey | string }>("show_exception");
 
 export const update_item = createAction<{ id: string; item: Item }>(
   "update_item",
@@ -69,23 +74,23 @@ export const new_order = createAction<{
 }>("new_order");
 export const package_item = createAction<{
   orderID: string;
-  itemKey: string;
+  itemKey: InventoryItemKey | string;
   qty: number;
 }>("package_item");
 export const quantify_item = createAction<{
   orderID: string;
-  itemKey: string;
+  itemKey: InventoryItemKey | string;
   qty: number;
 }>("quantify_item");
 export const retype_item = createAction<{
   orderID: string;
-  itemKey: string;
+  itemKey: InventoryItemKey | string;
   janCode: string;
   subtype: string;
   qty: number;
 }>("retype_item");
 export const rename_subtype = createAction<{
-  itemKey: string;
+  itemKey: InventoryItemKey | string;
   subtype: string;
 }>("rename_subtype");
 export const delete_empty_order = createAction<{
@@ -103,7 +108,7 @@ export const make_sales = createAction<{
 }>("make_sales");
 export interface BulkImportItem {
   type: "new" | "update";
-  id: string; // janCode or itemKey
+  id: InventoryItemKey | string; // janCode or itemKey
   item: Item; // The full item object or partial update
 }
 
@@ -112,8 +117,8 @@ export const bulk_import_items = createAction<{
 }>("bulk_import_items");
 
 export const split_inventory_item = createAction<{
-  sourceId: string;
-  splits: { newId: string; qty: number; subtype: string }[];
+  sourceId: InventoryItemKey | string;
+  splits: { newId: InventoryItemKey; qty: number; subtype: string }[];
 }>("split_inventory_item");
 
 export function itemsLookIdentical(oldItem: Item, mergeItem: Item) {
@@ -381,7 +386,7 @@ export const inventory = createReducer(initialState, (r) => {
     if (state.idToItem[itemKey]) {
       if (field === "subtype") {
         const subtype = (incomingValue as string)?.trim() || "";
-        const mergeItemKey = `${state.idToItem[itemKey].janCode}${subtype}`;
+        const mergeItemKey = makeInventoryItemKey(state.idToItem[itemKey].janCode, subtype);
         
         if (itemKey === mergeItemKey) {
           const ts = (action as any).timestamp;
@@ -521,7 +526,10 @@ export const inventory = createReducer(initialState, (r) => {
       existingItem[0].qty += qty;
       //console.log(`Package existing item ${existingItem[0].itemKey} to ${existingItem[0].qty} (of ${existingItem.length} items) for ${orderID}`)
     } else {
-      state.orderIdToOrder[orderID].items.push({ itemKey, qty });
+      state.orderIdToOrder[orderID].items.push({
+        itemKey: canonicalizeInventoryItemKey(itemKey),
+        qty,
+      });
       //console.log(`Create item ${itemKey} to ${qty} for order ${orderID}`)
     }
     if (state.idToItem[itemKey] !== undefined) {
@@ -578,7 +586,10 @@ export const inventory = createReducer(initialState, (r) => {
         ].items.filter((i) => i.itemKey !== itemKey);
       }
     } else {
-      state.orderIdToOrder[orderID].items.push({ itemKey, qty });
+      state.orderIdToOrder[orderID].items.push({
+        itemKey: canonicalizeInventoryItemKey(itemKey),
+        qty,
+      });
     }
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty - priorQty;
@@ -608,7 +619,7 @@ export const inventory = createReducer(initialState, (r) => {
       const date = new Date(0);
       state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
     }
-    const newItemKey = `${janCode}${subtype}`;
+    const newItemKey = makeInventoryItemKey(janCode, subtype);
     if (newItemKey !== itemKey) {
       state.orderIdToOrder[orderID].items = state.orderIdToOrder[
         orderID
@@ -667,7 +678,7 @@ export const inventory = createReducer(initialState, (r) => {
     const subtype = action.payload.subtype?.trim() || "";
 
     if (state.idToItem[itemKey] !== undefined) {
-      const mergeItemKey = `${state.idToItem[itemKey].janCode}${subtype}`;
+      const mergeItemKey = makeInventoryItemKey(state.idToItem[itemKey].janCode, subtype);
       if (itemKey === mergeItemKey) {
         // Use action's timestamp for the event record.
         // Note: "rename_subtype" action payload doesn't seem to have a timestamp in the interface
@@ -852,7 +863,7 @@ export const inventory = createReducer(initialState, (r) => {
         console.log("Postitem: ", { ...postitem });
       }
       if (qty !== 0) {
-        items.push({ itemKey, qty });
+        items.push({ itemKey: makeInventoryItemKey(preitem.janCode, preitem.subtype), qty });
       }
     }
     const email = "dobutsustationery@gmail.com";

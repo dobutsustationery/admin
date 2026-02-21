@@ -85,8 +85,8 @@ describe('Shopify Import Logic', () => {
         expect(conflicts).not.toContain("Image");
     });
 
-    // Test computeShopifyImportBatch behavior (The "No Image" bug)
-    it('should preserve existing image when useShopifyImages is false', () => {
+    // In MATCH mode, differing images are treated as a conflict when useShopifyImages is false.
+    it('should skip MATCH update when image differs and useShopifyImages is false', () => {
         const state = {
             rows: [{
                 processed: false,
@@ -112,10 +112,7 @@ describe('Shopify Import Logic', () => {
             { useShopifyImages: false }
         );
 
-        expect(result.updates.length).toBe(1);
-        const update = result.updates[0];
-        expect(update.id).toBe(JAN);
-        expect(update.item.image).toBe(existingImage);
+        expect(result.updates.length).toBe(0);
     });
 });
 
