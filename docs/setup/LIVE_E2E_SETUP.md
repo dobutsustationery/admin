@@ -253,6 +253,24 @@ npm run test:live:e2e
 - Ensure env is sourced before run (`source .env.live.local`).
 - Re-run bootstrap to rotate refresh tokens.
 
+### `invalid_grant` when running live tests
+
+If Drive/Photos live tests fail with `invalid_grant`, your refresh token is stale/revoked or mismatched with the OAuth client.
+
+Rotate just the refresh tokens (without recreating project resources):
+
+```bash
+npm run setup:live:tokens
+```
+
+Then reload env and re-run:
+
+```bash
+set -a && source .env.live.local && set +a
+npm run test:live:doctor
+npm run test:live:contracts
+```
+
 ### Sandbox cleanup warning for Photos albums
 - Drive folders are cleaned automatically.
 - Photos albums may require periodic manual cleanup depending on API constraints/account policy.

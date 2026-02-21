@@ -10,6 +10,27 @@ describe.skipIf(!isLiveConfigured)("Google Photos Integration (@live)", () => {
   let accessToken: string;
 
   beforeAll(async () => {
+    // Provide a minimal localStorage shim for Node test environment.
+    if (typeof globalThis.localStorage === "undefined") {
+      const storage = new Map<string, string>();
+      Object.defineProperty(globalThis, "localStorage", {
+        value: {
+          getItem: (key: string) =>
+            storage.has(key) ? storage.get(key)! : null,
+          setItem: (key: string, value: string) => {
+            storage.set(key, String(value));
+          },
+          removeItem: (key: string) => {
+            storage.delete(key);
+          },
+          clear: () => {
+            storage.clear();
+          },
+        },
+        configurable: true,
+      });
+    }
+
     // Setup Tokens from E2E Envs
     const clientId = process.env.E2E_GOOGLE_CLIENT_ID!;
     const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET!;
@@ -20,18 +41,6 @@ describe.skipIf(!isLiveConfigured)("Google Photos Integration (@live)", () => {
     auth.setCredentials({ refresh_token: refreshToken });
     const tokenRes = await auth.getAccessToken();
     accessToken = tokenRes.token!;
-
-    // Mock getStoredToken to return our live token
-    // Use vi.spyOn? GooglePhotos.getStoredToken is exported function.
-    // We'll need to use `vi.spyOn(GooglePhotos, 'getStoredToken')` if we imported * as GP.
-    // Wait, ES modules are read-only live bindings. We can't spy on default exports easily if they are used internally?
-    // But internal usage calls `getStoredToken()`.
-    // If `google-photos.ts` was calling `exports.getStoredToken()`, mocking works.
-    // But it calls `getStoredToken()` directly.
-    // We might need to mock localStorage instead?
-
-    // Let's rely on localStorage Mock since `getStoredToken` reads from it.
-    // Happy DOM/JSDOM should be present in vitest environment (usually).
   });
 
   it("should authenticate with a valid token", () => {
