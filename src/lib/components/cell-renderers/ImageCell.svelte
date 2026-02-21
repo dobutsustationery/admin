@@ -4,7 +4,6 @@
 
   export let item: any;
   export let col: any;
-  export let index: number;
 
   const dispatch = createEventDispatcher();
 

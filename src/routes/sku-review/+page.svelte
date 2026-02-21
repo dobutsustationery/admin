@@ -6,6 +6,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import type { Item } from "$lib/inventory";
   import { hide_exception, show_exception } from "$lib/inventory";
+  import { canonicalizeInventoryItemKey } from "$lib/sku";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import { formatYen, formatEuro } from "$lib/formatters";
 
@@ -18,9 +19,17 @@
     if (!$user || !$user.uid) return;
     const isHidden = $store.inventory.hiddenExceptions?.[key];
     if (isHidden) {
-      broadcast(firestore, $user.uid, show_exception({ itemKey: key }));
+      broadcast(
+        firestore,
+        $user.uid,
+        show_exception({ itemKey: canonicalizeInventoryItemKey(key) }),
+      );
     } else {
-      broadcast(firestore, $user.uid, hide_exception({ itemKey: key }));
+      broadcast(
+        firestore,
+        $user.uid,
+        hide_exception({ itemKey: canonicalizeInventoryItemKey(key) }),
+      );
     }
   }
 

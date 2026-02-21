@@ -23,6 +23,11 @@ import {
   initialState as namesInitialState,
   remove_name,
 } from "$lib/names";
+import {
+  type InventoryItemKey,
+  canonicalizeInventoryItemKey,
+  makeInventoryItemKey,
+} from "$lib/sku";
 
 /**
  * Immutability Test Suite
@@ -73,10 +78,12 @@ function randomItem(): Item {
 }
 
 // Helper to get a random existing item key from state
-function getRandomItemKey(state: any): string | null {
+function getRandomItemKey(state: any): InventoryItemKey | null {
   const keys = Object.keys(state.inventory.idToItem);
   if (keys.length === 0) return null;
-  return keys[Math.floor(Math.random() * keys.length)];
+  return canonicalizeInventoryItemKey(
+    keys[Math.floor(Math.random() * keys.length)],
+  );
 }
 
 // Helper to get a random existing order ID from state
@@ -117,7 +124,7 @@ function generateRandomAction(state: any, actionNumber: number) {
   switch (actionType) {
     case "update_item": {
       const item = randomItem();
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       return update_item({ id, item });
     }
 
@@ -126,7 +133,7 @@ function generateRandomAction(state: any, actionNumber: number) {
       if (!itemKey) {
         // Create an item first if none exist
         const item = randomItem();
-        const id = `${item.janCode}${item.subtype}`;
+        const id = makeInventoryItemKey(item.janCode, item.subtype);
         return update_item({ id, item });
       }
       const item = state.inventory.idToItem[itemKey];
@@ -288,7 +295,7 @@ describe("reducer immutability", () => {
     const initialItems = 5;
     for (let i = 0; i < initialItems; i++) {
       const item = randomItem();
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       store.dispatch(update_item({ id, item }));
     }
 
@@ -365,7 +372,7 @@ describe("reducer immutability", () => {
     // Initialize with some data
     for (let i = 0; i < 3; i++) {
       const item = randomItem();
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       store.dispatch(update_item({ id, item }));
     }
 
@@ -429,7 +436,7 @@ describe("reducer immutability", () => {
     // Real test actions sequence (representative sample)
     const testActions = [
       update_item({
-        id: "4542804044355",
+        id: makeInventoryItemKey("4542804044355", ""),
         item: {
           pieces: 1,
           image: "https://cdn.askul.co.jp/img/product/3L1/KR41667_3L1.jpg",
@@ -447,7 +454,7 @@ describe("reducer immutability", () => {
       create_name({ id: "Subtype", name: "Red" }),
       create_name({ id: "Subtype", name: "Blue" }),
       update_item({
-        id: "4542804044362",
+        id: makeInventoryItemKey("4542804044362", "Red"),
         item: {
           pieces: 1,
           image: "https://cdn.askul.co.jp/img/product/3L1/KR41668_3L1.jpg",
@@ -469,22 +476,22 @@ describe("reducer immutability", () => {
       }),
       package_item({
         orderID: "TEST-ORDER-001",
-        itemKey: "4542804044355",
+        itemKey: makeInventoryItemKey("4542804044355", ""),
         qty: 2,
       }),
       update_field({
-        id: "4542804044355",
+        id: makeInventoryItemKey("4542804044355", ""),
         field: "qty",
         from: 12,
         to: 10,
       }),
       quantify_item({
         orderID: "TEST-ORDER-001",
-        itemKey: "4542804044355",
+        itemKey: makeInventoryItemKey("4542804044355", ""),
         qty: 3,
       }),
       rename_subtype({
-        itemKey: "4542804044362Red",
+        itemKey: makeInventoryItemKey("4542804044362", "Red"),
         subtype: "Blue",
       }),
       delete_empty_order({

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { makeInventoryItemKey } from "$lib/sku";
 import {
   archive_inventory,
   delete_empty_order,
@@ -31,7 +32,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       const nextState = inventory(initialState, update_item({ id, item }));
       expect(nextState.idToItem[id]).toBeDefined();
       expect(nextState.idToItem[id].qty).toBe(10);
@@ -55,7 +56,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
       expect(nextState.idToItem[id].qty).toBe(10);
 
@@ -77,7 +78,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
       expect(nextState.idToItem[id].shipped).toBe(2);
 
@@ -99,7 +100,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       const nextState = inventory(initialState, update_item({ id, item }));
       expect(nextState.idToItem[id].shipped).toBeDefined();
       expect(nextState.idToItem[id].shipped).toBe(0);
@@ -118,7 +119,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       const nextState = inventory(initialState, update_item({ id, item }));
       expect(nextState.idToHistory[id]).toBeDefined();
       expect(nextState.idToHistory[id].length).toBe(1);
@@ -139,7 +140,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       nextState = inventory(
@@ -167,7 +168,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       nextState = inventory(
@@ -190,7 +191,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
       const initialHistoryLength = nextState.idToHistory[id].length;
 
@@ -214,7 +215,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       nextState = inventory(
@@ -271,7 +272,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       nextState = inventory(nextState, update_item({ id, item }));
       nextState = inventory(
         nextState,
@@ -310,7 +311,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -338,7 +339,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -363,7 +364,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -394,7 +395,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "NEW-ORDER";
@@ -420,7 +421,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
       const initialHistoryLength = nextState.idToHistory[id].length;
 
@@ -448,7 +449,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -475,7 +476,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -506,7 +507,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -535,7 +536,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
       const initialHistoryLength = nextState.idToHistory[id].length;
 
@@ -563,7 +564,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "NEW-ORDER";
@@ -602,8 +603,8 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id1 = `${item1.janCode}${item1.subtype}`;
-      const id2 = `${item2.janCode}${item2.subtype}`;
+      const id1 = makeInventoryItemKey(item1.janCode, item1.subtype);
+      const id2 = makeInventoryItemKey(item2.janCode, item2.subtype);
 
       let nextState = inventory(
         initialState,
@@ -663,8 +664,8 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id1 = `${item1.janCode}${item1.subtype}`;
-      const id2 = `${item2.janCode}${item2.subtype}`;
+      const id1 = makeInventoryItemKey(item1.janCode, item1.subtype);
+      const id2 = makeInventoryItemKey(item2.janCode, item2.subtype);
 
       let nextState = inventory(
         initialState,
@@ -724,8 +725,8 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id1 = `${item1.janCode}${item1.subtype}`;
-      const id2 = `${item2.janCode}${item2.subtype}`;
+      const id1 = makeInventoryItemKey(item1.janCode, item1.subtype);
+      const id2 = makeInventoryItemKey(item2.janCode, item2.subtype);
 
       let nextState = inventory(
         initialState,
@@ -782,8 +783,8 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id1 = `${item1.janCode}${item1.subtype}`;
-      const id2 = `${item2.janCode}${item2.subtype}`;
+      const id1 = makeInventoryItemKey(item1.janCode, item1.subtype);
+      const id2 = makeInventoryItemKey(item2.janCode, item2.subtype);
 
       let nextState = inventory(
         initialState,
@@ -819,7 +820,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -861,7 +862,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       nextState = inventory(
@@ -869,7 +870,7 @@ describe("inventory reducer", () => {
         rename_subtype({ itemKey: id, subtype: "Blue" }),
       );
 
-      const newId = `${item.janCode}Blue`;
+      const newId = makeInventoryItemKey(item.janCode, "Blue");
       expect(nextState.idToItem[newId]).toBeDefined();
       expect(nextState.idToItem[newId].subtype).toBe("Blue");
       expect(nextState.idToItem[newId].qty).toBe(10);
@@ -901,8 +902,8 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id1 = `${item1.janCode}${item1.subtype}`;
-      const id2 = `${item2.janCode}${item2.subtype}`;
+      const id1 = makeInventoryItemKey(item1.janCode, item1.subtype);
+      const id2 = makeInventoryItemKey(item2.janCode, item2.subtype);
 
       let nextState = inventory(
         initialState,
@@ -945,8 +946,8 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id1 = `${item1.janCode}${item1.subtype}`;
-      const id2 = `${item2.janCode}${item2.subtype}`;
+      const id1 = makeInventoryItemKey(item1.janCode, item1.subtype);
+      const id2 = makeInventoryItemKey(item2.janCode, item2.subtype);
 
       let nextState = inventory(
         initialState,
@@ -977,7 +978,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -991,7 +992,7 @@ describe("inventory reducer", () => {
         rename_subtype({ itemKey: id, subtype: "Blue" }),
       );
 
-      const newId = `${item.janCode}Blue`;
+      const newId = makeInventoryItemKey(item.janCode, "Blue");
       expect(
         nextState.orderIdToOrder[orderID].items.find(
           (i) => i.itemKey === newId,
@@ -1015,7 +1016,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const beforeState = nextState;
@@ -1043,7 +1044,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       nextState = inventory(
@@ -1051,7 +1052,7 @@ describe("inventory reducer", () => {
         rename_subtype({ itemKey: id, subtype: "Blue" }),
       );
 
-      const newId = `${item.janCode}Blue`;
+      const newId = makeInventoryItemKey(item.janCode, "Blue");
       expect(nextState.idToHistory[id]).toBeDefined();
       expect(nextState.idToHistory[newId]).toBeDefined();
     });
@@ -1088,7 +1089,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const orderID = "ORDER-001";
@@ -1126,7 +1127,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
@@ -1152,7 +1153,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
@@ -1181,7 +1182,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
       const initialHistoryLength = nextState.idToHistory[id].length;
 
@@ -1205,7 +1206,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
 
       // Create state with item but no history
       const stateWithoutHistory = {
@@ -1239,7 +1240,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
@@ -1275,7 +1276,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
@@ -1311,7 +1312,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
@@ -1347,7 +1348,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
@@ -1382,7 +1383,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";
@@ -1416,7 +1417,7 @@ describe("inventory reducer", () => {
         creationDate: "2024-01-01",
         timestamp: 0,
       };
-      const id = `${item.janCode}${item.subtype}`;
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Archive-2024-01";

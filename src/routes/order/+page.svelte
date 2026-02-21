@@ -10,6 +10,7 @@
     quantify_item,
     retype_item,
   } from "$lib/inventory";
+  import { canonicalizeInventoryItemKey } from "$lib/sku";
   import OrderRow from "$lib/OrderRow.svelte";
   import { broadcast } from "$lib/redux-firestore";
   import { store } from "$lib/store";
@@ -42,7 +43,15 @@
     }
     if (state.inventory.idToItem[itemKey] && orderID !== null && $user.uid) {
       const qty = 1;
-      broadcast(firestore, $user.uid, package_item({ orderID, itemKey, qty }));
+      broadcast(
+        firestore,
+        $user.uid,
+        package_item({
+          orderID,
+          itemKey: canonicalizeInventoryItemKey(itemKey),
+          qty,
+        }),
+      );
     }
   }
   function snapshot() {
@@ -56,7 +65,11 @@
         broadcast(
           firestore,
           $user.uid,
-          quantify_item({ orderID, itemKey, qty }),
+          quantify_item({
+            orderID,
+            itemKey: canonicalizeInventoryItemKey(itemKey),
+            qty,
+          }),
         );
       }
     };

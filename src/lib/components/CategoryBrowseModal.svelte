@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher, onMount, tick } from "svelte";
   import { fade, fly } from "svelte/transition";
 
   export let isOpen = false;
@@ -8,6 +8,7 @@
   const dispatch = createEventDispatcher();
 
   let searchTerm = "";
+  let searchInput: HTMLInputElement | null = null;
   let categories: string[] = [];
   let loading = true;
   let error = "";
@@ -47,6 +48,12 @@
     .filter((c) => c.toLowerCase().includes(searchTerm.toLowerCase()))
     .slice(0, 100); // Limit to 100 for performance
 
+  $: if (isOpen) {
+    searchTerm = "";
+    // Focus after the modal opens without relying on autofocus.
+    tick().then(() => searchInput?.focus());
+  }
+
   function select(cat: string) {
     dispatch("select", cat);
     close();
@@ -82,7 +89,7 @@
           placeholder="Search Shopify categories (e.g. 'Stationery' or 'Pens')..."
           bind:value={searchTerm}
           class="search-input"
-          autofocus
+          bind:this={searchInput}
         />
       </div>
 

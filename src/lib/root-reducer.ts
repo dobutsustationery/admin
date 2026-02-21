@@ -39,7 +39,7 @@ import { ui } from "./ui-slice";
 import { logAction } from "./devtools-middleware";
 import { generateHandle } from "./handle-utils";
 import { buildDraftListingImages } from "./listing-image-logic";
-import { makeInventoryItemKey } from "./sku";
+import { canonicalizeInventoryItemKey, makeInventoryItemKey } from "./sku";
 
 const reducerObject = {
   names,
@@ -951,7 +951,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           });
 
           const splitAction = {
-            ...split_inventory_item({ sourceId, splits }),
+            ...split_inventory_item({
+              sourceId: canonicalizeInventoryItemKey(sourceId),
+              splits,
+            }),
             _ephemeral: true,
             timestamp: action.timestamp || action._timestamp,
           };

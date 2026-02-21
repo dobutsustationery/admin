@@ -55,10 +55,10 @@ export interface InventoryState {
 export const inventory_synced = createAction("inventory_synced");
 
 export const hide_exception = createAction<{
-  itemKey: InventoryItemKey | string;
+  itemKey: InventoryItemKey;
 }>("hide_exception");
 export const show_exception = createAction<{
-  itemKey: InventoryItemKey | string;
+  itemKey: InventoryItemKey;
 }>("show_exception");
 
 export const update_item = createAction<{ id: string; item: Item }>(
@@ -78,23 +78,23 @@ export const new_order = createAction<{
 }>("new_order");
 export const package_item = createAction<{
   orderID: string;
-  itemKey: InventoryItemKey | string;
+  itemKey: InventoryItemKey;
   qty: number;
 }>("package_item");
 export const quantify_item = createAction<{
   orderID: string;
-  itemKey: InventoryItemKey | string;
+  itemKey: InventoryItemKey;
   qty: number;
 }>("quantify_item");
 export const retype_item = createAction<{
   orderID: string;
-  itemKey: InventoryItemKey | string;
+  itemKey: InventoryItemKey;
   janCode: string;
   subtype: string;
   qty: number;
 }>("retype_item");
 export const rename_subtype = createAction<{
-  itemKey: InventoryItemKey | string;
+  itemKey: InventoryItemKey;
   subtype: string;
 }>("rename_subtype");
 export const delete_empty_order = createAction<{
@@ -121,7 +121,7 @@ export const bulk_import_items = createAction<{
 }>("bulk_import_items");
 
 export const split_inventory_item = createAction<{
-  sourceId: InventoryItemKey | string;
+  sourceId: InventoryItemKey;
   splits: { newId: InventoryItemKey; qty: number; subtype: string }[];
 }>("split_inventory_item");
 
