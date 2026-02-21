@@ -1,0 +1,13 @@
+Check whether there is some issue here, I told Gemini this fix was wrong:
+ Summary of changes:
+   - Fixed `saveVariantPrompt`: In the listing creation page, the action to save the updated subtype
+     detection prompt now uses dispatchBroadcast instead of a local store dispatch. This ensures the change
+     is persisted to Firestore and synchronized across all users.
+   - Improved `dispatchBroadcast`: Updated the dispatchBroadcast implementation in the listing detail page
+     to support thunks. This ensures that any thunk dispatched through it (like those for title or
+     description regeneration) correctly broadcasts its internal actions.
+   - Synchronized Review Start: The handleStartReview action in the listing creation page now uses
+     dispatchBroadcast to ensure that starting a review batch is reflected for all connected users.
+   - Verified Prompt Persistence: Confirmed that title and description prompt updates are correctly
+     broadcasted whenever a regeneration is triggered, as the underlying thunks use the provided
+     broadcast-capable dispatch.
