@@ -48,6 +48,8 @@
     "data:import": "node scripts/transfer-data.js",
     "data:transfer": "node scripts/transfer-data.js",
     "shopify:sync": "bun scripts/shopify-sync.ts",
+    "shopify:sync:request": "bun scripts/shopify-sync-request.ts",
+    "shopify:sync:worker": "bun scripts/shopify-sync-worker.ts",
     "deploy": "npm run deploy:production",
     "functions:install": "npm --prefix functions install",
     "deploy:functions": "firebase deploy --only functions",

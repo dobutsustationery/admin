@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/stores";
   import { onMount } from "svelte";
+  import { addDoc, collection, serverTimestamp } from "firebase/firestore";
   import { store } from "$lib/store";
   import {
     update_listing,
@@ -444,9 +445,12 @@
       return;
     }
 
-    const action = {
-      type: "shopify_sync_listing_request",
-      payload: {
+    isQueueingSync = true;
+    syncMessage = "";
+
+    try {
+      await addDoc(collection(firestore, "shopify_sync"), {
+        eventType: "sync_requested",
         requestId,
         handle,
         listing: listingSnapshot,
@@ -454,14 +458,11 @@
         source: "listing-detail",
         requestedBy: uid,
         requestedAt: Date.now(),
-      },
-    };
-
-    isQueueingSync = true;
-    syncMessage = "";
-
-    try {
-      await broadcast(firestore, uid, action as any);
+        payloadVersion: 1,
+        createdAtMs: Date.now(),
+        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+      });
       syncMessage = `Queued Shopify sync for '${handle}'. It will sync automatically.`;
     } catch (error) {
       syncMessage =
