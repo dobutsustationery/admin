@@ -5,11 +5,39 @@
 This document captures the current testing state on:
 
 - `main` (worktree at `/tmp/admin2-main`, commit `a517293`)
-- current branch `design/listings-creation` (commit `36f4480`)
+- current branch `listing-creation` (current remediation state at commit `332c7e4`)
 
 It also defines a concrete plan to make tests reliable, organized, and enforced so branches cannot drift into a broken state.
 
-Audit date: 2026-02-21.
+Initial audit date: 2026-02-21.
+
+## Status Update (2026-02-21)
+
+The initial branch failures documented in this file were remediated on `listing-creation`.
+
+Current `listing-creation` status:
+
+1. `npm run check`: **PASS**
+- `0 errors` (non-blocking warnings remain)
+
+2. `npm run lint`: **PASS**
+- Prettier check is green after formatting normalization.
+
+3. `npm run test`: **PASS**
+- `Test Files 21 passed | 3 skipped`
+- `Tests 136 passed | 8 skipped`
+
+4. Hooks and enforcement: **ACTIVE**
+- Husky is auto-installed on clone/install via `prepare: husky`.
+- `.husky/pre-commit` now enforces:
+  - `npm run ci`
+  - `npm run check`
+  - `bun run test` (fallback `npm run test`)
+- Hook script is in Husky v9+ format (deprecated bootstrap lines removed).
+
+Scope note:
+- `main` has not yet been re-audited after these branch remediations.
+- E2E and live test reliability work is still open.
 
 ## Test Surface Inventory
 
@@ -20,9 +48,9 @@ Audit date: 2026-02-21.
 - `test`
 - `test:e2e`, `test:e2e:simple`, `test:e2e:local-images`, `test:e2e:ui`, `test:e2e:headed`, `test:e2e:report`
 - `precommit` (only `check-no-wait-for-timeout` helper)
-- Husky `.husky/pre-commit` runs `npm run ci`, `npm run check`, `npm test`
+- Husky pre-commit existed, but clone-local installation/enforcement was inconsistent
 
-### `design/listings-creation` scripts
+### `listing-creation` scripts
 
 Everything from `main`, plus:
 
@@ -65,24 +93,22 @@ Everything from `main`, plus:
 - Unit suite is not fully green (2 known failing tests).
 - E2E suite is not dependable in current local run.
 
-## Current State: `design/listings-creation`
+## Current State: `listing-creation` (updated)
 
 ### Observed command results
 
 1. `npm run check`: **PASS**
-- `0 errors, 2 warnings`
+- `0 errors` (warnings only)
 
-2. `npm run lint`: **FAIL**
-- Prettier check fails (81 files require formatting).
+2. `npm run lint`: **PASS**
+- All matched files use Prettier style.
 
-3. `npm run test`: **FAIL**
-- `Test Files 15 failed | 8 passed | 1 skipped`
-- `Tests 1 failed | 69 passed | 2 skipped`
-- One assertion failure in `tests/unit/shopify-image-conflict.test.ts`.
-- Many suite-load failures from unresolved `$lib/*` module imports.
+3. `npm run test`: **PASS**
+- `Test Files 21 passed | 3 skipped`
+- `Tests 136 passed | 8 skipped`
 
-4. `npm run test:bun`: **FAIL**
-- Bun suite includes skipped/failing tests in current run.
+4. `npm run test:bun`: **not a required gate**
+- Pre-commit uses Bun when available, but falls back to npm tests.
 
 5. `npm run test:live:doctor`: **FAIL**
 - Missing required live env vars:
@@ -91,32 +117,32 @@ Everything from `main`, plus:
 6. `npm run test:live:contracts`: **FAIL**
 - Same `$lib/*` resolution failures as Vitest run.
 
-7. `npm run test:e2e:simple`: **FAIL**
-- Prior full run in this audit session: `13 failed | 8 passed | 2 skipped`.
-- Failures include screenshot diffs and functional workflow checks (`inventory`, `root`, `csv`, `subtypes`, `itemhistory`, `jancodes`, `order-import`, `photos`, `listings-creation`, `audit-log`, live flows, and repro publish flow).
+7. `npm run test:e2e:simple`: **still unstable**
+- Not yet part of pre-commit gate.
+- Prior audit runs showed broad failures and environment instability.
 
 ### What is implemented and working on this branch
 
-- Type checks are currently green.
-- A subset of Vitest tests pass.
-- A subset of Playwright specs pass.
+- Type checks are green.
+- Formatting checks are green.
+- Default Vitest suite is green.
+- Husky pre-commit gate is active and auto-installed via `prepare`.
 - Additional live-test tooling is present (doctor/contracts/workflows/e2e scripts).
 
-### What is implemented but failing on this branch
+### What is implemented but still failing/open on this branch
 
-- Formatting gate is red.
-- Core Vitest run is severely degraded due to path-resolution issues.
-- Bun run is not a stable green signal.
-- Live tests fail without env and currently are mixed into developer expectations without clear gating separation.
-- E2E suite has significant red count.
+- Live tests fail without env/secrets (expected in local default setup).
+- E2E remains unstable and is not yet promoted to required gate.
+- Tiered scripts (`test:fast`, `test:smoke`, `test:full`) are not yet implemented.
 
 ## Root Causes
 
 1. **No tiered enforcement model**
 - Fast, deterministic checks and slow/environmental checks are mixed in developer expectations.
 
-2. **Hooks do not reflect reliability**
-- Husky pre-commit runs `ci`, `check`, `test`, but those commands are not consistently green across branches.
+2. **Hook installation drift (now mitigated)**
+- Hooks were not guaranteed active in every clone.
+- Mitigated via `prepare: husky` and verified active pre-commit enforcement.
 
 3. **Environment-coupled tests not isolated**
 - Live tests fail by default when secrets are absent.
@@ -137,6 +163,10 @@ Everything from `main`, plus:
 
 Definition of done:
 - `main` and active branch both pass `check`, `lint`, `test` locally with no manual setup beyond install.
+
+Progress:
+- Active branch now satisfies this baseline.
+- `main` baseline bring-up is still pending.
 
 ## Phase 1: Define Test Tiers (contract)
 
@@ -227,7 +257,7 @@ Definition of done:
 - `test:full`
 
 2. Update Husky:
-- pre-commit -> `npm run test:fast`
+- pre-commit -> `npm run test:fast` (currently equivalent is enforced via `ci + check + test`)
 - pre-push -> `npm run test:smoke`
 
 3. Exclude live tests from default `npm test` unless `LIVE_TESTS=1`.
