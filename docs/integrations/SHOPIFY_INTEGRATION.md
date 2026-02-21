@@ -167,10 +167,16 @@ Credentials are managed via `.env` files. **Do not commit these to git.**
 ```bash
 # Public (Client)
 VITE_SHOPIFY_STORE_URL=your-store.myshopify.com
-VITE_SHOPIFY_API_VERSION=2024-01
+VITE_SHOPIFY_API_VERSION=2026-01
 
 # Private (Server)
-SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxx
+# Option A (static token, if available)
+# SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxx
+
+# Option B (Dev Dashboard app credentials)
+SHOPIFY_CLIENT_ID=xxxxxxxxxxxxxxxx
+SHOPIFY_CLIENT_SECRET=xxxxxxxxxxxxxxxx
+
 SHOPIFY_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxx
 SHOPIFY_SYNC_ENABLED=true
 ```
@@ -193,10 +199,20 @@ SHOPIFY_SYNC_ENABLED=true
 
 ### Firebase Functions Setup
 
-Provide runtime env vars for the functions deployment:
+Use local gitignored env files in repo root:
+- `./.env.emulator`
+- `./.env.staging`
+- `./.env.production`
+
+Each file should include:
 - `SHOPIFY_STORE_URL`
-- `SHOPIFY_ACCESS_TOKEN`
+- `SHOPIFY_ACCESS_TOKEN` OR (`SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET`)
 - `SHOPIFY_API_VERSION`
+
+Deployment/runtime wiring:
+- `npm run emulators` prepares `functions/.env` from `./.env.emulator`.
+- `npm run deploy:staging` prepares `functions/.env` from `./.env.staging` and deploys hosting + functions.
+- `npm run deploy:production` prepares `functions/.env` from `./.env.production` and deploys hosting + functions.
 
 For a full step-by-step local setup and validation flow (Firebase emulators + functions + Shopify development store), see:
 - [Shopify Sync Runbook (Emulators + Dev Store)](./SHOPIFY_SYNC_EMULATOR_DEVSTORE_RUNBOOK.md)
@@ -219,9 +235,19 @@ npm run shopify:sync:worker -- --firestore-env production --request-doc-id <docI
 3.  **Scopes**:
     *   `read_products`, `write_products`
     *   `read_inventory`, `write_inventory`
+    *   `read_locations` (required for `/locations.json` lookup used by inventory sync)
     *   `read_orders`
-4.  **Install App**: This generates the `Admin API access token` (`shpat_...`).
-5.  **Webhooks**:
+4.  **Install app**.
+5.  In app credentials, copy:
+    * `Client ID`
+    * `Client secret`
+6.  Use those in your `.env.*` file:
+    * `SHOPIFY_CLIENT_ID=...`
+    * `SHOPIFY_CLIENT_SECRET=...`
+7.  If your app UI also provides a static `Admin API access token` (`shpat_...`), you may use:
+    * `SHOPIFY_ACCESS_TOKEN=...`
+    instead of client credentials.
+8.  **Webhooks**:
     *   Register `orders/create` and `products/update`.
     *   Copy the `Client secret` to `SHOPIFY_WEBHOOK_SECRET`.
 

@@ -24,7 +24,11 @@ You monitor derived request status at `/sync-status`.
    - `write_products`
    - `read_inventory`
    - `write_inventory`
-3. Admin API access token (`shpat_...`).
+   - `read_locations` (required to resolve location ID before inventory sync)
+3. Shopify app credentials from your dev store app:
+   - `Client ID`
+   - `Client secret`
+   - (optional) static Admin API token if your app provides one
 4. Firebase CLI installed and logged in.
 5. Local repo dependencies installed (`npm install`).
 6. Functions dependencies installed:
@@ -32,19 +36,40 @@ You monitor derived request status at `/sync-status`.
    npm run functions:install
    ```
 
-## 3. Configure Shopify Credentials for Local Testing
+## 3. Configure Shopify Credentials via Local `.env` Files
 
-Use shell env vars before starting emulators.
+Create these gitignored files in the repo root:
+
+1. `./.env.emulator` (used for local emulators)
+2. `./.env.staging` (used for staging deploy)
+3. `./.env.production` (used for production deploy)
+
+Minimum required values for each file:
 
 ```bash
-export SHOPIFY_STORE_URL="your-dev-store.myshopify.com"
-export SHOPIFY_ACCESS_TOKEN="shpat_xxxxxxxxx"
-export SHOPIFY_API_VERSION="2024-01"
+SHOPIFY_STORE_URL=your-store.myshopify.com
+SHOPIFY_API_VERSION=2026-01
+
+# Option A: Static token (if available)
+# SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxx
+
+# Option B: Dev Dashboard credentials (recommended)
+SHOPIFY_CLIENT_ID=xxxxxxxxxxxxxxxx
+SHOPIFY_CLIENT_SECRET=xxxxxxxxxxxxxxxx
 ```
 
-Notes:
-- Do not commit these values.
-- Keep this in your shell session only.
+How this is used:
+- `npm run emulators` automatically prepares `functions/.env` from `./.env.emulator`.
+- `npm run deploy:staging` automatically prepares `functions/.env` from `./.env.staging`.
+- `npm run deploy:production` automatically prepares `functions/.env` from `./.env.production`.
+
+No manual shell `export` is required.
+
+Where to find values in Shopify:
+1. Open your store admin (for example `DobutsuDev`) -> `Apps and sales channels`.
+2. Open your app (created in Dev Dashboard).
+3. Copy `Client ID` and `Client secret`.
+4. Store domain is your `SHOPIFY_STORE_URL` (for example `dobutsudev.myshopify.com`).
 
 ## 4. Start Local Stack (App + Firestore/Auth/Functions Emulators)
 
@@ -127,7 +152,10 @@ Verify outcomes in `/sync-status` (same as browser flow).
    - Confirm event has `eventType == sync_requested`.
 
 2. Immediate `sync_failed` with missing env vars:
-   - Ensure `SHOPIFY_STORE_URL` and `SHOPIFY_ACCESS_TOKEN` are exported in the shell that started emulators.
+   - Ensure `./.env.emulator` has `SHOPIFY_STORE_URL` and one credential mode:
+     - `SHOPIFY_ACCESS_TOKEN`, or
+     - `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET`.
+   - Re-run `npm run emulators` (it regenerates `functions/.env` automatically).
 
 3. `sync_api_call` failures on product upsert:
    - Validate token scopes in Shopify custom app.
@@ -143,14 +171,13 @@ Verify outcomes in `/sync-status` (same as browser flow).
 
 ## 10. Promote to Staging/Production
 
-1. Deploy functions:
+1. Put Shopify creds in `./.env.staging` or `./.env.production`.
+2. Deploy:
    ```bash
-   npm run deploy:functions
+   npm run deploy:staging
+   # or
+   npm run deploy:production
    ```
-2. Set runtime env vars for deployed functions:
-   - `SHOPIFY_STORE_URL`
-   - `SHOPIFY_ACCESS_TOKEN`
-   - `SHOPIFY_API_VERSION`
 3. Perform one canary listing sync from UI.
 4. Validate `/sync-status` and Shopify admin before broader use.
 
