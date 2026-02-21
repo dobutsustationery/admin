@@ -1,0 +1,81 @@
+{
+  "source": "test-data/firestore-export.json",
+  "totalBroadcastDocs": 3700,
+  "totalActionTypes": 11,
+  "dirtyTypesFromAudit": [
+    "listingCreation/add_proposals",
+    "make_sales",
+    "update_item",
+    "update_field",
+    "retype_item",
+    "orderImport/resolve_conflict",
+    "photos/select_photos"
+  ],
+  "dirtyTypesPresentInProduction": [
+    "update_item",
+    "update_field",
+    "retype_item",
+    "make_sales"
+  ],
+  "dirtyIntersection": [
+    {
+      "type": "update_item",
+      "count": 1225
+    },
+    {
+      "type": "update_field",
+      "count": 456
+    },
+    {
+      "type": "retype_item",
+      "count": 250
+    },
+    {
+      "type": "make_sales",
+      "count": 1
+    }
+  ],
+  "diagnostics": {
+    "update_field": {
+      "total": 456,
+      "withFrom": 456,
+      "missingFrom": 0,
+      "withTo": 456,
+      "fieldCounts": {
+        "description": 139,
+        "qty": 60,
+        "hsCode": 195,
+        "image": 28,
+        "pieces": 34
+      }
+    },
+    "make_sales": {
+      "total": 1,
+      "withDate": 1,
+      "dateTypeCounts": {
+        "object": 1
+      }
+    },
+    "update_item": {
+      "total": 1225,
+      "payloadHasItem": 1225,
+      "itemHasQty": 1225,
+      "itemHasShipped": 106,
+      "itemHasTimestamp": 0,
+      "itemHasCreationDate": 0
+    },
+    "retype_item": {
+      "total": 250,
+      "withQty": 250,
+      "withJanCode": 250,
+      "withSubtype": 250
+    },
+    "listingCreation/add_proposals": {
+      "total": 0,
+      "payloadIsArray": 0,
+      "proposalsWithVariantsQty": 0,
+      "proposalsTotal": 0
+    }
+  },
+  "generatedAt": "2026-02-20T02:35:50.558Z"
+}
