@@ -3,4 +3,11 @@
 
 npm run ci
 npm run check
-npm test
+
+if command -v bun >/dev/null 2>&1; then
+  echo "Running pre-commit tests with bun..."
+  bun run test
+else
+  echo "Running pre-commit tests with npm..."
+  npm run test
+fi
