@@ -9,7 +9,14 @@ describe("listing handle update logic", () => {
       subtype: "A",
       description: "Item A",
       handle: "H1",
-      qty: 1, price: 100, shipped: 0, pieces: 1, creationDate: "", timestamp: 0, hsCode: "", image: ""
+      qty: 1,
+      price: 100,
+      shipped: 0,
+      pieces: 1,
+      creationDate: "",
+      timestamp: 0,
+      hsCode: "",
+      image: "",
     };
     const itemB: Item = { ...itemA, subtype: "B", description: "Item B" };
     const idA = "123A";
@@ -27,7 +34,7 @@ describe("listing handle update logic", () => {
     // Move A to H2
     state = rootReducer(
       state,
-      update_field({ id: idA, field: "handle", from: "H1", to: "H2" })
+      update_field({ id: idA, field: "handle", from: "H1", to: "H2" }),
     );
 
     // H1 should STILL exist because B is there
@@ -37,7 +44,7 @@ describe("listing handle update logic", () => {
     // Move B to H2
     state = rootReducer(
       state,
-      update_field({ id: idB, field: "handle", from: "H1", to: "H2" })
+      update_field({ id: idB, field: "handle", from: "H1", to: "H2" }),
     );
 
     // H1 should be gone now

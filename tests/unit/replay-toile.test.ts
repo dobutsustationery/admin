@@ -7,13 +7,15 @@ describe("Replay Toile SKU Fail", () => {
   it("synchronizes item description with listing title after approval replay", () => {
     const filePath = join(process.cwd(), "test-data", "toile-sku-fail.jsonl");
     const content = readFileSync(filePath, "utf-8");
-    const lines = content.split(String.fromCharCode(10)).filter(l => l.trim());
+    const lines = content
+      .split(String.fromCharCode(10))
+      .filter((l) => l.trim());
 
     let state = rootReducer(undefined, { type: "INIT" });
 
     lines.forEach((line) => {
-        const action = JSON.parse(line);
-        state = rootReducer(state, action);
+      const action = JSON.parse(line);
+      state = rootReducer(state, action);
     });
 
     // Verification

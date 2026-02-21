@@ -18,7 +18,12 @@
     type Unsubscribe,
   } from "firebase/firestore";
   import { onMount } from "svelte";
-  import { store, inventory_synced, snapshotMetadata, hydrate } from "$lib/store";
+  import {
+    store,
+    inventory_synced,
+    snapshotMetadata,
+    hydrate,
+  } from "$lib/store";
   import { user } from "$lib/user-store";
   import type { AnyAction } from "$lib/store";
   import { watchBroadcastActions } from "$lib/redux-firestore";
@@ -29,7 +34,8 @@
   import type { ShopifySyncEvent } from "$lib/shopify-sync-model";
 
   // Start hydration immediately
-  const hydrationPromise = typeof window !== "undefined" ? hydrate() : Promise.resolve();
+  const hydrationPromise =
+    typeof window !== "undefined" ? hydrate() : Promise.resolve();
 
   // Define User interface
   interface User {
@@ -45,8 +51,6 @@
   let loadingState: "initializing" | "loading" | "ready" = "initializing";
   let navigationOpen = false;
 
-
-
   function handleUserChange(firebaseUser: any) {
     if (firebaseUser && firebaseUser.email) {
       if (typeof window !== "undefined") {
@@ -55,7 +59,9 @@
           const maxAttempts = 3;
 
           while (attempts < maxAttempts) {
-            const storedTokenString = localStorage.getItem("google_photos_access_token");
+            const storedTokenString = localStorage.getItem(
+              "google_photos_access_token",
+            );
             let hasAllScopes = false;
 
             if (storedTokenString) {
@@ -64,15 +70,21 @@
                 if (token && token.scope) {
                   const scopeStr = token.scope;
                   // Strict Check: Must have Picker AND (Drive Readonly OR Drive File OR Drive Full)
-                  const hasPicker = scopeStr.includes("photospicker.mediaitems.readonly") || scopeStr.includes("cloud-platform");
-                  const hasDrive = scopeStr.includes("drive.readonly") || 
-                                   scopeStr.includes("drive.file") || 
-                                   (scopeStr.includes("/drive") && !scopeStr.includes("drive.appdata"));
+                  const hasPicker =
+                    scopeStr.includes("photospicker.mediaitems.readonly") ||
+                    scopeStr.includes("cloud-platform");
+                  const hasDrive =
+                    scopeStr.includes("drive.readonly") ||
+                    scopeStr.includes("drive.file") ||
+                    (scopeStr.includes("/drive") &&
+                      !scopeStr.includes("drive.appdata"));
 
                   hasAllScopes = hasPicker && hasDrive;
 
                   if (!hasAllScopes && attempts === maxAttempts - 1) {
-                    console.warn(`[Layout] Scope mismatch! Picker: ${hasPicker}, Drive: ${hasDrive}. Scopes: ${scopeStr}`);
+                    console.warn(
+                      `[Layout] Scope mismatch! Picker: ${hasPicker}, Drive: ${hasDrive}. Scopes: ${scopeStr}`,
+                    );
                     // Force invalidate here too so the UI updates to "Not Connected"
                     localStorage.removeItem("google_photos_access_token");
                   }
@@ -81,22 +93,24 @@
             }
 
             if (hasAllScopes) {
-              return true; 
+              return true;
             }
 
             attempts++;
-            await new Promise((r) => setTimeout(r, 200)); 
+            await new Promise((r) => setTimeout(r, 200));
           }
-          return false; 
+          return false;
         };
 
         checkScopes().then(async (valid) => {
           if (!valid) {
-            console.warn("[Layout] User signed in but missing required scopes or token. Functionality may be limited until 'Switch Account' is used.");
+            console.warn(
+              "[Layout] User signed in but missing required scopes or token. Functionality may be limited until 'Switch Account' is used.",
+            );
             // Do NOT sign out. Allow user to enter and fix connection.
             // Proceed to set user state below.
           }
-          
+
           // Proceed regardless of validity (allow fixing in UI)
           if (true) {
             const { uid, email, displayName, photoURL } = firebaseUser;
@@ -108,21 +122,22 @@
               photo: photoURL || "",
               last: new Date().getTime(),
             };
-            
+
             // Wait for hydration
             await hydrationPromise;
 
             $user = me;
-            loadingState = "loading"; 
+            loadingState = "loading";
 
-            if (uid) { // Only write if we have a UID (always true here)
-                setDoc(doc(firestore as any, "users", email), {
-                  uid: me.uid,
-                  name: me.name,
-                  email: me.email,
-                  photo: me.photo,
-                  activity_timestamp: new Date().getTime(),
-                }).catch(console.error);
+            if (uid) {
+              // Only write if we have a UID (always true here)
+              setDoc(doc(firestore as any, "users", email), {
+                uid: me.uid,
+                name: me.name,
+                email: me.email,
+                photo: me.photo,
+                activity_timestamp: new Date().getTime(),
+              }).catch(console.error);
             }
 
             if (!unsubscribeBroadcast) {
@@ -133,11 +148,11 @@
             }
           }
         });
-        return; 
+        return;
       }
     } else {
       me = { signedIn: false };
-      loadingState = "ready"; 
+      loadingState = "ready";
       if (unsubscribeBroadcast) {
         unsubscribeBroadcast();
         unsubscribeBroadcast = undefined;
@@ -162,30 +177,34 @@
     // Note: watchBroadcastActions is now async
     watchBroadcastActions(firestore, (actions) => {
       let filteredActions = actions;
-      
+
       // Filter out actions already covered by the snapshot (if any)
       if (snapshotMetadata) {
-         const snapSeconds = snapshotMetadata.timestamp?.seconds || 0;
-         const snapNanos = snapshotMetadata.timestamp?.nanoseconds || 0;
-         
-         filteredActions = actions.filter(action => {
-            const thisTs = (action as any).timestamp;
-            if (!thisTs) return true; // Keep if no timestamp? Or unsafe? Usually broadcast actions have ts.
-            const thisSeconds = thisTs.seconds || 0;
-            const thisNanos = thisTs.nanoseconds || 0;
-            
-            const isBefore = thisSeconds < snapSeconds || (thisSeconds === snapSeconds && thisNanos < snapNanos);
-            const isSameId = action.id === snapshotMetadata?.id;
-            
-            if (isBefore) return false;
-            if (isSameId) return false;
-            
-            return true;
-         });
-         
-         if (actions.length !== filteredActions.length) {
-             console.log(`[Snapshot] Skipped ${actions.length - filteredActions.length} actions already in snapshot.`);
-         }
+        const snapSeconds = snapshotMetadata.timestamp?.seconds || 0;
+        const snapNanos = snapshotMetadata.timestamp?.nanoseconds || 0;
+
+        filteredActions = actions.filter((action) => {
+          const thisTs = (action as any).timestamp;
+          if (!thisTs) return true; // Keep if no timestamp? Or unsafe? Usually broadcast actions have ts.
+          const thisSeconds = thisTs.seconds || 0;
+          const thisNanos = thisTs.nanoseconds || 0;
+
+          const isBefore =
+            thisSeconds < snapSeconds ||
+            (thisSeconds === snapSeconds && thisNanos < snapNanos);
+          const isSameId = action.id === snapshotMetadata?.id;
+
+          if (isBefore) return false;
+          if (isSameId) return false;
+
+          return true;
+        });
+
+        if (actions.length !== filteredActions.length) {
+          console.log(
+            `[Snapshot] Skipped ${actions.length - filteredActions.length} actions already in snapshot.`,
+          );
+        }
       }
 
       loadedActionCount += filteredActions.length;
@@ -193,15 +212,16 @@
         // The actionItem is already expanded: { id, ...data }
         const action = actionItem as unknown as AnyAction;
         const id = actionItem.id;
-        
+
         // Check if locally executed OR already in Redux history (hydration)
-        const isAlreadyExecuted = executedActions[id] !== undefined || 
-                                  store.getState().history.executedActions?.[id];
+        const isAlreadyExecuted =
+          executedActions[id] !== undefined ||
+          store.getState().history.executedActions?.[id];
 
         if (!isAlreadyExecuted) {
           executedActions[id] = action;
           if (action.type === "retype_item") {
-             // payload typing might be loose here, check properties safely
+            // payload typing might be loose here, check properties safely
             const payload = (action as any).payload || {};
             const itemKey = payload.itemKey;
             const newItemKey = payload.janCode + payload.subtype;
@@ -227,10 +247,10 @@
       if (me.signedIn) {
         loadingState = "ready";
       }
-    }).then(unsub => {
-        unsubscribeBroadcast = unsub;
+    }).then((unsub) => {
+      unsubscribeBroadcast = unsub;
     });
-    
+
     // Return typed undefined initially since we await the promise
     return undefined;
   }
@@ -289,9 +309,12 @@
     };
   });
 
-  if (typeof window !== "undefined" && import.meta.env.VITE_ENABLE_TEST_HOOKS === "true") {
-      (window as any).__store = store;
-      (window as any).__firebaseAuth = auth;
+  if (
+    typeof window !== "undefined" &&
+    import.meta.env.VITE_ENABLE_TEST_HOOKS === "true"
+  ) {
+    (window as any).__store = store;
+    (window as any).__firebaseAuth = auth;
   }
 </script>
 

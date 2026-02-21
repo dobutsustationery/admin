@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { goto } from '$app/navigation';
+  import { goto } from "$app/navigation";
   import { store } from "$lib/store";
   import { user } from "$lib/globals";
   import { Parser } from "@json2csv/plainjs";
@@ -61,43 +61,47 @@
     if (driveConfigured) {
       // Handle OAuth callback if present
       const result = handleOAuthCallback();
-      
+
       if (result) {
         authenticated = true;
         // Check for redirect state
         if (result.state && result.state.startsWith("drive_auth|")) {
-             const parts = result.state.split("|");
-             if (parts.length > 1) {
-                 const returnUrlEncoded = parts[1];
-                 try {
-                     // Attempt to decode, handling both encoded and unencoded (legacy) cases
-                     const returnUrl = decodeURIComponent(returnUrlEncoded);
-                     if (returnUrl) {
-                         console.log("Redirecting to return URL:", returnUrl);
-                         
-                         let isDifferentPath = true;
-                         try {
-                             const targetUrl = new URL(returnUrl, window.location.origin);
-                             isDifferentPath = targetUrl.pathname !== window.location.pathname;
-                         } catch (e) {
-                             console.warn("Could not parse returnUrl:", returnUrl);
-                         }
+          const parts = result.state.split("|");
+          if (parts.length > 1) {
+            const returnUrlEncoded = parts[1];
+            try {
+              // Attempt to decode, handling both encoded and unencoded (legacy) cases
+              const returnUrl = decodeURIComponent(returnUrlEncoded);
+              if (returnUrl) {
+                console.log("Redirecting to return URL:", returnUrl);
 
-                         if (isDifferentPath) {
-                             if (returnUrl.startsWith("/") || returnUrl.startsWith(window.location.origin)) {
-                                goto(returnUrl, { replaceState: true });
-                             } else {
-                                window.location.href = returnUrl;
-                             }
-                             return;
-                         }
-                         
-                         window.history.replaceState({}, document.title, returnUrl);
-                     }
-                 } catch (e) {
-                     console.error("Error decoding return URL from state:", e);
-                 }
-             }
+                let isDifferentPath = true;
+                try {
+                  const targetUrl = new URL(returnUrl, window.location.origin);
+                  isDifferentPath =
+                    targetUrl.pathname !== window.location.pathname;
+                } catch (e) {
+                  console.warn("Could not parse returnUrl:", returnUrl);
+                }
+
+                if (isDifferentPath) {
+                  if (
+                    returnUrl.startsWith("/") ||
+                    returnUrl.startsWith(window.location.origin)
+                  ) {
+                    goto(returnUrl, { replaceState: true });
+                  } else {
+                    window.location.href = returnUrl;
+                  }
+                  return;
+                }
+
+                window.history.replaceState({}, document.title, returnUrl);
+              }
+            } catch (e) {
+              console.error("Error decoding return URL from state:", e);
+            }
+          }
         }
         await loadFiles();
       } else {

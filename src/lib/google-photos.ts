@@ -10,14 +10,22 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_PHOTOS_CLIENT_ID;
 const rawScopes = (
   import.meta.env.VITE_GOOGLE_PHOTOS_SCOPES ||
   "https://www.googleapis.com/auth/photospicker.mediaitems.readonly,https://www.googleapis.com/auth/drive.readonly,https://www.googleapis.com/auth/userinfo.email"
-).split(",").map((s: string) => s.trim());
+)
+  .split(",")
+  .map((s: string) => s.trim());
 
 // FORCE `drive.readonly` existence (Fix for sticky Env vars)
-if (!rawScopes.some((s: string) => s.includes("drive.readonly") || s.includes("drive") && !s.includes("file"))) {
-    // Note: 'drive' is full access, which covers readonly. 'drive.file' does NOT.
-    // If we only have 'drive.file', we MUST add 'drive.readonly'.
-    console.warn("Forcing addition of drive.readonly scope via code override.");
-    rawScopes.push("https://www.googleapis.com/auth/drive.readonly");
+if (
+  !rawScopes.some(
+    (s: string) =>
+      s.includes("drive.readonly") ||
+      (s.includes("drive") && !s.includes("file")),
+  )
+) {
+  // Note: 'drive' is full access, which covers readonly. 'drive.file' does NOT.
+  // If we only have 'drive.file', we MUST add 'drive.readonly'.
+  console.warn("Forcing addition of drive.readonly scope via code override.");
+  rawScopes.push("https://www.googleapis.com/auth/drive.readonly");
 }
 
 const SCOPES = rawScopes;
@@ -125,26 +133,32 @@ export function getStoredToken(): GooglePhotosToken | null {
     // Check for Drive Access (Any level)
     // CRITICAL: "cloud-platform" does NOT grant Drive API access for files.get/media
     // We MUST have explicit drive scopes.
-    const hasDriveScope = token.scope.includes("drive.readonly") || 
-                          token.scope.includes("drive.file") || 
-                          token.scope.includes("/drive") && !token.scope.includes("drive.appdata");
-    
-    // Check for Photos Picker Access
-    const hasPickerScope = token.scope.includes("photospicker.mediaitems.readonly") ||
-                           token.scope.includes("cloud-platform"); // Keep for Picker just in case
+    const hasDriveScope =
+      token.scope.includes("drive.readonly") ||
+      token.scope.includes("drive.file") ||
+      (token.scope.includes("/drive") &&
+        !token.scope.includes("drive.appdata"));
 
-     if (!hasDriveScope) {
-        console.warn("Token missing explicit Drive scope (readonly/file/full). 'cloud-platform' is insufficient. Invalidating. Had:", token.scope);
-        localStorage.removeItem(TOKEN_STORAGE_KEY);
-        return null;
+    // Check for Photos Picker Access
+    const hasPickerScope =
+      token.scope.includes("photospicker.mediaitems.readonly") ||
+      token.scope.includes("cloud-platform"); // Keep for Picker just in case
+
+    if (!hasDriveScope) {
+      console.warn(
+        "Token missing explicit Drive scope (readonly/file/full). 'cloud-platform' is insufficient. Invalidating. Had:",
+        token.scope,
+      );
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return null;
     }
-    
+
     if (!hasPickerScope) {
-         console.warn("Token missing Photos Picker scope. Invalidating.");
-         localStorage.removeItem(TOKEN_STORAGE_KEY);
-         return null;
+      console.warn("Token missing Photos Picker scope. Invalidating.");
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return null;
     }
-    
+
     // Optional scope warning removed as we enforce strict Drive access now.
 
     return token;
@@ -197,19 +211,19 @@ export function initiateOAuthFlow(allowSwitchAccount = false): void {
 
   // Build OAuth URL
   const redirectUri = `${window.location.origin}/photos`;
-  
+
   // Hardcoded Critical Scopes to bypass any Env/Init issues
   const CRITICAL_SCOPES = [
     "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
     "https://www.googleapis.com/auth/drive.readonly", // FORCE THIS
-    "https://www.googleapis.com/auth/userinfo.email"
+    "https://www.googleapis.com/auth/userinfo.email",
   ];
   const finalScopes = Array.from(new Set([...SCOPES, ...CRITICAL_SCOPES]));
 
   // Debug Scopes
   console.log("[Auth] Initiating OAuth Flow (v2-FIXED)");
   console.log("[Auth] Requested Scopes:", finalScopes);
-  
+
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     redirect_uri: redirectUri,
@@ -243,7 +257,7 @@ export async function handleOAuthCallback(): Promise<GooglePhotosToken | null> {
     const scope = params.get("scope");
     const tokenType = params.get("token_type");
     const state = params.get("state");
-    
+
     console.log("[Auth] OAuth Callback Received");
     console.log("[Auth] Received Scopes:", scope);
 
@@ -258,19 +272,22 @@ export async function handleOAuthCallback(): Promise<GooglePhotosToken | null> {
     if (!accessToken || !expiresIn) {
       return null;
     }
-    
+
     // Fetch User Info (Email)
     let userEmail: string | undefined = undefined;
     try {
-        const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        if (userInfoRes.ok) {
-            const userInfo = await userInfoRes.json();
-            userEmail = userInfo.email;
-        }
+      const userInfoRes = await fetch(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
+      if (userInfoRes.ok) {
+        const userInfo = await userInfoRes.json();
+        userEmail = userInfo.email;
+      }
     } catch (e) {
-        console.warn("Failed to fetch user info:", e);
+      console.warn("Failed to fetch user info:", e);
     }
 
     const token: GooglePhotosToken = {
@@ -279,7 +296,7 @@ export async function handleOAuthCallback(): Promise<GooglePhotosToken | null> {
       expires_at: Date.now() + parseInt(expiresIn, 10) * 1000,
       scope: scope || "",
       token_type: tokenType || "Bearer",
-      user_email: userEmail
+      user_email: userEmail,
     };
 
     // Store token

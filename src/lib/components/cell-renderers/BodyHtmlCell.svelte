@@ -14,7 +14,9 @@
 <div class="cell-container">
   <button class="body-btn" on:click={openEditor} title="Edit description">
     {#if item[col.field]}
-      <span class="body-preview">{item[col.field].replace(/<[^>]+>/g, "").slice(0, 48) || "Edit"}</span>
+      <span class="body-preview"
+        >{item[col.field].replace(/<[^>]+>/g, "").slice(0, 48) || "Edit"}</span
+      >
     {:else}
       <span class="body-placeholder">Add HTML</span>
     {/if}

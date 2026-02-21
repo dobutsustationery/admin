@@ -27,5 +27,5 @@ export const HS_CODE_DESCRIPTIONS: Record<string, string> = {
   "96084000": "Mechanical Pencils",
   "96091010": "Pencils",
   "96110000": "Stamps",
-  "96122000": "Ink Pads"
+  "96122000": "Ink Pads",
 };

@@ -11,7 +11,7 @@ export interface ShopifyImportItem {
   listingImage?: string; // Gallery Image (Image Src) - to be added to listing
   handle?: string; // For grouping/reference
   processed?: boolean;
-  
+
   // New Fields
   bodyHtml?: string;
   productCategory?: string;
@@ -22,10 +22,10 @@ export interface ShopifyImportItem {
 }
 
 export interface RawRow {
-    raw: string;
-    parsed: ShopifyImportItem | null;
-    error?: string;
-    processed?: boolean;
+  raw: string;
+  parsed: ShopifyImportItem | null;
+  error?: string;
+  processed?: boolean;
 }
 
 export interface ResolutionAction {
@@ -33,23 +33,22 @@ export interface ResolutionAction {
   payload: any;
 }
 
-
-export interface LastSeenProduct { 
-    handle: string; 
-    description: string;
-    price?: number;
-    weight?: number;
-    image?: string;
-    bodyHtml?: string;
-    productCategory?: string;
-    imagePosition?: number;
-    imageAltText?: string;
-    option1Name?: string;
+export interface LastSeenProduct {
+  handle: string;
+  description: string;
+  price?: number;
+  weight?: number;
+  image?: string;
+  bodyHtml?: string;
+  productCategory?: string;
+  imagePosition?: number;
+  imageAltText?: string;
+  option1Name?: string;
 }
 
 export interface ShopifyImportState {
   activeFile: { id: string; name: string } | null;
-  step: "idle" | "importing" | "review"; 
+  step: "idle" | "importing" | "review";
   headerRow: string | null;
   rows: RawRow[];
   resolutions: Record<number, ResolutionAction[]>;
@@ -66,432 +65,461 @@ const initialState: ShopifyImportState = {
 };
 
 export const parseShopifyChunk = (
-    headerRow: string, 
-    rawRows: string[], 
-    initialContext: LastSeenProduct | null
+  headerRow: string,
+  rawRows: string[],
+  initialContext: LastSeenProduct | null,
 ) => {
-     const csvChunk = [headerRow, ...rawRows].join("\n");
-     
-     const result = Papa.parse(csvChunk, {
-          header: true,
-          skipEmptyLines: true,
-          transformHeader: (h) => h.trim().toLowerCase(), 
-     });
-     
-     const items: { item: ShopifyImportItem | null, error?: string }[] = [];
-     let context = initialContext ? { ...initialContext } : null;
+  const csvChunk = [headerRow, ...rawRows].join("\n");
 
-     result.data.forEach((parsedRow: any) => {
-         const handle = (parsedRow['handle'] || "").trim();
-         let title = (parsedRow['title'] || "").trim();
-         let priceStr = parsedRow['variant price'];
-         let weightStr = parsedRow['variant grams'];
-         let imageStr = parsedRow['image src'];
-         let bodyHtml = parsedRow['body (html)'];
-         let productCategory = parsedRow['product category'];
-         let imagePositionStr = parsedRow['image position'];
-         let imageAltText = parsedRow['image alt text'];
-         let option1Name = parsedRow['option1 name'];
-         let option1Value = parsedRow['option1 value'];
+  const result = Papa.parse(csvChunk, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (h) => h.trim().toLowerCase(),
+  });
 
-         // Smart Inheritance Logic
-         if (handle) {
-             if (context && context.handle === handle) {
-                 // Same product, inherit if missing
-                 if (!title) title = context.description;
-                if (!priceStr && context.price !== undefined) priceStr = String(context.price);
-                 if (!weightStr && context.weight !== undefined) weightStr = String(context.weight);
-                 
-                 // Inherit Metadata
-                 if (!bodyHtml) bodyHtml = context.bodyHtml;
-                 if (!productCategory) productCategory = context.productCategory;
-                 if (!option1Name) option1Name = context.option1Name;
-                 // Note: Image Alt Text is tricky. Usually specific to the image on the row.
-                 // But if row has no image but belongs to the handle, should it inherit? 
-                 // Usually Body is global. Images are per-row. 
-                 // But let's inherit for safety if undefined, though typically only Row 1 has global data.
-                 // Actually, Shopify CSVs have Body/Category/Tags/Vendor/Type ONLY on the first row (Handle row).
-                 // So we MUST inherit them.
-                 // Images: Each row *can* have an image. If Row 2 has no image, it shouldn't inherit Row 1's image metadata unless it's the exact same image?
-                 // Let's stick to Global Fields: Body, Category. 
-                 // Image Position/Alt are tied to Image Src. If local Image Src is missing, we don't inherit image metadata.
-             } else {
-                 // New product, context will update at end of loop if valid
-             }
-         }
+  const items: { item: ShopifyImportItem | null; error?: string }[] = [];
+  let context = initialContext ? { ...initialContext } : null;
 
-         const janCode = (parsedRow['variant sku'] || "").toString().trim();
-         let item: ShopifyImportItem | null = null;
-         let error: string | undefined = undefined;
-         
-         if (!janCode) {
-             if (handle && imageStr) {
-                 // Valid Image Row
-             } else {
-                 error = "Missing Variant SKU";
-             }
-         } 
-         
-         if (!error) {
-             const qty = parseInt((parsedRow['variant inventory qty'] || "0").replace(/[^0-9-]/g, ""), 10) || 0;
-             const price = priceStr ? parseFloat(priceStr.replace(/[^0-9.]/g, "")) : undefined;
-             const weight = weightStr ? parseFloat(weightStr.replace(/[^0-9.]/g, "")) : undefined;
-              let variantImageStr = (parsedRow['variant image'] || "").trim();
-              const image = janCode ? (variantImageStr || imageStr || "") : (imageStr || ""); 
-             const pos = imagePositionStr ? parseInt(imagePositionStr, 10) : undefined;
-             
-             item = {
-                janCode,
-                description: title,
-                qty,
-                price,
-                weight,
-                image,
-                handle: handle,
-                bodyHtml: bodyHtml || "",
-                productCategory: productCategory || "",
-                imagePosition: pos,
-                imageAltText: imageAltText || "",
-                listingImage: imageStr || undefined,
-                option1Name: option1Name || "",
-                option1Value: option1Value || ""
-             };
-             
-             if (handle) {
-                if (!context || context.handle !== handle) {
-                    context = {
-                        handle,
-                        description: title,
-                        price,
-                        weight,
-                        image,
-                        bodyHtml,
-                        productCategory,
-                        imagePosition: pos,
-                        imageAltText,
-                        option1Name
-                    };
-                }
-             }
-         }
-         
-         items.push({ item, error });
-     });
-     
-     return { items, nextContext: context };
+  result.data.forEach((parsedRow: any) => {
+    const handle = (parsedRow["handle"] || "").trim();
+    let title = (parsedRow["title"] || "").trim();
+    let priceStr = parsedRow["variant price"];
+    let weightStr = parsedRow["variant grams"];
+    let imageStr = parsedRow["image src"];
+    let bodyHtml = parsedRow["body (html)"];
+    let productCategory = parsedRow["product category"];
+    let imagePositionStr = parsedRow["image position"];
+    let imageAltText = parsedRow["image alt text"];
+    let option1Name = parsedRow["option1 name"];
+    let option1Value = parsedRow["option1 value"];
+
+    // Smart Inheritance Logic
+    if (handle) {
+      if (context && context.handle === handle) {
+        // Same product, inherit if missing
+        if (!title) title = context.description;
+        if (!priceStr && context.price !== undefined)
+          priceStr = String(context.price);
+        if (!weightStr && context.weight !== undefined)
+          weightStr = String(context.weight);
+
+        // Inherit Metadata
+        if (!bodyHtml) bodyHtml = context.bodyHtml;
+        if (!productCategory) productCategory = context.productCategory;
+        if (!option1Name) option1Name = context.option1Name;
+        // Note: Image Alt Text is tricky. Usually specific to the image on the row.
+        // But if row has no image but belongs to the handle, should it inherit?
+        // Usually Body is global. Images are per-row.
+        // But let's inherit for safety if undefined, though typically only Row 1 has global data.
+        // Actually, Shopify CSVs have Body/Category/Tags/Vendor/Type ONLY on the first row (Handle row).
+        // So we MUST inherit them.
+        // Images: Each row *can* have an image. If Row 2 has no image, it shouldn't inherit Row 1's image metadata unless it's the exact same image?
+        // Let's stick to Global Fields: Body, Category.
+        // Image Position/Alt are tied to Image Src. If local Image Src is missing, we don't inherit image metadata.
+      } else {
+        // New product, context will update at end of loop if valid
+      }
+    }
+
+    const janCode = (parsedRow["variant sku"] || "").toString().trim();
+    let item: ShopifyImportItem | null = null;
+    let error: string | undefined = undefined;
+
+    if (!janCode) {
+      if (handle && imageStr) {
+        // Valid Image Row
+      } else {
+        error = "Missing Variant SKU";
+      }
+    }
+
+    if (!error) {
+      const qty =
+        parseInt(
+          (parsedRow["variant inventory qty"] || "0").replace(/[^0-9-]/g, ""),
+          10,
+        ) || 0;
+      const price = priceStr
+        ? parseFloat(priceStr.replace(/[^0-9.]/g, ""))
+        : undefined;
+      const weight = weightStr
+        ? parseFloat(weightStr.replace(/[^0-9.]/g, ""))
+        : undefined;
+      let variantImageStr = (parsedRow["variant image"] || "").trim();
+      const image = janCode
+        ? variantImageStr || imageStr || ""
+        : imageStr || "";
+      const pos = imagePositionStr ? parseInt(imagePositionStr, 10) : undefined;
+
+      item = {
+        janCode,
+        description: title,
+        qty,
+        price,
+        weight,
+        image,
+        handle: handle,
+        bodyHtml: bodyHtml || "",
+        productCategory: productCategory || "",
+        imagePosition: pos,
+        imageAltText: imageAltText || "",
+        listingImage: imageStr || undefined,
+        option1Name: option1Name || "",
+        option1Value: option1Value || "",
+      };
+
+      if (handle) {
+        if (!context || context.handle !== handle) {
+          context = {
+            handle,
+            description: title,
+            price,
+            weight,
+            image,
+            bodyHtml,
+            productCategory,
+            imagePosition: pos,
+            imageAltText,
+            option1Name,
+          };
+        }
+      }
+    }
+
+    items.push({ item, error });
+  });
+
+  return { items, nextContext: context };
 };
- 
+
 // Helper for Root Reducer
 export type ShopifyImportBatchFilter = "MATCH" | "NEW" | "RESOLVED";
 
 export interface ImportBatchOptions {
-    useShopifyDescription?: boolean;
-    useShopifyImages?: boolean;
-    ignoreShopifyQty?: boolean;
-    useShopifyHandles?: boolean;
-    useShopifyWeights?: boolean;
+  useShopifyDescription?: boolean;
+  useShopifyImages?: boolean;
+  ignoreShopifyQty?: boolean;
+  useShopifyHandles?: boolean;
+  useShopifyWeights?: boolean;
 }
 
 export const computeShopifyImportBatch = (
-    state: ShopifyImportState,
-    inventoryIdToItem: Record<string, any>,
-    handleToListing: Record<string, any>,
-    filter: ShopifyImportBatchFilter,
-    options?: ImportBatchOptions
-): { updates: any[], listingUpdates: any[], indices: number[] } => {
-    const updates: any[] = [];
-    const listingUpdates: any[] = [];
-    const indices: number[] = [];
-    const createdHandles = new Set<string>();
+  state: ShopifyImportState,
+  inventoryIdToItem: Record<string, any>,
+  handleToListing: Record<string, any>,
+  filter: ShopifyImportBatchFilter,
+  options?: ImportBatchOptions,
+): { updates: any[]; listingUpdates: any[]; indices: number[] } => {
+  const updates: any[] = [];
+  const listingUpdates: any[] = [];
+  const indices: number[] = [];
+  const createdHandles = new Set<string>();
 
-    // Pre-scan to map CSV Handles and JANs
-    const csvHandleToJan = new Map<string, string>();
-    const janToRow = new Map<string, any>();
+  // Pre-scan to map CSV Handles and JANs
+  const csvHandleToJan = new Map<string, string>();
+  const janToRow = new Map<string, any>();
 
-    state.rows.forEach(r => {
-        if (r.parsed && r.parsed.janCode) {
-            janToRow.set(r.parsed.janCode, r.parsed);
-        }
-        if (r.parsed && r.parsed.handle && r.parsed.janCode) {
-            csvHandleToJan.set(r.parsed.handle, r.parsed.janCode);
-        }
-    });
+  state.rows.forEach((r) => {
+    if (r.parsed && r.parsed.janCode) {
+      janToRow.set(r.parsed.janCode, r.parsed);
+    }
+    if (r.parsed && r.parsed.handle && r.parsed.janCode) {
+      csvHandleToJan.set(r.parsed.handle, r.parsed.janCode);
+    }
+  });
 
-    const getStoreHandle = (csvHandle: string): string => {
-        // If we are strictly using CSV Handles (User Intent: Rename), trust the CSV handle!
-        if (options?.useShopifyHandles) return csvHandle;
+  const getStoreHandle = (csvHandle: string): string => {
+    // If we are strictly using CSV Handles (User Intent: Rename), trust the CSV handle!
+    if (options?.useShopifyHandles) return csvHandle;
 
-        const jan = csvHandleToJan.get(csvHandle);
-        if (jan) {
-            const inv = inventoryIdToItem[jan];
-            if (inv && inv.handle) return inv.handle;
-        }
-        return csvHandle;
-    };
+    const jan = csvHandleToJan.get(csvHandle);
+    if (jan) {
+      const inv = inventoryIdToItem[jan];
+      if (inv && inv.handle) return inv.handle;
+    }
+    return csvHandle;
+  };
 
+  const useDesc = options?.useShopifyDescription ?? false;
+  const useImg = options?.useShopifyImages ?? false;
+  const useHandles = options?.useShopifyHandles ?? false;
+  const useWeights = options?.useShopifyWeights ?? false;
+  const ignoreQty = options?.ignoreShopifyQty ?? false;
 
-    const useDesc = options?.useShopifyDescription ?? false;
-    const useImg = options?.useShopifyImages ?? false;
-    const useHandles = options?.useShopifyHandles ?? false;
-    const useWeights = options?.useShopifyWeights ?? false;
-    const ignoreQty = options?.ignoreShopifyQty ?? false;
+  state.rows.forEach((row, index) => {
+    if (row.processed) return;
+    if (row.error) return; // Skip errors
+    if (!row.parsed) return; // Should not happen if no error
 
-    state.rows.forEach((row, index) => {
-        if (row.processed) return;
-        if (row.error) return; // Skip errors
-        if (!row.parsed) return; // Should not happen if no error
+    const item = row.parsed;
+    const exists = inventoryIdToItem[item.janCode];
 
-        const item = row.parsed;
-        const exists = inventoryIdToItem[item.janCode];
-        
-        // Resolve the handle we should strictly use for Listings
-        const storeHandle = getStoreHandle(item.handle || "");
+    // Resolve the handle we should strictly use for Listings
+    const storeHandle = getStoreHandle(item.handle || "");
 
-        // RESOLVED Handling
-        if (filter === "RESOLVED") {
-             const resolutions = state.resolutions[index];
-             if (resolutions && resolutions.length > 0) {
-                 resolutions.forEach(res => {
-                     // Assume standard resolution payload
-                     if (res.payload.itemKey) {
-                         const invItem = inventoryIdToItem[res.payload.itemKey];
-                         if (invItem) {
-                             updates.push({
-                                 type: 'update',
-                                 id: res.payload.itemKey,
-                                 item: { ...invItem, ...res.payload }
-                             });
-                         }
-                     }
-                 });
-                 indices.push(index);
-             }
-             return;
-        }
-
-        const resolutions = state.resolutions[index];
-        if (resolutions && resolutions.length > 0) return;
-
-        // Identify Matching Keys (Strict)
-        const matchingKeys: string[] = [];
-        if (exists) {
-            matchingKeys.push(item.janCode);
-        }
-
-        // Check for "Listing Match" using Resolved Store Handle
-        const hasListingMatch = storeHandle && handleToListing[storeHandle];
-        
-        // Check for "Inventory Match by Handle" (e.g. Image row matching existing inventory item)
-        const parentJan = csvHandleToJan.get(item.handle || "");
-        const isInventoryHandleMatch = storeHandle && parentJan && !!inventoryIdToItem[parentJan];
-
-        // Conflict Detection logic
-        let hasConflict = false;
-        if (exists) {
-            const match = exists;
-            const shopifyToDriveMap = state.activeFile ? {} : {}; // TODO: pass this if needed, or assume empty for batch logic
-
-            if (!useDesc) {
-                const existDesc = match.description || "";
-                const newDesc = item.description || "";
-                if (existDesc.trim() !== "" && newDesc.trim() !== "" && existDesc.trim() !== newDesc.trim()) {
-                    hasConflict = true;
-                }
+    // RESOLVED Handling
+    if (filter === "RESOLVED") {
+      const resolutions = state.resolutions[index];
+      if (resolutions && resolutions.length > 0) {
+        resolutions.forEach((res) => {
+          // Assume standard resolution payload
+          if (res.payload.itemKey) {
+            const invItem = inventoryIdToItem[res.payload.itemKey];
+            if (invItem) {
+              updates.push({
+                type: "update",
+                id: res.payload.itemKey,
+                item: { ...invItem, ...res.payload },
+              });
             }
+          }
+        });
+        indices.push(index);
+      }
+      return;
+    }
 
-            // Weight Conflict
-            if (!useWeights) {
-                const existWeight = match.weight;
-                const newWeight = item.weight;
-                if (existWeight && newWeight && existWeight !== newWeight) hasConflict = true;
-            }
+    const resolutions = state.resolutions[index];
+    if (resolutions && resolutions.length > 0) return;
 
-            const existPrice = match.price;
-            const newPrice = item.price;
-            if (existPrice && newPrice && existPrice !== newPrice) hasConflict = true;
+    // Identify Matching Keys (Strict)
+    const matchingKeys: string[] = [];
+    if (exists) {
+      matchingKeys.push(item.janCode);
+    }
 
-            if (!useImg) {
-                const existImage = match.image;
-                const newImage = item.image;
-                if (existImage && newImage && existImage !== newImage) {
-                    // Simple check for now (ignoring drive map in batch for simplicity unless critical)
-                    hasConflict = true;
-                }
-            }
+    // Check for "Listing Match" using Resolved Store Handle
+    const hasListingMatch = storeHandle && handleToListing[storeHandle];
 
-            if (!useHandles) {
-                const existHandle = match.handle || "";
-                const newHandle = item.handle || "";
-                if (existHandle.trim() !== newHandle.trim()) {
-                    // Check against computed default?
-                    // Batch logic doesn't import generateHandle easily (helper). 
-                    // Assume mismatch = conflict.
-                    hasConflict = true; 
-                }
-            }
+    // Check for "Inventory Match by Handle" (e.g. Image row matching existing inventory item)
+    const parentJan = csvHandleToJan.get(item.handle || "");
+    const isInventoryHandleMatch =
+      storeHandle && parentJan && !!inventoryIdToItem[parentJan];
 
-            if (!ignoreQty) {
-                const existTotal = match.qty || 0;
-                const existShipped = match.shipped || 0;
-                const existRemaining = existTotal - existShipped;
-                const newRemaining = item.qty; 
-                if (existRemaining !== newRemaining) hasConflict = true;
-            }
+    // Conflict Detection logic
+    let hasConflict = false;
+    if (exists) {
+      const match = exists;
+      const shopifyToDriveMap = state.activeFile ? {} : {}; // TODO: pass this if needed, or assume empty for batch logic
+
+      if (!useDesc) {
+        const existDesc = match.description || "";
+        const newDesc = item.description || "";
+        if (
+          existDesc.trim() !== "" &&
+          newDesc.trim() !== "" &&
+          existDesc.trim() !== newDesc.trim()
+        ) {
+          hasConflict = true;
+        }
+      }
+
+      // Weight Conflict
+      if (!useWeights) {
+        const existWeight = match.weight;
+        const newWeight = item.weight;
+        if (existWeight && newWeight && existWeight !== newWeight)
+          hasConflict = true;
+      }
+
+      const existPrice = match.price;
+      const newPrice = item.price;
+      if (existPrice && newPrice && existPrice !== newPrice) hasConflict = true;
+
+      if (!useImg) {
+        const existImage = match.image;
+        const newImage = item.image;
+        if (existImage && newImage && existImage !== newImage) {
+          // Simple check for now (ignoring drive map in batch for simplicity unless critical)
+          hasConflict = true;
+        }
+      }
+
+      if (!useHandles) {
+        const existHandle = match.handle || "";
+        const newHandle = item.handle || "";
+        if (existHandle.trim() !== newHandle.trim()) {
+          // Check against computed default?
+          // Batch logic doesn't import generateHandle easily (helper).
+          // Assume mismatch = conflict.
+          hasConflict = true;
+        }
+      }
+
+      if (!ignoreQty) {
+        const existTotal = match.qty || 0;
+        const existShipped = match.shipped || 0;
+        const existRemaining = existTotal - existShipped;
+        const newRemaining = item.qty;
+        if (existRemaining !== newRemaining) hasConflict = true;
+      }
+    }
+
+    if (
+      filter === "MATCH" &&
+      (matchingKeys.length > 0 || hasListingMatch || isInventoryHandleMatch) &&
+      !hasConflict
+    ) {
+      // Apply updates to ALL matching keys
+      matchingKeys.forEach((key) => {
+        const currentItem = inventoryIdToItem[key];
+        if (!currentItem) return;
+
+        let delta = 0;
+        if (!ignoreQty) {
+          const currentTotal = currentItem.qty || 0;
+          const shipped = currentItem.shipped || 0;
+          const targetTotal = (item.qty || 0) + shipped;
+          delta = targetTotal - currentTotal;
         }
 
-        if (filter === "MATCH" && (matchingKeys.length > 0 || hasListingMatch || isInventoryHandleMatch) && !hasConflict) {
-            
-            // Apply updates to ALL matching keys
-            matchingKeys.forEach(key => {
-                const currentItem = inventoryIdToItem[key];
-                if (!currentItem) return;
+        const newItem = {
+          ...currentItem,
+          price: item.price,
+          weight: item.weight,
+          ...(useHandles ? { handle: item.handle } : {}),
+          qty: ignoreQty ? 0 : delta,
+          ...(useDesc ? { description: item.description } : {}),
+          ...(useImg
+            ? { image: item.image, listingImage: item.listingImage }
+            : {}),
+          bodyHtml: item.bodyHtml,
+          productCategory: item.productCategory,
+          subtype: item.option1Value || currentItem.subtype, // Update Subtype
+        };
 
-                let delta = 0;
-                if (!ignoreQty) {
-                    const currentTotal = currentItem.qty || 0;
-                    const shipped = currentItem.shipped || 0;
-                    const targetTotal = (item.qty || 0) + shipped;
-                    delta = targetTotal - currentTotal;
-                }
+        updates.push({
+          type: "update",
+          id: key,
+          item: newItem,
+        });
+      });
 
-                const newItem = {
-                    ...currentItem,
-                    price: item.price,
-                    weight: item.weight,
-                    ...(useHandles ? { handle: item.handle } : {}), 
-                    qty: ignoreQty ? 0 : delta,
-                    ...(useDesc ? { description: item.description } : {}), 
-                    ...(useImg ? { image: item.image, listingImage: item.listingImage } : {}),
-                    bodyHtml: item.bodyHtml,
-                    productCategory: item.productCategory,
-                    subtype: item.option1Value || currentItem.subtype // Update Subtype
-                };
-                
-                updates.push({
-                    type: "update",
-                    id: key,
-                    item: newItem
-                });
+      indices.push(index);
+
+      // Add Image to Listing (Gallery) using Store Handle
+      if (useImg && storeHandle) {
+        const listingExists =
+          handleToListing[storeHandle] || createdHandles.has(storeHandle);
+
+        // RECOVERY: If listing missing, try to find parent in this batch and create it
+        if (!listingExists) {
+          const parentItem = parentJan ? janToRow.get(parentJan) : null;
+
+          if (parentItem) {
+            listingUpdates.push({
+              type: "create_listing",
+              listing: {
+                handle: storeHandle,
+                title: parentItem.description || "Untitled",
+                bodyHtml: parentItem.bodyHtml || "",
+                productCategory: parentItem.productCategory || "",
+                productType: "",
+                vendor: "SPNSS Ltd.",
+                tags: [],
+                status: "active",
+                option1Name: parentItem.option1Name || "Title",
+                images: [],
+                lastUpdated: Date.now(),
+              },
             });
-
-            indices.push(index);
-
-            // Add Image to Listing (Gallery) using Store Handle
-            if (useImg && storeHandle) { 
-                 const listingExists = handleToListing[storeHandle] || createdHandles.has(storeHandle);
-
-                 // RECOVERY: If listing missing, try to find parent in this batch and create it
-                 if (!listingExists) {
-                      const parentItem = parentJan ? janToRow.get(parentJan) : null;
-                      
-                      if (parentItem) {
-                          listingUpdates.push({
-                              type: "create_listing",
-                              listing: {
-                                  handle: storeHandle,
-                                  title: parentItem.description || "Untitled", 
-                                  bodyHtml: parentItem.bodyHtml || "",
-                                  productCategory: parentItem.productCategory || "",
-                                  productType: "",
-                                  vendor: "SPNSS Ltd.",
-                                  tags: [],
-                                  status: "active",
-                                  option1Name: parentItem.option1Name || "Title",
-                                  images: [],
-                                  lastUpdated: Date.now()
-                              }
-                          });
-                          createdHandles.add(storeHandle);
-                      }
-                 }
-
-                 const targetImage = item.listingImage || item.image;
-                 
-                 if (targetImage) {
-                     let alreadyHasImage = false;
-                     // Listing might be in handleToListing OR just created (not in handleToListing yet)
-                     // If created, images is empty.
-                     const listing = handleToListing[storeHandle];
-                     if (listing && listing.images) {
-                         alreadyHasImage = listing.images.some((img: any) => img.url === targetImage);
-                     }
-
-                     if (!alreadyHasImage) {
-                         listingUpdates.push({
-                             type: "add_image",
-                             handle: storeHandle,
-                             image: { url: targetImage, altText: item.imageAltText || "" }
-                         });
-                     }
-                 }
-            }
-        } else if (filter === "NEW" && !exists) {
-             if (item.janCode) {
-                 // Real New Item
-                 // Map option1Value to subtype
-                 const itemWithSubtype = {
-                     ...item,
-                     subtype: item.option1Value || ""
-                 };
-                 updates.push({
-                     type: "new",
-                     id: item.janCode,
-                     item: itemWithSubtype
-                 });
-                 if (storeHandle) createdHandles.add(storeHandle);
-                 indices.push(index);
-             } else if (storeHandle) {
-                 const listingExists = handleToListing[storeHandle] || createdHandles.has(storeHandle);
-                 
-                 // RECOVERY: If listing missing, try to find parent in this batch and create it
-                 if (!listingExists) {
-                      const parentJan = csvHandleToJan.get(item.handle || "");
-                      const parentItem = parentJan ? janToRow.get(parentJan) : null;
-                      
-                      if (parentItem) {
-                          listingUpdates.push({
-                              type: "create_listing",
-                              listing: {
-                                  handle: storeHandle,
-                                  title: parentItem.description || "Untitled", 
-                                  bodyHtml: parentItem.bodyHtml || "",
-                                  productCategory: parentItem.productCategory || "",
-                                  productType: "",
-                                  vendor: "SPNSS Ltd.",
-                                  tags: [],
-                                  status: "active",
-                                  option1Name: parentItem.option1Name || "Title",
-                                  images: [],
-                                  lastUpdated: Date.now()
-                              }
-                          });
-                          createdHandles.add(storeHandle);
-                      }
-                 }
-
-                 if (handleToListing[storeHandle] || createdHandles.has(storeHandle)) {
-                      const targetImage = item.listingImage || item.image;
-                      if (targetImage) {
-                           listingUpdates.push({
-                               type: "add_image",
-                               handle: storeHandle,
-                               image: { url: targetImage, altText: item.imageAltText || "" }
-                           });
-                           indices.push(index);
-                      }
-                 }
-             }
+            createdHandles.add(storeHandle);
+          }
         }
-    });
 
-    return { updates, listingUpdates, indices };
+        const targetImage = item.listingImage || item.image;
+
+        if (targetImage) {
+          let alreadyHasImage = false;
+          // Listing might be in handleToListing OR just created (not in handleToListing yet)
+          // If created, images is empty.
+          const listing = handleToListing[storeHandle];
+          if (listing && listing.images) {
+            alreadyHasImage = listing.images.some(
+              (img: any) => img.url === targetImage,
+            );
+          }
+
+          if (!alreadyHasImage) {
+            listingUpdates.push({
+              type: "add_image",
+              handle: storeHandle,
+              image: { url: targetImage, altText: item.imageAltText || "" },
+            });
+          }
+        }
+      }
+    } else if (filter === "NEW" && !exists) {
+      if (item.janCode) {
+        // Real New Item
+        // Map option1Value to subtype
+        const itemWithSubtype = {
+          ...item,
+          subtype: item.option1Value || "",
+        };
+        updates.push({
+          type: "new",
+          id: item.janCode,
+          item: itemWithSubtype,
+        });
+        if (storeHandle) createdHandles.add(storeHandle);
+        indices.push(index);
+      } else if (storeHandle) {
+        const listingExists =
+          handleToListing[storeHandle] || createdHandles.has(storeHandle);
+
+        // RECOVERY: If listing missing, try to find parent in this batch and create it
+        if (!listingExists) {
+          const parentJan = csvHandleToJan.get(item.handle || "");
+          const parentItem = parentJan ? janToRow.get(parentJan) : null;
+
+          if (parentItem) {
+            listingUpdates.push({
+              type: "create_listing",
+              listing: {
+                handle: storeHandle,
+                title: parentItem.description || "Untitled",
+                bodyHtml: parentItem.bodyHtml || "",
+                productCategory: parentItem.productCategory || "",
+                productType: "",
+                vendor: "SPNSS Ltd.",
+                tags: [],
+                status: "active",
+                option1Name: parentItem.option1Name || "Title",
+                images: [],
+                lastUpdated: Date.now(),
+              },
+            });
+            createdHandles.add(storeHandle);
+          }
+        }
+
+        if (handleToListing[storeHandle] || createdHandles.has(storeHandle)) {
+          const targetImage = item.listingImage || item.image;
+          if (targetImage) {
+            listingUpdates.push({
+              type: "add_image",
+              handle: storeHandle,
+              image: { url: targetImage, altText: item.imageAltText || "" },
+            });
+            indices.push(index);
+          }
+        }
+      }
+    }
+  });
+
+  return { updates, listingUpdates, indices };
 };
 
 const shopifyImportSlice = createSlice({
   name: "shopifyImport",
   initialState,
   reducers: {
-    start_session: (state, action: PayloadAction<{ id: string; name: string }>) => {
+    start_session: (
+      state,
+      action: PayloadAction<{ id: string; name: string }>,
+    ) => {
       state.activeFile = action.payload;
       state.step = "idle";
       state.headerRow = null;
@@ -500,70 +528,94 @@ const shopifyImportSlice = createSlice({
       state.lastSeenProduct = null;
     },
     set_header: (state, action: PayloadAction<string>) => {
-        state.headerRow = action.payload;
-        state.step = "importing";
+      state.headerRow = action.payload;
+      state.step = "importing";
     },
-    append_raw_rows: (state, action: PayloadAction<{ rawRows: string[], done: boolean }>) => {
-        const { rawRows, done } = action.payload;
-        
-        if (!state.headerRow) {
-            rawRows.forEach(r => state.rows.push({ raw: r, parsed: null, error: "Missing Header" }));
-        } else {
-             const { items, nextContext } = parseShopifyChunk(state.headerRow, rawRows, state.lastSeenProduct);
-             
-             items.forEach((res, i) => {
-                 state.rows.push({
-                     raw: rawRows[i] || "", // Map back to raw if possible, though PapaParse consumed it. 
-                                            // Ideally we use original rawRows index.
-                                            // The chunk size matches, so index i corresponds to rawRows[i].
-                     parsed: res.item,
-                     error: res.error
-                 });
-             });
-             state.lastSeenProduct = nextContext;
-        }
+    append_raw_rows: (
+      state,
+      action: PayloadAction<{ rawRows: string[]; done: boolean }>,
+    ) => {
+      const { rawRows, done } = action.payload;
 
-        if (done) {
-            state.step = "review";
-            state.lastSeenProduct = null;
-        } else {
-             state.step = "importing";
-        }
+      if (!state.headerRow) {
+        rawRows.forEach((r) =>
+          state.rows.push({ raw: r, parsed: null, error: "Missing Header" }),
+        );
+      } else {
+        const { items, nextContext } = parseShopifyChunk(
+          state.headerRow,
+          rawRows,
+          state.lastSeenProduct,
+        );
+
+        items.forEach((res, i) => {
+          state.rows.push({
+            raw: rawRows[i] || "", // Map back to raw if possible, though PapaParse consumed it.
+            // Ideally we use original rawRows index.
+            // The chunk size matches, so index i corresponds to rawRows[i].
+            parsed: res.item,
+            error: res.error,
+          });
+        });
+        state.lastSeenProduct = nextContext;
+      }
+
+      if (done) {
+        state.step = "review";
+        state.lastSeenProduct = null;
+      } else {
+        state.step = "importing";
+      }
     },
     resolve_conflict: (
-        state, 
-        action: PayloadAction<{ index: number; resolvedActions: any[] }>
+      state,
+      action: PayloadAction<{ index: number; resolvedActions: any[] }>,
     ) => {
-        const { index, resolvedActions } = action.payload;
-        state.resolutions[index] = resolvedActions;
+      const { index, resolvedActions } = action.payload;
+      state.resolutions[index] = resolvedActions;
     },
     mark_items_done: (state, action: PayloadAction<{ indices: number[] }>) => {
-        const { indices } = action.payload;
-        indices.forEach(i => {
-            if (state.rows[i]) {
-                state.rows[i].processed = true;
-            }
-        });
+      const { indices } = action.payload;
+      indices.forEach((i) => {
+        if (state.rows[i]) {
+          state.rows[i].processed = true;
+        }
+      });
     },
     clear_import: (state) => {
-        state.activeFile = null;
-        state.step = "idle";
-        state.headerRow = null;
-        state.rows = [];
-        state.resolutions = {};
+      state.activeFile = null;
+      state.step = "idle";
+      state.headerRow = null;
+      state.rows = [];
+      state.resolutions = {};
     },
     finish_import: (state: ShopifyImportState) => {
-        state.activeFile = null;
-        state.step = "idle";
-        state.headerRow = null;
-        state.rows = [];
-        state.resolutions = {};
+      state.activeFile = null;
+      state.step = "idle";
+      state.headerRow = null;
+      state.rows = [];
+      state.resolutions = {};
     },
-    import_batch: (state, action: PayloadAction<{ filter: ShopifyImportBatchFilter; options?: ImportBatchOptions }>) => {
-        // Trigger action for root reducer
-    }
+    import_batch: (
+      state,
+      action: PayloadAction<{
+        filter: ShopifyImportBatchFilter;
+        options?: ImportBatchOptions;
+      }>,
+    ) => {
+      // Trigger action for root reducer
+    },
   },
 });
 
-export const { start_session, set_header, append_raw_rows, resolve_conflict, mark_items_done, clear_import, finish_import, import_batch } = shopifyImportSlice.actions;
+export const {
+  start_session,
+  set_header,
+  append_raw_rows,
+  resolve_conflict,
+  mark_items_done,
+  clear_import,
+  finish_import,
+  import_batch,
+} = shopifyImportSlice.actions;
 export const shopifyImport = shopifyImportSlice.reducer;

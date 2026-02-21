@@ -27,7 +27,12 @@ describe("inventory handle updates sync to listings", () => {
 
     state = rootReducer(
       state,
-      update_field({ id, field: "handle", from: "old-handle", to: "new-handle" }),
+      update_field({
+        id,
+        field: "handle",
+        from: "old-handle",
+        to: "new-handle",
+      }),
     );
 
     expect(state.inventory.idToItem[id].handle).toBe("new-handle");
@@ -75,7 +80,12 @@ describe("inventory handle updates sync to listings", () => {
 
     state = rootReducer(
       state,
-      update_field({ id: idA, field: "handle", from: "handle-a", to: "handle-b" }),
+      update_field({
+        id: idA,
+        field: "handle",
+        from: "handle-a",
+        to: "handle-b",
+      }),
     );
 
     expect(state.listings.idToHandle[idA]).toBe("handle-b");

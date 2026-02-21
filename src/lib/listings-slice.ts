@@ -1,5 +1,11 @@
 import { createAction, createReducer } from "@reduxjs/toolkit";
-import { update_item, update_field, bulk_import_items, retype_item, rename_subtype } from "./inventory";
+import {
+  update_item,
+  update_field,
+  bulk_import_items,
+  retype_item,
+  rename_subtype,
+} from "./inventory";
 import { generateHandle } from "./handle-utils";
 
 export interface ListingImage {
@@ -18,7 +24,7 @@ export interface Listing {
   productType: string;
   vendor: string;
   tags: string[];
-  status: 'active' | 'archived' | 'draft';
+  status: "active" | "archived" | "draft";
   option1Name: string; // e.g., "Color" or "Style"
   images: ListingImage[];
   lastUpdated: number;
@@ -27,7 +33,7 @@ export interface Listing {
 export interface ListingsState {
   handleToListing: Record<string, Listing>;
   // Map inventory ID (item key) to Listing Handle to support partial updates/renames
-  idToHandle: Record<string, string>; 
+  idToHandle: Record<string, string>;
   knownCategories: string[];
   initialized: boolean;
 }
@@ -40,18 +46,31 @@ export const initialState: ListingsState = {
 };
 
 function ensureCategory(state: ListingsState, category: string) {
-    if (category && !state.knownCategories.includes(category)) {
-        state.knownCategories.push(category);
-        state.knownCategories.sort();
-    }
+  if (category && !state.knownCategories.includes(category)) {
+    state.knownCategories.push(category);
+    state.knownCategories.sort();
+  }
 }
 
 // Actions
-export const create_listing = createAction<{ listing: Listing }>("create_listing");
-export const update_listing = createAction<{ handle: string; changes: Partial<Listing> }>("update_listing");
-export const delete_listing = createAction<{ handle: string }>("delete_listing");
-export const add_listing_image = createAction<{ handle: string; image: ListingImage }>("add_listing_image");
-export const remove_listing_image = createAction<{ handle: string; imageId: string }>("remove_listing_image");
+export const create_listing = createAction<{ listing: Listing }>(
+  "create_listing",
+);
+export const update_listing = createAction<{
+  handle: string;
+  changes: Partial<Listing>;
+}>("update_listing");
+export const delete_listing = createAction<{ handle: string }>(
+  "delete_listing",
+);
+export const add_listing_image = createAction<{
+  handle: string;
+  image: ListingImage;
+}>("add_listing_image");
+export const remove_listing_image = createAction<{
+  handle: string;
+  imageId: string;
+}>("remove_listing_image");
 
 // Reducer
 export const listings = createReducer(initialState, (builder) => {
@@ -66,159 +85,184 @@ export const listings = createReducer(initialState, (builder) => {
       const existing = state.handleToListing[handle];
       if (existing) {
         state.handleToListing[handle] = {
-           ...existing,
-           ...changes,
-           lastUpdated: Date.now()
+          ...existing,
+          ...changes,
+          lastUpdated: Date.now(),
         };
-        if (changes.productCategory) ensureCategory(state, changes.productCategory);
+        if (changes.productCategory)
+          ensureCategory(state, changes.productCategory);
       }
     })
     .addCase(delete_listing, (state, action) => {
-        const { handle } = action.payload;
-        delete state.handleToListing[handle];
-        // Clean up idToHandle
-        for (const [id, h] of Object.entries(state.idToHandle)) {
-            if (h === handle) delete state.idToHandle[id];
-        }
+      const { handle } = action.payload;
+      delete state.handleToListing[handle];
+      // Clean up idToHandle
+      for (const [id, h] of Object.entries(state.idToHandle)) {
+        if (h === handle) delete state.idToHandle[id];
+      }
     })
     .addCase(add_listing_image, (state, action) => {
-        const { handle, image } = action.payload;
-        const listing = state.handleToListing[handle];
-        if (listing) {
-            const exists = listing.images.some(img => img.id === image.id);
-            if (!exists) {
-                listing.images.push(image);
-                listing.lastUpdated = Date.now();
-            }
+      const { handle, image } = action.payload;
+      const listing = state.handleToListing[handle];
+      if (listing) {
+        const exists = listing.images.some((img) => img.id === image.id);
+        if (!exists) {
+          listing.images.push(image);
+          listing.lastUpdated = Date.now();
         }
+      }
     })
     .addCase(remove_listing_image, (state, action) => {
-        const { handle, imageId } = action.payload;
-        const listing = state.handleToListing[handle];
-        if (listing) {
-            listing.images = listing.images.filter(img => img.id !== imageId);
-            listing.lastUpdated = Date.now();
-        }
+      const { handle, imageId } = action.payload;
+      const listing = state.handleToListing[handle];
+      if (listing) {
+        listing.images = listing.images.filter((img) => img.id !== imageId);
+        listing.lastUpdated = Date.now();
+      }
     })
     // Legacy Action Handling for Replay
     .addCase(update_item, (state, action) => {
-        handleLegacyUpdate(state, action.payload.id, action.payload.item, (action as any).timestamp);
+      handleLegacyUpdate(
+        state,
+        action.payload.id,
+        action.payload.item,
+        (action as any).timestamp,
+      );
     })
     .addCase(bulk_import_items, (state, action) => {
-        // Iterate over all items in the bulk import and process them
-        for (const importItem of action.payload.items) {
-           // We treat 'new' and 'update' similarly for listings: 
-           // ensure listing exists and update fields if present.
-           handleLegacyUpdate(state, importItem.id, importItem.item, (action as any).timestamp);
-        }
+      // Iterate over all items in the bulk import and process them
+      for (const importItem of action.payload.items) {
+        // We treat 'new' and 'update' similarly for listings:
+        // ensure listing exists and update fields if present.
+        handleLegacyUpdate(
+          state,
+          importItem.id,
+          importItem.item,
+          (action as any).timestamp,
+        );
+      }
     })
     .addCase(update_field, (state, action) => {
-        const { id, field, to } = action.payload;
-        const handle = state.idToHandle[id];
-        
-        // Map Item fields to Listing fields
-        const fieldKey = field as string;
-        if (fieldKey === 'handle') {
-             const newHandle = String(to);
-             applyHandleUpdate(state, id, newHandle, handle);
-             return;
+      const { id, field, to } = action.payload;
+      const handle = state.idToHandle[id];
+
+      // Map Item fields to Listing fields
+      const fieldKey = field as string;
+      if (fieldKey === "handle") {
+        const newHandle = String(to);
+        applyHandleUpdate(state, id, newHandle, handle);
+        return;
+      }
+
+      if (!handle) return; // Can't update if we don't know the handle
+
+      const listing = state.handleToListing[handle];
+      if (!listing) return;
+
+      if (fieldKey === "description") {
+        // Rename logic similar to above
+        const newTitle = String(to);
+        const janCode = (listing as any).janCode;
+        if (janCode) {
+          const newHandle = generateHandle(newTitle, janCode);
+          if (newHandle !== handle) {
+            const movedListing = {
+              ...listing,
+              handle: newHandle,
+              title: newTitle,
+            };
+            delete state.handleToListing[handle];
+            state.handleToListing[newHandle] = movedListing;
+            state.idToHandle[id] = newHandle;
+          } else {
+            listing.title = newTitle;
+          }
+        } else {
+          listing.title = newTitle;
         }
-
-        if (!handle) return; // Can't update if we don't know the handle
-
-        const listing = state.handleToListing[handle];
-        if (!listing) return;
-
-        if (fieldKey === 'description') {
-            // Rename logic similar to above
-            const newTitle = String(to);
-            const janCode = (listing as any).janCode;
-            if (janCode) {
-                const newHandle = generateHandle(newTitle, janCode);
-                 if (newHandle !== handle) {
-                    const movedListing = { ...listing, handle: newHandle, title: newTitle };
-                    delete state.handleToListing[handle];
-                    state.handleToListing[newHandle] = movedListing;
-                    state.idToHandle[id] = newHandle;
-               } else {
-                   listing.title = newTitle;
-               }
-            } else {
-                listing.title = newTitle;
-            }
-        } else if (fieldKey === 'bodyHtml') { // Legacy field support
-             listing.bodyHtml = String(to);
-        } else if (fieldKey === 'productCategory') { // Legacy
-             listing.productCategory = String(to);
-             ensureCategory(state, listing.productCategory);
-        }
+      } else if (fieldKey === "bodyHtml") {
+        // Legacy field support
+        listing.bodyHtml = String(to);
+      } else if (fieldKey === "productCategory") {
+        // Legacy
+        listing.productCategory = String(to);
+        ensureCategory(state, listing.productCategory);
+      }
     });
 });
 
 // Helper to consolidate logic between update_item and bulk_import_items
-function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, timestamp: number | undefined) {
-      // 1. Resolve Handle
-      let handle = state.idToHandle[id];
-      
-      // If no handle mapped, try to generate from payload (Creation scenario)
-      if (!handle) {
-          if (itemPayload.handle) handle = itemPayload.handle;
-          else if (itemPayload.description && itemPayload.janCode) {
-              handle = generateHandle(itemPayload.description, itemPayload.janCode);
-          } else {
-              if (!itemPayload.janCode) return; 
-              handle = generateHandle(itemPayload.description || "Untitled", itemPayload.janCode);
-          }
-          state.idToHandle[id] = handle;
-      }
+function handleLegacyUpdate(
+  state: ListingsState,
+  id: string,
+  itemPayload: any,
+  timestamp: number | undefined,
+) {
+  // 1. Resolve Handle
+  let handle = state.idToHandle[id];
 
-      // 2. Get Existing Listing or Create New
-      let listing = state.handleToListing[handle];
+  // If no handle mapped, try to generate from payload (Creation scenario)
+  if (!handle) {
+    if (itemPayload.handle) handle = itemPayload.handle;
+    else if (itemPayload.description && itemPayload.janCode) {
+      handle = generateHandle(itemPayload.description, itemPayload.janCode);
+    } else {
+      if (!itemPayload.janCode) return;
+      handle = generateHandle(
+        itemPayload.description || "Untitled",
+        itemPayload.janCode,
+      );
+    }
+    state.idToHandle[id] = handle;
+  }
 
-      if (!listing) {
-          // Creation Scenario
-          listing = {
-              handle,
-              title: itemPayload.description || "Untitled",
-              bodyHtml: itemPayload.bodyHtml || "",
-              productCategory: itemPayload.productCategory || "",
-              productType: "",
-              vendor: "SPNSS Ltd.",
-              tags: [],
-              status: "active",
-              option1Name: "Subtype",
-              images: [],
-              lastUpdated: timestamp || Date.now(),
-              // Store janCode for future re-generation/validation if needed?
-              // Not strictly in Listing interface but useful. 
-              // We rely on idToHandle map + payload updates.
-          } as Listing; // Cast to force verify or allow extra props if needed
-          
-          // Inject janCode property directly if flexible, or rely only on payload
-           (listing as any).janCode = itemPayload.janCode;
+  // 2. Get Existing Listing or Create New
+  let listing = state.handleToListing[handle];
 
-          if (listing.productCategory) ensureCategory(state, listing.productCategory);
-          state.handleToListing[handle] = listing;
-      }
+  if (!listing) {
+    // Creation Scenario
+    listing = {
+      handle,
+      title: itemPayload.description || "Untitled",
+      bodyHtml: itemPayload.bodyHtml || "",
+      productCategory: itemPayload.productCategory || "",
+      productType: "",
+      vendor: "SPNSS Ltd.",
+      tags: [],
+      status: "active",
+      option1Name: "Subtype",
+      images: [],
+      lastUpdated: timestamp || Date.now(),
+      // Store janCode for future re-generation/validation if needed?
+      // Not strictly in Listing interface but useful.
+      // We rely on idToHandle map + payload updates.
+    } as Listing; // Cast to force verify or allow extra props if needed
 
-      // 3. Handle Updates & Renames
-      const currentJanCode = (listing as any).janCode || itemPayload.janCode; 
-      if (itemPayload.janCode) (listing as any).janCode = itemPayload.janCode;
+    // Inject janCode property directly if flexible, or rely only on payload
+    (listing as any).janCode = itemPayload.janCode;
 
-      // Check if payload provides an explicit handle (e.g. from Shopify Import)
-      // or if we need to regenerate due to title/jan change.
-      let targetHandle = handle;
-      let newTitle = itemPayload.description || listing.title;
+    if (listing.productCategory) ensureCategory(state, listing.productCategory);
+    state.handleToListing[handle] = listing;
+  }
 
-      if (itemPayload.handle) {
-          targetHandle = itemPayload.handle;
-      } 
-      // REVISED (2025-12-22): 
-      // Do NOT regenerate handle implicitly on title/jan change. 
-      // Handles should be sticky (like Shopify). Only update if explicit handle provided.
-      // This preserves custom handles (e.g. from bulk import) even if legacy update_item actions come in.
-      
-      /*
+  // 3. Handle Updates & Renames
+  const currentJanCode = (listing as any).janCode || itemPayload.janCode;
+  if (itemPayload.janCode) (listing as any).janCode = itemPayload.janCode;
+
+  // Check if payload provides an explicit handle (e.g. from Shopify Import)
+  // or if we need to regenerate due to title/jan change.
+  let targetHandle = handle;
+  let newTitle = itemPayload.description || listing.title;
+
+  if (itemPayload.handle) {
+    targetHandle = itemPayload.handle;
+  }
+  // REVISED (2025-12-22):
+  // Do NOT regenerate handle implicitly on title/jan change.
+  // Handles should be sticky (like Shopify). Only update if explicit handle provided.
+  // This preserves custom handles (e.g. from bulk import) even if legacy update_item actions come in.
+
+  /*
       else if (itemPayload.description || itemPayload.janCode) {
            const newTitle = itemPayload.description || listing.title;
            const newJan = itemPayload.janCode || (listing as any).janCode;
@@ -238,42 +282,44 @@ function handleLegacyUpdate(state: ListingsState, id: string, itemPayload: any, 
       }
       */
 
-      if (targetHandle !== handle) {
-           applyHandleUpdate(state, id, targetHandle, handle);
-           const nextListing = state.handleToListing[targetHandle];
-           if (nextListing) {
-               listing = nextListing;
-               listing.title = newTitle;
-           }
-           handle = targetHandle;
-      } else {
-           // Just update title
-           listing.title = newTitle;
-      }
+  if (targetHandle !== handle) {
+    applyHandleUpdate(state, id, targetHandle, handle);
+    const nextListing = state.handleToListing[targetHandle];
+    if (nextListing) {
+      listing = nextListing;
+      listing.title = newTitle;
+    }
+    handle = targetHandle;
+  } else {
+    // Just update title
+    listing.title = newTitle;
+  }
 
-      // Update other fields
-      // Optimization: Only update if payload has data.
-      // During merge (replay), we don't want a variant with empty body to wipe the main product's body.
-      if (itemPayload.bodyHtml) listing.bodyHtml = itemPayload.bodyHtml;
-      if (itemPayload.productCategory) {
-          listing.productCategory = itemPayload.productCategory;
-          ensureCategory(state, listing.productCategory);
-      }
-      
-      // Handle Image
-      if (itemPayload.image) {
-            const hasImage = listing.images.some(img => img.url === itemPayload.image);
-            if (!hasImage) {
-                 listing.images.push({
-                       // Deterministic ID based on URL to ensure replay stability
-                       id: itemPayload.image, 
-                       url: itemPayload.image,
-                       position: itemPayload.imagePosition || listing.images.length + 1,
-                       altText: itemPayload.imageAltText || itemPayload.description || ""
-                 });
-                 listing.lastUpdated = Date.now();
-            }
-      }
+  // Update other fields
+  // Optimization: Only update if payload has data.
+  // During merge (replay), we don't want a variant with empty body to wipe the main product's body.
+  if (itemPayload.bodyHtml) listing.bodyHtml = itemPayload.bodyHtml;
+  if (itemPayload.productCategory) {
+    listing.productCategory = itemPayload.productCategory;
+    ensureCategory(state, listing.productCategory);
+  }
+
+  // Handle Image
+  if (itemPayload.image) {
+    const hasImage = listing.images.some(
+      (img) => img.url === itemPayload.image,
+    );
+    if (!hasImage) {
+      listing.images.push({
+        // Deterministic ID based on URL to ensure replay stability
+        id: itemPayload.image,
+        url: itemPayload.image,
+        position: itemPayload.imagePosition || listing.images.length + 1,
+        altText: itemPayload.imageAltText || itemPayload.description || "",
+      });
+      listing.lastUpdated = Date.now();
+    }
+  }
 }
 
 function applyHandleUpdate(
@@ -302,14 +348,22 @@ function applyHandleUpdate(
 
   if (priorListing && !targetListing) {
     if (!isStillUsed) {
-        // Move (Rename) - No one else uses old handle, so we move the listing entity
-        const movedListing = { ...priorListing, handle: newHandle, lastUpdated: Date.now() };
-        delete state.handleToListing[priorHandle];
-        state.handleToListing[newHandle] = movedListing;
+      // Move (Rename) - No one else uses old handle, so we move the listing entity
+      const movedListing = {
+        ...priorListing,
+        handle: newHandle,
+        lastUpdated: Date.now(),
+      };
+      delete state.handleToListing[priorHandle];
+      state.handleToListing[newHandle] = movedListing;
     } else {
-        // Split (Clone) - Old handle still used, so we create a NEW listing for this item, cloning context
-        const newListing = { ...priorListing, handle: newHandle, lastUpdated: Date.now() };
-        state.handleToListing[newHandle] = newListing;
+      // Split (Clone) - Old handle still used, so we create a NEW listing for this item, cloning context
+      const newListing = {
+        ...priorListing,
+        handle: newHandle,
+        lastUpdated: Date.now(),
+      };
+      state.handleToListing[newHandle] = newListing;
     }
     return;
   }
@@ -317,8 +371,8 @@ function applyHandleUpdate(
   if (priorListing && targetListing) {
     // Merge into existing target
     if (!isStillUsed) {
-        // Old handle empty, cleanup
-        delete state.handleToListing[priorHandle];
+      // Old handle empty, cleanup
+      delete state.handleToListing[priorHandle];
     }
   }
 }

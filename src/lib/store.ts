@@ -8,13 +8,13 @@ import { driveSyncMiddleware } from "./drive-sync-middleware";
 import { bulk_import_items } from "./inventory";
 import { create_listing, delete_listing } from "./listings-slice";
 import { categorize_photo } from "./photos-slice";
-import { 
-  add_proposals, 
-  start_batch, 
-  generate_descriptions_for_batch, 
-  generate_proposals, 
+import {
+  add_proposals,
+  start_batch,
+  generate_descriptions_for_batch,
+  generate_proposals,
   set_drive_connection_status,
-  approve_proposal_thunk
+  approve_proposal_thunk,
 } from "./listing-creation-slice";
 
 // Persistence Logic
@@ -42,7 +42,9 @@ export async function hydrate() {
 
 function triggerSave(state: any, lastAction: SnapshotMetadata | null) {
   const safeState = { ...state };
-  saveSnapshot(safeState, lastAction).catch((e) => console.warn("Save failed", e));
+  saveSnapshot(safeState, lastAction).catch((e) =>
+    console.warn("Save failed", e),
+  );
 }
 
 const persistenceMiddleware =
@@ -51,17 +53,16 @@ const persistenceMiddleware =
 
     if (action && action.id && action.timestamp) {
       snapshotMetadata = { id: action.id, timestamp: action.timestamp };
-      
+
       if (saveTimeout) clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => {
         triggerSave(storeAPI.getState(), snapshotMetadata);
       }, 100);
-    } 
-    else if (action.type.startsWith('photos/')) {
-       if (saveTimeout) clearTimeout(saveTimeout);
-       saveTimeout = setTimeout(() => {
-         triggerSave(storeAPI.getState(), snapshotMetadata);
-       }, 500); 
+    } else if (action.type.startsWith("photos/")) {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(() => {
+        triggerSave(storeAPI.getState(), snapshotMetadata);
+      }, 500);
     }
 
     return result;
@@ -71,12 +72,12 @@ const reduxStore = configureStore({
   reducer: rootReducer,
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
-      serializableCheck: false, 
-      immutableCheck: false, 
+      serializableCheck: false,
+      immutableCheck: false,
     })
-    .concat(devtoolsMiddleware)
-    .concat(persistenceMiddleware)
-    .concat(driveSyncMiddleware as any),
+      .concat(devtoolsMiddleware)
+      .concat(persistenceMiddleware)
+      .concat(driveSyncMiddleware as any),
   devTools: {
     name: "Dobutsu Admin",
     trace: true,
@@ -89,18 +90,18 @@ const reduxStore = configureStore({
       return action;
     },
     stateSanitizer: (state: any) => {
-       const result = { ...state };
-       if (result.inventory && result.inventory.idToItem) {
-           const keys = Object.keys(result.inventory.idToItem);
-           if (keys.length > 100) {
-               result.inventory = {
-                   ...result.inventory,
-                   idToItem: `<<LARGE_INVENTORY_MAP_OMITTED_FOR_DEVTOOLS (${keys.length} items)>>`
-               };
-           }
-       }
-       return result;
-    }
+      const result = { ...state };
+      if (result.inventory && result.inventory.idToItem) {
+        const keys = Object.keys(result.inventory.idToItem);
+        if (keys.length > 100) {
+          result.inventory = {
+            ...result.inventory,
+            idToItem: `<<LARGE_INVENTORY_MAP_OMITTED_FOR_DEVTOOLS (${keys.length} items)>>`,
+          };
+        }
+      }
+      return result;
+    },
   },
 });
 
@@ -128,23 +129,26 @@ const svelteStore = {
 export const store = svelteStore as ReduxStore & SvelteStore;
 
 if (typeof window !== "undefined") {
-  if (import.meta.env.VITE_FIREBASE_ENV === 'local' || import.meta.env.MODE === 'emulator') {
-      (window as any).testHelpers = {
-          store,
-          actions: {
-              bulk_import_items,
-              create_listing,
-              delete_listing,
-              add_proposals,
-              categorize_photo,
-              start_batch,
-              generate_descriptions_for_batch,
-              generate_proposals,
-              set_drive_connection_status,
-              approve_proposal_thunk
-          }
-      };
-      console.log("[Redux] Exposed window.testHelpers for E2E testing");
+  if (
+    import.meta.env.VITE_FIREBASE_ENV === "local" ||
+    import.meta.env.MODE === "emulator"
+  ) {
+    (window as any).testHelpers = {
+      store,
+      actions: {
+        bulk_import_items,
+        create_listing,
+        delete_listing,
+        add_proposals,
+        categorize_photo,
+        start_batch,
+        generate_descriptions_for_batch,
+        generate_proposals,
+        set_drive_connection_status,
+        approve_proposal_thunk,
+      },
+    };
+    console.log("[Redux] Exposed window.testHelpers for E2E testing");
   }
 }
 

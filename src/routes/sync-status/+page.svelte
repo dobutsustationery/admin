@@ -1,7 +1,13 @@
 <script lang="ts">
   import { page } from "$app/stores";
   import { onDestroy, onMount } from "svelte";
-  import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+  import {
+    collection,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+  } from "firebase/firestore";
   import { firestore } from "$lib/firebase";
   import {
     foldSyncRequests,
@@ -43,7 +49,8 @@
   function tsDebug(value: any): string {
     if (!value) return "-";
     if (typeof value?.seconds === "number") {
-      const nanos = typeof value?.nanoseconds === "number" ? value.nanoseconds : 0;
+      const nanos =
+        typeof value?.nanoseconds === "number" ? value.nanoseconds : 0;
       return `${value.seconds}.${String(nanos).padStart(9, "0")}Z`;
     }
     const ms = toMs(value);
@@ -54,11 +61,14 @@
   function extractRequestError(req: ShopifySyncRequestView | null): string {
     if (!req) return "";
     const resultError = req.result?.error;
-    if (typeof resultError === "string" && resultError.trim()) return resultError;
+    if (typeof resultError === "string" && resultError.trim())
+      return resultError;
 
     const failedApi = [...req.apiCalls]
       .sort((a, b) => b.loggedAt - a.loggedAt)
-      .find((call) => !call.success && typeof call.response?.error === "string");
+      .find(
+        (call) => !call.success && typeof call.response?.error === "string",
+      );
 
     if (failedApi?.response?.error) return String(failedApi.response.error);
     return "";
@@ -69,17 +79,28 @@
     .map((requestId) => folded.requestsById[requestId])
     .filter(Boolean);
   $: selected = requests.find((r) => r.requestId === selectedRequestId) || null;
-  $: selectedCalls = selected ? [...selected.apiCalls].sort((a, b) => b.loggedAt - a.loggedAt) : [];
+  $: selectedCalls = selected
+    ? [...selected.apiCalls].sort((a, b) => b.loggedAt - a.loggedAt)
+    : [];
   $: selectedError = extractRequestError(selected);
   $: selectedTimeline = selected ? sortSyncEventsAsc(selected.timeline) : [];
 
   onMount(() => {
-    const requestedFromUrl = ($page.url.searchParams.get("requestId") || "").trim();
-    const q = query(collection(firestore, "shopify_sync"), orderBy("timestamp", "desc"), limit(1000));
+    const requestedFromUrl = (
+      $page.url.searchParams.get("requestId") || ""
+    ).trim();
+    const q = query(
+      collection(firestore, "shopify_sync"),
+      orderBy("timestamp", "desc"),
+      limit(1000),
+    );
     unsubscribe = onSnapshot(
       q,
       (snap) => {
-        const nextEvents = snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as any) })) as ShopifySyncEvent[];
+        const nextEvents = snap.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as any),
+        })) as ShopifySyncEvent[];
         events = nextEvents;
         const nextFolded = foldSyncRequests(nextEvents);
         const nextRequests = nextFolded.requestIds
@@ -87,7 +108,9 @@
           .filter(Boolean);
 
         if (!selectedRequestId && requestedFromUrl) {
-          const found = nextRequests.find((r) => r.requestId === requestedFromUrl);
+          const found = nextRequests.find(
+            (r) => r.requestId === requestedFromUrl,
+          );
           if (found) selectedRequestId = found.requestId;
         }
 
@@ -131,13 +154,23 @@
           <p class="empty">No requests found in `shopify_sync`.</p>
         {:else}
           {#each requests as req}
-            <button class="request" class:selected={selectedRequestId === req.requestId} on:click={() => (selectedRequestId = req.requestId)}>
+            <button
+              class="request"
+              class:selected={selectedRequestId === req.requestId}
+              on:click={() => (selectedRequestId = req.requestId)}
+            >
               <div class="row">
                 <strong>{req.handle || "(missing handle)"}</strong>
-                <span class="status" style={`color:${statusColor[req.status] || "#111827"}`}>{req.status}</span>
+                <span
+                  class="status"
+                  style={`color:${statusColor[req.status] || "#111827"}`}
+                  >{req.status}</span
+                >
               </div>
               <div class="meta">requestId: {req.requestId}</div>
-              <div class="meta">requested: {tsToString(req.requestedAt || req.createdAtMs)}</div>
+              <div class="meta">
+                requested: {tsToString(req.requestedAt || req.createdAtMs)}
+              </div>
               <div class="meta">processor: {req.processor || "-"}</div>
             </button>
           {/each}
@@ -151,20 +184,38 @@
         {:else}
           {#if selectedError}
             <div class="error-banner">
-              <strong>Error:</strong> {selectedError}
+              <strong>Error:</strong>
+              {selectedError}
             </div>
           {/if}
 
           <div class="card">
             <div><strong>Handle:</strong> {selected.handle || "-"}</div>
-            <div><strong>Status:</strong> <span style={`color:${statusColor[selected.status] || "#111827"}`}>{selected.status}</span></div>
+            <div>
+              <strong>Status:</strong>
+              <span style={`color:${statusColor[selected.status] || "#111827"}`}
+                >{selected.status}</span
+              >
+            </div>
             <div><strong>Request ID:</strong> {selected.requestId}</div>
-            <div><strong>Request Event ID:</strong> {selected.requestEventId || "-"}</div>
-            <div><strong>Requested By:</strong> {selected.requestedBy || "-"}</div>
+            <div>
+              <strong>Request Event ID:</strong>
+              {selected.requestEventId || "-"}
+            </div>
+            <div>
+              <strong>Requested By:</strong>
+              {selected.requestedBy || "-"}
+            </div>
             <div><strong>Source:</strong> {selected.source || "-"}</div>
             <div><strong>Processor:</strong> {selected.processor || "-"}</div>
-            <div><strong>Requested At:</strong> {tsToString(selected.requestedAt || selected.createdAtMs)}</div>
-            <div><strong>Result:</strong> {selected.result ? JSON.stringify(selected.result) : "-"}</div>
+            <div>
+              <strong>Requested At:</strong>
+              {tsToString(selected.requestedAt || selected.createdAtMs)}
+            </div>
+            <div>
+              <strong>Result:</strong>
+              {selected.result ? JSON.stringify(selected.result) : "-"}
+            </div>
           </div>
 
           <h3>API Debug Events</h3>
@@ -175,7 +226,9 @@
               <div class="log">
                 <div class="row">
                   <strong>{call.requestType}</strong>
-                  <span class:ok={call.success} class:fail={!call.success}>{call.success ? "success" : "failure"}</span>
+                  <span class:ok={call.success} class:fail={!call.success}
+                    >{call.success ? "success" : "failure"}</span
+                  >
                 </div>
                 <div class="meta">endpoint: {call.endpoint}</div>
                 <div class="meta">processor: {call.processor || "-"}</div>
@@ -208,18 +261,81 @@
 </div>
 
 <style>
-  .page { max-width: 1500px; margin: 0 auto; padding: 1rem; }
-  .layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 1rem; min-width: 0; }
-  .list, .detail { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem; background: #fff; min-width: 0; }
-  .request { display: block; width: 100%; text-align: left; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.5rem; margin-bottom: 0.5rem; background: #fff; cursor: pointer; }
-  .request.selected { border-color: #2563eb; background: #eff6ff; }
-  .row { display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
-  .status { font-weight: 600; }
-  .meta { color: #4b5563; font-size: 0.85rem; word-break: break-all; }
-  .card, .log, .timeline-item { border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.65rem; margin-bottom: 0.75rem; background: #fafafa; overflow: hidden; min-width: 0; }
-  .error-banner { border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; border-radius: 6px; padding: 0.65rem; margin-bottom: 0.75rem; }
-  .ok { color: #059669; font-weight: 600; }
-  .fail { color: #dc2626; font-weight: 600; }
+  .page {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 1rem;
+    min-width: 0;
+  }
+  .list,
+  .detail {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.75rem;
+    background: #fff;
+    min-width: 0;
+  }
+  .request {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: #fff;
+    cursor: pointer;
+  }
+  .request.selected {
+    border-color: #2563eb;
+    background: #eff6ff;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+  }
+  .status {
+    font-weight: 600;
+  }
+  .meta {
+    color: #4b5563;
+    font-size: 0.85rem;
+    word-break: break-all;
+  }
+  .card,
+  .log,
+  .timeline-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 0.65rem;
+    margin-bottom: 0.75rem;
+    background: #fafafa;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .error-banner {
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #991b1b;
+    border-radius: 6px;
+    padding: 0.65rem;
+    margin-bottom: 0.75rem;
+  }
+  .ok {
+    color: #059669;
+    font-weight: 600;
+  }
+  .fail {
+    color: #dc2626;
+    font-weight: 600;
+  }
   pre {
     margin-top: 0.5rem;
     padding: 0.5rem;
@@ -233,7 +349,15 @@
     overflow: auto;
     max-height: 320px;
   }
-  .empty { color: #6b7280; }
-  .error { color: #dc2626; }
-  @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+  .empty {
+    color: #6b7280;
+  }
+  .error {
+    color: #dc2626;
+  }
+  @media (max-width: 960px) {
+    .layout {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>

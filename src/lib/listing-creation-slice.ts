@@ -62,10 +62,13 @@ export interface ListingProposal {
   status: "draft" | "approved" | "skipped";
 }
 
-export interface CleanListingVariant extends Omit<ListingVariant, 'itemId'> {}
+export interface CleanListingVariant extends Omit<ListingVariant, "itemId"> {}
 
-export interface CleanListingProposal extends Omit<ListingProposal, 'inventoryItemIds' | 'variants'> {
-    variants: CleanListingVariant[];
+export interface CleanListingProposal extends Omit<
+  ListingProposal,
+  "inventoryItemIds" | "variants"
+> {
+  variants: CleanListingVariant[];
 }
 
 export interface ListingCreationState {
@@ -81,7 +84,12 @@ export interface ListingCreationState {
 
   // Scanning State
   isScanning?: boolean;
-  scanProgress?: { current: number; total: number; message: string; lastUpdate: number };
+  scanProgress?: {
+    current: number;
+    total: number;
+    message: string;
+    lastUpdate: number;
+  };
   lastScanTimestamp?: number;
   lastScanJan?: string;
 
@@ -161,11 +169,16 @@ const listingCreationSlice = createSlice({
     set_scanning: (state, action: PayloadAction<boolean>) => {
       state.isScanning = action.payload;
       if (action.payload) {
-          state.lastScanTimestamp = Date.now();
+        state.lastScanTimestamp = Date.now();
       } else {
-          state.scanProgress = { current: 0, total: 0, message: "", lastUpdate: 0 };
-          state.lastScanTimestamp = undefined;
-          state.lastScanJan = undefined;
+        state.scanProgress = {
+          current: 0,
+          total: 0,
+          message: "",
+          lastUpdate: 0,
+        };
+        state.lastScanTimestamp = undefined;
+        state.lastScanJan = undefined;
       }
     },
     set_scan_progress: (
@@ -178,23 +191,26 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       state.scanProgress = {
-          ...action.payload,
-          lastUpdate: Date.now()
+        ...action.payload,
+        lastUpdate: Date.now(),
       };
       state.lastScanTimestamp = Date.now();
       if (action.payload.janCode) {
-          state.lastScanJan = action.payload.janCode;
+        state.lastScanJan = action.payload.janCode;
       }
     },
     // Session / Batch
-    add_proposals_internal: (state, action: PayloadAction<ListingProposal[]>) => {
+    add_proposals_internal: (
+      state,
+      action: PayloadAction<ListingProposal[]>,
+    ) => {
       action.payload.forEach((p) => {
         state.proposals[p.janCode] = p;
       });
     },
     // Intent-only action (Handled by RootReducer to enrich with Inventory Data)
     add_proposals: (state, action: PayloadAction<CleanListingProposal[]>) => {
-        // No-op in slice
+      // No-op in slice
     },
     remove_proposal: (state, action: PayloadAction<{ janCode: string }>) => {
       const { janCode } = action.payload;
@@ -758,24 +774,33 @@ export const generate_proposals =
   (): AppThunk => async (dispatch, getState) => {
     const currentState = getState().listingCreation;
     const now = Date.now();
-    
+
     // Stall detection: If scanning and no update for > 30 seconds, it's likely stuck.
     // If lastUpdate is missing (undefined/0), we treat it as stalled if isScanning is true.
     const lastUpdate = currentState.scanProgress?.lastUpdate || 0;
-    const isStalled = currentState.isScanning && (now - lastUpdate > 30000);
+    const isStalled = currentState.isScanning && now - lastUpdate > 30000;
 
     if (currentState.isScanning && !isStalled) {
-        console.log("[Generate] Scan already in flight and active. Skipping new trigger.");
-        return;
+      console.log(
+        "[Generate] Scan already in flight and active. Skipping new trigger.",
+      );
+      return;
     }
 
     if (isStalled) {
-        console.warn(`[Generate] Detected stalled scan (last update ${Math.round((now - currentState.scanProgress!.lastUpdate)/1000)}s ago). Resuming/Restarting.`);
+      console.warn(
+        `[Generate] Detected stalled scan (last update ${Math.round((now - currentState.scanProgress!.lastUpdate) / 1000)}s ago). Resuming/Restarting.`,
+      );
     }
 
     dispatch(set_scanning(true));
     dispatch(
-      set_scan_progress({ current: 0, total: 100, message: "Initializing...", lastUpdate: Date.now() } as any),
+      set_scan_progress({
+        current: 0,
+        total: 100,
+        message: "Initializing...",
+        lastUpdate: Date.now(),
+      } as any),
     );
 
     try {
@@ -839,7 +864,7 @@ export const generate_proposals =
                 current: processedCount,
                 total: totalCandidates,
                 message: `Analyzing variants for ${janCode}...`,
-                janCode
+                janCode,
               }),
             );
             try {
@@ -965,7 +990,7 @@ export const generate_proposals =
             current: processedBase,
             total: totalBaseJans,
             message: `Generating proposal for ${baseJan}...`,
-            janCode: baseJan
+            janCode: baseJan,
           }),
         );
 
@@ -1248,7 +1273,12 @@ export const generate_descriptions_for_batch =
           // MediaItem from photos-slice uses baseUrl. DriveFile uses apiUrl/thumbnailLink.
           // We prioritize baseUrl as per MediaItem interface.
           const url = toGoogleDrivePublicImageUrl(
-            f.baseUrl || f.productUrl || f.publicUrl || f.apiUrl || f.thumbnailLink || "",
+            f.baseUrl ||
+              f.productUrl ||
+              f.publicUrl ||
+              f.apiUrl ||
+              f.thumbnailLink ||
+              "",
           );
           // Ensure we have a valid string. If no direct link, construct API link?
           // google-drive.ts list function asks for these fields.
@@ -1365,7 +1395,12 @@ export const regenerate_title =
         const imagesToUse = driveGroup.slice(0, 3);
         const imagePromises = imagesToUse.map((f: any) => {
           const url = toGoogleDrivePublicImageUrl(
-            f.baseUrl || f.productUrl || f.publicUrl || f.apiUrl || f.thumbnailLink || "",
+            f.baseUrl ||
+              f.productUrl ||
+              f.publicUrl ||
+              f.apiUrl ||
+              f.thumbnailLink ||
+              "",
           );
           return fetchImage(url, accessToken);
         });
@@ -1484,9 +1519,14 @@ export const regenerate_description =
 
       const imagesToUse = allPhotos.slice(0, 5);
       const imagePromises = imagesToUse.map((f: any) => {
-      const url = toGoogleDrivePublicImageUrl(
-        f.baseUrl || f.productUrl || f.publicUrl || f.apiUrl || f.thumbnailLink || "",
-      );
+        const url = toGoogleDrivePublicImageUrl(
+          f.baseUrl ||
+            f.productUrl ||
+            f.publicUrl ||
+            f.apiUrl ||
+            f.thumbnailLink ||
+            "",
+        );
         return fetchImage(url, accessToken);
       });
 
@@ -1552,7 +1592,8 @@ export const set_proposal_handle_thunk =
     const sourceProposal = state.listingCreation.proposals[janCode];
     if (!sourceProposal) return;
     const currentHandle =
-      sourceProposal.handle || generateHandle(sourceProposal.title || "", sourceProposal.janCode);
+      sourceProposal.handle ||
+      generateHandle(sourceProposal.title || "", sourceProposal.janCode);
 
     // No-op guard: avoid creating synthetic split proposals when the handle is unchanged.
     // This can otherwise create hidden batch entries (same handle) and corrupt progress math.

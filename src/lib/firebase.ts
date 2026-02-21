@@ -18,8 +18,7 @@ function getFirebaseConfig() {
       apiKey: "demo-api-key",
       authDomain: "localhost",
       projectId:
-        import.meta.env.VITE_FIREBASE_LOCAL_PROJECT_ID ||
-        "dobutsu-admin",
+        import.meta.env.VITE_FIREBASE_LOCAL_PROJECT_ID || "dobutsu-admin",
       storageBucket: "demo-storage-bucket",
       messagingSenderId: "demo-sender-id",
       appId: "demo-app-id",

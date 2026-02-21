@@ -54,14 +54,20 @@
           const tokenData = {
             access_token: credential.accessToken,
             expires_in: 3600, // Required by google-photos.ts validation
-            expires_at: Date.now() + 3600 * 1000, 
+            expires_at: Date.now() + 3600 * 1000,
             // Use granted scopes from credential or fallback to our required scopes joined by space
-            scope: (credential as any).scope || REQUIRED_SCOPES.join(" ")
+            scope: (credential as any).scope || REQUIRED_SCOPES.join(" "),
           };
-          localStorage.setItem("google_drive_access_token", JSON.stringify(tokenData));
-          localStorage.setItem("google_photos_access_token", JSON.stringify(tokenData));
+          localStorage.setItem(
+            "google_drive_access_token",
+            JSON.stringify(tokenData),
+          );
+          localStorage.setItem(
+            "google_photos_access_token",
+            JSON.stringify(tokenData),
+          );
         }
-        
+
         dispatchEvent("sign_in", result);
       })
       .catch((message) => {

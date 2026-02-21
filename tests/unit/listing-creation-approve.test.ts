@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { configureStore } from "@reduxjs/toolkit";
 import { rootReducer } from "$lib/root-reducer";
-import { approve_proposal_thunk, add_proposals_internal } from "$lib/listing-creation-slice";
+import {
+  approve_proposal_thunk,
+  add_proposals_internal,
+} from "$lib/listing-creation-slice";
 import { update_item, type Item } from "$lib/inventory";
 import { categorize_photo } from "$lib/photos-slice";
 import type { MediaItem } from "$lib/google-photos";
@@ -26,7 +29,7 @@ describe("Listing Creation - Approve Proposal", () => {
       creationDate: "2024-01-01",
       timestamp: Date.now(),
       hsCode: "1234.56",
-      image: ""
+      image: "",
     };
     store.dispatch(update_item({ id: itemId, item }));
 
@@ -37,28 +40,36 @@ describe("Listing Creation - Approve Proposal", () => {
       productUrl: "https://photos.google.com/photo-1",
       mimeType: "image/jpeg",
       filename: "photo.jpg",
-      mediaMetadata: { creationTime: "2024-01-01", width: "100", height: "100" }
+      mediaMetadata: {
+        creationTime: "2024-01-01",
+        width: "100",
+        height: "100",
+      },
     };
-    // We need to inject this into janCodeToPhotos. 
+    // We need to inject this into janCodeToPhotos.
     // categorize_photo action does exactly this.
     store.dispatch(categorize_photo({ janCode, photo }));
 
     // 4. Setup Proposal
-    store.dispatch(add_proposals_internal([{
-      janCode,
-      inventoryItemIds: [itemId],
-      photoGroupIds: [janCode],
-      title: "New Product Title",
-      handle: "explicit-handle-1", // Explicit handle
-      bodyHtml: "<p>Description</p>",
-      productCategory: "Stationery",
-      vendor: "Dobutsu",
-      tags: ["tag1"],
-      option1Name: "Subtype",
-      variants: [{ id: "v1", itemId, option1Value: "Red" }],
-      status: 'draft',
-      price: 1500
-    }]));
+    store.dispatch(
+      add_proposals_internal([
+        {
+          janCode,
+          inventoryItemIds: [itemId],
+          photoGroupIds: [janCode],
+          title: "New Product Title",
+          handle: "explicit-handle-1", // Explicit handle
+          bodyHtml: "<p>Description</p>",
+          productCategory: "Stationery",
+          vendor: "Dobutsu",
+          tags: ["tag1"],
+          option1Name: "Subtype",
+          variants: [{ id: "v1", itemId, option1Value: "Red" }],
+          status: "draft",
+          price: 1500,
+        },
+      ]),
+    );
 
     // 5. Execute Approve Thunk
     store.dispatch(approve_proposal_thunk(janCode) as any);
@@ -69,10 +80,12 @@ describe("Listing Creation - Approve Proposal", () => {
 
     expect(listing).toBeDefined();
     expect(listing.title).toBe("New Product Title");
-    
+
     // CRITICAL CHECK: Images
     expect(listing.images.length).toBe(1);
-    expect(listing.images[0].url).toBe("https://lh3.googleusercontent.com/photo-1"); // Should be baseUrl
+    expect(listing.images[0].url).toBe(
+      "https://lh3.googleusercontent.com/photo-1",
+    ); // Should be baseUrl
     expect(listing.images[0].altText).toBe("photo.jpg");
   });
 
@@ -83,19 +96,105 @@ describe("Listing Creation - Approve Proposal", () => {
     const handle = "merged-handle";
 
     // 1. Setup Inventory
-    store.dispatch(update_item({ id: "item-A", item: { janCode: janA, handle, image: "", subtype: "A", description: "A", qty: 1, price: 100, shipped: 0, pieces: 1, creationDate: "", timestamp: 0, hsCode: "" } }));
-    store.dispatch(update_item({ id: "item-B", item: { janCode: janB, handle, image: "", subtype: "B", description: "B", qty: 1, price: 100, shipped: 0, pieces: 1, creationDate: "", timestamp: 0, hsCode: "" } }));
+    store.dispatch(
+      update_item({
+        id: "item-A",
+        item: {
+          janCode: janA,
+          handle,
+          image: "",
+          subtype: "A",
+          description: "A",
+          qty: 1,
+          price: 100,
+          shipped: 0,
+          pieces: 1,
+          creationDate: "",
+          timestamp: 0,
+          hsCode: "",
+        },
+      }),
+    );
+    store.dispatch(
+      update_item({
+        id: "item-B",
+        item: {
+          janCode: janB,
+          handle,
+          image: "",
+          subtype: "B",
+          description: "B",
+          qty: 1,
+          price: 100,
+          shipped: 0,
+          pieces: 1,
+          creationDate: "",
+          timestamp: 0,
+          hsCode: "",
+        },
+      }),
+    );
 
     // 2. Setup Photos
-    store.dispatch(categorize_photo({ janCode: janA, photo: { id: "p1", baseUrl: "url-A", filename: "A.jpg", productUrl: "", mimeType: "", mediaMetadata: { creationTime: "1", width: "1", height: "1" } } }));
-    store.dispatch(categorize_photo({ janCode: janB, photo: { id: "p2", baseUrl: "url-B", filename: "B.jpg", productUrl: "", mimeType: "", mediaMetadata: { creationTime: "2", width: "1", height: "1" } } }));
+    store.dispatch(
+      categorize_photo({
+        janCode: janA,
+        photo: {
+          id: "p1",
+          baseUrl: "url-A",
+          filename: "A.jpg",
+          productUrl: "",
+          mimeType: "",
+          mediaMetadata: { creationTime: "1", width: "1", height: "1" },
+        },
+      }),
+    );
+    store.dispatch(
+      categorize_photo({
+        janCode: janB,
+        photo: {
+          id: "p2",
+          baseUrl: "url-B",
+          filename: "B.jpg",
+          productUrl: "",
+          mimeType: "",
+          mediaMetadata: { creationTime: "2", width: "1", height: "1" },
+        },
+      }),
+    );
 
     // 3. Setup Proposals (Merged via handle)
-    const baseProp = { bodyHtml: "", productCategory: "", vendor: "", tags: [], option1Name: "Type", variants: [], status: 'draft' as const };
-    store.dispatch(add_proposals_internal([
-        { ...baseProp, janCode: janA, inventoryItemIds: ["item-A"], photoGroupIds: [janA], title: "Product", handle, variants: [{ id: "vA", itemId: "item-A", option1Value: "A" }] },
-        { ...baseProp, janCode: janB, inventoryItemIds: ["item-B"], photoGroupIds: [janB], title: "Product", handle, variants: [{ id: "vB", itemId: "item-B", option1Value: "B" }] }
-    ]));
+    const baseProp = {
+      bodyHtml: "",
+      productCategory: "",
+      vendor: "",
+      tags: [],
+      option1Name: "Type",
+      variants: [],
+      status: "draft" as const,
+    };
+    store.dispatch(
+      add_proposals_internal([
+        {
+          ...baseProp,
+          janCode: janA,
+          inventoryItemIds: ["item-A"],
+          photoGroupIds: [janA],
+          title: "Product",
+          handle,
+          variants: [{ id: "vA", itemId: "item-A", option1Value: "A" }],
+        },
+        {
+          ...baseProp,
+          janCode: janB,
+          inventoryItemIds: ["item-B"],
+          photoGroupIds: [janB],
+          title: "Product",
+          handle,
+          variants: [{ id: "vB", itemId: "item-B", option1Value: "B" }],
+        },
+      ]),
+    );
 
     // 4. Approve JAN_A
     store.dispatch(approve_proposal_thunk(janA) as any);

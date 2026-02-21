@@ -24,7 +24,12 @@
         broadcast(
           firestore,
           $user.uid,
-          update_field({ id: key, field, to, from: from as string|number ?? "" }),
+          update_field({
+            id: key,
+            field,
+            to,
+            from: (from as string | number) ?? "",
+          }),
         );
       }
     };

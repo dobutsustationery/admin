@@ -43,7 +43,7 @@ export function getDateRange(
     case "search":
       return {
         start: new Date(0), // Epoch
-        end: new Date()
+        end: new Date(),
       };
   }
 }

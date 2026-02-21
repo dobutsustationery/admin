@@ -23,7 +23,10 @@ const slice = createSlice({
   name: "shopifySync",
   initialState,
   reducers: {
-    replace_shopify_sync_events(state, action: PayloadAction<ShopifySyncEvent[]>) {
+    replace_shopify_sync_events(
+      state,
+      action: PayloadAction<ShopifySyncEvent[]>,
+    ) {
       const eventsById: Record<string, ShopifySyncEvent> = {};
       for (const event of action.payload || []) {
         if (!event?.id) continue;
@@ -42,6 +45,6 @@ const slice = createSlice({
   },
 });
 
-export const { replace_shopify_sync_events, reset_shopify_sync_state } = slice.actions;
+export const { replace_shopify_sync_events, reset_shopify_sync_state } =
+  slice.actions;
 export const shopifySync = slice.reducer;
-

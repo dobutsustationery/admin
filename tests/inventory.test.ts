@@ -28,7 +28,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       const nextState = inventory(initialState, update_item({ id, item }));
@@ -51,7 +52,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -72,7 +74,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 2,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -93,7 +96,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       const nextState = inventory(initialState, update_item({ id, item }));
@@ -111,7 +115,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       const nextState = inventory(initialState, update_item({ id, item }));
@@ -131,7 +136,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -158,7 +164,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -180,7 +187,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -203,7 +211,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -259,7 +268,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       nextState = inventory(nextState, update_item({ id, item }));
@@ -297,7 +307,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -324,7 +335,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -348,7 +360,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -378,7 +391,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -403,7 +417,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -430,7 +445,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -456,7 +472,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -486,7 +503,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -514,7 +532,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -541,7 +560,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -567,7 +587,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const item2: Item = {
         janCode: "4901234567890",
@@ -578,7 +599,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
@@ -626,7 +648,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const item2: Item = {
         janCode: "4901234567890",
@@ -637,7 +660,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
@@ -685,7 +709,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const item2: Item = {
         janCode: "4901234567890",
@@ -696,7 +721,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
@@ -741,7 +767,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const item2: Item = {
         janCode: "4901234567890",
@@ -752,7 +779,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
@@ -788,7 +816,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -829,7 +858,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -856,7 +886,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 2,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const item2: Item = {
         janCode: "4901234567890",
@@ -867,7 +898,8 @@ describe("inventory reducer", () => {
         qty: 5,
         pieces: 1,
         shipped: 1,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
@@ -898,7 +930,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const item2: Item = {
         janCode: "4901234567890",
@@ -909,7 +942,8 @@ describe("inventory reducer", () => {
         qty: 5,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id1 = `${item1.janCode}${item1.subtype}`;
       const id2 = `${item2.janCode}${item2.subtype}`;
@@ -940,7 +974,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -977,7 +1012,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1004,7 +1040,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1048,7 +1085,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1085,7 +1123,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 2,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1110,7 +1149,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 2,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1138,7 +1178,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 2,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1161,7 +1202,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 2,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
 
@@ -1194,7 +1236,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1229,7 +1272,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1264,7 +1308,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1299,7 +1344,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1333,7 +1379,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 5,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));
@@ -1366,7 +1413,8 @@ describe("inventory reducer", () => {
         qty: 10,
         pieces: 1,
         shipped: 0,
-        creationDate: "2024-01-01", timestamp: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
       };
       const id = `${item.janCode}${item.subtype}`;
       let nextState = inventory(initialState, update_item({ id, item }));

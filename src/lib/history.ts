@@ -13,7 +13,7 @@ export interface HistoryState {
 
 const initialState: HistoryState = {
   past: [],
-  future: []
+  future: [],
 };
 
 export const history_add = createAction<HistoryItem>("history/add");
@@ -43,7 +43,7 @@ export const history = createReducer(initialState, (builder) => {
       }
     })
     .addCase(history_clear, (state) => {
-        state.past = [];
-        state.future = [];
+      state.past = [];
+      state.future = [];
     });
 });

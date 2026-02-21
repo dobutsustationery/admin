@@ -16,8 +16,8 @@ describe("order import parsing", () => {
 
   it("parses weight when header contains line break", () => {
     const csv = [
-      "JAN Code,Country of Origin,Description,Total Pcs,Carton Number,Unused,Unused2,Unused3,\"\u203bWeight in Grams",
-      "per piece. (g)\"",
+      'JAN Code,Country of Origin,Description,Total Pcs,Carton Number,Unused,Unused2,Unused3,"\u203bWeight in Grams',
+      'per piece. (g)"',
       "4900000000013,Thailand,Linebreak Header Item,4,CN-2,,,,350",
     ].join("\n");
 

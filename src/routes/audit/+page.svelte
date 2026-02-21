@@ -25,7 +25,7 @@
   let loading = true;
   let viewMode: DateRangeView = "day";
   let currentDate = new Date();
-  
+
   // Search State
   let searchTerm = "";
   let allSearchCandidates: any[] = []; // Cache for client-side filtering
@@ -39,79 +39,89 @@
     loading = true;
     try {
       if (viewMode === "search") {
-         // Use local IndexedDB cache for search
-         const cached = await getAllCachedActions();
-         
-         // DRY RUN REPLAY TO CAPTURE EPHEMERAL ACTIONS
-         // Sort Ascending for Replay
-         cached.sort((a, b) => {
-             const tA = a.timestamp?.seconds || (typeof a.timestamp === 'number' ? a.timestamp : 0);
-             const tB = b.timestamp?.seconds || (typeof b.timestamp === 'number' ? b.timestamp : 0);
-             return tA - tB;
-         });
+        // Use local IndexedDB cache for search
+        const cached = await getAllCachedActions();
 
-         let state = rootReducer(undefined, { type: '@@INIT' });
-         const parentToChildren = new Map<string, any[]>();
+        // DRY RUN REPLAY TO CAPTURE EPHEMERAL ACTIONS
+        // Sort Ascending for Replay
+        cached.sort((a, b) => {
+          const tA =
+            a.timestamp?.seconds ||
+            (typeof a.timestamp === "number" ? a.timestamp : 0);
+          const tB =
+            b.timestamp?.seconds ||
+            (typeof b.timestamp === "number" ? b.timestamp : 0);
+          return tA - tB;
+        });
 
-         cached.forEach(action => {
-             const children: any[] = [];
-             // Logger signature: (action, state, timestamp)
-             const captureLogger = (childAction: any, _s: any, _t: any) => {
-                 children.push(childAction);
-             };
-             
-             try {
-                 state = rootReducer(state, action, captureLogger);
-             } catch (e) {
-                 console.warn("Dry run replay error:", e);
-             }
-             
-             if (children.length > 0) {
-                 parentToChildren.set(action.id, children);
-             }
-         });
+        let state = rootReducer(undefined, { type: "@@INIT" });
+        const parentToChildren = new Map<string, any[]>();
 
-         // Sort by timestamp desc for display
-         allSearchCandidates = cached.map(c => {
-             let d: Date;
-             if (c.timestamp?.toDate) {
-                 d = c.timestamp.toDate();
-             } else if (c.timestamp?.seconds) {
-                 d = new Date(c.timestamp.seconds * 1000);
-             } else {
-                 d = new Date(typeof c.timestamp === 'number' ? c.timestamp : 0);
-             }
-             return {
-                 ...c,
-                 children: parentToChildren.get(c.id) || [],
-                 displayTime: format(d, "yyyy-MM-dd")
-             };
-         }).sort((a, b) => {
-             const tA = a.timestamp?.seconds || (typeof a.timestamp === 'number' ? a.timestamp : 0);
-             const tB = b.timestamp?.seconds || (typeof b.timestamp === 'number' ? b.timestamp : 0);
-             return tB - tA; 
-         });
-         
-         applySearchFilter();
+        cached.forEach((action) => {
+          const children: any[] = [];
+          // Logger signature: (action, state, timestamp)
+          const captureLogger = (childAction: any, _s: any, _t: any) => {
+            children.push(childAction);
+          };
+
+          try {
+            state = rootReducer(state, action, captureLogger);
+          } catch (e) {
+            console.warn("Dry run replay error:", e);
+          }
+
+          if (children.length > 0) {
+            parentToChildren.set(action.id, children);
+          }
+        });
+
+        // Sort by timestamp desc for display
+        allSearchCandidates = cached
+          .map((c) => {
+            let d: Date;
+            if (c.timestamp?.toDate) {
+              d = c.timestamp.toDate();
+            } else if (c.timestamp?.seconds) {
+              d = new Date(c.timestamp.seconds * 1000);
+            } else {
+              d = new Date(typeof c.timestamp === "number" ? c.timestamp : 0);
+            }
+            return {
+              ...c,
+              children: parentToChildren.get(c.id) || [],
+              displayTime: format(d, "yyyy-MM-dd"),
+            };
+          })
+          .sort((a, b) => {
+            const tA =
+              a.timestamp?.seconds ||
+              (typeof a.timestamp === "number" ? a.timestamp : 0);
+            const tB =
+              b.timestamp?.seconds ||
+              (typeof b.timestamp === "number" ? b.timestamp : 0);
+            return tB - tA;
+          });
+
+        applySearchFilter();
       } else {
-          const broadcasts = collection(firestore, "broadcast");
-          const q = query(
-            broadcasts,
-            orderBy("timestamp", "desc"),
-            where("timestamp", ">=", Timestamp.fromDate(dateRange.start)),
-            where("timestamp", "<=", Timestamp.fromDate(dateRange.end)),
-            limit(50),
-          );
+        const broadcasts = collection(firestore, "broadcast");
+        const q = query(
+          broadcasts,
+          orderBy("timestamp", "desc"),
+          where("timestamp", ">=", Timestamp.fromDate(dateRange.start)),
+          where("timestamp", "<=", Timestamp.fromDate(dateRange.end)),
+          limit(50),
+        );
 
-          const querySnapshot = await getDocs(q);
-          actions = querySnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-            // Helper to format timestamp for display
-            displayTime: doc.data().timestamp?.toDate()
-              ? format(doc.data().timestamp.toDate(), "yyyy-MM-dd")
-              : "Unknown",
-          }));
+        const querySnapshot = await getDocs(q);
+        actions = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          // Helper to format timestamp for display
+          displayTime: doc.data().timestamp?.toDate()
+            ? format(doc.data().timestamp.toDate(), "yyyy-MM-dd")
+            : "Unknown",
+        }));
       }
     } catch (e) {
       console.error("Error fetching audit logs:", e);
@@ -121,34 +131,34 @@
   }
 
   function applySearchFilter() {
-      if (!searchTerm) {
-          actions = allSearchCandidates;
-          return;
+    if (!searchTerm) {
+      actions = allSearchCandidates;
+      return;
+    }
+    const lower = searchTerm.toLowerCase();
+
+    // Filter: Include Direct Matches OR Child Matches
+    actions = allSearchCandidates.filter((item) => {
+      const desc = getAuditActionDescription(item).toLowerCase();
+      const raw = JSON.stringify(item).toLowerCase();
+
+      if (desc.includes(lower) || raw.includes(lower)) return true;
+
+      // Check Children (Ephemeral Actions)
+      if (item.children) {
+        const childMatch = item.children.some((child: any) =>
+          JSON.stringify(child).toLowerCase().includes(lower),
+        );
+        if (childMatch) return true;
       }
-      const lower = searchTerm.toLowerCase();
-      
-      // Filter: Include Direct Matches OR Child Matches
-      actions = allSearchCandidates.filter(item => {
-          const desc = getAuditActionDescription(item).toLowerCase();
-          const raw = JSON.stringify(item).toLowerCase();
-          
-          if (desc.includes(lower) || raw.includes(lower)) return true;
-          
-          // Check Children (Ephemeral Actions)
-          if (item.children) {
-              const childMatch = item.children.some((child: any) => 
-                  JSON.stringify(child).toLowerCase().includes(lower)
-              );
-              if (childMatch) return true;
-          }
-          
-          return false;
-      });
+
+      return false;
+    });
   }
-  
+
   // Reactively filter when searchTerm changes
-  $: if (viewMode === 'search' && typeof searchTerm === 'string') {
-      applySearchFilter();
+  $: if (viewMode === "search" && typeof searchTerm === "string") {
+    applySearchFilter();
   }
 
   function handleViewModeChange(mode: DateRangeView) {
@@ -187,40 +197,40 @@
   }
 
   function handleExport() {
-      // Filter for non-ephemeral actions only (as requested for reproduction replay)
-      const exportable = actions.filter(a => !a._ephemeral);
-      
-      if (exportable.length === 0) {
-          alert("No exportable (broadcast) actions found in current view.");
-          return;
+    // Filter for non-ephemeral actions only (as requested for reproduction replay)
+    const exportable = actions.filter((a) => !a._ephemeral);
+
+    if (exportable.length === 0) {
+      alert("No exportable (broadcast) actions found in current view.");
+      return;
+    }
+
+    // Sort Ascending for Replay (Oldest First), with nanos for deterministic order
+    const getTimestampKey = (item: any) => {
+      if (item.timestamp?.seconds) {
+        const nanos = item.timestamp.nanoseconds || 0;
+        return item.timestamp.seconds * 1_000_000_000 + nanos;
       }
+      if (typeof item.timestamp === "number") {
+        return item.timestamp * 1_000_000_000;
+      }
+      if (item.timestamp?.toDate) {
+        return item.timestamp.toDate().getTime() * 1_000_000_000;
+      }
+      return 0;
+    };
+    exportable.sort((a, b) => getTimestampKey(a) - getTimestampKey(b));
 
-      // Sort Ascending for Replay (Oldest First), with nanos for deterministic order
-      const getTimestampKey = (item: any) => {
-          if (item.timestamp?.seconds) {
-              const nanos = item.timestamp.nanoseconds || 0;
-              return item.timestamp.seconds * 1_000_000_000 + nanos;
-          }
-          if (typeof item.timestamp === 'number') {
-              return item.timestamp * 1_000_000_000;
-          }
-          if (item.timestamp?.toDate) {
-              return item.timestamp.toDate().getTime() * 1_000_000_000;
-          }
-          return 0;
-      };
-      exportable.sort((a, b) => getTimestampKey(a) - getTimestampKey(b));
-
-      const jsonl = exportable.map(a => JSON.stringify(a)).join('\n');
-      const blob = new Blob([jsonl], { type: 'application/x-jsonlines' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `audit-export-${format(new Date(), "yyyy-MM-dd-HHmm")}.jsonl`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+    const jsonl = exportable.map((a) => JSON.stringify(a)).join("\n");
+    const blob = new Blob([jsonl], { type: "application/x-jsonlines" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit-export-${format(new Date(), "yyyy-MM-dd-HHmm")}.jsonl`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 </script>
 
@@ -248,7 +258,7 @@
         >
           <Search size={16} /> Search
         </button>
-        
+
         <button
           on:click={handleExport}
           class="flex items-center gap-1 export-btn"
@@ -259,38 +269,38 @@
       </div>
 
       <div class="date-nav">
-       {#if viewMode === 'search'}
-           <div class="search-input-wrapper">
-              <input 
-                  type="text" 
-                  bind:value={searchTerm} 
-                  placeholder="Search logs..." 
-                  class="search-input"
-                />
-               <span class="search-hint">Searching local history...</span>
-           </div>
-       {:else}
-            <button on:click={() => shiftDate("back")}
-            ><ChevronLeft size={20} /></button
-            >
-            <div class="date-inputs">
+        {#if viewMode === "search"}
+          <div class="search-input-wrapper">
             <input
-                type="date"
-                value={startDateInput}
-                on:change={(e) => handleDateInput("start", e)}
-                aria-label="Start Date"
+              type="text"
+              bind:value={searchTerm}
+              placeholder="Search logs..."
+              class="search-input"
+            />
+            <span class="search-hint">Searching local history...</span>
+          </div>
+        {:else}
+          <button on:click={() => shiftDate("back")}
+            ><ChevronLeft size={20} /></button
+          >
+          <div class="date-inputs">
+            <input
+              type="date"
+              value={startDateInput}
+              on:change={(e) => handleDateInput("start", e)}
+              aria-label="Start Date"
             />
             <span>-</span>
             <input
-                type="date"
-                value={endDateInput}
-                disabled
-                aria-label="End Date"
+              type="date"
+              value={endDateInput}
+              disabled
+              aria-label="End Date"
             />
-            </div>
-            <button on:click={() => shiftDate("forward")}
+          </div>
+          <button on:click={() => shiftDate("forward")}
             ><ChevronRight size={20} /></button
-            >
+          >
         {/if}
       </div>
     </div>
@@ -320,12 +330,16 @@
             <div class="action-body">
               <pre>{JSON.stringify(action, null, 2)}</pre>
               {#if action.children && action.children.length > 0}
-                  <div class="children-section">
-                      <h4>Derived Actions (Dry Run):</h4>
-                      {#each action.children as child}
-                          <pre class="child-action">{JSON.stringify(child, null, 2)}</pre>
-                      {/each}
-                  </div>
+                <div class="children-section">
+                  <h4>Derived Actions (Dry Run):</h4>
+                  {#each action.children as child}
+                    <pre class="child-action">{JSON.stringify(
+                        child,
+                        null,
+                        2,
+                      )}</pre>
+                  {/each}
+                </div>
               {/if}
             </div>
           {/if}
@@ -397,27 +411,27 @@
     background-color: #f0f0f0;
     border-radius: 50%;
   }
-  
+
   .search-input-wrapper {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      width: 100%;
-      max-width: 500px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    max-width: 500px;
   }
-  
+
   .search-input {
-      flex: 1;
-      padding: 0.5rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 1rem;
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
   }
-  
+
   .search-hint {
-      font-size: 0.8rem;
-      color: #666;
-      white-space: nowrap;
+    font-size: 0.8rem;
+    color: #666;
+    white-space: nowrap;
   }
 
   .action-list {
@@ -458,17 +472,17 @@
     background: #fff;
     overflow-x: auto;
   }
-  
+
   .children-section {
-      margin-top: 1rem;
-      border-top: 1px dashed #ccc;
-      padding-top: 0.5rem;
+    margin-top: 1rem;
+    border-top: 1px dashed #ccc;
+    padding-top: 0.5rem;
   }
   .child-action {
-      background: #f0fdf4;
-      padding: 0.5rem;
-      margin-bottom: 0.5rem;
-      font-size: 0.8rem;
+    background: #f0fdf4;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
   }
 
   pre {

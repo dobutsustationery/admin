@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { photos, select_photos, register_media_items, complete_upload } from "../../src/lib/photos-slice";
+import {
+  photos,
+  select_photos,
+  register_media_items,
+  complete_upload,
+} from "../../src/lib/photos-slice";
 
 describe("photos slice", () => {
   it("does not persist ephemeral googleusercontent URLs into history on initial selection", () => {
@@ -32,7 +37,10 @@ describe("photos slice", () => {
     };
 
     const registered = photos(initial, register_media_items({ items: [item] }));
-    const withSelection = photos(registered, select_photos({ ids: ["photo-1"] }));
+    const withSelection = photos(
+      registered,
+      select_photos({ ids: ["photo-1"] }),
+    );
 
     const final = photos(
       withSelection,
@@ -43,8 +51,9 @@ describe("photos slice", () => {
       }),
     );
 
-    expect(final.urlHistory["photo-1"][0]).toContain("drive.google.com/thumbnail");
+    expect(final.urlHistory["photo-1"][0]).toContain(
+      "drive.google.com/thumbnail",
+    );
     expect(final.selected[0].baseUrl).toContain("drive.google.com/thumbnail");
   });
 });
-

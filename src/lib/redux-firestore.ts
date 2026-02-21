@@ -14,19 +14,19 @@ import {
   Timestamp,
   getCountFromServer,
 } from "firebase/firestore";
-import { 
-    getAllCachedActions, 
-    cacheActions, 
-    getLatestTimestamp, 
-    clearActionCache,
-    type ActionWithId 
+import {
+  getAllCachedActions,
+  cacheActions,
+  getLatestTimestamp,
+  clearActionCache,
+  type ActionWithId,
 } from "$lib/action-cache";
 
 // Helper to recursively remove undefined values
 function stripUndefined(obj: any): any {
   if (Array.isArray(obj)) {
     return obj.map(stripUndefined);
-  } else if (obj !== null && typeof obj === 'object') {
+  } else if (obj !== null && typeof obj === "object") {
     // Check for Firestore types or specific classes we want to preserve?
     // For now, assume plain objects. Redux actions should be plain.
     return Object.entries(obj).reduce((acc, [key, value]) => {
@@ -40,67 +40,97 @@ function stripUndefined(obj: any): any {
 }
 
 function validateAction(action: any) {
-    if (action.type === "listingCreation/add_proposals") {
-        if (Array.isArray(action.payload)) {
-            for (const p of action.payload) {
-                if ('inventoryItemIds' in p) throw new Error("Dirty payload: add_proposals contains inventoryItemIds");
-                if (p.variants) {
-                    for (const v of p.variants) {
-                        if ('qty' in v) throw new Error("Dirty payload: add_proposals contains qty");
-                        if ('itemId' in v) throw new Error("Dirty payload: add_proposals contains itemId");
-                    }
-                }
-            }
+  if (action.type === "listingCreation/add_proposals") {
+    if (Array.isArray(action.payload)) {
+      for (const p of action.payload) {
+        if ("inventoryItemIds" in p)
+          throw new Error(
+            "Dirty payload: add_proposals contains inventoryItemIds",
+          );
+        if (p.variants) {
+          for (const v of p.variants) {
+            if ("qty" in v)
+              throw new Error("Dirty payload: add_proposals contains qty");
+            if ("itemId" in v)
+              throw new Error("Dirty payload: add_proposals contains itemId");
+          }
         }
+      }
     }
-    if (action.type === "orderImport/resolve_conflict") {
-        const res = action.payload?.resolution;
-        if (res && res.type === 'data_mismatch') {
-            if ('qty' in res) throw new Error("Dirty payload: data_mismatch resolution contains qty");
-        }
+  }
+  if (action.type === "orderImport/resolve_conflict") {
+    const res = action.payload?.resolution;
+    if (res && res.type === "data_mismatch") {
+      if ("qty" in res)
+        throw new Error("Dirty payload: data_mismatch resolution contains qty");
     }
-    if (action.type === "photos/select_photos" || action.type === "photos/add_selected_photos") {
-        if ('photos' in action.payload) throw new Error(`Dirty payload: ${action.type} contains 'photos' array (should be 'ids')`);
-        if (!('ids' in action.payload)) throw new Error(`Invalid payload: ${action.type} missing 'ids'`);
-    }
-    if (action.type === "photos/register_media_items") {
-        if (!('items' in action.payload)) throw new Error("Invalid payload: photos/register_media_items missing 'items'");
-        if (!Array.isArray(action.payload.items)) throw new Error("Invalid payload: photos/register_media_items 'items' must be an array");
-    }
+  }
+  if (
+    action.type === "photos/select_photos" ||
+    action.type === "photos/add_selected_photos"
+  ) {
+    if ("photos" in action.payload)
+      throw new Error(
+        `Dirty payload: ${action.type} contains 'photos' array (should be 'ids')`,
+      );
+    if (!("ids" in action.payload))
+      throw new Error(`Invalid payload: ${action.type} missing 'ids'`);
+  }
+  if (action.type === "photos/register_media_items") {
+    if (!("items" in action.payload))
+      throw new Error(
+        "Invalid payload: photos/register_media_items missing 'items'",
+      );
+    if (!Array.isArray(action.payload.items))
+      throw new Error(
+        "Invalid payload: photos/register_media_items 'items' must be an array",
+      );
+  }
 }
 
 export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
   validateAction(action);
   if ((action as any)._ephemeral) {
-      console.warn("[Broadcast] Blocked ephemeral action from persistence:", action.type);
-      return; 
+    console.warn(
+      "[Broadcast] Blocked ephemeral action from persistence:",
+      action.type,
+    );
+    return;
   }
   const broadcasts = collection(fs, "broadcast");
   const cleanAction = stripUndefined(action);
-  
+
   // Size Check
-  const payloadSize = new TextEncoder().encode(JSON.stringify(cleanAction)).length;
-  if (payloadSize > 900 * 1024) { // 900KB limit (safety buffer for Firestore 1MB)
-      console.error(`[Broadcast] Action ${action.type} is TOO LARGE (${(payloadSize / 1024).toFixed(2)} KB). Dropping.`);
-      // We return a rejected promise so the caller knows it failed, 
-      // but we don't crash the app or get the SDK stuck in a retry loop.
-      return Promise.reject(new Error(`Action too large: ${payloadSize} bytes`));
+  const payloadSize = new TextEncoder().encode(
+    JSON.stringify(cleanAction),
+  ).length;
+  if (payloadSize > 900 * 1024) {
+    // 900KB limit (safety buffer for Firestore 1MB)
+    console.error(
+      `[Broadcast] Action ${action.type} is TOO LARGE (${(payloadSize / 1024).toFixed(2)} KB). Dropping.`,
+    );
+    // We return a rejected promise so the caller knows it failed,
+    // but we don't crash the app or get the SDK stuck in a retry loop.
+    return Promise.reject(new Error(`Action too large: ${payloadSize} bytes`));
   }
 
   // Debug Log
-  console.log(`[Broadcast] Sending action ${action.type} (${payloadSize} bytes)`, cleanAction);
-  
+  console.log(
+    `[Broadcast] Sending action ${action.type} (${payloadSize} bytes)`,
+    cleanAction,
+  );
+
   try {
-      const docRef = await addDoc(broadcasts, {
-        ...cleanAction,
-        timestamp: serverTimestamp(),
-        creator: uid,
-      });
-      console.log(`[Broadcast] Success. Doc ID: ${docRef.id}`);
-      return docRef;
+    const docRef = await addDoc(broadcasts, {
+      ...cleanAction,
+      timestamp: serverTimestamp(),
+      creator: uid,
+    });
+    console.log(`[Broadcast] Success. Doc ID: ${docRef.id}`);
+    return docRef;
   } catch (e) {
-      console.error(`[Broadcast] FAILED to write action ${action.type}`, e);
-      throw e;
+    console.error(`[Broadcast] FAILED to write action ${action.type}`, e);
+    throw e;
   }
 }
 
@@ -112,9 +142,9 @@ export type ActionsCallback = (actions: ActionWithId[]) => void;
 export type ErrorCallback = (e: FirestoreError) => void;
 
 interface BroadcastStats {
-    fromCache: number;
-    fromServer: number;
-    duplicates: number;
+  fromCache: number;
+  fromServer: number;
+  duplicates: number;
 }
 const stats: BroadcastStats = { fromCache: 0, fromServer: 0, duplicates: 0 };
 
@@ -127,54 +157,59 @@ export async function watchBroadcastActions(
 
   // 1. Load from Cache
   let cachedActions: ActionWithId[] = await getAllCachedActions();
-  
+
   // Sort by timestamp (memory sort for robustness)
   cachedActions.sort((a, b) => {
-      const tA = a.timestamp?.seconds || 0;
-      const tB = b.timestamp?.seconds || 0;
-      if (tA === tB) {
-          return (a.timestamp?.nanoseconds || 0) - (b.timestamp?.nanoseconds || 0);
-      }
-      return tA - tB;
+    const tA = a.timestamp?.seconds || 0;
+    const tB = b.timestamp?.seconds || 0;
+    if (tA === tB) {
+      return (a.timestamp?.nanoseconds || 0) - (b.timestamp?.nanoseconds || 0);
+    }
+    return tA - tB;
   });
 
   if (cachedActions.length > 0) {
-      stats.fromCache = cachedActions.length;
-      callback(cachedActions);
+    stats.fromCache = cachedActions.length;
+    callback(cachedActions);
   }
 
   // 2. Determine Start Point
   const latestTimestamp = getLatestTimestamp(cachedActions);
-  
+
   let q;
   if (latestTimestamp) {
-      // Reconstruct Timestamp for FS query to ensure correct type comparison
-      const ts = new Timestamp(latestTimestamp.seconds, latestTimestamp.nanoseconds);
-      // Use startAt to handle potential duplicates/edge cases
-      q = query(broadcasts, orderBy("timestamp"), startAt(ts));
+    // Reconstruct Timestamp for FS query to ensure correct type comparison
+    const ts = new Timestamp(
+      latestTimestamp.seconds,
+      latestTimestamp.nanoseconds,
+    );
+    // Use startAt to handle potential duplicates/edge cases
+    q = query(broadcasts, orderBy("timestamp"), startAt(ts));
   } else {
-      q = query(broadcasts, orderBy("timestamp"));
+    q = query(broadcasts, orderBy("timestamp"));
   }
 
   // 3. Initial Safety Check
   try {
-      const countSnapshot = await getCountFromServer(broadcasts);
-      const serverCount = countSnapshot.data().count;
-      const clientCount = cachedActions.length; 
+    const countSnapshot = await getCountFromServer(broadcasts);
+    const serverCount = countSnapshot.data().count;
+    const clientCount = cachedActions.length;
 
-      if (serverCount < clientCount) {
-          console.warn(`[Sync] Server count (${serverCount}) < Client count (${clientCount}). Server reset detected. Invalidating cache.`);
-          await clearActionCache();
-          window.location.reload();
-          // Stop here to prevent subscribing with invalid state
-          return () => {}; 
-      }
+    if (serverCount < clientCount) {
+      console.warn(
+        `[Sync] Server count (${serverCount}) < Client count (${clientCount}). Server reset detected. Invalidating cache.`,
+      );
+      await clearActionCache();
+      window.location.reload();
+      // Stop here to prevent subscribing with invalid state
+      return () => {};
+    }
   } catch (e) {
-      console.warn("Failed to check server count on startup", e);
+    console.warn("Failed to check server count on startup", e);
   }
 
   // 4. Listen to Firestore
-      const unsubscribe = onSnapshot(
+  const unsubscribe = onSnapshot(
     q,
     async (querySnapshot) => {
       const changes = querySnapshot.docChanges();
@@ -185,76 +220,78 @@ export async function watchBroadcastActions(
       // Note: For a robust system we check against what we've already emitted.
       // But purely for this simplified version, let's check against cachedActions IDs
       // and also maintain a local set of "seen this session".
-      
+
       // Actually, +layout.svelte maintains `executedActions` map to dedupe.
       // So passing duplicates is SAFE but wasteful.
       // We essentially want to filter out what we ALREADY sent from cache.
-      
+
       changes.forEach((change) => {
         if (change.type === "added") {
-             // Check if it's a pending write (local optimistic update)
-             const isPending = change.doc.metadata.hasPendingWrites;
+          // Check if it's a pending write (local optimistic update)
+          const isPending = change.doc.metadata.hasPendingWrites;
 
-             const data = change.doc.data();
-             const action = {
-                 id: change.doc.id,
-                 ...data
-             } as ActionWithId;
+          const data = change.doc.data();
+          const action = {
+            id: change.doc.id,
+            ...data,
+          } as ActionWithId;
 
-             // Dedupe against cache (simple ID check)
-             // CRITICAL: If it's pending, we ALWAYS emit it (so UI updates), but we NEVER cache it.
-             // If it's confirmed (server), we check if we already cached it.
-             
-             if (isPending) {
-                 // Optimistic: Emit immediately, don't cache, don't mark as cached.
-                 newActions.push(action);
-             } else {
-                 // Confirmed: Check cache
-                 const isCached = cachedActions.some(c => c.id === action.id);
-                 if (isCached) {
-                     stats.duplicates++;
-                 } else {
-                     stats.fromServer++;
-                     newActions.push(action);
-                     actionsToCache.push(action);
-                 }
-             }
-        } else if (change.type === "modified") {
-            const data = change.doc.data();
-            const action = {
-                id: change.doc.id,
-                ...data
-            } as ActionWithId;
+          // Dedupe against cache (simple ID check)
+          // CRITICAL: If it's pending, we ALWAYS emit it (so UI updates), but we NEVER cache it.
+          // If it's confirmed (server), we check if we already cached it.
 
-            // This typically happens when a Pending write becomes Confirmed (server timestamp added).
-            // We DO want to cache this confirmed version.
-            // We DO want to include it in newActions so the safety check counts it.
-            // Layout.svelte will dedup execution, so it's safe to emit.
-            
-            // Check if we already have this EXACT version in cache? 
-            // The cached version has no timestamp or different timestamp?
-            // Actually, we just blindly update cache with the latest confirmed version.
-            
-            stats.fromServer++;
+          if (isPending) {
+            // Optimistic: Emit immediately, don't cache, don't mark as cached.
             newActions.push(action);
-            actionsToCache.push(action);
+          } else {
+            // Confirmed: Check cache
+            const isCached = cachedActions.some((c) => c.id === action.id);
+            if (isCached) {
+              stats.duplicates++;
+            } else {
+              stats.fromServer++;
+              newActions.push(action);
+              actionsToCache.push(action);
+            }
+          }
+        } else if (change.type === "modified") {
+          const data = change.doc.data();
+          const action = {
+            id: change.doc.id,
+            ...data,
+          } as ActionWithId;
+
+          // This typically happens when a Pending write becomes Confirmed (server timestamp added).
+          // We DO want to cache this confirmed version.
+          // We DO want to include it in newActions so the safety check counts it.
+          // Layout.svelte will dedup execution, so it's safe to emit.
+
+          // Check if we already have this EXACT version in cache?
+          // The cached version has no timestamp or different timestamp?
+          // Actually, we just blindly update cache with the latest confirmed version.
+
+          stats.fromServer++;
+          newActions.push(action);
+          actionsToCache.push(action);
         }
       });
 
       if (newActions.length > 0) {
-          // Only cache confirmed actions
-          if (actionsToCache.length > 0) {
-              await cacheActions(actionsToCache);
-              // Update local memory cache with legitimate confirmed actions
-              cachedActions = [...cachedActions, ...actionsToCache];
-          }
-          
-          // Emit all (Pending + New Confirmed)
-          // Note: Layout.svelte handles deduplication of execution, so emitting same ID twice (pending then confirmed) is safe/good.
-          callback(newActions);
+        // Only cache confirmed actions
+        if (actionsToCache.length > 0) {
+          await cacheActions(actionsToCache);
+          // Update local memory cache with legitimate confirmed actions
+          cachedActions = [...cachedActions, ...actionsToCache];
+        }
+
+        // Emit all (Pending + New Confirmed)
+        // Note: Layout.svelte handles deduplication of execution, so emitting same ID twice (pending then confirmed) is safe/good.
+        callback(newActions);
       }
-      
-      console.log(`[Broadcast] Stats: Cache=${stats.fromCache}, Server=${stats.fromServer}, Dupes=${stats.duplicates}`);
+
+      console.log(
+        `[Broadcast] Stats: Cache=${stats.fromCache}, Server=${stats.fromServer}, Dupes=${stats.duplicates}`,
+      );
     },
     (error) => {
       console.log("broadcasts query failing: ");

@@ -35,8 +35,8 @@ export function generateShopifyCSV(products: ShopifyProduct[]): string {
 
 // Extended Item for Export (includes Listing fields overlay)
 export interface ExportableItem extends Item {
-    bodyHtml?: string;
-    imageAltText?: string;
+  bodyHtml?: string;
+  imageAltText?: string;
 }
 
 // Helper to map our Item to a base partial ShopifyProduct
@@ -47,18 +47,18 @@ export function mapItemToProduct(
   productCategory: string = "",
 ): ShopifyProduct {
   // Use persisted fields or defaults
-  // Handle: Required. If missing from item, caller must ensure it exists or we default? 
+  // Handle: Required. If missing from item, caller must ensure it exists or we default?
   // Ideally, valid items for export have handles.
   const handle = item.handle || "MISSING-HANDLE";
   const title = item.description || "Untitled";
   const body = item.bodyHtml || "";
-  
+
   return {
     Handle: handle,
     Title: title,
     "Body (HTML)": body,
     Vendor: "SPNSS Ltd.",
-    "Product Category": productCategory, 
+    "Product Category": productCategory,
     Published: "true",
     "Option1 Name": option1Name,
     "Option1 Value": item.subtype || "Default",
@@ -77,6 +77,6 @@ export function mapItemToProduct(
     "Image Alt Text": item.imageAltText || item.description || "", // Use Listing Alt if available
     "Variant Image": item.image || "", // Default to same image
     "Variant Weight Unit": "g",
-    Status: "active"
+    Status: "active",
   };
 }

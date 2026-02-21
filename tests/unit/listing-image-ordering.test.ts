@@ -50,10 +50,13 @@ describe("reorderListingImages", () => {
 
   it("returns result when reordering variant images", () => {
     const listingImages = [
-        { id: "v-a", url: "img-a", position: 1, altText: "A" }, 
-        { id: "v-b", url: "img-b", position: 2, altText: "B" }
+      { id: "v-a", url: "img-a", position: 1, altText: "A" },
+      { id: "v-b", url: "img-b", position: 2, altText: "B" },
     ];
-    const associatedItems = [{ id: "sku-a", image: "img-a" }, { id: "sku-b", image: "img-b" }];
+    const associatedItems = [
+      { id: "sku-a", image: "img-a" },
+      { id: "sku-b", image: "img-b" },
+    ];
 
     const result = reorderListingImages({
       listingImages,
@@ -64,6 +67,6 @@ describe("reorderListingImages", () => {
     });
 
     expect(result).toBeTruthy();
-    expect(result?.updatedImages.map(i => i.id)).toEqual(["v-b", "v-a"]);
+    expect(result?.updatedImages.map((i) => i.id)).toEqual(["v-b", "v-a"]);
   });
 });

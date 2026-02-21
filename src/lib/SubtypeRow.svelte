@@ -27,42 +27,42 @@
     state = store.getState();
     const sourceItem = state.inventory.idToItem[key];
     if (sourceItem) {
-        item = { ...sourceItem };
-        const links: { [k: string]: boolean } = {};
-        imageItems = [];
-        imageItems.push({
-          link: item!.image,
-          description: item!.description,
-        });
-        links[item!.image] = true;
-        matched = true;
-        for (const otherType of otherTypes) {
-          const otherKey = makeInventoryItemKey(code, otherType);
-          const otherItem = state.inventory.idToItem[otherKey];
-          if (otherItem) {
-             if (!links[otherItem.image]) {
-                links[otherItem.image] = true;
-                imageItems.push({
-                  link: otherItem.image,
-                  description: otherItem.description,
-                });
-             }
-             if (!itemsLookIdentical(item!, otherItem)) {
-                matched = false;
-                console.log(`${key} and ${otherKey} do not match`, item, otherItem);
-             } else {
-                console.log(`${key} and ${otherKey} MATCH `, item, otherItem);
-             }
+      item = { ...sourceItem };
+      const links: { [k: string]: boolean } = {};
+      imageItems = [];
+      imageItems.push({
+        link: item!.image,
+        description: item!.description,
+      });
+      links[item!.image] = true;
+      matched = true;
+      for (const otherType of otherTypes) {
+        const otherKey = makeInventoryItemKey(code, otherType);
+        const otherItem = state.inventory.idToItem[otherKey];
+        if (otherItem) {
+          if (!links[otherItem.image]) {
+            links[otherItem.image] = true;
+            imageItems.push({
+              link: otherItem.image,
+              description: otherItem.description,
+            });
+          }
+          if (!itemsLookIdentical(item!, otherItem)) {
+            matched = false;
+            console.log(`${key} and ${otherKey} do not match`, item, otherItem);
+          } else {
+            console.log(`${key} and ${otherKey} MATCH `, item, otherItem);
           }
         }
-        for (const newImage of newImageItems) {
-          if (!links[newImage.link]) {
-            links[newImage.link] = true;
-            imageItems.push(newImage);
-          }
+      }
+      for (const newImage of newImageItems) {
+        if (!links[newImage.link]) {
+          links[newImage.link] = true;
+          imageItems.push(newImage);
         }
+      }
     } else {
-        item = null;
+      item = null;
     }
   }
 
@@ -93,7 +93,12 @@
           broadcast(
             firestore,
             $user.uid,
-            update_field({ id: otherKey, field, to, from: from as string|number ?? "" }),
+            update_field({
+              id: otherKey,
+              field,
+              to,
+              from: (from as string | number) ?? "",
+            }),
           );
         }
       }
@@ -158,12 +163,12 @@
       <div class="{dropdownOpen} dropdown">
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-        <div 
-          style="height: 40px; width: 40px;" 
-          on:click={toggleDropdown} 
-          role="button" 
+        <div
+          style="height: 40px; width: 40px;"
+          on:click={toggleDropdown}
+          role="button"
           tabindex="0"
-          on:keydown={(e) => e.key === 'Enter' && toggleDropdown()}
+          on:keydown={(e) => e.key === "Enter" && toggleDropdown()}
         >
           <ImageThumbnail src={item.image} alt={item.description} />
         </div>
@@ -171,12 +176,12 @@
           {#each imageItems as imageInfo, i (imageInfo.link)}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-            <div 
-              style="height: 40px; width: 40px; margin-bottom: 4px;" 
+            <div
+              style="height: 40px; width: 40px; margin-bottom: 4px;"
               on:click={chooseImage(i)}
               role="button"
               tabindex="0"
-              on:keydown={(e) => e.key === 'Enter' && chooseImage(i)()}
+              on:keydown={(e) => e.key === "Enter" && chooseImage(i)()}
             >
               <ImageThumbnail src={imageInfo.link} alt="sr" />
             </div>

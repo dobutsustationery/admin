@@ -93,19 +93,16 @@ describe("Replay Kalita Minimal Photo Order", () => {
         const finalHandle =
           proposal.handle || generateHandle(proposal.title, proposal.janCode);
 
-        const mergedProposals = Object.values(state.listingCreation.proposals)
-          .filter((p: any) => {
-            const h = p.handle || generateHandle(p.title, p.janCode);
-            if (h === finalHandle) return true;
-            if (
-              !p.handle &&
-              !proposal.handle &&
-              p.janCode === proposal.janCode
-            ) {
-              return true;
-            }
-            return false;
-          }) as ListingProposal[];
+        const mergedProposals = Object.values(
+          state.listingCreation.proposals,
+        ).filter((p: any) => {
+          const h = p.handle || generateHandle(p.title, p.janCode);
+          if (h === finalHandle) return true;
+          if (!p.handle && !proposal.handle && p.janCode === proposal.janCode) {
+            return true;
+          }
+          return false;
+        }) as ListingProposal[];
 
         const primaryIndex = mergedProposals.findIndex(
           (p) => p.janCode === proposal.janCode,

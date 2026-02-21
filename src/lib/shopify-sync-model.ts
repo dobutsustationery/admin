@@ -58,14 +58,17 @@ export function toMs(value: any): number {
   if (!value) return 0;
   if (typeof value === "number") return value;
   if (typeof value?.seconds === "number") {
-    const nanos = typeof value?.nanoseconds === "number" ? value.nanoseconds : 0;
+    const nanos =
+      typeof value?.nanoseconds === "number" ? value.nanoseconds : 0;
     return value.seconds * 1000 + nanos / 1_000_000;
   }
   if (value?.toDate) return value.toDate().getTime();
   return 0;
 }
 
-export function sortSyncEventsAsc(events: ShopifySyncEvent[]): ShopifySyncEvent[] {
+export function sortSyncEventsAsc(
+  events: ShopifySyncEvent[],
+): ShopifySyncEvent[] {
   return [...events].sort((a, b) => {
     const tA = toMs(a.timestamp) || Number(a.createdAtMs || 0);
     const tB = toMs(b.timestamp) || Number(b.createdAtMs || 0);
@@ -74,7 +77,9 @@ export function sortSyncEventsAsc(events: ShopifySyncEvent[]): ShopifySyncEvent[
   });
 }
 
-export function foldSyncRequests(syncEvents: ShopifySyncEvent[]): FoldedShopifySync {
+export function foldSyncRequests(
+  syncEvents: ShopifySyncEvent[],
+): FoldedShopifySync {
   const byRequestId = new Map<string, ShopifySyncRequestView>();
   const sortedAsc = sortSyncEventsAsc(syncEvents);
 
@@ -175,4 +180,3 @@ export function foldSyncRequests(syncEvents: ShopifySyncEvent[]): FoldedShopifyS
     handleToLatestRequestId,
   };
 }
-

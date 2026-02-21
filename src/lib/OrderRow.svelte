@@ -54,8 +54,11 @@
       </div>
     </td>
     <td>{item.description}</td>
-    <td on:click={() => itemHistory(makeInventoryItemKey(item?.janCode || "", item?.subtype || ""))}
-      >{item.janCode}</td
+    <td
+      on:click={() =>
+        itemHistory(
+          makeInventoryItemKey(item?.janCode || "", item?.subtype || ""),
+        )}>{item.janCode}</td
     >
     <td
       >{#if !immutable}<SelectBox

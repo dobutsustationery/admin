@@ -54,8 +54,12 @@ export interface InventoryState {
 
 export const inventory_synced = createAction("inventory_synced");
 
-export const hide_exception = createAction<{ itemKey: InventoryItemKey | string }>("hide_exception");
-export const show_exception = createAction<{ itemKey: InventoryItemKey | string }>("show_exception");
+export const hide_exception = createAction<{
+  itemKey: InventoryItemKey | string;
+}>("hide_exception");
+export const show_exception = createAction<{
+  itemKey: InventoryItemKey | string;
+}>("show_exception");
 
 export const update_item = createAction<{ id: string; item: Item }>(
   "update_item",
@@ -171,22 +175,22 @@ function applyInventoryUpdate(
   // Robust Timestamp Parsing
   let val = Date.now(); // Default to now
   if (timestamp) {
-      if (typeof timestamp === 'number') {
-          val = timestamp;
-      } else if (timestamp.seconds) {
-          val = timestamp.seconds * 1000;
-      } else if (timestamp instanceof Date) {
-          val = timestamp.getTime();
-      }
+    if (typeof timestamp === "number") {
+      val = timestamp;
+    } else if (timestamp.seconds) {
+      val = timestamp.seconds * 1000;
+    } else if (timestamp instanceof Date) {
+      val = timestamp.getTime();
+    }
   }
-  
+
   if (isNaN(val)) val = Date.now(); // Fallback if parsing failed
 
   const dateObj = new Date(val);
   const globalDate = dateObj.toLocaleString("en", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 
   // Safety check for state shape (idToHistory)
@@ -219,88 +223,92 @@ function applyInventoryUpdate(
 
   // 1. Detect Changes
   if (existingItem) {
-      // Compare fields
-      if (item.cost !== undefined && item.cost !== existingItem.cost) {
-          historyEntries.push({
-              date: globalDate,
-              desc: `Cost updated: ${formatYen(existingItem.cost)} -> ${formatYen(item.cost)}`,
-              val
-          });
-      }
-      if (item.qty !== undefined && item.qty !== 0) {
-           // Qty is usually a delta in bulk import (e.g. +50)
-           // But wait, update_item usually takes a FULL ITEM or DELTA?
-           // In computeOrderImportBatch, we passed: qty: item.qty (Delta)
-           // The applyInventoryUpdate logic below does: qty = Number(item.qty) + qty (existing)
-           // So item.qty IS a delta here.
-           historyEntries.push({
-              date: globalDate,
-              desc: `Quantity adjustment: ${item.qty > 0 ? '+' : ''}${item.qty} (New Total: ${existingItem.qty + item.qty})`,
-              val
-          });
-      }
-      if (item.hsCode && item.hsCode !== existingItem.hsCode) {
-          historyEntries.push({
-              date: globalDate,
-              desc: `HS Code changed: ${existingItem.hsCode} -> ${item.hsCode}`,
-              val
-          });
-      }
-      if (item.weight && item.weight !== existingItem.weight) {
-          historyEntries.push({
-              date: globalDate,
-              desc: `Weight changed: ${existingItem.weight}g -> ${item.weight}g`,
-              val
-          });
-      }
-      if (item.countryOfOrigin && item.countryOfOrigin !== existingItem.countryOfOrigin) {
-          historyEntries.push({
-              date: globalDate,
-              desc: `Origin changed: ${existingItem.countryOfOrigin} -> ${item.countryOfOrigin}`,
-              val
-          });
-      }
-      if (item.description && item.description !== existingItem.description) {
-           // Description often changes slightly, log only if significant?
-           // For now log it.
-           historyEntries.push({
-              date: globalDate,
-              desc: `Description updated`,
-              val
-          });
-      }
-      
-      // Implicitly track migration: Shopify -> Drive
-      const oldImage = existingItem.image;
-      const newImage = item.image;
-      if (oldImage && newImage && oldImage !== newImage) {
-          historyEntries.push({
-              date: globalDate,
-              desc: `Image updated`,
-              val
-          });
-          if (
-            oldImage.includes("cdn.shopify.com") &&
-            newImage.includes("drive.google.com")
-          ) {
-            if (!state.shopifyUrlToDriveUrl) state.shopifyUrlToDriveUrl = {};
-            state.shopifyUrlToDriveUrl[oldImage] = newImage;
-          }
-      }
-
-  } else {
-      // New Item
+    // Compare fields
+    if (item.cost !== undefined && item.cost !== existingItem.cost) {
       historyEntries.push({
-          date: globalDate,
-          desc: `Created Item: ${item.description} (Qty: ${item.qty})`,
-          val
+        date: globalDate,
+        desc: `Cost updated: ${formatYen(existingItem.cost)} -> ${formatYen(item.cost)}`,
+        val,
       });
+    }
+    if (item.qty !== undefined && item.qty !== 0) {
+      // Qty is usually a delta in bulk import (e.g. +50)
+      // But wait, update_item usually takes a FULL ITEM or DELTA?
+      // In computeOrderImportBatch, we passed: qty: item.qty (Delta)
+      // The applyInventoryUpdate logic below does: qty = Number(item.qty) + qty (existing)
+      // So item.qty IS a delta here.
+      historyEntries.push({
+        date: globalDate,
+        desc: `Quantity adjustment: ${item.qty > 0 ? "+" : ""}${item.qty} (New Total: ${existingItem.qty + item.qty})`,
+        val,
+      });
+    }
+    if (item.hsCode && item.hsCode !== existingItem.hsCode) {
+      historyEntries.push({
+        date: globalDate,
+        desc: `HS Code changed: ${existingItem.hsCode} -> ${item.hsCode}`,
+        val,
+      });
+    }
+    if (item.weight && item.weight !== existingItem.weight) {
+      historyEntries.push({
+        date: globalDate,
+        desc: `Weight changed: ${existingItem.weight}g -> ${item.weight}g`,
+        val,
+      });
+    }
+    if (
+      item.countryOfOrigin &&
+      item.countryOfOrigin !== existingItem.countryOfOrigin
+    ) {
+      historyEntries.push({
+        date: globalDate,
+        desc: `Origin changed: ${existingItem.countryOfOrigin} -> ${item.countryOfOrigin}`,
+        val,
+      });
+    }
+    if (item.description && item.description !== existingItem.description) {
+      // Description often changes slightly, log only if significant?
+      // For now log it.
+      historyEntries.push({
+        date: globalDate,
+        desc: `Description updated`,
+        val,
+      });
+    }
+
+    // Implicitly track migration: Shopify -> Drive
+    const oldImage = existingItem.image;
+    const newImage = item.image;
+    if (oldImage && newImage && oldImage !== newImage) {
+      historyEntries.push({
+        date: globalDate,
+        desc: `Image updated`,
+        val,
+      });
+      if (
+        oldImage.includes("cdn.shopify.com") &&
+        newImage.includes("drive.google.com")
+      ) {
+        if (!state.shopifyUrlToDriveUrl) state.shopifyUrlToDriveUrl = {};
+        state.shopifyUrlToDriveUrl[oldImage] = newImage;
+      }
+    }
+  } else {
+    // New Item
+    historyEntries.push({
+      date: globalDate,
+      desc: `Created Item: ${item.description} (Qty: ${item.qty})`,
+      val,
+    });
   }
 
   // 2. Apply State Updates
   const currentQty = existingItem ? existingItem.qty : 0;
-  const currentShipped = existingItem ? (existingItem.shipped || 0) : 0;
-  const currentCreationDate = existingItem ? existingItem.creationDate : (globalDate + ` (${item.qty})`);
+  const currentShipped = existingItem ? existingItem.shipped || 0 : 0;
+  const currentCreationDate = existingItem
+    ? existingItem.creationDate
+    : globalDate + ` (${item.qty})`;
 
   const {
     bodyHtml,
@@ -316,14 +324,17 @@ function applyInventoryUpdate(
     ...inventoryItem,
     janCode: item.janCode?.trim(),
     subtype: item.subtype?.trim() || "",
-    hsCode: item.hsCode ? String(item.hsCode).replace(/\s+/g, "") : (state.idToItem[id]?.hsCode || ""),
-    cost: item.cost !== undefined ? Number(item.cost) : state.idToItem[id]?.cost,
+    hsCode: item.hsCode
+      ? String(item.hsCode).replace(/\s+/g, "")
+      : state.idToItem[id]?.hsCode || "",
+    cost:
+      item.cost !== undefined ? Number(item.cost) : state.idToItem[id]?.cost,
     creationDate: currentCreationDate,
     qty: Number(item.qty) + currentQty, // Apply Delta
     shipped: (Number(item.shipped) || 0) + currentShipped,
     timestamp: val,
   };
-  
+
   if (state.idToItem[id].shipped === undefined) {
     state.idToItem[id].shipped = 0;
   }
@@ -335,11 +346,11 @@ function applyInventoryUpdate(
   }
 
   try {
-      historyEntries.forEach(entry => {
-          state.idToHistory[id].push(entry);
-      });
-      // Fallback: If no changes detected but function called? 
-      // (e.g. identical update). No history needed.
+    historyEntries.forEach((entry) => {
+      state.idToHistory[id].push(entry);
+    });
+    // Fallback: If no changes detected but function called?
+    // (e.g. identical update). No history needed.
   } catch (e) {
     console.error(
       `[InventoryDebug] Exception pushing to history for ${id}:`,
@@ -365,13 +376,13 @@ export const inventory = createReducer(initialState, (r) => {
     state.initialized = true;
   });
   r.addCase(hide_exception, (state, action) => {
-      if (!state.hiddenExceptions) state.hiddenExceptions = {};
-      state.hiddenExceptions[action.payload.itemKey] = true;
+    if (!state.hiddenExceptions) state.hiddenExceptions = {};
+    state.hiddenExceptions[action.payload.itemKey] = true;
   });
   r.addCase(show_exception, (state, action) => {
-      if (state.hiddenExceptions) {
-          delete state.hiddenExceptions[action.payload.itemKey];
-      }
+    if (state.hiddenExceptions) {
+      delete state.hiddenExceptions[action.payload.itemKey];
+    }
   });
   r.addCase(update_item, (state, action) => {
     applyInventoryUpdate(
@@ -386,11 +397,16 @@ export const inventory = createReducer(initialState, (r) => {
     if (state.idToItem[itemKey]) {
       if (field === "subtype") {
         const subtype = (incomingValue as string)?.trim() || "";
-        const mergeItemKey = makeInventoryItemKey(state.idToItem[itemKey].janCode, subtype);
-        
+        const mergeItemKey = makeInventoryItemKey(
+          state.idToItem[itemKey].janCode,
+          subtype,
+        );
+
         if (itemKey === mergeItemKey) {
           const ts = (action as any).timestamp;
-          const val = state.idToItem[itemKey].timestamp || (ts ? new Date(ts.seconds * 1000).getTime() : 0);
+          const val =
+            state.idToItem[itemKey].timestamp ||
+            (ts ? new Date(ts.seconds * 1000).getTime() : 0);
           state.idToHistory[itemKey].push({
             date: state.idToItem[itemKey].creationDate,
             desc: `Subtype update ignored (identical): ${subtype}`,
@@ -403,7 +419,11 @@ export const inventory = createReducer(initialState, (r) => {
           const mergeItem = state.idToItem[mergeItemKey];
           const oldItem = state.idToItem[itemKey];
           if (!itemsLookIdentical(oldItem, mergeItem)) {
-            console.error("Merge conflict on subtype update", oldItem, mergeItem);
+            console.error(
+              "Merge conflict on subtype update",
+              oldItem,
+              mergeItem,
+            );
             return state;
           }
           mergeItem.qty += oldItem.qty;
@@ -417,7 +437,9 @@ export const inventory = createReducer(initialState, (r) => {
 
         // Update orders
         for (const orderID in state.orderIdToOrder) {
-          const existingItems = state.orderIdToOrder[orderID].items.filter(i => i.itemKey === itemKey);
+          const existingItems = state.orderIdToOrder[orderID].items.filter(
+            (i) => i.itemKey === itemKey,
+          );
           for (const item of existingItems) {
             item.itemKey = mergeItemKey;
           }
@@ -425,8 +447,12 @@ export const inventory = createReducer(initialState, (r) => {
 
         // Merge history
         const oldHistory = state.idToHistory[itemKey] || [];
-        if (!state.idToHistory[mergeItemKey]) state.idToHistory[mergeItemKey] = [];
-        const combined = [...state.idToHistory[mergeItemKey], ...oldHistory.map(h => ({ ...h, desc: `[${itemKey}] ${h.desc}` }))];
+        if (!state.idToHistory[mergeItemKey])
+          state.idToHistory[mergeItemKey] = [];
+        const combined = [
+          ...state.idToHistory[mergeItemKey],
+          ...oldHistory.map((h) => ({ ...h, desc: `[${itemKey}] ${h.desc}` })),
+        ];
         combined.sort((a, b) => (a.val || 0) - (b.val || 0));
         state.idToHistory[mergeItemKey] = combined;
 
@@ -435,7 +461,11 @@ export const inventory = createReducer(initialState, (r) => {
         const ts = (action as any).timestamp;
         const val = ts ? new Date(ts.seconds * 1000).getTime() : Date.now();
         state.idToHistory[mergeItemKey].push({
-          date: new Date(val).toLocaleString("en", { year: "numeric", month: "short", day: "numeric" }),
+          date: new Date(val).toLocaleString("en", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          }),
           desc: `Subtype updated via update_field from '${from}' to '${subtype}' (Key: ${itemKey} -> ${mergeItemKey})`,
           val,
         });
@@ -453,23 +483,23 @@ export const inventory = createReducer(initialState, (r) => {
       const timestamp = (action as any).timestamp;
       let val = 0;
       let creationDate = "Invalid Date";
-      
+
       if (timestamp) {
         if (timestamp.seconds) {
-            val = new Date(timestamp.seconds * 1000).getTime();
-        } else if (typeof timestamp === 'number') {
-            val = timestamp;
+          val = new Date(timestamp.seconds * 1000).getTime();
+        } else if (typeof timestamp === "number") {
+          val = timestamp;
         }
 
         if (val > 0) {
-            creationDate = new Date(val).toLocaleString("en", {
+          creationDate = new Date(val).toLocaleString("en", {
             year: "numeric",
             month: "short",
             day: "numeric",
-            });
+          });
         }
       }
-      
+
       state.idToHistory[itemKey].push({
         date: creationDate,
         desc: `${field} changed from ${from} to ${incomingValue}`,
@@ -486,9 +516,7 @@ export const inventory = createReducer(initialState, (r) => {
         }
       }
     } else {
-      console.warn(
-        `Skipping update_field for missing item: ${itemKey}`,
-      );
+      console.warn(`Skipping update_field for missing item: ${itemKey}`);
     }
   });
   r.addCase(new_order, (state, action) => {
@@ -678,7 +706,10 @@ export const inventory = createReducer(initialState, (r) => {
     const subtype = action.payload.subtype?.trim() || "";
 
     if (state.idToItem[itemKey] !== undefined) {
-      const mergeItemKey = makeInventoryItemKey(state.idToItem[itemKey].janCode, subtype);
+      const mergeItemKey = makeInventoryItemKey(
+        state.idToItem[itemKey].janCode,
+        subtype,
+      );
       if (itemKey === mergeItemKey) {
         // Use action's timestamp for the event record.
         // Note: "rename_subtype" action payload doesn't seem to have a timestamp in the interface
@@ -824,16 +855,18 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(make_sales, (state, action) => {
     const archiveName = action.payload.archiveName;
     const orderID = archiveName;
-    
+
     // Safety check for archive existence
     let archive = state.archivedInventoryState[archiveName];
     if (!archive && state.hiddenInventoryState[archiveName]) {
-        archive = state.hiddenInventoryState[archiveName];
+      archive = state.hiddenInventoryState[archiveName];
     }
-    
+
     if (!archive) {
-        console.warn(`[Inventory] make_sales: Archive '${archiveName}' not found. Skipping.`);
-        return state;
+      console.warn(
+        `[Inventory] make_sales: Archive '${archiveName}' not found. Skipping.`,
+      );
+      return state;
     }
 
     const items: LineItem[] = [];
@@ -863,7 +896,10 @@ export const inventory = createReducer(initialState, (r) => {
         console.log("Postitem: ", { ...postitem });
       }
       if (qty !== 0) {
-        items.push({ itemKey: makeInventoryItemKey(preitem.janCode, preitem.subtype), qty });
+        items.push({
+          itemKey: makeInventoryItemKey(preitem.janCode, preitem.subtype),
+          qty,
+        });
       }
     }
     const email = "dobutsustationery@gmail.com";
@@ -881,77 +917,79 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(split_inventory_item, (state, action) => {
     const { sourceId, splits } = action.payload;
     const sourceItem = state.idToItem[sourceId];
-    
+
     if (!sourceItem) {
-        console.error(`Cannot split missing item: ${sourceId}`);
-        return;
+      console.error(`Cannot split missing item: ${sourceId}`);
+      return;
     }
 
     const totalSplitQty = splits.reduce((sum, s) => sum + s.qty, 0);
-    
+
     // Validation (optional, maybe allow negative/overdraft?)
     // if (sourceItem.qty < totalSplitQty) ...
 
     // 1. Update Source Item
     sourceItem.qty -= totalSplitQty;
-    
+
     const timestamp = (action as any).timestamp;
     let val = 0;
     let dateStr = "Invalid Date";
 
     if (timestamp) {
-        if (timestamp.seconds) {
-             val = new Date(timestamp.seconds * 1000).getTime();
-        } else if (typeof timestamp === 'number') {
-             val = timestamp;
-        }
-        
-        if (val > 0) {
-            dateStr = new Date(val).toLocaleString("en", {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-            });
-        }
+      if (timestamp.seconds) {
+        val = new Date(timestamp.seconds * 1000).getTime();
+      } else if (typeof timestamp === "number") {
+        val = timestamp;
+      }
+
+      if (val > 0) {
+        dateStr = new Date(val).toLocaleString("en", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+      }
     }
 
     state.idToHistory[sourceId].push({
-        date: dateStr,
-        desc: `Split ${totalSplitQty} into ${splits.length} variants`,
-        val
+      date: dateStr,
+      desc: `Split ${totalSplitQty} into ${splits.length} variants`,
+      val,
     });
 
     // 2. Create New Items
-    splits.forEach(split => {
-        if (state.idToItem[split.newId]) {
-            console.warn(`Variant ID collision: ${split.newId} already exists. Merging/Overwriting.`);
-            // Merge logic? Or just add qty?
-            state.idToItem[split.newId].qty += split.qty;
-        } else {
-            state.idToItem[split.newId] = {
-                ...sourceItem,
-                qty: split.qty,
-                subtype: split.subtype,
-                janCode: sourceItem.janCode, // Keep base JAN? Or update if provided?
-                // Reset fields specific to the new item instance
-                shipped: 0, 
-                creationDate: dateStr,
-                timestamp: val
-            };
-        }
-        
-        // History for new item
-        if (!state.idToHistory[split.newId]) state.idToHistory[split.newId] = [];
-        state.idToHistory[split.newId].push({
-            date: dateStr,
-            desc: `Split from ${sourceId} (${split.qty})`,
-            val
-        });
+    splits.forEach((split) => {
+      if (state.idToItem[split.newId]) {
+        console.warn(
+          `Variant ID collision: ${split.newId} already exists. Merging/Overwriting.`,
+        );
+        // Merge logic? Or just add qty?
+        state.idToItem[split.newId].qty += split.qty;
+      } else {
+        state.idToItem[split.newId] = {
+          ...sourceItem,
+          qty: split.qty,
+          subtype: split.subtype,
+          janCode: sourceItem.janCode, // Keep base JAN? Or update if provided?
+          // Reset fields specific to the new item instance
+          shipped: 0,
+          creationDate: dateStr,
+          timestamp: val,
+        };
+      }
+
+      // History for new item
+      if (!state.idToHistory[split.newId]) state.idToHistory[split.newId] = [];
+      state.idToHistory[split.newId].push({
+        date: dateStr,
+        desc: `Split from ${sourceId} (${split.qty})`,
+        val,
+      });
     });
 
     // 3. Cleanup Source Item if empty
     if (sourceItem.qty <= 0) {
-        delete state.idToItem[sourceId];
+      delete state.idToItem[sourceId];
     }
   });
 

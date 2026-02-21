@@ -143,14 +143,14 @@ const mapImportItem = (row: any): ImportItem => {
   );
 
   const qty = parseInt(
-      getValueByHeaders(row, [
-          (h) => h === "total pcs",
-          (h) => h === "qty",
-          (h) => h.includes("q'ty") && !h.includes("unit"),
-          (h) => h.includes("quantity") && !h.includes("unit"),
-          (h) => /order\s*q'?ty/.test(h) && !h.includes("unit"),
-      ]) || "0",
-      10
+    getValueByHeaders(row, [
+      (h) => h === "total pcs",
+      (h) => h === "qty",
+      (h) => h.includes("q'ty") && !h.includes("unit"),
+      (h) => h.includes("quantity") && !h.includes("unit"),
+      (h) => /order\s*q'?ty/.test(h) && !h.includes("unit"),
+    ]) || "0",
+    10,
   );
 
   return {
@@ -278,7 +278,7 @@ export const computeOrderImportBatch = (
   // Use state.rows directly to ensure index alignment
   orderState.rows.forEach((row, index) => {
     if (row.processed) return;
-    
+
     const item = row.parsed;
     if (!item) return; // Skip error rows
 
@@ -354,81 +354,89 @@ export const computeOrderImportBatch = (
 
     const matches = janToItems[item.janCode] || [];
     const exists = matches.length > 0;
-    
+
     // --- Conflict Detection ---
     let isConflict = false;
     let isDataMismatch = false;
 
     // 1. Subtype Conflict (Multiple Matches)
     if (matches.length > 1) {
-        // Special Exception: If qty is 0, we allow it as a "Match" (updates cost/data on all)
-        if (item.qty !== 0) {
-            isConflict = true;
-        }
+      // Special Exception: If qty is 0, we allow it as a "Match" (updates cost/data on all)
+      if (item.qty !== 0) {
+        isConflict = true;
+      }
     }
 
     // 2. Data Mismatch Conflict (Single Match OR Zero-Qty Multi-Match)
     // We check the FIRST item as the representative for data consistency
     if (exists) {
-        const { item: existingItem } = matches[0];
-        const existingHS = existingItem.hsCode;
-        const newHS = item.hsCode;
-        const existingWeight = existingItem.weight;
-        const newWeight = item.weight;
-        const existingCOO = existingItem.countryOfOrigin;
-        const newCOO = item.countryOfOrigin;
+      const { item: existingItem } = matches[0];
+      const existingHS = existingItem.hsCode;
+      const newHS = item.hsCode;
+      const existingWeight = existingItem.weight;
+      const newWeight = item.weight;
+      const existingCOO = existingItem.countryOfOrigin;
+      const newCOO = item.countryOfOrigin;
 
-        if (existingHS && newHS && existingHS !== newHS) isDataMismatch = true;
-        if (existingWeight && newWeight && existingWeight !== newWeight) isDataMismatch = true;
-        if (existingCOO && newCOO && existingCOO !== newCOO) isDataMismatch = true;
+      if (existingHS && newHS && existingHS !== newHS) isDataMismatch = true;
+      if (existingWeight && newWeight && existingWeight !== newWeight)
+        isDataMismatch = true;
+      if (existingCOO && newCOO && existingCOO !== newCOO)
+        isDataMismatch = true;
     }
-    
+
     if (isDataMismatch) {
-        isConflict = true;
+      isConflict = true;
     }
 
     // --- Action Generation ---
 
     if (filter === "MATCH" && exists && !isConflict) {
       if (item.qty === 0 && matches.length > 1) {
-          // Zero Qty Multi-Match: Update ALL matches
-          matches.forEach(({ id, item: existingItem }) => {
-              updates.push({
-                type: "update",
-                id: id,
-                item: {
-                  ...existingItem,
-                  janCode: item.janCode,
-                  qty: 0, // No stock change
-                  cost: item.cost, 
-                  weight: item.weight,
-                  hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode,
-                  countryOfOrigin: existingItem.countryOfOrigin ? existingItem.countryOfOrigin : item.countryOfOrigin,
-                },
-              });
-          });
-      } else {
-          // Standard Single Match
-          const { id, item: existingItem } = matches[0];
+        // Zero Qty Multi-Match: Update ALL matches
+        matches.forEach(({ id, item: existingItem }) => {
           updates.push({
             type: "update",
             id: id,
             item: {
               ...existingItem,
               janCode: item.janCode,
-              qty: item.qty, // Add stock
+              qty: 0, // No stock change
               cost: item.cost,
               weight: item.weight,
               hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode,
-              countryOfOrigin: existingItem.countryOfOrigin ? existingItem.countryOfOrigin : item.countryOfOrigin,
+              countryOfOrigin: existingItem.countryOfOrigin
+                ? existingItem.countryOfOrigin
+                : item.countryOfOrigin,
             },
           });
+        });
+      } else {
+        // Standard Single Match
+        const { id, item: existingItem } = matches[0];
+        updates.push({
+          type: "update",
+          id: id,
+          item: {
+            ...existingItem,
+            janCode: item.janCode,
+            qty: item.qty, // Add stock
+            cost: item.cost,
+            weight: item.weight,
+            hsCode: existingItem.hsCode ? existingItem.hsCode : item.hsCode,
+            countryOfOrigin: existingItem.countryOfOrigin
+              ? existingItem.countryOfOrigin
+              : item.countryOfOrigin,
+          },
+        });
       }
       indices.push(index);
     } else if (filter === "NEW" && !exists) {
       // DEBUG: Why is this NEW?
-      console.log(`[ImportBatch] Processing NEW for CSV JAN: "${item.janCode}". Matches found: ${matches.length}`);
-      
+      console.log(
+        `[ImportBatch] Processing NEW for CSV JAN: "${item.janCode}". Matches found: ${matches.length}`,
+      );
+
       updates.push({
         type: "new",
         id: item.janCode,

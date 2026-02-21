@@ -38,7 +38,9 @@
         lastError = error;
       }
       if (i < attempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, backoffMs * (i + 1)));
+        await new Promise((resolve) =>
+          setTimeout(resolve, backoffMs * (i + 1)),
+        );
       }
     }
     throw lastError || new Error("Failed to load image");
@@ -58,14 +60,20 @@
       if (shouldRun && seq === loadSeq) loading = false;
       return;
     }
-    
+
     let finalSrc = toGoogleDrivePublicImageUrl(src);
     const driveFileId = extractGoogleDriveFileId(finalSrc);
 
     // During pending picker->Drive migration we intentionally avoid rendering
     // fragile expiring googleusercontent URLs and keep a loading spinner instead.
-    const isStableDriveGoogleusercontent = finalSrc.includes("googleusercontent.com/d/");
-    if (isUploading && finalSrc.includes("googleusercontent.com") && !isStableDriveGoogleusercontent) {
+    const isStableDriveGoogleusercontent = finalSrc.includes(
+      "googleusercontent.com/d/",
+    );
+    if (
+      isUploading &&
+      finalSrc.includes("googleusercontent.com") &&
+      !isStableDriveGoogleusercontent
+    ) {
       if (shouldRun && seq === loadSeq) {
         loading = true;
         error = "";
@@ -73,7 +81,7 @@
       }
       return;
     }
-    
+
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
     const driveFullSizeUrl = driveFileId
@@ -90,7 +98,8 @@
       finalSrc.includes("drive.usercontent.google.com/") ||
       finalSrc.includes("lh3.googleusercontent.com/d/");
     const shouldFetch = isGoogleApi || isGoogleusercontent;
-    const requestSrc = isDrivePublic && driveFullSizeUrl ? driveFullSizeUrl : finalSrc;
+    const requestSrc =
+      isDrivePublic && driveFullSizeUrl ? driveFullSizeUrl : finalSrc;
 
     // Drive public images must be loaded directly via <img>; browser fetch() is CORS-blocked.
     if (isDrivePublic) {
@@ -100,62 +109,63 @@
     }
 
     if (!shouldFetch) {
-        // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
-        objectUrl = finalSrc;
-        loading = false;
-        return;
+      // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
+      objectUrl = finalSrc;
+      loading = false;
+      return;
     }
 
     // Wrap fetch in Queue
     try {
-        await imageQueue.add(async () => {
-             const driveToken = getDriveToken();
-             const authCandidates = isDrivePublic
-               ? []
-               : Array.from(
-                   new Set(
-                     [token?.access_token, driveToken?.access_token]
-                       .filter(Boolean) as string[]
-                   )
-                 );
-             const tryFetch = async (authHeader?: string) =>
-               await fetchWithRetries(
-                 requestSrc,
-                 {
-                   headers: authHeader ? { Authorization: authHeader } : {},
-                   referrerPolicy: "no-referrer",
-                 },
-                 4,
-                 250,
-               );
+      await imageQueue.add(async () => {
+        const driveToken = getDriveToken();
+        const authCandidates = isDrivePublic
+          ? []
+          : Array.from(
+              new Set(
+                [token?.access_token, driveToken?.access_token].filter(
+                  Boolean,
+                ) as string[],
+              ),
+            );
+        const tryFetch = async (authHeader?: string) =>
+          await fetchWithRetries(
+            requestSrc,
+            {
+              headers: authHeader ? { Authorization: authHeader } : {},
+              referrerPolicy: "no-referrer",
+            },
+            4,
+            250,
+          );
 
-             let response: Response | null = null;
-             let lastError: any = null;
+        let response: Response | null = null;
+        let lastError: any = null;
 
-             for (const accessToken of authCandidates) {
-               try {
-                 response = await tryFetch(`Bearer ${accessToken}`);
-                 break;
-               } catch (error) {
-                 lastError = error;
-               }
-             }
+        for (const accessToken of authCandidates) {
+          try {
+            response = await tryFetch(`Bearer ${accessToken}`);
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
 
-             if (!response) {
-               try {
-                 response = await tryFetch();
-               } catch (error) {
-                 lastError = error;
-               }
-             }
+        if (!response) {
+          try {
+            response = await tryFetch();
+          } catch (error) {
+            lastError = error;
+          }
+        }
 
-             if (!response) {
-               throw lastError || new Error("Failed to load image");
-             }
+        if (!response) {
+          throw lastError || new Error("Failed to load image");
+        }
 
-             const blob = await response.blob();
-             if (shouldRun && seq === loadSeq) objectUrl = URL.createObjectURL(blob);
-        });
+        const blob = await response.blob();
+        if (shouldRun && seq === loadSeq) objectUrl = URL.createObjectURL(blob);
+      });
     } catch (e: any) {
       console.error("SecureImage error:", e);
 
@@ -181,7 +191,9 @@
 
   // Determine crossorigin attribute: 'anonymous' for known CORS-supporting hosts (e.g. Shopify),
   // but NULL for drive.google.com (cookies) and googleusercontent.com (PPA - often fails CORS check or requires no-header).
-  $: crossOriginVal = ((objectUrl && objectUrl.includes("cdn.shopify.com")) ? "anonymous" : null) as "anonymous" | null;
+  $: crossOriginVal = (
+    objectUrl && objectUrl.includes("cdn.shopify.com") ? "anonymous" : null
+  ) as "anonymous" | null;
   $: referrerPolicyVal = (
     objectUrl && objectUrl.includes("lh3.googleusercontent.com/d/")
       ? undefined
@@ -206,7 +218,10 @@
   <div
     class="{className} bg-red-100 flex items-center justify-center p-2 text-center"
   >
-    <span class="text-xs text-red-500 font-medium overflow-hidden text-ellipsis px-1" title={error}>
+    <span
+      class="text-xs text-red-500 font-medium overflow-hidden text-ellipsis px-1"
+      title={error}
+    >
       {error}
     </span>
   </div>
@@ -220,20 +235,20 @@
     referrerpolicy={referrerPolicyVal}
     crossorigin={crossOriginVal}
     on:error={() => {
-        if (isUploading && objectUrl.includes("googleusercontent.com")) {
-            // During picker->Drive migration, avoid flashing a broken image icon.
-            // Keep loading state until the durable Drive URL replaces this source.
-            loading = true;
-            error = "";
-            return;
-        }
-        console.error("Image failed to load:", objectUrl);
-        error = "Failed to load image";
-        loading = false;
+      if (isUploading && objectUrl.includes("googleusercontent.com")) {
+        // During picker->Drive migration, avoid flashing a broken image icon.
+        // Keep loading state until the durable Drive URL replaces this source.
+        loading = true;
+        error = "";
+        return;
+      }
+      console.error("Image failed to load:", objectUrl);
+      error = "Failed to load image";
+      loading = false;
     }}
     on:load={() => {
-        loading = false;
-        error = "";
+      loading = false;
+      error = "";
     }}
   />
 {/if}

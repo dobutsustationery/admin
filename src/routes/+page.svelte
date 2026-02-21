@@ -14,8 +14,11 @@
       )
     : 0;
 
-  $: pendingDrafts = $store.listingCreation && $store.listingCreation.proposals 
-      ? Object.values($store.listingCreation.proposals).filter((p: any) => p.status === 'draft').length
+  $: pendingDrafts =
+    $store.listingCreation && $store.listingCreation.proposals
+      ? Object.values($store.listingCreation.proposals).filter(
+          (p: any) => p.status === "draft",
+        ).length
       : 0;
 
   // Recent activity mock

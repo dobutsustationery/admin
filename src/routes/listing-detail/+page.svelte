@@ -53,7 +53,7 @@
   $: janCode =
     $page.url.searchParams.get("janCode") || $page.url.searchParams.get("jan");
   $: handle = $page.url.searchParams.get("handle");
-  $: isLiveMode = mode === 'live' || (!!handle && mode !== 'create');
+  $: isLiveMode = mode === "live" || (!!handle && mode !== "create");
 
   // Batch Navigation State
   $: activeBatchJans = $store.listingCreation.activeBatchJans || [];
@@ -183,7 +183,8 @@
         // This keeps computed allocation in reducer/view logic instead of persisted events.
         const variantsByItemId = new Map<string, any[]>();
         variants.forEach((v: any) => {
-          if (!variantsByItemId.has(v.itemId)) variantsByItemId.set(v.itemId, []);
+          if (!variantsByItemId.has(v.itemId))
+            variantsByItemId.set(v.itemId, []);
           variantsByItemId.get(v.itemId)!.push(v);
         });
 
@@ -418,7 +419,10 @@
     return [...request.apiCalls].sort((a, b) => b.loggedAt - a.loggedAt)[0];
   }
 
-  function buildSyncMessageFromRequest(request: ShopifySyncRequestView, syncHandle: string) {
+  function buildSyncMessageFromRequest(
+    request: ShopifySyncRequestView,
+    syncHandle: string,
+  ) {
     if (request.status === "queued") {
       return {
         level: "info" as const,
@@ -482,9 +486,12 @@
   $: latestSyncRequestIdForHandle = handle
     ? (syncState.handleToLatestRequestId?.[handle] ?? null)
     : null;
-  $: activeSyncRequestId = trackedSyncRequestId || latestSyncRequestIdForHandle || null;
+  $: activeSyncRequestId =
+    trackedSyncRequestId || latestSyncRequestIdForHandle || null;
   $: activeSyncRequest = activeSyncRequestId
-    ? ((syncState.requestsById?.[activeSyncRequestId] as ShopifySyncRequestView) || null)
+    ? (syncState.requestsById?.[
+        activeSyncRequestId
+      ] as ShopifySyncRequestView) || null
     : null;
   $: syncDetailsHref = activeSyncRequestId
     ? `/sync-status?requestId=${encodeURIComponent(activeSyncRequestId)}`
@@ -759,7 +766,7 @@
       // Live Mode: Update Inventory Item
       const currentItem = $store.inventory.idToItem[id];
       const from = currentItem ? currentItem.subtype : "";
-      
+
       dispatchBroadcast(
         update_field({
           id,
@@ -892,12 +899,18 @@
         token.access_token,
       );
       const newUrl = toGoogleDrivePublicImageUrl(
-        result.publicUrl || result.apiUrl || result.thumbnailLink || result.webViewLink || "",
+        result.publicUrl ||
+          result.apiUrl ||
+          result.thumbnailLink ||
+          result.webViewLink ||
+          "",
       );
 
       if ($user.uid) {
         if (replacingSubtypeId) {
-          const item = associatedItems.find((i) => (i.variantId || i.id) === replacingSubtypeId);
+          const item = associatedItems.find(
+            (i) => (i.variantId || i.id) === replacingSubtypeId,
+          );
           if (item) {
             if (mode === "create" && janCode) {
               const vId = item.variantId || item.id;
@@ -978,9 +991,13 @@
             // 4. Remove Old Image
             // Use sourceGroup/sourceJan from the image object if available
             // Draft images have extra metadata injected by buildDraftListingImages
-            type DraftListingImage = ListingImage & { sourceGroup?: string; sourceJan?: string; isListingOnly?: boolean };
+            type DraftListingImage = ListingImage & {
+              sourceGroup?: string;
+              sourceJan?: string;
+              isListingOnly?: boolean;
+            };
             const oldImageTyped = oldImage as DraftListingImage;
-            
+
             const targetJan =
               oldImageTyped?.sourceGroup || oldImageTyped?.sourceJan || janCode;
 
@@ -1123,7 +1140,7 @@
       "associatedItems:",
       associatedItems,
       "showAll:",
-      showAll
+      showAll,
     );
 
     if (showAll) {
@@ -1246,10 +1263,12 @@
           if (v.photoGroupKey) {
             // Avoid duplicates if already processed via relatedKeys
             if (relatedKeys.includes(v.photoGroupKey)) return;
-            
-            const groupPhotos = $store.photos.janCodeToPhotos?.[v.photoGroupKey] || [];
+
+            const groupPhotos =
+              $store.photos.janCodeToPhotos?.[v.photoGroupKey] || [];
             groupPhotos.forEach((photo: any, idx: number) => {
-              const url = photo.baseUrl || photo.thumbnailLink || photo.productUrl;
+              const url =
+                photo.baseUrl || photo.thumbnailLink || photo.productUrl;
               if (!url) return;
               if (!candidates.has(url)) {
                 candidates.set(url, {
@@ -1332,7 +1351,9 @@
       if ($user && $user.uid) {
         if (mode === "create" && janCode) {
           // Draft Mode: Update ListingVariant image override
-          const item = associatedItems.find((i) => (i.variantId || i.id) === replacingSubtypeId);
+          const item = associatedItems.find(
+            (i) => (i.variantId || i.id) === replacingSubtypeId,
+          );
           const vId = item?.variantId || replacingSubtypeId;
 
           dispatchBroadcast(
@@ -1808,7 +1829,9 @@
       <div class="modal image-picker-modal">
         <div class="flex justify-between items-center mb-4">
           <h3 class="modal-title">Select listing image</h3>
-          <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <label
+            class="flex items-center gap-2 text-sm cursor-pointer select-none"
+          >
             <input type="checkbox" bind:checked={showAllPhotos} />
             Show all photos
           </label>
@@ -1821,10 +1844,7 @@
                 class="image-picker-item"
                 on:click={() => handlePickListingImage(candidate)}
               >
-                <ImageThumbnail
-                  src={candidate.url}
-                  alt={candidate.altText}
-                />
+                <ImageThumbnail src={candidate.url} alt={candidate.altText} />
               </button>
             {/each}
           </div>

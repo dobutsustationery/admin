@@ -40,7 +40,9 @@ export function reorderListingImages(params: {
 
   // 1. Create a working copy of the full list
   // We assume listingImages is already sorted by position, but sorting here ensures consistency.
-  const currentList = [...listingImages].sort((a, b) => a.position - b.position);
+  const currentList = [...listingImages].sort(
+    (a, b) => a.position - b.position,
+  );
 
   const sourceIndex = currentList.findIndex((img) => img.id === sourceId);
   const targetIndex = currentList.findIndex((img) => img.id === targetId);
@@ -58,7 +60,7 @@ export function reorderListingImages(params: {
   }));
 
   // 4. Update References
-  
+
   // Update Variant Positions
   // We need to find where each variant's image ended up.
   // associatedItems links to images via URL (image property).

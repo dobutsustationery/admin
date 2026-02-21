@@ -49,16 +49,16 @@ class RMBGProcessor {
   }
 
   async predictMask(image: any) {
-     await this.load();
-     // Pre-process
-     const { pixel_values } = await this.processor(image);
-     // Predict
-     const { output } = await this.model({ input: pixel_values });
-     // Post-process (Resize mask)
-     const mask = await RawImage.fromTensor(
-       output[0].mul(255).to("uint8")
-     ).resize(image.width, image.height);
-     return mask;
+    await this.load();
+    // Pre-process
+    const { pixel_values } = await this.processor(image);
+    // Predict
+    const { output } = await this.model({ input: pixel_values });
+    // Post-process (Resize mask)
+    const mask = await RawImage.fromTensor(
+      output[0].mul(255).to("uint8"),
+    ).resize(image.width, image.height);
+    return mask;
   }
 }
 
@@ -91,7 +91,7 @@ export async function removeBackground(
       if (maskChannels === 1) {
         maskVal = mask.data[i];
       } else if (maskChannels >= 3) {
-        maskVal = mask.data[i * maskChannels]; 
+        maskVal = mask.data[i * maskChannels];
       }
       imgData.data[imgIdx + 3] = maskVal;
     }
@@ -100,143 +100,145 @@ export async function removeBackground(
 
     // 3. Smart Crop (Result is transparent now, so alpha scan will work)
     return await smartCrop(canvas);
-
   } catch (e) {
     console.error("[BackgroundRemoval] Client-side processing failed:", e);
-    return null; 
+    return null;
   }
 }
 
 /**
  * Smart Crop: Trims transparent borders from an image
  */
-export async function smartCrop(input: string | HTMLCanvasElement): Promise<string> {
-    let canvas: HTMLCanvasElement;
-    
-    if (typeof input === 'string') {
-        // Load Base64 to Canvas
-        const img = new Image();
-        img.src = input.startsWith('data:') ? input : `data:image/png;base64,${input}`;
-        await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-        });
-        canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) throw new Error("No context");
-        ctx.drawImage(img, 0, 0);
-    } else {
-        canvas = input;
-    }
+export async function smartCrop(
+  input: string | HTMLCanvasElement,
+): Promise<string> {
+  let canvas: HTMLCanvasElement;
 
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (typeof input === "string") {
+    // Load Base64 to Canvas
+    const img = new Image();
+    img.src = input.startsWith("data:")
+      ? input
+      : `data:image/png;base64,${input}`;
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+    canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("No context");
-    
-    const width = canvas.width;
-    const height = canvas.height;
-    const imgData = ctx.getImageData(0, 0, width, height);
+    ctx.drawImage(img, 0, 0);
+  } else {
+    canvas = input;
+  }
 
-    // 1. Determine Background Mode (Transparent vs Solid Color)
-    // Scan alpha channel FIRST. If we find meaningful alpha, use that.
-    const ALPHA_THRESHOLD = 40; 
-    
-    let hasTransparency = false;
-    for (let i = 3; i < imgData.data.length; i += 4) {
-        if (imgData.data[i] < 255 - ALPHA_THRESHOLD) {
-            hasTransparency = true;
-            break;
-        }
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("No context");
+
+  const width = canvas.width;
+  const height = canvas.height;
+  const imgData = ctx.getImageData(0, 0, width, height);
+
+  // 1. Determine Background Mode (Transparent vs Solid Color)
+  // Scan alpha channel FIRST. If we find meaningful alpha, use that.
+  const ALPHA_THRESHOLD = 40;
+
+  let hasTransparency = false;
+  for (let i = 3; i < imgData.data.length; i += 4) {
+    if (imgData.data[i] < 255 - ALPHA_THRESHOLD) {
+      hasTransparency = true;
+      break;
     }
+  }
 
-    // 2. Scan for Subject BBox
-    let minX = width;
-    let minY = height;
-    let maxX = 0;
-    let maxY = 0;
-    let foundPixel = false;
+  // 2. Scan for Subject BBox
+  let minX = width;
+  let minY = height;
+  let maxX = 0;
+  let maxY = 0;
+  let foundPixel = false;
 
-    if (hasTransparency) {
-        // --- ALPHA SCAN (Fast, for transparent images) ---
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const i = (y * width + x) * 4;
-                if (imgData.data[i + 3] > ALPHA_THRESHOLD) {
-                    if (x < minX) minX = x;
-                    if (x > maxX) maxX = x;
-                    if (y < minY) minY = y;
-                    if (y > maxY) maxY = y;
-                    foundPixel = true;
-                }
-            }
-        }
-    } else {
-        // --- AI SCAN (Slow, for opaque images - crops to mask bbox) ---
-        console.log("[SmartCrop] Opaque image detected. Using AI for crop mask...");
-        try {
-             const instance = await RMBGProcessor.getInstance();
-             // We need to pass url or RawImage. Since we have canvas, convert to blob url or RawImage.fromCanvas?
-             // Only RawImage.fromURL or fromTensor is exposed usually, but let's see. 
-             // RawImage can be created from canvas? No easily documented way in this context?
-             // Actually, RawImage.read(url) works.
-             // Or we just get base64.
-             const b64 = canvas.toDataURL("image/png");
-             const image = await RawImage.fromURL(b64);
-             
-             const mask = await instance.predictMask(image);
-             
-             // Scan mask data
-             const pixelCount = width * height;
-             const maskChannels = mask.data.length / pixelCount;
-             
-             for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const idx = (y * width + x);
-                    let val = 0;
-                    if (maskChannels === 1) val = mask.data[idx];
-                    else val = mask.data[idx * maskChannels]; // R channel likely
-                    
-                    if (val > 10) { // Keep low threshold for mask
-                        if (x < minX) minX = x;
-                        if (x > maxX) maxX = x;
-                        if (y < minY) minY = y;
-                        if (y > maxY) maxY = y;
-                        foundPixel = true;
-                    }
-                }
-             }
-             
-        } catch (e) {
-            console.error("[SmartCrop] AI Mask failed:", e);
-            // Fallback to full image (foundPixel = false)
-        }
-    }
-
-
-    if (foundPixel) {
-      // Add requested padding (15px)
-      const margin = 15;
-      const cropX = Math.max(0, minX - margin);
-      const cropY = Math.max(0, minY - margin);
-      const cropWidth = Math.min(width, maxX + margin) - cropX;
-      const cropHeight = Math.min(height, maxY + margin) - cropY;
-
-      if (cropWidth > 0 && cropHeight > 0) {
-        const cropCanvas = document.createElement("canvas");
-        cropCanvas.width = cropWidth;
-        cropCanvas.height = cropHeight;
-        const cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
-        if (cropCtx) {
-          cropCtx.putImageData(
-            ctx.getImageData(cropX, cropY, cropWidth, cropHeight),
-            0,
-            0,
-          );
-          return cropCanvas.toDataURL("image/png").split(",")[1];
+  if (hasTransparency) {
+    // --- ALPHA SCAN (Fast, for transparent images) ---
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        if (imgData.data[i + 3] > ALPHA_THRESHOLD) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+          foundPixel = true;
         }
       }
     }
-    
-    return canvas.toDataURL("image/png").split(",")[1];
+  } else {
+    // --- AI SCAN (Slow, for opaque images - crops to mask bbox) ---
+    console.log("[SmartCrop] Opaque image detected. Using AI for crop mask...");
+    try {
+      const instance = await RMBGProcessor.getInstance();
+      // We need to pass url or RawImage. Since we have canvas, convert to blob url or RawImage.fromCanvas?
+      // Only RawImage.fromURL or fromTensor is exposed usually, but let's see.
+      // RawImage can be created from canvas? No easily documented way in this context?
+      // Actually, RawImage.read(url) works.
+      // Or we just get base64.
+      const b64 = canvas.toDataURL("image/png");
+      const image = await RawImage.fromURL(b64);
+
+      const mask = await instance.predictMask(image);
+
+      // Scan mask data
+      const pixelCount = width * height;
+      const maskChannels = mask.data.length / pixelCount;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = y * width + x;
+          let val = 0;
+          if (maskChannels === 1) val = mask.data[idx];
+          else val = mask.data[idx * maskChannels]; // R channel likely
+
+          if (val > 10) {
+            // Keep low threshold for mask
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            foundPixel = true;
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[SmartCrop] AI Mask failed:", e);
+      // Fallback to full image (foundPixel = false)
+    }
+  }
+
+  if (foundPixel) {
+    // Add requested padding (15px)
+    const margin = 15;
+    const cropX = Math.max(0, minX - margin);
+    const cropY = Math.max(0, minY - margin);
+    const cropWidth = Math.min(width, maxX + margin) - cropX;
+    const cropHeight = Math.min(height, maxY + margin) - cropY;
+
+    if (cropWidth > 0 && cropHeight > 0) {
+      const cropCanvas = document.createElement("canvas");
+      cropCanvas.width = cropWidth;
+      cropCanvas.height = cropHeight;
+      const cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
+      if (cropCtx) {
+        cropCtx.putImageData(
+          ctx.getImageData(cropX, cropY, cropWidth, cropHeight),
+          0,
+          0,
+        );
+        return cropCanvas.toDataURL("image/png").split(",")[1];
+      }
+    }
+  }
+
+  return canvas.toDataURL("image/png").split(",")[1];
 }

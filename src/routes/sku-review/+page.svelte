@@ -15,13 +15,13 @@
   let skippedCount = 0;
 
   function toggleHide(key: string) {
-      if (!$user || !$user.uid) return;
-      const isHidden = $store.inventory.hiddenExceptions?.[key];
-      if (isHidden) {
-          broadcast(firestore, $user.uid, show_exception({ itemKey: key }));
-      } else {
-          broadcast(firestore, $user.uid, hide_exception({ itemKey: key }));
-      }
+    if (!$user || !$user.uid) return;
+    const isHidden = $store.inventory.hiddenExceptions?.[key];
+    if (isHidden) {
+      broadcast(firestore, $user.uid, show_exception({ itemKey: key }));
+    } else {
+      broadcast(firestore, $user.uid, hide_exception({ itemKey: key }));
+    }
   }
 
   $: {
@@ -34,12 +34,16 @@
       for (const key in inv) {
         const item = inv[key];
         const missing: string[] = [];
-        
+
         // 1. Description: Check existence and CAPS
         if (!item.description) {
-            missing.push("Description");
-        } else if (item.description.length > 0 && item.description === item.description.toUpperCase() && /[a-z]/i.test(item.description)) {
-            missing.push("Description (ALL CAPS)");
+          missing.push("Description");
+        } else if (
+          item.description.length > 0 &&
+          item.description === item.description.toUpperCase() &&
+          /[a-z]/i.test(item.description)
+        ) {
+          missing.push("Description (ALL CAPS)");
         }
 
         // 2. Required Fields (excluding ignored ones)
@@ -49,7 +53,7 @@
         if (!item.image) missing.push("Image");
         if (!item.hsCode) missing.push("HS Code");
         if (!item.countryOfOrigin) missing.push("Country of Origin");
-        
+
         // Explicitly ignored: subtype, handle, productType, tags, qty, janCode, pieces, shipped, creationDate, timestamp
         // Checking internal/Shopify optional fields that were likely intended by "Everything else"
         // If these are too noisy, we can remove them.
@@ -57,21 +61,21 @@
         const idToHandle = $store.listings.idToHandle;
         const handleToListing = $store.listings.handleToListing;
         const handle = idToHandle[key];
-        
+
         const listing = handle ? handleToListing[handle] : undefined;
         if (!listing || !listing.bodyHtml) {
-             missing.push("Unlisted");
+          missing.push("Unlisted");
         }
         if (listing && !listing.productCategory) {
-            missing.push("Category");
+          missing.push("Category");
         }
 
         const stock = (item.qty || 0) - (item.shipped || 0);
-        
+
         // Filter out items with <= 0 stock if we are skipping out of stock
         if (stock <= 0) {
-            skippedCount++;
-            if (skipOutOfStock) continue;
+          skippedCount++;
+          if (skipOutOfStock) continue;
         }
 
         if (missing.length > 0) {
@@ -80,39 +84,43 @@
         }
       }
       // Sort by creationDate desc
-      itemsMissingData.sort((a, b) => b.item.creationDate.localeCompare(a.item.creationDate));
+      itemsMissingData.sort((a, b) =>
+        b.item.creationDate.localeCompare(a.item.creationDate),
+      );
     }
   }
 
   $: hiddenExceptions = $store.inventory.hiddenExceptions || {};
-  $: visibleItems = itemsMissingData.filter(i => showHidden || !hiddenExceptions[i.key]);
+  $: visibleItems = itemsMissingData.filter(
+    (i) => showHidden || !hiddenExceptions[i.key],
+  );
   $: hiddenCount = itemsMissingData.length - visibleItems.length;
 </script>
 
 <div class="container">
   <h1>SKU Review</h1>
   <div class="header-controls">
-      <h2 class="summary">{visibleItems.length} exceptions found.</h2>
-      {#if hiddenCount > 0}
-          <span class="hidden-count">({hiddenCount} hidden)</span>
-      {/if}
+    <h2 class="summary">{visibleItems.length} exceptions found.</h2>
+    {#if hiddenCount > 0}
+      <span class="hidden-count">({hiddenCount} hidden)</span>
+    {/if}
   </div>
   <p>Items missing required data or with invalid formatting.</p>
-  
+
   <div class="filters">
-      <label>
-        <input type="checkbox" bind:checked={skipOutOfStock}> 
-        {#if skipOutOfStock}
-            Skip out of stock ({skippedCount} skipped)
-        {:else}
-            Skip out of stock ({skippedCount} would be skipped)
-        {/if}
-      </label>
-      
-      <label>
-        <input type="checkbox" bind:checked={showHidden}> 
-        Show hidden items
-      </label>
+    <label>
+      <input type="checkbox" bind:checked={skipOutOfStock} />
+      {#if skipOutOfStock}
+        Skip out of stock ({skippedCount} skipped)
+      {:else}
+        Skip out of stock ({skippedCount} would be skipped)
+      {/if}
+    </label>
+
+    <label>
+      <input type="checkbox" bind:checked={showHidden} />
+      Show hidden items
+    </label>
   </div>
 
   {#if visibleItems.length === 0}
@@ -156,9 +164,9 @@
               {/each}
             </td>
             <td>
-                <button class="btn-small" on:click={() => toggleHide(key)}>
-                    {hiddenExceptions[key] ? "Unhide" : "Hide"}
-                </button>
+              <button class="btn-small" on:click={() => toggleHide(key)}>
+                {hiddenExceptions[key] ? "Unhide" : "Hide"}
+              </button>
             </td>
           </tr>
         {/each}
@@ -172,46 +180,47 @@
     padding: 2rem;
   }
   .header-controls {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
   }
   .summary {
-      font-size: 1.25rem;
-      color: #b91c1c;
-      margin: 0;
+    font-size: 1.25rem;
+    color: #b91c1c;
+    margin: 0;
   }
   .hidden-count {
-      font-size: 0.9rem;
-      color: #6b7280;
+    font-size: 0.9rem;
+    color: #6b7280;
   }
   .filters {
-      display: flex;
-      gap: 1.5rem;
-      margin-bottom: 1.5rem;
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
   }
   .btn-small {
-      padding: 0.25rem 0.5rem;
-      font-size: 0.8rem;
-      background: white;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
   }
   .btn-small:hover {
-      background: #f9fafb;
+    background: #f9fafb;
   }
   .hidden-row {
-      opacity: 0.5;
-      background: #f9fafb;
+    opacity: 0.5;
+    background: #f9fafb;
   }
   table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 1rem;
   }
-  th, td {
+  th,
+  td {
     border: 1px solid #eee;
     padding: 0.5rem;
     text-align: left;

@@ -16,73 +16,84 @@ export async function fetchImage(
   // These (drive.google.com/thumbnail?id=...) do NOT support CORS for fetch().
   // We must convert them to the Drive API 'get media' endpoint:
   // https://www.googleapis.com/drive/v3/files/{fileId}?alt=media
-  
+
   let fetchUrl = toGoogleDrivePublicImageUrl(url);
-  
+
   // Extract ID from drive thumbnail link or standard public export link
   // Matches:
   // 1. drive.google.com/thumbnail?id=XYZ
   // 2. drive.google.com/uc?id=XYZ
   // 3. drive.google.com/uc?export=view&id=XYZ
-  const driveIdMatch = fetchUrl.match(/drive\.google\.com\/(?:thumbnail|uc)\?.*id=([^&]+)/);
+  const driveIdMatch = fetchUrl.match(
+    /drive\.google\.com\/(?:thumbnail|uc)\?.*id=([^&]+)/,
+  );
   let driveApiUrl = "";
   if (driveIdMatch && driveIdMatch[1]) {
-      const fileId = driveIdMatch[1];
-      // Prefer public URL first to avoid unnecessary auth failures/noise.
-      driveApiUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-      fetchUrl = toGoogleDrivePublicImageUrl(fetchUrl);
-      
+    const fileId = driveIdMatch[1];
+    // Prefer public URL first to avoid unnecessary auth failures/noise.
+    driveApiUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+    fetchUrl = toGoogleDrivePublicImageUrl(fetchUrl);
   } else if (url.includes("googleusercontent.com")) {
-      // Normalize to full-resolution download form. If a resized suffix was persisted
-      // accidentally (e.g. =w400-h400-c), strip it and request original bytes.
-      const base = url.replace(/=[a-z0-9,-]+$/i, "");
-      fetchUrl = `${base}=d`;
+    // Normalize to full-resolution download form. If a resized suffix was persisted
+    // accidentally (e.g. =w400-h400-c), strip it and request original bytes.
+    const base = url.replace(/=[a-z0-9,-]+$/i, "");
+    fetchUrl = `${base}=d`;
   }
 
   const headers: Record<string, string> = {};
   if (token && fetchUrl.includes("googleapis.com/drive/v3/files/")) {
-      headers['Authorization'] = `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   try {
-      let response = await fetch(fetchUrl, {
-        headers,
-        referrerPolicy: "no-referrer"
-      });
+    let response = await fetch(fetchUrl, {
+      headers,
+      referrerPolicy: "no-referrer",
+    });
 
-      if (!response.ok) {
-        // For Drive links, fallback to API endpoint when token is available.
-        if (token && driveIdMatch && (response.status === 401 || response.status === 403 || response.status === 0)) {
-            const apiResponse = await fetch(driveApiUrl, {
-                headers: { Authorization: `Bearer ${token}` },
-                referrerPolicy: "no-referrer",
-            });
-            if (apiResponse.ok) {
-                return processResponse(apiResponse);
-            }
+    if (!response.ok) {
+      // For Drive links, fallback to API endpoint when token is available.
+      if (
+        token &&
+        driveIdMatch &&
+        (response.status === 401 ||
+          response.status === 403 ||
+          response.status === 0)
+      ) {
+        const apiResponse = await fetch(driveApiUrl, {
+          headers: { Authorization: `Bearer ${token}` },
+          referrerPolicy: "no-referrer",
+        });
+        if (apiResponse.ok) {
+          return processResponse(apiResponse);
         }
-
-        if (url.includes("googleusercontent.com") && fetchUrl !== url) {
-            const rawResponse = await fetch(url, {
-                headers,
-                referrerPolicy: "no-referrer"
-            });
-            if (rawResponse.ok) {
-                return processResponse(rawResponse);
-            }
-        }
-
-        throw new Error(`Failed to fetch image (${response.status}): ${response.statusText}`);
       }
-      return processResponse(response);
+
+      if (url.includes("googleusercontent.com") && fetchUrl !== url) {
+        const rawResponse = await fetch(url, {
+          headers,
+          referrerPolicy: "no-referrer",
+        });
+        if (rawResponse.ok) {
+          return processResponse(rawResponse);
+        }
+      }
+
+      throw new Error(
+        `Failed to fetch image (${response.status}): ${response.statusText}`,
+      );
+    }
+    return processResponse(response);
   } catch (e: any) {
-       // If the fallback (or initial) fetch failed, rethrow.
-       // Note: CORS errors on public URL usually show up as TypeError: Failed to fetch
-       throw e;
+    // If the fallback (or initial) fetch failed, rethrow.
+    // Note: CORS errors on public URL usually show up as TypeError: Failed to fetch
+    throw e;
   }
 }
 
-async function processResponse(response: Response): Promise<{ data: string; mimeType: string }> {
+async function processResponse(
+  response: Response,
+): Promise<{ data: string; mimeType: string }> {
   const blob = await response.blob();
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -188,7 +199,9 @@ export async function detectVariants(
   apiKey?: string,
   customPrompt?: string,
 ): Promise<{ name: string; indices: number[] }[]> {
-    const identificationPrompt = customPrompt || `
+  const identificationPrompt =
+    customPrompt ||
+    `
         You are a strict JSON generator. Look at these ${images.length} images.
         Task: Group these images into Product Variants (e.g. Red vs Blue) based on their packaging.
 
@@ -213,37 +226,37 @@ export async function detectVariants(
         Return ONLY valid JSON. No markdown. No conversation.
     `;
 
-    const variantJsonRaw = await imagePrompt(
-      identificationPrompt,
-      images,
-      accessToken,
-      apiKey,
-    );
-    
-    console.log(`[Variant Detection] Raw Response:`, variantJsonRaw);
+  const variantJsonRaw = await imagePrompt(
+    identificationPrompt,
+    images,
+    accessToken,
+    apiKey,
+  );
 
-    if (variantJsonRaw) {
-      try {
-        let jsonStr = variantJsonRaw
-          .replace(/```json/g, "")
-          .replace(/```/g, "")
-          .trim();
-        const firstBrace = jsonStr.indexOf("{");
-        const lastBrace = jsonStr.lastIndexOf("}");
-        if (firstBrace !== -1 && lastBrace !== -1) {
-          jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
-        }
+  console.log(`[Variant Detection] Raw Response:`, variantJsonRaw);
 
-        const parsed = JSON.parse(jsonStr);
-        if (parsed.variants && Array.isArray(parsed.variants)) {
-          console.log(`[Variant Detection] Parsed Variants:`, parsed.variants);
-          return parsed.variants;
-        }
-      } catch (e) {
-        console.warn("Failed to parse variant JSON", e, variantJsonRaw);
+  if (variantJsonRaw) {
+    try {
+      let jsonStr = variantJsonRaw
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+      const firstBrace = jsonStr.indexOf("{");
+      const lastBrace = jsonStr.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
       }
+
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.variants && Array.isArray(parsed.variants)) {
+        console.log(`[Variant Detection] Parsed Variants:`, parsed.variants);
+        return parsed.variants;
+      }
+    } catch (e) {
+      console.warn("Failed to parse variant JSON", e, variantJsonRaw);
     }
-    return [];
+  }
+  return [];
 }
 
 /**
@@ -293,12 +306,12 @@ export async function processMediaItems(
   // Ensure 'Processed' folder exists
   let processedFolderId = "";
   try {
-      const folders = await ensureFolderStructure(accessToken);
-      processedFolderId = folders.processedId;
-  } catch(e) {
-      console.error("Failed to ensure folder structure", e);
-      // Continue locally? Or fail?
-      // Warn and try to continue, but upload will fail.
+    const folders = await ensureFolderStructure(accessToken);
+    processedFolderId = folders.processedId;
+  } catch (e) {
+    console.error("Failed to ensure folder structure", e);
+    // Continue locally? Or fail?
+    // Warn and try to continue, but upload will fail.
   }
 
   // 1. Group images by JAN code
@@ -401,9 +414,15 @@ export async function processMediaItems(
 
     // Check for variants only if there are enough images to likely contain variants (Heuristic: > 1 image)
     if (group.images.length > 1) {
-      console.log(`[Variant Detection] Checking group ${group.janCode} with ${group.images.length} images...`);
+      console.log(
+        `[Variant Detection] Checking group ${group.janCode} with ${group.images.length} images...`,
+      );
       try {
-        const variants = await detectVariants(groupImagesData, accessToken, apiKey);
+        const variants = await detectVariants(
+          groupImagesData,
+          accessToken,
+          apiKey,
+        );
 
         if (variants.length > 1) {
           console.log(
@@ -537,20 +556,26 @@ export async function processMediaItems(
 
         if (editedBase64) {
           const dataUri = `data:image/png;base64,${editedBase64}`;
-          
+
           // UPLOAD TO DRIVE
           let driveUrl = dataUri; // Fallback
           if (processedFolderId) {
-             try {
-                // Convert to blob
-                const processedBlob = await (await fetch(dataUri)).blob();
-                const filename = `processed_${group.janCode}_${imgIdx}_${Date.now()}.png`;
-                const driveFile = await uploadImageToDrive(processedBlob, filename, processedFolderId, accessToken);
-                // Prefer publicUrl for external compatibility (Shopify), fall back to webContentLink or dataUri
-                driveUrl = driveFile.publicUrl || driveFile.webContentLink || dataUri;
-             } catch(uploadErr) {
-                 console.error("Failed to upload processed image", uploadErr);
-             }
+            try {
+              // Convert to blob
+              const processedBlob = await (await fetch(dataUri)).blob();
+              const filename = `processed_${group.janCode}_${imgIdx}_${Date.now()}.png`;
+              const driveFile = await uploadImageToDrive(
+                processedBlob,
+                filename,
+                processedFolderId,
+                accessToken,
+              );
+              // Prefer publicUrl for external compatibility (Shopify), fall back to webContentLink or dataUri
+              driveUrl =
+                driveFile.publicUrl || driveFile.webContentLink || dataUri;
+            } catch (uploadErr) {
+              console.error("Failed to upload processed image", uploadErr);
+            }
           }
 
           // Update Live Group
@@ -566,11 +591,13 @@ export async function processMediaItems(
             };
             liveGroups[idx].imageUrls[imgIdx] = driveUrl; // LINK Update
             liveGroups[idx].imageStatuses[imgIdx] = "done";
-            
+
             // Update Results as well!
-            const resIdx = results.findIndex(r => r.janCode === group.janCode);
+            const resIdx = results.findIndex(
+              (r) => r.janCode === group.janCode,
+            );
             if (resIdx !== -1) {
-                results[resIdx].imageUrls[imgIdx] = driveUrl;
+              results[resIdx].imageUrls[imgIdx] = driveUrl;
             }
 
             notify(
@@ -633,63 +660,64 @@ export async function categorizeMediaItems(
   accessToken: string,
   apiKey?: string,
   onMatch?: (item: { baseUrl: string; id: string }, janCode: string) => void,
-  onProgress?: (current: number, total: number, message: string) => void
+  onProgress?: (current: number, total: number, message: string) => void,
 ): Promise<void> {
-    const total = items.length;
-    let current = 0;
-    
-    onProgress?.(0, total, "Starting categorization...");
-    
-    let lastSeenJanCode: string | null = null;
+  const total = items.length;
+  let current = 0;
 
-    for (const item of items) {
-        current++;
-        onProgress?.(current, total, `Analyzing image ${current}/${total}...`);
-        
-        try {
-             // 1. Fetch
-             const imageData = await fetchImage(item.baseUrl, accessToken);
-             
-             // 2. Identify
-             const janCheck = await imagePrompt(
-                "Find the JAN code (Japanese Article Number, 8 or 13 digits) in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.",
-                [imageData],
-                accessToken,
-                apiKey
-             );
-             
-             let janCode = janCheck?.replace(/[^0-9]/g, "") || "";
-             
-             // Validate length
-             if (janCode.length >= 8 && janCode !== "NONE") {
-                 // FOUND A NEW JAN
-                 lastSeenJanCode = janCode;
-                 console.log(`[Categorize] ${item.id} -> Found JAN: ${janCode}`);
-             } else {
-                 // NO JAN FOUND
-                 if (lastSeenJanCode) {
-                     janCode = lastSeenJanCode; // Inherit
-                     console.log(`[Categorize] ${item.id} -> No JAN, inheriting: ${janCode}`);
-                 } else {
-                     janCode = DEFAULT_UNCATEGORIZED_CODE;
-                     console.log(`[Categorize] ${item.id} -> No JAN, no history.`);
-                 }
-             }
-             
-             // 3. Notify
-             if (janCode !== DEFAULT_UNCATEGORIZED_CODE) {
-                onMatch?.(item, janCode);
-             } else {
-                 console.log(`[Categorize] Skipping ${item.id} (Uncategorized)`);
-             }
-             
-        } catch (e: any) {
-            console.error(`Error categorizing item ${item.id}:`, e);
-            // On error, do we inherit? Probably safer not to, or maybe yes?
-            // If fetch fails, we can't see the image.
-            // Let's NOT inherit on error to avoid grouping broken images blindly.
+  onProgress?.(0, total, "Starting categorization...");
+
+  let lastSeenJanCode: string | null = null;
+
+  for (const item of items) {
+    current++;
+    onProgress?.(current, total, `Analyzing image ${current}/${total}...`);
+
+    try {
+      // 1. Fetch
+      const imageData = await fetchImage(item.baseUrl, accessToken);
+
+      // 2. Identify
+      const janCheck = await imagePrompt(
+        "Find the JAN code (Japanese Article Number, 8 or 13 digits) in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.",
+        [imageData],
+        accessToken,
+        apiKey,
+      );
+
+      let janCode = janCheck?.replace(/[^0-9]/g, "") || "";
+
+      // Validate length
+      if (janCode.length >= 8 && janCode !== "NONE") {
+        // FOUND A NEW JAN
+        lastSeenJanCode = janCode;
+        console.log(`[Categorize] ${item.id} -> Found JAN: ${janCode}`);
+      } else {
+        // NO JAN FOUND
+        if (lastSeenJanCode) {
+          janCode = lastSeenJanCode; // Inherit
+          console.log(
+            `[Categorize] ${item.id} -> No JAN, inheriting: ${janCode}`,
+          );
+        } else {
+          janCode = DEFAULT_UNCATEGORIZED_CODE;
+          console.log(`[Categorize] ${item.id} -> No JAN, no history.`);
         }
+      }
+
+      // 3. Notify
+      if (janCode !== DEFAULT_UNCATEGORIZED_CODE) {
+        onMatch?.(item, janCode);
+      } else {
+        console.log(`[Categorize] Skipping ${item.id} (Uncategorized)`);
+      }
+    } catch (e: any) {
+      console.error(`Error categorizing item ${item.id}:`, e);
+      // On error, do we inherit? Probably safer not to, or maybe yes?
+      // If fetch fails, we can't see the image.
+      // Let's NOT inherit on error to avoid grouping broken images blindly.
     }
-    
-    onProgress?.(current, total, "Categorization complete.");
+  }
+
+  onProgress?.(current, total, "Categorization complete.");
 }
