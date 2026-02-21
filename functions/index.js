@@ -26,7 +26,13 @@ function getShopifyConfig() {
   };
 }
 
-exports.syncShopifyRequest = onDocumentCreated("shopify_sync/{requestId}", async (event) => {
+exports.syncShopifyRequest = onDocumentCreated(
+  {
+    document: "shopify_sync/{requestId}",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+  },
+  async (event) => {
   const requestId = event.params?.requestId;
   const requestData = event.data?.data();
   if (!requestData) return;

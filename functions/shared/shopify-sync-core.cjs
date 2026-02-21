@@ -170,6 +170,72 @@ function mapStatus(input) {
   return "active";
 }
 
+function normalizeImageKey(rawUrl) {
+  const value = normalizeString(rawUrl);
+  if (!value) return "";
+  const driveId = extractGoogleDriveFileId(value);
+  if (driveId) return `drive:${driveId}`;
+  return value.replace(/[#?].*$/, "");
+}
+
+function buildGalleryImageEntries(requestPayload) {
+  const listing = requestPayload?.listing || {};
+  const listingImages = (Array.isArray(listing?.images) ? listing.images : [])
+    .slice()
+    .sort((a, b) => Number(a?.position || 0) - Number(b?.position || 0));
+
+  const entries = [];
+  const keyToIndex = new Map();
+
+  const pushImage = (rawUrl, altText) => {
+    const src = toGoogleDrivePublicImageUrl(String(rawUrl || ""));
+    const key = normalizeImageKey(src);
+    if (!src || !key) return;
+    const existingIdx = keyToIndex.get(key);
+    if (existingIdx !== undefined) {
+      if (!entries[existingIdx].alt && altText) {
+        entries[existingIdx].alt = String(altText || "");
+      }
+      return;
+    }
+    const next = {
+      key,
+      src,
+      alt: String(altText || ""),
+    };
+    keyToIndex.set(key, entries.length);
+    entries.push(next);
+  };
+
+  listingImages.forEach((img) => {
+    pushImage(img?.url, img?.altText);
+  });
+
+  return entries.map((entry, idx) => ({
+    ...entry,
+    position: idx + 1,
+  }));
+}
+
+function buildVariantAttachmentEntries(requestPayload) {
+  const variants = Array.isArray(requestPayload?.variants) ? requestPayload.variants : [];
+  const entries = [];
+  variants.forEach((variant) => {
+    const sku = String(variant?.sku || "").trim();
+    const subtype = String(variant?.subtype || "").trim();
+    const src = toGoogleDrivePublicImageUrl(String(variant?.image || ""));
+    const key = normalizeImageKey(src);
+    if (!sku || !src || !key) return;
+    entries.push({
+      sku,
+      key,
+      src,
+      alt: subtype || sku,
+    });
+  });
+  return entries;
+}
+
 async function fetchJson(url, options = {}) {
   const res = await fetch(url, options);
   const json = await res.json().catch(async () => ({ raw: await res.text() }));
@@ -350,25 +416,22 @@ function buildProductPayload(requestPayload, existingProduct) {
     });
   }
 
-  const imagesPayload = (Array.isArray(listing.images) ? listing.images : [])
-    .slice()
-    .sort((a, b) => Number(a?.position || 0) - Number(b?.position || 0))
-    .map((img, idx) => ({
-      src: toGoogleDrivePublicImageUrl(String(img?.url || "")),
-      position: Number(img?.position || idx + 1),
-      alt: String(img?.altText || ""),
-    }))
-    .filter((img) => !!img.src);
+  const imagesPayload = buildGalleryImageEntries(requestPayload).map((img) => ({
+    src: img.src,
+    position: img.position,
+    alt: img.alt,
+  }));
 
   const option1Name = String(listing.option1Name || "Subtype").trim() || "Subtype";
 
-  const variantsPayload = variants.map((variant) => {
+  const variantsPayload = variants.map((variant, idx) => {
     const sku = String(variant?.sku || "").trim();
     const subtype = String(variant?.subtype || "").trim();
     const existingId = existingVariantIdBySku.get(sku);
     const payload = {
       sku,
       option1: subtype || "Default",
+      position: idx + 1,
       price: String(Number(variant?.price || 0)),
       barcode: String(variant?.janCode || ""),
       grams: Number(variant?.weight || 0),
@@ -396,6 +459,198 @@ function buildProductPayload(requestPayload, existingProduct) {
     images: imagesPayload,
     variants: variantsPayload,
   };
+}
+
+async function fetchProductById(config, productId) {
+  const { storeUrl, apiVersion } = config;
+  const headers = await buildShopifyHeaders(config);
+  const url = `https://${storeUrl}/admin/api/${apiVersion}/products/${productId}.json`;
+  const json = await fetchJson(url, { headers });
+  return json?.product || null;
+}
+
+async function createProductImage(config, productId, image) {
+  const { storeUrl, apiVersion } = config;
+  const headers = await buildShopifyHeaders(config);
+  const url = `https://${storeUrl}/admin/api/${apiVersion}/products/${productId}/images.json`;
+  const json = await fetchJson(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      image: {
+        src: image?.src,
+        alt: String(image?.alt || ""),
+        position: toNumberOrNull(image?.position) || undefined,
+      },
+    }),
+  });
+  return json?.image || null;
+}
+
+async function updateProductImage(config, productId, imageId, fields) {
+  const { storeUrl, apiVersion } = config;
+  const headers = await buildShopifyHeaders(config);
+  const url = `https://${storeUrl}/admin/api/${apiVersion}/products/${productId}/images/${imageId}.json`;
+  const json = await fetchJson(url, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      image: {
+        id: imageId,
+        ...fields,
+      },
+    }),
+  });
+  return json?.image || null;
+}
+
+async function deleteProductImage(config, productId, imageId) {
+  const { storeUrl, apiVersion } = config;
+  const headers = await buildShopifyHeaders(config);
+  const url = `https://${storeUrl}/admin/api/${apiVersion}/products/${productId}/images/${imageId}.json`;
+  await fetchJson(url, {
+    method: "DELETE",
+    headers,
+  });
+}
+
+async function reconcileProductGallery(config, productId, requestPayload) {
+  const desiredGalleryImages = buildGalleryImageEntries(requestPayload);
+  const variantAttachmentImages = buildVariantAttachmentEntries(requestPayload);
+  const variantImageIdBySku = new Map();
+  let latest = await fetchProductById(config, productId);
+  if (!latest) return { product: null, variantImageIdBySku };
+  const existingImages = Array.isArray(latest?.images) ? latest.images : [];
+  for (const img of existingImages) {
+    const imageId = toNumberOrNull(img?.id);
+    if (!imageId) continue;
+    await deleteProductImage(config, productId, imageId);
+  }
+
+  let nextPosition = 1;
+  for (const desired of desiredGalleryImages) {
+    const created = await createProductImage(config, productId, {
+      ...desired,
+      position: nextPosition,
+    });
+    if (created) nextPosition += 1;
+  }
+
+  for (const desired of variantAttachmentImages) {
+    const created = await createProductImage(config, productId, {
+      ...desired,
+      position: nextPosition,
+    });
+    if (created) {
+      const imageId = toNumberOrNull(created?.id);
+      if (imageId) {
+        variantImageIdBySku.set(desired.sku, imageId);
+      }
+      nextPosition += 1;
+    }
+  }
+
+  latest = await fetchProductById(config, productId);
+  if (!latest) return { product: null, variantImageIdBySku };
+  const currentImages = (Array.isArray(latest?.images) ? latest.images : [])
+    .slice()
+    .sort((a, b) => Number(a?.position || 0) - Number(b?.position || 0));
+
+  const desiredAll = [
+    ...desiredGalleryImages,
+    ...variantAttachmentImages.map((img, idx) => ({
+      ...img,
+      position: desiredGalleryImages.length + idx + 1,
+    })),
+  ];
+  for (let i = 0; i < currentImages.length && i < desiredAll.length; i += 1) {
+    const current = currentImages[i];
+    const desired = desiredAll[i];
+    const imageId = toNumberOrNull(current?.id);
+    if (!imageId) continue;
+    const currentPos = toNumberOrNull(current?.position);
+    const currentAlt = String(current?.alt || "");
+    if (currentPos !== desired.position || currentAlt !== String(desired.alt || "")) {
+      await updateProductImage(config, productId, imageId, {
+        position: desired.position,
+        alt: String(desired.alt || ""),
+      });
+    }
+  }
+
+  return { product: await fetchProductById(config, productId), variantImageIdBySku };
+}
+
+async function updateVariantFields(config, variantId, fields) {
+  const { storeUrl, apiVersion } = config;
+  const headers = await buildShopifyHeaders(config);
+  const url = `https://${storeUrl}/admin/api/${apiVersion}/variants/${variantId}.json`;
+  const json = await fetchJson(url, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      variant: { id: variantId, ...fields },
+    }),
+  });
+  return json?.variant || null;
+}
+
+async function reconcileVariantOrderAndImages(config, product, requestPayload) {
+  const productId = toNumberOrNull(product?.id);
+  if (!productId) return product;
+
+  const requestVariants = Array.isArray(requestPayload?.variants) ? requestPayload.variants : [];
+  if (requestVariants.length === 0) return product;
+
+  const galleryResult = await reconcileProductGallery(config, productId, requestPayload);
+  const variantImageIdBySku = galleryResult?.variantImageIdBySku || new Map();
+  if (galleryResult?.product) {
+    product = galleryResult.product;
+  }
+  const desiredBySku = new Map();
+  requestVariants.forEach((variant, idx) => {
+    const sku = String(variant?.sku || "").trim();
+    if (!sku) return;
+    desiredBySku.set(sku, {
+      position: idx + 1,
+      variantImageId: toNumberOrNull(variantImageIdBySku.get(sku)) || null,
+    });
+  });
+
+  let latest = await fetchProductById(config, productId);
+  if (!latest) return product;
+
+  const variants = Array.isArray(latest?.variants) ? latest.variants : [];
+  for (const variant of variants) {
+    const sku = String(variant?.sku || "").trim();
+    if (!sku) continue;
+    const desired = desiredBySku.get(sku);
+    if (!desired) continue;
+
+    const variantId = toNumberOrNull(variant?.id);
+    if (!variantId) continue;
+
+    const nextFields = {};
+    const currentPosition = toNumberOrNull(variant?.position);
+    if (desired.position && currentPosition !== desired.position) {
+      nextFields.position = desired.position;
+    }
+
+    if (desired.variantImageId) {
+      const targetImageId = desired.variantImageId;
+      const currentImageId = toNumberOrNull(variant?.image_id);
+      if (targetImageId && currentImageId !== targetImageId) {
+        nextFields.image_id = targetImageId;
+      }
+    }
+
+    if (Object.keys(nextFields).length > 0) {
+      await updateVariantFields(config, variantId, nextFields);
+    }
+  }
+
+  latest = await fetchProductById(config, productId);
+  return latest || product;
 }
 
 async function upsertProductFromRequest(config, requestPayload) {
@@ -497,11 +752,11 @@ async function upsertProductFromRequest(config, requestPayload) {
     }
 
     if (updated?.product?.id) {
-      return updated.product;
+      return reconcileVariantOrderAndImages(config, updated.product, requestPayload);
     }
   }
 
-  return json.product;
+  return reconcileVariantOrderAndImages(config, json.product, requestPayload);
 }
 
 async function setInventoryLevel(config, locationId, inventoryItemId, available) {
