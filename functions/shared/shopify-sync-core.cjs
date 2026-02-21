@@ -164,7 +164,7 @@ function toTagsString(tags) {
 }
 
 function mapStatus(input) {
-  const status = String(input || "active");
+  const status = String(input || "active").trim().toLowerCase();
   if (status === "archived") return "archived";
   if (status === "draft") return "draft";
   return "active";
@@ -278,6 +278,7 @@ async function findProductByHandle(config, handle) {
         productByHandle(handle: $handle) {
           id
           handle
+          status
           variants(first: 250) {
             nodes {
               id
@@ -307,6 +308,7 @@ async function findProductByHandle(config, handle) {
       return {
         id: productId,
         handle: String(graphProduct.handle || handle),
+        status: mapStatus(graphProduct.status),
         variants,
       };
     }
@@ -319,7 +321,7 @@ async function findProductByHandle(config, handle) {
     const params = new URLSearchParams({
       limit: "250",
       status: "any",
-      fields: "id,handle,variants",
+      fields: "id,handle,status,variants",
       since_id: String(sinceId),
     });
     const url = `https://${storeUrl}/admin/api/${apiVersion}/products.json?${params.toString()}`;
@@ -358,7 +360,7 @@ async function findProductByVariantSku(config, skus) {
     const params = new URLSearchParams({
       limit: "250",
       status: "any",
-      fields: "id,handle,variants",
+      fields: "id,handle,status,variants",
       since_id: String(sinceId),
     });
     const url = `https://${storeUrl}/admin/api/${apiVersion}/products.json?${params.toString()}`;
@@ -447,6 +449,13 @@ function buildProductPayload(requestPayload, existingProduct) {
     return payload;
   });
 
+  const explicitStatusRaw = String(listing.status || "").trim();
+  const resolvedStatus = explicitStatusRaw
+    ? mapStatus(explicitStatusRaw)
+    : existingProduct?.status
+      ? mapStatus(existingProduct.status)
+      : "draft";
+
   return {
     handle,
     title: String(listing.title || "Untitled"),
@@ -454,7 +463,7 @@ function buildProductPayload(requestPayload, existingProduct) {
     vendor: String(listing.vendor || "SPNSS Ltd."),
     product_type: String(listing.productType || ""),
     tags: toTagsString(listing.tags),
-    status: mapStatus(listing.status),
+    status: resolvedStatus,
     options: [{ name: option1Name }],
     images: imagesPayload,
     variants: variantsPayload,
