@@ -21,6 +21,7 @@ import {
   mark_items_done as markShopifyDone,
 } from "./shopify-import-slice";
 import { listings, add_listing_image, create_listing, update_listing } from "./listings-slice";
+import { shopifySync } from "./shopify-sync-slice";
 import listingCreation, { 
   add_variants_internal,
   add_proposals_internal,
@@ -42,6 +43,7 @@ const reducerObject = {
   orderImport,
   shopifyImport,
   listings,
+  shopifySync,
   listingCreation,
   ui,
 };

@@ -6,12 +6,27 @@
   import Signin from "$lib/Signin.svelte"; // Static import
   import { onAuthStateChanged, signOut } from "firebase/auth";
   import { auth, firestore, googleAuthProvider } from "$lib/firebase"; // Ensure imports are correct based on file context
-  import { doc, setDoc, deleteDoc, type Unsubscribe } from "firebase/firestore";
+  import {
+    collection,
+    deleteDoc,
+    doc,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+    setDoc,
+    type Unsubscribe,
+  } from "firebase/firestore";
   import { onMount } from "svelte";
   import { store, inventory_synced, snapshotMetadata, hydrate } from "$lib/store";
   import { user } from "$lib/user-store";
   import type { AnyAction } from "$lib/store";
   import { watchBroadcastActions } from "$lib/redux-firestore";
+  import {
+    replace_shopify_sync_events,
+    reset_shopify_sync_state,
+  } from "$lib/shopify-sync-slice";
+  import type { ShopifySyncEvent } from "$lib/shopify-sync-model";
 
   // Start hydration immediately
   const hydrationPromise = typeof window !== "undefined" ? hydrate() : Promise.resolve();
@@ -113,6 +128,9 @@
             if (!unsubscribeBroadcast) {
               unsubscribeBroadcast = startBroadcastListener();
             }
+            if (!unsubscribeShopifySync) {
+              unsubscribeShopifySync = startShopifySyncListener();
+            }
           }
         });
         return; 
@@ -124,6 +142,11 @@
         unsubscribeBroadcast();
         unsubscribeBroadcast = undefined;
       }
+      if (unsubscribeShopifySync) {
+        unsubscribeShopifySync();
+        unsubscribeShopifySync = undefined;
+      }
+      store.dispatch(reset_shopify_sync_state());
     }
   }
 
@@ -133,6 +156,7 @@
   let unsyncedActions = 0;
   let loadedActionCount = 0;
   let unsubscribeBroadcast: Unsubscribe | undefined;
+  let unsubscribeShopifySync: Unsubscribe | undefined;
 
   function startBroadcastListener() {
     // Note: watchBroadcastActions is now async
@@ -211,6 +235,30 @@
     return undefined;
   }
 
+  function startShopifySyncListener() {
+    const q = query(
+      collection(firestore, "shopify_sync"),
+      orderBy("timestamp", "desc"),
+      limit(2000),
+    );
+
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const events = snapshot.docs.map((eventDoc) => {
+          return {
+            id: eventDoc.id,
+            ...(eventDoc.data() as any),
+          };
+        }) as ShopifySyncEvent[];
+        store.dispatch(replace_shopify_sync_events(events));
+      },
+      (error) => {
+        console.error("[ShopifySync] Listener failed", error);
+      },
+    );
+  }
+
   onMount(() => {
     // Auth Listener
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -236,6 +284,7 @@
     return () => {
       unsubscribe();
       if (unsubscribeBroadcast) unsubscribeBroadcast();
+      if (unsubscribeShopifySync) unsubscribeShopifySync();
       if (typeof window !== "undefined") delete (window as any).__store;
     };
   });
