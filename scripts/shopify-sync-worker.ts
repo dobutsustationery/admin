@@ -58,7 +58,9 @@ Options:
 Required env vars for Shopify API:
   SHOPIFY_STORE_URL
   SHOPIFY_ACCESS_TOKEN
-  SHOPIFY_API_VERSION (optional, default 2024-01)
+    OR
+  SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET
+  SHOPIFY_API_VERSION (optional, default 2026-01)
 `);
 }
 
@@ -83,13 +85,10 @@ async function initFirestore(firestoreEnv: string) {
 function buildShopifyConfig() {
   const storeUrl = core.normalizeStoreUrl(process.env.SHOPIFY_STORE_URL || "");
   const accessToken = process.env.SHOPIFY_ACCESS_TOKEN || "";
-  const apiVersion = process.env.SHOPIFY_API_VERSION || "2024-01";
-
-  if (!storeUrl || !accessToken) {
-    throw new Error("Missing SHOPIFY_STORE_URL or SHOPIFY_ACCESS_TOKEN");
-  }
-
-  return { storeUrl, accessToken, apiVersion };
+  const clientId = process.env.SHOPIFY_CLIENT_ID || "";
+  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET || "";
+  const apiVersion = process.env.SHOPIFY_API_VERSION || "2026-01";
+  return { storeUrl, accessToken, clientId, clientSecret, apiVersion };
 }
 
 async function processOne(db: any, docId: string, processor: string, shopifyConfig: any) {

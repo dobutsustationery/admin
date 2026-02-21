@@ -148,6 +148,24 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
   let successCount = 0;
   let failureCount = 0;
 
+  // Preflight config validation: fail without creating a sync_api_call event.
+  if (!shopifyConfig?.storeUrl || !core.hasAnyCredentials(shopifyConfig)) {
+    const message =
+      "Missing Shopify credentials: set SHOPIFY_STORE_URL and either SHOPIFY_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET";
+    await appendFinalEvent(db, {
+      requestEventId,
+      requestData,
+      processor,
+      status: "failed",
+      payload: {
+        error: message,
+        successCount,
+        failureCount,
+      },
+    });
+    throw new Error(message);
+  }
+
   try {
     const locationId = await core.resolveLocationId(shopifyConfig);
     const product = await core.upsertProductFromRequest(shopifyConfig, requestData);

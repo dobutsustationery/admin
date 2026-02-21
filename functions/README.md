@@ -25,23 +25,29 @@ Shared modules used by both cloud function and CLI worker:
 ## Required Runtime Environment Variables
 
 - `SHOPIFY_STORE_URL` (e.g. `your-store.myshopify.com`)
-- `SHOPIFY_ACCESS_TOKEN` (`shpat_...`)
-- `SHOPIFY_API_VERSION` (default `2024-01` if omitted)
+- one credential mode:
+  - `SHOPIFY_ACCESS_TOKEN` (`shpat_...`), or
+  - `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET`
+- `SHOPIFY_API_VERSION` (default `2026-01` if omitted)
+
+`functions/.env` is read automatically by Firebase emulators/deploy.
+In this repo, generate it from root env files via:
+
+- `npm run env:functions:local` (from `./.env.emulator`)
+- `npm run env:functions:staging` (from `./.env.staging`)
+- `npm run env:functions:production` (from `./.env.production`)
 
 ## Local
 
 ```bash
-cd functions
-npm install
-cd ..
-firebase emulators:start
+npm run functions:install
+npm run emulators
 ```
 
 ## Deploy
 
 ```bash
-cd functions
-npm install
-cd ..
-firebase deploy --only functions
+npm run deploy:functions:staging
+# or
+npm run deploy:functions:production
 ```

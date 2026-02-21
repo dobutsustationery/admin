@@ -4,6 +4,101 @@ function normalizeStoreUrl(raw) {
     .replace(/\/+$/, "");
 }
 
+function normalizeString(value) {
+  return String(value || "").trim();
+}
+
+const tokenCache = new Map();
+
+function getTokenCacheKey(config) {
+  return `${normalizeString(config?.storeUrl)}|${normalizeString(config?.clientId)}`;
+}
+
+function hasStaticAccessToken(config) {
+  return !!normalizeString(config?.accessToken);
+}
+
+function hasClientCredentials(config) {
+  return !!normalizeString(config?.clientId) && !!normalizeString(config?.clientSecret);
+}
+
+function hasAnyCredentials(config) {
+  return hasStaticAccessToken(config) || hasClientCredentials(config);
+}
+
+async function fetchAppAccessToken(config) {
+  const storeUrl = normalizeString(config?.storeUrl);
+  const clientId = normalizeString(config?.clientId);
+  const clientSecret = normalizeString(config?.clientSecret);
+  if (!storeUrl || !clientId || !clientSecret) {
+    throw new Error("Missing SHOPIFY_CLIENT_ID or SHOPIFY_CLIENT_SECRET");
+  }
+
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: clientId,
+    client_secret: clientSecret,
+  });
+
+  const url = `https://${storeUrl}/admin/oauth/access_token`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+
+  const json = await res.json().catch(async () => ({ raw: await res.text() }));
+  if (!res.ok) {
+    throw new Error(`Token exchange failed (${res.status}): ${JSON.stringify(json)}`);
+  }
+
+  const token = normalizeString(json?.access_token);
+  if (!token) {
+    throw new Error(`Token exchange response missing access_token: ${JSON.stringify(json)}`);
+  }
+
+  const expiresInSec = Number(json?.expires_in || 0);
+  const expiresAtMs = Number.isFinite(expiresInSec) && expiresInSec > 0
+    ? Date.now() + expiresInSec * 1000
+    : 0;
+
+  return { token, expiresAtMs };
+}
+
+async function resolveAccessToken(config) {
+  const staticToken = normalizeString(config?.accessToken);
+  if (staticToken) return staticToken;
+
+  if (!hasClientCredentials(config)) {
+    throw new Error(
+      "Missing Shopify credentials: set SHOPIFY_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET",
+    );
+  }
+
+  const key = getTokenCacheKey(config);
+  const cached = tokenCache.get(key);
+  if (cached?.token) {
+    const refreshBufferMs = 60 * 1000;
+    if (!cached.expiresAtMs || Date.now() < cached.expiresAtMs - refreshBufferMs) {
+      return cached.token;
+    }
+  }
+
+  const next = await fetchAppAccessToken(config);
+  tokenCache.set(key, next);
+  return next.token;
+}
+
+async function buildShopifyHeaders(config) {
+  const accessToken = await resolveAccessToken(config);
+  return {
+    "X-Shopify-Access-Token": accessToken,
+    "Content-Type": "application/json",
+  };
+}
+
 function toNumberOrNull(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -48,15 +143,13 @@ async function fetchJson(url, options = {}) {
 }
 
 async function findProductByHandle(config, handle) {
-  const { storeUrl, apiVersion, accessToken } = config;
+  const { storeUrl, apiVersion } = config;
   let url = `https://${storeUrl}/admin/api/${apiVersion}/products.json?limit=250&status=any&fields=id,handle,variants`;
 
   while (url) {
+    const headers = await buildShopifyHeaders(config);
     const res = await fetch(url, {
-      headers: {
-        "X-Shopify-Access-Token": accessToken,
-        "Content-Type": "application/json",
-      },
+      headers,
     });
 
     const json = await res.json().catch(async () => ({ raw: await res.text() }));
@@ -79,13 +172,11 @@ async function resolveLocationId(config) {
     return Number(config.locationId);
   }
 
-  const { storeUrl, apiVersion, accessToken } = config;
+  const { storeUrl, apiVersion } = config;
   const url = `https://${storeUrl}/admin/api/${apiVersion}/locations.json?limit=250`;
+  const headers = await buildShopifyHeaders(config);
   const json = await fetchJson(url, {
-    headers: {
-      "X-Shopify-Access-Token": accessToken,
-      "Content-Type": "application/json",
-    },
+    headers,
   });
   const first = Array.isArray(json.locations) ? json.locations[0] : null;
   const id = toNumberOrNull(first?.id);
@@ -159,7 +250,7 @@ function buildProductPayload(requestPayload, existingProduct) {
 }
 
 async function upsertProductFromRequest(config, requestPayload) {
-  const { storeUrl, apiVersion, accessToken } = config;
+  const { storeUrl, apiVersion } = config;
   const handle = String(requestPayload?.handle || "").trim();
 
   const existing = await findProductByHandle(config, handle);
@@ -169,12 +260,10 @@ async function upsertProductFromRequest(config, requestPayload) {
     ? `https://${storeUrl}/admin/api/${apiVersion}/products/${existing.id}.json`
     : `https://${storeUrl}/admin/api/${apiVersion}/products.json`;
 
+  const headers = await buildShopifyHeaders(config);
   const json = await fetchJson(endpoint, {
     method: existing ? "PUT" : "POST",
-    headers: {
-      "X-Shopify-Access-Token": accessToken,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       product: existing ? { id: existing.id, ...productPayload } : productPayload,
     }),
@@ -188,13 +277,11 @@ async function upsertProductFromRequest(config, requestPayload) {
 }
 
 async function setInventoryLevel(config, locationId, inventoryItemId, available) {
-  const { storeUrl, apiVersion, accessToken } = config;
+  const { storeUrl, apiVersion } = config;
+  const headers = await buildShopifyHeaders(config);
   return fetchJson(`https://${storeUrl}/admin/api/${apiVersion}/inventory_levels/set.json`, {
     method: "POST",
-    headers: {
-      "X-Shopify-Access-Token": accessToken,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       location_id: locationId,
       inventory_item_id: inventoryItemId,
@@ -204,16 +291,14 @@ async function setInventoryLevel(config, locationId, inventoryItemId, available)
 }
 
 async function fetchAllVariantsBySku(config) {
-  const { storeUrl, apiVersion, accessToken } = config;
+  const { storeUrl, apiVersion } = config;
   const variantsBySku = new Map();
   let url = `https://${storeUrl}/admin/api/${apiVersion}/products.json?limit=250&status=active&fields=id,handle,variants`;
 
   while (url) {
+    const headers = await buildShopifyHeaders(config);
     const res = await fetch(url, {
-      headers: {
-        "X-Shopify-Access-Token": accessToken,
-        "Content-Type": "application/json",
-      },
+      headers,
     });
 
     const json = await res.json().catch(async () => ({ raw: await res.text() }));
@@ -251,6 +336,9 @@ module.exports = {
   parseNextLink,
   toTagsString,
   mapStatus,
+  hasAnyCredentials,
+  resolveAccessToken,
+  buildShopifyHeaders,
   fetchJson,
   findProductByHandle,
   resolveLocationId,
