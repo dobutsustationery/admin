@@ -10,6 +10,7 @@ This is the current testing surface and status on the active branch.
 2. Push gate (`.husky/pre-push`): `npm run test:e2e`, `npm run test:live:doctor`, `npm run test:live:contracts`, `npm run test:live:workflows`, `npm run test:live:e2e`
 
 This keeps local commit latency reasonable while still enforcing non-live E2E and live test suites before push.
+The push gate runs on isolated ports (`+10000` offset from normal local defaults) so it does not attach to or interfere with a developer's active dev server/emulators.
 
 ### Default required / expected-green local suites
 

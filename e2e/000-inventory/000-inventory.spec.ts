@@ -91,7 +91,7 @@ test.describe("Inventory Page", () => {
       // ====================================================================
       // STEP 2: Sign in
       // ====================================================================
-      const authEmulatorUrl = "http://localhost:9099";
+      const authEmulatorUrl = process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
       const testEmail = `test-${Date.now()}@example.com`;
       const testPassword = "testpassword123";
   

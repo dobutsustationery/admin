@@ -14,7 +14,7 @@ type AuthFixtures = {
 export const test = base.extend<AuthFixtures>({
   authenticatedPage: async ({ page, context }, use) => {
     // Create a real user in Firebase Auth Emulator using Playwright's request context
-    const authEmulatorUrl = "http://localhost:9099";
+    const authEmulatorUrl = process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
     const testEmail = `test-${Date.now()}@example.com`; // Unique email to avoid conflicts
     const testPassword = "testpassword123";
     

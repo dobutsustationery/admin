@@ -2,6 +2,20 @@
 
 set -e
 
+# Isolate push-time test infrastructure from a developer's local environment.
+# +10000 offset from common local defaults (4173/8080/9099/5001/4000).
+export E2E_PREVIEW_PORT=14173
+export E2E_PREVIEW_BASE_URL="http://localhost:${E2E_PREVIEW_PORT}"
+export E2E_FIRESTORE_EMULATOR_HOST=localhost
+export E2E_FIRESTORE_EMULATOR_PORT=18080
+export FIRESTORE_EMULATOR_HOST="${E2E_FIRESTORE_EMULATOR_HOST}:${E2E_FIRESTORE_EMULATOR_PORT}"
+export E2E_AUTH_EMULATOR_PORT=19099
+export E2E_AUTH_EMULATOR_URL="http://localhost:${E2E_AUTH_EMULATOR_PORT}"
+export E2E_FUNCTIONS_EMULATOR_PORT=15001
+export E2E_EMULATOR_UI_PORT=14000
+export E2E_FIREBASE_CONFIG_PATH="firebase.prepush.json"
+export E2E_EMULATOR_LOG_PATH="/tmp/dobutsu-prepush-emulators.log"
+
 echo "Running pre-push non-live E2E suite..."
 npm run test:e2e
 

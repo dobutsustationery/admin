@@ -5,6 +5,17 @@
 
 set -e  # Exit on error
 
+FIRESTORE_HOST="${E2E_FIRESTORE_EMULATOR_HOST:-localhost}"
+FIRESTORE_PORT="${E2E_FIRESTORE_EMULATOR_PORT:-8080}"
+AUTH_PORT="${E2E_AUTH_EMULATOR_PORT:-9099}"
+PREVIEW_PORT="${E2E_PREVIEW_PORT:-4173}"
+FIREBASE_CONFIG_PATH="${E2E_FIREBASE_CONFIG_PATH:-firebase.json}"
+EMULATOR_LOG_PATH="${E2E_EMULATOR_LOG_PATH:-/tmp/emulators.log}"
+
+export FIRESTORE_EMULATOR_HOST="${FIRESTORE_HOST}:${FIRESTORE_PORT}"
+export E2E_AUTH_EMULATOR_URL="${E2E_AUTH_EMULATOR_URL:-http://localhost:${AUTH_PORT}}"
+export E2E_PREVIEW_BASE_URL="${E2E_PREVIEW_BASE_URL:-http://localhost:${PREVIEW_PORT}}"
+
 # Record start time
 START_TIME=$(date +%s)
 
@@ -15,11 +26,11 @@ echo ""
 # Check if emulators are running
 check_emulators() {
   echo "📡 Checking if Firebase emulators are running..."
-  if curl -s http://localhost:8080 > /dev/null 2>&1; then
-    echo "✓ Firestore emulator is running on port 8080"
+  if curl -s "http://${FIRESTORE_HOST}:${FIRESTORE_PORT}" > /dev/null 2>&1; then
+    echo "✓ Firestore emulator is running on port ${FIRESTORE_PORT}"
     return 0
   else
-    echo "✗ Firestore emulator is not running on port 8080"
+    echo "✗ Firestore emulator is not running on port ${FIRESTORE_PORT}"
     return 1
   fi
 }
@@ -28,7 +39,7 @@ check_emulators() {
 if ! check_emulators; then
   echo ""
   echo "🔥 Starting Firebase emulators..."
-  npm run emulators > /tmp/emulators.log 2>&1 &
+  (npm run env:functions:local && firebase emulators:start --config "${FIREBASE_CONFIG_PATH}") > "${EMULATOR_LOG_PATH}" 2>&1 &
   EMULATOR_PID=$!
   echo "   Started emulators (PID: $EMULATOR_PID)"
   
@@ -40,7 +51,7 @@ if ! check_emulators; then
     fi
     if [ $i -eq 30 ]; then
       echo "❌ Emulators failed to start after 30 seconds"
-      cat /tmp/emulators.log
+      cat "${EMULATOR_LOG_PATH}"
       exit 1
     fi
     sleep 1

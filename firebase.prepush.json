@@ -1,0 +1,29 @@
+{
+  "functions": {
+    "source": "functions"
+  },
+  "hosting": {
+    "public": "build",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "cleanUrls": true,
+    "trailingSlash": false
+  },
+  "emulators": {
+    "firestore": {
+      "port": 18080,
+      "host": "localhost"
+    },
+    "auth": {
+      "port": 19099,
+      "host": "localhost"
+    },
+    "functions": {
+      "port": 15001,
+      "host": "localhost"
+    },
+    "ui": {
+      "enabled": true,
+      "port": 14000
+    }
+  }
+}

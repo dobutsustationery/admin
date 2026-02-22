@@ -24,6 +24,7 @@ import { Timestamp, getFirestore } from "firebase-admin/firestore";
 // This is the proper way to connect to the Firestore emulator
 const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
 process.env.FIRESTORE_EMULATOR_HOST = emulatorHost;
+const previewBaseUrl = process.env.E2E_PREVIEW_BASE_URL || "http://localhost:4173";
 
 // Initialize Firebase Admin for emulator
 // Use the same project ID as configured for e2e tests
@@ -202,7 +203,7 @@ async function loadTestData() {
       if (data?.payload?.item?.image && urlMapping[data.payload.item.image]) {
         modifiedData = JSON.parse(JSON.stringify(data));
         const originalUrl = modifiedData.payload.item.image;
-        modifiedData.payload.item.image = `http://localhost:4173${urlMapping[originalUrl]}`;
+        modifiedData.payload.item.image = `${previewBaseUrl}${urlMapping[originalUrl]}`;
         rewrittenCount++;
       }
 
