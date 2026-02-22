@@ -45,9 +45,14 @@
 
   $: isPriceValid =
     associatedItems.length > 0 && (associatedItems[0].price || 0) > 0;
-  $: normalizedCategories = knownCategories
-    .map((c) => c.trim())
-    .filter(Boolean);
+  let locallyAcceptedCategories: string[] = [];
+  $: normalizedCategories = Array.from(
+    new Set(
+      [...knownCategories, ...locallyAcceptedCategories]
+        .map((c) => c.trim())
+        .filter(Boolean),
+    ),
+  );
   $: categorySet = new Set(normalizedCategories);
   $: isCategoryValid = !!(
     listing &&
@@ -323,6 +328,9 @@
   }
 
   function selectCategory(cat: string) {
+    if (!locallyAcceptedCategories.includes(cat)) {
+      locallyAcceptedCategories = [...locallyAcceptedCategories, cat];
+    }
     categorySearchTerm = cat;
     categoryError = "";
     dispatch("updateCategory", cat);

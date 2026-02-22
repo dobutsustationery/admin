@@ -12,6 +12,7 @@
   let categories: string[] = [];
   let loading = true;
   let error = "";
+  let wasOpen = false;
 
   // Shopify Taxonomy URL (TXT format is easier to parse as line-by-line)
   // Using the stable path from the main branch
@@ -48,11 +49,12 @@
     .filter((c) => c.toLowerCase().includes(searchTerm.toLowerCase()))
     .slice(0, 100); // Limit to 100 for performance
 
-  $: if (isOpen) {
+  $: if (isOpen && !wasOpen) {
     searchTerm = "";
     // Focus after the modal opens without relying on autofocus.
     tick().then(() => searchInput?.focus());
   }
+  $: wasOpen = isOpen;
 
   function select(cat: string) {
     dispatch("select", cat);
