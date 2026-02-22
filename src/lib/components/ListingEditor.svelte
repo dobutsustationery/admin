@@ -28,7 +28,8 @@
   $: sourceAllocations = associatedItems.reduce(
     (acc, item) => {
       const sourceId = item.id; // Inventory Item ID
-      const alloc = item.allocatedQty || 0;
+      const alloc =
+        typeof item.allocatedQty === "number" ? item.allocatedQty : 0;
       acc[sourceId] = (acc[sourceId] || 0) + alloc;
       return acc;
     },
@@ -38,6 +39,7 @@
   $: isAllocationValid =
     !isCreationMode ||
     associatedItems.every((item) => {
+      if (typeof item.allocatedQty !== "number") return false;
       const totalAlloc = sourceAllocations[item.id] || 0;
       const avail = item.qty || 0;
       return totalAlloc === avail;
@@ -531,7 +533,7 @@
           </div>
         {/if}
         <div class="subtype-list">
-          {#each associatedItems as item, i (i)}
+          {#each associatedItems as item, i (item.variantId || item.id)}
             {@const subtypeImg =
               (item.variantImage ? { url: item.variantImage } : null) ||
               (item.photoGroupKey
@@ -550,18 +552,20 @@
                 {@const totalAlloc = sourceAllocations[item.id] || 0}
                 {@const avail = item.qty || 0}
                 {@const statusClass =
-                  totalAlloc > avail
-                    ? "over-allocated"
-                    : totalAlloc < avail
-                      ? "under-allocated"
-                      : "valid-allocated"}
+                  typeof item.allocatedQty !== "number"
+                    ? "under-allocated"
+                    : totalAlloc > avail
+                      ? "over-allocated"
+                      : totalAlloc < avail
+                        ? "under-allocated"
+                        : "valid-allocated"}
                 <input
                   type="number"
                   min="0"
                   class="subtype-qty-input {statusClass}"
                   value={item.allocatedQty !== undefined
                     ? item.allocatedQty
-                    : 0}
+                    : ""}
                   on:input={(e) => handleQtyChange(e, item)}
                   placeholder="Qty"
                   title={totalAlloc > avail
@@ -571,9 +575,7 @@
                       : "Fully allocated"}
                 />
                 <span class="subtype-qty-display" title="Final Inventory Count">
-                  {item.allocatedQty !== undefined
-                    ? item.allocatedQty
-                    : item.qty || 0}
+                  {item.allocatedQty !== undefined ? item.allocatedQty : "-"}
                 </span>
               {/if}
 

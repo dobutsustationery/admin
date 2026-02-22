@@ -571,14 +571,44 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       const inventoryItemIds = inventoryItems.map((x) => x.id);
       // Default to empty string if no inventory items found (shouldn't happen if scan logic was correct)
       const baseItemId = inventoryItemIds.length > 0 ? inventoryItemIds[0] : "";
+      const sourceQty =
+        inventoryItems.length > 0
+          ? Number(inventoryItems[0].item?.qty || 0)
+          : 0;
+
+      const variantsWithItem = p.variants.map((v: any) => ({
+        ...v,
+        itemId: baseItemId, // Enrich variant with inventory link
+      }));
+
+      // Persist initial allocations for split variants so UI/state agree and approval is deterministic.
+      const explicitQtyTotal = variantsWithItem.reduce(
+        (sum: number, v: any) =>
+          sum + (v.qty !== undefined ? Number(v.qty) || 0 : 0),
+        0,
+      );
+      const missingQtyIndices = variantsWithItem
+        .map((v: any, index: number) => ({ v, index }))
+        .filter(({ v }: any) => v.qty === undefined)
+        .map(({ index }: any) => index);
+
+      if (missingQtyIndices.length > 0) {
+        const remainingQty = Math.max(sourceQty - explicitQtyTotal, 0);
+        const base = Math.floor(remainingQty / missingQtyIndices.length);
+        const remainder = remainingQty % missingQtyIndices.length;
+
+        missingQtyIndices.forEach((variantIndex: number, i: number) => {
+          variantsWithItem[variantIndex] = {
+            ...variantsWithItem[variantIndex],
+            qty: base + (i < remainder ? 1 : 0),
+          };
+        });
+      }
 
       return {
         ...p,
         inventoryItemIds,
-        variants: p.variants.map((v: any) => ({
-          ...v,
-          itemId: baseItemId, // Enrich variant with inventory link
-        })),
+        variants: variantsWithItem,
       };
     });
 
