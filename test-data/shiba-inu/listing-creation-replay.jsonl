@@ -1,0 +1,869 @@
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photo": {
+      "id": "AOcBCurlY3OQG98hXME9G15o_VNLpX3aMjGJQfJxFzjUdf0T4Ik6O_IpBXZ54O9VJvCMxHirxntofQVrYX0j2xhaT4Zet6qvNQ",
+      "baseUrl": "https://lh3.googleusercontent.com/d/10la7uxeZf1q1JK5H_xVScBaJyPz46m7-=s0",
+      "productUrl": "https://drive.google.com/file/d/10la7uxeZf1q1JK5H_xVScBaJyPz46m7-/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7427.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:19:14.419Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771737751,
+    "_nanoseconds": 479000000
+  }
+}
+{
+  "type": "photos/merge_jan_groups",
+  "payload": {
+    "sourceJan": "4549131085422",
+    "targetJan": "4542804126211"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771737762,
+    "_nanoseconds": 331000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photo": {
+      "id": "AOcBCur_hOC4POstEFnZrPNzysRShBwv1RstTTUFOBuMAGwW4wRpvfVKPxfcsDQvvvsRiiZV1VV4xdfaa2xbmgWB22uHU1C3-Q",
+      "baseUrl": "https://lh3.googleusercontent.com/d/1brHiNZrULpOB0Tzy0xCU6j7anHGmShmg=s0",
+      "productUrl": "https://drive.google.com/file/d/1brHiNZrULpOB0Tzy0xCU6j7anHGmShmg/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7429.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:19:44.530Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771737763,
+    "_nanoseconds": 59000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photo": {
+      "id": "AOcBCur3Sk5sN-XJXCS_a6WFLjq2QYSQlJbcHKGFNtawM8dAS1zcZe61oS9MqbGhqTXhZ184KDwSWo-HG_XbYQCRwlmSVe3Skg",
+      "baseUrl": "https://lh3.googleusercontent.com/d/1iQpA8ekqQr_JFWybB66m_OGhzoKchmEw=s0",
+      "productUrl": "https://drive.google.com/file/d/1iQpA8ekqQr_JFWybB66m_OGhzoKchmEw/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7430.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:19:50.916Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771737767,
+    "_nanoseconds": 334000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photo": {
+      "id": "AOcBCuoA_NuMkXqOfD_StmeNseDTWBKKqwo7fsIZcxTtfZYUQtLV6PKeool516PDxGOB0PrUB5aN_0jJKJXBDINGayXhNMZ5Vw",
+      "baseUrl": "https://lh3.googleusercontent.com/d/1F9-sPuRKgCba6MsDLvyomov9dnYAFANi=s0",
+      "productUrl": "https://drive.google.com/file/d/1F9-sPuRKgCba6MsDLvyomov9dnYAFANi/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7431.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:20:15.854Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771737771,
+    "_nanoseconds": 318000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photo": {
+      "id": "AOcBCuroBpZz7loPCIkZm5ldpx46TrzWYANmMVneIpulkwe95TDROFrtq-Ya2hROZ541wrL41gOsQgkOPffSG2PqwncYI_fd3A",
+      "baseUrl": "https://lh3.googleusercontent.com/d/147WVJrgDJLfUkXiwD19G1P8Ri-AkQtQt=s0",
+      "productUrl": "https://drive.google.com/file/d/147WVJrgDJLfUkXiwD19G1P8Ri-AkQtQt/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7432.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:20:43.105Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771737774,
+    "_nanoseconds": 581000000
+  }
+}
+{
+  "type": "listingCreation/set_scan_progress",
+  "payload": {
+    "current": 1,
+    "total": 1,
+    "message": "Analyzing variants for 4542804126211...",
+    "janCode": "4542804126211"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738239,
+    "_nanoseconds": 793000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211:Sushi",
+    "photo": {
+      "id": "AOcBCurlY3OQG98hXME9G15o_VNLpX3aMjGJQfJxFzjUdf0T4Ik6O_IpBXZ54O9VJvCMxHirxntofQVrYX0j2xhaT4Zet6qvNQ",
+      "baseUrl": "https://lh3.googleusercontent.com/d/1n3a0lABfbx8kD1Rigf_TQgtSK2mZYpR7=s0",
+      "productUrl": "https://drive.google.com/file/d/10la7uxeZf1q1JK5H_xVScBaJyPz46m7-/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7427.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:19:14.419Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738274,
+    "_nanoseconds": 593000000
+  }
+}
+{
+  "type": "photos/uncategorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photoId": "AOcBCurlY3OQG98hXME9G15o_VNLpX3aMjGJQfJxFzjUdf0T4Ik6O_IpBXZ54O9VJvCMxHirxntofQVrYX0j2xhaT4Zet6qvNQ"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738274,
+    "_nanoseconds": 854000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211:Sushi",
+    "photo": {
+      "id": "AOcBCupKooYxMFSjSt4ii72SzfES_Xo97jR7FV9gOz9whMbmocnPg-Y1ipcyaHqfpbe18OjTZgb3oA5AwOTmUPLnLIrZ_1qgxQ",
+      "baseUrl": "https://lh3.googleusercontent.com/d/199BYNv5Qq9u7_er1go-d5OCH624qDq6-=s0",
+      "productUrl": "https://drive.google.com/file/d/1663ert4NSSfKISaQBi_TP2-CCNz_SKaN/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7428.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:19:32.364Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738275,
+    "_nanoseconds": 75000000
+  }
+}
+{
+  "type": "photos/uncategorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photoId": "AOcBCupKooYxMFSjSt4ii72SzfES_Xo97jR7FV9gOz9whMbmocnPg-Y1ipcyaHqfpbe18OjTZgb3oA5AwOTmUPLnLIrZ_1qgxQ"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738275,
+    "_nanoseconds": 289000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211:Sushi",
+    "photo": {
+      "id": "AOcBCuoA_NuMkXqOfD_StmeNseDTWBKKqwo7fsIZcxTtfZYUQtLV6PKeool516PDxGOB0PrUB5aN_0jJKJXBDINGayXhNMZ5Vw",
+      "baseUrl": "https://lh3.googleusercontent.com/d/1PaEhT3k-3jzECSL1XXidcjPhJRB3ZkeJ=s0",
+      "productUrl": "https://drive.google.com/file/d/1PaEhT3k-3jzECSL1XXidcjPhJRB3ZkeJ/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7431.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:20:15.854Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738275,
+    "_nanoseconds": 513000000
+  }
+}
+{
+  "type": "photos/uncategorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photoId": "AOcBCuoA_NuMkXqOfD_StmeNseDTWBKKqwo7fsIZcxTtfZYUQtLV6PKeool516PDxGOB0PrUB5aN_0jJKJXBDINGayXhNMZ5Vw"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738275,
+    "_nanoseconds": 744000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211:Spa",
+    "photo": {
+      "id": "AOcBCur_hOC4POstEFnZrPNzysRShBwv1RstTTUFOBuMAGwW4wRpvfVKPxfcsDQvvvsRiiZV1VV4xdfaa2xbmgWB22uHU1C3-Q",
+      "baseUrl": "https://lh3.googleusercontent.com/d/1lavLmqYAf9oObfZSU3AntySMfdb_MhPA=s0",
+      "productUrl": "https://drive.google.com/file/d/1brHiNZrULpOB0Tzy0xCU6j7anHGmShmg/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7429.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:19:44.530Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738275,
+    "_nanoseconds": 966000000
+  }
+}
+{
+  "type": "photos/uncategorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photoId": "AOcBCur_hOC4POstEFnZrPNzysRShBwv1RstTTUFOBuMAGwW4wRpvfVKPxfcsDQvvvsRiiZV1VV4xdfaa2xbmgWB22uHU1C3-Q"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738276,
+    "_nanoseconds": 193000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211:Spa",
+    "photo": {
+      "id": "AOcBCur3Sk5sN-XJXCS_a6WFLjq2QYSQlJbcHKGFNtawM8dAS1zcZe61oS9MqbGhqTXhZ184KDwSWo-HG_XbYQCRwlmSVe3Skg",
+      "baseUrl": "https://lh3.googleusercontent.com/d/1QD0M4tc6mB-PL7BVwSgc5q5dwkachLab=s0",
+      "productUrl": "https://drive.google.com/file/d/1iQpA8ekqQr_JFWybB66m_OGhzoKchmEw/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7430.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:19:50.916Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738276,
+    "_nanoseconds": 432000000
+  }
+}
+{
+  "type": "photos/uncategorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photoId": "AOcBCur3Sk5sN-XJXCS_a6WFLjq2QYSQlJbcHKGFNtawM8dAS1zcZe61oS9MqbGhqTXhZ184KDwSWo-HG_XbYQCRwlmSVe3Skg"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738276,
+    "_nanoseconds": 656000000
+  }
+}
+{
+  "type": "photos/categorize_photo",
+  "payload": {
+    "janCode": "4542804126211:Spa",
+    "photo": {
+      "id": "AOcBCuroBpZz7loPCIkZm5ldpx46TrzWYANmMVneIpulkwe95TDROFrtq-Ya2hROZ541wrL41gOsQgkOPffSG2PqwncYI_fd3A",
+      "baseUrl": "https://lh3.googleusercontent.com/d/1NODzSvc93AjMRgCZPIL5YWfm47QcY1-B=s0",
+      "productUrl": "https://drive.google.com/file/d/1NODzSvc93AjMRgCZPIL5YWfm47QcY1-B/view?usp=drivesdk",
+      "mimeType": "image/heif",
+      "filename": "IMG_7432.HEIC",
+      "description": "",
+      "mediaMetadata": {
+        "creationTime": "2025-11-03T13:20:43.105Z",
+        "width": 3024,
+        "height": 4032
+      }
+    }
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738276,
+    "_nanoseconds": 872000000
+  }
+}
+{
+  "type": "photos/uncategorize_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photoId": "AOcBCuroBpZz7loPCIkZm5ldpx46TrzWYANmMVneIpulkwe95TDROFrtq-Ya2hROZ541wrL41gOsQgkOPffSG2PqwncYI_fd3A"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738277,
+    "_nanoseconds": 101000000
+  }
+}
+{
+  "type": "listingCreation/set_scan_progress",
+  "payload": {
+    "current": 1,
+    "total": 1,
+    "message": "Generating proposal for 4542804126211...",
+    "janCode": "4542804126211"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738277,
+    "_nanoseconds": 309000000
+  }
+}
+{
+  "type": "listingCreation/add_proposals",
+  "payload": [
+    {
+      "janCode": "4542804126211",
+      "photoGroupIds": [
+        "4542804126211:Spa",
+        "4542804126211:Sushi"
+      ],
+      "title": "Shiba Inu Sushi & Spa Zip Bags",
+      "bodyHtml": "<h2>Shiba Sushi & Tea Party Pouches!</h2><p>Roll up your tiny treasures or steep your sweetest treats in these adorably kawaii Shiba Inu zipper bags!</p>",
+      "productCategory": "Stationery",
+      "vendor": "Dobutsu",
+      "tags": [
+        "New Arrival"
+      ],
+      "option1Name": "Subtype",
+      "variants": [
+        {
+          "id": "4542804126211:Spa:6988fd32",
+          "option1Value": "Spa",
+          "photoGroupKey": "4542804126211:Spa",
+          "image": "https://lh3.googleusercontent.com/d/1QD0M4tc6mB-PL7BVwSgc5q5dwkachLab=s0"
+        },
+        {
+          "id": "4542804126211:Sushi:f9be83c5",
+          "option1Value": "Sushi",
+          "photoGroupKey": "4542804126211:Sushi",
+          "image": "https://lh3.googleusercontent.com/d/199BYNv5Qq9u7_er1go-d5OCH624qDq6-=s0"
+        }
+      ],
+      "status": "draft",
+      "listingOnlyImages": []
+    }
+  ],
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738337,
+    "_nanoseconds": 847000000
+  }
+}
+{
+  "type": "listingCreation/start_batch",
+  "payload": {
+    "janCodes": [
+      "4542804126211"
+    ],
+    "batchId": "6318ab93-8382-4498-b1e2-48aa601c1dc0",
+    "createdAt": 1771738345955
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738345,
+    "_nanoseconds": 962000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_value",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Spa:6988fd32",
+    "value": "Tea"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738359,
+    "_nanoseconds": 89000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "title",
+    "value": "Shiba Inu Ziplock Bags"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738374,
+    "_nanoseconds": 672000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_image",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Spa:6988fd32",
+    "image": "https://lh3.googleusercontent.com/d/1NODzSvc93AjMRgCZPIL5YWfm47QcY1-B=s0"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738389,
+    "_nanoseconds": 497000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_image",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "image": "https://lh3.googleusercontent.com/d/1PaEhT3k-3jzECSL1XXidcjPhJRB3ZkeJ=s0"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738392,
+    "_nanoseconds": 738000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "listingImageOrder",
+    "value": [
+      "AOcBCuoA_NuMkXqOfD_StmeNseDTWBKKqwo7fsIZcxTtfZYUQtLV6PKeool516PDxGOB0PrUB5aN_0jJKJXBDINGayXhNMZ5Vw",
+      "AOcBCupKooYxMFSjSt4ii72SzfES_Xo97jR7FV9gOz9whMbmocnPg-Y1ipcyaHqfpbe18OjTZgb3oA5AwOTmUPLnLIrZ_1qgxQ",
+      "AOcBCurlY3OQG98hXME9G15o_VNLpX3aMjGJQfJxFzjUdf0T4Ik6O_IpBXZ54O9VJvCMxHirxntofQVrYX0j2xhaT4Zet6qvNQ",
+      "AOcBCur3Sk5sN-XJXCS_a6WFLjq2QYSQlJbcHKGFNtawM8dAS1zcZe61oS9MqbGhqTXhZ184KDwSWo-HG_XbYQCRwlmSVe3Skg",
+      "AOcBCuroBpZz7loPCIkZm5ldpx46TrzWYANmMVneIpulkwe95TDROFrtq-Ya2hROZ541wrL41gOsQgkOPffSG2PqwncYI_fd3A",
+      "AOcBCur_hOC4POstEFnZrPNzysRShBwv1RstTTUFOBuMAGwW4wRpvfVKPxfcsDQvvvsRiiZV1VV4xdfaa2xbmgWB22uHU1C3-Q"
+    ]
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738404,
+    "_nanoseconds": 497000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "listingOnlyImages",
+    "value": []
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738404,
+    "_nanoseconds": 750000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "listingImageOrder",
+    "value": [
+      "AOcBCuroBpZz7loPCIkZm5ldpx46TrzWYANmMVneIpulkwe95TDROFrtq-Ya2hROZ541wrL41gOsQgkOPffSG2PqwncYI_fd3A",
+      "AOcBCuoA_NuMkXqOfD_StmeNseDTWBKKqwo7fsIZcxTtfZYUQtLV6PKeool516PDxGOB0PrUB5aN_0jJKJXBDINGayXhNMZ5Vw",
+      "AOcBCupKooYxMFSjSt4ii72SzfES_Xo97jR7FV9gOz9whMbmocnPg-Y1ipcyaHqfpbe18OjTZgb3oA5AwOTmUPLnLIrZ_1qgxQ",
+      "AOcBCurlY3OQG98hXME9G15o_VNLpX3aMjGJQfJxFzjUdf0T4Ik6O_IpBXZ54O9VJvCMxHirxntofQVrYX0j2xhaT4Zet6qvNQ",
+      "AOcBCur3Sk5sN-XJXCS_a6WFLjq2QYSQlJbcHKGFNtawM8dAS1zcZe61oS9MqbGhqTXhZ184KDwSWo-HG_XbYQCRwlmSVe3Skg",
+      "AOcBCur_hOC4POstEFnZrPNzysRShBwv1RstTTUFOBuMAGwW4wRpvfVKPxfcsDQvvvsRiiZV1VV4xdfaa2xbmgWB22uHU1C3-Q"
+    ]
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738407,
+    "_nanoseconds": 938000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "listingOnlyImages",
+    "value": []
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738408,
+    "_nanoseconds": 188000000
+  }
+}
+{
+  "type": "listingCreation/exclude_proposal_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photoId": "AOcBCurlY3OQG98hXME9G15o_VNLpX3aMjGJQfJxFzjUdf0T4Ik6O_IpBXZ54O9VJvCMxHirxntofQVrYX0j2xhaT4Zet6qvNQ"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738414,
+    "_nanoseconds": 886000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "listingImageOrder",
+    "value": [
+      "AOcBCuroBpZz7loPCIkZm5ldpx46TrzWYANmMVneIpulkwe95TDROFrtq-Ya2hROZ541wrL41gOsQgkOPffSG2PqwncYI_fd3A",
+      "AOcBCuoA_NuMkXqOfD_StmeNseDTWBKKqwo7fsIZcxTtfZYUQtLV6PKeool516PDxGOB0PrUB5aN_0jJKJXBDINGayXhNMZ5Vw",
+      "AOcBCupKooYxMFSjSt4ii72SzfES_Xo97jR7FV9gOz9whMbmocnPg-Y1ipcyaHqfpbe18OjTZgb3oA5AwOTmUPLnLIrZ_1qgxQ",
+      "AOcBCur3Sk5sN-XJXCS_a6WFLjq2QYSQlJbcHKGFNtawM8dAS1zcZe61oS9MqbGhqTXhZ184KDwSWo-HG_XbYQCRwlmSVe3Skg",
+      "AOcBCur_hOC4POstEFnZrPNzysRShBwv1RstTTUFOBuMAGwW4wRpvfVKPxfcsDQvvvsRiiZV1VV4xdfaa2xbmgWB22uHU1C3-Q"
+    ]
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738415,
+    "_nanoseconds": 155000000
+  }
+}
+{
+  "type": "listingCreation/exclude_proposal_photo",
+  "payload": {
+    "janCode": "4542804126211",
+    "photoId": "AOcBCur_hOC4POstEFnZrPNzysRShBwv1RstTTUFOBuMAGwW4wRpvfVKPxfcsDQvvvsRiiZV1VV4xdfaa2xbmgWB22uHU1C3-Q"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738419,
+    "_nanoseconds": 781000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "listingImageOrder",
+    "value": [
+      "AOcBCuroBpZz7loPCIkZm5ldpx46TrzWYANmMVneIpulkwe95TDROFrtq-Ya2hROZ541wrL41gOsQgkOPffSG2PqwncYI_fd3A",
+      "AOcBCuoA_NuMkXqOfD_StmeNseDTWBKKqwo7fsIZcxTtfZYUQtLV6PKeool516PDxGOB0PrUB5aN_0jJKJXBDINGayXhNMZ5Vw",
+      "AOcBCupKooYxMFSjSt4ii72SzfES_Xo97jR7FV9gOz9whMbmocnPg-Y1ipcyaHqfpbe18OjTZgb3oA5AwOTmUPLnLIrZ_1qgxQ",
+      "AOcBCur3Sk5sN-XJXCS_a6WFLjq2QYSQlJbcHKGFNtawM8dAS1zcZe61oS9MqbGhqTXhZ184KDwSWo-HG_XbYQCRwlmSVe3Skg"
+    ]
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738420,
+    "_nanoseconds": 58000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 1
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738431,
+    "_nanoseconds": 18000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 2
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738431,
+    "_nanoseconds": 290000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 3
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738431,
+    "_nanoseconds": 526000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 4
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738431,
+    "_nanoseconds": 760000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 5
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738431,
+    "_nanoseconds": 995000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 6
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738432,
+    "_nanoseconds": 230000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 7
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738432,
+    "_nanoseconds": 474000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 8
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738432,
+    "_nanoseconds": 712000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 9
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738433,
+    "_nanoseconds": 76000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 10
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738433,
+    "_nanoseconds": 520000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 11
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738433,
+    "_nanoseconds": 886000000
+  }
+}
+{
+  "type": "listingCreation/update_variant_qty",
+  "payload": {
+    "janCode": "4542804126211",
+    "variantId": "4542804126211:Sushi:f9be83c5",
+    "qty": 12
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738434,
+    "_nanoseconds": 398000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "productCategory",
+    "value": "Animals & Pet Supplies > Pet Supplies"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738464,
+    "_nanoseconds": 840000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "productCategory",
+    "value": "Office Supplies > General Office Supplies > Paper Products > Stationery"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738476,
+    "_nanoseconds": 234000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "price",
+    "value": 4
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738479,
+    "_nanoseconds": 341000000
+  }
+}
+{
+  "type": "listingCreation/update_proposal_field",
+  "payload": {
+    "janCode": "4542804126211",
+    "field": "bodyHtml",
+    "value": "<h2>Shiba Sushi &amp; Tea Party Pouches!</h2><p>Roll up your tiny treasures or steep your sweetest treats in these adorably kawaii Shiba Inu zipper bags!</p>"
+  },
+  "creator": "orZoo9pQ2frepNPVntz2mhzfjZQ6",
+  "timestamp": {
+    "_timestamp": true,
+    "_seconds": 1771738506,
+    "_nanoseconds": 81000000
+  }
+}
