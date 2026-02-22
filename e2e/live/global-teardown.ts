@@ -6,7 +6,6 @@ async function globalTeardown() {
 
   const envFile = path.resolve(process.cwd(), 'e2e/live/.env.live.json');
   if (!fs.existsSync(envFile)) {
-    console.warn('⚠️ No environment file found. Skipping cleanup.');
     return;
   }
 

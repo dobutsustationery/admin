@@ -61,6 +61,6 @@
 ![Processed Photo History](screenshots/007-processed-history.png)
 
 **Programmatic Verification:**
-- [ ] History contains exactly 3 new versions after processing
+- [ ] History contains expected versions after processing
 - [ ] Current image is visible after processing
 

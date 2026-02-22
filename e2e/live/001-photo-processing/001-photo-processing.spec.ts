@@ -3,11 +3,13 @@ import { createScreenshotHelper } from '../../helpers/screenshot-helper';
 import { TestDocumentationHelper } from '../../helpers/test-documentation-helper';
 import * as path from 'path';
 
-const PREFERRED_MEDIA_ITEM_ID = 'AOcBCupFCSjHAeHtqTfYFXK9NJK2WXUn-vwL-FvVkqXCeiYAq0qeWwrzQaogCwZPKQx6wmfr04aoYBcN9QoEHHgypqP6rUmiKw';
+const PREFERRED_MEDIA_ITEM_ID =
+  process.env.E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID ??
+  "1Xk0qww5eUV6OlMAg15tgKNGmLxxf168T";
 
 test.describe('Live Photo Processing', () => {
   test('Photo Processing Workflow', async ({ page, sandboxId }, testInfo) => {
-    test.setTimeout(1200000);
+    test.setTimeout(240000);
     expect(sandboxId).toBeTruthy();
     const dialogMessages: string[] = [];
     page.on('dialog', async (dialog) => {
@@ -34,9 +36,9 @@ test.describe('Live Photo Processing', () => {
     };
 
     await page.waitForFunction(
-      () => typeof (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__ === 'function',
+      () => typeof (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__ === 'function',
       undefined,
-      { timeout: 30000 },
+      { timeout: 15000 },
     );
     await page.waitForFunction(
       () => !!((window as any).__store || (window as any).testHelpers?.store),
@@ -49,12 +51,22 @@ test.describe('Live Photo Processing', () => {
         const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
         return runtimeStore?.getState?.()?.photos || null;
       };
-      const hook = (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__;
-      if (typeof hook !== 'function') {
-        return { ok: false, error: 'Missing __E2E_IMPORT_PHOTOS_FROM_ALBUM__ hook' };
+      const driveHook = (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__;
+      if (typeof driveHook !== 'function') {
+        return { ok: false, error: 'Missing __E2E_IMPORT_PHOTOS_FROM_DRIVE__ hook' };
       }
       try {
-        const result = await hook('replace', 1, preferredId);
+        let result: any = null;
+        try {
+          if (typeof preferredId === 'string' && preferredId.trim().length > 0) {
+            result = await driveHook('replace', 1, preferredId);
+          } else {
+            result = await driveHook('replace', 1);
+          }
+        } catch (preferredError) {
+          throw preferredError;
+        }
+
         const state = readPhotosState();
         const selectedCount = (state?.selected || []).length;
         return {
@@ -62,6 +74,8 @@ test.describe('Live Photo Processing', () => {
           importedPhotoId: result?.importedItems?.[0]?.id || null,
           importedFilename: result?.importedItems?.[0]?.filename || null,
           importedMimeType: result?.importedItems?.[0]?.mimeType || null,
+          importedCount: result?.importedItems?.length || 0,
+          importSource: 'drive',
           selectedCount,
         };
       } catch (error) {
@@ -70,64 +84,46 @@ test.describe('Live Photo Processing', () => {
     }, PREFERRED_MEDIA_ITEM_ID);
 
     expect(importResult.ok, importResult.error).toBeTruthy();
-    expect(importResult.importedPhotoId, `Selected photos after import: ${importResult.selectedCount}`).toBeTruthy();
+    expect(importResult.importedCount, 'Drive import returned 0 items. Run fixtures:google:sync before live E2E.').toBeGreaterThan(0);
+    expect(
+      importResult.importedPhotoId,
+      `Import source=${importResult.importSource || 'unknown'} importedCount=${importResult.importedCount} selectedCount=${importResult.selectedCount}`,
+    ).toBeTruthy();
 
-    try {
-      await page.waitForFunction(
-        (photoId) => {
-          const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
-          const state = runtimeStore?.getState?.()?.photos;
-          return !!(state?.selected || []).find((item: any) => item.id === photoId);
-        },
-        importResult.importedPhotoId,
-        { timeout: 60000 },
-      );
-
-      await page.waitForFunction(
-        (photoId) => {
-          const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
-          const state = runtimeStore?.getState?.()?.photos;
-          if (!state || !photoId) return false;
-          const uploadStatus = state.uploads?.[photoId]?.status;
-          const selected = (state.selected || []).find((item: any) => item.id === photoId);
-          const baseUrl = selected?.baseUrl || "";
-          return uploadStatus === 'completed' && typeof baseUrl === 'string' && !baseUrl.includes('googleusercontent.com');
-        },
-        importResult.importedPhotoId,
-        { timeout: 180000 },
-      );
-    } catch {
-      const uploadSnapshot = await page.evaluate((photoId) => {
+    await page.waitForFunction(
+      (photoId) => {
         const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
         const state = runtimeStore?.getState?.()?.photos;
-        const upload = state?.uploads?.[photoId];
-        const selected = (state?.selected || []).find((item: any) => item.id === photoId);
-        return {
-          storeAvailable: !!runtimeStore,
-          hasSelected: !!selected,
-          uploadStatus: upload?.status || null,
-          uploadError: upload?.error || null,
-          baseUrl: selected?.baseUrl || null,
-        };
-      }, importResult.importedPhotoId);
-      throw new Error(
-        `Photo never reached Drive-backed state before processing. storeAvailable=${uploadSnapshot.storeAvailable} hasSelected=${uploadSnapshot.hasSelected} status=${uploadSnapshot.uploadStatus} error=${uploadSnapshot.uploadError} baseUrl=${uploadSnapshot.baseUrl}`,
-      );
-    }
+        return !!(state?.selected || []).find((item: any) => item.id === photoId);
+      },
+      importResult.importedPhotoId,
+      { timeout: 30000 },
+    );
+    await page.waitForFunction(
+      (photoId) => {
+        const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
+        const photos = runtimeStore?.getState?.()?.photos;
+        if (!photos || !photoId) return false;
+        const selected = (photos.selected || []).find((item: any) => item.id === photoId);
+        const baseUrl = selected?.baseUrl || "";
+        return typeof baseUrl === "string" && baseUrl.includes("lh3.googleusercontent.com/d/");
+      },
+      importResult.importedPhotoId,
+      { timeout: 15000 },
+    );
 
     await expect(async () => {
       expect(await getVisiblePhotoCount()).toBeGreaterThanOrEqual(1);
-    }).toPass({ timeout: 120000 });
+    }).toPass({ timeout: 30000 });
 
     await expect(async () => {
       const queueCount = await queueThumbs.count();
       expect(queueCount).toBeGreaterThanOrEqual(1);
-    }).toPass({ timeout: 180000 });
+    }).toPass({ timeout: 30000 });
 
     const chosenPhotoId = importResult.importedPhotoId;
     expect(chosenPhotoId).toBeTruthy();
     const chosenThumb = page.getByTestId(`photo-thumbnail-${chosenPhotoId}`);
-    const chosenThumbImage = chosenThumb.locator('img').first();
 
     const step1Checks = [
       {
@@ -140,16 +136,18 @@ test.describe('Live Photo Processing', () => {
       },
       {
         description: 'Chosen photo thumbnail has fully loaded',
-        check: async () => {
-          await expect(chosenThumb.getByText('Loading...')).toHaveCount(0);
-          await expect(chosenThumbImage).toBeVisible();
-        },
+        check: async () => await expect(chosenThumb).toHaveAttribute('data-photo-state', 'ready'),
       },
     ];
 
-    await expect(chosenThumb).toHaveAttribute('data-photo-state', 'ready', { timeout: 180000 });
-    await expect(chosenThumb.getByText('Loading...')).toHaveCount(0, { timeout: 60000 });
-    await expect(chosenThumbImage).toBeVisible({ timeout: 60000 });
+    await expect(chosenThumb).toHaveAttribute('data-photo-state', 'ready', { timeout: 90000 });
+    await expect
+      .poll(async () => {
+        const img = chosenThumb.locator('img').first();
+        if ((await img.count()) === 0) return false;
+        return await img.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0);
+      }, { timeout: 30000 })
+      .toBe(true);
 
     docHelper.addStep('Photos View Loaded', '000-photos-view.png', step1Checks);
     await screenshots.capture(page, 'photos-view', {
@@ -162,10 +160,15 @@ test.describe('Live Photo Processing', () => {
     await chosenThumb.scrollIntoViewIfNeeded();
     await chosenThumb.click();
     await expect(page).toHaveURL(/\/photo-history/);
-    await expect(page.locator('img[alt="Current"]').first()).toBeVisible({ timeout: 60000 });
+    await expect(page.locator('img[alt="Current"]').first()).toBeVisible({ timeout: 30000 });
 
     const historyRows = page.locator('.space-y-6 > div.relative.flex');
     const initialHistoryCount = await historyRows.count();
+    const initialPersistedHistoryCount = await page.evaluate((targetPhotoId) => {
+      const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
+      const photos = runtimeStore?.getState?.()?.photos;
+      return (photos?.urlHistory?.[targetPhotoId] || []).length;
+    }, chosenPhotoId);
 
     const runOperation = async (
       label: 'Color' | 'Auto Crop' | 'Remove BG',
@@ -204,10 +207,23 @@ test.describe('Live Photo Processing', () => {
         {
           description: 'Current/history images are fully loaded during in-progress state',
           check: async () => {
-            await expect(page.getByText('Failed to load image')).toHaveCount(0);
-            await expect(page.getByText('Loading...')).toHaveCount(0);
-            await expect(page.locator('img[alt="Current"]').first()).toBeVisible();
-            await expect(targetRow.locator('img').first()).toBeVisible();
+            await expect
+              .poll(async () => {
+                return await page.locator('text=Failed to load image').evaluateAll(
+                  (nodes) => nodes.filter((node) => (node as HTMLElement).offsetParent !== null).length,
+                );
+              }, { timeout: 30000 })
+              .toBe(0);
+            await expect
+              .poll(async () => {
+                const current = page.locator('img[alt="Current"]').first();
+                const history = targetRow.locator('img').first();
+                return await Promise.all([
+                  current.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+                  history.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+                ]);
+              }, { timeout: 30000 })
+              .toEqual([true, true]);
           },
         },
       ];
@@ -227,7 +243,7 @@ test.describe('Live Photo Processing', () => {
         delete (window as any).__E2E_PAUSE_OPERATION_AT_START__;
       });
 
-      await expect(targetRow.locator('button', { hasText: '...' })).toHaveCount(0, { timeout: 600000 });
+      await expect(targetRow.locator('button', { hasText: '...' })).toHaveCount(0, { timeout: 90000 });
       expect(
         dialogMessages,
         `Operation "${label}" failed with dialog: ${dialogMessages.join(' | ')} (file: ${importResult.importedFilename}, mime: ${importResult.importedMimeType})`,
@@ -242,11 +258,16 @@ test.describe('Live Photo Processing', () => {
           return !!head && head !== prior && selected?.baseUrl === head;
         },
         { targetPhotoId: chosenPhotoId, prior: previousHeadUrl },
-        { timeout: 180000 },
+        { timeout: 90000 },
       );
-      await expect(historyRows).toHaveCount(expectedCount, { timeout: 180000 });
-      expect(await page.getByText('Failed to load image').count()).toBe(0);
-      await expect(page.getByText('Loading...')).toHaveCount(0, { timeout: 120000 });
+      await expect(historyRows).toHaveCount(expectedCount, { timeout: 90000 });
+      await expect
+        .poll(async () => {
+          return await page.locator('text=Failed to load image').evaluateAll(
+            (nodes) => nodes.filter((node) => (node as HTMLElement).offsetParent !== null).length,
+          );
+        }, { timeout: 30000 })
+        .toBe(0);
       await expect
         .poll(async () => {
           const current = page.locator('img[alt="Current"]').first();
@@ -255,11 +276,11 @@ test.describe('Live Photo Processing', () => {
             current.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
             history.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
           ]);
-        }, { timeout: 120000 })
+        }, { timeout: 60000 })
         .toEqual([true, true]);
       for (let i = 0; i < expectedCount; i++) {
         const row = historyRows.nth(i);
-        await expect(row.locator('img').first()).toBeVisible({ timeout: 120000 });
+        await expect(row.locator('img').first()).toBeVisible({ timeout: 30000 });
       }
 
       const completeChecks = [
@@ -278,14 +299,30 @@ test.describe('Live Photo Processing', () => {
       });
     };
 
-    await runOperation('Color', '001-color-in-progress.png', '002-color-completed.png', initialHistoryCount + 1);
-    await runOperation('Auto Crop', '003-auto-crop-in-progress.png', '004-auto-crop-completed.png', initialHistoryCount + 2);
-    await runOperation('Remove BG', '005-remove-bg-in-progress.png', '006-remove-bg-completed.png', initialHistoryCount + 3);
+    await runOperation(
+      'Color',
+      '001-color-in-progress.png',
+      '002-color-completed.png',
+      initialPersistedHistoryCount + 1,
+    );
+    await runOperation(
+      'Auto Crop',
+      '003-auto-crop-in-progress.png',
+      '004-auto-crop-completed.png',
+      initialPersistedHistoryCount + 2,
+    );
+    await runOperation(
+      'Remove BG',
+      '005-remove-bg-in-progress.png',
+      '006-remove-bg-completed.png',
+      initialPersistedHistoryCount + 3,
+    );
 
     const finalChecks = [
       {
-        description: 'History contains exactly 3 new versions after processing',
-        check: async () => await expect(historyRows).toHaveCount(initialHistoryCount + 3),
+        description: 'History contains expected versions after processing',
+        check: async () =>
+          await expect(historyRows).toHaveCount(initialPersistedHistoryCount + 3),
       },
       {
         description: 'Current image is visible after processing',

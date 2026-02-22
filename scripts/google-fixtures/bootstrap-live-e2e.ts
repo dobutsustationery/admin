@@ -19,6 +19,8 @@ const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"];
 const PHOTOS_SCOPES = [
   "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+  "https://www.googleapis.com/auth/photoslibrary",
+  "https://www.googleapis.com/auth/photoslibrary.readonly",
   "https://www.googleapis.com/auth/drive.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata",
@@ -324,7 +326,67 @@ async function createOrFindDriveFolder(
   return created.data.id as string;
 }
 
-async function createPhotosAlbum(
+async function countAlbumItemsViaSearch(accessToken: string, albumId: string): Promise<number> {
+  let count = 0;
+  let nextPageToken = "";
+  while (true) {
+    const response = await fetch("https://photoslibrary.googleapis.com/v1/mediaItems:search", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        albumId,
+        pageSize: 100,
+        ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+      }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to read album ${albumId}: ${response.status} ${text}`);
+    }
+    const payload = (await response.json()) as {
+      mediaItems?: Array<{ id?: string }>;
+      nextPageToken?: string;
+    };
+    count += (payload.mediaItems || []).length;
+    if (!payload.nextPageToken) break;
+    nextPageToken = payload.nextPageToken;
+  }
+  return count;
+}
+
+async function listAllAlbums(accessToken: string): Promise<Array<{ id?: string; title?: string; mediaItemsCount?: string }>> {
+  const albums: Array<{ id?: string; title?: string; mediaItemsCount?: string }> = [];
+  let nextPageToken = "";
+  while (true) {
+    const query = new URLSearchParams({
+      pageSize: "50",
+      ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+    });
+    const response = await fetch(
+      `https://photoslibrary.googleapis.com/v1/albums?${query.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Photos album list failed: ${response.status} ${text}`);
+    }
+    const payload = (await response.json()) as {
+      albums?: Array<{ id?: string; title?: string; mediaItemsCount?: string }>;
+      nextPageToken?: string;
+    };
+    albums.push(...(payload.albums || []));
+    if (!payload.nextPageToken) break;
+    nextPageToken = payload.nextPageToken;
+  }
+  return albums;
+}
+
+async function createOrFindPhotosAlbum(
   clientId: string,
   clientSecret: string,
   photosRefreshToken: string,
@@ -334,11 +396,29 @@ async function createPhotosAlbum(
   auth.setCredentials({ refresh_token: photosRefreshToken });
   const tokenRes = await auth.getAccessToken();
   if (!tokenRes.token) throw new Error("Failed to obtain photos access token.");
+  const accessToken = tokenRes.token;
+
+  const albums = await listAllAlbums(accessToken);
+  const titleMatches = albums.filter((a) => a.title === title && a.id);
+  if (titleMatches.length > 0) {
+    const ranked = await Promise.all(
+      titleMatches.map(async (album) => ({
+        id: album.id as string,
+        visibleCount: await countAlbumItemsViaSearch(accessToken, album.id as string),
+      })),
+    );
+    ranked.sort((a, b) => b.visibleCount - a.visibleCount);
+    const best = ranked[0];
+    console.log(
+      `♻️ Reusing existing Photos album "${title}" (${best.id}) with ${best.visibleCount} visible item(s).`,
+    );
+    return best.id;
+  }
 
   const response = await fetch("https://photoslibrary.googleapis.com/v1/albums", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${tokenRes.token}`,
+      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ album: { title } }),
@@ -571,7 +651,7 @@ async function main() {
       driveRefreshToken,
       args.driveFolderName,
     );
-    const photosAlbumId = await createPhotosAlbum(
+    const photosAlbumId = await createOrFindPhotosAlbum(
       clientId,
       clientSecret,
       photosRefreshToken,

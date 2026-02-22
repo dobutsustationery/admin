@@ -42,7 +42,7 @@ setup("authenticate", async ({ page, context }) => {
     expires_in: 3500,
     expires_at: now + 3500 * 1000,
     scope:
-      "https://www.googleapis.com/auth/photospicker.mediaitems.readonly https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/photospicker.mediaitems.readonly https://www.googleapis.com/auth/photoslibrary.readonly https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata https://www.googleapis.com/auth/photoslibrary.appendonly https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email",
     token_type: "Bearer",
   };
 

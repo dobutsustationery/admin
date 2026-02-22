@@ -1,107 +1,249 @@
-import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
+import { google } from "googleapis";
+import { OAuth2Client } from "google-auth-library";
+import fs from "fs";
+import path from "path";
 
-// Define required environment variables
 const REQUIRED_ENV_VARS = [
-  'E2E_GOOGLE_CLIENT_ID',
-  'E2E_GOOGLE_CLIENT_SECRET',
-  'E2E_GOOGLE_DRIVE_REFRESH_TOKEN',
-  'E2E_GOOGLE_PHOTOS_REFRESH_TOKEN',
-  'E2E_GOOGLE_DRIVE_FOLDER_ID',
-  'E2E_GOOGLE_PHOTOS_ALBUM_ID',
+  "E2E_GOOGLE_CLIENT_ID",
+  "E2E_GOOGLE_CLIENT_SECRET",
+  "E2E_GOOGLE_DRIVE_REFRESH_TOKEN",
+  "E2E_GOOGLE_PHOTOS_REFRESH_TOKEN",
+  "E2E_GOOGLE_DRIVE_FOLDER_ID",
+  "E2E_GOOGLE_PHOTOS_ALBUM_ID",
 ];
 
+const MANIFEST_PATH = path.resolve(
+  process.cwd(),
+  "e2e/fixtures/google-media-manifest.json",
+);
+
+type Manifest = {
+  fixtures?: Array<{ filename?: string }>;
+};
+
+function toPhotosUploadName(sourceFileName: string): string {
+  if (sourceFileName.toLowerCase().endsWith(".heic")) {
+    return sourceFileName.replace(/\.heic$/i, ".jpg");
+  }
+  if (sourceFileName.toLowerCase().endsWith(".heif")) {
+    return sourceFileName.replace(/\.heif$/i, ".jpg");
+  }
+  return sourceFileName;
+}
+
+function loadExpectedFixtureFilenames(): Set<string> {
+  if (!fs.existsSync(MANIFEST_PATH)) {
+    throw new Error(`Fixture manifest not found at ${MANIFEST_PATH}`);
+  }
+  const manifest = JSON.parse(
+    fs.readFileSync(MANIFEST_PATH, "utf8"),
+  ) as Manifest;
+  const filenames = new Set(
+    (manifest.fixtures || [])
+      .map((f) => toPhotosUploadName((f.filename || "").trim()))
+      .filter((f) => f.length > 0),
+  );
+  if (filenames.size === 0) {
+    throw new Error(`Fixture manifest has no filenames at ${MANIFEST_PATH}`);
+  }
+  return filenames;
+}
+
+async function listAlbumItemsViaSearch(
+  accessToken: string,
+  albumId: string,
+): Promise<Array<{ id: string; filename: string }>> {
+  const items: Array<{ id: string; filename: string }> = [];
+  let nextPageToken = "";
+  while (true) {
+    const response = await fetch(
+      "https://photoslibrary.googleapis.com/v1/mediaItems:search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          albumId,
+          pageSize: 100,
+          ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+        }),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Photos mediaItems:search failed: ${response.status} ${await response.text()}`,
+      );
+    }
+    const payload = (await response.json()) as {
+      mediaItems?: Array<{ id?: string; filename?: string }>;
+      nextPageToken?: string;
+    };
+    for (const item of payload.mediaItems || []) {
+      if (item.id && item.filename) items.push({ id: item.id, filename: item.filename });
+    }
+    if (!payload.nextPageToken) break;
+    nextPageToken = payload.nextPageToken;
+  }
+  return items;
+}
+
 async function main() {
-  console.log('🏥 Starting E2E Environment Health Check...');
-  
-  // 1. Check Environment Variables
-  const missingVars = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
+  console.log("🏥 Starting E2E Environment Health Check...");
+
+  const missingVars = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
   if (missingVars.length > 0) {
-    console.error('❌ Missing required environment variables:', missingVars.join(', '));
+    const suffix = missingVars.includes("E2E_GOOGLE_PHOTOS_ALBUM_ID")
+      ? " Run npm run fixtures:google:sync once to auto-create and persist a fixtures album ID."
+      : "";
+    console.error(
+      "❌ Missing required environment variables:",
+      `${missingVars.join(", ")}.${suffix}`,
+    );
     process.exit(1);
   }
-  console.log('✅ All environment variables present.');
+  console.log("✅ All environment variables present.");
 
-  const clientId = process.env.E2E_GOOGLE_CLIENT_ID!;
-  const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET!;
-  const driveRefreshToken = process.env.E2E_GOOGLE_DRIVE_REFRESH_TOKEN!;
-  const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN!;
-  const driveRootId = process.env.E2E_GOOGLE_DRIVE_FOLDER_ID!;
-  const photosAlbumId = process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID!;
+  const clientId = process.env.E2E_GOOGLE_CLIENT_ID as string;
+  const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET as string;
+  const driveRefreshToken = process.env.E2E_GOOGLE_DRIVE_REFRESH_TOKEN as string;
+  const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN as string;
+  const driveRootId = process.env.E2E_GOOGLE_DRIVE_FOLDER_ID as string;
+  const photosAlbumId = (process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID as string).trim();
+  const expectedFilenames = loadExpectedFixtureFilenames();
 
-  // 2. Check Drive Access
-  console.log('Testing Drive Access...');
+  console.log("Testing Drive Access...");
   try {
     const driveAuth = new OAuth2Client(clientId, clientSecret);
     driveAuth.setCredentials({ refresh_token: driveRefreshToken });
-    
-    // Refresh token check
-    await driveAuth.getAccessToken(); // Will throw if invalid
-    
-    const drive = google.drive({ version: 'v3', auth: driveAuth });
-    const file = await drive.files.get({ 
-      fileId: driveRootId, 
-      fields: 'id, name, mimeType, trashed' 
+    await driveAuth.getAccessToken();
+
+    const drive = google.drive({ version: "v3", auth: driveAuth });
+    const folder = await drive.files.get({
+      fileId: driveRootId,
+      fields: "id,name,trashed",
     });
-    
-    if (file.data.trashed) {
-      throw new Error('Drive root folder is in trash');
+    if (folder.data.trashed) {
+      throw new Error("Drive root folder is in trash");
     }
-    
-    console.log(`✅ Drive access confirmed. Root folder: "${file.data.name}" (${file.data.id})`);
+
+    const rootImages = await drive.files.list({
+      q: `'${driveRootId}' in parents and mimeType contains 'image/' and trashed = false`,
+      fields: "files(id)",
+      pageSize: 1,
+    });
+    const rootImageCount = rootImages.data.files?.length || 0;
+
+    const seedFolder = await drive.files.list({
+      q: `'${driveRootId}' in parents and name = 'Seed' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "files(id)",
+      pageSize: 1,
+    });
+    const seedFolderId = seedFolder.data.files?.[0]?.id;
+    let seedImageCount = 0;
+    if (seedFolderId) {
+      const seedImages = await drive.files.list({
+        q: `'${seedFolderId}' in parents and mimeType contains 'image/' and trashed = false`,
+        fields: "files(id)",
+        pageSize: 1,
+      });
+      seedImageCount = seedImages.data.files?.length || 0;
+    }
+
+    if (rootImageCount + seedImageCount === 0) {
+      throw new Error(
+        "Drive fixture folder has no images. Run: npm run fixtures:google:sync",
+      );
+    }
+
+    console.log(
+      `✅ Drive access confirmed. Root folder: "${folder.data.name}" (${folder.data.id}), fixture images present.`,
+    );
   } catch (error: any) {
-    console.error('❌ Drive access failed:', error.message);
+    console.error("❌ Drive access failed:", error.message);
     process.exit(1);
   }
 
-  // 3. Check Photos Access
-  console.log('Testing Photos Access...');
+  console.log("Testing Photos Access...");
   try {
     const photosAuth = new OAuth2Client(clientId, clientSecret);
     photosAuth.setCredentials({ refresh_token: photosRefreshToken });
-
-    // Refresh token check
-    await photosAuth.getAccessToken();
-
-    // Note: The Google Photos Library API via googleapis might need verify scopes or use raw fetch if the library excludes it.
-    // The design doc mentions "real Drive and Google Photos integration".
-    // For now we assume standard REST checks or available library support.
-    // googleapis does NOT have a full 'photoslibrary' equivalent usually, we might need to use fetch or a wrapper.
-    // Let's use simple fetch with the token for Photos to be sure.
-    
     const tokenRes = await photosAuth.getAccessToken();
     const accessToken = tokenRes.token;
+    if (!accessToken) throw new Error("Could not generate Photos access token");
 
-    if (!accessToken) throw new Error('Could not generate Photos access token');
-
-    const response = await fetch(`https://photoslibrary.googleapis.com/v1/albums/${photosAlbumId}`, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      if (response.status === 403 && text.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+    const tokenInfoResponse = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+    );
+    if (tokenInfoResponse.ok) {
+      const tokenInfo = (await tokenInfoResponse.json()) as { scope?: string };
+      const scopeSet = new Set((tokenInfo.scope || "").split(/\s+/).filter(Boolean));
+      if (!scopeSet.has("https://www.googleapis.com/auth/photoslibrary.readonly")) {
         throw new Error(
-          `Photos token is missing required scopes. Re-run: npm run setup:live:e2e to mint a new E2E_GOOGLE_PHOTOS_REFRESH_TOKEN.`,
+          "Photos token is missing photoslibrary.readonly scope. Run: npm run setup:live:tokens",
         );
       }
-      throw new Error(`Photos API returned ${response.status}: ${text}`);
     }
 
-    const album = await response.json();
-    console.log(`✅ Photos access confirmed. Album: "${album.title}" (${album.id})`);
+    const albumResponse = await fetch(
+      `https://photoslibrary.googleapis.com/v1/albums/${photosAlbumId}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!albumResponse.ok) {
+      const text = await albumResponse.text();
+      if (
+        albumResponse.status === 403 &&
+        text.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT")
+      ) {
+        throw new Error(
+          "Photos token is missing required scopes. Re-run: npm run setup:live:e2e",
+        );
+      }
+      throw new Error(`Photos API returned ${albumResponse.status}: ${text}`);
+    }
+    const album = (await albumResponse.json()) as {
+      id?: string;
+      title?: string;
+      mediaItemsCount?: string;
+    };
+    const metadataCount =
+      Number.parseInt(String(album.mediaItemsCount || "0"), 10) || 0;
+    const visibleItems = await listAlbumItemsViaSearch(accessToken, photosAlbumId);
+    const visibleCount = visibleItems.length;
+    const unexpectedFilenames = Array.from(
+      new Set(
+        visibleItems
+          .map((item) => item.filename)
+          .filter((filename) => !expectedFilenames.has(filename)),
+      ),
+    );
+    if (visibleCount === 0) {
+      throw new Error(
+        `Photos fixture album has 0 API-visible items via mediaItems:search ` +
+          `(albumId=${photosAlbumId}, metadata=${metadataCount}). ` +
+          `Delete this fixtures album and rerun npm run fixtures:google:sync.`,
+      );
+    }
+    if (unexpectedFilenames.length > 0) {
+      throw new Error(
+        `Photos fixture album contains unexpected filename(s): ${unexpectedFilenames.join(", ")}. ` +
+          `Delete this fixtures album and rerun npm run fixtures:google:sync.`,
+      );
+    }
 
+    console.log(
+      `✅ Photos access confirmed. Album: "${album.title}" (${album.id}), fixture media present (visible=${visibleCount}, metadata=${metadataCount}).`,
+    );
   } catch (error: any) {
-    console.error('❌ Photos access failed:', error.message);
+    console.error("❌ Photos access failed:", error.message);
     process.exit(1);
   }
 
-  console.log('🎉 Health check passed! E2E environment is ready.');
+  console.log("🎉 Health check passed! E2E environment is ready.");
 }
 
-main().catch(err => {
-  console.error('Unexpected error:', err);
+main().catch((err) => {
+  console.error("Unexpected error:", err);
   process.exit(1);
 });

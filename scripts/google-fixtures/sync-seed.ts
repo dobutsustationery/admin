@@ -2,7 +2,9 @@ import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import crypto from "crypto";
 import fs from "fs";
+import os from "os";
 import path from "path";
+import { spawnSync } from "child_process";
 
 const REQUIRED_ENV_VARS = [
   "E2E_GOOGLE_CLIENT_ID",
@@ -10,12 +12,17 @@ const REQUIRED_ENV_VARS = [
   "E2E_GOOGLE_DRIVE_REFRESH_TOKEN",
   "E2E_GOOGLE_DRIVE_FOLDER_ID",
   "E2E_GOOGLE_PHOTOS_REFRESH_TOKEN",
-  "E2E_GOOGLE_PHOTOS_ALBUM_ID",
 ];
 
-const MANIFEST_PATH = path.resolve(process.cwd(), "e2e/fixtures/google-media-manifest.json");
+const MANIFEST_PATH = path.resolve(
+  process.cwd(),
+  "e2e/fixtures/google-media-manifest.json",
+);
 const DEFAULT_FIXTURE_DIR = path.resolve(process.cwd(), "e2e/fixtures/photo-data");
+const LIVE_ENV_PATH = path.resolve(process.cwd(), ".env.live.local");
 const DRIVE_SEED_FOLDER_NAME = "Seed";
+const DEFAULT_FIXTURE_ALBUM_TITLE = "DobutsuE2EFixtures";
+const FIXTURE_DESCRIPTION_PREFIX = "DOBUTSU_FIXTURE:";
 
 type FixtureEntry = {
   id: string;
@@ -29,6 +36,27 @@ type FixtureEntry = {
 type Manifest = {
   fixtures: FixtureEntry[];
 };
+
+type AlbumMediaItem = {
+  id: string;
+  filename: string;
+};
+
+function parseFixtureLimit(): number | null {
+  const arg = process.argv.find((entry) => entry.startsWith("--limit="));
+  const rawArg = arg ? arg.split("=")[1] : "";
+  const rawEnv = process.env.E2E_FIXTURE_SYNC_LIMIT || "";
+  const raw = (rawArg || rawEnv || "").trim();
+  if (!raw) return null;
+  if (raw.toLowerCase() === "all") return null;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(
+      `Invalid fixture sync limit '${raw}'. Use a positive integer or 'all'.`,
+    );
+  }
+  return value;
+}
 
 function escapeDriveQueryValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -54,16 +82,40 @@ function loadManifest(): Manifest {
   if (!fs.existsSync(MANIFEST_PATH)) {
     throw new Error(`Manifest not found at ${MANIFEST_PATH}`);
   }
-  const parsed = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf-8")) as Partial<Manifest>;
+  const parsed = JSON.parse(
+    fs.readFileSync(MANIFEST_PATH, "utf-8"),
+  ) as Partial<Manifest>;
   const fixtures = Array.isArray(parsed.fixtures) ? parsed.fixtures : [];
   return { fixtures };
 }
 
 function writeManifest(manifest: Manifest) {
-  const sorted = [...manifest.fixtures].sort((a, b) => a.filename.localeCompare(b.filename));
+  const sorted = [...manifest.fixtures].sort((a, b) =>
+    a.filename.localeCompare(b.filename),
+  );
   fs.writeFileSync(
     MANIFEST_PATH,
     `${JSON.stringify({ fixtures: sorted }, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+function upsertEnvVarFile(filePath: string, key: string, value: string): void {
+  if (!fs.existsSync(filePath)) return;
+  const content = fs.readFileSync(filePath, "utf8");
+  const lines = content.split(/\r?\n/);
+  let replaced = false;
+  const nextLines = lines.map((line) => {
+    if (line.startsWith(`${key}=`)) {
+      replaced = true;
+      return `${key}=${value}`;
+    }
+    return line;
+  });
+  if (!replaced) nextLines.push(`${key}=${value}`);
+  fs.writeFileSync(
+    filePath,
+    `${nextLines.filter((line) => line.length > 0).join("\n")}\n`,
     "utf8",
   );
 }
@@ -95,15 +147,133 @@ async function ensureDriveSeedFolder(
   return createRes.data.id;
 }
 
-async function listPhotosAlbumItems(
+async function createPhotosAlbum(
+  accessToken: string,
+  title: string,
+): Promise<string> {
+  const response = await fetch("https://photoslibrary.googleapis.com/v1/albums", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ album: { title } }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Photos album creation failed: ${response.status} ${await response.text()}`,
+    );
+  }
+  const payload = (await response.json()) as { id?: string };
+  const id = String(payload.id || "");
+  if (!id) throw new Error("Photos album creation did not return an album id.");
+  return id;
+}
+
+async function resolveConfiguredAlbumId(accessToken: string): Promise<string> {
+  const configured = (process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID || "").trim();
+  if (configured) {
+    const validateResponse = await fetch(
+      `https://photoslibrary.googleapis.com/v1/albums/${configured}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+    if (validateResponse.ok) return configured;
+    if (validateResponse.status !== 400 && validateResponse.status !== 404) {
+      throw new Error(
+        `Configured E2E_GOOGLE_PHOTOS_ALBUM_ID is invalid (${configured}): ` +
+          `${validateResponse.status} ${await validateResponse.text()}`,
+      );
+    }
+    console.warn(
+      `⚠️ Configured E2E_GOOGLE_PHOTOS_ALBUM_ID is stale/invalid (${configured}). Creating a new fixtures album...`,
+    );
+  }
+
+  const created = await createPhotosAlbum(accessToken, DEFAULT_FIXTURE_ALBUM_TITLE);
+  process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID = created;
+  upsertEnvVarFile(LIVE_ENV_PATH, "E2E_GOOGLE_PHOTOS_ALBUM_ID", created);
+  console.log(
+    `🆕 Created fixtures album ${created} and wrote E2E_GOOGLE_PHOTOS_ALBUM_ID to .env.live.local`,
+  );
+  return created;
+}
+
+async function listAlbumMediaItems(
   accessToken: string,
   albumId: string,
-): Promise<Map<string, string>> {
-  const byFilename = new Map<string, string>();
+): Promise<AlbumMediaItem[]> {
+  const items: AlbumMediaItem[] = [];
   let nextPageToken = "";
-
   while (true) {
-    const response = await fetch("https://photoslibrary.googleapis.com/v1/mediaItems:search", {
+    const response = await fetch(
+      "https://photoslibrary.googleapis.com/v1/mediaItems:search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          albumId,
+          pageSize: 100,
+          ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Photos mediaItems:search failed: ${response.status} ${await response.text()}`,
+      );
+    }
+
+    const payload = (await response.json()) as {
+      mediaItems?: Array<{ id?: string; filename?: string }>;
+      nextPageToken?: string;
+    };
+    for (const item of payload.mediaItems || []) {
+      if (item.id && item.filename) {
+        items.push({ id: item.id, filename: item.filename });
+      }
+    }
+
+    if (!payload.nextPageToken) break;
+    nextPageToken = payload.nextPageToken;
+  }
+  return items;
+}
+
+async function uploadToPhotos(
+  accessToken: string,
+  albumId: string,
+  filePath: string,
+  fileName: string,
+  description?: string,
+): Promise<string> {
+  const uploadResponse = await fetch("https://photoslibrary.googleapis.com/v1/uploads", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/octet-stream",
+      "X-Goog-Upload-Content-Type": inferMimeType(fileName),
+      "X-Goog-Upload-File-Name": fileName,
+      "X-Goog-Upload-Protocol": "raw",
+    },
+    body: fs.readFileSync(filePath),
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(
+      `Photos upload failed: ${uploadResponse.status} ${await uploadResponse.text()}`,
+    );
+  }
+  const uploadToken = (await uploadResponse.text()).trim();
+  if (!uploadToken) throw new Error("Photos upload did not return an upload token.");
+
+  const createResponse = await fetch(
+    "https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate",
+    {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -111,103 +281,122 @@ async function listPhotosAlbumItems(
       },
       body: JSON.stringify({
         albumId,
-        pageSize: 100,
-        ...(nextPageToken ? { pageToken: nextPageToken } : {}),
-      }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Photos mediaItems:search failed: ${response.status} ${text}`);
-    }
-
-    const payload = (await response.json()) as {
-      mediaItems?: Array<{ id?: string; filename?: string }>;
-      nextPageToken?: string;
-    };
-
-    for (const item of payload.mediaItems || []) {
-      if (item.filename && item.id) byFilename.set(item.filename, item.id);
-    }
-
-    if (!payload.nextPageToken) break;
-    nextPageToken = payload.nextPageToken;
-  }
-
-  return byFilename;
-}
-
-async function uploadToPhotos(
-  accessToken: string,
-  albumId: string,
-  fixtureFilePath: string,
-  filename: string,
-): Promise<string> {
-  const uploadResponse = await fetch("https://photoslibrary.googleapis.com/v1/uploads", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/octet-stream",
-      "X-Goog-Upload-Content-Type": inferMimeType(filename),
-      "X-Goog-Upload-File-Name": filename,
-      "X-Goog-Upload-Protocol": "raw",
-    },
-    body: fs.readFileSync(fixtureFilePath),
-  });
-
-  if (!uploadResponse.ok) {
-    const text = await uploadResponse.text();
-    throw new Error(`Photos upload failed: ${uploadResponse.status} ${text}`);
-  }
-
-  const uploadToken = (await uploadResponse.text()).trim();
-  if (!uploadToken) throw new Error("Photos upload did not return an upload token.");
-
-  const createResponse = await fetch("https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      albumId,
-      newMediaItems: [
-        {
-          simpleMediaItem: {
-            uploadToken,
-            fileName: filename,
+        newMediaItems: [
+          {
+            ...(description ? { description } : {}),
+            simpleMediaItem: {
+              uploadToken,
+              fileName,
+            },
           },
-        },
-      ],
-    }),
-  });
-
+        ],
+      }),
+    },
+  );
   if (!createResponse.ok) {
-    const text = await createResponse.text();
-    throw new Error(`Photos batchCreate failed: ${createResponse.status} ${text}`);
+    throw new Error(
+      `Photos batchCreate failed: ${createResponse.status} ${await createResponse.text()}`,
+    );
   }
-
-  const created = (await createResponse.json()) as {
+  const payload = (await createResponse.json()) as {
     newMediaItemResults?: Array<{
       mediaItem?: { id?: string };
       status?: { code?: number; message?: string };
     }>;
   };
-  const result = created.newMediaItemResults?.[0];
-  if (result?.status?.code && result.status.code !== 0) {
-    throw new Error(`Photos batchCreate status ${result.status.code}: ${result.status.message || "unknown error"}`);
+  const result = payload.newMediaItemResults?.[0];
+  const statusCode = result?.status?.code || 0;
+  const statusMessage = result?.status?.message || "";
+  if (statusCode !== 0 && statusMessage !== "Success" && statusMessage !== "OK") {
+    throw new Error(
+      `Photos batchCreate status ${statusCode}: ${statusMessage || "unknown error"}`,
+    );
   }
-  const mediaItemId = result?.mediaItem?.id;
+  const mediaItemId = result?.mediaItem?.id || "";
   if (!mediaItemId) throw new Error("Photos batchCreate did not return media item id.");
   return mediaItemId;
 }
 
+function toPhotosUploadName(sourceFileName: string): string {
+  if (sourceFileName.toLowerCase().endsWith(".heic")) {
+    return sourceFileName.replace(/\.heic$/i, ".jpg");
+  }
+  if (sourceFileName.toLowerCase().endsWith(".heif")) {
+    return sourceFileName.replace(/\.heif$/i, ".jpg");
+  }
+  return sourceFileName;
+}
+
+function preparePhotosUploadAsset(
+  sourcePath: string,
+  sourceFileName: string,
+  fixtureId: string,
+): { filePath: string; fileName: string; cleanup: () => void } {
+  const lower = sourceFileName.toLowerCase();
+  if (!lower.endsWith(".heic") && !lower.endsWith(".heif")) {
+    return { filePath: sourcePath, fileName: sourceFileName, cleanup: () => {} };
+  }
+
+  const outputName = toPhotosUploadName(sourceFileName);
+  const outputPath = path.join(
+    os.tmpdir(),
+    `${path.parse(outputName).name}-${Date.now()}.jpg`,
+  );
+  const result = spawnSync("sips", ["-s", "format", "jpeg", sourcePath, "--out", outputPath], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `HEIC to JPEG conversion failed for ${sourceFileName}: ${result.stderr || result.stdout || "sips failed"}`,
+    );
+  }
+  // Avoid Photos content-dedupe collisions with older probe files by making bytes fixture-stable.
+  fs.appendFileSync(outputPath, `\nDOBUTSU_FIXTURE_JPEG:${fixtureId}\n`, "utf8");
+
+  return {
+    filePath: outputPath,
+    fileName: outputName,
+    cleanup: () => {
+      try {
+        fs.unlinkSync(outputPath);
+      } catch {
+        // best effort
+      }
+    },
+  };
+}
+
 function getFixtureLocalPath(fixture: FixtureEntry): string {
-  const fallback = path.join(DEFAULT_FIXTURE_DIR, fixture.filename);
-  const requested = fixture.localPath
+  const defaultPath = path.join(DEFAULT_FIXTURE_DIR, fixture.filename);
+  return fixture.localPath
     ? path.resolve(process.cwd(), fixture.localPath)
-    : fallback;
-  return requested;
+    : defaultPath;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForFilenamesInAlbum(
+  accessToken: string,
+  albumId: string,
+  expectedFilenames: string[],
+  timeoutMs = 60_000,
+): Promise<{ visibleCount: number; missingFilenames: string[] }> {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const items = await listAlbumMediaItems(accessToken, albumId);
+    const visible = new Set(items.map((item) => item.filename));
+    const missing = expectedFilenames.filter((name) => !visible.has(name));
+    if (missing.length === 0) {
+      return { visibleCount: items.length, missingFilenames: [] };
+    }
+    await sleep(2_000);
+  }
+  const items = await listAlbumMediaItems(accessToken, albumId);
+  const visible = new Set(items.map((item) => item.filename));
+  const missing = expectedFilenames.filter((name) => !visible.has(name));
+  return { visibleCount: items.length, missingFilenames: missing };
 }
 
 async function main() {
@@ -223,14 +412,21 @@ async function main() {
     return;
   }
 
-  console.log(`📦 Syncing ${manifest.fixtures.length} fixtures...`);
+  const limit = parseFixtureLimit();
+  const fixturesToSync = limit
+    ? manifest.fixtures.slice(0, Math.min(limit, manifest.fixtures.length))
+    : manifest.fixtures;
+  console.log(
+    `📦 Syncing ${fixturesToSync.length} fixture(s)` +
+      (limit ? ` (limit=${limit}, total=${manifest.fixtures.length})` : ` (total=${manifest.fixtures.length})`) +
+      "...",
+  );
 
   const clientId = process.env.E2E_GOOGLE_CLIENT_ID as string;
   const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET as string;
   const driveRefreshToken = process.env.E2E_GOOGLE_DRIVE_REFRESH_TOKEN as string;
   const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN as string;
   const driveRootId = process.env.E2E_GOOGLE_DRIVE_FOLDER_ID as string;
-  const photosAlbumId = process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID as string;
 
   const driveAuth = new OAuth2Client(clientId, clientSecret);
   driveAuth.setCredentials({ refresh_token: driveRefreshToken });
@@ -238,17 +434,22 @@ async function main() {
 
   const photosAuth = new OAuth2Client(clientId, clientSecret);
   photosAuth.setCredentials({ refresh_token: photosRefreshToken });
-  const tokenRes = await photosAuth.getAccessToken();
-  if (!tokenRes.token) throw new Error("Failed to obtain Photos access token.");
-  const photosAccessToken = tokenRes.token;
+  const photosToken = (await photosAuth.getAccessToken()).token;
+  if (!photosToken) throw new Error("Failed to obtain Photos access token.");
+
+  const photosAlbumId = await resolveConfiguredAlbumId(photosToken);
+  console.log(`🎯 Using Photos fixture album: ${photosAlbumId}`);
 
   const seedFolderId = await ensureDriveSeedFolder(drive, driveRootId);
-  const photosItemsByFilename = await listPhotosAlbumItems(photosAccessToken, photosAlbumId);
+  const existingAlbumItems = await listAlbumMediaItems(photosToken, photosAlbumId);
+  const albumIds = new Set(existingAlbumItems.map((item) => item.id));
+  const albumFilenameById = new Map(existingAlbumItems.map((item) => [item.id, item.filename]));
+  const albumByFilename = new Map(existingAlbumItems.map((item) => [item.filename, item.id]));
 
   let updated = false;
   let success = true;
 
-  for (const fixture of manifest.fixtures) {
+  for (const fixture of fixturesToSync) {
     const localPath = getFixtureLocalPath(fixture);
     if (!fs.existsSync(localPath)) {
       console.error(`❌ [${fixture.id}] Missing local file: ${localPath}`);
@@ -256,37 +457,32 @@ async function main() {
       continue;
     }
 
-    const computedSha256 = sha256ForFile(localPath);
-    if (fixture.sha256 && fixture.sha256 !== computedSha256) {
+    const computedSha = sha256ForFile(localPath);
+    if (fixture.sha256 && fixture.sha256 !== computedSha) {
       console.error(
-        `❌ [${fixture.id}] SHA mismatch for ${fixture.filename}; manifest=${fixture.sha256}, local=${computedSha256}`,
+        `❌ [${fixture.id}] SHA mismatch for ${fixture.filename}; manifest=${fixture.sha256}, local=${computedSha}`,
       );
       success = false;
       continue;
     }
     if (!fixture.sha256) {
-      fixture.sha256 = computedSha256;
+      fixture.sha256 = computedSha;
       updated = true;
     }
 
-    const safeFilename = escapeDriveQueryValue(fixture.filename);
-    const fileQ = `'${seedFolderId}' in parents and name = '${safeFilename}' and trashed = false`;
-
+    const safeName = escapeDriveQueryValue(fixture.filename);
+    const driveQuery = `'${seedFolderId}' in parents and name = '${safeName}' and trashed = false`;
     try {
-      const fileRes = await drive.files.list({
-        q: fileQ,
-        fields: "files(id, name)",
+      const driveRes = await drive.files.list({
+        q: driveQuery,
+        fields: "files(id)",
         pageSize: 1,
       });
-
-      let driveFileId = fileRes.data.files?.[0]?.id || "";
+      let driveFileId = driveRes.data.files?.[0]?.id || "";
       if (!driveFileId) {
         console.log(`⬆️ [${fixture.id}] Uploading to Drive: ${fixture.filename}`);
         const uploadRes = await drive.files.create({
-          requestBody: {
-            name: fixture.filename,
-            parents: [seedFolderId],
-          },
+          requestBody: { name: fixture.filename, parents: [seedFolderId] },
           media: {
             mimeType: inferMimeType(fixture.filename),
             body: fs.createReadStream(localPath),
@@ -301,31 +497,56 @@ async function main() {
         updated = true;
       }
       console.log(`✅ [${fixture.id}] Drive ready: ${fixture.filename}`);
-    } catch (e: any) {
-      console.error(`❌ [${fixture.id}] Drive sync failed for ${fixture.filename}:`, e.message);
+    } catch (err: any) {
+      console.error(`❌ [${fixture.id}] Drive sync failed for ${fixture.filename}:`, err.message);
       success = false;
       continue;
     }
 
     try {
-      let photosMediaItemId = photosItemsByFilename.get(fixture.filename) || "";
+      let photosMediaItemId = "";
+      const prepared = preparePhotosUploadAsset(localPath, fixture.filename, fixture.id);
+      try {
+        const expectedName = prepared.fileName;
+        if (
+          fixture.photosMediaItemId &&
+          albumIds.has(fixture.photosMediaItemId) &&
+          albumFilenameById.get(fixture.photosMediaItemId) === expectedName
+        ) {
+          photosMediaItemId = fixture.photosMediaItemId;
+        }
+
+        if (!photosMediaItemId) {
+          photosMediaItemId = albumByFilename.get(expectedName) || "";
+        }
+
+        if (!photosMediaItemId) {
+          console.log(`⬆️ [${fixture.id}] Uploading to Photos: ${expectedName}`);
+          photosMediaItemId = await uploadToPhotos(
+            photosToken,
+            photosAlbumId,
+            prepared.filePath,
+            expectedName,
+            `${FIXTURE_DESCRIPTION_PREFIX}${fixture.id}`,
+          );
+          albumByFilename.set(expectedName, photosMediaItemId);
+          albumFilenameById.set(photosMediaItemId, expectedName);
+        }
+      } finally {
+        prepared.cleanup();
+      }
+
       if (!photosMediaItemId) {
-        console.log(`⬆️ [${fixture.id}] Uploading to Photos: ${fixture.filename}`);
-        photosMediaItemId = await uploadToPhotos(
-          photosAccessToken,
-          photosAlbumId,
-          localPath,
-          fixture.filename,
-        );
-        photosItemsByFilename.set(fixture.filename, photosMediaItemId);
+        throw new Error("Could not resolve photos media item id.");
       }
       if (fixture.photosMediaItemId !== photosMediaItemId) {
         fixture.photosMediaItemId = photosMediaItemId;
         updated = true;
       }
+      albumIds.add(photosMediaItemId);
       console.log(`✅ [${fixture.id}] Photos ready: ${fixture.filename}`);
-    } catch (e: any) {
-      console.error(`❌ [${fixture.id}] Photos sync failed for ${fixture.filename}:`, e.message);
+    } catch (err: any) {
+      console.error(`❌ [${fixture.id}] Photos sync failed for ${fixture.filename}:`, err.message);
       success = false;
     }
   }
@@ -334,6 +555,35 @@ async function main() {
     writeManifest(manifest);
     console.log(`📝 Updated manifest: ${MANIFEST_PATH}`);
   }
+
+  const expectedFilenames = fixturesToSync.map((fixture) =>
+    toPhotosUploadName(fixture.filename),
+  );
+  if (
+    fixturesToSync.some((fixture) => !fixture.photosMediaItemId || fixture.photosMediaItemId.length === 0)
+  ) {
+    console.error("❌ Photos sync did not produce media item ids for all fixtures.");
+    process.exit(1);
+  }
+
+  console.log("⏱️ Waiting for Photos indexing...");
+  const visibility = await waitForFilenamesInAlbum(
+    photosToken,
+    photosAlbumId,
+    expectedFilenames,
+  );
+  if (visibility.missingFilenames.length > 0) {
+    console.error(
+      "❌ Photos album visibility check failed. " +
+        `Album ${photosAlbumId} is missing ${visibility.missingFilenames.length}/${expectedFilenames.length} expected fixture filename(s): ` +
+        visibility.missingFilenames.join(", "),
+    );
+    process.exit(1);
+  }
+  console.log(
+    `ℹ️ Photos album visibility confirmed via mediaItems:search: ` +
+      `${expectedFilenames.length}/${expectedFilenames.length} fixture filenames visible (album item count snapshot=${visibility.visibleCount}).`,
+  );
 
   if (!success) {
     console.error("⚠️ Some fixtures failed to sync.");

@@ -194,11 +194,7 @@
   $: crossOriginVal = (
     objectUrl && objectUrl.includes("cdn.shopify.com") ? "anonymous" : null
   ) as "anonymous" | null;
-  $: referrerPolicyVal = (
-    objectUrl && objectUrl.includes("lh3.googleusercontent.com/d/")
-      ? undefined
-      : "no-referrer"
-  ) as ReferrerPolicy | undefined;
+  $: referrerPolicyVal = "no-referrer" as ReferrerPolicy;
 
   onDestroy(() => {
     shouldRun = false;

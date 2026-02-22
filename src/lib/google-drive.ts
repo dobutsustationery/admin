@@ -340,6 +340,10 @@ export async function listAllImages(accessToken: string): Promise<DriveFile[]> {
     const imagesId = await findFolder("Images", FOLDER_ID, accessToken);
     const imagesFolderImages = imagesId ? await searchInParent(imagesId) : [];
 
+    // Search in "Seed" (fixtures) if present at root.
+    const seedId = await findFolder("Seed", FOLDER_ID, accessToken);
+    const seedImages = seedId ? await searchInParent(seedId) : [];
+
     // Search in "Originals" (if exists, inside Images)
     let originalsImages: DriveFile[] = [];
     if (imagesId) {
@@ -367,6 +371,7 @@ export async function listAllImages(accessToken: string): Promise<DriveFile[]> {
 
     return [
       ...hydrate(rootImages),
+      ...hydrate(seedImages),
       ...hydrate(imagesFolderImages),
       ...hydrate(originalsImages),
       ...hydrate(processedImages),

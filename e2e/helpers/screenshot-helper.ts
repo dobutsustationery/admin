@@ -74,9 +74,10 @@ export function createScreenshotHelper(startIndex = 0): ScreenshotHelper {
         }
       });
 
-      // Take the screenshot
       await expect(page).toHaveScreenshot(filename, {
         fullPage,
+        caret: "hide",
+        timeout: 3000,
         ...rest,
       });
 

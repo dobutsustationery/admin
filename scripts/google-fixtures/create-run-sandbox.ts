@@ -52,6 +52,43 @@ async function main() {
     process.exit(1);
   }
 
+  // Seed the sandbox Drive folder from an existing "Seed" folder so
+  // browser-side Drive imports have deterministic media even when Photos
+  // album seeding is unavailable.
+  try {
+    const seedFolderQuery = `'${driveRootId}' in parents and name = 'Seed' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const seedFolderRes = await drive.files.list({
+      q: seedFolderQuery,
+      fields: 'files(id,name)',
+      pageSize: 1,
+    });
+    const seedFolderId = seedFolderRes.data.files?.[0]?.id;
+
+    if (seedFolderId) {
+      const seedFilesRes = await drive.files.list({
+        q: `'${seedFolderId}' in parents and mimeType contains 'image/' and trashed = false`,
+        fields: 'files(id,name,modifiedTime)',
+        orderBy: 'modifiedTime desc',
+        pageSize: 8,
+      });
+      const seedFiles = seedFilesRes.data.files || [];
+
+      for (const seedFile of seedFiles) {
+        if (!seedFile.id) continue;
+        await drive.files.copy({
+          fileId: seedFile.id,
+          requestBody: {
+            name: seedFile.name || `seed-${seedFile.id}`,
+            parents: [driveFolderId],
+          },
+          fields: 'id',
+        });
+      }
+    }
+  } catch (error: any) {
+    console.warn('⚠️ Failed to seed sandbox Drive folder from Seed files:', error.message);
+  }
+
   // 2. Create/Reuse Photos Album
   const photosAuth = new OAuth2Client(clientId, clientSecret);
   photosAuth.setCredentials({ refresh_token: photosRefreshToken });
@@ -97,6 +134,47 @@ async function main() {
       }
   }
 
+  async function listAlbumSeedCandidates(albumId: string, token: string) {
+      let nextPageToken: string | undefined;
+      const allItems: Array<{
+          id: string;
+          mimeType: string;
+          filename: string;
+          creationTime: string;
+      }> = [];
+
+      do {
+          const searchRes = await fetch('https://photoslibrary.googleapis.com/v1/mediaItems:search', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                albumId,
+                pageSize: 100,
+                ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+              }),
+          });
+          if (!searchRes.ok) {
+              throw new Error(`Failed to read seed album ${albumId}: ${searchRes.status} ${await searchRes.text()}`);
+          }
+          const searchData = await searchRes.json();
+          const pageItems = (searchData.mediaItems || [])
+              .map((item: any) => ({
+                  id: item.id,
+                  mimeType: item.mimeType || "",
+                  filename: item.filename || "",
+                  creationTime: item.mediaMetadata?.creationTime || "",
+              }))
+              .filter((item: any) => !!item.id);
+          allItems.push(...pageItems);
+          nextPageToken = searchData.nextPageToken;
+      } while (nextPageToken);
+
+      return allItems;
+  }
+
   try {
       if (useReuse) {
           // List albums to find reuse target
@@ -136,25 +214,22 @@ async function main() {
       }
 
       // Seed sandbox album from a stable source album so live tests start from known media.
+      let seededAlbumItemCount = 0;
       if (sourceAlbumId && sourceAlbumId !== photosAlbumId) {
-          const searchRes = await fetch('https://photoslibrary.googleapis.com/v1/mediaItems:search', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${photosAccessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ albumId: sourceAlbumId, pageSize: 100 }),
-          });
-          if (!searchRes.ok) {
-              throw new Error(`Failed to read seed album ${sourceAlbumId}: ${searchRes.status} ${await searchRes.text()}`);
-          }
-          const searchData = await searchRes.json();
-          const seedItems = (searchData.mediaItems || [])
-              .map((item: any) => ({
-                  id: item.id,
-                  creationTime: item.mediaMetadata?.creationTime || "",
-              }))
-              .filter((item: any) => !!item.id)
+          const allSeedCandidates = await listAlbumSeedCandidates(sourceAlbumId, photosAccessToken);
+          const preferredSeedItems = allSeedCandidates.filter((item: any) => {
+                  if (!item.id) return false;
+                  const mime = String(item.mimeType || "").toLowerCase();
+                  const filename = String(item.filename || "").toLowerCase();
+                  const ext = filename.includes(".")
+                    ? filename.split(".").pop() || ""
+                    : "";
+                  return mime === "image/jpeg" || mime === "image/jpg" || mime === "image/png" || ext === "jpg" || ext === "jpeg" || ext === "png";
+              });
+
+          const seedCandidates =
+              preferredSeedItems.length > 0 ? preferredSeedItems : allSeedCandidates;
+          const seedItems = seedCandidates
               .sort((a: any, b: any) => {
                   const tA = new Date(a.creationTime || 0).getTime();
                   const tB = new Date(b.creationTime || 0).getTime();
@@ -176,7 +251,27 @@ async function main() {
               if (!addRes.ok) {
                   throw new Error(`Failed to seed sandbox album ${photosAlbumId}: ${addRes.status} ${await addRes.text()}`);
               }
+              seededAlbumItemCount = seedItems.length;
+          } else {
+              console.warn(`⚠️ Source album ${sourceAlbumId} has no media items available for sandbox seeding.`);
           }
+      }
+
+      const verifyRes = await fetch('https://photoslibrary.googleapis.com/v1/mediaItems:search', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${photosAccessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ albumId: photosAlbumId, pageSize: 1 }),
+      });
+      if (!verifyRes.ok) {
+          throw new Error(`Failed to verify sandbox album ${photosAlbumId}: ${verifyRes.status} ${await verifyRes.text()}`);
+      }
+      const verifyData = await verifyRes.json();
+      const currentAlbumCount = (verifyData.mediaItems || []).length;
+      if (currentAlbumCount === 0) {
+          console.warn(`⚠️ Sandbox album ${photosAlbumId} is empty after seeding. Seeded count=${seededAlbumItemCount}.`);
       }
   } catch (error: any) {
     console.error('❌ Failed to create/reuse Photos sandbox album:', error.message);

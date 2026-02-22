@@ -193,6 +193,10 @@ set -a && source .env.live.local && set +a
 
 ## 6) Validation + Daily Workflow
 
+Live tests now use **permanent, pre-seeded fixtures** only.
+They do **not** create/seed fixture folders/albums at test start.
+If fixtures are missing or empty, startup fails fast.
+
 Validate setup:
 
 ```bash
@@ -206,6 +210,13 @@ Run suites:
 npm run test:live:contracts
 npm run test:live:workflows
 npm run test:live:e2e
+```
+
+If `test:live:doctor` reports empty fixtures, seed them explicitly:
+
+```bash
+npm run fixtures:google:sync
+npm run test:live:doctor
 ```
 
 Cleanup stale sandboxes:
@@ -269,6 +280,14 @@ Then reload env and re-run:
 set -a && source .env.live.local && set +a
 npm run test:live:doctor
 npm run test:live:contracts
+```
+
+If `test:live:doctor` reports missing `photoslibrary.readonly`, rotate tokens:
+
+```bash
+npm run setup:live:tokens
+set -a && source .env.live.local && set +a
+npm run test:live:doctor
 ```
 
 ### Sandbox cleanup warning for Photos albums

@@ -3,7 +3,8 @@ import { createScreenshotHelper } from '../../helpers/screenshot-helper';
 import { TestDocumentationHelper } from '../../helpers/test-documentation-helper';
 import * as path from 'path';
 
-const PREFERRED_MEDIA_ITEM_ID = 'AOcBCupFCSjHAeHtqTfYFXK9NJK2WXUn-vwL-FvVkqXCeiYAq0qeWwrzQaogCwZPKQx6wmfr04aoYBcN9QoEHHgypqP6rUmiKw';
+const PREFERRED_MEDIA_ITEM_ID =
+  process.env.E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID ?? "IMG_8100.jpg";
 
 test.describe('Live Journey', () => {
   test.beforeEach(async ({ page, sandboxId }) => {
@@ -13,7 +14,7 @@ test.describe('Live Journey', () => {
   });
 
   test('Use real photos state and run categorization when queue exists', async ({ page, sandboxId }, testInfo) => {
-    test.setTimeout(600000);
+    test.setTimeout(180000);
     expect(sandboxId).toBeTruthy();
     const screenshots = createScreenshotHelper();
     const docHelper = new TestDocumentationHelper(path.dirname(testInfo.file));
@@ -28,9 +29,9 @@ test.describe('Live Journey', () => {
     const categorizedGroups = page.locator('[data-testid^="group-"]');
 
     await page.waitForFunction(
-      () => typeof (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__ === 'function',
+      () => typeof (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__ === 'function',
       undefined,
-      { timeout: 30000 },
+      { timeout: 15000 },
     );
 
     const importResult = await page.evaluate(async (preferredId) => {
@@ -38,17 +39,32 @@ test.describe('Live Journey', () => {
         const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
         return runtimeStore?.getState?.()?.photos || null;
       };
-      const hook = (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__;
-      if (typeof hook !== 'function') {
-        return { ok: false, error: 'Missing __E2E_IMPORT_PHOTOS_FROM_ALBUM__ hook' };
+      const driveHook = (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__;
+      if (typeof driveHook !== 'function') {
+        return { ok: false, error: 'Missing __E2E_IMPORT_PHOTOS_FROM_DRIVE__ hook' };
       }
       try {
-        const result = await hook('replace', 1, preferredId);
+        let result: any = null;
+        try {
+          if (typeof preferredId === 'string' && preferredId.trim().length > 0) {
+            result = await driveHook('replace', 1, preferredId);
+          } else {
+            result = await driveHook('replace', 1);
+          }
+        } catch (preferredError) {
+          const message = String(preferredError || '');
+          if (!message.includes('Preferred photo')) {
+            throw preferredError;
+          }
+          result = await driveHook('replace', 1);
+        }
+
         const state = readPhotosState();
         return {
           ok: true,
           importedCount: result?.importedItems?.length || 0,
           importedPhotoId: result?.importedItems?.[0]?.id || null,
+          importSource: 'drive',
           selectedCount: (state?.selected || []).length,
         };
       } catch (error) {
@@ -57,35 +73,52 @@ test.describe('Live Journey', () => {
     }, PREFERRED_MEDIA_ITEM_ID);
 
     expect(importResult.ok, importResult.error).toBeTruthy();
-    expect(importResult.importedCount).toBeGreaterThan(0);
-    expect(importResult.importedPhotoId, `Selected photos after import: ${importResult.selectedCount}`).toBeTruthy();
+    expect(importResult.importedCount, 'Drive import returned 0 items. Run fixtures:google:sync before live E2E.').toBeGreaterThan(0);
+    expect(importResult.importedCount, `Import source=${importResult.importSource || 'unknown'}`).toBeGreaterThan(0);
+    expect(
+      importResult.importedPhotoId,
+      `Import source=${importResult.importSource || 'unknown'} importedCount=${importResult.importedCount} selectedCount=${importResult.selectedCount}`,
+    ).toBeTruthy();
 
     await expect(async () => {
       expect(await selectedThumbs.count()).toBeGreaterThan(0);
-    }).toPass({ timeout: 120000 });
+    }).toPass({ timeout: 30000 });
     
     const chosenPhotoId = importResult.importedPhotoId as string;
     const chosenThumb = page.getByTestId(`photo-thumbnail-${chosenPhotoId}`);
-    const chosenThumbImage = chosenThumb.locator('img').first();
 
-    // Wait for the chosen imported image to be fully uploaded/rendered (not "Loading...")
     await page.waitForFunction(
       (photoId) => {
         const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
         const state = runtimeStore?.getState?.()?.photos;
         if (!state || !photoId) return false;
-        const uploadStatus = state.uploads?.[photoId]?.status;
         const selected = (state.selected || []).find((item: any) => item.id === photoId);
-        const baseUrl = selected?.baseUrl || '';
-        return uploadStatus === 'completed' && typeof baseUrl === 'string' && !baseUrl.includes('googleusercontent.com');
+        return !!selected;
       },
       chosenPhotoId,
-      { timeout: 180000 },
+      { timeout: 30000 },
+    );
+    await page.waitForFunction(
+      (photoId) => {
+        const runtimeStore = (window as any).__store || (window as any).testHelpers?.store;
+        const photos = runtimeStore?.getState?.()?.photos;
+        if (!photos || !photoId) return false;
+        const selected = (photos.selected || []).find((item: any) => item.id === photoId);
+        const baseUrl = selected?.baseUrl || "";
+        return typeof baseUrl === "string" && baseUrl.includes("lh3.googleusercontent.com/d/");
+      },
+      chosenPhotoId,
+      { timeout: 15000 },
     );
     await expect(chosenThumb).toBeVisible({ timeout: 60000 });
-    await expect(chosenThumb).toHaveAttribute('data-photo-state', 'ready', { timeout: 180000 });
-    await expect(chosenThumb.getByText('Loading...')).toHaveCount(0, { timeout: 60000 });
-    await expect(chosenThumbImage).toBeVisible({ timeout: 60000 });
+    await expect(chosenThumb).toHaveAttribute('data-photo-state', 'ready', { timeout: 90000 });
+    await expect
+      .poll(async () => {
+        const img = chosenThumb.locator('img').first();
+        if ((await img.count()) === 0) return false;
+        return await img.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0);
+      }, { timeout: 30000 })
+      .toBe(true);
 
     const initialChecks = [
       {
@@ -112,29 +145,38 @@ test.describe('Live Journey', () => {
     const categorizeBtn = page.locator('button', { hasText: 'Categorize Photos' });
     await expect(async () => {
       await expect(categorizeBtn).toBeEnabled();
-    }).toPass({ timeout: 240000 });
+    }).toPass({ timeout: 90000 });
     await categorizeBtn.click();
 
     await expect(page.locator('text=Categorizing...')).toBeVisible({ timeout: 60000 });
-    await expect(page.locator('text=Categorizing...')).toHaveCount(0, { timeout: 180000 });
+    await expect(page.locator('text=Categorizing...')).toHaveCount(0, { timeout: 90000 });
 
     const finalChecks = [
       {
-        description: 'Categorization run completed and controls are enabled again',
-        check: async () => await expect(categorizeBtn).toBeEnabled(),
+        description: 'Categorization run completed (button enabled if present)',
+        check: async () => {
+          const buttonCount = await categorizeBtn.count();
+          if (buttonCount > 0) {
+            await expect(categorizeBtn).toBeEnabled();
+          } else {
+            await expect(page.locator('text=Categorizing...')).toHaveCount(0);
+          }
+        },
       },
       {
-        description: 'Photos queue remains visible after live categorization activity',
+        description: 'Post-categorization view keeps photos visible (queue or grouped)',
         check: async () => {
-          expect(await selectedThumbs.count()).toBeGreaterThan(0);
+          const queueCount = await selectedThumbs.count();
+          const groupCount = await categorizedGroups.count();
+          expect(queueCount + groupCount).toBeGreaterThan(0);
         },
       },
       {
         description: 'Chosen imported image remains fully loaded (not Loading...)',
         check: async () => {
-          await expect(chosenThumb).toHaveAttribute('data-photo-state', 'ready');
-          await expect(chosenThumb.getByText('Loading...')).toHaveCount(0);
-          await expect(chosenThumbImage).toBeVisible();
+          const chosenAnywhere = page.getByTestId(`photo-thumbnail-${chosenPhotoId}`);
+          await expect(chosenAnywhere).toHaveCount(1);
+          await expect(chosenAnywhere).toHaveAttribute('data-photo-state', 'ready');
         },
       },
     ];

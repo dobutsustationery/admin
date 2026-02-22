@@ -1,45 +1,165 @@
 import { test as base } from '@playwright/test';
-import { execSync } from 'child_process';
 import { OAuth2Client } from 'google-auth-library';
+import { google } from 'googleapis';
 
 type LiveFixtures = {
   sandboxId: string;
 };
 
-function extractLastJsonObject(output: string): any {
-  const lines = output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+type StaticFixtureConfig = {
+  driveFolderId: string;
+  photosAlbumId: string;
+};
 
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      return JSON.parse(lines[i]);
-    } catch {
-      // continue scanning
-    }
-  }
+let cachedStaticFixtureConfig: Promise<StaticFixtureConfig> | null = null;
 
-  throw new Error('No JSON payload found in sandbox creation output.');
+function getConfiguredPhotosAlbumId(): string {
+  return (process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID || '').trim();
 }
 
-function createSandboxWithRetries(maxAttempts = 4): any {
-  let lastError: any = null;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const stdout = execSync('bun scripts/google-fixtures/create-run-sandbox.ts', {
-        encoding: 'utf-8',
-        env: process.env,
-      });
-      return extractLastJsonObject(stdout);
-    } catch (error: any) {
-      lastError = error;
-      const delayMs = attempt * 1000;
-      console.warn(`⚠️ [Live Fixture] Sandbox create failed (attempt ${attempt}/${maxAttempts}). Retrying in ${delayMs}ms...`);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
-    }
+async function findDriveFolderIdByName(
+  drive: ReturnType<typeof google.drive>,
+  parentId: string,
+  name: string,
+): Promise<string | null> {
+  const q =
+    `'${parentId}' in parents and name = '${name.replace(/'/g, "\\'")}' ` +
+    `and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const response = await drive.files.list({
+    q,
+    fields: 'files(id)',
+    pageSize: 1,
+  });
+  const id = response.data.files?.[0]?.id;
+  return id || null;
+}
+
+async function countDriveImagesInParent(
+  drive: ReturnType<typeof google.drive>,
+  parentId: string,
+): Promise<number> {
+  const q = `'${parentId}' in parents and mimeType contains 'image/' and trashed = false`;
+  const response = await drive.files.list({
+    q,
+    fields: 'files(id)',
+    pageSize: 10,
+  });
+  return response.data.files?.length || 0;
+}
+
+async function validatePermanentGoogleFixtures(): Promise<StaticFixtureConfig> {
+  const clientId = process.env.E2E_GOOGLE_CLIENT_ID || '';
+  const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET || '';
+  const driveRefreshToken = process.env.E2E_GOOGLE_DRIVE_REFRESH_TOKEN || '';
+  const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN || '';
+  const driveFolderId = process.env.E2E_GOOGLE_DRIVE_FOLDER_ID || '';
+  const photosAlbumId = getConfiguredPhotosAlbumId();
+
+  const missing = [
+    !clientId && 'E2E_GOOGLE_CLIENT_ID',
+    !clientSecret && 'E2E_GOOGLE_CLIENT_SECRET',
+    !driveRefreshToken && 'E2E_GOOGLE_DRIVE_REFRESH_TOKEN',
+    !photosRefreshToken && 'E2E_GOOGLE_PHOTOS_REFRESH_TOKEN',
+    !driveFolderId && 'E2E_GOOGLE_DRIVE_FOLDER_ID',
+    !photosAlbumId && 'E2E_GOOGLE_PHOTOS_ALBUM_ID',
+  ].filter(Boolean) as string[];
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing live fixture configuration: ${missing.join(', ')}. ` +
+        `Live tests require permanent pre-seeded fixtures.`,
+    );
   }
-  throw lastError;
+
+  const driveAuth = new OAuth2Client(clientId, clientSecret);
+  driveAuth.setCredentials({ refresh_token: driveRefreshToken });
+  const drive = google.drive({ version: 'v3', auth: driveAuth });
+
+  const driveFolder = await drive.files.get({
+    fileId: driveFolderId,
+    fields: 'id,name,trashed',
+  });
+  if (driveFolder.data.trashed) {
+    throw new Error(`Configured Drive fixture folder is trashed: ${driveFolderId}`);
+  }
+
+  const candidateParents = new Set<string>([driveFolderId]);
+  const seedFolderId = await findDriveFolderIdByName(drive, driveFolderId, 'Seed');
+  if (seedFolderId) candidateParents.add(seedFolderId);
+  const imagesFolderId = await findDriveFolderIdByName(drive, driveFolderId, 'Images');
+  if (imagesFolderId) {
+    candidateParents.add(imagesFolderId);
+    const originalsId = await findDriveFolderIdByName(drive, imagesFolderId, 'Originals');
+    if (originalsId) candidateParents.add(originalsId);
+    const processedId = await findDriveFolderIdByName(drive, imagesFolderId, 'Processed');
+    if (processedId) candidateParents.add(processedId);
+  }
+
+  let driveImageCount = 0;
+  for (const parentId of candidateParents) {
+    driveImageCount += await countDriveImagesInParent(drive, parentId);
+    if (driveImageCount > 0) break;
+  }
+  if (driveImageCount === 0) {
+    throw new Error(
+      `Configured Drive fixture folder has no images: ${driveFolderId}. ` +
+        `Run npm run fixtures:google:sync before test:live:e2e.`,
+    );
+  }
+
+  const photosAuth = new OAuth2Client(clientId, clientSecret);
+  photosAuth.setCredentials({ refresh_token: photosRefreshToken });
+  const photosAccessToken = (await photosAuth.getAccessToken()).token;
+  if (!photosAccessToken) {
+    throw new Error('Could not obtain access token for Google Photos fixture validation.');
+  }
+
+  const albumResponse = await fetch(`https://photoslibrary.googleapis.com/v1/albums/${photosAlbumId}`, {
+    headers: { Authorization: `Bearer ${photosAccessToken}` },
+  });
+  if (!albumResponse.ok) {
+    throw new Error(
+      `Configured Photos fixture album is not accessible (${photosAlbumId}): ` +
+        `${albumResponse.status} ${await albumResponse.text()}`,
+    );
+  }
+  const album = (await albumResponse.json()) as { id?: string; mediaItemsCount?: string };
+
+  const mediaResponse = await fetch('https://photoslibrary.googleapis.com/v1/mediaItems:search', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${photosAccessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      albumId: photosAlbumId,
+      pageSize: 1,
+    }),
+  });
+  if (!mediaResponse.ok) {
+    throw new Error(
+      `Failed to read media items from configured Photos fixture album (${photosAlbumId}): ` +
+        `${mediaResponse.status} ${await mediaResponse.text()}`,
+    );
+  }
+  const mediaPayload = (await mediaResponse.json()) as { mediaItems?: Array<{ id?: string }> };
+  const visibleCount = mediaPayload.mediaItems?.length || 0;
+  const metadataCount = Number.parseInt(String(album.mediaItemsCount || '0'), 10) || 0;
+  if (visibleCount === 0) {
+    throw new Error(
+      `Configured Photos fixture album has 0 API-visible items via mediaItems:search ` +
+        `(albumId=${photosAlbumId}, metadataCount=${metadataCount}). ` +
+        `Delete this fixtures album, then run npm run fixtures:google:sync and verify doctor passes before test:live:e2e.`,
+    );
+  }
+
+  return { driveFolderId, photosAlbumId };
+}
+
+async function getStaticFixtureConfig(): Promise<StaticFixtureConfig> {
+  if (!cachedStaticFixtureConfig) {
+    cachedStaticFixtureConfig = validatePermanentGoogleFixtures();
+  }
+  return cachedStaticFixtureConfig;
 }
 
 async function resetFirestoreEmulator() {
@@ -83,9 +203,8 @@ export const test = base.extend<LiveFixtures>({
       }
     });
 
-    // Create a fresh Drive/Photos sandbox for each test execution
-    const sandboxData = createSandboxWithRetries(4);
-    const activeDriveFolderId = sandboxData.driveFolderId || '';
+    const fixtureConfig = await getStaticFixtureConfig();
+    const activeDriveFolderId = fixtureConfig.driveFolderId;
     
     // Inject into window
     await page.addInitScript((data) => {
@@ -100,84 +219,14 @@ export const test = base.extend<LiveFixtures>({
     }, {
         driveFolderId: activeDriveFolderId,
         clientId: process.env.E2E_GOOGLE_CLIENT_ID,
-        photosAlbumId: process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID || sandboxData.photosAlbumId,
+        photosAlbumId: fixtureConfig.photosAlbumId,
         fixedNow: Date.UTC(2026, 0, 15, 12, 0, 0),
-    });
-
-    // Proxy Googleusercontent image requests through Playwright's API context.
-    // This preserves real upstream bytes while avoiding browser CORS restrictions in headless runs.
-    const clientId = process.env.E2E_GOOGLE_CLIENT_ID || '';
-    const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET || '';
-    const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN || '';
-    let photosAccessToken: string | null = null;
-    if (clientId && clientSecret && photosRefreshToken) {
-      const oauth = new OAuth2Client(clientId, clientSecret);
-      oauth.setCredentials({ refresh_token: photosRefreshToken });
-      photosAccessToken = (await oauth.getAccessToken()).token || null;
-    }
-
-    await page.route('https://lh3.googleusercontent.com/**', async (route) => {
-      const request = route.request();
-      if (!['GET', 'HEAD'].includes(request.method())) {
-        await route.continue();
-        return;
-      }
-
-      const headers = { ...request.headers() };
-      delete (headers as any).host;
-      if (photosAccessToken) {
-        headers.authorization = `Bearer ${photosAccessToken}`;
-      }
-
-      let upstream: any = null;
-      let lastError: unknown = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          upstream = await page.request.fetch(request.url(), {
-            method: request.method(),
-            headers,
-          });
-          break;
-        } catch (error) {
-          lastError = error;
-          if (attempt < 3) {
-            await page.waitForTimeout(150 * attempt);
-          }
-        }
-      }
-
-      if (!upstream) {
-        console.warn(`⚠️ [Live Fixture] lh3 proxy failed after retries for ${request.url()}:`, lastError);
-        await route.continue();
-        return;
-      }
-
-      const upstreamHeaders = upstream.headers();
-      await route.fulfill({
-        status: upstream.status(),
-        headers: {
-          ...upstreamHeaders,
-          'access-control-allow-origin': '*',
-          'access-control-allow-headers': '*',
-          'access-control-allow-methods': 'GET,HEAD,OPTIONS',
-        },
-        body: await upstream.body(),
-      });
     });
 
     try {
       await use(activeDriveFolderId);
     } finally {
-      if (activeDriveFolderId) {
-        try {
-          execSync(`bun scripts/google-fixtures/cleanup-run-sandbox.ts ${activeDriveFolderId}`, {
-            stdio: 'inherit',
-            env: process.env,
-          });
-        } catch (cleanupError) {
-          console.error('❌ [Live Fixture] Failed to cleanup sandbox folder:', cleanupError);
-        }
-      }
+      // no-op
     }
   }
 });

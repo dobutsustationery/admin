@@ -61,6 +61,7 @@
     "deploy:production": "npm run env:functions:production && vite build --mode production && firebase deploy --only hosting,functions --project production",
     "deploy:staging": "npm run env:functions:staging && vite build --mode staging && firebase deploy --only hosting,functions --project staging",
     "fixtures:google:sync": "bun scripts/google-fixtures/sync-seed.ts",
+    "fixtures:google:sync:quick": "bun scripts/google-fixtures/sync-seed.ts --limit=1",
     "fixtures:google:cleanup": "bun scripts/google-fixtures/cleanup-run-sandbox.ts",
     "setup:live:e2e": "bun scripts/google-fixtures/bootstrap-live-e2e.ts",
     "setup:live:tokens": "bun scripts/google-fixtures/refresh-live-tokens.ts",

@@ -15,7 +15,7 @@
 ![Post Categorization State](screenshots/001-post-categorization-state.png)
 
 **Programmatic Verification:**
-- [ ] Categorization run completed and controls are enabled again
-- [ ] Photos queue remains visible after live categorization activity
+- [ ] Categorization run completed (button enabled if present)
+- [ ] Post-categorization view keeps photos visible (queue or grouped)
 - [ ] Chosen imported image remains fully loaded (not Loading...)
 

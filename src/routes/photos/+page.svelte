@@ -81,7 +81,11 @@
   $: isCategorizing = $store.photos.categorizing;
 
   function isEphemeral(url: string) {
-    return url && url.includes("googleusercontent.com");
+    return (
+      !!url &&
+      url.includes("googleusercontent.com") &&
+      !url.includes("lh3.googleusercontent.com/d/")
+    );
   }
 
   function cleanMediaItem(item: MediaItem): MediaItem {
@@ -571,6 +575,11 @@
 
     selectionMode = mode;
     const albumItems = await listAlbumMediaItems(albumId);
+    if (albumItems.length === 0) {
+      throw new Error(
+        `Configured Google Photos album has no API-visible media items (albumId=${albumId}).`,
+      );
+    }
     const processableItems = albumItems.filter((item) => {
       const mime = (item.mimeType || "").toLowerCase();
       const filename = (item.filename || "").toLowerCase();
@@ -667,6 +676,7 @@
   async function importPhotosFromDrive(
     mode: "replace" | "add" = "replace",
     maxItems = 24,
+    preferredPhoto: string | null = null,
   ) {
     const driveToken = getDriveStoredToken();
     if (!driveToken) {
@@ -678,23 +688,14 @@
       .filter(
         (item) =>
           item.mimeType?.startsWith("image/") &&
-          !!(
-            item.publicUrl ||
-            item.apiUrl ||
-            item.webViewLink ||
-            item.thumbnailLink
-          ),
+          typeof item.publicUrl === "string" &&
+          item.publicUrl.includes("lh3.googleusercontent.com/d/"),
       )
       .map((item) => ({
         id: item.id,
         description: "",
         productUrl: item.webViewLink || "",
-        baseUrl:
-          item.publicUrl ||
-          item.apiUrl ||
-          item.thumbnailLink ||
-          item.webViewLink ||
-          "",
+        baseUrl: item.publicUrl || "",
         mimeType: item.mimeType || "image/jpeg",
         filename: item.name || item.id,
         mediaMetadata: {
@@ -704,7 +705,24 @@
         },
       })) as MediaItem[];
 
-    const limitedItems = sourceItems.slice(0, Math.max(1, maxItems));
+    let orderedItems = sourceItems;
+    if (preferredPhoto) {
+      const preferredIndex = sourceItems.findIndex(
+        (item) =>
+          item.id === preferredPhoto || item.filename === preferredPhoto,
+      );
+      if (preferredIndex < 0) {
+        throw new Error(
+          `Preferred photo "${preferredPhoto}" not found in Drive fixtures.`,
+        );
+      }
+      const preferredItem = sourceItems[preferredIndex];
+      orderedItems = [
+        preferredItem,
+        ...sourceItems.filter((item) => item.id !== preferredItem.id),
+      ];
+    }
+    const limitedItems = orderedItems.slice(0, Math.max(1, maxItems));
 
     if (!$user.uid) {
       throw new Error("No signed-in user to broadcast selected photos.");
@@ -1054,8 +1072,7 @@
                 data-upload-status={uploads[photo.id]?.status || "none"}
                 data-photo-state={(!!uploads[photo.id] &&
                   uploads[photo.id].status === "uploading") ||
-                (!uploads[photo.id] &&
-                  photo.baseUrl.includes("googleusercontent.com"))
+                (!uploads[photo.id] && isEphemeral(photo.baseUrl))
                   ? "uploading"
                   : "ready"}
                 aria-label="View photo history"
@@ -1070,8 +1087,7 @@
                   height="100%"
                   isUploading={(!!uploads[photo.id] &&
                     uploads[photo.id].status === "uploading") ||
-                    (!uploads[photo.id] &&
-                      photo.baseUrl.includes("googleusercontent.com"))}
+                    (!uploads[photo.id] && isEphemeral(photo.baseUrl))}
                 />
 
                 <!-- Edit Status Overlay -->
@@ -1286,8 +1302,7 @@
                         data-upload-status={uploads[item.id]?.status || "none"}
                         data-photo-state={(!!uploads[item.id] &&
                           uploads[item.id].status === "uploading") ||
-                        (!uploads[item.id] &&
-                          item.baseUrl.includes("googleusercontent.com"))
+                        (!uploads[item.id] && isEphemeral(item.baseUrl))
                           ? "uploading"
                           : "ready"}
                         aria-label="View photo history"

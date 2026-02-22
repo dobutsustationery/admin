@@ -14,7 +14,13 @@ export function getUploadCandidates(
 ): MediaItem[] {
   return selectedPhotos.filter((p) => {
     // 1. Skip if already permanent (drive.google.com)
-    if (p.baseUrl && p.baseUrl.includes("drive.google.com")) return false;
+    if (
+      p.baseUrl &&
+      (p.baseUrl.includes("drive.google.com") ||
+        p.baseUrl.includes("lh3.googleusercontent.com/d/"))
+    ) {
+      return false;
+    }
 
     // Check upload state
     const status = uploads[p.id];

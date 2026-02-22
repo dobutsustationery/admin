@@ -23,7 +23,7 @@ export default defineConfig({
   // No retries for live tests to avoid burning quota/state confusion? 
   // Or retries to handle flake? Design doc says "Retry only on known transient...".
   // Playwright retries are general. Let's keep 0 for now or 1.
-  retries: 1,
+  retries: 0,
   // Disable interactive reporters
   reporter: [['list']],
 

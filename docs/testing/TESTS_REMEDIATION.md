@@ -39,6 +39,32 @@ Scope note:
 - `main` has not yet been re-audited after these branch remediations.
 - E2E and live test reliability work is still open.
 
+## Status Update (2026-02-22)
+
+Live E2E photo-flow work was substantially improved and re-baselined.
+
+Current live-photo status on `listing-creation`:
+
+1. `npm run test:live:e2e` (photo flows + auth setup): **PASS observed**
+- Recent run completed green (`3 passed` including `auth.setup`).
+- Baselines were regenerated after real rendering-flow fixes.
+
+2. `e2e/live/001-photo-processing`: **PASS observed, mildly flaky**
+- Uses deterministic Drive fixture selection for the `001` flow (explicit preferred Drive file ID for fixture 8103 JPEG).
+- We have observed successful passing runs.
+- Flakiness remains possible in live network / image-processing timing, so this is not yet suitable as a required local gate.
+
+3. `e2e/live/002-journey`: **PASS observed**
+- Screenshot baseline updated to match current deterministic rendering behavior.
+
+4. Live Playwright retries: **DISABLED**
+- `playwright.live.config.ts` now sets `retries: 0`.
+- This aligns with the project policy that E2E tests should fail loudly rather than self-heal via retries.
+
+5. Remaining gap
+- Live photo-flow tests are functional and much more deterministic, but still depend on external services and local secrets/setup.
+- They remain outside pre-commit enforcement.
+
 ## Test Surface Inventory
 
 ### `main` scripts
@@ -193,6 +219,7 @@ Definition of done:
 2. Ensure Playwright webServer lifecycle is deterministic (no missing built-node module race).
 3. Split live tests by filename/tag and exclude by default from `test` and `test:fast`.
 4. Make snapshot/image-based tests deterministic (fixed viewport, fonts, seed data, retries policy).
+5. For live E2E, prefer deterministic fixture IDs (Drive file IDs) over human filenames when the runtime source is Drive.
 
 Definition of done:
 - Re-running the same command without code changes yields same pass/fail result.
