@@ -5,13 +5,58 @@ import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
+export type GeminiImageInput =
+  | { kind: "inline"; data: string; mimeType: string }
+  | { kind: "file_uri"; fileUri: string; mimeType: string };
+
+function inferImageMimeTypeFromUrl(url: string): string {
+  const lower = String(url || "").toLowerCase();
+  if (lower.includes(".png")) return "image/png";
+  if (lower.includes(".webp")) return "image/webp";
+  if (lower.includes(".gif")) return "image/gif";
+  if (lower.includes(".heic") || lower.includes(".heif")) return "image/heic";
+  return "image/jpeg";
+}
+
+function toGeminiPublicImageUrl(rawUrl: string): string {
+  const normalized = toGoogleDrivePublicImageUrl(rawUrl);
+  if (!normalized) return "";
+
+  if (normalized.includes("googleusercontent.com")) {
+    // Preserve public URL path but remove transient resize suffixes for stable full-res access.
+    return normalized.replace(/=[a-z0-9,-]+$/i, "=s0");
+  }
+
+  return normalized;
+}
+
+function isPublicGeminiImageUrl(url: string): boolean {
+  const value = String(url || "").trim();
+  if (!value) return false;
+  if (!/^https?:\/\//i.test(value)) return false;
+  if (value.includes("googleapis.com/drive/v3/files/")) return false;
+  if (value.startsWith("data:")) return false;
+
+  // Prefer URL-based Gemini fetch for public Drive/Googleusercontent links and generic HTTPS URLs.
+  return true;
+}
+
 /**
  * Fetch image data from a URL using the user's OAuth token.
  */
 export async function fetchImage(
   url: string,
   token?: string,
-): Promise<{ data: string; mimeType: string }> {
+): Promise<GeminiImageInput> {
+  const publicUrl = toGeminiPublicImageUrl(url);
+  if (isPublicGeminiImageUrl(publicUrl)) {
+    return {
+      kind: "file_uri",
+      fileUri: publicUrl,
+      mimeType: inferImageMimeTypeFromUrl(publicUrl),
+    };
+  }
+
   // Handle Google Drive Thumbnail URLs:
   // These (drive.google.com/thumbnail?id=...) do NOT support CORS for fetch().
   // We must convert them to the Drive API 'get media' endpoint:
@@ -91,9 +136,32 @@ export async function fetchImage(
   }
 }
 
-async function processResponse(
-  response: Response,
+export async function fetchImageInline(
+  url: string,
+  token?: string,
 ): Promise<{ data: string; mimeType: string }> {
+  const result = await fetchImage(url, token);
+  if (result.kind === "inline") {
+    return { data: result.data, mimeType: result.mimeType };
+  }
+
+  // Force a direct fetch when a caller explicitly needs bytes (canvas/local processing paths).
+  const response = await fetch(result.fileUri, {
+    referrerPolicy: "no-referrer",
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch image (${response.status}): ${response.statusText}`,
+    );
+  }
+  const inline = await processResponse(response);
+  if (inline.kind !== "inline") {
+    throw new Error("Expected inline Gemini image payload");
+  }
+  return { data: inline.data, mimeType: inline.mimeType };
+}
+
+async function processResponse(response: Response): Promise<GeminiImageInput> {
   const blob = await response.blob();
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -105,13 +173,13 @@ async function processResponse(
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
-  return { data: base64, mimeType: blob.type || "image/jpeg" };
+  return { kind: "inline", data: base64, mimeType: blob.type || "image/jpeg" };
 }
 
 // ... imagePrompt function remains same ...
 export async function imagePrompt(
   text: string,
-  images: { data: string; mimeType: string }[],
+  images: GeminiImageInput[],
   accessToken: string,
   apiKey?: string,
 ): Promise<string | null> {
@@ -122,6 +190,16 @@ export async function imagePrompt(
       const parts = contents[0].parts;
 
       for (const img of images) {
+        if (img.kind === "file_uri") {
+          parts.push({
+            file_data: {
+              mime_type: img.mimeType,
+              file_uri: img.fileUri,
+            },
+          });
+          continue;
+        }
+
         parts.push({
           inline_data: {
             mime_type: img.mimeType,
@@ -194,7 +272,7 @@ export interface ProcessingResult {
 }
 
 export async function detectVariants(
-  images: { data: string; mimeType: string }[],
+  images: GeminiImageInput[],
   accessToken: string,
   apiKey?: string,
   customPrompt?: string,
@@ -286,7 +364,7 @@ export async function processMediaItems(
     images: {
       id: string;
       baseUrl: string;
-      dataPromise: Promise<{ data: string; mimeType: string }>;
+      dataPromise: Promise<GeminiImageInput>;
     }[];
   }[] = [];
   // We maintain a "live" version for the UI
@@ -551,7 +629,11 @@ export async function processMediaItems(
         );
 
         // Use the already fetched Base64 data to avoid 403 Forbidden on re-fetch without headers
-        const dataUriInput = `data:${imgData.mimeType};base64,${imgData.data}`;
+        const inlineImgData =
+          imgData.kind === "inline"
+            ? imgData
+            : await fetchImageInline(img.baseUrl, accessToken);
+        const dataUriInput = `data:${inlineImgData.mimeType};base64,${inlineImgData.data}`;
         const editedBase64 = await removeBackground(dataUriInput);
 
         if (editedBase64) {

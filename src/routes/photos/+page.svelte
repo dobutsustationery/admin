@@ -30,7 +30,7 @@
     listAllImages,
     getStoredToken as getDriveStoredToken,
   } from "$lib/google-drive";
-  import { fetchImage } from "$lib/gemini-client";
+  import { fetchImageInline } from "$lib/gemini-client";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { store } from "$lib/store";
   import { broadcast } from "$lib/redux-firestore";
@@ -230,7 +230,7 @@
       // `background-removal` tries to load using `Image` tag which fails CORS for canvas.
       // So we MUST fetch blob -> base64.
 
-      const fetched = await fetchImage(item.baseUrl, token.access_token);
+      const fetched = await fetchImageInline(item.baseUrl, token.access_token);
       const base64 = fetched.data;
       const mimeType = fetched.mimeType || "image/jpeg";
 
