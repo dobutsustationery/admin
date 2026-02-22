@@ -65,11 +65,23 @@ test('Publishing a proposal saves Draft Subtype to Inventory', async ({ page }) 
     
     // 3. Verify Result (Poll for async update)
     await expect(async () => {
-        const type = await page.evaluate(({ itemId }) => {
+        const result = await page.evaluate(({ itemId, janCode }) => {
             const { store } = (window as any).testHelpers;
-            return store.getState().inventory.idToItem[itemId]?.subtype;
-        }, { itemId });
-        expect(type).toBe("New");
+            const inventory = store.getState().inventory.idToItem || {};
+            const itemsForJan = Object.entries(inventory)
+              .filter(([_, item]: any) => item?.janCode === janCode)
+              .map(([id, item]: any) => ({ id, subtype: item?.subtype }));
+            return {
+              oldKeySubtype: inventory[itemId]?.subtype,
+              itemsForJan,
+            };
+        }, { itemId, janCode });
+
+        // Current approve flow re-keys the inventory item when subtype is set.
+        expect(result.oldKeySubtype).toBeUndefined();
+        expect(result.itemsForJan).toContainEqual(
+          expect.objectContaining({ subtype: "New" }),
+        );
     }).toPass({ timeout: 5000 });
 
 });

@@ -16,26 +16,26 @@
 ![Batch Editor Variants](screenshots/001-variants-start.png)
 
 **Programmatic Verification:**
-- [ ] Validated Batch Editor is visible with 2 variant rows
+- [ ] Validated Batch Editor is visible with a draft row
 
-### 3. Variant Split
+### 3. Batch Editor Handle Edit
 
-![Variant Split](screenshots/002-variant-split.png)
-
-**Programmatic Verification:**
-- [ ] Validated Variant Split via Handle change
-
-### 4. Variant Merge
-
-![Variant Merge](screenshots/003-variant-merge.png)
+![Batch Editor Handle Edit](screenshots/002-batch-handle-edit.png)
 
 **Programmatic Verification:**
-- [ ] Validated Variant Merge via Handle change
+- [ ] Validated handle edit in Batch Editor
 
-### 5. Review Multi-Variant
+### 4. Merge Existing
 
-![Review Multi-Variant](screenshots/004-review-multi-variant.png)
+![Merge Existing](screenshots/003b-merge-existing.png)
 
 **Programmatic Verification:**
-- [ ] Validated Review View for Multi-Variant
+- [ ] Validated merge with existing listing context update
+
+### 5. Review Listing
+
+![Review Listing](screenshots/004-review-listing.png)
+
+**Programmatic Verification:**
+- [ ] Validated Review View
 

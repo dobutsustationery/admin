@@ -1,5 +1,40 @@
 # TESTS_REMEDIATION
 
+## Testing Summary (2026-02-22)
+
+This is the current testing surface and status on the active branch.
+
+### Default required / expected-green local suites
+
+1. `npm run check` (Svelte/TS checks): **PASS** (expected to pass)
+2. `npm run lint` (Prettier check): **PASS** (expected to pass)
+3. `npm run test` (Vitest unit/integration): **PASS** (expected to pass)
+ - Default Vitest now excludes `tests/live/**`; live Vitest suites are opt-in via `VITEST_INCLUDE_LIVE=1`.
+4. `npm run test:e2e` (non-live Playwright via emulators + local fixtures): **PASS** (expected to pass)
+- Now excludes `e2e/live/**` and `e2e/experiments/**` by default.
+- Current non-live Playwright surface is **19 tests in 19 files**.
+- `playwright.nonlive.config.ts` forces a fresh `vite preview` server (`reuseExistingServer: false`) to avoid stale-preview blank-page failures.
+
+### Optional / environment-dependent suites
+
+1. `npm run test:live:doctor`: **PASS** only when live Google fixture env/tokens are configured
+2. `npm run test:live:contracts`: **Expected PASS with valid live env/tokens**
+3. `npm run test:live:workflows`: **Expected PASS with valid live env/tokens**
+4. `npm run test:live:e2e`: **PASS observed**, but remains external-service dependent and somewhat flaky; not a required local gate
+
+### Intentionally not in default `npm run test:e2e`
+
+1. `e2e/live/**`: excluded (live/external dependencies)
+2. `e2e/experiments/**`: excluded (debug/experimental specs, previously reported as skipped)
+
+### Are any tests that should be passing currently not passing?
+
+No known failures in the expected-green local suites (`check`, `lint`, `test`, `test:e2e`) after the current E2E remediations and snapshot refreshes.
+
+Remaining caveats:
+- Live suites still depend on secrets/tokens and external services.
+- `test:e2e:ui`, `test:e2e:headed`, and `test:e2e:report` are tooling/runner convenience commands rather than pass/fail gate suites.
+
 ## Purpose
 
 This document captures the current testing state on:
@@ -64,6 +99,25 @@ Current live-photo status on `listing-creation`:
 5. Remaining gap
 - Live photo-flow tests are functional and much more deterministic, but still depend on external services and local secrets/setup.
 - They remain outside pre-commit enforcement.
+
+## Status Update (2026-02-22, later)
+
+Non-live Playwright E2E was re-baselined and brought back to green after UI drift and harness drift.
+
+Current non-live E2E status on `listing-creation`:
+
+1. `npm run test:e2e`: **PASS** (expected local gate)
+- Runs via `playwright.nonlive.config.ts`
+- Excludes `e2e/live/**` and `e2e/experiments/**`
+- Current discovered test count: **19 tests**
+
+2. Snapshot refresh completed for current UI
+- Regenerated snapshots for affected specs including:
+  `009-itemhistory`, `013-order-import`, `014-photos`, `015-listings-creation`, and `090-audit-log`
+
+3. Harness hardening applied
+- `playwright.nonlive.config.ts` now sets `webServer.reuseExistingServer = false`
+- This fixed intermittent blank-page failures caused by stale reused `vite preview` servers in local runs
 
 ## Test Surface Inventory
 

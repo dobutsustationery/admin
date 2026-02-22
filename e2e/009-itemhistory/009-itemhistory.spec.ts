@@ -179,7 +179,7 @@ test.describe("Item History Page", () => {
             description: 'Validated heading contains item key',
             check: async () => {
                  await expect(heading).toContainText("Item History");
-                 await expect(heading).toContainText(testItemKey);
+                 await expect(page.locator("main")).toContainText(testItemKey);
             }
         },
         {

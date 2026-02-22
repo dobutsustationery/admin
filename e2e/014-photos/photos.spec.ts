@@ -60,6 +60,77 @@ test.describe('Google Photos Integration', () => {
         });
     });
 
+    // Mock Drive folder discovery/creation + upload path used by the upload manager after selection
+    await page.route('https://www.googleapis.com/drive/v3/files**', async (route: any) => {
+        const req = route.request();
+        const url = req.url();
+        const method = req.method();
+
+        if (method === 'GET') {
+            // findFolder() queries should return "not found" so app creates folders deterministically
+            if (url.includes('/drive/v3/files?')) {
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ files: [] })
+                });
+                return;
+            }
+            // file details fetch after upload
+            const idMatch = url.match(/\/drive\/v3\/files\/([^?]+)/);
+            const fileId = idMatch?.[1] || 'mock-file-id';
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    id: fileId,
+                    name: 'mock-upload.jpg',
+                    webViewLink: `https://drive.google.com/file/d/${fileId}/view`,
+                    webContentLink: `https://drive.google.com/uc?id=${fileId}&export=download`,
+                    thumbnailLink: `https://drive.google.com/thumbnail?id=${fileId}`
+                })
+            });
+            return;
+        }
+
+        if (method === 'POST') {
+            // createFolder() and any non-upload file creation
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ id: `folder_${Date.now()}` })
+            });
+            return;
+        }
+
+        if (method === 'PATCH') {
+            await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+            return;
+        }
+
+        await route.continue();
+    });
+
+    await page.route('https://www.googleapis.com/drive/v3/files/**/permissions', async (route: any) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+
+    await page.route('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', async (route: any) => {
+        await route.fulfill({
+            status: 200,
+            headers: { location: 'https://mock.upload/session/1' },
+            body: ''
+        });
+    });
+
+    await page.route('https://mock.upload/session/**', async (route: any) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ id: `uploaded_${Date.now()}` })
+        });
+    });
+
     await page.route('https://photospicker.googleapis.com/v1/mediaItems**', async (route: any) => {
         await route.fulfill({
             status: 200,
@@ -139,13 +210,13 @@ test.describe('Google Photos Integration', () => {
             check: async () => {
                 await expect(page.locator('text=Selection in progress...')).toBeVisible();
                 // Check that 2 photos are rendered
-                await expect(page.locator('img[alt="Thumbnail"]')).toHaveCount(2);
+                await expect(page.locator('[data-testid^="photo-thumbnail-"]')).toHaveCount(2);
             }
         },
         {
             description: "Verify Photos",
             check: async () => {
-                const photos = page.locator('img[alt="Thumbnail"]');
+                const photos = page.locator('[data-testid^="photo-thumbnail-"]');
                 await expect(photos).toHaveCount(2);
             }
         }

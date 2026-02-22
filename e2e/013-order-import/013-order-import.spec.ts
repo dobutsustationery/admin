@@ -205,14 +205,14 @@ test.describe("Inventory Receipt with Google Drive", () => {
                 description: "Batch Actions Visible",
                 check: async () => {
                    await expect(page.locator('button:has-text("Process Matches")')).toBeVisible();
-                   await expect(page.locator('button:has-text("Create New")')).toBeVisible();
+                   await expect(page.locator('button:has-text("ADD to inventory")')).toBeVisible();
                 }
             },
             {
                 description: "Row 1: New Item (6666...)",
                 check: async () => {
                     await expect(page.locator('tr:has-text("1010101010101")')).toBeVisible({ timeout: 10000 });
-                    await expect(page.locator('tr:has-text("1010101010101")')).toContainText('NEW');
+                    await expect(page.locator('tr:has-text("1010101010101")')).toContainText('ADD');
                 }
             },
             {
@@ -270,7 +270,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
              {
                 description: "Click Create New Button",
                 check: async () => {
-                    await page.click('button:has-text("Create New")');
+                    await page.click('button:has-text("ADD to inventory")');
                     await expect(page.locator('.success-message')).toBeVisible();
                     // Wait for sync to complete
                     await waitForSync(page);

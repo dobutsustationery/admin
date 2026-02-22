@@ -66,8 +66,8 @@
     "setup:live:e2e": "bun scripts/google-fixtures/bootstrap-live-e2e.ts",
     "setup:live:tokens": "bun scripts/google-fixtures/refresh-live-tokens.ts",
     "test:live:doctor": "bun scripts/google-fixtures/healthcheck.ts",
-    "test:live:contracts": "vitest run --testNamePattern='@live'",
-    "test:live:workflows": "vitest run --run tests/live/processing-workflow.test.ts",
+    "test:live:contracts": "VITEST_INCLUDE_LIVE=1 vitest run --testNamePattern='@live'",
+    "test:live:workflows": "VITEST_INCLUDE_LIVE=1 vitest run --run tests/live/processing-workflow.test.ts",
     "test:live:e2e": "npx playwright test --config=playwright.live.config.ts",
     "prepare": "husky"
   },
