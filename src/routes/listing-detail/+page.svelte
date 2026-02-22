@@ -504,6 +504,38 @@
     }
   }
 
+  function findUndefinedPaths(value: unknown, path = "root"): string[] {
+    if (value === undefined) return [path];
+    if (value === null) return [];
+    if (Array.isArray(value)) {
+      return value.flatMap((entry, idx) =>
+        findUndefinedPaths(entry, `${path}[${idx}]`),
+      );
+    }
+    if (typeof value === "object") {
+      return Object.entries(value as Record<string, unknown>).flatMap(
+        ([key, entry]) => findUndefinedPaths(entry, `${path}.${key}`),
+      );
+    }
+    return [];
+  }
+
+  function sanitizeForDebug(value: unknown): unknown {
+    if (value === undefined) return "__undefined__";
+    if (value === null) return null;
+    if (Array.isArray(value))
+      return value.map((entry) => sanitizeForDebug(entry));
+    if (typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+          key,
+          sanitizeForDebug(entry),
+        ]),
+      );
+    }
+    return value;
+  }
+
   async function queueShopifyListingSync() {
     if (!handle) return;
 
@@ -561,25 +593,48 @@
     dismissedSuccessRequestId = null;
     clearSuccessMessageTimer();
 
+    const syncRequestEvent = {
+      eventType: "sync_requested",
+      requestId,
+      handle,
+      listing: listingSnapshot,
+      variants: variantsSnapshot,
+      source: "listing-detail",
+      requestedBy: uid,
+      requestedAt: Date.now(),
+      payloadVersion: 1,
+      createdAtMs: Date.now(),
+      createdAt: serverTimestamp(),
+      timestamp: serverTimestamp(),
+    };
+
     try {
-      await addDoc(collection(firestore, "shopify_sync"), {
-        eventType: "sync_requested",
-        requestId,
-        handle,
-        listing: listingSnapshot,
-        variants: variantsSnapshot,
-        source: "listing-detail",
-        requestedBy: uid,
-        requestedAt: Date.now(),
-        payloadVersion: 1,
-        createdAtMs: Date.now(),
-        createdAt: serverTimestamp(),
-        timestamp: serverTimestamp(),
-      });
+      const undefinedPaths = findUndefinedPaths(syncRequestEvent);
+      if (undefinedPaths.length > 0) {
+        console.error(
+          "[Shopify Sync] Undefined fields in queued request payload",
+          {
+            requestId,
+            handle,
+            undefinedPaths,
+            payload: sanitizeForDebug(syncRequestEvent),
+            associatedItems: sanitizeForDebug(associatedItems),
+          },
+        );
+      }
+
+      await addDoc(collection(firestore, "shopify_sync"), syncRequestEvent);
       trackedSyncRequestId = requestId;
       syncMessage = `Sync requested for '${handle}'. Waiting for processor claim...`;
       syncMessageLevel = "info";
     } catch (error) {
+      console.error("[Shopify Sync] addDoc(shopify_sync) failed", {
+        requestId,
+        handle,
+        error,
+        undefinedPaths: findUndefinedPaths(syncRequestEvent),
+        payload: sanitizeForDebug(syncRequestEvent),
+      });
       trackedSyncRequestId = null;
       syncMessage =
         error instanceof Error
