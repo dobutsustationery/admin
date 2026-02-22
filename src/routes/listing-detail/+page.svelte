@@ -552,11 +552,13 @@
       bodyHtml: listingData?.bodyHtml || "",
       productCategory: listingData?.productCategory || "",
       option1Name: listingData?.option1Name || "Subtype",
-      images: (listingImages || []).map((img) => ({
-        id: img.id,
-        url: toGoogleDrivePublicImageUrl(String(img.url || "")),
-        position: img.position,
-        altText: img.altText || "",
+      images: (listingImages || []).map((img, idx) => ({
+        id: String(img?.id || ""),
+        url: toGoogleDrivePublicImageUrl(String(img?.url || "")),
+        position: Number.isFinite(Number(img?.position))
+          ? Number(img.position)
+          : idx + 1,
+        altText: String(img?.altText || ""),
       })),
     };
 
