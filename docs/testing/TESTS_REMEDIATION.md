@@ -4,6 +4,13 @@
 
 This is the current testing surface and status on the active branch.
 
+### Enforcement gates (current)
+
+1. Commit gate (`.husky/pre-commit`): `npm run ci`, `npm run check`, `bun run test` (fallback `npm run test`)
+2. Push gate (`.husky/pre-push`): `npm run test:e2e`, `npm run test:live:doctor`, `npm run test:live:contracts`, `npm run test:live:workflows`, `npm run test:live:e2e`
+
+This keeps local commit latency reasonable while still enforcing non-live E2E and live test suites before push.
+
 ### Default required / expected-green local suites
 
 1. `npm run check` (Svelte/TS checks): **PASS** (expected to pass)
@@ -15,12 +22,12 @@ This is the current testing surface and status on the active branch.
 - Current non-live Playwright surface is **19 tests in 19 files**.
 - `playwright.nonlive.config.ts` forces a fresh `vite preview` server (`reuseExistingServer: false`) to avoid stale-preview blank-page failures.
 
-### Optional / environment-dependent suites
+### Push-gated / environment-dependent suites
 
 1. `npm run test:live:doctor`: **PASS** only when live Google fixture env/tokens are configured
 2. `npm run test:live:contracts`: **Expected PASS with valid live env/tokens**
 3. `npm run test:live:workflows`: **Expected PASS with valid live env/tokens**
-4. `npm run test:live:e2e`: **PASS observed**, but remains external-service dependent and somewhat flaky; not a required local gate
+4. `npm run test:live:e2e`: **PASS observed**, but remains external-service dependent and somewhat flaky; now enforced at push time (not commit time)
 
 ### Intentionally not in default `npm run test:e2e`
 
@@ -33,6 +40,7 @@ No known failures in the expected-green local suites (`check`, `lint`, `test`, `
 
 Remaining caveats:
 - Live suites still depend on secrets/tokens and external services.
+- Pushes now require live env/tokens to be configured locally because live suites are part of `.husky/pre-push`.
 - `test:e2e:ui`, `test:e2e:headed`, and `test:e2e:report` are tooling/runner convenience commands rather than pass/fail gate suites.
 
 ## Purpose
@@ -68,6 +76,12 @@ Current `listing-creation` status:
   - `npm run ci`
   - `npm run check`
   - `bun run test` (fallback `npm run test`)
+- `.husky/pre-push` now enforces:
+  - `npm run test:e2e` (non-live Playwright)
+  - `npm run test:live:doctor`
+  - `npm run test:live:contracts`
+  - `npm run test:live:workflows`
+  - `npm run test:live:e2e`
 - Hook script is in Husky v9+ format (deprecated bootstrap lines removed).
 
 Scope note:

@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+
+set -e
+
+echo "Running pre-push non-live E2E suite..."
+npm run test:e2e
+
+echo "Running pre-push live fixture health check..."
+npm run test:live:doctor
+
+echo "Running pre-push live contract tests..."
+npm run test:live:contracts
+
+echo "Running pre-push live workflow tests..."
+npm run test:live:workflows
+
+echo "Running pre-push live E2E suite..."
+npm run test:live:e2e
