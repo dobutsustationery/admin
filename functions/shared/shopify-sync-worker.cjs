@@ -169,6 +169,19 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
   try {
     const locationId = await core.resolveLocationId(shopifyConfig);
     const product = await core.upsertProductFromRequest(shopifyConfig, requestData);
+    const publication = await core.ensureProductPublishedToOnlineStore(shopifyConfig, product.id);
+
+    await appendApiEvent(db, creator, {
+      requestId,
+      requestEventId,
+      handle,
+      processor,
+      requestType: "product_publication_sync",
+      endpoint: `/admin/api/${apiVersion}/graphql.json`,
+      success: true,
+      response: publication,
+      context: { requestId, handle, productId: product.id, processor },
+    });
 
     await appendApiEvent(db, creator, {
       requestId,

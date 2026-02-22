@@ -270,6 +270,95 @@ async function fetchGraphql(config, query, variables = {}) {
   return json?.data || {};
 }
 
+function toShopifyProductGid(productId) {
+  const id = extractNumericId(productId);
+  if (!id) return "";
+  return `gid://shopify/Product/${id}`;
+}
+
+function pickOnlineStorePublication(publications) {
+  const nodes = Array.isArray(publications) ? publications : [];
+  const normalized = nodes.map((p) => ({
+    id: String(p?.id || ""),
+    name: String(p?.name || "").trim(),
+  }));
+  return (
+    normalized.find((p) => p.id && p.name.toLowerCase() === "online store") ||
+    normalized.find((p) => p.id && p.name.toLowerCase().includes("online store")) ||
+    null
+  );
+}
+
+async function listShopifyPublications(config) {
+  const data = await fetchGraphql(
+    config,
+    `
+      query ListPublications {
+        publications(first: 50) {
+          nodes {
+            id
+            name
+          }
+        }
+      }
+    `,
+    {},
+  );
+  return Array.isArray(data?.publications?.nodes) ? data.publications.nodes : [];
+}
+
+async function ensureProductPublishedToOnlineStore(config, productId) {
+  const productGid = toShopifyProductGid(productId);
+  if (!productGid) {
+    throw new Error(`Invalid Shopify product id: ${JSON.stringify(productId)}`);
+  }
+
+  const publications = await listShopifyPublications(config);
+  const onlineStore = pickOnlineStorePublication(publications);
+  if (!onlineStore?.id) {
+    throw new Error(
+      `Could not find 'Online Store' publication. Available publications: ${JSON.stringify(publications.map((p) => ({ id: p?.id, name: p?.name })))}`,
+    );
+  }
+
+  const data = await fetchGraphql(
+    config,
+    `
+      mutation PublishProductToOnlineStore($id: ID!, $input: [PublicationInput!]!) {
+        publishablePublish(id: $id, input: $input) {
+          publishable {
+            ... on Product {
+              id
+              status
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      id: productGid,
+      input: [{ publicationId: onlineStore.id }],
+    },
+  );
+
+  const result = data?.publishablePublish;
+  const userErrors = Array.isArray(result?.userErrors) ? result.userErrors : [];
+  if (userErrors.length > 0) {
+    throw new Error(`publishablePublish userErrors: ${JSON.stringify(userErrors)}`);
+  }
+
+  return {
+    publicationId: onlineStore.id,
+    publicationName: onlineStore.name,
+    productId: extractNumericId(result?.publishable?.id) || extractNumericId(productId),
+    productStatus: String(result?.publishable?.status || ""),
+  };
+}
+
 async function findProductByHandle(config, handle) {
   const graphData = await fetchGraphql(
     config,
@@ -456,7 +545,7 @@ function buildProductPayload(requestPayload, existingProduct) {
       ? mapStatus(existingProduct.status)
       : "draft";
 
-  return {
+  const payload = {
     handle,
     title: String(listing.title || "Untitled"),
     body_html: String(listing.bodyHtml || ""),
@@ -468,6 +557,14 @@ function buildProductPayload(requestPayload, existingProduct) {
     images: imagesPayload,
     variants: variantsPayload,
   };
+
+  if (!existingProduct) {
+    // Ensure newly created products are assigned to the standard sales channels
+    // (including Online Store) even when created as draft.
+    payload.published_scope = "global";
+  }
+
+  return payload;
 }
 
 async function fetchProductById(config, productId) {
@@ -848,6 +945,7 @@ module.exports = {
   resolveLocationId,
   buildProductPayload,
   upsertProductFromRequest,
+  ensureProductPublishedToOnlineStore,
   setInventoryLevel,
   fetchAllVariantsBySku,
 };
