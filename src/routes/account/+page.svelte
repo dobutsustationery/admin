@@ -17,6 +17,18 @@
   let loading = false;
 
   const CONFIG_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID;
+  const APP_VERSION = import.meta.env.VITE_APP_VERSION || "unknown";
+  const APP_GIT_HASH = import.meta.env.VITE_APP_GIT_HASH || "";
+  const APP_GIT_SHORT_HASH = import.meta.env.VITE_APP_GIT_SHORT_HASH || "";
+  const APP_GIT_BRANCH = import.meta.env.VITE_APP_GIT_BRANCH || "";
+  const APP_GIT_DIRTY =
+    String(import.meta.env.VITE_APP_GIT_DIRTY || "false") === "true";
+  const APP_BUILD_TIME_ISO = import.meta.env.VITE_APP_BUILD_TIME_ISO || "";
+  const APP_BUILD_MODE = import.meta.env.VITE_APP_BUILD_MODE || "";
+
+  $: buildTimeDisplay = APP_BUILD_TIME_ISO
+    ? new Date(APP_BUILD_TIME_ISO).toLocaleString()
+    : "Unknown";
 
   onMount(() => {
     loadTokenInfo();
@@ -88,112 +100,127 @@
   }
 </script>
 
-<div class="p-8 max-w-4xl mx-auto">
-  <h1 class="text-3xl font-bold mb-8">Account & Settings</h1>
+<div class="account-page">
+  <h1 class="page-title">Account & Settings</h1>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h2 class="section-title">Version Info</h2>
+      <span
+        class={`status-pill ${APP_GIT_DIRTY ? "status-dirty" : "status-clean"}`}
+      >
+        {APP_GIT_DIRTY ? "DIRTY" : "CLEAN"}
+      </span>
+    </div>
+    <div class="kv-grid kv-grid-wide">
+      <div class="kv-label">Version:</div>
+      <div class="mono">{APP_VERSION}</div>
+
+      <div class="kv-label">Commit:</div>
+      <div class="mono wrap-anywhere">
+        {APP_GIT_SHORT_HASH || APP_GIT_HASH || "Unknown"}
+      </div>
+
+      <div class="kv-label">Full Hash:</div>
+      <div class="mono small wrap-anywhere">{APP_GIT_HASH || "Unknown"}</div>
+
+      <div class="kv-label">Branch:</div>
+      <div class="mono">{APP_GIT_BRANCH || "Unknown"}</div>
+
+      <div class="kv-label">Build Time:</div>
+      <div title={APP_BUILD_TIME_ISO}>{buildTimeDisplay}</div>
+
+      <div class="kv-label">Mode:</div>
+      <div class="mono">{APP_BUILD_MODE || "Unknown"}</div>
+    </div>
+  </div>
 
   <!-- User Section -->
-  <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-    <h2 class="text-xl font-semibold mb-4">Firebase User</h2>
+  <div class="panel">
+    <h2 class="section-title section-title-spaced">Firebase User</h2>
     {#if $user}
-      <div class="grid grid-cols-[120px_1fr] gap-4 text-sm">
-        <div class="font-medium text-gray-500">Name:</div>
+      <div class="kv-grid">
+        <div class="kv-label">Name:</div>
         <div>{$user.name || "N/A"}</div>
 
-        <div class="font-medium text-gray-500">Email:</div>
+        <div class="kv-label">Email:</div>
         <div>{$user.email || "N/A"}</div>
 
-        <div class="font-medium text-gray-500">UID:</div>
-        <div class="font-mono text-xs bg-gray-100 p-1 rounded">{$user.uid}</div>
+        <div class="kv-label">UID:</div>
+        <div class="inline-code">{$user.uid}</div>
       </div>
     {:else}
-      <p class="text-gray-500 italic">Not signed in to Firebase.</p>
+      <p class="muted italic">Not signed in to Firebase.</p>
     {/if}
 
-    <div class="mt-6">
-      <button
-        on:click={handleSignOut}
-        class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition"
-      >
+    <div class="actions-top">
+      <button on:click={handleSignOut} class="btn btn-danger">
         Sign Out Everywhere
       </button>
     </div>
   </div>
 
   <!-- Google Auth Section -->
-  <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-    <div class="flex justify-between items-start mb-4">
-      <h2 class="text-xl font-semibold">Google Drive & Photos Auth</h2>
+  <div class="panel">
+    <div class="panel-header">
+      <h2 class="section-title">Google Drive & Photos Auth</h2>
       {#if token}
-        <span
-          class="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded"
-          >CONNECTED</span
-        >
+        <span class="status-pill status-connected">CONNECTED</span>
       {:else}
-        <span
-          class="bg-gray-100 text-gray-800 text-xs font-bold px-2 py-1 rounded"
-          >DISCONNECTED</span
-        >
+        <span class="status-pill status-disconnected">DISCONNECTED</span>
       {/if}
     </div>
 
     {#if token}
-      <div class="mb-6 space-y-4">
-        <div>
-          <div class="font-medium text-gray-500 mb-1">Current Scopes:</div>
-          <div class="flex flex-wrap gap-2">
+      <div class="stack">
+        <div class="stack-item">
+          <div class="kv-label label-inline">Current Scopes:</div>
+          <div class="pill-wrap">
             {#each scopes as scope}
-              <span
-                class="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded border border-blue-200 break-all"
-              >
+              <span class="scope-pill">
                 {scope.replace("https://www.googleapis.com/auth/", "")}
               </span>
             {/each}
           </div>
         </div>
 
-        <div>
-          <div class="font-medium text-gray-500 mb-1">Target Folder ID:</div>
-          <code class="bg-gray-100 px-2 py-1 rounded text-sm"
-            >{CONFIG_FOLDER_ID || "Not Set"}</code
-          >
+        <div class="stack-item">
+          <div class="kv-label label-inline">Target Folder ID:</div>
+          <code class="inline-code">{CONFIG_FOLDER_ID || "Not Set"}</code>
         </div>
 
-        <div class="bg-gray-50 p-4 rounded border border-gray-200">
-          <div class="font-medium mb-2">Diagnostic Tools</div>
-          <div class="flex gap-4 items-center">
+        <div class="diagnostic-box">
+          <div class="diagnostic-title">Diagnostic Tools</div>
+          <div class="action-row">
             <button
               on:click={testDriveAccess}
               disabled={loading}
-              class="bg-gray-700 text-white px-3 py-1.5 rounded text-sm hover:bg-gray-800 transition disabled:opacity-50"
+              class="btn btn-neutral btn-small"
             >
               {loading ? "Testing..." : "Test Drive Access"}
             </button>
           </div>
 
           {#if testResult}
-            <pre
-              class="mt-4 text-xs bg-black text-green-400 p-3 rounded overflow-x-auto whitespace-pre-wrap">{testResult}</pre>
+            <pre class="terminal-output">{testResult}</pre>
           {/if}
         </div>
       </div>
     {/if}
 
-    <div class="flex gap-4">
-      <button
-        on:click={handleReauthorize}
-        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-      >
+    <div class="action-row">
+      <button on:click={handleReauthorize} class="btn btn-primary">
         {token ? "Re-Authorize & Grant Scopes" : "Connect Google Account"}
       </button>
     </div>
   </div>
 
   <!-- Advanced Section -->
-  <div class="bg-white p-6 rounded-lg shadow-md mb-8 border-t-4 border-red-200">
-    <h2 class="text-xl font-semibold mb-4 text-red-800">
+  <div class="panel panel-danger">
+    <h2 class="section-title section-title-spaced danger-title">
       Advanced / Danger Zone
     </h2>
-    <p class="text-sm text-gray-600 mb-4">
+    <p class="muted">
       If you are experiencing state synchronization issues (e.g. items appearing
       as "New" when they should be matches), you can clear the local cache and
       force a full re-download of all history.
@@ -206,9 +233,300 @@
                   window.location.reload();
               }
           }}
-      class="bg-white border border-red-500 text-red-600 px-4 py-2 rounded hover:bg-red-50 transition"
+      class="btn btn-outline-danger"
     >
       Refresh Cached State
     </button>
   </div>
 </div>
+
+<style>
+  .account-page {
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  .page-title {
+    margin: 0 0 2rem 0;
+    font-size: 1.875rem;
+    line-height: 1.2;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .panel {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    box-shadow: 0 6px 18px rgba(17, 24, 39, 0.06);
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .panel-danger {
+    border-top: 4px solid #fecaca;
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .section-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .section-title-spaced {
+    margin-bottom: 1rem;
+  }
+
+  .danger-title {
+    color: #991b1b;
+  }
+
+  .status-pill {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .status-clean {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .status-dirty {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .status-connected {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .status-disconnected {
+    background: #f3f4f6;
+    color: #374151;
+  }
+
+  .kv-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 0.75rem 1rem;
+    font-size: 0.875rem;
+    align-items: start;
+  }
+
+  .kv-grid-wide {
+    grid-template-columns: 140px 1fr;
+  }
+
+  .kv-label {
+    color: #6b7280;
+    font-weight: 600;
+  }
+
+  .label-inline {
+    margin-bottom: 0.375rem;
+    display: block;
+  }
+
+  .mono {
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      monospace;
+  }
+
+  .small {
+    font-size: 0.75rem;
+  }
+
+  .wrap-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .inline-code {
+    display: inline-block;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      monospace;
+    font-size: 0.8125rem;
+    background: #f3f4f6;
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .muted {
+    color: #4b5563;
+    font-size: 0.875rem;
+    margin: 0 0 1rem 0;
+  }
+
+  .italic {
+    font-style: italic;
+  }
+
+  .actions-top {
+    margin-top: 1.5rem;
+  }
+
+  .stack {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .stack-item {
+    min-width: 0;
+  }
+
+  .pill-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .scope-pill {
+    display: inline-block;
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .diagnostic-box {
+    border: 1px solid #e5e7eb;
+    background: #f9fafb;
+    border-radius: 0.5rem;
+    padding: 1rem;
+  }
+
+  .diagnostic-title {
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: #111827;
+  }
+
+  .action-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    padding: 0.55rem 0.9rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease,
+      opacity 0.15s ease;
+  }
+
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: #fff;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: #1d4ed8;
+  }
+
+  .btn-danger {
+    background: #dc2626;
+    color: #fff;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: #b91c1c;
+  }
+
+  .btn-neutral {
+    background: #374151;
+    color: #fff;
+  }
+
+  .btn-neutral:hover:not(:disabled) {
+    background: #1f2937;
+  }
+
+  .btn-small {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .btn-outline-danger {
+    background: #fff;
+    color: #dc2626;
+    border-color: #ef4444;
+  }
+
+  .btn-outline-danger:hover:not(:disabled) {
+    background: #fef2f2;
+  }
+
+  .terminal-output {
+    margin: 1rem 0 0 0;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    background: #000;
+    color: #4ade80;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+
+  @media (max-width: 700px) {
+    .account-page {
+      padding: 1rem;
+    }
+
+    .kv-grid,
+    .kv-grid-wide {
+      grid-template-columns: 1fr;
+      gap: 0.35rem 0;
+    }
+
+    .kv-label {
+      margin-top: 0.25rem;
+    }
+
+    .panel {
+      padding: 1rem;
+    }
+
+    .panel-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
