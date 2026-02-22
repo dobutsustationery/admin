@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { loadLiveEnvLocal } from './load-live-env';
 
 async function globalSetup() {
+  loadLiveEnvLocal();
   console.log('🌍 [Live Setup] Resetting emulator fixtures...');
 
   const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080';

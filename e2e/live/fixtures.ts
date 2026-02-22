@@ -1,6 +1,9 @@
 import { test as base } from '@playwright/test';
 import { OAuth2Client } from 'google-auth-library';
 import { google } from 'googleapis';
+import { loadLiveEnvLocal } from './load-live-env';
+
+loadLiveEnvLocal();
 
 type LiveFixtures = {
   sandboxId: string;

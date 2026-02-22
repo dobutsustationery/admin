@@ -16,10 +16,26 @@ const MANIFEST_PATH = path.resolve(
   process.cwd(),
   "e2e/fixtures/google-media-manifest.json",
 );
+const LIVE_ENV_PATH = path.resolve(process.cwd(), ".env.live.local");
 
 type Manifest = {
   fixtures?: Array<{ filename?: string }>;
 };
+
+function loadLiveLocalEnvOverrides() {
+  if (!fs.existsSync(LIVE_ENV_PATH)) return;
+  const lines = fs.readFileSync(LIVE_ENV_PATH, "utf8").split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const idx = line.indexOf("=");
+    if (idx <= 0) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1);
+    // .env.live.local should be the source of truth for live fixture tooling.
+    process.env[key] = value;
+  }
+}
 
 function toPhotosUploadName(sourceFileName: string): string {
   if (sourceFileName.toLowerCase().endsWith(".heic")) {
@@ -91,6 +107,7 @@ async function listAlbumItemsViaSearch(
 
 async function main() {
   console.log("🏥 Starting E2E Environment Health Check...");
+  loadLiveLocalEnvOverrides();
 
   const missingVars = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
   if (missingVars.length > 0) {

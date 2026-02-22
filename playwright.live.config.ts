@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 import baseConfig from './playwright.config';
+import { loadLiveEnvLocal } from './e2e/live/load-live-env';
+
+loadLiveEnvLocal();
 
 /**
  * Playwright configuration for Live Integration tests

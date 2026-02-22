@@ -327,6 +327,122 @@ function toPhotosUploadName(sourceFileName: string): string {
   return sourceFileName;
 }
 
+function writeExifAsciiTag(
+  buffer: Buffer,
+  ifdOffset: number,
+  entryIndex: number,
+  tag: number,
+  valueOffsetFromTiffStart: number,
+  count: number,
+) {
+  const entryOffset = ifdOffset + 2 + entryIndex * 12;
+  buffer.writeUInt16LE(tag, entryOffset);
+  buffer.writeUInt16LE(2, entryOffset + 2); // ASCII
+  buffer.writeUInt32LE(count, entryOffset + 4);
+  buffer.writeUInt32LE(valueOffsetFromTiffStart, entryOffset + 8);
+}
+
+function writeExifLongTag(
+  buffer: Buffer,
+  ifdOffset: number,
+  entryIndex: number,
+  tag: number,
+  value: number,
+) {
+  const entryOffset = ifdOffset + 2 + entryIndex * 12;
+  buffer.writeUInt16LE(tag, entryOffset);
+  buffer.writeUInt16LE(4, entryOffset + 2); // LONG
+  buffer.writeUInt32LE(1, entryOffset + 4);
+  buffer.writeUInt32LE(value, entryOffset + 8);
+}
+
+function buildExifDateSegment(dateTime = "2000:01:01 00:00:00"): Buffer {
+  const ascii = Buffer.from(`${dateTime}\0`, "ascii");
+
+  const exifHeader = Buffer.from("Exif\0\0", "ascii");
+
+  const tiff = Buffer.alloc(8);
+  tiff.write("II", 0, "ascii");
+  tiff.writeUInt16LE(0x002a, 2);
+  tiff.writeUInt32LE(8, 4); // IFD0 starts immediately after TIFF header
+
+  const ifd0Offset = 8;
+  const ifd0Entries = 2;
+  const ifd0Size = 2 + ifd0Entries * 12 + 4;
+  const exifIfdOffset = ifd0Offset + ifd0Size;
+
+  const exifIfdEntries = 2;
+  const exifIfdSize = 2 + exifIfdEntries * 12 + 4;
+
+  const stringsOffset = exifIfdOffset + exifIfdSize;
+  const dateTimeOffset = stringsOffset;
+  const dateTimeOriginalOffset = dateTimeOffset + ascii.length;
+  const dateTimeDigitizedOffset = dateTimeOriginalOffset + ascii.length;
+
+  const totalTiffBytes = dateTimeDigitizedOffset + ascii.length;
+  const tiffPayload = Buffer.alloc(totalTiffBytes);
+  tiff.copy(tiffPayload, 0);
+
+  // IFD0 entries: DateTime + ExifIFDPointer
+  tiffPayload.writeUInt16LE(ifd0Entries, ifd0Offset);
+  writeExifAsciiTag(tiffPayload, ifd0Offset, 0, 0x0132, dateTimeOffset, ascii.length);
+  writeExifLongTag(tiffPayload, ifd0Offset, 1, 0x8769, exifIfdOffset);
+  tiffPayload.writeUInt32LE(0, ifd0Offset + 2 + ifd0Entries * 12); // no next IFD
+
+  // Exif IFD entries: DateTimeOriginal + DateTimeDigitized
+  tiffPayload.writeUInt16LE(exifIfdEntries, exifIfdOffset);
+  writeExifAsciiTag(tiffPayload, exifIfdOffset, 0, 0x9003, dateTimeOriginalOffset, ascii.length);
+  writeExifAsciiTag(tiffPayload, exifIfdOffset, 1, 0x9004, dateTimeDigitizedOffset, ascii.length);
+  tiffPayload.writeUInt32LE(0, exifIfdOffset + 2 + exifIfdEntries * 12); // no next IFD
+
+  ascii.copy(tiffPayload, dateTimeOffset);
+  ascii.copy(tiffPayload, dateTimeOriginalOffset);
+  ascii.copy(tiffPayload, dateTimeDigitizedOffset);
+
+  const app1Payload = Buffer.concat([exifHeader, tiffPayload]);
+  const segment = Buffer.alloc(4);
+  segment.writeUInt16BE(0xffe1, 0); // APP1 marker
+  segment.writeUInt16BE(app1Payload.length + 2, 2); // length includes these two bytes
+  return Buffer.concat([segment, app1Payload]);
+}
+
+function stampJpegExifDate(filePath: string, dateTime = "2000:01:01 00:00:00") {
+  const bytes = fs.readFileSync(filePath);
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    throw new Error(`Expected JPEG file when stamping EXIF date: ${filePath}`);
+  }
+
+  let offset = 2; // after SOI
+  while (offset + 4 <= bytes.length && bytes[offset] === 0xff) {
+    const marker = bytes[offset + 1];
+    if (marker === 0xda || marker === 0xd9) {
+      break;
+    }
+    if (offset + 4 > bytes.length) break;
+    const segLen = bytes.readUInt16BE(offset + 2);
+    if (segLen < 2) break;
+    const next = offset + 2 + segLen;
+
+    // Drop any existing EXIF APP1 segment so our timestamp is authoritative.
+    if (
+      marker === 0xe1 &&
+      offset + 10 <= bytes.length &&
+      bytes.subarray(offset + 4, offset + 10).toString("ascii") === "Exif\0\0"
+    ) {
+      const withoutExif = Buffer.concat([bytes.subarray(0, offset), bytes.subarray(next)]);
+      fs.writeFileSync(filePath, withoutExif);
+      return stampJpegExifDate(filePath, dateTime);
+    }
+    offset = next;
+  }
+
+  const exifSegment = buildExifDateSegment(dateTime);
+  const stamped = Buffer.concat([bytes.subarray(0, 2), exifSegment, bytes.subarray(2)]);
+  fs.writeFileSync(filePath, stamped);
+  const jan1 = new Date("2000-01-01T00:00:00Z");
+  fs.utimesSync(filePath, jan1, jan1);
+}
+
 function preparePhotosUploadAsset(
   sourcePath: string,
   sourceFileName: string,
@@ -350,6 +466,7 @@ function preparePhotosUploadAsset(
       `HEIC to JPEG conversion failed for ${sourceFileName}: ${result.stderr || result.stdout || "sips failed"}`,
     );
   }
+  stampJpegExifDate(outputPath);
   // Avoid Photos content-dedupe collisions with older probe files by making bytes fixture-stable.
   fs.appendFileSync(outputPath, `\nDOBUTSU_FIXTURE_JPEG:${fixtureId}\n`, "utf8");
 

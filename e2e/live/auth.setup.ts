@@ -2,9 +2,12 @@ import { test as setup } from "@playwright/test";
 import { OAuth2Client } from "google-auth-library";
 import * as fs from "fs";
 import * as path from "path";
+import { loadLiveEnvLocal } from "./load-live-env";
 
 const authFile = "e2e/live/.auth/user.json";
 const authDir = path.dirname(authFile);
+
+loadLiveEnvLocal();
 
 setup("authenticate", async ({ page, context }) => {
   const clientId = process.env.E2E_GOOGLE_CLIENT_ID || "";

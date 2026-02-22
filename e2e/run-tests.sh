@@ -71,7 +71,7 @@ echo "▶️  Running Playwright tests..."
 
 # Record test start time
 TEST_START_TIME=$(date +%s)
-npx playwright test "$@"
+npx playwright test --config=playwright.nonlive.config.ts "$@"
 TEST_EXIT_CODE=$?
 
 # Calculate test duration
