@@ -100,9 +100,6 @@ else
   done
 fi
 
-echo "Running pre-push non-live E2E suite..."
-npm run test:e2e
-
 echo "Running pre-push live fixture health check..."
 npm run test:live:doctor
 
@@ -114,3 +111,6 @@ npm run test:live:workflows
 
 echo "Running pre-push live E2E suite..."
 npm run test:live:e2e
+
+echo "Running pre-push non-live E2E suite..."
+npm run test:e2e

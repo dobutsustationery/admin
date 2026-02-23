@@ -7,6 +7,46 @@ const PREFERRED_MEDIA_ITEM_ID =
   process.env.E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID ??
   "1Xk0qww5eUV6OlMAg15tgKNGmLxxf168T";
 
+async function waitForVisibleImagesToRender(page: any) {
+  await page.evaluate(async () => {
+    const visibleImages = Array.from(document.querySelectorAll('img')).filter((img) => {
+      const el = img as HTMLImageElement;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return (
+        el.offsetParent !== null &&
+        style.visibility !== 'hidden' &&
+        style.display !== 'none' &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    }) as HTMLImageElement[];
+
+    await Promise.all(
+      visibleImages.map(async (img) => {
+        if (!img.complete) {
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+          });
+        }
+
+        if (typeof img.decode === 'function') {
+          try {
+            await img.decode();
+          } catch {
+            // Some images may reject decode after successful paint; we still continue.
+          }
+        }
+      }),
+    );
+
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+}
+
 test.describe('Live Photo Processing', () => {
   test('Photo Processing Workflow', async ({ page, sandboxId }, testInfo) => {
     test.setTimeout(240000);
@@ -229,6 +269,7 @@ test.describe('Live Photo Processing', () => {
       ];
 
       docHelper.addStep(`${label} In Progress`, progressScreenshot, progressChecks);
+      await waitForVisibleImagesToRender(page);
       await screenshots.capture(page, progressScreenshot.replace(/^\d{3}-/, '').replace(/\.png$/, ''), {
         fullPage: true,
         programmaticCheck: async () => {
@@ -291,6 +332,7 @@ test.describe('Live Photo Processing', () => {
       ];
 
       docHelper.addStep(`${label} Completed`, completeScreenshot, completeChecks);
+      await waitForVisibleImagesToRender(page);
       await screenshots.capture(page, completeScreenshot.replace(/^\d{3}-/, '').replace(/\.png$/, ''), {
         fullPage: true,
         programmaticCheck: async () => {
@@ -331,6 +373,7 @@ test.describe('Live Photo Processing', () => {
     ];
 
     docHelper.addStep('Processed Photo History', '007-processed-history.png', finalChecks);
+    await waitForVisibleImagesToRender(page);
     await screenshots.capture(page, 'processed-history', {
       fullPage: true,
       programmaticCheck: async () => {
