@@ -30,13 +30,23 @@ echo ""
 # Check if emulators are running
 check_emulators() {
   echo "📡 Checking if Firebase emulators are running..."
+  local ok=0
+
   if curl -s "http://${FIRESTORE_HOST}:${FIRESTORE_PORT}" > /dev/null 2>&1; then
     echo "✓ Firestore emulator is running on port ${FIRESTORE_PORT}"
-    return 0
   else
     echo "✗ Firestore emulator is not running on port ${FIRESTORE_PORT}"
-    return 1
+    ok=1
   fi
+
+  if curl -s "http://localhost:${AUTH_PORT}" > /dev/null 2>&1; then
+    echo "✓ Auth emulator is responding on port ${AUTH_PORT}"
+  else
+    echo "✗ Auth emulator is not responding on port ${AUTH_PORT}"
+    ok=1
+  fi
+
+  return $ok
 }
 
 # Start emulators if not running
