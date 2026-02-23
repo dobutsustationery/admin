@@ -1,64 +1,337 @@
 # Image Handling Design
 
-## 1. Introduction
+## Purpose
 
-The current approach to image handling in the application suffers from several significant issues:
-*   **Performance Bottlenecks:** We are frequently loading full-size images (using `=s0` or raw URLs) across all views. This consumes massive amounts of bandwidth, slows down page rendering, and frequently bogs down the browser or causes out-of-memory (OOM) errors.
-*   **Inefficient Data Transfers:** When promoting an image from Google Photos to Google Drive, the client browser downloads the full image blob from Photos and then uploads it back to Google Drive. This wastes client bandwidth and is fragile on slower connections.
-*   **State Bloat:** There is a risk of image data (Base64 strings or raw Blobs) ending up in our broadcast actions or Redux state, which violates our event sourcing architecture and cripples the broadcast log.
+This document defines how image data is fetched, rendered, stored, and promoted across the application.
 
-This document outlines the new architectural standards for image handling to resolve these issues, focusing on performance, robust state management, and efficient cloud-to-cloud transfers.
+Goals:
+- reduce bandwidth and memory pressure
+- eliminate image-related UI flake and browser OOM behavior
+- keep Redux/broadcast state durable and small
+- support reliable Google Photos -> Google Drive promotion
 
-## 2. Core Principles
+## Scope
 
-1.  **Single Choke Point (`SecureImage`):** Absolutely all image rendering in the application MUST go through the `SecureImage` component. Direct use of `<img>` tags for dynamic user content is prohibited. This ensures a single place to enforce authentication, sizing policies, and loading strategies.
-2.  **References Only, Never Blobs:** Redux state and Broadcast Actions must NEVER contain image Blobs, `data:` URIs, or Base64 encoded strings. They must only contain stable URLs (e.g., Google Drive `lh3.googleusercontent.com` public URLs) or IDs. 
-3.  **Cloud-to-Cloud Transfers:** Transferring images between Google services (e.g., Photos to Drive) must happen backend-to-backend whenever possible, bypassing the client completely.
+In scope:
+- dynamic user/content images rendered in the app
+- Google Photos and Google Drive image URLs
+- client image rendering policy (`SecureImage`)
+- persistence rules for image references
+- background transfer architecture for cloud-to-cloud promotion
 
-## 3. Dynamic Quality & Progressive Loading (`SecureImage`)
+Out of scope:
+- static app assets (icons, logos, bundled illustrations)
+- image editing UX details (crop UI, filters UI)
+- CDN strategy for non-Google image hosts
 
-To dramatically speed up loading without compromising the user experience when high quality is expected, `SecureImage` will act as a smart proxy for image URLs.
+## Architectural Rules
 
-### URL Sizing Parameters
-Google Drive and Google Photos image URLs (typically `lh3.googleusercontent.com/...`) support powerful sizing parameters appended to the URL path (e.g., `=s200`, `=w400-h400-c`, `=s0`). 
+### 1. Single Rendering Path for Dynamic Images
 
-Currently, our state often hardcodes `=s0` (original size) on the URLs. `SecureImage` will strip any existing sizing parameters and apply context-appropriate ones dynamically based on a new `size` prop.
+All dynamic content images must render through `SecureImage` (directly or via wrappers such as `ImageThumbnail`).
 
-### The `size` Prop
-`SecureImage` will accept a `size` prop with standard values:
-*   `thumbnail` (e.g., `=s200-c`): Used in grids, tables, and lists. Dramatically reduces payload size.
-*   `preview` (e.g., `=s800`): Used for standard display sizes, sidebars, or split views.
-*   `full` (e.g., `=s0`): Used for zoomed views, full-screen overlays, and anywhere the user explicitly expects to see the maximum detail.
+Allowed exception:
+- static bundled assets used by the app shell may use normal `<img>`
 
-### Progressive Enhancement (Blur-Up / Low-to-High)
-When `size="full"` is requested, `SecureImage` should implement a progressive loading strategy:
-1.  Immediately load the `thumbnail` (or `preview`) size. Because these are used elsewhere in the app, they are likely already in the browser cache and will render instantly.
-2.  In the background, request the `full` size image.
-3.  Once the `full` size image is fully downloaded, seamlessly swap it in. 
+This keeps auth handling, retry behavior, URL normalization, and sizing policy centralized.
 
-This guarantees the user never sees a broken or slowly painting image when they open a modal, while still eventually providing the full-quality preview they expect.
+### 2. Persistent State Stores References Only
 
-## 4. State and Action Persistence (Strict Ban on Blobs)
+Persistent stores must contain only image references, never image bytes.
 
-*   **Broadcast Actions:** Actions dispatched to the `broadcast` middleware are permanent. Storing a 5MB Base64 string in a single action will bloat the Firestore document and the local database. Any action containing `data:image/...` or Blob references will be rejected.
-*   **Temporary Client State (Cropping/Editing):** If the user performs a local action like manual cropping that generates a Blob, that Blob can exist in ephemeral component state. However, before that edit can be "saved" or broadcast, the client MUST upload the Blob to a durable storage location (Google Drive) and dispatch the resulting public URL.
+Disallowed in Redux state, broadcast actions, Firestore sync/broadcast docs:
+- `Blob`
+- `File`
+- `ArrayBuffer`
+- Base64 image payloads
+- `data:` URIs
+- transient object URLs (`blob:`)
 
-## 5. Server-to-Server Image Transfers (Event-Driven via Sync Queue)
+Allowed:
+- stable URLs (prefer durable Drive URLs)
+- source IDs (Google Photos media item id, Drive file id)
+- metadata (dimensions, mime type, filename)
 
-Currently, `uploadImageToDrive` in `src/lib/google-drive.ts` handles Photos-to-Drive promotion by fetching the image into a client-side Blob and then issuing a PUT request to Drive. This is extremely inefficient for bulk operations and prone to failures.
+Ephemeral component-local state may temporarily hold a `Blob` during editing, but it must be uploaded before persistence.
 
-**New Architecture: Event-Driven Transfer via `sync` Queue**
-Instead of the client acting as a middleman or calling a synchronous HTTP endpoint, we will leverage our existing robust background job architecture. 
+### 3. Durable URLs Only in Business State
 
-*Implementation Note:* We will rename the existing `shopify_sync` Firestore collection and its corresponding Cloud Function trigger to simply `sync`. This refactoring broadens the path for general reuse. To keep the sync log readable and allow the Cloud Function to easily route tasks, all events in this collection will use namespaced `eventType`s (e.g., `shopify/sync_requested`, `photos/image_transfer_requested`).
+Expiring or session-bound URLs must not be persisted as canonical image references.
 
-1.  **Client Intent:** To initiate a transfer, the client writes a new document to the `sync` collection with a specific event type (e.g., `eventType: "photos/image_transfer_requested"`). This document contains the source Google Photos URL/ID, target context, and a unique `requestId`.
-2.  **In-Flight State Tracking:** Because the request is recorded in the `sync` collection (and synced to local state via Redux, similarly to Shopify sync statuses), the client knows the transfer is "in-flight". If the user reloads the page, the client recovers this state and avoids duplicate transfer requests.
-3.  **Backend Processing:** The existing Cloud Function trigger (listening on `sync/{requestId}`) picks up the document. It splits the `eventType` on `/` to dispatch to the correct domain logic. For `photos/image_transfer_requested`, it delegates to a specialized worker. The worker streams the image directly from Google Photos and pipes it into the Google Drive upload API within Google's network, consuming zero client bandwidth.
-4.  **Backend Status Actions:** As the worker processes the transfer, it appends response event documents back into the `sync` collection with the same `requestId`:
-    *   `photos/image_transfer_started`: (Optional) Indicates the worker picked it up.
-    *   `photos/image_transfer_completed`: Contains the newly created stable Google Drive public URL.
-    *   `photos/image_transfer_failed`: Contains error details, allowing the client to show a failure state and offer a retry.
-5.  **Client Resolution:** The client listens to the `sync` collection. When it receives the `photos/image_transfer_completed` event, it dispatches a "Green" action to the main `broadcast` log (e.g., `update_variant_image`) to permanently update the application state with the new, stable Drive URL, and clears its local loading indicator.
+Examples of URLs that are often transient and should not be treated as durable:
+- some Google Photos / `googleusercontent.com` picker URLs
+- signed thumbnail URLs
+- session-specific redirects
 
-This approach guarantees state consistency across reloads, eliminates OOM crashes, and allows us to test and perfect the cloud functions logic independently (e.g., via CLI scripts) before relying on it live in the browser, exactly mirroring the proven backend sync workflow.
+Canonical stored references should be:
+- durable Google Drive URLs (or Drive file IDs that can be resolved deterministically)
+- stable non-Google external URLs when ownership/longevity is acceptable
+
+### 4. Client Is Not the Long-Term Transfer Engine
+
+Client-side Photos -> Drive transfer is acceptable only as a temporary compatibility path.
+
+Target state:
+- cloud-to-cloud transfer handled by backend workers
+- client submits intent and tracks status
+- client updates business state only after completion event
+
+## Rendering Policy (`SecureImage`)
+
+`SecureImage` is the policy enforcement point for dynamic images.
+
+### Responsibilities
+
+- normalize source URL shape
+- choose an appropriate display size
+- fetch with auth where required
+- apply retry logic for flaky sources
+- avoid persisting transient fetch artifacts (`blob:` URLs are view-only)
+- expose consistent loading/error states
+
+### URL Normalization
+
+For Google-hosted images, `SecureImage` should normalize sizing parameters instead of trusting whatever size is currently embedded in state.
+
+Policy:
+- strip existing size suffixes where safe
+- apply context-driven size suffixes
+- preserve original ID/path
+
+This prevents state from hardcoding `=s0` everywhere.
+
+### Size Presets
+
+`SecureImage` should support a small set of semantic sizes:
+- `thumbnail`: grids, tables, chips, queues
+- `preview`: detail panes, standard modals
+- `full`: explicit zoom/fullscreen/high-detail views
+
+Implementation detail:
+- actual suffixes (`=s200`, `=s800`, `=s0`, etc.) are configuration, not business logic
+- callers specify intent (`thumbnail`/`preview`/`full`), not transport parameters
+
+### Progressive Loading for High-Detail Views
+
+When `full` is requested:
+1. render `thumbnail` or `preview` first
+2. request `full` in background
+3. swap only after decode completes
+
+Requirements:
+- no visible broken-image flash
+- no layout shift during swap
+- keep previous image visible until replacement is paint-ready
+
+## Persistence and Validation Rules
+
+### Broadcast / Sync Event Constraints
+
+Image bytes in events are prohibited because they:
+- bloat Firestore documents
+- slow replay and synchronization
+- break event-log durability expectations
+
+Enforcement should exist in code, not only in convention.
+
+Recommended safeguards:
+- action validators in reducers/middleware rejecting `data:` and `blob:` URLs
+- schema validation on backend write paths for sync events
+- tests covering rejection of invalid payloads
+
+### Editable Client Flows (Crop / Manual Edits)
+
+For local edits that produce a `Blob`:
+1. keep blob in component-local state only
+2. upload to durable storage
+3. receive durable reference (URL or ID)
+4. dispatch broadcast action with durable reference only
+
+If upload fails:
+- keep unsaved local preview ephemeral
+- do not emit a persistent action
+
+## Photos -> Drive Promotion Architecture
+
+### Summary
+
+Promotion should be event-driven via the existing background sync queue pattern, not a synchronous client-mediated blob transfer.
+
+The client records intent; backend performs transfer; client consumes completion/failure events.
+
+### Why
+
+This avoids:
+- client bandwidth waste (download then re-upload)
+- browser memory spikes on large images
+- fragile long-running requests in the UI
+- duplicate transfers after reload
+
+### Event-Driven Flow
+
+0. Sync collection unification (platform prerequisite)
+- migrate from `shopify_sync` to a general-purpose `sync` collection
+- use namespaced event types (for example `shopify/...`, `photos/...`)
+- keep a single Cloud Function trigger on `sync/{docId}`
+- route to domain-specific handlers based on the event type prefix
+
+1. Client writes transfer intent to `sync`
+- event type: `photos/image_transfer_requested`
+- payload includes source reference, target context, and `requestId`
+
+2. Client tracks in-flight status from `sync`
+- status survives reloads
+- duplicate requests can be deduplicated by `requestId` or source+target key
+
+3. Backend worker handles transfer
+- triggered from `sync/{docId}`
+- routes by namespaced `eventType`
+- streams source bytes to Drive without involving browser memory
+
+4. Backend emits status events
+- `photos/image_transfer_started` (optional)
+- `photos/image_transfer_completed`
+- `photos/image_transfer_failed`
+
+5. Client resolves state
+- on completion, dispatch canonical broadcast action with durable Drive reference
+- clear local loading state
+- on failure, show retryable UI
+
+### Event Payload Requirements
+
+Request event should include:
+- `requestId`
+- `sourceType` (`google_photos`, `url`, etc.)
+- `sourceRef` (media item ID and/or URL)
+- target entity reference (listing/photo queue item/etc.)
+- requesting user identity
+- idempotency key
+- created timestamp
+
+Completion event should include:
+- `requestId`
+- resulting durable reference (Drive file ID and canonical URL)
+- optional metadata (width, height, mime type)
+- completed timestamp
+
+Failure event should include:
+- `requestId`
+- error code (machine-readable)
+- error message (user-safe)
+- retryable flag
+- failed timestamp
+
+### Sync Collection Unification (`shopify_sync` -> `sync`)
+
+The application should converge on one sync/event-work queue collection for backend jobs.
+
+Target collection:
+- `sync`
+
+Migration intent:
+- replace `shopify_sync` with `sync`
+- preserve Shopify workflows by renaming their event types to namespaced forms
+- add Photos transfer events into the same queue model
+
+Event type naming convention:
+- `shopify/<event>`
+- `photos/<event>`
+- future domains follow the same pattern (`<domain>/<event>`)
+
+Cloud Function design:
+- one trigger on `sync/{docId}`
+- lightweight dispatcher parses `eventType`
+- domain handlers live in separate modules (Shopify, Photos, etc.)
+- shared concerns (logging, retries, idempotency, status writes) stay in common sync infrastructure
+
+Benefits:
+- one operational queue to monitor
+- consistent retry/idempotency semantics across domains
+- simpler client-side subscription model for in-flight status
+- cleaner backend implementation than parallel ad hoc triggers per feature
+
+Migration requirements:
+- dual-read or migration path for any UI/state currently reading `shopify_sync`
+- compatibility mapping for legacy Shopify event names during transition
+- backfill/archival decision for historical `shopify_sync` documents documented before cutover
+
+## Backend Prerequisites and Constraints
+
+Cloud-to-cloud transfer is the target design, but implementation depends on auth and source URL semantics.
+
+Requirements before rollout:
+- backend can authenticate to Google Photos source on behalf of user (or receives a valid scoped token safely)
+- backend can upload to target Drive location with correct permissions
+- token handling avoids storing long-lived sensitive tokens in broadcast/sync logs
+
+Important constraint:
+- not every Google-hosted URL is fetchable server-side without the right token and scopes
+- URL shape alone is not sufficient; source identity and auth context matter
+
+Recommended approach:
+- prefer transferring by source media item ID when available
+- resolve/fetch in backend with explicit OAuth credentials
+- treat direct URL fallback as compatibility behavior, not the canonical path
+
+## Rollout Plan
+
+### Phase 1: Policy Enforcement (Client)
+
+- route dynamic image rendering through `SecureImage`
+- add semantic size presets
+- stop persisting transient/expiring image URLs as canonical references
+- add tests for state/action payload validation
+
+### Phase 2: Rendering Efficiency
+
+- normalize Google sizing params in `SecureImage`
+- enable progressive loading for `full` views
+- measure image payload reduction in common screens
+
+### Phase 3: Sync-Queue Transfers (Backend)
+
+- unify backend queue on `sync` (migrate/compat-wrap `shopify_sync`)
+- implement namespaced event dispatcher in Cloud Function trigger
+- implement `photos/image_transfer_requested` worker
+- emit started/completed/failed events
+- update client flow to consume status events and finalize broadcast updates
+
+### Phase 4: Remove Client Blob Promotion Path
+
+- gate old client-mediated transfer behind fallback flag
+- monitor failures and retry rates
+- remove fallback after backend path is proven reliable
+
+## Acceptance Criteria
+
+The design is considered implemented when all of the following are true:
+
+- dynamic images render via `SecureImage` (or a wrapper that uses it)
+- no broadcast/sync event persists image bytes or `data:`/`blob:` URLs
+- thumbnail/list views do not request original-size (`=s0`) images by default
+- full-detail views progressively upgrade image quality without broken-image flash
+- Photos -> Drive promotion survives page reload and resumes from sync status
+- business state stores durable image references only
+
+## Testing Strategy
+
+### Unit Tests
+
+- URL normalization for Google size suffixes
+- payload validators reject image bytes / `data:` / `blob:`
+- reducers preserve durable references and reject transient ones
+
+### Integration / E2E Tests
+
+- thumbnails render successfully after image promotion
+- no upload-failure overlays in stable mocked flows
+- screenshot captures wait for image decode/render-ready state
+- transfer completion updates canonical state with durable URL/ID
+
+### Operational Monitoring
+
+- transfer success/failure rates by event type
+- median transfer duration
+- retry rate and duplicate request rate
+- client memory usage regressions on image-heavy flows
