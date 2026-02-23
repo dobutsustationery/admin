@@ -1,16 +1,22 @@
 # TESTS_REMEDIATION
 
-## Testing Summary (2026-02-22)
+## Testing Summary (2026-02-23)
 
 This is the current testing surface and status on the active branch.
 
 ### Enforcement gates (current)
 
 1. Commit gate (`.husky/pre-commit`): `npm run ci`, `npm run check`, `bun run test` (fallback `npm run test`)
-2. Push gate (`.husky/pre-push`): `npm run test:e2e`, `npm run test:live:doctor`, `npm run test:live:contracts`, `npm run test:live:workflows`, `npm run test:live:e2e`
+2. Push gate (`.husky/pre-push`): `npm run test:live:doctor`, `npm run test:live:contracts`, `npm run test:live:workflows`, `npm run test:live:e2e`, `npm run test:e2e`
 
 This keeps local commit latency reasonable while still enforcing non-live E2E and live test suites before push.
+Live suites intentionally run first as a temporary workaround so known live flake(s) fail faster and do not waste time running the full non-live E2E suite first.
 The push gate runs on isolated ports (`+10000` offset from normal local defaults) so it does not attach to or interfere with a developer's active dev server/emulators.
+The pre-push hook now hardens emulator startup by:
+- using isolated emulator ports via `firebase.prepush.json`
+- auto-killing stray Java emulator listeners on those isolated ports
+- failing fast if the emulator process exits before readiness
+- checking both Firestore and Auth emulator readiness (not Firestore only)
 
 ### Default required / expected-green local suites
 
@@ -22,6 +28,8 @@ The push gate runs on isolated ports (`+10000` offset from normal local defaults
 - Now excludes `e2e/live/**` and `e2e/experiments/**` by default.
 - Current non-live Playwright surface is **19 tests in 19 files**.
 - `playwright.nonlive.config.ts` forces a fresh `vite preview` server (`reuseExistingServer: false`) to avoid stale-preview blank-page failures.
+- Local image URL rewriting now uses **relative `/test-images/...` paths** (not absolute `http://localhost:PORT/...`) so screenshots are stable across normal local runs (`4173`) and isolated pre-push runs (`14173`).
+- `download-test-images.js` now merges and sorts `e2e/test-images/url-mapping.json` deterministically and avoids rewriting the file when unchanged (reduces churn).
 
 ### Push-gated / environment-dependent suites
 
@@ -29,6 +37,8 @@ The push gate runs on isolated ports (`+10000` offset from normal local defaults
 2. `npm run test:live:contracts`: **Expected PASS with valid live env/tokens**
 3. `npm run test:live:workflows`: **Expected PASS with valid live env/tokens**
 4. `npm run test:live:e2e`: **PASS observed**, but remains external-service dependent and somewhat flaky; now enforced at push time (not commit time)
+- Known current flaky area: `e2e/live/001-photo-processing` (historically around `006-remove-bg-completed` thumbnail render timing)
+- Mitigation in place: visible image decode + render-frame stabilization before live photo-processing screenshots
 
 ### Intentionally not in default `npm run test:e2e`
 
@@ -38,10 +48,15 @@ The push gate runs on isolated ports (`+10000` offset from normal local defaults
 ### Are any tests that should be passing currently not passing?
 
 No known failures in the expected-green local suites (`check`, `lint`, `test`, `test:e2e`) after the current E2E remediations and snapshot refreshes.
+Recent push succeeded after:
+- regenerating affected non-live snapshots (`002`, `090`, plus prior `015` refresh/stabilization work)
+- fixing pre-push emulator startup/port conflicts
+- removing port-sensitive local-image URL text from snapshots by switching rewritten URLs to relative paths
 
 Remaining caveats:
 - Live suites still depend on secrets/tokens and external services.
 - Pushes now require live env/tokens to be configured locally because live suites are part of `.husky/pre-push`.
+- Live `001` remains mildly flaky even after render/decode stabilization; push ordering currently optimizes for fast failure rather than eliminating that flake.
 - `test:e2e:ui`, `test:e2e:headed`, and `test:e2e:report` are tooling/runner convenience commands rather than pass/fail gate suites.
 
 ## Purpose
@@ -133,6 +148,35 @@ Current non-live E2E status on `listing-creation`:
 3. Harness hardening applied
 - `playwright.nonlive.config.ts` now sets `webServer.reuseExistingServer = false`
 - This fixed intermittent blank-page failures caused by stale reused `vite preview` servers in local runs
+
+## Status Update (2026-02-23)
+
+Push-gate reliability was improved and port-specific snapshot failures were remediated.
+
+1. `.husky/pre-push`: **hardened**
+- Runs on isolated ports and now starts/keeps emulator stack reliably for push-time suites.
+- Detects and kills stray Java listeners on isolated emulator ports (`18080`, `19099`) before startup.
+- Fails fast when emulator startup exits early instead of waiting the full readiness timeout.
+- Current push ordering is **live-first, non-live E2E last** to reduce retry cost while live `001` flake remains open.
+
+2. `e2e/run-tests.sh`: **hardened**
+- Emulator readiness now checks **both Firestore and Auth**.
+- Detects partial-emulator state (e.g., Firestore up / Auth down), kills stale Java listeners on configured ports, and fails fast if startup exits.
+
+3. Local image URL rewrite: **port-independent**
+- `e2e/helpers/load-test-data.js` and `e2e/helpers/load-test-data-with-local-images.js` now rewrite to relative `/test-images/...` paths.
+- This removes screenshot diffs caused purely by `localhost:4173` vs `localhost:14173` appearing in visible UI text.
+
+4. `e2e/test-images/url-mapping.json` churn: **reduced**
+- `e2e/helpers/download-test-images.js` now merges against the existing mapping and writes deterministically (sorted keys) only when content changes.
+
+5. Snapshot remediations completed
+- `015-listings-creation` screenshots were regenerated and stabilized for zero-pixel tolerance (no masking) using deterministic fixture data and explicit sync/image/render stabilization.
+- Port-sensitive snapshot baselines were refreshed for affected specs including `002-csv` and `090-audit-log`.
+
+6. Live `001` photo-processing flake: **mitigated, not eliminated**
+- Added visible-image decode + render-frame waits before screenshot capture in `e2e/live/001-photo-processing/001-photo-processing.spec.ts`.
+- Pushes can still fail on live flake; live-first ordering is the current pragmatic mitigation.
 
 ## Test Surface Inventory
 
@@ -248,119 +292,57 @@ Everything from `main`, plus:
 5. **Large formatting debt**
 - Prettier drift makes lint a constant red signal and undermines trust.
 
-## Remediation Plan to 100% Working Tests
+## Revised Next Steps (Current Priority Order)
 
-## Phase 0: Stabilize Baseline (must-do first)
+The branch is materially healthier than the original remediation state. The next plan should prioritize targeted reliability work and push-flow ergonomics over broad framework redesign.
 
-1. Make `npm run check`, `npm run lint`, and `npm run test` green on `main`.
-2. Fix branch loader/config drift so `$lib/*` imports resolve in all Vitest entry points.
-3. Commit a one-time formatting sweep to eliminate Prettier debt.
+### Priority 1: Eliminate remaining live `001` flake
 
-Definition of done:
-- `main` and active branch both pass `check`, `lint`, `test` locally with no manual setup beyond install.
+Target: `e2e/live/001-photo-processing` (`006-remove-bg-completed` and related image-heavy captures)
 
-Progress:
-- Active branch now satisfies this baseline.
-- `main` baseline bring-up is still pending.
-
-## Phase 1: Define Test Tiers (contract)
-
-Create explicit tiers and scripts:
-
-1. `test:fast` (pre-commit safe, <2 min)
-- `check`
-- `lint`
-- deterministic unit/integration only (no live env, no network)
-
-2. `test:smoke` (pre-push safe)
-- selected Playwright smoke specs with stable fixtures/emulators
-
-3. `test:full` (CI required)
-- full Playwright suite
-- optional live suite behind explicit opt-in and secrets
+1. Capture and categorize the remaining diff location(s) for `006-remove-bg-completed` across multiple failures.
+2. Add a stricter screenshot readiness helper for live image-heavy pages:
+- visible images loaded
+- `decode()` completed
+- 2+ paint frames
+- no pending operation UI indicators
+- optional DOM-layout stability poll (same thumbnail dimensions/positions across consecutive frames)
+3. Re-run `test:live:e2e` multiple times to confirm the fix before changing policy.
 
 Definition of done:
-- Every test file belongs to exactly one primary tier.
+- `e2e/live/001-photo-processing` passes repeated local runs without snapshot drift.
 
-## Phase 2: Determinism and Config Hardening
+### Priority 2: Make push-gate behavior explicit and maintainable
 
-1. Standardize Vitest alias resolution in a single shared config.
-2. Ensure Playwright webServer lifecycle is deterministic (no missing built-node module race).
-3. Split live tests by filename/tag and exclude by default from `test` and `test:fast`.
-4. Make snapshot/image-based tests deterministic (fixed viewport, fonts, seed data, retries policy).
-5. For live E2E, prefer deterministic fixture IDs (Drive file IDs) over human filenames when the runtime source is Drive.
+1. Document the current push behavior (live-first ordering, isolated ports, auto-kill of stray Java emulators) in a runbook section.
+2. Add a short pre-push summary line to print which stage failed (`live doctor`, `live contracts`, `live workflows`, `live e2e`, `non-live e2e`) for faster triage.
+3. Consider an env toggle to bypass live suites for emergency pushes (only if team policy allows; default should remain enforced).
 
 Definition of done:
-- Re-running the same command without code changes yields same pass/fail result.
+- Push failures are immediately attributable to a specific stage with minimal log scrolling.
 
-## Phase 3: Enforcement via Hooks
+### Priority 3: Finish local image fixture hygiene
 
-1. Pre-commit (`.husky/pre-commit`)
-- Run `test:fast` only.
-- Fail commit on any red result.
-
-2. Pre-push (`.husky/pre-push`)
-- Run `test:smoke`.
-- Block push on red.
-
-3. Optional targeted mode
-- If needed for speed, run impacted test subsets from changed files, but still keep a minimum invariant gate (`check + lint + core unit smoke`).
+1. Confirm `e2e/test-images/url-mapping.json` no longer changes on no-op `npm run test:e2e` runs.
+2. If churn remains, lock down any remaining non-deterministic ordering in image extraction/download scripts.
+3. Add a short note in `e2e/LOCAL_IMAGES_SETUP.md` that rewritten test-data image URLs are relative (`/test-images/...`) by design to support isolated-port runs.
 
 Definition of done:
-- Cannot create a commit without fast suite green.
-- Cannot push without smoke suite green.
+- `url-mapping.json` remains unchanged on repeated no-op local E2E runs.
 
-## Phase 4: CI as Source of Truth
+### Priority 4: Reassess test-tier scripting after reliability work
 
-1. Required CI checks on PR:
-- `test:fast`
-- `test:smoke`
-- `test:full` (or matrix split)
+The earlier proposal (`test:fast` / `test:smoke` / `test:full`) is still directionally good, but it is not the immediate bottleneck anymore.
+Do this after the live `001` flake is materially reduced.
 
-2. Nightly/scheduled:
-- live contracts/workflows with secrets.
-
-3. Branch protection:
-- disallow merge when required checks are red.
+1. Keep current enforced hooks while reliability is still improving.
+2. Revisit whether push-time live enforcement remains the right tradeoff once flake rate is known.
+3. If needed, split:
+- `test:push:required` (deterministic)
+- `test:live:gate` (explicit, still enforced in CI or optional locally)
 
 Definition of done:
-- Broken branch cannot merge; regressions are caught before integration.
-
-## Phase 5: Operational Discipline
-
-1. Add `docs/testing/TESTING_RUNBOOK.md`:
-- exact local commands,
-- expected env vars,
-- which tiers are required for commit/push/merge.
-
-2. Add ownership:
-- assign owner for each test tier and flaky test triage SLA.
-
-3. Track reliability metrics:
-- pass rate by tier,
-- average runtime,
-- flake retry rate,
-- top failing specs.
-
-Definition of done:
-- Teams can quickly identify and fix red tests, and flaky tests are treated as incidents.
-
-## Immediate Implementation Checklist
-
-1. Create scripts:
-- `test:fast`
-- `test:smoke`
-- `test:full`
-
-2. Update Husky:
-- pre-commit -> `npm run test:fast` (currently equivalent is enforced via `ci + check + test`)
-- pre-push -> `npm run test:smoke`
-
-3. Exclude live tests from default `npm test` unless `LIVE_TESTS=1`.
-
-4. Fix alias/config so Vitest resolves `$lib/*` consistently.
-
-5. Make `main` green first, then rebase/forward-fix active branches.
+- Current push success is repeatable enough for active development, and remaining failures are primarily tracked live-test flake(s) rather than broad harness breakage.
 
 ## Expected End State (100% Working Tests)
 
