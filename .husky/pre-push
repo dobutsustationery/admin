@@ -17,10 +17,19 @@ export E2E_FIREBASE_CONFIG_PATH="firebase.prepush.json"
 export E2E_EMULATOR_LOG_PATH="/tmp/dobutsu-prepush-emulators.log"
 
 PREPUSH_EMULATOR_PID=""
+PREPUSH_EMULATOR_TIMEOUT_SECONDS="${PREPUSH_EMULATOR_TIMEOUT_SECONDS:-20}"
 
 check_prepush_emulators() {
   curl -s "http://${E2E_FIRESTORE_EMULATOR_HOST}:${E2E_FIRESTORE_EMULATOR_PORT}" >/dev/null 2>&1 \
     && curl -s "http://localhost:${E2E_AUTH_EMULATOR_PORT}" >/dev/null 2>&1
+}
+
+print_prepush_port_diagnostics() {
+  if command -v lsof >/dev/null 2>&1; then
+    echo "Port diagnostics:"
+    lsof -nP -iTCP:"${E2E_FIRESTORE_EMULATOR_PORT}" -sTCP:LISTEN || true
+    lsof -nP -iTCP:"${E2E_AUTH_EMULATOR_PORT}" -sTCP:LISTEN || true
+  fi
 }
 
 cleanup_prepush_emulators() {
@@ -36,19 +45,27 @@ if check_prepush_emulators; then
   echo "Pre-push emulators already running on isolated ports."
 else
   echo "Starting pre-push emulator stack..."
+  print_prepush_port_diagnostics
   (npm run env:functions:local && firebase emulators:start --config "${E2E_FIREBASE_CONFIG_PATH}") > "${E2E_EMULATOR_LOG_PATH}" 2>&1 &
   PREPUSH_EMULATOR_PID=$!
   echo "Pre-push emulators started (PID: ${PREPUSH_EMULATOR_PID})"
   echo "Waiting for Firestore/Auth emulators..."
   i=1
-  while [ $i -le 60 ]; do
+  while [ $i -le "${PREPUSH_EMULATOR_TIMEOUT_SECONDS}" ]; do
     if check_prepush_emulators; then
       echo "Pre-push emulators are ready."
       break
     fi
-    if [ $i -eq 60 ]; then
+    if ! kill -0 "${PREPUSH_EMULATOR_PID}" 2>/dev/null; then
+      echo "Pre-push emulator process exited before becoming ready."
+      tail -120 "${E2E_EMULATOR_LOG_PATH}" || true
+      print_prepush_port_diagnostics
+      exit 1
+    fi
+    if [ $i -eq "${PREPUSH_EMULATOR_TIMEOUT_SECONDS}" ]; then
       echo "Pre-push emulators failed to become ready in time."
       tail -120 "${E2E_EMULATOR_LOG_PATH}" || true
+      print_prepush_port_diagnostics
       exit 1
     fi
     i=$((i + 1))
