@@ -5,6 +5,100 @@ import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import { FlowHelper } from "../helpers/flow-helper";
 import * as path from "path";
 
+const MOCK_IMAGE_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <rect width="120" height="120" fill="#e5e7eb"/>
+  <rect x="10" y="10" width="100" height="100" rx="8" fill="#cbd5e1"/>
+  <circle cx="40" cy="44" r="12" fill="#94a3b8"/>
+  <path d="M18 94 L48 62 L66 78 L83 58 L102 94 Z" fill="#64748b"/>
+</svg>
+`.trim();
+
+async function waitForVisiblePhotoThumbnailsReady(page: any, expectedCount: number) {
+  const thumbnails = page.locator('[data-testid^="photo-thumbnail-"]');
+  await expect(thumbnails).toHaveCount(expectedCount);
+
+  await page.waitForFunction(
+    (count) => {
+      const items = Array.from(
+        document.querySelectorAll('[data-testid^="photo-thumbnail-"]'),
+      ) as HTMLElement[];
+
+      if (items.length !== count) return false;
+
+      for (const item of items) {
+        const uploadStatus = item.getAttribute("data-upload-status") || "none";
+        const photoState = item.getAttribute("data-photo-state") || "";
+        if (uploadStatus === "uploading" || uploadStatus === "failed") return false;
+        if (photoState !== "ready") return false;
+
+        const img = item.querySelector("img") as HTMLImageElement | null;
+        if (!img) return false;
+        if (!img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) return false;
+      }
+
+      return true;
+    },
+    expectedCount,
+    { timeout: 10000 },
+  );
+
+  await page.evaluate(async () => {
+    const visibleThumbImgs = Array.from(
+      document.querySelectorAll('[data-testid^="photo-thumbnail-"] img'),
+    ) as HTMLImageElement[];
+
+    await Promise.all(
+      visibleThumbImgs.map(async (img) => {
+        if (!img.complete) {
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+          });
+        }
+        if (typeof img.decode === "function") {
+          try {
+            await img.decode();
+          } catch {
+            // decode() may reject even when the image is displayable; handled by DOM checks above.
+          }
+        }
+      }),
+    );
+
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+  });
+
+  // Avoid hover-ring/focus-edge drift in zero-pixel screenshots.
+  await page.mouse.move(8, 8);
+  await page.evaluate(async () => {
+    let styleEl = document.getElementById("e2e-photo-thumb-stable-style");
+    if (!styleEl) {
+      styleEl = document.createElement("style");
+      styleEl.id = "e2e-photo-thumb-stable-style";
+      styleEl.textContent = `
+        [data-testid^="photo-thumbnail-"] {
+          transition: none !important;
+          pointer-events: none !important;
+        }
+        [data-testid^="photo-thumbnail-"]:hover {
+          box-shadow: var(--tw-shadow) !important;
+          --tw-ring-shadow: 0 0 #0000 !important;
+          --tw-ring-offset-shadow: 0 0 #0000 !important;
+        }
+      `;
+      document.head.appendChild(styleEl);
+    }
+    const active = document.activeElement as HTMLElement | null;
+    if (active && typeof active.blur === "function") active.blur();
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+  });
+  await page.waitForTimeout(250);
+}
+
 test.describe('Google Photos Integration', () => {
     
   test('should allow connecting and selecting photos via Picker', async ({ authenticatedPage: page }, testInfo) => {
@@ -53,10 +147,36 @@ test.describe('Google Photos Integration', () => {
     });
 
     await page.route('https://mock.photos/**', async (route: any) => {
+        if (route.request().method() === 'OPTIONS') {
+            await route.fulfill({
+                status: 204,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+                },
+                body: ''
+            });
+            return;
+        }
+
         await route.fulfill({
             status: 200,
-            contentType: 'image/png',
-            body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAwAB/AL+f4QAAAAASUVORK5CYII=', 'base64')
+            contentType: 'image/svg+xml',
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=3600',
+            },
+            body: MOCK_IMAGE_SVG
+        });
+    });
+
+    await page.route('https://lh3.googleusercontent.com/**', async (route: any) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'image/svg+xml',
+            headers: { 'Cache-Control': 'public, max-age=3600' },
+            body: MOCK_IMAGE_SVG
         });
     });
 
@@ -65,6 +185,16 @@ test.describe('Google Photos Integration', () => {
         const req = route.request();
         const url = req.url();
         const method = req.method();
+        const corsHeaders = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        };
+
+        if (method === 'OPTIONS') {
+            await route.fulfill({ status: 204, headers: corsHeaders, body: '' });
+            return;
+        }
 
         if (method === 'GET') {
             // findFolder() queries should return "not found" so app creates folders deterministically
@@ -72,6 +202,7 @@ test.describe('Google Photos Integration', () => {
                 await route.fulfill({
                     status: 200,
                     contentType: 'application/json',
+                    headers: corsHeaders,
                     body: JSON.stringify({ files: [] })
                 });
                 return;
@@ -82,6 +213,7 @@ test.describe('Google Photos Integration', () => {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
+                headers: corsHeaders,
                 body: JSON.stringify({
                     id: fileId,
                     name: 'mock-upload.jpg',
@@ -98,13 +230,14 @@ test.describe('Google Photos Integration', () => {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
+                headers: corsHeaders,
                 body: JSON.stringify({ id: `folder_${Date.now()}` })
             });
             return;
         }
 
         if (method === 'PATCH') {
-            await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+            await route.fulfill({ status: 200, contentType: 'application/json', headers: corsHeaders, body: '{}' });
             return;
         }
 
@@ -112,21 +245,67 @@ test.describe('Google Photos Integration', () => {
     });
 
     await page.route('https://www.googleapis.com/drive/v3/files/**/permissions', async (route: any) => {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+        if (route.request().method() === 'OPTIONS') {
+            await route.fulfill({
+                status: 204,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+                },
+                body: ''
+            });
+            return;
+        }
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: '{}'
+        });
     });
 
     await page.route('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', async (route: any) => {
+        if (route.request().method() === 'OPTIONS') {
+            await route.fulfill({
+                status: 204,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+                },
+                body: ''
+            });
+            return;
+        }
         await route.fulfill({
             status: 200,
-            headers: { location: 'https://mock.upload/session/1' },
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Expose-Headers': 'Location',
+                'Location': 'https://mock.upload/session/1'
+            },
             body: ''
         });
     });
 
     await page.route('https://mock.upload/session/**', async (route: any) => {
+        if (route.request().method() === 'OPTIONS') {
+            await route.fulfill({
+                status: 204,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'PUT, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+                },
+                body: ''
+            });
+            return;
+        }
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
+            headers: { 'Access-Control-Allow-Origin': '*' },
             body: JSON.stringify({ id: `uploaded_${Date.now()}` })
         });
     });
@@ -216,8 +395,7 @@ test.describe('Google Photos Integration', () => {
         {
             description: "Verify Photos",
             check: async () => {
-                const photos = page.locator('[data-testid^="photo-thumbnail-"]');
-                await expect(photos).toHaveCount(2);
+                await waitForVisiblePhotoThumbnailsReady(page, 2);
             }
         }
     ]);
