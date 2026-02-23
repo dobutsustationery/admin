@@ -17,6 +17,52 @@ const LIVE_002_TEST_TIMEOUT_MS = Number(
 const looksLikeDriveFileId = (value: string | null | undefined) =>
   typeof value === "string" && /^[A-Za-z0-9_-]{20,}$/.test(value.trim());
 
+async function waitForVisibleImagesToRender(page: any) {
+  await page.evaluate(async () => {
+    const visibleImages = Array.from(document.querySelectorAll("img")).filter(
+      (img) => {
+        const el = img as HTMLImageElement;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return (
+          el.offsetParent !== null &&
+          style.visibility !== "hidden" &&
+          style.display !== "none" &&
+          rect.width > 0 &&
+          rect.height > 0
+        );
+      },
+    ) as HTMLImageElement[];
+
+    await Promise.all(
+      visibleImages.map(async (img) => {
+        if (!img.complete) {
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+          });
+        }
+
+        if (typeof img.decode === "function") {
+          try {
+            await img.decode();
+          } catch {
+            // decode() can reject even after paint; continue.
+          }
+        }
+      }),
+    );
+
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+  });
+}
+
 async function importSinglePhotoFromDrive(
   page: any,
   preferredId: string | null,
@@ -310,6 +356,7 @@ test.describe("Live Journey", () => {
       fullPage: true,
       programmaticCheck: async () => {
         for (const c of initialChecks) await c.check();
+        await waitForVisibleImagesToRender(page);
       },
     });
 
@@ -374,6 +421,7 @@ test.describe("Live Journey", () => {
       fullPage: true,
       programmaticCheck: async () => {
         for (const c of finalChecks) await c.check();
+        await waitForVisibleImagesToRender(page);
       },
     });
 
