@@ -23,12 +23,36 @@ async function ensureStableThumbnailCaptureStyles(page: Page) {
       const styleEl = document.createElement("style");
       styleEl.id = "e2e-photo-thumb-stable-style";
       styleEl.textContent = `
+      [data-testid="selected-queue"] ~ div button,
+      [data-testid="selected-queue"] button,
+      button {
+        transition: none !important;
+        animation: none !important;
+        box-shadow: none !important;
+        filter: none !important;
+      }
+      button {
+        border-radius: 0 !important;
+      }
       ${selector} {
         transition: none !important;
+        animation: none !important;
+        box-shadow: none !important;
+        filter: none !important;
+        will-change: auto !important;
+        border-radius: 0 !important;
+      }
+      ${selector} * {
+        transition: none !important;
+        animation: none !important;
+        filter: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
       }
       ${selector}:hover {
         --tw-ring-shadow: 0 0 #0000 !important;
         --tw-ring-offset-shadow: 0 0 #0000 !important;
+        box-shadow: none !important;
       }
     `;
       document.head.appendChild(styleEl);
