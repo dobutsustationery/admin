@@ -88,6 +88,7 @@
     "@sveltejs/package": "^2.0.0",
     "@types/canvas-confetti": "^1.9.0",
     "@types/papaparse": "^5.5.1",
+    "@types/three": "^0.180.0",
     "@vitest/coverage-v8": "^0.34.6",
     "firebase-tools": "^14.26.0",
     "husky": "^9.1.7",
@@ -120,7 +121,8 @@
     "firebase-admin": "^12.0.0",
     "googleapis": "^128.0.0",
     "lucide-svelte": "^0.556.0",
-    "papaparse": "^5.5.3"
+    "papaparse": "^5.5.3",
+    "three": "^0.180.0"
   },
   "trustedDependencies": [
     "protobufjs"

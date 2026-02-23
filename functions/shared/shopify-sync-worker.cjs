@@ -233,28 +233,23 @@ async function executeClaimedRequest({
 
   try {
     const locationId = await core.resolveLocationId(shopifyConfig);
-    const product = await core.upsertProductFromRequest(
-      shopifyConfig,
-      requestData,
-    );
-    const publication = await core.ensureProductPublishedToOnlineStore(
-      shopifyConfig,
-      product.id,
-    );
-
     await appendApiEvent(db, creator, {
       requestId,
       requestEventId,
       handle,
       processor,
-      requestType: "product_publication_sync",
-      endpoint: `/admin/api/${apiVersion}/graphql.json`,
+      requestType: "location_resolve",
+      endpoint: `/admin/api/${apiVersion}/locations`,
       success: true,
-      response: publication,
-      context: { requestId, handle, productId: product.id, processor },
+      response: { locationId },
+      context: { requestId, handle, processor },
       options: eventOptions,
     });
 
+    const product = await core.upsertProductFromRequest(
+      shopifyConfig,
+      requestData,
+    );
     await appendApiEvent(db, creator, {
       requestId,
       requestEventId,
@@ -275,6 +270,24 @@ async function executeClaimedRequest({
         locationId,
         processor,
       },
+      options: eventOptions,
+    });
+
+    const publication = await core.ensureProductPublishedToOnlineStore(
+      shopifyConfig,
+      product.id,
+    );
+
+    await appendApiEvent(db, creator, {
+      requestId,
+      requestEventId,
+      handle,
+      processor,
+      requestType: "product_publication_sync",
+      endpoint: `/admin/api/${apiVersion}/graphql.json`,
+      success: true,
+      response: publication,
+      context: { requestId, handle, productId: product.id, processor },
       options: eventOptions,
     });
 

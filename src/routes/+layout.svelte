@@ -3,6 +3,7 @@
   import Navigation from "$lib/components/Navigation.svelte";
   import PhotoUploadManager from "$lib/components/PhotoUploadManager.svelte";
   import LoadingScreen from "$lib/components/LoadingScreen.svelte";
+  import SyncQueueStatusBar from "$lib/components/SyncQueueStatusBar.svelte";
   import Signin from "$lib/Signin.svelte"; // Static import
   import { onAuthStateChanged, signOut } from "firebase/auth";
   import { auth, firestore, googleAuthProvider } from "$lib/firebase"; // Ensure imports are correct based on file context
@@ -31,6 +32,11 @@
     reset_shopify_sync_state,
   } from "$lib/shopify-sync-slice";
   import type { ShopifySyncEvent } from "$lib/shopify-sync-model";
+  import {
+    replace_sync_events,
+    reset_sync_queue_state,
+    type SyncEvent,
+  } from "$lib/sync-queue-slice";
   import {
     SYNC_COLLECTION,
     toShopifySyncListenerEvent,
@@ -165,6 +171,7 @@
         unsubscribeShopifySync = undefined;
       }
       store.dispatch(reset_shopify_sync_state());
+      store.dispatch(reset_sync_queue_state());
     }
   }
 
@@ -272,6 +279,7 @@
             data: eventDoc.data() as Record<string, any>,
           }),
         ) as ShopifySyncEvent[];
+        store.dispatch(replace_sync_events(events as SyncEvent[]));
         store.dispatch(replace_shopify_sync_events(events));
       },
       (error) => {
@@ -328,6 +336,7 @@
     <PhotoUploadManager />
 
     <main class="main-content" class:nav-open={navigationOpen}>
+      <SyncQueueStatusBar syncQueue={$store.syncQueue} />
       <slot />
     </main>
   </div>

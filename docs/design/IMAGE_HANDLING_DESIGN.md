@@ -10,6 +10,29 @@ Goals:
 - keep Redux/broadcast state durable and small
 - support reliable Google Photos -> Google Drive promotion
 
+## Current Status (2026-02-23)
+
+Completed on current branch:
+- `shopify_sync` queue replaced by unified `sync` collection (no legacy fallback path kept)
+- Shopify sync events are namespaced (`shopify/...`)
+- single Cloud Function trigger on `sync/{docId}` with dispatcher routing
+- Shopify sync worker writes follow-up events back to `sync` with namespaced event types
+- sync and broadcast event docs now include `creator` and Firestore rules require it on create
+- sync and broadcast rules are append-only (`create` + `read`, no client update/delete)
+- Shopify sync UI/listeners read from `sync`
+- local Shopify sync CLI request/worker scripts target `sync`
+- top-level UI listens to `sync` and shows a persistent sync queue status bar while work is pending
+  - Redux `syncQueue` slice tracks queued/processing/current job summary from `sync` event log
+
+Started (scaffold only):
+- `photos/*` sync dispatcher route and backend stub worker (`photos/image_transfer_requested`)
+- stub emits structured `photos/image_transfer_started` + `photos/image_transfer_failed` events
+
+Not started:
+- client cutover to enqueue photo transfer intents into `sync`
+- backend Photos -> Drive transfer implementation
+- `SecureImage` rollout and image persistence validation enforcement
+
 ## Scope
 
 In scope:
@@ -229,10 +252,10 @@ The application should converge on one sync/event-work queue collection for back
 Target collection:
 - `sync`
 
-Migration intent:
-- replace `shopify_sync` with `sync`
-- preserve Shopify workflows by renaming their event types to namespaced forms
-- add Photos transfer events into the same queue model
+Implementation status:
+- completed on this branch as a direct cutover (new `shopify_sync` code was removed instead of supported via fallback)
+- Shopify workflows preserved with namespaced event types in `sync`
+- Photos transfer events can now be added to the same queue model via dispatcher routes
 
 Event type naming convention:
 - `shopify/<event>`
@@ -251,10 +274,10 @@ Benefits:
 - simpler client-side subscription model for in-flight status
 - cleaner backend implementation than parallel ad hoc triggers per feature
 
-Migration requirements:
-- dual-read or migration path for any UI/state currently reading `shopify_sync`
-- compatibility mapping for legacy Shopify event names during transition
-- backfill/archival decision for historical `shopify_sync` documents documented before cutover
+Operational follow-up requirements:
+- deploy updated Firestore rules for `sync` create/read policy and `creator` enforcement
+- verify production/staging dashboards/ops docs point to `sync` instead of `shopify_sync`
+- decide whether any historical `shopify_sync` documents should be archived/migrated for reporting
 
 ## Backend Prerequisites and Constraints
 
@@ -291,9 +314,9 @@ Recommended approach:
 
 ### Phase 3: Sync-Queue Transfers (Backend)
 
-- unify backend queue on `sync` (migrate/compat-wrap `shopify_sync`)
-- implement namespaced event dispatcher in Cloud Function trigger
-- implement `photos/image_transfer_requested` worker
+- unify backend queue on `sync` (completed)
+- implement namespaced event dispatcher in Cloud Function trigger (completed)
+- implement `photos/image_transfer_requested` worker (scaffold only; actual transfer not implemented)
 - emit started/completed/failed events
 - update client flow to consume status events and finalize broadcast updates
 
@@ -335,3 +358,9 @@ The design is considered implemented when all of the following are true:
 - median transfer duration
 - retry rate and duplicate request rate
 - client memory usage regressions on image-heavy flows
+
+### In-App Monitoring (Implemented)
+
+- global top-of-page sync queue status bar (visible while queue is non-empty)
+- shows current active job, queued count, processing count, recent failures/completions
+- powered by Redux state derived from `sync` event log listener

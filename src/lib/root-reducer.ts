@@ -27,6 +27,7 @@ import {
   update_listing,
 } from "./listings-slice";
 import { shopifySync } from "./shopify-sync-slice";
+import { syncQueue } from "./sync-queue-slice";
 import listingCreation, {
   add_variants_internal,
   add_proposals_internal,
@@ -50,6 +51,7 @@ const reducerObject = {
   shopifyImport,
   listings,
   shopifySync,
+  syncQueue,
   listingCreation,
   ui,
 };
