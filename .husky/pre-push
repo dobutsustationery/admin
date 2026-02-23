@@ -32,6 +32,31 @@ print_prepush_port_diagnostics() {
   fi
 }
 
+kill_stale_prepush_port_processes() {
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+
+  for port in "${E2E_FIRESTORE_EMULATOR_PORT}" "${E2E_AUTH_EMULATOR_PORT}"; do
+    pids="$(lsof -t -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')"
+    [ -z "${pids}" ] && continue
+
+    echo "Found listener(s) on pre-push port ${port}: ${pids}"
+    for pid in ${pids}; do
+      comm="$(ps -p "${pid}" -o comm= 2>/dev/null | tr -d ' ')"
+      if [ "${comm}" = "java" ]; then
+        echo "Killing stray java process ${pid} on port ${port}..."
+        kill "${pid}" 2>/dev/null || true
+      else
+        echo "Leaving non-java process ${pid} (${comm:-unknown}) on port ${port}."
+      fi
+    done
+  done
+
+  # Give killed processes a moment to release sockets.
+  sleep 1
+}
+
 cleanup_prepush_emulators() {
   if [ -n "${PREPUSH_EMULATOR_PID}" ]; then
     echo "Stopping pre-push emulator stack (PID: ${PREPUSH_EMULATOR_PID})..."
@@ -45,6 +70,8 @@ if check_prepush_emulators; then
   echo "Pre-push emulators already running on isolated ports."
 else
   echo "Starting pre-push emulator stack..."
+  print_prepush_port_diagnostics
+  kill_stale_prepush_port_processes
   print_prepush_port_diagnostics
   (npm run env:functions:local && firebase emulators:start --config "${E2E_FIREBASE_CONFIG_PATH}") > "${E2E_EMULATOR_LOG_PATH}" 2>&1 &
   PREPUSH_EMULATOR_PID=$!
