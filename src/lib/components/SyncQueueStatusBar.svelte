@@ -42,7 +42,10 @@
   function startCelebration() {
     clearCelebrationTimers();
     celebrationHeightPx =
-      measuredBarHeightPx || statusCardEl?.offsetHeight || rootEl?.offsetHeight || 96;
+      measuredBarHeightPx ||
+      statusCardEl?.offsetHeight ||
+      rootEl?.offsetHeight ||
+      96;
     celebrationReason =
       failedRecent > 0
         ? `Queue drained with ${failedRecent} recent failure${failedRecent === 1 ? "" : "s"}`
@@ -75,11 +78,15 @@
     const updateMeasuredHeight = () => {
       measuredBarHeightPx = Math.max(
         92,
-        statusCardEl?.offsetHeight || rootEl?.offsetHeight || measuredBarHeightPx || 0,
+        statusCardEl?.offsetHeight ||
+          rootEl?.offsetHeight ||
+          measuredBarHeightPx ||
+          0,
       );
     };
     const updateLaneRenderWidth = () => {
-      const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+      const viewportWidth =
+        typeof window !== "undefined" ? window.innerWidth : 0;
       laneRenderWidthPx = Math.max(220, viewportWidth - 24);
     };
 
@@ -124,7 +131,9 @@
         active={visible}
         celebrate={celebrationPhase !== "idle"}
         phase={celebrationPhase}
-        lockedRenderWidthPx={celebrationPhase === "idle" ? null : laneRenderWidthPx}
+        lockedRenderWidthPx={celebrationPhase === "idle"
+          ? null
+          : laneRenderWidthPx}
       />
 
       {#if celebrationPhase === "victory"}

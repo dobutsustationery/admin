@@ -171,9 +171,13 @@
 
       const updateSize = () => {
         if (!renderer || !camera || !containerEl) return;
-        const targetWidth = lockedRenderWidthPx || containerEl.clientWidth || 84;
+        const targetWidth =
+          lockedRenderWidthPx || containerEl.clientWidth || 84;
         const widthPx = Math.max(48, Math.floor(targetWidth));
-        const visibleWidthPx = Math.max(48, Math.floor(containerEl.clientWidth || 84));
+        const visibleWidthPx = Math.max(
+          48,
+          Math.floor(containerEl.clientWidth || 84),
+        );
         const heightPx = Math.max(
           40,
           Math.floor(containerEl.clientHeight || 82),
