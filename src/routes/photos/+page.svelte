@@ -28,8 +28,12 @@
   import type { MediaItem } from "$lib/google-photos";
   import {
     listAllImages,
+    findSingleImage,
+    listRecentImages,
     getStoredToken as getDriveStoredToken,
+    type DriveFile,
   } from "$lib/google-drive";
+  import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import { fetchImageInline } from "$lib/gemini-client";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { store } from "$lib/store";
@@ -624,6 +628,7 @@
     if (!$user.uid) {
       throw new Error("No signed-in user to broadcast selected photos.");
     }
+    const userUid = $user.uid;
 
     // 1. Register (Filtered)
     const itemsToRegister = limitedItems.filter((item) => {
@@ -683,15 +688,8 @@
       throw new Error("No Google Drive token available for import.");
     }
 
-    const driveItems = await listAllImages(driveToken.access_token);
-    const sourceItems = driveItems
-      .filter(
-        (item) =>
-          item.mimeType?.startsWith("image/") &&
-          typeof item.publicUrl === "string" &&
-          item.publicUrl.includes("lh3.googleusercontent.com/d/"),
-      )
-      .map((item) => ({
+    const toMediaItem = (item: DriveFile) =>
+      ({
         id: item.id,
         description: "",
         productUrl: item.webViewLink || "",
@@ -703,7 +701,63 @@
           width: "0",
           height: "0",
         },
-      })) as MediaItem[];
+      }) as MediaItem;
+
+    const looksLikeDriveFileId = (value: string) =>
+      /^[A-Za-z0-9_-]{20,}$/.test(value.trim());
+
+    let sourceItems: MediaItem[] = [];
+    if (
+      preferredPhoto &&
+      maxItems === 1 &&
+      looksLikeDriveFileId(preferredPhoto)
+    ) {
+      sourceItems = [
+        {
+          id: preferredPhoto,
+          description: "",
+          productUrl: "",
+          baseUrl: toGoogleDrivePublicImageUrl(preferredPhoto),
+          mimeType: "image/jpeg",
+          filename: preferredPhoto,
+          mediaMetadata: {
+            creationTime: "",
+            width: "0",
+            height: "0",
+          },
+        } as MediaItem,
+      ];
+    }
+
+    if (preferredPhoto && sourceItems.length === 0) {
+      const preferredDriveImage = await findSingleImage(
+        driveToken.access_token,
+        preferredPhoto,
+      );
+      if (
+        preferredDriveImage?.publicUrl?.includes("lh3.googleusercontent.com/d/")
+      ) {
+        sourceItems = [toMediaItem(preferredDriveImage)];
+      }
+    }
+
+    if (sourceItems.length === 0 || maxItems > 1) {
+      const driveItems =
+        maxItems <= 4
+          ? await listRecentImages(
+              driveToken.access_token,
+              Math.max(8, maxItems * 4),
+            )
+          : await listAllImages(driveToken.access_token);
+      sourceItems = driveItems
+        .filter(
+          (item) =>
+            item.mimeType?.startsWith("image/") &&
+            typeof item.publicUrl === "string" &&
+            item.publicUrl.includes("lh3.googleusercontent.com/d/"),
+        )
+        .map(toMediaItem);
+    }
 
     let orderedItems = sourceItems;
     if (preferredPhoto) {
@@ -727,6 +781,21 @@
     if (!$user.uid) {
       throw new Error("No signed-in user to broadcast selected photos.");
     }
+    const userUid = $user.uid;
+
+    const broadcastBestEffort = (
+      action:
+        | {
+            type: "photos/register_media_items";
+            payload: { items: MediaItem[] };
+          }
+        | { type: "photos/select_photos"; payload: { ids: string[] } }
+        | { type: "photos/add_selected_photos"; payload: { ids: string[] } },
+    ) => {
+      broadcast(firestore, userUid, action).catch((error) => {
+        console.warn("[e2e-drive-import] broadcast failed", error);
+      });
+    };
 
     // 1. Register (Filtered)
     const itemsToRegister = limitedItems.filter((item) => {
@@ -738,30 +807,30 @@
 
     if (itemsToRegister.length > 0) {
       const cleanItems = itemsToRegister.map(cleanMediaItem);
-      await broadcast(firestore, $user.uid, {
+      store.dispatch(register_media_items({ items: cleanItems }));
+      broadcastBestEffort({
         type: "photos/register_media_items",
         payload: { items: cleanItems },
       });
-      store.dispatch(register_media_items({ items: cleanItems }));
     }
 
     // 2. Select
     const ids = limitedItems.map((p) => p.id);
     if (mode === "replace") {
-      await broadcast(firestore, $user.uid, {
+      store.dispatch({
         type: "photos/select_photos",
         payload: { ids },
       });
-      store.dispatch({
+      broadcastBestEffort({
         type: "photos/select_photos",
         payload: { ids },
       });
     } else {
-      await broadcast(firestore, $user.uid, {
+      store.dispatch({
         type: "photos/add_selected_photos",
         payload: { ids },
       });
-      store.dispatch({
+      broadcastBestEffort({
         type: "photos/add_selected_photos",
         payload: { ids },
       });

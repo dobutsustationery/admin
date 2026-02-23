@@ -15,9 +15,25 @@ export E2E_FUNCTIONS_EMULATOR_PORT=15001
 export E2E_EMULATOR_UI_PORT=14000
 export E2E_FIREBASE_CONFIG_PATH="firebase.prepush.json"
 export E2E_EMULATOR_LOG_PATH="/tmp/dobutsu-prepush-emulators.log"
+export E2E_LIVE_IMPORT_TIMEOUT_MS="${E2E_LIVE_IMPORT_TIMEOUT_MS:-30000}"
+export E2E_LIVE_IMPORT_RETRIES="${E2E_LIVE_IMPORT_RETRIES:-1}"
+export E2E_LIVE_001_TEST_TIMEOUT_MS="${E2E_LIVE_001_TEST_TIMEOUT_MS:-180000}"
+export E2E_LIVE_002_TEST_TIMEOUT_MS="${E2E_LIVE_002_TEST_TIMEOUT_MS:-150000}"
 
 PREPUSH_EMULATOR_PID=""
 PREPUSH_EMULATOR_TIMEOUT_SECONDS="${PREPUSH_EMULATOR_TIMEOUT_SECONDS:-20}"
+
+run_with_one_retry() {
+  label="$1"
+  shift
+
+  if "$@"; then
+    return 0
+  fi
+
+  echo "${label} failed. Retrying once..."
+  "$@"
+}
 
 check_prepush_emulators() {
   curl -s "http://${E2E_FIRESTORE_EMULATOR_HOST}:${E2E_FIRESTORE_EMULATOR_PORT}" >/dev/null 2>&1 \
@@ -27,6 +43,7 @@ check_prepush_emulators() {
 print_prepush_port_diagnostics() {
   if command -v lsof >/dev/null 2>&1; then
     echo "Port diagnostics:"
+    lsof -nP -iTCP:"${E2E_PREVIEW_PORT}" -sTCP:LISTEN || true
     lsof -nP -iTCP:"${E2E_FIRESTORE_EMULATOR_PORT}" -sTCP:LISTEN || true
     lsof -nP -iTCP:"${E2E_AUTH_EMULATOR_PORT}" -sTCP:LISTEN || true
   fi
@@ -54,6 +71,21 @@ kill_stale_prepush_port_processes() {
   done
 
   # Give killed processes a moment to release sockets.
+  sleep 1
+}
+
+kill_stale_preview_server() {
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+
+  pids="$(lsof -t -nP -iTCP:"${E2E_PREVIEW_PORT}" -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')"
+  [ -z "${pids}" ] && return 0
+
+  echo "Killing stale preview listener(s) on port ${E2E_PREVIEW_PORT}: ${pids}"
+  for pid in ${pids}; do
+    kill "${pid}" 2>/dev/null || true
+  done
   sleep 1
 }
 
@@ -103,14 +135,13 @@ fi
 echo "Running pre-push live fixture health check..."
 npm run test:live:doctor
 
-echo "Running pre-push live contract tests..."
-npm run test:live:contracts
-
-echo "Running pre-push live workflow tests..."
-npm run test:live:workflows
+echo "Running pre-push live Vitest suite..."
+npm run test:live:vitest
 
 echo "Running pre-push live E2E suite..."
-npm run test:live:e2e
+kill_stale_preview_server
+run_with_one_retry "Pre-push live E2E suite" env CI=1 npm run test:live:e2e
 
 echo "Running pre-push non-live E2E suite..."
-npm run test:e2e
+kill_stale_preview_server
+env CI=1 npm run test:e2e

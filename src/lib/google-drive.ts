@@ -66,6 +66,186 @@ export interface DriveFile {
   apiUrl?: string;
 }
 
+function hydrateDriveFiles(files: DriveFile[]): DriveFile[] {
+  return files.map((f) => {
+    const apiUrl = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
+    return {
+      ...f,
+      publicUrl: toGoogleDrivePublicImageUrl(apiUrl),
+      apiUrl,
+    };
+  });
+}
+
+async function fetchDriveFileById(
+  accessToken: string,
+  fileId: string,
+): Promise<DriveFile | null> {
+  const params = new URLSearchParams({
+    fields:
+      "id,name,mimeType,modifiedTime,size,webViewLink,webContentLink,thumbnailLink",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    if (response.status === 401) {
+      console.error("Google Drive Token Expired (401). Clearing token.");
+      clearToken();
+    }
+    throw new Error(
+      `Failed to fetch Drive file ${fileId}: ${response.statusText}`,
+    );
+  }
+
+  const file = (await response.json()) as DriveFile;
+  return file;
+}
+
+function looksLikeDriveFileId(value: string): boolean {
+  return /^[A-Za-z0-9_-]{20,}$/.test(value.trim());
+}
+
+function escapeDriveQueryValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+/**
+ * Fast-path lookup for a single image by exact file ID or exact filename.
+ * Used by live E2E imports to avoid broad folder scans.
+ */
+export async function findSingleImage(
+  accessToken: string,
+  preferred: string,
+): Promise<DriveFile | null> {
+  const trimmed = preferred.trim();
+  if (!trimmed) return null;
+
+  if (looksLikeDriveFileId(trimmed)) {
+    const byId = await fetchDriveFileById(accessToken, trimmed);
+    if (byId && byId.mimeType?.startsWith("image/")) {
+      return hydrateDriveFiles([byId])[0];
+    }
+  }
+
+  const params = new URLSearchParams({
+    q: `name = '${escapeDriveQueryValue(trimmed)}' and mimeType contains 'image/' and trashed=false`,
+    fields:
+      "files(id,name,mimeType,modifiedTime,size,webViewLink,webContentLink,thumbnailLink)",
+    orderBy: "modifiedTime desc",
+    pageSize: "5",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      console.error("Google Drive Token Expired (401). Clearing token.");
+      clearToken();
+    }
+    throw new Error(
+      `Failed to search Drive images by name: ${response.statusText}`,
+    );
+  }
+
+  const data = (await response.json()) as { files?: DriveFile[] };
+  const first = (data.files || [])[0];
+  return first ? hydrateDriveFiles([first])[0] : null;
+}
+
+/**
+ * Fast-path fallback for E2E imports: get a small recent set of image files.
+ * This avoids expensive recursive-ish folder scans when the test only needs 1-2 images.
+ */
+export async function listRecentImages(
+  accessToken: string,
+  limit = 10,
+): Promise<DriveFile[]> {
+  if (!FOLDER_ID) {
+    throw new Error("Google Drive folder ID is not configured");
+  }
+
+  const pageSize = String(Math.max(1, Math.min(Math.max(limit * 2, 8), 50)));
+  const listInParent = async (parentId: string): Promise<DriveFile[]> => {
+    const params = new URLSearchParams({
+      q: `'${parentId}' in parents and mimeType contains 'image/' and trashed=false`,
+      fields:
+        "files(id,name,mimeType,modifiedTime,size,webViewLink,webContentLink,thumbnailLink)",
+      orderBy: "modifiedTime desc",
+      pageSize,
+    });
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+    if (!response.ok) {
+      if (response.status === 401) {
+        console.error("Google Drive Token Expired (401). Clearing token.");
+        clearToken();
+      }
+      throw new Error(
+        `Failed to list images in ${parentId}: ${response.statusText}`,
+      );
+    }
+    const data = (await response.json()) as { files?: DriveFile[] };
+    return data.files || [];
+  };
+
+  const [rootImages, imagesId, seedId] = await Promise.all([
+    listInParent(FOLDER_ID),
+    findFolder("Images", FOLDER_ID, accessToken),
+    findFolder("Seed", FOLDER_ID, accessToken),
+  ]);
+
+  const [imagesFolderImages, seedImages] = await Promise.all([
+    imagesId ? listInParent(imagesId) : Promise.resolve([]),
+    seedId ? listInParent(seedId) : Promise.resolve([]),
+  ]);
+
+  let originalsId: string | null = null;
+  let processedId: string | null = null;
+  if (imagesId) {
+    [originalsId, processedId] = await Promise.all([
+      findFolder("Originals", imagesId, accessToken),
+      findFolder("Processed", imagesId, accessToken),
+    ]);
+  }
+
+  const [originalsImages, processedImages] = await Promise.all([
+    originalsId ? listInParent(originalsId) : Promise.resolve([]),
+    processedId ? listInParent(processedId) : Promise.resolve([]),
+  ]);
+
+  const all = [
+    ...rootImages,
+    ...seedImages,
+    ...imagesFolderImages,
+    ...originalsImages,
+    ...processedImages,
+  ]
+    .sort((a, b) => {
+      const tA = new Date(a.modifiedTime || 0).getTime();
+      const tB = new Date(b.modifiedTime || 0).getTime();
+      return tB - tA;
+    })
+    .slice(0, Math.max(1, limit));
+
+  return hydrateDriveFiles(all);
+}
+
 /**
  * Check if Google Drive is configured
  */
@@ -358,23 +538,12 @@ export async function listAllImages(accessToken: string): Promise<DriveFile[]> {
       if (processedId) processedImages = await searchInParent(processedId);
     }
 
-    // Return combined with apiUrl hydrated
-    const hydrate = (files: DriveFile[]) =>
-      files.map((f) => {
-        const apiUrl = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
-        return {
-          ...f,
-          publicUrl: toGoogleDrivePublicImageUrl(apiUrl),
-          apiUrl,
-        };
-      });
-
     return [
-      ...hydrate(rootImages),
-      ...hydrate(seedImages),
-      ...hydrate(imagesFolderImages),
-      ...hydrate(originalsImages),
-      ...hydrate(processedImages),
+      ...hydrateDriveFiles(rootImages),
+      ...hydrateDriveFiles(seedImages),
+      ...hydrateDriveFiles(imagesFolderImages),
+      ...hydrateDriveFiles(originalsImages),
+      ...hydrateDriveFiles(processedImages),
     ];
   } catch (e) {
     console.error("Error listing all images:", e);
