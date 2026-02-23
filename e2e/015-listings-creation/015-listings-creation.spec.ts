@@ -4,14 +4,63 @@ import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import { waitForAppReady } from "../helpers/loading-helper";
 import * as path from "path";
 
+async function waitForSyncIdle(page: any) {
+    try {
+        await expect(page.locator('text=/Sync: [1-9]/')).toBeVisible({ timeout: 2000 });
+    } catch {
+        // Sync may complete before we observe the non-zero state.
+    }
+    await expect(page.locator('text=Sync: 0')).toBeVisible({ timeout: 30000 });
+}
+
+async function waitForMainImagesToRender(page: any) {
+    await page.evaluate(async () => {
+        const main = document.querySelector('main');
+        const imgs = Array.from(main?.querySelectorAll('img') ?? []);
+
+        await Promise.all(
+            imgs.map(async (img) => {
+                if (!img.complete) {
+                    await new Promise<void>((resolve) => {
+                        const done = () => resolve();
+                        img.addEventListener('load', done, { once: true });
+                        img.addEventListener('error', done, { once: true });
+                    });
+                }
+
+                if (typeof img.decode === 'function') {
+                    try {
+                        await img.decode();
+                    } catch {
+                        // Ignore decode failures; the screenshot should reflect the final rendered state.
+                    }
+                }
+            })
+        );
+
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+}
+
+async function stabilizeScreenshotFrame(page: any) {
+    await page.mouse.move(1, 1);
+    await page.evaluate(async () => {
+        const active = document.activeElement as HTMLElement | null;
+        active?.blur?.();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+}
+
 test.describe('Listings Creation Flow', () => {
     test('User can propose, edit variant groups, and approve a listing', async ({ authenticatedPage: page }, testInfo) => {
         test.setTimeout(120000);
         
-        const timestamp = Date.now();
-        const janCode = `TEST${timestamp}`;
-        const item1Id = `item1-${timestamp}`;
-        const item2Id = `item2-${timestamp}`;
+        const janCode = 'TEST015LISTINGS';
+        const item1Id = 'item1-test015-blue';
+        const item2Id = 'item2-test015-red';
+        const mockImageUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Crect width='160' height='160' fill='%23eef2f7'/%3E%3Crect x='12' y='12' width='136' height='136' rx='10' fill='%23dbeafe'/%3E%3Ccircle cx='52' cy='55' r='16' fill='%23fde68a'/%3E%3Cpath d='M22 126l36-34 22 18 28-34 30 50H22z' fill='%233b82f6'/%3E%3C/svg%3E";
 
         // Setup Console Logging & Error Trapping
         page.on('console', msg => {
@@ -32,7 +81,7 @@ test.describe('Listings Creation Flow', () => {
                         mimeType: 'image/jpeg',
                         modifiedTime: '2023-01-01T00:00:00.000Z',
                         webViewLink: 'https://mock.drive/view',
-                        thumbnailLink: 'https://via.placeholder.com/150'
+                        thumbnailLink: mockImageUrl
                     }
                 ]
             };
@@ -166,7 +215,7 @@ test.describe('Listings Creation Flow', () => {
 
 
         // 3. Scan/Generate (triggers generate_proposals)
-        await page.evaluate(({ janCode, item1Id, item2Id }) => {
+        await page.evaluate(({ janCode, item1Id, item2Id, mockImageUrl }) => {
             const { store, actions } = (window as any).testHelpers;
             
             // Clear previous proposals
@@ -203,7 +252,7 @@ test.describe('Listings Creation Flow', () => {
             // Inject Categorized Photo
             const mockPhoto = {
                 id: "mock_file_1",
-                baseUrl: "https://via.placeholder.com/150", 
+                baseUrl: mockImageUrl,
                 filename: `${janCode}_1.jpg`,
                 mimeType: "image/jpeg",
                 productUrl: "https://mock.drive/view",
@@ -213,7 +262,7 @@ test.describe('Listings Creation Flow', () => {
                  type: "photos/categorize_photo",
                  payload: { janCode, photo: mockPhoto }
             });
-        }, { janCode, item1Id, item2Id });
+        }, { janCode, item1Id, item2Id, mockImageUrl });
             
         await page.waitForFunction(() => (window as any).testHelpers);
         
@@ -286,6 +335,9 @@ test.describe('Listings Creation Flow', () => {
             }
        }];
        docHelper.addStep("Batch Editor Variants", "001-variants-start.png", bulkEditVerifications);
+       await waitForSyncIdle(page);
+       await waitForMainImagesToRender(page);
+       await stabilizeScreenshotFrame(page);
        await screenshots.capture(page, "variants-start", {
            programmaticCheck: async () => {
             for (const v of bulkEditVerifications) await v.check();
@@ -306,6 +358,9 @@ test.describe('Listings Creation Flow', () => {
             }
        }];
        docHelper.addStep("Batch Editor Handle Edit", "002-batch-handle-edit.png", handleEditVerifications);
+       await waitForSyncIdle(page);
+       await waitForMainImagesToRender(page);
+       await stabilizeScreenshotFrame(page);
        await screenshots.capture(page, "batch-handle-edit", {
            programmaticCheck: async () => {
              for (const v of handleEditVerifications) await v.check();
@@ -328,6 +383,9 @@ test.describe('Listings Creation Flow', () => {
             }
        }];
        docHelper.addStep("Merge Existing", "003b-merge-existing.png", mergeExistingVerifications);
+       await waitForSyncIdle(page);
+       await waitForMainImagesToRender(page);
+       await stabilizeScreenshotFrame(page);
        await screenshots.capture(page, "merge-existing", {
            programmaticCheck: async () => {
              for (const v of mergeExistingVerifications) await v.check();
@@ -351,6 +409,9 @@ test.describe('Listings Creation Flow', () => {
             }
        }];
        docHelper.addStep("Review Listing", "004-review-listing.png", reviewVerifications);
+       await waitForSyncIdle(page);
+       await waitForMainImagesToRender(page);
+       await stabilizeScreenshotFrame(page);
        await screenshots.capture(page, "review-listing", {
            programmaticCheck: async () => {
              for (const v of reviewVerifications) await v.check();
