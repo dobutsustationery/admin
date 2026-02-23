@@ -8,7 +8,6 @@
   import { auth, firestore, googleAuthProvider } from "$lib/firebase"; // Ensure imports are correct based on file context
   import {
     collection,
-    deleteDoc,
     doc,
     limit,
     onSnapshot,
@@ -32,6 +31,10 @@
     reset_shopify_sync_state,
   } from "$lib/shopify-sync-slice";
   import type { ShopifySyncEvent } from "$lib/shopify-sync-model";
+  import {
+    SYNC_COLLECTION,
+    toShopifySyncListenerEvent,
+  } from "$lib/sync-events";
 
   // Start hydration immediately
   const hydrationPromise =
@@ -227,9 +230,7 @@
             const newItemKey = payload.janCode + payload.subtype;
             if (itemKey == newItemKey) {
               console.error("bad retype item detected", id);
-              // We cannot easily deleteDoc(change.doc.ref) anymore because we don't have the ref reference here directly.
-              // We have the ID. We can reconstruct the ref if needed.
-              deleteDoc(doc(firestore, "broadcast", id));
+              // Broadcast is an immutable event log; record and ignore the bad event.
             }
           }
           store.dispatch(action);
@@ -257,7 +258,7 @@
 
   function startShopifySyncListener() {
     const q = query(
-      collection(firestore, "shopify_sync"),
+      collection(firestore, SYNC_COLLECTION),
       orderBy("timestamp", "desc"),
       limit(2000),
     );
@@ -265,16 +266,19 @@
     return onSnapshot(
       q,
       (snapshot) => {
-        const events = snapshot.docs.map((eventDoc) => {
-          return {
+        const events = snapshot.docs.map((eventDoc) =>
+          toShopifySyncListenerEvent({
             id: eventDoc.id,
-            ...(eventDoc.data() as any),
-          };
-        }) as ShopifySyncEvent[];
+            data: eventDoc.data() as Record<string, any>,
+          }),
+        ) as ShopifySyncEvent[];
         store.dispatch(replace_shopify_sync_events(events));
       },
       (error) => {
-        console.error("[ShopifySync] Listener failed", error);
+        console.error(
+          `[ShopifySync] Listener failed for ${SYNC_COLLECTION}`,
+          error,
+        );
       },
     );
   }

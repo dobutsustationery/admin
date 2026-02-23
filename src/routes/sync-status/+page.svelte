@@ -16,6 +16,10 @@
     type ShopifySyncEvent,
     type ShopifySyncRequestView,
   } from "$lib/shopify-sync-model";
+  import {
+    SYNC_COLLECTION,
+    toShopifySyncListenerEvent,
+  } from "$lib/sync-events";
 
   let loading = true;
   let error = "";
@@ -90,17 +94,20 @@
       $page.url.searchParams.get("requestId") || ""
     ).trim();
     const q = query(
-      collection(firestore, "shopify_sync"),
+      collection(firestore, SYNC_COLLECTION),
       orderBy("timestamp", "desc"),
       limit(1000),
     );
+
     unsubscribe = onSnapshot(
       q,
       (snap) => {
-        const nextEvents = snap.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as any),
-        })) as ShopifySyncEvent[];
+        const nextEvents = snap.docs.map((doc) =>
+          toShopifySyncListenerEvent({
+            id: doc.id,
+            data: doc.data() as Record<string, any>,
+          }),
+        ) as ShopifySyncEvent[];
         events = nextEvents;
         const nextFolded = foldSyncRequests(nextEvents);
         const nextRequests = nextFolded.requestIds
@@ -128,7 +135,9 @@
         loading = false;
       },
       (e) => {
-        error = e.message || "Failed loading Shopify sync events";
+        error =
+          e.message ||
+          `Failed loading Shopify sync events from ${SYNC_COLLECTION}`;
         loading = false;
       },
     );
@@ -151,7 +160,7 @@
       <section class="list">
         <h2>Requests (Derived from Event Log)</h2>
         {#if requests.length === 0}
-          <p class="empty">No requests found in `shopify_sync`.</p>
+          <p class="empty">No requests found in `sync`.</p>
         {:else}
           {#each requests as req}
             <button

@@ -1,16 +1,17 @@
-# Shopify Sync Function
+# Sync Functions
 
-This folder contains Firebase Functions for Shopify sync processing.
+This folder contains Firebase Functions for sync queue processing (scoped by domain/action).
 
 ## Function
 
-- `syncShopifyRequest`
-  - Trigger: Firestore `shopify_sync/{requestId}` create
-  - Processes only events where `eventType === sync_requested`
-  - Emits append-only follow-up events in `shopify_sync`:
-    - `sync_claimed`
-    - `sync_api_call`
-    - `sync_completed` / `sync_partial_failed` / `sync_failed`
+- `syncRequest`
+  - Trigger: Firestore `sync/{requestId}` create
+  - Dispatches by scoped event type (currently Shopify)
+  - Processes Shopify requests where `eventType === shopify/sync_requested`
+  - Emits append-only follow-up events in `sync`:
+    - `shopify/sync_claimed`
+    - `shopify/sync_api_call`
+    - `shopify/sync_completed` / `shopify/sync_partial_failed` / `shopify/sync_failed`
   - Upserts Shopify product by handle
   - Syncs inventory levels for request variants
   - Writes API logs to `broadcast` as `shopify_api_log`

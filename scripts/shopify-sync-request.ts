@@ -7,6 +7,9 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { rootReducer } from "../src/lib/root-reducer";
 import { generateSku } from "../src/lib/handle-utils";
 
+const SYNC_COLLECTION = "sync";
+const SHOPIFY_SYNC_REQUEST_EVENT = "shopify/sync_requested";
+
 type Args = Record<string, string | boolean>;
 
 function parseArgs(argv: string[]): Args {
@@ -34,7 +37,7 @@ function getStringArg(args: Args, key: string, fallback = ""): string {
 }
 
 function showHelp() {
-  console.log(`Queue a Shopify sync request into Firestore collection: shopify_sync
+  console.log(`Queue a Shopify sync request into Firestore sync queue ("sync")
 
 Usage:
   bun scripts/shopify-sync-request.ts --handle <listing-handle> [options]
@@ -50,19 +53,33 @@ Options:
 
 async function initFirestore(firestoreEnv: string) {
   if (firestoreEnv === "emulator") {
-    const app = initializeApp({ projectId: process.env.FIREBASE_EMULATOR_PROJECT_ID || "dobutsu-admin" }, `shopify-sync-request-${Date.now()}`);
+    const app = initializeApp(
+      {
+        projectId: process.env.FIREBASE_EMULATOR_PROJECT_ID || "dobutsu-admin",
+      },
+      `shopify-sync-request-${Date.now()}`,
+    );
     const db = getFirestore(app);
-    db.settings({ host: process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8080", ssl: false });
+    db.settings({
+      host: process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8080",
+      ssl: false,
+    });
     return db;
   }
 
-  const keyPath = resolve(process.cwd(), `service-account-${firestoreEnv}.json`);
+  const keyPath = resolve(
+    process.cwd(),
+    `service-account-${firestoreEnv}.json`,
+  );
   if (!existsSync(keyPath)) {
     throw new Error(`Missing service account key: ${keyPath}`);
   }
 
   const serviceAccount = JSON.parse(readFileSync(keyPath, "utf8"));
-  const app = initializeApp({ credential: cert(serviceAccount) }, `shopify-sync-request-${firestoreEnv}-${Date.now()}`);
+  const app = initializeApp(
+    { credential: cert(serviceAccount) },
+    `shopify-sync-request-${firestoreEnv}-${Date.now()}`,
+  );
   return getFirestore(app);
 }
 
@@ -76,7 +93,12 @@ async function replayState(db: any) {
   return state;
 }
 
-function buildRequestPayload(state: any, handle: string, requestedBy: string, source: string) {
+function buildRequestPayload(
+  state: any,
+  handle: string,
+  requestedBy: string,
+  source: string,
+) {
   const listing = state?.listings?.handleToListing?.[handle];
   if (!listing) {
     throw new Error(`Listing not found for handle: ${handle}`);
@@ -112,7 +134,7 @@ function buildRequestPayload(state: any, handle: string, requestedBy: string, so
   const requestId = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
   return {
-    eventType: "sync_requested",
+    eventType: SHOPIFY_SYNC_REQUEST_EVENT,
     requestId,
     handle,
     listing: {
@@ -129,6 +151,7 @@ function buildRequestPayload(state: any, handle: string, requestedBy: string, so
     },
     variants,
     source,
+    creator: requestedBy,
     requestedBy,
     requestedAt: Date.now(),
     payloadVersion: 1,
@@ -159,8 +182,10 @@ async function main() {
   const state = await replayState(db);
   const payload = buildRequestPayload(state, handle, requestedBy, source);
 
-  const docRef = await db.collection("shopify_sync").add(payload);
-  console.log(`Queued request ${payload.requestId} in shopify_sync/${docRef.id}`);
+  const docRef = await db.collection(SYNC_COLLECTION).add(payload);
+  console.log(
+    `Queued request ${payload.requestId} in ${SYNC_COLLECTION}/${docRef.id}`,
+  );
 }
 
 main().catch((error) => {

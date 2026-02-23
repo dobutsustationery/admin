@@ -1,16 +1,38 @@
 const { FieldValue } = require("firebase-admin/firestore");
 const core = require("./shopify-sync-core.cjs");
 
-function eventDoc(db, id) {
-  return db.collection("shopify_sync").doc(id);
+function getSyncCollectionName(options) {
+  return String(options?.collectionName || "sync");
 }
 
-function baseEvent({ eventType, requestId, requestEventId, handle, processor, payload }) {
+function qualifyShopifyEventType(eventType, options) {
+  const value = String(eventType || "").trim();
+  if (!value) return value;
+  const namespace = String(options?.eventTypeNamespace || "").trim();
+  if (!namespace) return value;
+  if (value.startsWith(`${namespace}/`)) return value;
+  return `${namespace}/${value}`;
+}
+
+function eventDoc(db, id, options) {
+  return db.collection(getSyncCollectionName(options)).doc(id);
+}
+
+function baseEvent({
+  eventType,
+  requestId,
+  requestEventId,
+  handle,
+  creator,
+  processor,
+  payload,
+}) {
   return {
     eventType,
     requestId,
     requestEventId,
     handle,
+    creator: creator || "shopify-sync-worker",
     processor,
     payload: payload || {},
     createdAtMs: Date.now(),
@@ -18,13 +40,13 @@ function baseEvent({ eventType, requestId, requestEventId, handle, processor, pa
   };
 }
 
-async function createEvent(db, event) {
-  await db.collection("shopify_sync").add(event);
+async function createEvent(db, event, options) {
+  await db.collection(getSyncCollectionName(options)).add(event);
 }
 
-async function createIdempotentEvent(db, deterministicId, event) {
+async function createIdempotentEvent(db, deterministicId, event, options) {
   try {
-    await eventDoc(db, deterministicId).create(event);
+    await eventDoc(db, deterministicId, options).create(event);
     return { created: true };
   } catch (error) {
     const code = error?.code || error?.status;
@@ -49,7 +71,9 @@ async function writeBroadcastApiLog(db, creator, payload) {
 }
 
 function summarizeRequest(requestData) {
-  const variants = Array.isArray(requestData?.variants) ? requestData.variants : [];
+  const variants = Array.isArray(requestData?.variants)
+    ? requestData.variants
+    : [];
   return {
     requestId: String(requestData?.requestId || ""),
     handle: String(requestData?.handle || ""),
@@ -57,7 +81,14 @@ function summarizeRequest(requestData) {
   };
 }
 
-async function claimRequest(db, requestEventId, requestData, processor) {
+async function claimRequest(
+  db,
+  requestEventId,
+  requestData,
+  creator,
+  processor,
+  options,
+) {
   const requestId = String(requestData?.requestId || "");
   const handle = String(requestData?.handle || "");
 
@@ -66,16 +97,17 @@ async function claimRequest(db, requestEventId, requestData, processor) {
   }
 
   const claimEvent = baseEvent({
-    eventType: "sync_claimed",
+    eventType: qualifyShopifyEventType("sync_claimed", options),
     requestId,
     requestEventId,
     handle,
+    creator,
     processor,
     payload: {},
   });
 
   const claimId = `claim_${requestEventId}`;
-  const result = await createIdempotentEvent(db, claimId, claimEvent);
+  const result = await createIdempotentEvent(db, claimId, claimEvent, options);
   if (!result.created) {
     return { claimed: false, reason: "already_claimed" };
   }
@@ -84,13 +116,25 @@ async function claimRequest(db, requestEventId, requestData, processor) {
 }
 
 async function appendApiEvent(db, creator, params) {
-  const { requestId, requestEventId, handle, processor, requestType, endpoint, success, response, context } = params;
-
-  const event = baseEvent({
-    eventType: "sync_api_call",
+  const {
     requestId,
     requestEventId,
     handle,
+    processor,
+    requestType,
+    endpoint,
+    success,
+    response,
+    context,
+    options,
+  } = params;
+
+  const event = baseEvent({
+    eventType: qualifyShopifyEventType("sync_api_call", options),
+    requestId,
+    requestEventId,
+    handle,
+    creator,
     processor,
     payload: {
       requestType,
@@ -101,7 +145,7 @@ async function appendApiEvent(db, creator, params) {
     },
   });
 
-  await createEvent(db, event);
+  await createEvent(db, event, options);
   await writeBroadcastApiLog(db, creator, {
     requestType,
     endpoint,
@@ -112,7 +156,15 @@ async function appendApiEvent(db, creator, params) {
 }
 
 async function appendFinalEvent(db, params) {
-  const { requestEventId, requestData, processor, status, payload } = params;
+  const {
+    requestEventId,
+    requestData,
+    creator,
+    processor,
+    status,
+    payload,
+    options,
+  } = params;
   const requestId = String(requestData?.requestId || "");
   const handle = String(requestData?.handle || "");
 
@@ -124,19 +176,29 @@ async function appendFinalEvent(db, params) {
         : "sync_failed";
 
   const finalEvent = baseEvent({
-    eventType,
+    eventType: qualifyShopifyEventType(eventType, options),
     requestId,
     requestEventId,
     handle,
+    creator,
     processor,
     payload,
   });
 
   const finalId = `result_${requestEventId}`;
-  await createIdempotentEvent(db, finalId, finalEvent);
+  await createIdempotentEvent(db, finalId, finalEvent, options);
 }
 
-async function executeClaimedRequest({ db, requestEventId, requestData, processor, shopifyConfig, creator }) {
+async function executeClaimedRequest({
+  db,
+  requestEventId,
+  requestData,
+  processor,
+  shopifyConfig,
+  creator,
+  collectionName,
+  eventTypeNamespace,
+}) {
   const requestId = String(requestData?.requestId || "");
   const handle = String(requestData?.handle || "");
   if (!requestId || !handle) {
@@ -147,6 +209,7 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
 
   let successCount = 0;
   let failureCount = 0;
+  const eventOptions = { collectionName, eventTypeNamespace };
 
   // Preflight config validation: fail without creating a sync_api_call event.
   if (!shopifyConfig?.storeUrl || !core.hasAnyCredentials(shopifyConfig)) {
@@ -155,6 +218,7 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
     await appendFinalEvent(db, {
       requestEventId,
       requestData,
+      creator,
       processor,
       status: "failed",
       payload: {
@@ -162,14 +226,21 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
         successCount,
         failureCount,
       },
+      options: eventOptions,
     });
     throw new Error(message);
   }
 
   try {
     const locationId = await core.resolveLocationId(shopifyConfig);
-    const product = await core.upsertProductFromRequest(shopifyConfig, requestData);
-    const publication = await core.ensureProductPublishedToOnlineStore(shopifyConfig, product.id);
+    const product = await core.upsertProductFromRequest(
+      shopifyConfig,
+      requestData,
+    );
+    const publication = await core.ensureProductPublishedToOnlineStore(
+      shopifyConfig,
+      product.id,
+    );
 
     await appendApiEvent(db, creator, {
       requestId,
@@ -181,6 +252,7 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
       success: true,
       response: publication,
       context: { requestId, handle, productId: product.id, processor },
+      options: eventOptions,
     });
 
     await appendApiEvent(db, creator, {
@@ -196,15 +268,26 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
         handle: product.handle,
         variantCount: product.variants?.length || 0,
       },
-      context: { requestId, handle, productId: product.id, locationId, processor },
+      context: {
+        requestId,
+        handle,
+        productId: product.id,
+        locationId,
+        processor,
+      },
+      options: eventOptions,
     });
 
-    const variants = Array.isArray(requestData?.variants) ? requestData.variants : [];
+    const variants = Array.isArray(requestData?.variants)
+      ? requestData.variants
+      : [];
     const responseVariantBySku = new Map();
-    (Array.isArray(product.variants) ? product.variants : []).forEach((variant) => {
-      const sku = String(variant?.sku || "").trim();
-      if (sku) responseVariantBySku.set(sku, variant);
-    });
+    (Array.isArray(product.variants) ? product.variants : []).forEach(
+      (variant) => {
+        const sku = String(variant?.sku || "").trim();
+        if (sku) responseVariantBySku.set(sku, variant);
+      },
+    );
 
     for (const variant of variants) {
       const sku = String(variant?.sku || "").trim();
@@ -212,7 +295,9 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
       if (!sku) continue;
 
       const responseVariant = responseVariantBySku.get(sku);
-      const inventoryItemId = core.toNumberOrNull(responseVariant?.inventory_item_id);
+      const inventoryItemId = core.toNumberOrNull(
+        responseVariant?.inventory_item_id,
+      );
       const endpoint = `/admin/api/${apiVersion}/inventory_levels/set.json`;
 
       if (!inventoryItemId) {
@@ -227,12 +312,18 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
           success: false,
           response: { error: "Missing inventory_item_id after product upsert" },
           context: { requestId, handle, sku, targetQty, locationId, processor },
+          options: eventOptions,
         });
         continue;
       }
 
       try {
-        const response = await core.setInventoryLevel(shopifyConfig, locationId, inventoryItemId, targetQty);
+        const response = await core.setInventoryLevel(
+          shopifyConfig,
+          locationId,
+          inventoryItemId,
+          targetQty,
+        );
         successCount += 1;
         await appendApiEvent(db, creator, {
           requestId,
@@ -252,6 +343,7 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
             locationId,
             processor,
           },
+          options: eventOptions,
         });
       } catch (error) {
         failureCount += 1;
@@ -274,6 +366,7 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
             locationId,
             processor,
           },
+          options: eventOptions,
         });
       }
     }
@@ -281,6 +374,7 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
     await appendFinalEvent(db, {
       requestEventId,
       requestData,
+      creator,
       processor,
       status: failureCount === 0 ? "success" : "partial_failed",
       payload: {
@@ -289,6 +383,7 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
         productId: product.id,
         productHandle: product.handle,
       },
+      options: eventOptions,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -303,11 +398,13 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
       success: false,
       response: { error: message },
       context: { requestId, handle, processor },
+      options: eventOptions,
     });
 
     await appendFinalEvent(db, {
       requestEventId,
       requestData,
+      creator,
       processor,
       status: "failed",
       payload: {
@@ -315,14 +412,32 @@ async function executeClaimedRequest({ db, requestEventId, requestData, processo
         successCount,
         failureCount,
       },
+      options: eventOptions,
     });
 
     throw error;
   }
 }
 
-async function processRequestEvent({ db, requestEventId, requestData, processor, shopifyConfig, creator }) {
-  const claim = await claimRequest(db, requestEventId, requestData, processor);
+async function processRequestEvent({
+  db,
+  requestEventId,
+  requestData,
+  processor,
+  shopifyConfig,
+  creator,
+  collectionName,
+  eventTypeNamespace,
+}) {
+  const eventOptions = { collectionName, eventTypeNamespace };
+  const claim = await claimRequest(
+    db,
+    requestEventId,
+    requestData,
+    creator,
+    processor,
+    eventOptions,
+  );
   if (!claim.claimed) {
     return { processed: false, reason: claim.reason || "not_claimed" };
   }
@@ -334,6 +449,8 @@ async function processRequestEvent({ db, requestEventId, requestData, processor,
     processor,
     shopifyConfig,
     creator,
+    collectionName,
+    eventTypeNamespace,
   });
 
   return { processed: true, summary: summarizeRequest(requestData) };

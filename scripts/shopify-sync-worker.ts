@@ -10,6 +10,9 @@ const require = createRequire(import.meta.url);
 const core = require("../functions/shared/shopify-sync-core.cjs");
 const worker = require("../functions/shared/shopify-sync-worker.cjs");
 
+const SYNC_COLLECTION = "sync";
+const SHOPIFY_SYNC_REQUEST_EVENT = "shopify/sync_requested";
+
 type Args = Record<string, string | boolean>;
 
 function parseArgs(argv: string[]): Args {
@@ -43,7 +46,7 @@ function getNumberArg(args: Args, key: string, fallback: number): number {
 }
 
 function showHelp() {
-  console.log(`Execute queued Shopify sync requests from Firestore collection: shopify_sync
+  console.log(`Execute queued Shopify sync requests from Firestore sync queue ("sync")
 
 Usage:
   bun scripts/shopify-sync-worker.ts [options]
@@ -66,19 +69,33 @@ Required env vars for Shopify API:
 
 async function initFirestore(firestoreEnv: string) {
   if (firestoreEnv === "emulator") {
-    const app = initializeApp({ projectId: process.env.FIREBASE_EMULATOR_PROJECT_ID || "dobutsu-admin" }, `shopify-sync-worker-${Date.now()}`);
+    const app = initializeApp(
+      {
+        projectId: process.env.FIREBASE_EMULATOR_PROJECT_ID || "dobutsu-admin",
+      },
+      `shopify-sync-worker-${Date.now()}`,
+    );
     const db = getFirestore(app);
-    db.settings({ host: process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8080", ssl: false });
+    db.settings({
+      host: process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8080",
+      ssl: false,
+    });
     return db;
   }
 
-  const keyPath = resolve(process.cwd(), `service-account-${firestoreEnv}.json`);
+  const keyPath = resolve(
+    process.cwd(),
+    `service-account-${firestoreEnv}.json`,
+  );
   if (!existsSync(keyPath)) {
     throw new Error(`Missing service account key: ${keyPath}`);
   }
 
   const serviceAccount = JSON.parse(readFileSync(keyPath, "utf8"));
-  const app = initializeApp({ credential: cert(serviceAccount) }, `shopify-sync-worker-${firestoreEnv}-${Date.now()}`);
+  const app = initializeApp(
+    { credential: cert(serviceAccount) },
+    `shopify-sync-worker-${firestoreEnv}-${Date.now()}`,
+  );
   return getFirestore(app);
 }
 
@@ -91,15 +108,19 @@ function buildShopifyConfig() {
   return { storeUrl, accessToken, clientId, clientSecret, apiVersion };
 }
 
-async function processOne(db: any, docId: string, processor: string, shopifyConfig: any) {
-  const docRef = db.collection("shopify_sync").doc(docId);
-  const snap = await docRef.get();
+async function processOne(
+  db: any,
+  docId: string,
+  processor: string,
+  shopifyConfig: any,
+) {
+  const snap = await db.collection(SYNC_COLLECTION).doc(docId).get();
   if (!snap.exists) {
     console.log(`Skipped ${docId}: missing`);
     return;
   }
   const data = snap.data() as any;
-  if (data?.eventType !== "sync_requested") {
+  if (data?.eventType !== SHOPIFY_SYNC_REQUEST_EVENT) {
     console.log(`Skipped ${docId}: eventType=${data?.eventType || "unknown"}`);
     return;
   }
@@ -107,16 +128,21 @@ async function processOne(db: any, docId: string, processor: string, shopifyConf
   const result = await worker.processRequestEvent({
     db,
     requestEventId: docId,
-    requestData: data,
+    requestData: {
+      ...data,
+      eventType: "sync_requested",
+    },
     processor,
     shopifyConfig,
     creator: processor,
+    collectionName: SYNC_COLLECTION,
+    eventTypeNamespace: "shopify",
   });
 
   if (!result.processed) {
     console.log(`Skipped ${docId}: ${result.reason}`);
   } else {
-    console.log(`Processed ${docId}:`, result.summary);
+    console.log(`Processed ${SYNC_COLLECTION}/${docId}:`, result.summary);
   }
 }
 
@@ -142,8 +168,8 @@ async function main() {
   }
 
   const queued = await db
-    .collection("shopify_sync")
-    .where("eventType", "==", "sync_requested")
+    .collection(SYNC_COLLECTION)
+    .where("eventType", "==", SHOPIFY_SYNC_REQUEST_EVENT)
     .limit(limit)
     .get();
 

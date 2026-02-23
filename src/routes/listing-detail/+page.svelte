@@ -47,6 +47,10 @@
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
   import type { ShopifySyncRequestView } from "$lib/shopify-sync-model";
+  import {
+    SHOPIFY_SYNC_REQUEST_EVENT,
+    SYNC_COLLECTION,
+  } from "$lib/sync-events";
 
   // --- State ---
   $: mode = $page.url.searchParams.get("mode");
@@ -596,12 +600,13 @@
     clearSuccessMessageTimer();
 
     const syncRequestEvent = {
-      eventType: "sync_requested",
+      eventType: SHOPIFY_SYNC_REQUEST_EVENT,
       requestId,
       handle,
       listing: listingSnapshot,
       variants: variantsSnapshot,
       source: "listing-detail",
+      creator: uid,
       requestedBy: uid,
       requestedAt: Date.now(),
       payloadVersion: 1,
@@ -625,12 +630,12 @@
         );
       }
 
-      await addDoc(collection(firestore, "shopify_sync"), syncRequestEvent);
+      await addDoc(collection(firestore, SYNC_COLLECTION), syncRequestEvent);
       trackedSyncRequestId = requestId;
       syncMessage = `Sync requested for '${handle}'. Waiting for processor claim...`;
       syncMessageLevel = "info";
     } catch (error) {
-      console.error("[Shopify Sync] addDoc(shopify_sync) failed", {
+      console.error(`[Shopify Sync] addDoc(${SYNC_COLLECTION}) failed`, {
         requestId,
         handle,
         error,

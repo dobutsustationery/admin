@@ -1,3 +1,5 @@
+import { normalizeShopifySyncEventType } from "$lib/sync-events";
+
 export type ShopifySyncEvent = {
   id: string;
   eventType: string;
@@ -105,9 +107,13 @@ export function foldSyncRequests(
       byRequestId.set(reqId, req);
     }
 
-    req.timeline.push(ev);
+    const normalizedEventType = normalizeShopifySyncEventType(ev.eventType);
+    req.timeline.push({
+      ...ev,
+      eventType: normalizedEventType,
+    });
 
-    if (ev.eventType === "sync_requested") {
+    if (normalizedEventType === "sync_requested") {
       req.requestEventId = ev.id;
       req.handle = String(ev.handle || req.handle || "");
       req.requestedBy = String(ev.requestedBy || req.requestedBy || "");
@@ -117,12 +123,12 @@ export function foldSyncRequests(
       req.status = "queued";
     }
 
-    if (ev.eventType === "sync_claimed") {
+    if (normalizedEventType === "sync_claimed") {
       req.processor = String(ev.processor || req.processor || "");
       req.status = "processing";
     }
 
-    if (ev.eventType === "sync_api_call") {
+    if (normalizedEventType === "sync_api_call") {
       const payload = ev.payload || {};
       req.processor = String(ev.processor || req.processor || "");
       req.apiCalls.push({
@@ -137,19 +143,19 @@ export function foldSyncRequests(
       });
     }
 
-    if (ev.eventType === "sync_completed") {
+    if (normalizedEventType === "sync_completed") {
       req.processor = String(ev.processor || req.processor || "");
       req.status = "success";
       req.result = ev.payload || {};
     }
 
-    if (ev.eventType === "sync_partial_failed") {
+    if (normalizedEventType === "sync_partial_failed") {
       req.processor = String(ev.processor || req.processor || "");
       req.status = "partial_failed";
       req.result = ev.payload || {};
     }
 
-    if (ev.eventType === "sync_failed") {
+    if (normalizedEventType === "sync_failed") {
       req.processor = String(ev.processor || req.processor || "");
       req.status = "failed";
       req.result = ev.payload || {};
