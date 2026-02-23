@@ -122,7 +122,16 @@ for (const { data } of recordsToProcess) {
 
 console.log(`   Found ${imageUrls.size} unique image URLs`);
 
-const urlMapping = {};
+let existingMapping = {};
+if (existsSync(MAPPING_FILE)) {
+  try {
+    existingMapping = JSON.parse(readFileSync(MAPPING_FILE, "utf8"));
+  } catch {
+    existingMapping = {};
+  }
+}
+
+const urlMapping = { ...existingMapping };
 let successCount = 0;
 let failCount = 0;
 
@@ -173,8 +182,15 @@ for (const url of imageUrls) {
   }
 }
 
-// Save the mapping
-writeFileSync(MAPPING_FILE, JSON.stringify(urlMapping, null, 2));
+// Save the mapping deterministically and only when changed.
+const sortedMapping = Object.fromEntries(
+  Object.entries(urlMapping).sort(([a], [b]) => a.localeCompare(b))
+);
+const nextJson = JSON.stringify(sortedMapping, null, 2);
+const prevJson = existsSync(MAPPING_FILE) ? readFileSync(MAPPING_FILE, "utf8") : "";
+if (nextJson !== prevJson) {
+  writeFileSync(MAPPING_FILE, nextJson);
+}
 
 console.log(`\n✅ Download complete!`);
 console.log(`   Success: ${successCount}`);

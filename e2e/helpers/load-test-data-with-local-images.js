@@ -18,7 +18,6 @@ import { Timestamp, getFirestore } from "firebase-admin/firestore";
 // Set emulator host before initializing Firebase Admin
 const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
 process.env.FIRESTORE_EMULATOR_HOST = emulatorHost;
-const previewBaseUrl = process.env.E2E_PREVIEW_BASE_URL || "http://localhost:4173";
 
 // Initialize Firebase Admin for emulator
 const app = initializeApp({
@@ -189,7 +188,8 @@ async function loadTestData() {
       if (data?.payload?.item?.image && urlMapping[data.payload.item.image]) {
         modifiedData = JSON.parse(JSON.stringify(data));
         const originalUrl = modifiedData.payload.item.image;
-        modifiedData.payload.item.image = `${previewBaseUrl}${urlMapping[originalUrl]}`;
+        // Use relative paths so screenshots don't differ across local/pre-push ports.
+        modifiedData.payload.item.image = urlMapping[originalUrl];
         rewrittenCount++;
       }
 

@@ -27,6 +27,33 @@ echo "🧪 E2E Test Runner"
 echo "=================="
 echo ""
 
+print_emulator_port_diagnostics() {
+  if command -v lsof >/dev/null 2>&1; then
+    echo "Port diagnostics:"
+    lsof -nP -iTCP:"${FIRESTORE_PORT}" -sTCP:LISTEN || true
+    lsof -nP -iTCP:"${AUTH_PORT}" -sTCP:LISTEN || true
+  fi
+}
+
+kill_stale_emulator_port_processes() {
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+
+  for port in "${FIRESTORE_PORT}" "${AUTH_PORT}"; do
+    pids="$(lsof -t -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')"
+    [ -z "${pids}" ] && continue
+    for pid in ${pids}; do
+      comm="$(ps -p "${pid}" -o comm= 2>/dev/null | tr -d ' ')"
+      if [ "${comm}" = "java" ]; then
+        echo "Killing stray java process ${pid} on emulator port ${port}..."
+        kill "${pid}" 2>/dev/null || true
+      fi
+    done
+  done
+  sleep 1
+}
+
 # Check if emulators are running
 check_emulators() {
   echo "📡 Checking if Firebase emulators are running..."
@@ -53,6 +80,9 @@ check_emulators() {
 if ! check_emulators; then
   echo ""
   echo "🔥 Starting Firebase emulators..."
+  print_emulator_port_diagnostics
+  kill_stale_emulator_port_processes
+  print_emulator_port_diagnostics
   (npm run env:functions:local && firebase emulators:start --config "${FIREBASE_CONFIG_PATH}") > "${EMULATOR_LOG_PATH}" 2>&1 &
   EMULATOR_PID=$!
   echo "   Started emulators (PID: $EMULATOR_PID)"
@@ -63,9 +93,16 @@ if ! check_emulators; then
     if check_emulators; then
       break
     fi
+    if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+      echo "❌ Emulator process exited before becoming ready"
+      cat "${EMULATOR_LOG_PATH}"
+      print_emulator_port_diagnostics
+      exit 1
+    fi
     if [ $i -eq 30 ]; then
       echo "❌ Emulators failed to start after 30 seconds"
       cat "${EMULATOR_LOG_PATH}"
+      print_emulator_port_diagnostics
       exit 1
     fi
     sleep 1
