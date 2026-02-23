@@ -1,5 +1,5 @@
 
-import { test, expect } from '../fixtures/auth';
+import { test, expect, type Page } from '../fixtures/auth';
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import { FlowHelper } from "../helpers/flow-helper";
@@ -14,14 +14,35 @@ const MOCK_IMAGE_SVG = `
 </svg>
 `.trim();
 
-async function waitForVisiblePhotoThumbnailsReady(page: any, expectedCount: number) {
-  const thumbnails = page.locator('[data-testid^="photo-thumbnail-"]');
+const THUMBNAIL_SELECTOR = '[data-testid^="photo-thumbnail-"]';
+
+async function ensureStableThumbnailCaptureStyles(page: Page) {
+  await page.evaluate(() => {
+    if (document.getElementById("e2e-photo-thumb-stable-style")) return;
+
+    const styleEl = document.createElement("style");
+    styleEl.id = "e2e-photo-thumb-stable-style";
+    styleEl.textContent = `
+      ${THUMBNAIL_SELECTOR} {
+        transition: none !important;
+      }
+      ${THUMBNAIL_SELECTOR}:hover {
+        --tw-ring-shadow: 0 0 #0000 !important;
+        --tw-ring-offset-shadow: 0 0 #0000 !important;
+      }
+    `;
+    document.head.appendChild(styleEl);
+  });
+}
+
+async function waitForVisiblePhotoThumbnailsReady(page: Page, expectedCount: number) {
+  const thumbnails = page.locator(THUMBNAIL_SELECTOR);
   await expect(thumbnails).toHaveCount(expectedCount);
 
   await page.waitForFunction(
     (count) => {
       const items = Array.from(
-        document.querySelectorAll('[data-testid^="photo-thumbnail-"]'),
+        document.querySelectorAll(THUMBNAIL_SELECTOR),
       ) as HTMLElement[];
 
       if (items.length !== count) return false;
@@ -45,7 +66,7 @@ async function waitForVisiblePhotoThumbnailsReady(page: any, expectedCount: numb
 
   await page.evaluate(async () => {
     const visibleThumbImgs = Array.from(
-      document.querySelectorAll('[data-testid^="photo-thumbnail-"] img'),
+      document.querySelectorAll(`${THUMBNAIL_SELECTOR} img`),
     ) as HTMLImageElement[];
 
     await Promise.all(
@@ -71,26 +92,11 @@ async function waitForVisiblePhotoThumbnailsReady(page: any, expectedCount: numb
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
   });
 
-  // Avoid hover-ring/focus-edge drift in zero-pixel screenshots.
+  await ensureStableThumbnailCaptureStyles(page);
+
+  // Force a non-hover state and let the paint settle before capture.
   await page.mouse.move(8, 8);
   await page.evaluate(async () => {
-    let styleEl = document.getElementById("e2e-photo-thumb-stable-style");
-    if (!styleEl) {
-      styleEl = document.createElement("style");
-      styleEl.id = "e2e-photo-thumb-stable-style";
-      styleEl.textContent = `
-        [data-testid^="photo-thumbnail-"] {
-          transition: none !important;
-          pointer-events: none !important;
-        }
-        [data-testid^="photo-thumbnail-"]:hover {
-          box-shadow: var(--tw-shadow) !important;
-          --tw-ring-shadow: 0 0 #0000 !important;
-          --tw-ring-offset-shadow: 0 0 #0000 !important;
-        }
-      `;
-      document.head.appendChild(styleEl);
-    }
     const active = document.activeElement as HTMLElement | null;
     if (active && typeof active.blur === "function") active.blur();
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
