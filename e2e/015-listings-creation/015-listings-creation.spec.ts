@@ -60,6 +60,9 @@ test.describe('Listings Creation Flow', () => {
         const janCode = 'TEST015LISTINGS';
         const item1Id = 'item1-test015-blue';
         const item2Id = 'item2-test015-red';
+        // Use a stable https:// URL for the photo baseUrl — data: URIs are rejected by the
+        // broadcast payload guard (assertNoBinaryPayload) and must not appear in broadcast state.
+        const mockPhotoBaseUrl = "https://mock.photos/test015-product.jpg";
         const mockImageUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Crect width='160' height='160' fill='%23eef2f7'/%3E%3Crect x='12' y='12' width='136' height='136' rx='10' fill='%23dbeafe'/%3E%3Ccircle cx='52' cy='55' r='16' fill='%23fde68a'/%3E%3Cpath d='M22 126l36-34 22 18 28-34 30 50H22z' fill='%233b82f6'/%3E%3C/svg%3E";
 
         // Setup Console Logging & Error Trapping
@@ -86,6 +89,16 @@ test.describe('Listings Creation Flow', () => {
                 ]
             };
             await route.fulfill({ json });
+        });
+
+        // Return a solid-color SVG immediately for mock.photos URLs so images render fast
+        // without network timeouts. The baseUrl must be an https:// URL (not data:) to pass
+        // the broadcast payload guard, so we use mock.photos and intercept it here.
+        // SVG is preferred over PNG because it renders at any display size without
+        // scaling interpolation, producing pixel-identical screenshots across runs.
+        const mockSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="#dbeafe"/></svg>';
+        await page.route('https://mock.photos/**', async route => {
+            await route.fulfill({ contentType: 'image/svg+xml', body: mockSvg });
         });
         const screenshots = createScreenshotHelper();
         const docHelper = new TestDocumentationHelper(path.dirname(testInfo.file));
@@ -215,7 +228,7 @@ test.describe('Listings Creation Flow', () => {
 
 
         // 3. Scan/Generate (triggers generate_proposals)
-        await page.evaluate(({ janCode, item1Id, item2Id, mockImageUrl }) => {
+        await page.evaluate(({ janCode, item1Id, item2Id, mockImageUrl, mockPhotoBaseUrl }) => {
             const { store, actions } = (window as any).testHelpers;
             
             // Clear previous proposals
@@ -249,10 +262,10 @@ test.describe('Listings Creation Flow', () => {
                 }]
             }));
             
-            // Inject Categorized Photo
+            // Inject Categorized Photo — baseUrl must be a stable https:// URL (not data:)
             const mockPhoto = {
                 id: "mock_file_1",
-                baseUrl: mockImageUrl,
+                baseUrl: mockPhotoBaseUrl,
                 filename: `${janCode}_1.jpg`,
                 mimeType: "image/jpeg",
                 productUrl: "https://mock.drive/view",
@@ -262,7 +275,7 @@ test.describe('Listings Creation Flow', () => {
                  type: "photos/categorize_photo",
                  payload: { janCode, photo: mockPhoto }
             });
-        }, { janCode, item1Id, item2Id, mockImageUrl });
+        }, { janCode, item1Id, item2Id, mockImageUrl, mockPhotoBaseUrl });
             
         await page.waitForFunction(() => (window as any).testHelpers);
         
