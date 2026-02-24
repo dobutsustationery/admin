@@ -33,29 +33,38 @@ test.describe("Sync Payload Validation", () => {
 
     // 2. Poll for the rejection event
     // The dispatcher should write a document with eventType "shopify/rejected" and the same requestId.
-    let found = false;
-    for (let i = 0; i < 10; i++) {
-      await page.waitForTimeout(1000);
+    console.log(`⏳ Waiting for rejection event for requestId: ${requestId}...`);
+    
+    await expect.poll(async () => {
       const queryResponse = await page.request.get(`${firestoreUrl}?mask.fieldPaths=eventType&mask.fieldPaths=requestId&mask.fieldPaths=payload`);
-      if (queryResponse.ok()) {
-        const body = await queryResponse.json();
-        const documents = body.documents || [];
-        const rejection = documents.find((doc: any) => {
-          const fields = doc.fields || {};
-          return fields.requestId?.stringValue === requestId && 
-                 fields.eventType?.stringValue === "shopify/rejected";
-        });
-        
-        if (rejection) {
-          console.log("✅ Rejection event found in E2E!");
-          const payload = rejection.fields.payload?.mapValue?.fields || {};
-          expect(payload.errorCode?.stringValue).toBe("binary_payload_rejected");
-          found = true;
-          break;
-        }
-      }
-    }
+      if (!queryResponse.ok()) return false;
+      
+      const body = await queryResponse.json();
+      const documents = body.documents || [];
+      return documents.find((doc: any) => {
+        const fields = doc.fields || {};
+        return fields.requestId?.stringValue === requestId && 
+               fields.eventType?.stringValue === "shopify/rejected";
+      });
+    }, {
+      message: "Wait for rejection event in Firestore",
+      timeout: 15000,
+      intervals: [1000],
+    }).toBeTruthy();
 
-    expect(found).toBe(true);
+    // 3. Verify the rejection details
+    const finalQueryResponse = await page.request.get(`${firestoreUrl}?mask.fieldPaths=eventType&mask.fieldPaths=requestId&mask.fieldPaths=payload`);
+    const body = await finalQueryResponse.json();
+    const documents = body.documents || [];
+    const rejection = documents.find((doc: any) => {
+      const fields = doc.fields || {};
+      return fields.requestId?.stringValue === requestId && 
+             fields.eventType?.stringValue === "shopify/rejected";
+    });
+
+    expect(rejection).toBeDefined();
+    console.log("✅ Rejection event found in E2E!");
+    const payload = rejection.fields.payload?.mapValue?.fields || {};
+    expect(payload.errorCode?.stringValue).toBe("binary_payload_rejected");
   });
 });

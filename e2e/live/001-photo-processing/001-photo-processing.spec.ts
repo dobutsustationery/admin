@@ -206,7 +206,7 @@ async function importSinglePhotoFromDrive(
     console.warn(
       `[live-001] Drive import attempt ${attempt + 1} failed (${errorText}). Retrying...`,
     );
-    await page.waitForTimeout(1000);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
   if (

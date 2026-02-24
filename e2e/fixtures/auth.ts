@@ -56,7 +56,7 @@ export const test = base.extend<AuthFixtures>({
       }
 
       if (attempt < 5) {
-        await page.waitForTimeout(300);
+        await new Promise((resolve) => setTimeout(resolve, 300));
       }
     }
 

@@ -153,11 +153,12 @@ test.describe('Listings Creation Flow', () => {
         // Wait for Broadcast to settle BEFORE resetting logic
         console.log("Waiting for Broadcast to settle...");
         await broadcastPromise;
-        await page.waitForTimeout(2000); // Allow UI/Store to catch up
-        console.log("Broadcast settled. Cleaning up...");
+        
+        // Wait for store to be available instead of fixed timeout
+        await page.waitForFunction(() => (window as any).testHelpers?.store);
+        console.log("Broadcast settled and store available. Cleaning up...");
 
         // Reset Logic - Aggressive Loop
-        await page.waitForFunction(() => (window as any).testHelpers);
         await page.evaluate(async () => {
             const { store } = (window as any).testHelpers;
             

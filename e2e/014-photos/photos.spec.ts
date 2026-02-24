@@ -161,7 +161,8 @@ async function waitForVisiblePhotoThumbnailsReady(
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
   });
-  await page.waitForTimeout(250);
+  // Final small settle time to ensure UI is stable
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
 }
 
 test.describe("Google Photos Integration", () => {
