@@ -8,22 +8,6 @@
   export let style: string = "";
   let className: string = "";
   export { className as class };
-
-  // Compute high-res URL for zoom
-  $: zoomedSrc = (() => {
-    if (!src) return "";
-    if (src.includes("drive.google.com/thumbnail")) {
-      // Force high resolution for Drive thumbnails
-      return src.includes("sz=")
-        ? src.replace(/sz=[^&]+/, "sz=w1600")
-        : `${src}&sz=w1600`;
-    }
-    if (src.includes("googleusercontent.com")) {
-      // Strip params and request high res
-      return src.replace(/=[a-z0-9,-]+$/i, "") + "=w1600";
-    }
-    return src;
-  })();
 </script>
 
 {#if show && src}
@@ -32,7 +16,7 @@
     {style}
     transition:fade={{ duration: 150 }}
   >
-    <SecureImage src={zoomedSrc} {alt} className="zoomed-image" />
+    <SecureImage {src} {alt} size="preview" className="zoomed-image" />
     {#if alt}
       <div class="alt-text">
         {alt}
