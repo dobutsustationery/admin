@@ -2,12 +2,16 @@
   import { fade } from "svelte/transition";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ImagePreviewOverlay from "$lib/components/ImagePreviewOverlay.svelte";
+  import type { ImageSize } from "$lib/drive-url";
 
   export let src: string;
   export let alt: string = "";
   // Size props can be CSS values (e.g. "100%", "300px", "10rem")
   export let width: string = "100%";
   export let height: string = "100%";
+  /** Semantic image size passed to SecureImage. Defaults to thumbnail since
+   *  ImageThumbnail is primarily used in grids and tables. */
+  export let size: ImageSize = "thumbnail";
 
   // Fit mode:
   // 'contain' = maintain aspect ratio, show full image, letterbox
@@ -143,6 +147,7 @@
       {src}
       {alt}
       {isUploading}
+      {size}
       className="secure-image"
       style="object-fit: {fit};"
     />

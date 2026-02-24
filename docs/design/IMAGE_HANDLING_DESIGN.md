@@ -24,14 +24,17 @@ Completed on current branch:
 - top-level UI listens to `sync` and shows a persistent sync queue status bar while work is pending
   - Redux `syncQueue` slice tracks queued/processing/current job summary from `sync` event log
 
-Started (scaffold only):
-- `photos/*` sync dispatcher route and backend stub worker (`photos/image_transfer_requested`)
-- stub emits structured `photos/image_transfer_started` + `photos/image_transfer_failed` events
+Completed on current branch (continued):
+- `photos/*` sync dispatcher route and backend worker (`photos/image_transfer_requested`) are fully implemented. The worker authenticates to Google Photos, fetches source bytes, uploads to Google Drive via multipart POST, makes the file public, and emits `photos/image_transfer_completed` (or `photos/image_transfer_failed`) back to `sync` and `broadcast`.
+- Client cutover to enqueue photo transfer intents into `sync` is completed (handled via `PhotoUploadManager`).
+- Backend emits all three lifecycle events: `photos/image_transfer_started`, `photos/image_transfer_completed`, `photos/image_transfer_failed`.
+- Client reducers (`photos-slice.ts`) fully consume these events: `initiate_upload`, `complete_upload`, `fail_upload`.
+- Drive rename middleware fires on `photos/complete_upload` to rename the Drive file to the JAN-code pattern when the item is categorized.
 
-Not started:
-- client cutover to enqueue photo transfer intents into `sync`
-- backend Photos -> Drive transfer implementation
-- `SecureImage` rollout and image persistence validation enforcement
+Not started (Next Steps):
+- `SecureImage` `size` prop with `thumbnail` / `preview` / `full` semantics and Google-URL size-suffix normalization (currently always requests `=s0` full-size).
+- Progressive / blur-up loading for `full`-size views in `SecureImage`.
+- Strict `data:` / `blob:` URL rejection in broadcast middleware and reducers (design calls for this; no guard currently exists).
 
 ## Scope
 
@@ -312,19 +315,78 @@ Recommended approach:
 - enable progressive loading for `full` views
 - measure image payload reduction in common screens
 
-### Phase 3: Sync-Queue Transfers (Backend)
+### Phase 3: Sync-Queue Transfers (Backend) — COMPLETE
 
 - unify backend queue on `sync` (completed)
 - implement namespaced event dispatcher in Cloud Function trigger (completed)
-- implement `photos/image_transfer_requested` worker (scaffold only; actual transfer not implemented)
-- emit started/completed/failed events
-- update client flow to consume status events and finalize broadcast updates
+- implement `photos/image_transfer_requested` worker — fully implemented; streams bytes from Google Photos to Drive (completed)
+- emit started/completed/failed events (completed)
+- update client flow to consume status events and finalize broadcast updates (completed)
 
 ### Phase 4: Remove Client Blob Promotion Path
 
 - gate old client-mediated transfer behind fallback flag
 - monitor failures and retry rates
 - remove fallback after backend path is proven reliable
+
+## Next Implementation Steps (Concrete Roadmap)
+
+The backend transfer pipeline is complete. Remaining work is **client-side only**, split into two independent tracks.
+
+### Track A — `SecureImage` sizing and progressive loading
+
+**Milestone A1: `size` prop and URL normalization — COMPLETE**
+
+Goal: callers declare intent (`thumbnail` / `preview` / `full`); `SecureImage` applies the right Google size suffix and never persists the suffix in state.
+
+Implemented:
+- `ImageSize` type and `SIZE_SUFFIXES` map exported from `src/lib/drive-url.ts` (`thumbnail`→`=s200`, `preview`→`=s800`, `full`→`=s0`).
+- `stripGoogleSizeSuffix(url)` and `applyGoogleSizeSuffix(url, size)` helpers in `drive-url.ts`.
+- `size: ImageSize = 'full'` prop added to `SecureImage.svelte`; `driveFullSizeUrl` now uses `SIZE_SUFFIXES[size]` instead of the hardcoded `=s0`.
+- `size: ImageSize = 'thumbnail'` prop added to `ImageThumbnail.svelte` (default `thumbnail` since it is primarily used in grids and tables); passed through to `SecureImage`.
+- `ListingEditor.svelte` hero image updated to `size="preview"`.
+- `ImagePreviewOverlay` already does its own `=w1600` normalization — no change needed there.
+- 20 unit tests covering `SIZE_SUFFIXES`, `stripGoogleSizeSuffix`, `applyGoogleSizeSuffix`, `extractGoogleDriveFileId`, `toGoogleDrivePublicImageUrl` in `tests/unit/drive-url.test.ts`.
+
+**Milestone A2: Progressive loading for `full`-size views**
+
+Goal: when `size="full"`, show `preview` quality first, then upgrade to `full` without broken-image flash or layout shift.
+
+Tasks:
+1. On mount with `size="full"`, immediately load the `preview`-size URL and display it.
+2. In the background, load the `full`-size URL; swap only after decode completes (`img.decode()`).
+3. Keep the `preview` image visible (or last stable frame) until the `full` swap is paint-ready.
+4. Unit-test: progressive swap lifecycle (preview shown → full loaded → swap fires).
+5. E2E test: fullscreen/zoom view shows no broken-image state during load.
+
+### Track B — Payload validation
+
+**Milestone B1: Broadcast middleware guards**
+
+Goal: enforce at the dispatch layer that no `data:`, `blob:`, or binary payload enters persistent state.
+
+Tasks:
+1. In `src/lib/redux-firestore.ts` `validateAction()`, add a recursive walk of `action.payload` that throws on:
+   - any string value starting with `data:`
+   - any string value starting with `blob:`
+   - any `Blob`, `File`, or `ArrayBuffer` instance
+2. Unit-test: middleware rejects each disallowed form; allows normal string URLs.
+3. Unit-test: reducers that currently allow `data:`/`blob:` (e.g., `SecureImage` local state) are not in the broadcast path — confirm via test that such values are never dispatched to `broadcast()`.
+
+**Milestone B2: Backend sync-event schema guards**
+
+Goal: `sync` collection Cloud Function rejects events whose payload contains image bytes.
+
+Tasks:
+1. In the sync dispatcher, add a payload-shape check before routing: reject events where any payload field is a base64 image string (`data:image/…`) or exceeds a size threshold (e.g., > 10 KB string).
+2. Write a failing sync document in the emulator during E2E to confirm rejection path fires.
+
+### Suggested order
+
+1. **A1** (size prop + normalization) — highest user-visible impact, independent of everything else.
+2. **B1** (broadcast middleware guards) — pure safety net, no UI changes, easy to verify.
+3. **A2** (progressive loading) — polish; build on A1.
+4. **B2** (backend schema guards) — final hardening; needs emulator E2E to verify.
 
 ## Acceptance Criteria
 

@@ -1,3 +1,31 @@
+export type ImageSize = "thumbnail" | "preview" | "full";
+
+export const SIZE_SUFFIXES: Record<ImageSize, string> = {
+  thumbnail: "=s200",
+  preview: "=s800",
+  full: "=s0",
+};
+
+/**
+ * Strip the trailing Google image size suffix (e.g. =s200, =w400-h300-c, =d)
+ * from a googleusercontent.com URL.
+ */
+export function stripGoogleSizeSuffix(url: string): string {
+  return url.replace(/=[a-z0-9,-]+$/i, "");
+}
+
+/**
+ * Replace any existing Google size suffix on a googleusercontent.com URL with
+ * the suffix appropriate for the requested ImageSize.  Non-Google URLs are
+ * returned unchanged.
+ */
+export function applyGoogleSizeSuffix(url: string, size: ImageSize): string {
+  if (!url.includes("googleusercontent.com") && !url.includes("lh3.google")) {
+    return url;
+  }
+  return stripGoogleSizeSuffix(url) + SIZE_SUFFIXES[size];
+}
+
 export function extractGoogleDriveFileId(rawUrl: string): string {
   const value = String(rawUrl || "").trim();
   if (!value) return "";

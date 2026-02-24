@@ -450,6 +450,7 @@
             src={mainImageObj.url}
             alt={mainImageObj.altText}
             className="main-image"
+            size="preview"
           />
         {:else}
           <span class="no-image-text">No image available</span>

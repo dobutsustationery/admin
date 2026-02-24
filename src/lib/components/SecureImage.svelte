@@ -5,6 +5,8 @@
   import {
     extractGoogleDriveFileId,
     toGoogleDrivePublicImageUrl,
+    SIZE_SUFFIXES,
+    type ImageSize,
   } from "$lib/drive-url";
 
   export let src: string; // The base URL
@@ -12,6 +14,12 @@
   export let className: string = "";
   export let style: string = "";
   export let isUploading: boolean = false;
+  /** Semantic size hint. Controls the Google image-size suffix requested.
+   *  thumbnail (=s200): grids, tables, chips, queues
+   *  preview   (=s800): detail panes, standard modals
+   *  full      (=s0):   zoom / fullscreen / high-detail views
+   */
+  export let size: ImageSize = "full";
 
   let objectUrl: string = "";
   let error = "";
@@ -85,7 +93,7 @@
     // Check global token for authenticated Google Photos items
     const token = getStoredToken();
     const driveFullSizeUrl = driveFileId
-      ? `https://lh3.googleusercontent.com/d/${driveFileId}=s0`
+      ? `https://lh3.googleusercontent.com/d/${driveFileId}${SIZE_SUFFIXES[size]}`
       : "";
 
     // Prefer fetching Google URLs and render via object URLs. This avoids flaky
