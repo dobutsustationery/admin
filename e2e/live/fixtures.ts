@@ -198,7 +198,12 @@ export const test = base.extend<LiveFixtures>({
     await resetFirestoreEmulator();
 
     // Start each run from a clean client cache so broadcast replay does not accumulate.
+    // Setting __SKIP_IDB_HYDRATION__ BEFORE any page scripts run prevents the store
+    // from reading stale IndexedDB state left by a previous test in the same browser
+    // context.  The deleteDatabase call is async and races with loadSnapshot(); the
+    // flag eliminates the race entirely.
     await page.addInitScript(() => {
+      (window as any).__SKIP_IDB_HYDRATION__ = true;
       try {
         window.indexedDB.deleteDatabase('dobutsu_actions_db');
       } catch {

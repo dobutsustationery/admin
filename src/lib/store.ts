@@ -28,6 +28,11 @@ let saveTimeout: any = null;
 
 export async function hydrate() {
   if (typeof window === "undefined") return;
+  // Live E2E tests set this flag via addInitScript (before any page JS runs)
+  // to prevent hydrating stale IndexedDB state from a previous test in the
+  // same browser context.  The flag eliminates a race between deleteDatabase()
+  // and loadSnapshot() that caused sub-pixel layout shifts and screenshot diffs.
+  if ((window as any).__SKIP_IDB_HYDRATION__) return;
   try {
     const loaded = await loadSnapshot();
     if (loaded && loaded.state) {
