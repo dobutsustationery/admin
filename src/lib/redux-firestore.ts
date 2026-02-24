@@ -39,7 +39,64 @@ function stripUndefined(obj: any): any {
   return obj;
 }
 
+/**
+ * Recursively walk `value` and throw if any node is, or contains, image binary
+ * data that must never be persisted in broadcast/sync state.
+ *
+ * Banned:
+ *   - strings starting with "data:"  (inline data URIs / base64)
+ *   - strings starting with "blob:"  (transient object URLs)
+ *   - Blob / File instances
+ *   - ArrayBuffer instances
+ */
+export function assertNoBinaryPayload(value: any, path = "payload"): void {
+  if (value === null || value === undefined) return;
+
+  if (typeof value === "string") {
+    if (value.startsWith("data:")) {
+      throw new Error(
+        `Dirty payload at ${path}: data: URI must not be persisted in broadcast/sync state`,
+      );
+    }
+    if (value.startsWith("blob:")) {
+      throw new Error(
+        `Dirty payload at ${path}: blob: URL must not be persisted in broadcast/sync state`,
+      );
+    }
+    return;
+  }
+
+  if (
+    (typeof Blob !== "undefined" && value instanceof Blob) ||
+    (typeof File !== "undefined" && value instanceof File)
+  ) {
+    throw new Error(
+      `Dirty payload at ${path}: Blob/File must not be persisted in broadcast/sync state`,
+    );
+  }
+
+  if (value instanceof ArrayBuffer) {
+    throw new Error(
+      `Dirty payload at ${path}: ArrayBuffer must not be persisted in broadcast/sync state`,
+    );
+  }
+
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      assertNoBinaryPayload(value[i], `${path}[${i}]`);
+    }
+    return;
+  }
+
+  if (typeof value === "object") {
+    for (const key of Object.keys(value)) {
+      assertNoBinaryPayload(value[key], `${path}.${key}`);
+    }
+  }
+}
+
 function validateAction(action: any) {
+  assertNoBinaryPayload(action.payload);
   if (action.type === "listingCreation/add_proposals") {
     if (Array.isArray(action.payload)) {
       for (const p of action.payload) {

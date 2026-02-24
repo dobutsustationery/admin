@@ -361,17 +361,14 @@ Tasks:
 
 ### Track B — Payload validation
 
-**Milestone B1: Broadcast middleware guards**
+**Milestone B1: Broadcast middleware guards — COMPLETE**
 
 Goal: enforce at the dispatch layer that no `data:`, `blob:`, or binary payload enters persistent state.
 
-Tasks:
-1. In `src/lib/redux-firestore.ts` `validateAction()`, add a recursive walk of `action.payload` that throws on:
-   - any string value starting with `data:`
-   - any string value starting with `blob:`
-   - any `Blob`, `File`, or `ArrayBuffer` instance
-2. Unit-test: middleware rejects each disallowed form; allows normal string URLs.
-3. Unit-test: reducers that currently allow `data:`/`blob:` (e.g., `SecureImage` local state) are not in the broadcast path — confirm via test that such values are never dispatched to `broadcast()`.
+Implemented:
+- `assertNoBinaryPayload(value, path)` exported from `src/lib/redux-firestore.ts`: recursively walks any value and throws a descriptive error (including the dotted path) if it finds a `data:` URI, `blob:` URL, `Blob`/`File` instance, or `ArrayBuffer`.
+- Called at the top of `validateAction()` on `action.payload` before any Firestore write.
+- 18 unit tests in `tests/unit/broadcast-payload-validation.test.ts` covering: safe values, `data:` URIs at all nesting depths, `blob:` URLs at all nesting depths, and binary object types.
 
 **Milestone B2: Backend sync-event schema guards**
 
