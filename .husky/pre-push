@@ -62,11 +62,14 @@ kill_stale_prepush_port_processes() {
     for pid in ${pids}; do
       comm="$(ps -p "${pid}" -o comm= 2>/dev/null | tr -d ' ')"
       comm_base="$(basename "${comm}" 2>/dev/null || echo "${comm}")"
-      if [ "${comm_base}" = "java" ]; then
-        echo "Killing stray java process ${pid} on port ${port}..."
+      # Kill java (Firestore/emulator hub) and node (Auth emulator) processes on
+      # isolated pre-push ports. These ports are exclusively reserved for pre-push
+      # emulators so it is safe to kill any emulator-runtime process found there.
+      if [ "${comm_base}" = "java" ] || [ "${comm_base}" = "node" ]; then
+        echo "Killing stray ${comm_base} process ${pid} on port ${port}..."
         kill "${pid}" 2>/dev/null || true
       else
-        echo "Leaving non-java process ${pid} (${comm:-unknown}) on port ${port}."
+        echo "Leaving non-emulator process ${pid} (${comm:-unknown}) on port ${port}."
       fi
     done
   done
@@ -100,38 +103,37 @@ cleanup_prepush_emulators() {
 trap cleanup_prepush_emulators EXIT INT TERM
 
 if check_prepush_emulators; then
-  echo "Pre-push emulators already running on isolated ports."
-else
-  echo "Starting pre-push emulator stack..."
-  print_prepush_port_diagnostics
+  echo "Pre-push emulators already running on isolated ports. Killing and restarting for a clean, owned run..."
   kill_stale_prepush_port_processes
-  print_prepush_port_diagnostics
-  (npm run env:functions:local && firebase emulators:start --config "${E2E_FIREBASE_CONFIG_PATH}") > "${E2E_EMULATOR_LOG_PATH}" 2>&1 &
-  PREPUSH_EMULATOR_PID=$!
-  echo "Pre-push emulators started (PID: ${PREPUSH_EMULATOR_PID})"
-  echo "Waiting for Firestore/Auth emulators..."
-  i=1
-  while [ $i -le "${PREPUSH_EMULATOR_TIMEOUT_SECONDS}" ]; do
-    if check_prepush_emulators; then
-      echo "Pre-push emulators are ready."
-      break
-    fi
-    if ! kill -0 "${PREPUSH_EMULATOR_PID}" 2>/dev/null; then
-      echo "Pre-push emulator process exited before becoming ready."
-      tail -120 "${E2E_EMULATOR_LOG_PATH}" || true
-      print_prepush_port_diagnostics
-      exit 1
-    fi
-    if [ $i -eq "${PREPUSH_EMULATOR_TIMEOUT_SECONDS}" ]; then
-      echo "Pre-push emulators failed to become ready in time."
-      tail -120 "${E2E_EMULATOR_LOG_PATH}" || true
-      print_prepush_port_diagnostics
-      exit 1
-    fi
-    i=$((i + 1))
-    sleep 1
-  done
 fi
+
+echo "Starting pre-push emulator stack..."
+print_prepush_port_diagnostics
+(npm run env:functions:local && firebase emulators:start --config "${E2E_FIREBASE_CONFIG_PATH}") > "${E2E_EMULATOR_LOG_PATH}" 2>&1 &
+PREPUSH_EMULATOR_PID=$!
+echo "Pre-push emulators started (PID: ${PREPUSH_EMULATOR_PID})"
+echo "Waiting for Firestore/Auth emulators..."
+i=1
+while [ $i -le "${PREPUSH_EMULATOR_TIMEOUT_SECONDS}" ]; do
+  if check_prepush_emulators; then
+    echo "Pre-push emulators are ready."
+    break
+  fi
+  if ! kill -0 "${PREPUSH_EMULATOR_PID}" 2>/dev/null; then
+    echo "Pre-push emulator process exited before becoming ready."
+    tail -120 "${E2E_EMULATOR_LOG_PATH}" || true
+    print_prepush_port_diagnostics
+    exit 1
+  fi
+  if [ $i -eq "${PREPUSH_EMULATOR_TIMEOUT_SECONDS}" ]; then
+    echo "Pre-push emulators failed to become ready in time."
+    tail -120 "${E2E_EMULATOR_LOG_PATH}" || true
+    print_prepush_port_diagnostics
+    exit 1
+  fi
+  i=$((i + 1))
+  sleep 1
+done
 
 echo "Running pre-push live fixture health check..."
 npm run test:live:doctor
