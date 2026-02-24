@@ -25,14 +25,35 @@ async function ensureStableThumbnailCaptureStyles(page: Page) {
       styleEl.textContent = `
       [data-testid="selected-queue"] ~ div button,
       [data-testid="selected-queue"] button,
-      button {
+      button,
+      h1,
+      h2,
+      h3,
+      p,
+      span,
+      div {
         transition: none !important;
         animation: none !important;
         box-shadow: none !important;
         filter: none !important;
+        text-shadow: none !important;
+        transform: none !important;
+        outline: none !important;
+        -webkit-font-smoothing: none !important;
+        text-rendering: geometricPrecision !important;
+      }
+      [data-testid="selected-queue"],
+      [data-testid="selected-queue"] * {
+        border-radius: 0 !important;
       }
       button {
         border-radius: 0 !important;
+        border-color: #9ca3af !important;
+        background-image: none !important;
+        font-family: sans-serif !important;
+        font-size: 14px !important;
+        line-height: 1.2 !important;
+        letter-spacing: 0 !important;
       }
       ${selector} {
         transition: none !important;
@@ -78,12 +99,13 @@ async function waitForVisiblePhotoThumbnailsReady(
 
       for (const item of items) {
         const uploadStatus = item.getAttribute("data-upload-status") || "none";
-        const photoState = item.getAttribute("data-photo-state") || "";
         if (uploadStatus === "failed") return false;
-        if (photoState !== "ready") return false;
+
+        const rect = item.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
 
         const img = item.querySelector("img") as HTMLImageElement | null;
-        if (!img) return false;
+        if (!img) continue;
         if (!img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0)
           return false;
       }

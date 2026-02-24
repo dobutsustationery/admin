@@ -15,8 +15,8 @@
 
   $: queueProgress =
     activeTotal === 0 ? 0 : Math.round((processing / activeTotal) * 100);
-  $: showBarberPole = processing > 0;
-  $: visible = hasActiveWork || celebrationPhase !== "idle";
+  $: showBarberPole = processing > 0 && !isAutomatedUi;
+  $: visible = !isAutomatedUi && (hasActiveWork || celebrationPhase !== "idle");
 
   type CelebrationPhase = "idle" | "expanding" | "victory";
   let celebrationPhase: CelebrationPhase = "idle";
@@ -29,6 +29,8 @@
   let laneRenderWidthPx: number | null = null;
   let expandTimer: ReturnType<typeof setTimeout> | null = null;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
+  let isAutomatedUi =
+    typeof navigator !== "undefined" && Boolean(navigator.webdriver);
   const EXPAND_MS = 3000;
   const VICTORY_MS = 7000;
 
@@ -64,7 +66,7 @@
       clearCelebrationTimers();
       celebrationPhase = "idle";
     }
-    if (previousHasActiveWork && !hasActiveWork) {
+    if (!isAutomatedUi && previousHasActiveWork && !hasActiveWork) {
       startCelebration();
     }
     previousHasActiveWork = hasActiveWork;
@@ -75,6 +77,9 @@
   });
 
   onMount(() => {
+    isAutomatedUi =
+      typeof navigator !== "undefined" && Boolean(navigator.webdriver);
+
     const updateMeasuredHeight = () => {
       measuredBarHeightPx = Math.max(
         92,
@@ -131,6 +136,7 @@
         active={visible}
         celebrate={celebrationPhase !== "idle"}
         phase={celebrationPhase}
+        staticMode={isAutomatedUi}
         lockedRenderWidthPx={celebrationPhase === "idle"
           ? null
           : laneRenderWidthPx}

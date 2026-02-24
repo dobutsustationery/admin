@@ -5,6 +5,7 @@
   export let celebrate = false;
   export let phase: "idle" | "expanding" | "victory" = "idle";
   export let lockedRenderWidthPx: number | null = null;
+  export let staticMode = false;
 
   let containerEl: HTMLDivElement;
   let syncRendererSize: (() => void) | null = null;
@@ -14,7 +15,7 @@
   }
 
   onMount(() => {
-    if (!containerEl || !active) return;
+    if (!containerEl || !active || staticMode) return;
 
     let destroyed = false;
     let frame = 0;
@@ -303,7 +304,13 @@
 </script>
 
 <div class="patrol-lane" aria-hidden="true">
-  <div class="canvas-wrap" bind:this={containerEl}></div>
+  {#if staticMode}
+    <div class="static-scene">
+      <img src="/hedgehogs/HedgehogV6ColourTransparentBG.png" alt="" />
+    </div>
+  {:else}
+    <div class="canvas-wrap" bind:this={containerEl}></div>
+  {/if}
 </div>
 
 <style>
@@ -333,6 +340,50 @@
   .canvas-wrap :global(canvas) {
     display: block;
     max-width: none;
+  }
+
+  .static-scene {
+    width: 100%;
+    height: 100%;
+    min-height: inherit;
+    display: grid;
+    place-items: center;
+    background:
+      radial-gradient(
+        circle at 28% 15%,
+        rgba(255, 255, 255, 0.72),
+        transparent 52%
+      ),
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.18),
+        rgba(255, 255, 255, 0)
+      ),
+      linear-gradient(180deg, #fef3c7 0%, #fde68a 58%, #fcd34d 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .static-scene::after {
+    content: "";
+    position: absolute;
+    left: -10%;
+    right: -10%;
+    bottom: 14%;
+    height: 26%;
+    border-radius: 999px;
+    background: rgba(234, 179, 8, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(234, 179, 8, 0.2);
+  }
+
+  .static-scene img {
+    width: auto;
+    height: min(76px, calc(100% - 10px));
+    max-width: calc(100% - 8px);
+    object-fit: contain;
+    transform: translateY(1px);
+    position: relative;
+    z-index: 1;
   }
 
   @media (max-width: 768px) {

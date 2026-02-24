@@ -14,36 +14,52 @@ type AuthFixtures = {
 export const test = base.extend<AuthFixtures>({
   authenticatedPage: async ({ page, context }, use) => {
     // Create a real user in Firebase Auth Emulator using Playwright's request context
-    const authEmulatorUrl = process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
+    const authEmulatorUrl =
+      process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
     const testEmail = `test-${Date.now()}@example.com`; // Unique email to avoid conflicts
     const testPassword = "testpassword123";
-    
+
     let authData = null;
-    
-    try {
-      // Create user via Auth emulator REST API using Playwright's request
-      const response = await page.request.post(
-        `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
-        {
-          data: {
-            email: testEmail,
-            password: testPassword,
-            displayName: "Test User",
-            returnSecureToken: true,
+
+    for (let attempt = 1; attempt <= 5 && !authData; attempt++) {
+      try {
+        // Create user via Auth emulator REST API using Playwright's request
+        const response = await page.request.post(
+          `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
+          {
+            data: {
+              email: testEmail,
+              password: testPassword,
+              displayName: "Test User",
+              returnSecureToken: true,
+            },
           },
+        );
+
+        if (response.ok()) {
+          authData = await response.json();
+          console.log(
+            `✓ Created test user in Auth emulator: ${authData.email}`,
+          );
+          break;
         }
-      );
-      
-      if (response.ok()) {
-        authData = await response.json();
-        console.log(`✓ Created test user in Auth emulator: ${authData.email}`);
-      } else {
-        console.log(`⚠️  Failed to create user: ${response.status()}`);
+
+        console.log(
+          `⚠️  Failed to create user (attempt ${attempt}/5): ${response.status()}`,
+        );
+      } catch (error: any) {
+        const message = String(error?.message || error || "");
+        console.log(`⚠️  Error creating user (attempt ${attempt}/5):`, error);
+        if (!message.includes("ECONNREFUSED") && !message.includes("socket")) {
+          break;
+        }
       }
-    } catch (error) {
-      console.log(`⚠️  Error creating user:`, error);
+
+      if (attempt < 5) {
+        await page.waitForTimeout(300);
+      }
     }
-    
+
     if (authData && authData.idToken) {
       // Inject real auth state into localStorage before page loads
       await context.addInitScript((authInfo) => {
