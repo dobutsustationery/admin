@@ -55,4 +55,26 @@ describe("shopify-sync-core buildProductPayload", () => {
     expect(payload.status).toBe("draft");
     expect(payload).not.toHaveProperty("published_scope");
   });
+
+  it("includes standard_product_type in payload from productCategory", () => {
+    const payload = buildProductPayload(
+      {
+        handle: "test-handle",
+        listing: {
+          handle: "test-handle",
+          title: "Test Product",
+          productCategory: "Stationery",
+        },
+        variants: [
+          {
+            sku: "123",
+            janCode: "123",
+          },
+        ],
+      },
+      null,
+    );
+
+    expect(payload.standard_product_type).toBe("Stationery");
+  });
 });

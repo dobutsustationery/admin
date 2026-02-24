@@ -245,6 +245,50 @@ async function fetchJson(url, options = {}) {
   return json;
 }
 
+let taxonomyCache = null;
+let taxonomyCacheTime = 0;
+
+async function fetchTaxonomyMapping() {
+  const TAXONOMY_URL =
+    "https://raw.githubusercontent.com/Shopify/product-taxonomy/main/dist/en/categories.txt";
+  const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+  if (taxonomyCache && Date.now() - taxonomyCacheTime < CACHE_TTL) {
+    return taxonomyCache;
+  }
+
+  try {
+    const res = await fetch(TAXONOMY_URL);
+    if (!res.ok) throw new Error(`Failed to fetch taxonomy: ${res.statusText}`);
+    const text = await res.text();
+
+    const mapping = new Map();
+    const lines = text.split("\n");
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+
+      // Format: {GID} : {Path}
+      // Example: gid://shopify/TaxonomyCategory/ap : Animals & Pet Supplies
+      const lastColonIndex = trimmed.lastIndexOf(":");
+      if (lastColonIndex > 0) {
+        const gid = trimmed.slice(0, lastColonIndex).trim();
+        const path = trimmed.slice(lastColonIndex + 1).trim();
+        if (gid.startsWith("gid://shopify/TaxonomyCategory/")) {
+          mapping.set(path, gid);
+        }
+      }
+    }
+
+    taxonomyCache = mapping;
+    taxonomyCacheTime = Date.now();
+    return mapping;
+  } catch (error) {
+    console.error("Failed to fetch Shopify taxonomy:", error);
+    return new Map();
+  }
+}
+
 function extractNumericId(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   const text = String(value || "").trim();
@@ -551,6 +595,7 @@ function buildProductPayload(requestPayload, existingProduct) {
     body_html: String(listing.bodyHtml || ""),
     vendor: String(listing.vendor || "SPNSS Ltd."),
     product_type: String(listing.productType || ""),
+    standard_product_type: String(listing.productCategory || ""),
     tags: toTagsString(listing.tags),
     status: resolvedStatus,
     options: [{ name: option1Name }],
@@ -759,9 +804,59 @@ async function reconcileVariantOrderAndImages(config, product, requestPayload) {
   return latest || product;
 }
 
+async function syncProductCategory(config, productId, categoryPath) {
+  if (!categoryPath) return null;
+
+  const taxonomy = await fetchTaxonomyMapping();
+  const categoryGid = taxonomy.get(categoryPath);
+  if (!categoryGid) {
+    console.warn(`Category path not found in taxonomy: ${categoryPath}`);
+    return null;
+  }
+
+  const productGid = toShopifyProductGid(productId);
+  if (!productGid) return null;
+
+  const data = await fetchGraphql(
+    config,
+    `
+      mutation ProductUpdateCategory($input: ProductInput!) {
+        productUpdate(input: $input) {
+          product {
+            id
+            category {
+              id
+              fullName
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      input: {
+        id: productGid,
+        category: categoryGid,
+      },
+    },
+  );
+
+  const result = data?.productUpdate;
+  const userErrors = Array.isArray(result?.userErrors) ? result.userErrors : [];
+  if (userErrors.length > 0) {
+    console.error(`productUpdate Category userErrors: ${JSON.stringify(userErrors)}`);
+  }
+
+  return result?.product;
+}
+
 async function upsertProductFromRequest(config, requestPayload) {
   const { storeUrl, apiVersion } = config;
   const handle = String(requestPayload?.handle || "").trim();
+  const listing = requestPayload?.listing || {};
   const requestSkus = (Array.isArray(requestPayload?.variants) ? requestPayload.variants : [])
     .map((v) => String(v?.sku || "").trim())
     .filter(Boolean);
@@ -818,6 +913,8 @@ async function upsertProductFromRequest(config, requestPayload) {
   }
 
   const json = opResult.json;
+  let finalProduct = json.product;
+
   const createdHandle = String(json.product?.handle || "");
   const requestedHandle = String(opResult.productPayload?.handle || "").trim();
   const wasCreate = !existing || Number(existing?.id) !== Number(json.product?.id);
@@ -858,11 +955,18 @@ async function upsertProductFromRequest(config, requestPayload) {
     }
 
     if (updated?.product?.id) {
-      return reconcileVariantOrderAndImages(config, updated.product, requestPayload);
+      finalProduct = updated.product;
     }
   }
 
-  return reconcileVariantOrderAndImages(config, json.product, requestPayload);
+  // Sync category via GraphQL for the final product
+  if (finalProduct?.id && listing.productCategory) {
+    await syncProductCategory(config, finalProduct.id, listing.productCategory).catch(
+      (err) => console.error("Failed to sync product category:", err),
+    );
+  }
+
+  return reconcileVariantOrderAndImages(config, finalProduct, requestPayload);
 }
 
 async function setInventoryLevel(config, locationId, inventoryItemId, available) {
@@ -948,4 +1052,6 @@ module.exports = {
   ensureProductPublishedToOnlineStore,
   setInventoryLevel,
   fetchAllVariantsBySku,
+  fetchTaxonomyMapping,
+  syncProductCategory,
 };
