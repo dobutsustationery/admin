@@ -200,3 +200,12 @@ Switch environments with `npm run env:local/staging/production`.
 For local development: copy `.env.example` to `.env`, run `npm run emulators` in one terminal, then `npm run dev:local` in another.
 
 The pre-commit hook (`scripts/check-no-wait-for-timeout.js`) rejects `waitForTimeout` calls in E2E tests.
+
+### Nix + direnv
+
+The development environment is defined by a **Nix flake** (`flake.nix`). `direnv` automatically loads the flake when you enter the project directory (via `.envrc`).
+
+When a tool is missing from the shell:
+- **Do not install it globally** with `brew`, `npm -g`, or similar.
+- **Add it to the flake** so all contributors and CI get the same version automatically.
+- After editing `flake.nix`, run `direnv reload` (or `cd` out and back in) to apply the change.
