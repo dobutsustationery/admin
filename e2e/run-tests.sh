@@ -6,13 +6,17 @@
 set -e  # Exit on error
 
 FIRESTORE_HOST="${E2E_FIRESTORE_EMULATOR_HOST:-localhost}"
-FIRESTORE_PORT="${E2E_FIRESTORE_EMULATOR_PORT:-8080}"
-AUTH_PORT="${E2E_AUTH_EMULATOR_PORT:-9099}"
-PREVIEW_PORT="${E2E_PREVIEW_PORT:-4173}"
-FIREBASE_CONFIG_PATH="${E2E_FIREBASE_CONFIG_PATH:-firebase.json}"
-EMULATOR_LOG_PATH="${E2E_EMULATOR_LOG_PATH:-/tmp/emulators.log}"
+# Default to isolated E2E ports so ad-hoc runs don't attach to the developer's local stack.
+FIRESTORE_PORT="${E2E_FIRESTORE_EMULATOR_PORT:-18080}"
+AUTH_PORT="${E2E_AUTH_EMULATOR_PORT:-19099}"
+PREVIEW_PORT="${E2E_PREVIEW_PORT:-14173}"
+FIREBASE_CONFIG_PATH="${E2E_FIREBASE_CONFIG_PATH:-firebase.prepush.json}"
+EMULATOR_LOG_PATH="${E2E_EMULATOR_LOG_PATH:-/tmp/dobutsu-e2e-emulators.log}"
 
 export FIRESTORE_EMULATOR_HOST="${FIRESTORE_HOST}:${FIRESTORE_PORT}"
+export E2E_FIRESTORE_EMULATOR_PORT="${FIRESTORE_PORT}"
+export E2E_AUTH_EMULATOR_PORT="${AUTH_PORT}"
+export E2E_PREVIEW_PORT="${PREVIEW_PORT}"
 export E2E_AUTH_EMULATOR_URL="${E2E_AUTH_EMULATOR_URL:-http://localhost:${AUTH_PORT}}"
 export E2E_PREVIEW_BASE_URL="${E2E_PREVIEW_BASE_URL:-http://localhost:${PREVIEW_PORT}}"
 export VITE_EMULATOR_FIRESTORE_HOST="${FIRESTORE_HOST}"
@@ -25,6 +29,10 @@ START_TIME=$(date +%s)
 
 echo "🧪 E2E Test Runner"
 echo "=================="
+echo ""
+echo "Using emulator ports: Firestore=${FIRESTORE_PORT}, Auth=${AUTH_PORT}"
+echo "Using preview port: ${PREVIEW_PORT}"
+echo "Using Firebase config: ${FIREBASE_CONFIG_PATH}"
 echo ""
 
 print_emulator_port_diagnostics() {
@@ -45,9 +53,15 @@ kill_stale_emulator_port_processes() {
     [ -z "${pids}" ] && continue
     for pid in ${pids}; do
       comm="$(ps -p "${pid}" -o comm= 2>/dev/null | tr -d ' ')"
-      if [ "${comm}" = "java" ]; then
+      comm_base="$(basename "${comm}" 2>/dev/null || echo "${comm}")"
+      if [ "${comm_base}" = "java" ]; then
         echo "Killing stray java process ${pid} on emulator port ${port}..."
         kill "${pid}" 2>/dev/null || true
+        sleep 1
+        if lsof -t -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | grep -q "^${pid}$"; then
+          echo "Force killing stubborn java process ${pid} on emulator port ${port}..."
+          kill -9 "${pid}" 2>/dev/null || true
+        fi
       fi
     done
   done

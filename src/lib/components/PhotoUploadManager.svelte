@@ -4,32 +4,187 @@
   import { user } from "$lib/user-store";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
+  import {
+    addDoc,
+    collection,
+    doc,
+    getDoc,
+    onSnapshot,
+    query,
+    serverTimestamp,
+    setDoc,
+    where,
+  } from "firebase/firestore";
   import { getStoredToken as getPhotosToken } from "$lib/google-photos";
   import { getStoredToken as getDriveToken } from "$lib/google-drive";
-  import {
-    ensureFolderStructure,
-    uploadImageToDrive,
-    getFolderId,
-  } from "$lib/google-drive";
+  import { ensureFolderStructure, getFolderId } from "$lib/google-drive";
   import { getUploadCandidates } from "$lib/upload-logic";
+  import {
+    PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
+    SYNC_COLLECTION,
+    SYNC_SECRETS_COLLECTION,
+  } from "$lib/sync-events";
 
   let interval: ReturnType<typeof setInterval>;
+  let unsubscribeSecretRequests: (() => void) | null = null;
+  let unsubscribeTransferRequests: (() => void) | null = null;
   let cachedOriginalsId: string | null = null;
   let processing = new Set<string>(); // Local lock to prevent double-processing in same cycle
+  let respondedSecretRequestIds = new Set<string>();
+  let requestedPhotoIds = new Set<string>();
+  let secretListenerStartedAtMs = 0;
+  let transferRequestsHydrated = false;
 
   // Configuration
   const MAX_RETRIES = 3;
-  const UPLOAD_TIMEOUT = 5000; // 5s for easier testing
+  const UPLOAD_TIMEOUT = 5 * 60 * 1000; // backend sync transfers can take much longer than local uploads
   const CHECK_INTERVAL = 2000;
-  const HIGH_RES_SUFFIX = "=w4096-h4096";
-
   onMount(() => {
     interval = setInterval(processQueue, CHECK_INTERVAL);
+    startSecretRequestListener();
+    startTransferRequestListener();
   });
 
   onDestroy(() => {
     if (interval) clearInterval(interval);
+    if (unsubscribeSecretRequests) unsubscribeSecretRequests();
+    if (unsubscribeTransferRequests) unsubscribeTransferRequests();
   });
+
+  function getLongestAvailableDriveToken() {
+    const photosToken = getPhotosToken();
+    const driveToken = getDriveToken() || photosToken;
+    return { photosToken, driveToken };
+  }
+
+  function startTransferRequestListener() {
+    if (unsubscribeTransferRequests) return;
+    const q = query(
+      collection(firestore, SYNC_COLLECTION),
+      where("eventType", "==", PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT),
+    );
+    unsubscribeTransferRequests = onSnapshot(
+      q,
+      (snap) => {
+        for (const change of snap.docChanges()) {
+          if (change.type !== "added") continue;
+          const data = change.doc.data() as any;
+          const photoId = String(
+            data?.payload?.photoId || data?.photoId || "",
+          ).trim();
+          if (photoId) requestedPhotoIds.add(photoId);
+        }
+        transferRequestsHydrated = true;
+      },
+      (error) => {
+        console.warn(
+          "[PhotoUploadManager] transfer request listener failed",
+          error,
+        );
+        transferRequestsHydrated = true;
+      },
+    );
+  }
+
+  function toSyncPhotoRequestDocId(photoId: string) {
+    const safe = String(photoId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    return `photos_request_${safe}`;
+  }
+
+  function startSecretRequestListener() {
+    if (unsubscribeSecretRequests) return;
+    secretListenerStartedAtMs = Date.now();
+    const q = query(
+      collection(firestore, SYNC_COLLECTION),
+      where("eventType", "==", "photos/image_transfer_secret_required"),
+    );
+    unsubscribeSecretRequests = onSnapshot(
+      q,
+      (snap) => {
+        for (const change of snap.docChanges()) {
+          if (change.type !== "added") continue;
+          const id = change.doc.id;
+          if (respondedSecretRequestIds.has(id)) continue;
+          const data = change.doc.data() as any;
+          const createdAtMs = Number(data?.createdAtMs || 0);
+          if (createdAtMs && createdAtMs < secretListenerStartedAtMs - 5000) {
+            // Ignore historical backlog so a page refresh does not replay old secret handoffs.
+            continue;
+          }
+          respondedSecretRequestIds.add(id);
+          respondToSecretRequired(id, data).catch((error) => {
+            console.warn(
+              "[PhotoUploadManager] secret_required response failed",
+              {
+                id,
+                error,
+              },
+            );
+            respondedSecretRequestIds.delete(id);
+          });
+        }
+      },
+      (error) => {
+        console.warn(
+          "[PhotoUploadManager] secret_required listener failed",
+          error,
+        );
+      },
+    );
+  }
+
+  async function respondToSecretRequired(syncEventId: string, eventData: any) {
+    if (!$user?.uid) return;
+    const uid = $user.uid;
+    const payload = eventData?.payload || {};
+
+    const { photosToken, driveToken } = getLongestAvailableDriveToken();
+    if (!driveToken?.access_token) {
+      console.warn(
+        "[PhotoUploadManager] No Drive token available for secret response",
+        {
+          syncEventId,
+        },
+      );
+      return;
+    }
+
+    const secretDocId = `photos-secret-${uid}`;
+
+    await setDoc(doc(firestore, SYNC_SECRETS_COLLECTION, secretDocId), {
+      creator: uid,
+      requestId: String(eventData?.requestId || "").trim(),
+      source: "photo-upload-manager:secret-response",
+      createdAtMs: Date.now(),
+      updatedAtMs: Date.now(),
+      expiresAtMs: Date.now() + 60 * 60 * 1000,
+      // We cannot mint a refresh token here; these are the longest-lived tokens available in current client flow.
+      photosAccessToken: photosToken?.access_token || null,
+      driveAccessToken: driveToken.access_token,
+    });
+
+    await addDoc(collection(firestore, SYNC_COLLECTION), {
+      eventType: "photos/image_transfer_secret_provided",
+      creator: uid,
+      requestedBy: uid,
+      requestId: String(eventData?.requestId || "").trim(),
+      source: "photo-upload-manager",
+      payloadVersion: 1,
+      payload: {
+        targetRequestEventId: String(
+          payload?.targetRequestEventId || eventData?.requestEventId || "",
+        ).trim(),
+        secretRef: {
+          collection: SYNC_SECRETS_COLLECTION,
+          docId: secretDocId,
+        },
+        secretRequiredEventId: syncEventId,
+      },
+      createdAtMs: Date.now(),
+      createdAt: serverTimestamp(),
+      timestamp: serverTimestamp(),
+    });
+  }
 
   async function processQueue() {
     // Requirements: User signed in (Firebase) AND a Drive-capable token available
@@ -37,6 +192,7 @@
     const photosToken = getPhotosToken();
     const driveToken = getDriveToken() || photosToken;
     if (!driveToken) return;
+    if (!transferRequestsHydrated) return;
 
     const state = $store.photos;
     const { selected, uploads } = state;
@@ -46,7 +202,7 @@
     const candidates = getUploadCandidates(selected, uploads || {}, now, {
       maxRetries: MAX_RETRIES,
       uploadTimeout: UPLOAD_TIMEOUT,
-    });
+    }).filter((item) => !requestedPhotoIds.has(String(item.id || "")));
 
     if (candidates.length > 0) {
       console.log(
@@ -93,135 +249,88 @@
       processing.add(item.id);
 
       // Fire & Forget (async)
-      uploadItem(
-        item,
-        photosToken?.access_token,
-        driveToken.access_token,
-        cachedOriginalsId!,
-      ).finally(() => {
+      uploadItem(item, cachedOriginalsId!).finally(() => {
         processing.delete(item.id);
       });
     }
   }
 
-  async function uploadItem(
-    item: any,
-    photosAccessToken: string | undefined,
-    driveAccessToken: string,
-    folderId: string,
-  ) {
+  async function uploadItem(item: any, folderId: string) {
     const uid = $user.uid!;
+    const requestId = `photo-transfer-${item.id}-${Date.now()}`;
 
     try {
+      // Queue append-only sync intent so the backend worker can process transfer.
+      const syncRequestDocId = toSyncPhotoRequestDocId(item.id);
+      const syncRequestRef = doc(firestore, SYNC_COLLECTION, syncRequestDocId);
+      const existing = await getDoc(syncRequestRef);
+      if (existing.exists()) {
+        requestedPhotoIds.add(String(item.id));
+        console.info(
+          "[PhotoUploadManager] Sync request already exists, waiting",
+          {
+            photoId: item.id,
+            syncRequestDocId,
+          },
+        );
+        return;
+      }
+
+      await setDoc(syncRequestRef, {
+        eventType: PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
+        requestId,
+        creator: uid,
+        requestedBy: uid,
+        requestedAt: Date.now(),
+        source: "photo-upload-manager",
+        photoId: item.id,
+        filename: item.filename || `${item.id}.jpg`,
+        mimeType: item.mimeType || "image/jpeg",
+        payloadVersion: 1,
+        payload: {
+          photoId: item.id,
+          sourceBaseUrl: item.baseUrl || "",
+          filename: item.filename || `${item.id}.jpg`,
+          mimeType: item.mimeType || "image/jpeg",
+          targetFolderId: folderId,
+          sourceType: item.baseUrl?.includes("googleusercontent.com")
+            ? "google_photos_url"
+            : "url",
+          sourceRef: {
+            mediaItemId: item.id,
+            url: item.baseUrl || "",
+          },
+        },
+        createdAtMs: Date.now(),
+        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+      });
+      requestedPhotoIds.add(String(item.id));
+
       // Broadcase Initiate
       await broadcast(firestore, uid, {
         type: "photos/initiate_upload",
-        payload: { id: item.id, timestamp: Date.now() },
-      });
-
-      // Fetch Blob using URL/header strategy that mirrors browser behavior.
-      let fetchUrl = item.baseUrl;
-      const isGoogleusercontent = fetchUrl.includes("googleusercontent.com");
-      if (
-        !isGoogleusercontent &&
-        !fetchUrl.includes("googleapis.com") &&
-        !fetchUrl.includes("drive.google.com")
-      ) {
-        fetchUrl += HIGH_RES_SUFFIX;
-      }
-
-      let resp: Response | null = null;
-      const candidateUrls = isGoogleusercontent
-        ? (() => {
-            const base = item.baseUrl.replace(/=[a-z0-9,-]+$/i, "");
-            // Strict mode: only fetch original bytes for Google Photos sources.
-            return [`${base}=d`];
-          })()
-        : [fetchUrl];
-
-      for (const candidate of candidateUrls) {
-        if (photosAccessToken) {
-          // Google Photos PPA URLs require auth tied to the Photos account.
-          const withAuth = await fetch(candidate, {
-            headers: { Authorization: `Bearer ${photosAccessToken}` },
-            referrerPolicy: "no-referrer",
-          }).catch(() => null);
-          if (withAuth?.ok) {
-            resp = withAuth;
-            break;
-          }
-        }
-
-        // Fallback without auth for public/special cases.
-        const withoutAuth = await fetch(candidate, {
-          referrerPolicy: "no-referrer",
-        }).catch(() => null);
-        if (withoutAuth?.ok) {
-          resp = withoutAuth;
-          break;
-        }
-      }
-
-      // Drive and API URLs require auth.
-      if (!resp && !isGoogleusercontent) {
-        const authResp = await fetch(fetchUrl, {
-          headers: { Authorization: `Bearer ${driveAccessToken}` },
-          referrerPolicy: "no-referrer",
-        }).catch(() => null);
-        if (authResp?.ok) {
-          resp = authResp;
-        }
-      }
-
-      if (!resp) {
-        throw new Error(`Fetch failed for ${item.id}`);
-      }
-
-      const blob = await resp.blob();
-      console.info(
-        `[UploadManager] Source fetch succeeded: id=${item.id} url=${candidateUrls[0]} bytes=${blob.size} type=${blob.type || "unknown"}`,
-      );
-
-      // Use Google Photos ID for uniqueness as requested
-      // Sanitize ID just in case (though usually base64-like)
-      const safeId = item.id.replace(/[^a-zA-Z0-9-_]/g, "");
-      const ext = item.filename.split(".").pop() || "jpg";
-      const driveFilename = `${safeId}.${ext}`;
-
-      // Check if file already exists?
-      // Drive allows duplicates. To strictly avoid it, we'd need to search first.
-      // But for now, we just ensure the name is deterministic.
-
-      // Upload
-      const driveFile = await uploadImageToDrive(
-        blob,
-        driveFilename,
-        folderId,
-        driveAccessToken,
-      );
-
-      // Determine Permanent URL
-      // Keep the canonical Drive API media URL so downstream flows always reference
-      // the full-size original bytes rather than an expiring/resized thumbnail URL.
-      const permanentUrl = driveFile.publicUrl || driveFile.apiUrl;
-      if (!permanentUrl) {
-        throw new Error("No Drive public URL returned from upload");
-      }
-
-      // Broadcast Success
-      await broadcast(firestore, uid, {
-        type: "photos/complete_upload",
-        payload: {
-          id: item.id,
-          permanentUrl: permanentUrl,
-          webViewLink: driveFile.webViewLink,
-        },
+        payload: { id: item.id, timestamp: Date.now(), requestId },
       });
     } catch (e: any) {
+      if (String(e?.code || "").includes("permission-denied")) {
+        requestedPhotoIds.add(String(item.id));
+        console.info(
+          "[PhotoUploadManager] Sync request deduped by rules, waiting",
+          {
+            photoId: item.id,
+          },
+        );
+        return;
+      }
       console.error(`[UploadManager] Fail ${item.filename}:`, e);
       await broadcast(firestore, uid, {
         type: "photos/fail_upload",
-        payload: { id: item.id, error: e.message || String(e) },
+        payload: {
+          id: item.id,
+          requestId,
+          error: e.message || String(e),
+        },
       });
     }
   }

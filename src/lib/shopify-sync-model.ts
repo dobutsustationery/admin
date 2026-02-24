@@ -56,6 +56,13 @@ export type FoldedShopifySync = {
   handleToLatestRequestId: Record<string, string>;
 };
 
+export type GenericSyncRequestStatus =
+  | "queued"
+  | "processing"
+  | "success"
+  | "partial_failed"
+  | "failed";
+
 export function toMs(value: any): number {
   if (!value) return 0;
   if (typeof value === "number") return value;
@@ -77,6 +84,50 @@ export function sortSyncEventsAsc(
     if (tA !== tB) return tA - tB;
     return String(a.id || "").localeCompare(String(b.id || ""));
   });
+}
+
+export function getSyncEventBaseType(eventType: string): string {
+  const value = String(eventType || "");
+  const slash = value.lastIndexOf("/");
+  return slash >= 0 ? value.slice(slash + 1) : value;
+}
+
+export function inferSyncRequestDomainFromEvents(
+  events: Pick<ShopifySyncEvent, "eventType">[],
+): "shopify" | "photos" | "unknown" {
+  const first = String(events?.[0]?.eventType || "");
+  if (!first) return "unknown";
+  if (first.startsWith("photos/")) return "photos";
+  if (first.startsWith("shopify/") || first.includes("sync_")) return "shopify";
+  return "unknown";
+}
+
+export function classifySyncRequestStatusFromEventTypes(
+  eventTypes: string[],
+): GenericSyncRequestStatus | null {
+  if (eventTypes.length === 0) return null;
+  const hasRequested = eventTypes.some(
+    (t) =>
+      t.endsWith("/sync_requested") || t.endsWith("/image_transfer_requested"),
+  );
+  const hasStarted = eventTypes.some(
+    (t) => t.endsWith("/sync_claimed") || t.endsWith("/image_transfer_started"),
+  );
+  const hasFailed = eventTypes.some(
+    (t) =>
+      t.endsWith("/sync_failed") ||
+      t.endsWith("/sync_partial_failed") ||
+      t.endsWith("/image_transfer_failed"),
+  );
+  const hasCompleted = eventTypes.some(
+    (t) =>
+      t.endsWith("/sync_completed") || t.endsWith("/image_transfer_completed"),
+  );
+  if (hasFailed) return "failed";
+  if (hasCompleted) return "success";
+  if (hasStarted) return "processing";
+  if (hasRequested) return "queued";
+  return null;
 }
 
 export function foldSyncRequests(

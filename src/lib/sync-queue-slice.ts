@@ -1,5 +1,8 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import { toMs } from "./shopify-sync-model";
+import {
+  classifySyncRequestStatusFromEventTypes,
+  toMs,
+} from "./shopify-sync-model";
 
 export type SyncEvent = {
   id: string;
@@ -57,29 +60,12 @@ function eventTimeMs(ev: SyncEvent): number {
 }
 
 function classifyJobStatus(eventTypes: string[]): SyncJobStatus | null {
-  if (eventTypes.length === 0) return null;
-  const hasRequested = eventTypes.some(
-    (t) =>
-      t.endsWith("/sync_requested") || t.endsWith("/image_transfer_requested"),
-  );
-  const hasClaimedOrStarted = eventTypes.some(
-    (t) => t.endsWith("/sync_claimed") || t.endsWith("/image_transfer_started"),
-  );
-  const hasFailed = eventTypes.some(
-    (t) =>
-      t.endsWith("/sync_failed") ||
-      t.endsWith("/sync_partial_failed") ||
-      t.endsWith("/image_transfer_failed"),
-  );
-  const hasCompleted = eventTypes.some(
-    (t) =>
-      t.endsWith("/sync_completed") || t.endsWith("/image_transfer_completed"),
-  );
-
-  if (hasFailed) return "failed";
-  if (hasCompleted) return "completed";
-  if (hasClaimedOrStarted) return "processing";
-  if (hasRequested) return "queued";
+  const status = classifySyncRequestStatusFromEventTypes(eventTypes);
+  if (status === "success") return "completed";
+  if (status === "queued" || status === "processing" || status === "failed") {
+    return status;
+  }
+  if (status === "partial_failed") return "failed";
   return null;
 }
 

@@ -10,7 +10,10 @@
   } from "firebase/firestore";
   import { firestore } from "$lib/firebase";
   import {
+    classifySyncRequestStatusFromEventTypes,
     foldSyncRequests,
+    getSyncEventBaseType,
+    inferSyncRequestDomainFromEvents,
     sortSyncEventsAsc,
     toMs,
     type ShopifySyncEvent,
@@ -37,6 +40,149 @@
     partial_failed: "#d97706",
     failed: "#dc2626",
   };
+
+  type EffectiveRequestStatus =
+    | "queued"
+    | "processing"
+    | "success"
+    | "partial_failed"
+    | "failed";
+
+  function inferDomain(
+    req: ShopifySyncRequestView | null,
+  ): "shopify" | "photos" | "unknown" {
+    if (!req) return "unknown";
+    return inferSyncRequestDomainFromEvents(req.timeline || []);
+  }
+
+  function getEventBaseType(ev: ShopifySyncEvent): string {
+    return getSyncEventBaseType(String(ev?.eventType || ""));
+  }
+
+  function deriveEffectiveStatus(
+    req: ShopifySyncRequestView,
+  ): EffectiveRequestStatus {
+    const domain = inferDomain(req);
+    if (domain !== "photos") return req.status;
+    const timeline = sortSyncEventsAsc(req.timeline || []);
+    return (
+      classifySyncRequestStatusFromEventTypes(
+        timeline.map((ev) => String(ev.eventType || "")),
+      ) || req.status
+    );
+  }
+
+  function latestTimelineEventBySuffix(
+    req: ShopifySyncRequestView | null,
+    suffix: string,
+  ): ShopifySyncEvent | null {
+    if (!req) return null;
+    const timeline = sortSyncEventsAsc(req.timeline || []);
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      if (getEventBaseType(timeline[i]) === suffix) return timeline[i];
+    }
+    return null;
+  }
+
+  function firstTimelineEventBySuffix(
+    req: ShopifySyncRequestView | null,
+    suffix: string,
+  ): ShopifySyncEvent | null {
+    if (!req) return null;
+    const timeline = sortSyncEventsAsc(req.timeline || []);
+    return timeline.find((ev) => getEventBaseType(ev) === suffix) || null;
+  }
+
+  function extractPhotosDetails(req: ShopifySyncRequestView | null) {
+    const requested = firstTimelineEventBySuffix(
+      req,
+      "image_transfer_requested",
+    );
+    const started = latestTimelineEventBySuffix(req, "image_transfer_started");
+    const completed = latestTimelineEventBySuffix(
+      req,
+      "image_transfer_completed",
+    );
+    const failed = latestTimelineEventBySuffix(req, "image_transfer_failed");
+    const secretRequired = latestTimelineEventBySuffix(
+      req,
+      "image_transfer_secret_required",
+    );
+    const secretProvided = latestTimelineEventBySuffix(
+      req,
+      "image_transfer_secret_provided",
+    );
+
+    const reqPayload = (requested?.payload || {}) as any;
+    const resultPayload = ((completed || failed)?.payload || {}) as any;
+    const current =
+      completed || failed || started || secretRequired || requested;
+    const photoId =
+      String(
+        reqPayload?.photoId ||
+          reqPayload?.sourceRef?.mediaItemId ||
+          resultPayload?.photoId ||
+          "",
+      ).trim() || "-";
+    const filename =
+      String(reqPayload?.filename || resultPayload?.filename || "").trim() ||
+      "-";
+    const mimeType =
+      String(reqPayload?.mimeType || resultPayload?.mimeType || "").trim() ||
+      "-";
+    const sourceType = String(reqPayload?.sourceType || "").trim() || "-";
+    const targetFolderId =
+      String(reqPayload?.targetFolderId || "").trim() || "-";
+    const secretState =
+      completed || failed
+        ? secretProvided
+          ? "provided"
+          : secretRequired
+            ? "required"
+            : "-"
+        : secretProvided
+          ? "provided"
+          : secretRequired
+            ? "required"
+            : "-";
+
+    return {
+      requested,
+      started,
+      completed,
+      failed,
+      secretRequired,
+      secretProvided,
+      current,
+      photoId,
+      filename,
+      mimeType,
+      sourceType,
+      targetFolderId,
+      secretState,
+      resultPayload,
+    };
+  }
+
+  function extractPhotoApiCalls(req: ShopifySyncRequestView | null) {
+    if (!req) return [];
+    return sortSyncEventsAsc(req.timeline || [])
+      .filter((ev) => getEventBaseType(ev) === "image_transfer_api_call")
+      .map((ev) => {
+        const payload = (ev.payload || {}) as any;
+        return {
+          eventId: ev.id,
+          requestType: String(payload.requestType || "photos_api_call"),
+          endpoint: String(payload.endpoint || ""),
+          success: !!payload.success,
+          response: payload.response || {},
+          context: payload.context || {},
+          loggedAt: Number(ev.createdAtMs || toMs(ev.timestamp) || 0),
+          processor: String(ev.processor || ""),
+        };
+      })
+      .sort((a, b) => b.loggedAt - a.loggedAt);
+  }
 
   function tsToString(value: any): string {
     const ms = toMs(value);
@@ -83,8 +229,15 @@
     .map((requestId) => folded.requestsById[requestId])
     .filter(Boolean);
   $: selected = requests.find((r) => r.requestId === selectedRequestId) || null;
+  $: selectedDomain = inferDomain(selected);
+  $: selectedEffectiveStatus = selected
+    ? deriveEffectiveStatus(selected)
+    : "queued";
+  $: selectedPhotos = extractPhotosDetails(selected);
   $: selectedCalls = selected
-    ? [...selected.apiCalls].sort((a, b) => b.loggedAt - a.loggedAt)
+    ? selectedDomain === "photos"
+      ? extractPhotoApiCalls(selected)
+      : [...selected.apiCalls].sort((a, b) => b.loggedAt - a.loggedAt)
     : [];
   $: selectedError = extractRequestError(selected);
   $: selectedTimeline = selected ? sortSyncEventsAsc(selected.timeline) : [];
@@ -149,7 +302,7 @@
 </script>
 
 <div class="page">
-  <h1>Shopify Sync Status</h1>
+  <h1>Sync Status</h1>
 
   {#if loading}
     <p>Loading sync event log...</p>
@@ -169,13 +322,22 @@
               on:click={() => (selectedRequestId = req.requestId)}
             >
               <div class="row">
-                <strong>{req.handle || "(missing handle)"}</strong>
+                <strong>
+                  {#if inferDomain(req) === "photos"}
+                    {extractPhotosDetails(req).filename !== "-"
+                      ? extractPhotosDetails(req).filename
+                      : `photo ${extractPhotosDetails(req).photoId}`}
+                  {:else}
+                    {req.handle || "(missing handle)"}
+                  {/if}
+                </strong>
                 <span
                   class="status"
-                  style={`color:${statusColor[req.status] || "#111827"}`}
-                  >{req.status}</span
+                  style={`color:${statusColor[deriveEffectiveStatus(req)] || "#111827"}`}
+                  >{deriveEffectiveStatus(req)}</span
                 >
               </div>
+              <div class="meta">domain: {inferDomain(req)}</div>
               <div class="meta">requestId: {req.requestId}</div>
               <div class="meta">
                 requested: {tsToString(req.requestedAt || req.createdAtMs)}
@@ -199,17 +361,40 @@
           {/if}
 
           <div class="card">
-            <div><strong>Handle:</strong> {selected.handle || "-"}</div>
+            <div><strong>Domain:</strong> {selectedDomain}</div>
+            {#if selectedDomain === "photos"}
+              <div><strong>Photo ID:</strong> {selectedPhotos.photoId}</div>
+              <div><strong>Filename:</strong> {selectedPhotos.filename}</div>
+              <div><strong>MIME Type:</strong> {selectedPhotos.mimeType}</div>
+              <div>
+                <strong>Source Type:</strong>
+                {selectedPhotos.sourceType}
+              </div>
+              <div>
+                <strong>Target Folder ID:</strong>
+                {selectedPhotos.targetFolderId}
+              </div>
+              <div>
+                <strong>Secret State:</strong>
+                {selectedPhotos.secretState}
+              </div>
+            {:else}
+              <div><strong>Handle:</strong> {selected.handle || "-"}</div>
+            {/if}
             <div>
               <strong>Status:</strong>
-              <span style={`color:${statusColor[selected.status] || "#111827"}`}
-                >{selected.status}</span
+              <span
+                style={`color:${statusColor[selectedEffectiveStatus] || "#111827"}`}
+                >{selectedEffectiveStatus}</span
               >
             </div>
             <div><strong>Request ID:</strong> {selected.requestId}</div>
             <div>
               <strong>Request Event ID:</strong>
-              {selected.requestEventId || "-"}
+              {selected.requestEventId ||
+                (selectedDomain === "photos"
+                  ? selectedPhotos.requested?.id || "-"
+                  : "-")}
             </div>
             <div>
               <strong>Requested By:</strong>
@@ -223,8 +408,30 @@
             </div>
             <div>
               <strong>Result:</strong>
-              {selected.result ? JSON.stringify(selected.result) : "-"}
+              {#if selectedDomain === "photos"}
+                {#if selectedPhotos.completed}
+                  {JSON.stringify(selectedPhotos.resultPayload)}
+                {:else if selectedPhotos.failed}
+                  {JSON.stringify(selectedPhotos.resultPayload)}
+                {:else}
+                  -
+                {/if}
+              {:else}
+                {selected.result ? JSON.stringify(selected.result) : "-"}
+              {/if}
             </div>
+            {#if selectedDomain === "photos" && selectedPhotos.resultPayload?.permanentUrl}
+              <div>
+                <strong>Permanent URL:</strong>
+                <a
+                  href={selectedPhotos.resultPayload.permanentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {selectedPhotos.resultPayload.permanentUrl}
+                </a>
+              </div>
+            {/if}
           </div>
 
           <h3>API Debug Events</h3>

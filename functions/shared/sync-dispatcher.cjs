@@ -53,7 +53,10 @@ async function dispatchSyncCreate({ db, requestEventId, requestData, processor, 
     return { handled: true, domain: SHOPIFY_NAMESPACE, result };
   }
 
-  if (eventType === `${PHOTOS_NAMESPACE}/image_transfer_requested`) {
+  if (
+    eventType === `${PHOTOS_NAMESPACE}/image_transfer_requested` ||
+    eventType === `${PHOTOS_NAMESPACE}/image_transfer_secret_provided`
+  ) {
     const result = await photosWorker.processRequestEvent({
       db,
       requestEventId,

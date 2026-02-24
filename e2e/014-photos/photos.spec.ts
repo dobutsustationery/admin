@@ -79,8 +79,7 @@ async function waitForVisiblePhotoThumbnailsReady(
       for (const item of items) {
         const uploadStatus = item.getAttribute("data-upload-status") || "none";
         const photoState = item.getAttribute("data-photo-state") || "";
-        if (uploadStatus === "uploading" || uploadStatus === "failed")
-          return false;
+        if (uploadStatus === "failed") return false;
         if (photoState !== "ready") return false;
 
         const img = item.querySelector("img") as HTMLImageElement | null;

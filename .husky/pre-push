@@ -61,7 +61,8 @@ kill_stale_prepush_port_processes() {
     echo "Found listener(s) on pre-push port ${port}: ${pids}"
     for pid in ${pids}; do
       comm="$(ps -p "${pid}" -o comm= 2>/dev/null | tr -d ' ')"
-      if [ "${comm}" = "java" ]; then
+      comm_base="$(basename "${comm}" 2>/dev/null || echo "${comm}")"
+      if [ "${comm_base}" = "java" ]; then
         echo "Killing stray java process ${pid} on port ${port}..."
         kill "${pid}" 2>/dev/null || true
       else
