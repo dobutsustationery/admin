@@ -6,6 +6,7 @@
     extractGoogleDriveFileId,
     toGoogleDrivePublicImageUrl,
     SIZE_SUFFIXES,
+    applyGoogleSizeSuffix,
     type ImageSize,
   } from "$lib/drive-url";
 
@@ -54,26 +55,10 @@
     throw lastError || new Error("Failed to load image");
   }
 
-  async function loadImage() {
-    const seq = ++loadSeq;
-    // Reset state
-    loading = true;
-    error = "";
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-    objectUrl = "";
-
-    // Handle local/generated images directly
-    if (src.startsWith("data:") || src.startsWith("blob:")) {
-      objectUrl = src;
-      if (shouldRun && seq === loadSeq) loading = false;
-      return;
-    }
-
+  async function fetchImageData(targetSize: ImageSize): Promise<string | null> {
     let finalSrc = toGoogleDrivePublicImageUrl(src);
     const driveFileId = extractGoogleDriveFileId(finalSrc);
 
-    // During pending picker->Drive migration we intentionally avoid rendering
-    // fragile expiring googleusercontent URLs and keep a loading spinner instead.
     const isStableDriveGoogleusercontent = finalSrc.includes(
       "googleusercontent.com/d/",
     );
@@ -82,23 +67,14 @@
       finalSrc.includes("googleusercontent.com") &&
       !isStableDriveGoogleusercontent
     ) {
-      if (shouldRun && seq === loadSeq) {
-        loading = true;
-        error = "";
-        objectUrl = "";
-      }
-      return;
+      return null;
     }
 
-    // Check global token for authenticated Google Photos items
     const token = getStoredToken();
     const driveFullSizeUrl = driveFileId
-      ? `https://lh3.googleusercontent.com/d/${driveFileId}${SIZE_SUFFIXES[size]}`
+      ? `https://lh3.googleusercontent.com/d/${driveFileId}${SIZE_SUFFIXES[targetSize]}`
       : "";
 
-    // Prefer fetching Google URLs and render via object URLs. This avoids flaky
-    // direct-image auth behavior on Drive/Photos links. For googleusercontent,
-    // we still fall back to direct <img> if fetch path fails.
     const isGoogleApi = finalSrc.includes("googleapis.com");
     const isGoogleusercontent = finalSrc.includes("googleusercontent.com");
     const isDrivePublic =
@@ -107,78 +83,150 @@
       finalSrc.includes("lh3.googleusercontent.com/d/");
     const shouldFetch = isGoogleApi || isGoogleusercontent;
     const requestSrc =
-      isDrivePublic && driveFullSizeUrl ? driveFullSizeUrl : finalSrc;
+      isDrivePublic && driveFullSizeUrl
+        ? driveFullSizeUrl
+        : applyGoogleSizeSuffix(finalSrc, targetSize);
 
-    // Drive public images must be loaded directly via <img>; browser fetch() is CORS-blocked.
     if (isDrivePublic) {
-      objectUrl = requestSrc;
-      loading = false;
-      return;
+      return requestSrc;
     }
 
     if (!shouldFetch) {
-      // External/Public image (e.g. CDN, Shopify) or Drive Thumbnail. Load directly.
-      objectUrl = finalSrc;
-      loading = false;
+      return requestSrc;
+    }
+
+    let resultUrl = "";
+    await imageQueue.add(async () => {
+      const driveToken = getDriveToken();
+      const authCandidates = isDrivePublic
+        ? []
+        : Array.from(
+            new Set(
+              [token?.access_token, driveToken?.access_token].filter(
+                Boolean,
+              ) as string[],
+            ),
+          );
+      const tryFetch = async (authHeader?: string) =>
+        await fetchWithRetries(
+          requestSrc,
+          {
+            headers: authHeader ? { Authorization: authHeader } : {},
+            referrerPolicy: "no-referrer",
+          },
+          4,
+          250,
+        );
+
+      let response: Response | null = null;
+      let lastError: any = null;
+
+      for (const accessToken of authCandidates) {
+        try {
+          response = await tryFetch(`Bearer ${accessToken}`);
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!response) {
+        try {
+          response = await tryFetch();
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!response) {
+        throw lastError || new Error("Failed to load image");
+      }
+
+      const blob = await response.blob();
+      resultUrl = URL.createObjectURL(blob);
+    });
+    return resultUrl;
+  }
+
+  async function loadImage() {
+    const seq = ++loadSeq;
+    loading = true;
+    error = "";
+    if (objectUrl && !objectUrl.startsWith("data:"))
+      URL.revokeObjectURL(objectUrl);
+    objectUrl = "";
+
+    if (src.startsWith("data:") || src.startsWith("blob:")) {
+      objectUrl = src;
+      if (shouldRun && seq === loadSeq) loading = false;
       return;
     }
 
-    // Wrap fetch in Queue
     try {
-      await imageQueue.add(async () => {
-        const driveToken = getDriveToken();
-        const authCandidates = isDrivePublic
-          ? []
-          : Array.from(
-              new Set(
-                [token?.access_token, driveToken?.access_token].filter(
-                  Boolean,
-                ) as string[],
-              ),
-            );
-        const tryFetch = async (authHeader?: string) =>
-          await fetchWithRetries(
-            requestSrc,
-            {
-              headers: authHeader ? { Authorization: authHeader } : {},
-              referrerPolicy: "no-referrer",
-            },
-            4,
-            250,
-          );
-
-        let response: Response | null = null;
-        let lastError: any = null;
-
-        for (const accessToken of authCandidates) {
-          try {
-            response = await tryFetch(`Bearer ${accessToken}`);
-            break;
-          } catch (error) {
-            lastError = error;
+      if (size === "full") {
+        const previewUrl = await fetchImageData("preview");
+        if (!shouldRun || seq !== loadSeq) {
+          if (previewUrl && previewUrl.startsWith("blob:"))
+            URL.revokeObjectURL(previewUrl);
+          return;
+        }
+        if (!previewUrl) {
+          if (shouldRun && seq === loadSeq) {
+            loading = true;
+            error = "";
           }
+          return;
         }
 
-        if (!response) {
-          try {
-            response = await tryFetch();
-          } catch (error) {
-            lastError = error;
+        objectUrl = previewUrl;
+        loading = false;
+
+        const fullUrl = await fetchImageData("full");
+        if (!shouldRun || seq !== loadSeq) {
+          if (fullUrl && fullUrl.startsWith("blob:"))
+            URL.revokeObjectURL(fullUrl);
+          return;
+        }
+        if (!fullUrl) return;
+
+        const img = new Image();
+        img.src = fullUrl;
+        try {
+          await img.decode();
+        } catch (err) {
+          // ignore
+        }
+
+        if (!shouldRun || seq !== loadSeq) {
+          if (fullUrl && fullUrl.startsWith("blob:"))
+            URL.revokeObjectURL(fullUrl);
+          return;
+        }
+
+        const oldUrl = objectUrl;
+        objectUrl = fullUrl;
+        if (oldUrl && oldUrl.startsWith("blob:")) URL.revokeObjectURL(oldUrl);
+      } else {
+        const url = await fetchImageData(size);
+        if (!shouldRun || seq !== loadSeq) {
+          if (url && url.startsWith("blob:")) URL.revokeObjectURL(url);
+          return;
+        }
+        if (!url) {
+          if (shouldRun && seq === loadSeq) {
+            loading = true;
+            error = "";
           }
+          return;
         }
-
-        if (!response) {
-          throw lastError || new Error("Failed to load image");
-        }
-
-        const blob = await response.blob();
-        if (shouldRun && seq === loadSeq) objectUrl = URL.createObjectURL(blob);
-      });
+        objectUrl = url;
+        loading = false;
+      }
     } catch (e: any) {
       console.error("SecureImage error:", e);
-
       if (e.message.includes("403")) {
         if (shouldRun && seq === loadSeq) {
+          let finalSrc = toGoogleDrivePublicImageUrl(src);
           if (finalSrc.includes("/ppa/")) {
             error = "Link Expired";
           } else {
@@ -189,7 +237,9 @@
         if (shouldRun && seq === loadSeq) error = "Error";
       }
     } finally {
-      if (shouldRun && seq === loadSeq) loading = false;
+      if (shouldRun && seq === loadSeq && loading) {
+        if (objectUrl) loading = false;
+      }
     }
   }
 

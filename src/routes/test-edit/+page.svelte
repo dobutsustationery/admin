@@ -1,5 +1,6 @@
 <script lang="ts">
   import { removeBackground } from "$lib/background-removal";
+  import SecureImage from "$lib/components/SecureImage.svelte";
 
   let files: FileList;
   let prompt =
@@ -132,10 +133,10 @@
         class="bg-gray-100 p-4 rounded flex items-center justify-center min-h-[500px] border-2 border-dashed border-gray-300"
       >
         {#if resultImage}
-          <img
+          <SecureImage
             src={resultImage}
             alt="Result"
-            class="max-w-full max-h-full object-contain shadow-lg"
+            className="max-w-full max-h-full object-contain shadow-lg"
           />
         {:else if loading}
           <div

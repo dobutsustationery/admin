@@ -37,6 +37,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import { update_item, type Item } from "$lib/inventory";
   import Papa from "papaparse";
+  import SecureImage from "$lib/components/SecureImage.svelte";
 
   // --- State from Redux ---
   $: activeFile = $store.shopifyImport.activeFile;
@@ -1286,10 +1287,11 @@
                             (hoveredImage = getIncomingValue(field))}
                           on:mouseleave={() => (hoveredImage = null)}
                         >
-                          <img
+                          <SecureImage
                             src={getIncomingValue(field)}
                             alt="Incoming"
-                            class="conflict-thumb"
+                            className="conflict-thumb"
+                            size="thumbnail"
                           />
                         </div>
                         <span
@@ -1321,10 +1323,11 @@
                             (hoveredImage = getExistingValue(field))}
                           on:mouseleave={() => (hoveredImage = null)}
                         >
-                          <img
+                          <SecureImage
                             src={getExistingValue(field)}
                             alt="Existing"
-                            class="conflict-thumb"
+                            className="conflict-thumb"
+                            size="thumbnail"
                           />
                         </div>
                         <span
@@ -1366,7 +1369,12 @@
 <!-- Image Hover Overlay -->
 {#if hoveredImage}
   <div class="hover-overlay">
-    <img src={hoveredImage} alt="Zoomed" />
+    <SecureImage
+      src={hoveredImage}
+      alt="Zoomed"
+      size="preview"
+      className="zoomed-image"
+    />
   </div>
 {/if}
 
@@ -1594,7 +1602,7 @@
     justify-content: center;
     background-color: rgba(0, 0, 0, 0.5);
   }
-  .hover-overlay img {
+  .hover-overlay :global(.zoomed-image) {
     max-width: 80vw;
     max-height: 80vh;
     border: 4px solid white;

@@ -30,11 +30,15 @@ Completed on current branch (continued):
 - Backend emits all three lifecycle events: `photos/image_transfer_started`, `photos/image_transfer_completed`, `photos/image_transfer_failed`.
 - Client reducers (`photos-slice.ts`) fully consume these events: `initiate_upload`, `complete_upload`, `fail_upload`.
 - Drive rename middleware fires on `photos/complete_upload` to rename the Drive file to the JAN-code pattern when the item is categorized.
+- `SecureImage` `size` prop and Google-URL size-suffix normalization implemented (Track A1).
+- Progressive loading for `full`-size views in `SecureImage` implemented: shows `preview` then upgrades to `full` after decode (Track A2).
+- Payload validation guards:
+  - Broadcast middleware recursively rejects `data:`, `blob:`, and binary objects (Track B1).
+  - Sync dispatcher rejects large payloads (> 10KB) and `data:`/`blob:` strings (Track B2).
 
 Not started (Next Steps):
-- `SecureImage` `size` prop with `thumbnail` / `preview` / `full` semantics and Google-URL size-suffix normalization (currently always requests `=s0` full-size).
-- Progressive / blur-up loading for `full`-size views in `SecureImage`.
-- Strict `data:` / `blob:` URL rejection in broadcast middleware and reducers (design calls for this; no guard currently exists).
+- remove legacy client-mediated blob promotion fallback (Phase 4).
+- monitor transfer success/failure rates in production.
 
 ## Scope
 
@@ -348,16 +352,15 @@ Implemented:
 - `ImagePreviewOverlay` already does its own `=w1600` normalization — no change needed there.
 - 20 unit tests covering `SIZE_SUFFIXES`, `stripGoogleSizeSuffix`, `applyGoogleSizeSuffix`, `extractGoogleDriveFileId`, `toGoogleDrivePublicImageUrl` in `tests/unit/drive-url.test.ts`.
 
-**Milestone A2: Progressive loading for `full`-size views**
+**Milestone A2: Progressive loading for `full`-size views — COMPLETE**
 
 Goal: when `size="full"`, show `preview` quality first, then upgrade to `full` without broken-image flash or layout shift.
 
-Tasks:
-1. On mount with `size="full"`, immediately load the `preview`-size URL and display it.
-2. In the background, load the `full`-size URL; swap only after decode completes (`img.decode()`).
-3. Keep the `preview` image visible (or last stable frame) until the `full` swap is paint-ready.
-4. Unit-test: progressive swap lifecycle (preview shown → full loaded → swap fires).
-5. E2E test: fullscreen/zoom view shows no broken-image state during load.
+Implemented:
+1. `fetchImageData` helper in `SecureImage.svelte` handles the fetch/object-url logic.
+2. `loadImage` logic split into progressive steps for `size="full"`.
+3. Background load of `full` URL waits for `img.decode()` before swap.
+4. Unit test `tests/unit/secure-image-progressive.test.ts` verifies the swap lifecycle.
 
 ### Track B — Payload validation
 
@@ -370,20 +373,19 @@ Implemented:
 - Called at the top of `validateAction()` on `action.payload` before any Firestore write.
 - 18 unit tests in `tests/unit/broadcast-payload-validation.test.ts` covering: safe values, `data:` URIs at all nesting depths, `blob:` URLs at all nesting depths, and binary object types.
 
-**Milestone B2: Backend sync-event schema guards**
+**Milestone B2: Backend sync-event schema guards — COMPLETE**
 
 Goal: `sync` collection Cloud Function rejects events whose payload contains image bytes.
 
-Tasks:
-1. In the sync dispatcher, add a payload-shape check before routing: reject events where any payload field is a base64 image string (`data:image/…`) or exceeds a size threshold (e.g., > 10 KB string).
-2. Write a failing sync document in the emulator during E2E to confirm rejection path fires.
+Implemented:
+1. `hasBinaryPayload` check in `functions/shared/sync-dispatcher.cjs` rejects events with `data:`/`blob:` or strings > 10KB.
+2. Dispatcher writes a `rejected` event back to `sync` on failure.
+3. E2E test `e2e/014-photos/sync-rejection.spec.ts` verifies rejection of large payloads.
 
-### Suggested order
+### Suggested next steps
 
-1. **A1** (size prop + normalization) — highest user-visible impact, independent of everything else.
-2. **B1** (broadcast middleware guards) — pure safety net, no UI changes, easy to verify.
-3. **A2** (progressive loading) — polish; build on A1.
-4. **B2** (backend schema guards) — final hardening; needs emulator E2E to verify.
+1. Remove legacy client-mediated blob promotion fallback (Phase 4).
+2. Monitor transfer success/failure rates by event type.
 
 ## Acceptance Criteria
 
