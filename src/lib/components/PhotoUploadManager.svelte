@@ -57,6 +57,14 @@
     return { photosToken, driveToken };
   }
 
+  function hasDriveUploadScope(token: { scope?: string } | null | undefined) {
+    const scope = String(token?.scope || "");
+    return (
+      scope.includes("https://www.googleapis.com/auth/drive.file") ||
+      scope.includes("https://www.googleapis.com/auth/drive")
+    );
+  }
+
   function startTransferRequestListener() {
     if (unsubscribeTransferRequests) return;
     const q = query(
@@ -192,6 +200,7 @@
     const photosToken = getPhotosToken();
     const driveToken = getDriveToken() || photosToken;
     if (!driveToken) return;
+    if (!hasDriveUploadScope(driveToken)) return;
     if (!transferRequestsHydrated) return;
 
     const state = $store.photos;
