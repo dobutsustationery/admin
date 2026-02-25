@@ -30,14 +30,29 @@ __export(idempotency_utils_exports, {
 });
 module.exports = __toCommonJS(idempotency_utils_exports);
 var DERIVATION_KEY_PROPERTY = "derivation_key";
+function crc32(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
 function generateDerivationKey(type, id, transform) {
   if (!id)
     return null;
-  const safeId = String(id).replace(/:/g, "_");
   const safeType = String(type || "unknown");
   let safeTransform = String(transform || "identity");
   if (safeTransform === "remove_bg") {
     safeTransform = "remove_bg_v1";
+  }
+  let safeId = String(id).replace(/:/g, "_");
+  const baseKey = `${safeType}:${safeId}:${safeTransform}`;
+  if (baseKey.length > 110) {
+    const hash = crc32(safeId);
+    const prefix = safeId.slice(0, 32);
+    safeId = `h_${prefix}_${hash}`;
   }
   return `${safeType}:${safeId}:${safeTransform}`;
 }

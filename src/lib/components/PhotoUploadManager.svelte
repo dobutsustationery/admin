@@ -344,8 +344,8 @@
           mimeType: item.mimeType || "image/jpeg",
           targetFolderId: folderId,
           sourceType: item.baseUrl?.includes("googleusercontent.com")
-            ? "google_photos_url"
-            : "url",
+            ? "photos"
+            : "ext",
           sourceRef: {
             mediaItemId: item.id,
             url: item.baseUrl || "",
