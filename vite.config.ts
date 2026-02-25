@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { sveltekit } from "@sveltejs/kit/vite";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, searchForWorkspaceRoot } from "vite";
 
 function safeGit(command: string): string {
   try {
@@ -45,6 +45,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [sveltekit()],
+    server: {
+      fs: {
+        allow: [searchForWorkspaceRoot(process.cwd())],
+      },
+    },
     define: Object.fromEntries(
       Object.entries(versionEnv).map(([key, value]) => [`import.meta.env.${key}`, JSON.stringify(value)]),
     ),

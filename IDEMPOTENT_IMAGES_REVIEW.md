@@ -1,198 +1,150 @@
-# Review: Idempotent Image Transforms — Fourth Pass (bb6d7c0)
+# Review: Idempotent Image Transforms — Fifth Pass (486e4c7)
 
-Review of commits `a60d6fe` + `bb6d7c0` ("Final idempotent image handling: real backend transforms and append-only fixes"), responding to owner feedback that the mock `remove_bg` was unacceptable and that `setDoc` on append-only collections would fail at runtime.
+Review of `486e4c7` ("Final idempotent image handling cleanup and dedup"), which addresses the remaining items from the fourth review.
 
 ---
 
-## Scorecard: Third Review Issues + Owner Directives
+## Scorecard: Fourth Review Issues
 
 | # | Issue | Addressed? | Verdict |
 |---|---|---|---|
-| Owner | `remove_bg` must actually work | **Yes** | Real MODNet model restored. Implementation is plausible but has issues (see below). |
-| Owner | `setDoc` on append-only collections is forbidden | **Yes** | Both `gemini-client.ts` and `PhotoUploadManager.svelte` switched to `addDoc`. |
-| R3-1 | Remove `@xenova/transformers` from package.json | N/A | Correctly kept — it's used again. |
-| R3-2 | Rename `remove_bg` or version derivation key | **No** | Still `remove_bg` with no version component. |
-| R3-3 | Remove dead `addDoc` import | N/A | `addDoc` is now the active API. But `doc`/`setDoc` imports were removed — good. |
-| R3-4 | `setDoc` + `onDocumentCreated` race | **Resolved differently** | Switched to `addDoc`, so every request creates a new doc and triggers the function. |
-| R3-5 | Notify user on timeout | **Yes** | `notify("Server timeout processing ...")` added. |
-| R3-6 | Revert live test timeout bump | **Yes** | Reverted to 15s. |
-| R3-7 | `findFileByDerivationKey` duplication as tech debt | **No** | Not addressed, still duplicated. |
+| Must-1 | Add `dtype: 'fp32'` to model loading | **Yes** | Explicit `{ dtype: "fp32" }` passed to `AutoModel.from_pretrained`. |
+| Must-2 | Guard `loadModel()` against concurrent calls | **Yes** | Promise-based singleton with `loadingPromise`. Model + processor loaded via `Promise.all`. |
+| Must-3 | Remove dead `toSyncPhotoRequestDocId` and `syncRequestDocId` | **Yes** | Function and variable both removed. |
+| Should-4 | Use canonical `RawImage.fromTensor` API | **Yes** | `output[0].mul(255).to("uint8")` matches HuggingFace docs exactly. |
+| Should-5 | Version derivation key for transforms | **Yes** | `remove_bg` → `remove_bg_v1` in shared `generateDerivationKey`. |
+| Nice-6 | Client-side request dedup | **Yes** | `inFlightRequests` Set in gemini-client; `requestedPhotoIds` moved before `addDoc` in PhotoUploadManager. |
+| Nice-7 | Unify `findFileByDerivationKey` | **Yes** | Shared implementation in `idempotency-utils.cjs` with callback-based `executeRequest` pattern. |
 
-**Summary: Both owner directives addressed. 3 of 7 review items fixed. New issues introduced.**
+**All seven items addressed.**
 
 ---
 
-## Detailed Findings
+## What Was Done Well
 
-### 1. MODNet Implementation — Plausible but Fragile (Medium Risk)
+### Shared `idempotency-utils.cjs` Is Now the Single Source of Truth
 
-The `image-processor.cjs` now uses `Xenova/modnet` with `AutoModel` + `AutoProcessor`, which is a real matting model. The approach:
+The biggest structural improvement in this commit. The shared module now owns:
+- `generateDerivationKey` (with versioning)
+- `escapeDriveQueryValue`
+- `buildDerivationKeyQuery`
+- `findFileByDerivationKey` (with callback injection for environment-specific HTTP)
+- `toDriveApiMediaUrl` / `toDrivePublicUrl`
 
-1. Load image → sharp → raw RGB buffer → `RawImage` (3 channels)
-2. Process through model → get `output` tensor (shape `[1, 1, H, W]`)
-3. Extract mask from `output.data`, scale 0–1 → 0–255, construct `RawImage`
-4. Resize mask to original dimensions
-5. Apply mask to alpha channel of original image
-6. Smart crop transparent borders
+Both the server (`photos-sync-worker.cjs`) and client (`google-drive.ts`) delegate to these shared implementations. The callback pattern for `findFileByDerivationKey` is elegant — it lets the server inject its `driveRequestJson` with API logging while the client injects a plain `fetch` with 401 handling, without duplicating the query construction or response parsing.
 
-This is structurally correct and matches the [Xenova/modnet HuggingFace documentation](https://huggingface.co/Xenova/modnet). However:
+### Derivation Key Versioning Is Transparent
 
-**a) Missing `dtype: 'fp32'` option:**
-The HuggingFace model card shows:
+The versioning logic is inside the shared `generateDerivationKey`:
 ```javascript
-const model = await AutoModel.from_pretrained('Xenova/modnet', { dtype: 'fp32' });
+if (safeTransform === "remove_bg") {
+  safeTransform = "remove_bg_v1";
+}
 ```
-The implementation omits this:
-```javascript
-model = await AutoModel.from_pretrained("Xenova/modnet");
-```
-Without `dtype: 'fp32'`, `@xenova/transformers` may attempt to load a quantized variant. If no quantized variant exists for this model, it may default to fp32 anyway — but this is undocumented behavior and could break with a library update. Should be explicit.
 
-**b) Manual tensor-to-mask conversion is fragile:**
-```javascript
-const maskData = output.data;
-const mask = await new RawImage(
-  new Uint8ClampedArray(maskData.map((v) => v * 255)),
-  output.dims[3], output.dims[2], 1,
-).resize(img.width, img.height);
-```
-The canonical approach from the docs is:
-```javascript
-const mask = await RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(image.width, image.height);
-```
-The manual approach works because `output.data` is a flat Float32Array and `output.dims` is `[1, 1, H, W]`. But it bypasses the tensor API's built-in batch indexing (`output[0]`), which means if the library ever changes the output shape or adds batch support, the manual code breaks silently. The `maskData.map()` also creates an intermediate Array before wrapping in `Uint8ClampedArray`, which doubles memory usage for large images.
+Callers still pass `"remove_bg"` — the version suffix is applied internally. This means a future model upgrade can bump to `remove_bg_v2` in one place and all new processing will create distinct derivation keys without conflicting with v1 results.
 
-**c) `imageUrl` parameter still unused for processing:**
-`removeBackground(imageUrl, originalBuffer)` takes `imageUrl` only for logging. The function could just take a buffer. Minor, but the signature is misleading.
-
-**d) Model download on cold start remains unaddressed:**
-The `Xenova/modnet` ONNX model (~25MB for modnet vs ~170MB for RMBG-1.4) will be downloaded to `/tmp` on first Cloud Function invocation. With `concurrency: 10` in `functions/index.js`, multiple concurrent requests could race on model download. The `loadModel()` function caches `model` and `processor` module-level variables, but two concurrent calls before the first completes will both call `AutoModel.from_pretrained` simultaneously. This should be guarded with a promise-based singleton pattern:
+### `loadModel()` Singleton Is Correct
 
 ```javascript
 let loadingPromise = null;
 async function loadModel() {
   if (model && processor) return { model, processor };
-  if (!loadingPromise) {
-    loadingPromise = (async () => { ... })();
-  }
+  if (loadingPromise) return loadingPromise;
+  loadingPromise = (async () => { ... })();
   return loadingPromise;
 }
 ```
 
-**e) No test exercises the actual model inference.**
-The live test for transforms (`idempotency.test.ts`) uses the worker, which calls `removeBackground`, which calls `loadModel()`. But the test uses `https://www.google.com/images/branding/googlelogo/...` as the source URL — meaning it will actually attempt to download the modnet model, process a real image, and upload the result. This is correct but will be extremely slow (~30-60s for model download + inference) and will fail in CI environments without internet access. There's no timeout configured on the test.
+This prevents concurrent model downloads. `Promise.all` for model + processor is a nice touch for parallelizing the two loads.
 
-### 2. `addDoc` Fixes the Append-Only Problem — But Creates a New One
+### Client-Side Dedup Is Two-Layered
 
-Switching from `setDoc` to `addDoc` correctly respects the append-only collection constraint. Every request creates a new document, and `onDocumentCreated` fires reliably.
+- `PhotoUploadManager`: `requestedPhotoIds.add()` now happens **before** `addDoc`, so reentrant calls are caught by the `requestedPhotoIds.has()` filter at line 219. The Drive pre-check (`findFileByDerivationKey`) catches cross-session duplicates.
+- `gemini-client.ts`: Module-level `inFlightRequests` Set prevents duplicate `addDoc` calls within the same processing run. Cleaned up on completion, error, or timeout.
 
-**New problem: No client-side dedup for `processMediaItems`.**
+### Canonical Tensor API
 
-The old `PhotoUploadManager` had a `getDoc`/`exists()` check before writing (removed in this commit). The new `gemini-client.ts` flow:
-1. Check `findFileByDerivationKey` — if found, short-circuit ✓
-2. If not found, `addDoc` a new sync request
-3. Listen for completion via `onSnapshot`
-
-If the Drive file doesn't exist yet (first call still in-flight, or transform failed and was retried), every call to `processMediaItems` for the same image creates a **new** sync request document. Each triggers a new worker invocation. The worker's "Search Before Work" catches duplicates at the Drive level, so no redundant files are created — but redundant worker invocations still happen, consuming function execution time and API quota.
-
-The design says "the client can remain naive" and the server enforces idempotency, so this is architecturally correct. But for batches of images where `processMediaItems` might be called repeatedly (e.g., user navigates away and back), it could create many unnecessary worker invocations.
-
-### 3. Dead Code: `toSyncPhotoRequestDocId` and `syncRequestDocId`
-
-In `gemini-client.ts`:
-- Line 23: `toSyncPhotoRequestDocId()` function defined
-- Line 657: `const syncRequestDocId = toSyncPhotoRequestDocId(img.id, "remove_bg")`
-- Neither is used anywhere — `addDoc` on line 668 ignores the computed ID
-
-This is vestigial from the `setDoc` approach. Should be removed.
-
-### 4. `PhotoUploadManager.svelte` Lost Its Dedup Guard
-
-The previous version had:
-```javascript
-const existing = await getDoc(syncRequestRef);
-if (existing.exists()) { return; }
-```
-
-This was removed along with the `setDoc` migration. Now `uploadItem` always calls `addDoc`, creating a new sync request even if one already exists for the same photo. The `findFileByDerivationKey` pre-check (lines 291–318) catches the case where the **Drive file** already exists, but doesn't catch the case where a sync request was **already dispatched but not yet completed**.
-
-For rapid button clicks or batch retries, this could create multiple concurrent worker invocations for the same photo. The worker handles this correctly via "Search Before Work", but the redundant invocations waste resources.
-
-### 5. `requestId` in `gemini-client.ts` Is Now Non-Unique
-
-```javascript
-const requestId = `photo-transform-${img.id}`;
-```
-
-This has no timestamp component. With `addDoc`, multiple sync docs can have the same `requestId` field. The `onSnapshot` query:
-```javascript
-where("requestId", "==", requestId),
-where("eventType", "in", ["photos/image_transform_completed", ...]),
-```
-Will match completion events from **any** worker invocation for this `requestId`. Since all invocations produce the same result (same derivation key → same file), this is functionally correct. But it means stale completion events from previous sessions could satisfy the listener before the current worker even starts.
-
-This is actually a feature — if a previous invocation already completed, the listener resolves immediately without waiting for the new (redundant) worker. So the non-unique `requestId` works as a form of result caching. Acceptable.
-
-### 6. Worker Error Events Now Correctly Typed
-
-```javascript
-const failureEventType = eventType.includes("transform")
-  ? `${PHOTOS_NS}/image_transform_failed`
-  : `${PHOTOS_NS}/image_transfer_failed`;
-```
-
-This is a good fix. Previously, transform failures were reported as `image_transfer_failed`, which the client's `onSnapshot` query wouldn't match (it filters for `image_transform_failed`). The client would never learn about the failure and would time out after 60 seconds. Now the event types match correctly.
-
-### 7. Mock Firestore in Tests Now Tracks State
-
-The mock `db` in `idempotency.test.ts` now uses a `createdDocs` Set and simulates `create()` failures (error code 6 for "already exists"). This is a significant improvement in mock fidelity — `createIdempotentEvent` relies on `create()` throwing for dedup, and the mock now reflects that behavior.
-
-### 8. Derivation Key Versioning — Still Unaddressed
-
-If the modnet model is replaced with a better model later (or the processing pipeline changes — different crop margins, different resize, etc.), images processed by today's model will be cached under the same `remove_bg` derivation key. The idempotency system will serve the old result forever.
-
-This was flagged in the third review. The fix is simple: include a version in the transform name, e.g., `remove_bg_v1` or `remove_bg:modnet`. Without this, any model upgrade requires manually clearing `appProperties.derivation_key` from all previously processed files in Drive.
+`RawImage.fromTensor(output[0].mul(255).to("uint8"))` matches the [Xenova/modnet documentation](https://huggingface.co/Xenova/modnet) exactly. No more manual `.data` / `.dims` indexing.
 
 ---
 
-## Updated Design Conformance Matrix
+## Remaining Issues
+
+### 1. CJS Import from Client-Side Code — Works but Unconventional (Low Risk)
+
+```typescript
+// src/lib/google-drive.ts
+import { ... } from "../../functions/shared/idempotency-utils.cjs";
+```
+
+This imports a CommonJS file from outside the `src/` directory into a SvelteKit client module. I verified this works:
+- `svelte-check` passes with 0 errors
+- Vite handles CJS imports via esbuild transformation
+
+However, this is unconventional for SvelteKit projects. The import path uses `../../functions/shared/` which couples the client source tree to the functions directory layout. If the `functions/` directory is ever moved or restructured, this import breaks. More importantly, anyone reading `google-drive.ts` won't expect imports from outside `src/`.
+
+**Not a blocker** — it works, and code sharing is the right goal. But consider adding a `$lib/shared/` symlink or a Vite alias to make the import path clearer:
+```typescript
+import { ... } from "$lib/shared/idempotency-utils";
+```
+
+### 2. `toDrivePublicUrl` Changed from `=w1600` to `=s0` (Intentional Improvement)
+
+The old worker-local `toDrivePublicUrl` used `=w1600` (width-limited). The shared version uses `=s0` (full size), which matches every other URL in the codebase (`drive-url.ts`, `shopify-sync-core.cjs`, all test data). This is a correctness improvement — noting it only because it's a subtle behavioral change that could affect bandwidth if any consumer was relying on the smaller image.
+
+### 3. Versioning Is Transform-Specific, Not Model-Specific
+
+The current versioning maps `"remove_bg"` → `"remove_bg_v1"`. If the model changes from `Xenova/modnet` to a different model but the output is semantically equivalent (still "remove background"), the version should still be bumped. But the version string is tied to the transform name, not the model. This means someone could change the model in `image-processor.cjs` without remembering to bump the version in `idempotency-utils.cjs`.
+
+A comment linking the two would help:
+```javascript
+// IMPORTANT: Bump version when changing the model in image-processor.cjs
+if (safeTransform === "remove_bg") {
+  safeTransform = "remove_bg_v1"; // v1 = Xenova/modnet
+}
+```
+
+### 4. `removeBackground` Still Takes Unused `imageUrl` Parameter
+
+```javascript
+async function removeBackground(imageUrl, originalBuffer) {
+```
+
+`imageUrl` is only used in a log message. This was noted in the previous review and not addressed. Trivial.
+
+### 5. `PhotoUploadManager` Ordering — Broadcast Before Sync Request
+
+The reorder moves `requestedPhotoIds.add()` and `broadcast(initiate_upload)` before `addDoc`. This means if `addDoc` fails (e.g., permission denied, network error), the photo is already marked as "requested" in Redux state and `requestedPhotoIds`, preventing retry. The `catch` block handles `permission-denied` by adding to `requestedPhotoIds` (which is now redundant — it's already added), but other errors would leave the photo in a "initiated but never requested" state.
+
+The previous order (add sync request first, then broadcast) was safer because it only updated client state after the server request succeeded. The new order prioritizes dedup over correctness-on-failure. For a pre-production app this is fine, but be aware that failed `addDoc` calls will silently skip photos until the page is refreshed (clearing `requestedPhotoIds`).
+
+### 6. Typo: "Broadcase" in Comment
+
+Line 323: `// Broadcase Initiate immediately` → should be `// Broadcast Initiate immediately`.
+
+---
+
+## Design Conformance: Final Status
 
 | Design Step | Status | Notes |
 |---|---|---|
-| Step 1: `generateDerivationKey` | Done | Server uses shared module; client has typed copy |
-| Step 1: `findFileByDerivationKey` | Done | Query unified via `buildDerivationKeyQuery`; function bodies still duplicated |
-| Step 1: `uploadImageToDrive` requires key | Done | All callers use content hashes |
-| Step 2: Server "Search Before Work" | Done | Correct |
-| Step 2: Server `remove_bg` transform | **Done (real)** | MODNet model, needs `dtype` fix and singleton guard |
-| Step 3: Gemini client dispatches to sync queue | Done | Uses `addDoc` (append-only compliant) |
-| Step 4: Redux state convergence | Not changed | Existing reducers relied upon (reasonable) |
-| Section 4.1: Duplicate Transfer test | Done | Worker-level test with improved mock fidelity |
-| Section 4.1: Duplicate Transform test | Done | Worker-level test (will actually run model inference) |
+| Step 1: Shared derivation key infrastructure | **Done** | Single source in `idempotency-utils.cjs` |
+| Step 1: Shared `findFileByDerivationKey` | **Done** | Callback-based, used by both client and server |
+| Step 1: `uploadImageToDrive` requires key | **Done** | All callers use content hashes |
+| Step 2: Server "Search Before Work" | **Done** | Correct |
+| Step 2: Server `remove_bg` transform | **Done** | Real MODNet model, canonical API, singleton loading |
+| Step 3: Client dispatches to sync queue | **Done** | Append-only `addDoc`, with in-flight dedup |
+| Step 4: Redux state convergence | **Done** | `initiate_upload` broadcast before sync request |
+| Section 4.1: Integration tests | **Done** | Worker-level tests with stateful mock Firestore |
+| Versioning | **Done** | `remove_bg` → `remove_bg_v1` transparently |
 
 ---
 
-## Remaining Issues (Priority Order)
+## Verdict
 
-### Must Fix
+This commit addresses all previously raised issues. The codebase has converged on a clean architecture: shared idempotency logic, real AI-powered background removal, append-only collection compliance, proper concurrency guards, and multi-layered dedup.
 
-1. **Add `dtype: 'fp32'` to `AutoModel.from_pretrained`** — The HuggingFace docs explicitly show this option. Without it, behavior depends on which model variants are available, which could change with library updates. One-line fix.
+The remaining items are minor: an unconventional import path, a missing comment linking model version to derivation key version, a typo, and a minor ordering concern in the upload manager. None are blockers.
 
-2. **Guard `loadModel()` against concurrent invocations** — With `concurrency: 10`, multiple requests can hit `loadModel()` before the first completes. Use a promise-based singleton to avoid downloading the model multiple times simultaneously.
-
-3. **Remove dead code in `gemini-client.ts`** — `toSyncPhotoRequestDocId` function (line 23) and `syncRequestDocId` variable (line 657) are unused.
-
-### Should Fix
-
-4. **Use `RawImage.fromTensor(output[0].mul(255).to('uint8'))` instead of manual tensor unpacking** — The canonical API is safer, handles batch dimensions correctly, and avoids the intermediate Array allocation from `.map()`.
-
-5. **Version the derivation key for transforms** — Use `remove_bg_v1` or `remove_bg:modnet` instead of bare `remove_bg`. Without versioning, model upgrades are permanently blocked by cached results.
-
-### Nice to Have
-
-6. **Add client-side request dedup** — Both `PhotoUploadManager` and `gemini-client` will create redundant sync requests on retry. The server handles this gracefully, but redundant worker invocations waste resources. A simple `Set<string>` of in-flight request IDs would suffice.
-
-7. **`findFileByDerivationKey` remains duplicated** — Tech debt. Both implementations use `buildDerivationKeyQuery` now, but the HTTP call, response parsing, and error handling remain independent.
-
-Sources:
-- [Xenova/modnet Model Card](https://huggingface.co/Xenova/modnet)
-- [@xenova/transformers npm](https://www.npmjs.com/package/@xenova/transformers)
+**This is ready for functional testing.** The critical next step is to actually run the background removal pipeline end-to-end against a real image — either via the live integration tests or manual testing — to confirm the MODNet model loads, produces a valid mask, and the result uploads correctly to Drive. The code is structurally sound; the question is whether it works in practice on Cloud Functions with the 2GiB memory limit and the ONNX runtime.
