@@ -1,10 +1,25 @@
 /**
- * Server-side image processing using sharp.
- * Deterministic background removal (mocked with smart crop + white background for now
- * to avoid heavy model downloads in ephemeral function environments).
+ * Server-side image processing using transformers.js and sharp.
  */
 
+const { AutoModel, AutoProcessor, RawImage } = require("@xenova/transformers");
 const sharp = require("sharp");
+
+let model = null;
+let processor = null;
+
+/**
+ * Load the background removal model and processor
+ */
+async function loadModel() {
+  if (model && processor) return { model, processor };
+  console.log("[ImageProcessor] Loading briaai/RMBG-1.4 model...");
+  // Use quantized model by default to save memory and download time
+  model = await AutoModel.from_pretrained("briaai/RMBG-1.4");
+  processor = await AutoProcessor.from_pretrained("briaai/RMBG-1.4");
+  console.log("[ImageProcessor] Model loaded.");
+  return { model, processor };
+}
 
 /**
  * Smart Crop: Trims transparent borders from an image
@@ -55,34 +70,69 @@ async function smartCrop(inputBuffer) {
 }
 
 /**
- * Remove background from an image (deterministic sharp-based implementation)
- * This is a placeholder for a full AI model that avoids runtime downloads.
+ * Remove background from an image buffer using AI
  */
 async function removeBackground(imageUrl, originalBuffer) {
   try {
     console.log(`[ImageProcessor] Processing background for ${imageUrl}...`);
     
-    // For now, we perform a "Smart Contrast" + Center Crop to simulate the effect
-    // without requiring a 170MB model download which fails in some restricted environments.
-    // Real implementation should bundle the model or use a dedicated inference service.
+    const { model, processor } = await loadModel();
+
+    // 1. Load image
+    const img = await RawImage.read(originalBuffer);
+
+    // 2. Pre-process
+    const { pixel_values } = await processor(img);
+
+    // 3. Predict mask
+    const { output } = await model({ input: pixel_values });
+
+    // 4. Post-process mask (resize to original)
+    // RMBG-1.4 output is [1, 1, H, W]
+    const mask = await RawImage.fromTensor(output.mul(255).to("uint8"), [
+      output.dims[2],
+      output.dims[3],
+    ]).resize(img.width, img.height);
+
+    // 5. Composite (Apply Mask) using sharp
+    const { data: originalData, info } = await sharp(originalBuffer)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    // Apply mask to alpha channel
+    for (let i = 0; i < info.width * info.height; i++) {
+      originalData[i * 4 + 3] = mask.data[i];
+    }
+
+    // 6. Convert back to Buffer via sharp
+    const processedBuffer = await sharp(originalData, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: 4,
+      },
+    })
+      .png()
+      .toBuffer();
+
+    // 7. Smart Crop
+    return await smartCrop(processedBuffer);
+  } catch (e) {
+    console.error("[ImageProcessor] Background removal failed, falling back to basic crop:", e);
     
+    // Fallback: Just return a smart-cropped version of the original with a white background
     const image = sharp(originalBuffer);
-    
-    // 1. Convert to a square canvas with white background
-    const processedBuffer = await image
+    const fallbackBuffer = await image
       .resize(1024, 1024, {
         fit: 'contain',
         background: { r: 255, g: 255, b: 255, alpha: 1 }
       })
-      .flatten({ background: '#ffffff' }) // Remove alpha channel if it exists
+      .flatten({ background: '#ffffff' })
       .png()
       .toBuffer();
-
-    // 2. Return processed result
-    return await smartCrop(processedBuffer);
-  } catch (e) {
-    console.error("[ImageProcessor] Image processing failed:", e);
-    throw e;
+      
+    return await smartCrop(fallbackBuffer);
   }
 }
 

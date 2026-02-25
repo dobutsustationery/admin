@@ -148,5 +148,5 @@ describe.skipIf(!isLiveConfigured)("Google Drive Integration (@live)", () => {
     await expect(
       GoogleDrive.setFilePermissions(fileInfo.id, accessToken),
     ).resolves.not.toThrow();
-  }, 30000);
+  }, 15000);
 });

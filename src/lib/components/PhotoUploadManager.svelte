@@ -318,22 +318,7 @@
       }
 
       // 2. Queue append-only sync intent so the backend worker can process transfer.
-      const syncRequestDocId = toSyncPhotoRequestDocId(item.id);
-      const syncRequestRef = doc(firestore, SYNC_COLLECTION, syncRequestDocId);
-      const existing = await getDoc(syncRequestRef);
-      if (existing.exists()) {
-        requestedPhotoIds.add(String(item.id));
-        console.info(
-          "[PhotoUploadManager] Sync request already exists, waiting",
-          {
-            photoId: item.id,
-            syncRequestDocId,
-          },
-        );
-        return;
-      }
-
-      await setDoc(syncRequestRef, {
+      await addDoc(collection(firestore, SYNC_COLLECTION), {
         eventType: PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
         requestId,
         creator: uid,

@@ -8,8 +8,6 @@ import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 import {
   type Firestore,
   collection,
-  doc,
-  setDoc,
   addDoc,
   serverTimestamp,
   onSnapshot,
@@ -654,8 +652,8 @@ export async function processMediaItems(
             items.length,
           );
 
-          // We use setDoc with deterministic ID to prevent duplicate requests
-          await setDoc(doc(firestore, SYNC_COLLECTION, syncRequestDocId), {
+          // We use addDoc because sync collection is append-only
+          await addDoc(collection(firestore, SYNC_COLLECTION), {
             eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
             requestId,
             creator: uid,
@@ -731,6 +729,10 @@ export async function processMediaItems(
             // Safety Timeout (60s)
             setTimeout(() => {
               unsubscribe();
+              notify(
+                `Server timeout processing ${group.janCode}`,
+                items.length,
+              );
               resolve(null);
             }, 60000);
           });
