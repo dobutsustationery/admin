@@ -15,6 +15,25 @@ export function normalizeShopifySyncEventType(eventType: string): string {
   if (value.startsWith(`${SHOPIFY_SYNC_NAMESPACE}/`)) {
     return value.slice(SHOPIFY_SYNC_NAMESPACE.length + 1);
   }
+  if (value.startsWith(`${PHOTOS_SYNC_NAMESPACE}/`)) {
+    const tail = value.slice(PHOTOS_SYNC_NAMESPACE.length + 1);
+    if (
+      tail === "image_transfer_requested" ||
+      tail === "image_transform_requested"
+    )
+      return "sync_requested";
+    if (tail === "image_transfer_started" || tail === "image_transform_started")
+      return "sync_claimed";
+    if (
+      tail === "image_transfer_completed" ||
+      tail === "image_transform_completed"
+    )
+      return "sync_completed";
+    if (tail === "image_transfer_failed" || tail === "image_transform_failed")
+      return "sync_failed";
+    if (tail === "image_transfer_api_call") return "sync_api_call";
+    return tail;
+  }
   return value;
 }
 

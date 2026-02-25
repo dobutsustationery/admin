@@ -20,7 +20,7 @@
     "firebase:convert:staging": "node scripts/firebase-config-to-env.js --env staging --output .env.staging",
     "firebase:convert:production": "node scripts/firebase-config-to-env.js --env production --output .env.production",
     "auth": "firebase login",
-    "emulators": "npm run env:functions:local && firebase emulators:start",
+    "emulators": "npm run functions:install && npm run env:functions:local && firebase emulators:start",
     "emulators:export": "firebase emulators:export ./emulator-data",
     "emulators:import": "firebase emulators:start --import=./emulator-data",
     "build": "vite build",

@@ -266,8 +266,8 @@
   function startShopifySyncListener() {
     const q = query(
       collection(firestore, SYNC_COLLECTION),
-      orderBy("timestamp", "desc"),
-      limit(2000),
+      orderBy("createdAtMs", "desc"),
+      limit(5000),
     );
 
     return onSnapshot(

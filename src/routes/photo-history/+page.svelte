@@ -11,6 +11,7 @@
     initiateOAuthFlow as initiateDriveAuth,
     generateDerivationKey,
     calculateHash,
+    findFileByDerivationKey,
   } from "$lib/google-drive";
   import { getStoredToken, initiateOAuthFlow } from "$lib/google-photos";
   import Navigation from "$lib/components/Navigation.svelte";
@@ -36,7 +37,6 @@
     SYNC_COLLECTION,
     PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
   } from "$lib/sync-events";
-  import { findFileByDerivationKey } from "$lib/google-drive";
 
   // Actions are dispatched via broadcast to ensure persistence
 

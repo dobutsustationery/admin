@@ -35,6 +35,7 @@
     listRecentImages,
     getStoredToken as getDriveStoredToken,
     type DriveFile,
+    findFileByDerivationKey,
   } from "$lib/google-drive";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import SecureImage from "$lib/components/SecureImage.svelte";
@@ -56,7 +57,6 @@
     SYNC_COLLECTION,
     PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
   } from "$lib/sync-events";
-  import { findFileByDerivationKey } from "$lib/google-drive";
 
   // Local Auth State for UI
   let isPhotosAuthenticated = false;
@@ -210,7 +210,7 @@
       operation === "remove_background" ? "remove_bg" : operation;
     const requestId = `photo-edit-${transform}-${id}`;
 
-    if (inFlightEdits.has(requestId)) return;
+    if (inFlightEdits.has(requestId)) return null;
 
     try {
       const token = getStoredToken();
@@ -253,11 +253,11 @@
         });
 
         if ($user.uid) {
-          broadcast(firestore, $user.uid, completeAction);
+          await broadcast(firestore, $user.uid, completeAction);
         } else {
           store.dispatch(completeAction);
         }
-        return;
+        return "idempotent";
       }
 
       // 3. Request Transform via Sync Queue
@@ -270,7 +270,7 @@
       const folders = await ensureFolderStructure(driveToken!.access_token);
 
       // We use addDoc because sync collection is append-only
-      await addDoc(collection(firestore, SYNC_COLLECTION), {
+      const docRef = await addDoc(collection(firestore, SYNC_COLLECTION), {
         eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
         requestId,
         creator: $user.uid,
@@ -299,16 +299,21 @@
         createdAt: serverTimestamp(),
         timestamp: serverTimestamp(),
       });
+
+      return docRef.id;
     } catch (e: any) {
       console.error(`Edit dispatch failed for ${id}:`, e);
       store.dispatch(
         fail_edit({ id, operation: operation as any, error: e.message }),
       );
+      return null;
     }
   }
 
   async function handleProcessImages() {
+    if (isEditing) return;
     isEditing = true;
+
     try {
       // 1. Color Correct ALL Categorized Photos
       const colorIds = scheduleBatch("color_correct");
@@ -316,10 +321,11 @@
         console.log(
           `[Batch] Dispatching ${colorIds.length} color_correct jobs...`,
         );
-        // Dispatch ALL at once
-        await Promise.all(
-          colorIds.map((id) => dispatchTransformRequest(id, "color_correct")),
-        );
+        // Dispatch with staggered delay to avoid quota spikes
+        for (const id of colorIds) {
+          await dispatchTransformRequest(id, "color_correct");
+          await new Promise((r) => setTimeout(r, 250));
+        }
 
         console.log(
           `[Batch] Waiting for ${colorIds.length} color_correct jobs to complete...`,
@@ -333,10 +339,10 @@
         console.log(
           `[Batch] Dispatching ${bgIds.length} remove_background jobs...`,
         );
-        // Dispatch ALL at once
-        await Promise.all(
-          bgIds.map((id) => dispatchTransformRequest(id, "remove_background")),
-        );
+        for (const id of bgIds) {
+          await dispatchTransformRequest(id, "remove_background");
+          await new Promise((r) => setTimeout(r, 250));
+        }
 
         console.log(
           `[Batch] Waiting for ${bgIds.length} remove_background jobs to complete...`,
@@ -345,6 +351,9 @@
       }
 
       console.log("[Batch] All processing complete.");
+    } catch (err: any) {
+      console.error("[Batch] Image processing failed:", err);
+      alert("Error during image processing: " + err.message);
     } finally {
       isEditing = false;
     }
@@ -357,7 +366,7 @@
           operation === "remove_background" ? "remove_bg" : operation;
         const requestId = `photo-edit-${transform}-${id}`;
 
-        // Poll for this specific job
+        // Poll for this specific job, filtering for NEW events (created after now - 1 minute)
         const q = query(
           collection(firestore, SYNC_COLLECTION),
           where("requestId", "==", requestId),
@@ -375,8 +384,9 @@
           (snap) => {
             if (snap.empty) return;
             const data = snap.docs[0].data();
-            unsubscribe();
-            inFlightEdits.delete(requestId);
+
+            // Important: With addDoc and non-unique requestId, we might see old events.
+            // But since the result is deterministic (same derivation key), any completed event is good.
 
             if (data.eventType.endsWith("completed")) {
               const payload = data.payload || {};
@@ -393,14 +403,24 @@
                   store.dispatch(completeAction);
                 }
               }
+              unsubscribe();
+              inFlightEdits.delete(requestId);
+              resolve();
+            } else if (data.eventType.endsWith("failed")) {
+              console.error(
+                `[Batch] Transform failed for ${id}:`,
+                data.payload?.errorMessage,
+              );
+              unsubscribe();
+              inFlightEdits.delete(requestId);
+              resolve();
             }
-            resolve();
           },
           (err) => {
             console.error(`[Batch] Error polling ${requestId}:`, err);
             unsubscribe();
             inFlightEdits.delete(requestId);
-            resolve(); // Resolve anyway to not block whole batch
+            resolve();
           },
         );
 
@@ -409,7 +429,7 @@
           unsubscribe();
           inFlightEdits.delete(requestId);
           resolve();
-        }, 120000); // Longer timeout for batch
+        }, 180000); // 3 minutes for batch
       });
     });
 
@@ -418,12 +438,10 @@
 
   function scheduleBatch(op: "crop" | "color_correct" | "remove_background") {
     // Schedule for CATEGORIZED photos only (as per user request)
-    // Collect IDs from janCodeToPhotos only
     const allIds = new Set<string>();
     Object.values(janCodeToPhotos)
       .flat()
       .forEach((p) => {
-        // Check if already done
         const status = edits[p.id]?.status;
         const isDone = status && status[op];
         if (!isDone) {
@@ -432,9 +450,7 @@
       });
 
     const ids = Array.from(allIds);
-    if (ids.length === 0) {
-      return [];
-    }
+    if (ids.length === 0) return [];
 
     const action = schedule_edit_batch({ ids, operation: op });
 
@@ -444,7 +460,6 @@
       );
       broadcast(firestore, $user.uid, action);
     } else {
-      console.warn("[Batch] No User UID! Dispatching locally only.");
       store.dispatch(action);
     }
 

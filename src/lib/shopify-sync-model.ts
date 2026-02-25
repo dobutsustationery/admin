@@ -106,36 +106,45 @@ export function classifySyncRequestStatusFromEventTypes(
   eventTypes: string[],
 ): GenericSyncRequestStatus | null {
   if (eventTypes.length === 0) return null;
-  const hasRequested = eventTypes.some(
-    (t) =>
-      t.endsWith("/sync_requested") ||
-      t === "photos/image_transfer_requested" ||
-      t === "photos/image_transform_requested",
-  );
-  const hasStarted = eventTypes.some(
-    (t) =>
-      t.endsWith("/sync_claimed") ||
-      t === "photos/image_transfer_started" ||
-      t === "photos/image_transform_started",
-  );
+
   const hasFailed = eventTypes.some(
     (t) =>
-      t.endsWith("/sync_failed") ||
-      t.endsWith("/sync_partial_failed") ||
-      t === "photos/image_transfer_failed" ||
-      t === "photos/image_transform_failed",
-  );
-  const hasCompleted = eventTypes.some(
-    (t) =>
-      t.endsWith("/sync_completed") ||
-      t === "photos/image_transfer_completed" ||
-      t === "photos/image_transform_completed",
+      t.includes("sync_failed") ||
+      t.includes("sync_partial_failed") ||
+      t.includes("image_transfer_failed") ||
+      t.includes("image_transform_failed") ||
+      t.includes("/rejected"),
   );
   if (hasFailed) return "failed";
+
+  const hasCompleted = eventTypes.some(
+    (t) =>
+      t.includes("sync_completed") ||
+      t.includes("image_transfer_completed") ||
+      t.includes("image_transform_completed"),
+  );
   if (hasCompleted) return "success";
+
+  const hasStarted = eventTypes.some(
+    (t) =>
+      t.includes("sync_claimed") ||
+      t.includes("image_transfer_started") ||
+      t.includes("image_transform_started") ||
+      t.includes("_api_call") || // Any API activity means it's processing
+      t.includes("secret_provided"),
+  );
   if (hasStarted) return "processing";
+
+  const hasRequested = eventTypes.some(
+    (t) =>
+      t.includes("sync_requested") ||
+      t.includes("image_transfer_requested") ||
+      t.includes("image_transform_requested") ||
+      t.includes("secret_required"),
+  );
   if (hasRequested) return "queued";
-  return null;
+
+  return "processing"; // Fallback
 }
 
 export function foldSyncRequests(

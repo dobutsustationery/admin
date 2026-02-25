@@ -18,6 +18,7 @@ async function loadRMBGModel() {
 
   loadingPromise = (async () => {
     console.log("[ImageProcessor] Loading briaai/RMBG-1.4 model...");
+    // Use AutoModel (generic) as it handles the custom Segformer mapping better in v2
     const [model, processor] = await Promise.all([
       AutoModel.from_pretrained("briaai/RMBG-1.4"),
       AutoProcessor.from_pretrained("briaai/RMBG-1.4"),
@@ -149,7 +150,6 @@ async function autoColorCorrect(originalBuffer) {
       data[i] = map(data[i], levelsR.min, levelsR.max);
       data[i + 1] = map(data[i + 1], levelsG.min, levelsG.max);
       data[i + 2] = map(data[i + 2], levelsB.min, levelsB.max);
-      // Alpha preserved automatically
     }
 
     return await sharp(data, {
@@ -191,6 +191,7 @@ async function removeBackground(imageUrl, originalBuffer) {
     const { output } = await model({ input: pixel_values });
 
     // 4. Post-process mask (resize to original)
+    // The output[0] is the mask tensor
     const mask = await RawImage.fromTensor(output[0].mul(255).to("uint8")).resize(
       img.width,
       img.height,

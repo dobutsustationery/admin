@@ -248,8 +248,8 @@
     ).trim();
     const q = query(
       collection(firestore, SYNC_COLLECTION),
-      orderBy("timestamp", "desc"),
-      limit(1000),
+      orderBy("createdAtMs", "desc"),
+      limit(5000),
     );
 
     unsubscribe = onSnapshot(

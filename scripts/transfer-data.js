@@ -220,6 +220,8 @@ async function exportData(db, outputDir) {
   if (!config.skipOrders) {
     collections.push("dobutsu");
   }
+  collections.push("sync");
+  collections.push("sync_secrets");
 
   const exportData = {
     exportedAt: new Date().toISOString(),
