@@ -4,6 +4,7 @@
  */
 
 const DERIVATION_KEY_PROPERTY = "derivation_key";
+exports.DERIVATION_KEY_PROPERTY = DERIVATION_KEY_PROPERTY;
 
 /**
  * Generate a deterministic derivation key for a file in Drive.
@@ -28,6 +29,7 @@ function generateDerivationKey(type, id, transform) {
 
   return `${safeType}:${safeId}:${safeTransform}`;
 }
+exports.generateDerivationKey = generateDerivationKey;
 
 /**
  * Escape a value for use in a Google Drive API query string.
@@ -38,6 +40,7 @@ function escapeDriveQueryValue(value) {
   if (!value) return "";
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
+exports.escapeDriveQueryValue = escapeDriveQueryValue;
 
 /**
  * Build a query string for searching by derivation key.
@@ -47,6 +50,7 @@ function escapeDriveQueryValue(value) {
 function buildDerivationKeyQuery(derivationKey) {
   return `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
 }
+exports.buildDerivationKeyQuery = buildDerivationKeyQuery;
 
 /**
  * @param {string} fileId
@@ -55,6 +59,7 @@ function buildDerivationKeyQuery(derivationKey) {
 function toDriveApiMediaUrl(fileId) {
   return `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
 }
+exports.toDriveApiMediaUrl = toDriveApiMediaUrl;
 
 /**
  * @param {string} fileId
@@ -63,6 +68,7 @@ function toDriveApiMediaUrl(fileId) {
 function toDrivePublicUrl(fileId) {
   return `https://lh3.googleusercontent.com/d/${fileId}=s0`;
 }
+exports.toDrivePublicUrl = toDrivePublicUrl;
 
 /**
  * Search for a file by its derivation key in appProperties.
@@ -94,13 +100,4 @@ async function findFileByDerivationKey(derivationKey, executeRequest) {
     publicUrl: toDrivePublicUrl(first.id),
   };
 }
-
-module.exports = {
-  DERIVATION_KEY_PROPERTY,
-  generateDerivationKey,
-  escapeDriveQueryValue,
-  buildDerivationKeyQuery,
-  toDriveApiMediaUrl,
-  toDrivePublicUrl,
-  findFileByDerivationKey,
-};
+exports.findFileByDerivationKey = findFileByDerivationKey;
