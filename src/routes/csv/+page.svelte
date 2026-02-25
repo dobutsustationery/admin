@@ -15,6 +15,7 @@
     clearToken,
     getFolderLink,
     generateDerivationKey,
+    calculateHash,
     type DriveFile,
   } from "$lib/google-drive";
 
@@ -184,11 +185,14 @@
     error = "";
 
     try {
+      const contentHash = await calculateHash(
+        new Blob([csv], { type: "text/csv" }),
+      );
       const fileInfo = await uploadCSVToDrive(
         finalFilename,
         csv,
         token.access_token,
-        generateDerivationKey("ext", finalFilename, "identity"),
+        generateDerivationKey("ext", contentHash, "identity"),
       );
       uploadSuccess = true;
       uploadedFileLink = fileInfo.webViewLink;

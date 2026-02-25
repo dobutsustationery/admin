@@ -1,151 +1,183 @@
-# Review: Idempotent Image Transforms & Durable Registry (d8c1985)
+# Review: Idempotent Image Transforms — Follow-Up (892a6cd)
 
-## Summary
-
-The implementation in `d8c1985` delivers a solid foundation for the idempotent image system described in `docs/design/IDEMPOTENT_IMAGES.md`. The core derivation-key mechanism and server-side "Search Before Work" pattern are correctly implemented. However, there are incomplete areas, a few bugs, and several design-vs-implementation gaps worth noting.
+This is a second review of the follow-up commit `892a6cd` ("Full implementation of server-side idempotent transforms"), which claims to address all findings from the initial review of `d8c1985`.
 
 ---
 
-## What Was Implemented Well
+## Scorecard: Original Review Issues
 
-### Derivation Key Infrastructure (Step 1 — Complete)
-- `generateDerivationKey(type, id, transform)` is implemented in both `google-drive.ts` (client, typed) and `photos-sync-worker.cjs` (server, untyped but equivalent). The `{source_type}:{source_id}:{transform_name}` format matches the spec exactly.
-- `findFileByDerivationKey()` is implemented on both client and server, using `appProperties has { key=... and value=... }` Drive API queries.
-- `uploadImageToDrive()` now requires a `derivationKey` parameter, stamping every uploaded file with `appProperties.derivation_key`. This enforces the design goal that "no untracked uploads" should exist.
-- `uploadCSVToDrive()` was updated to accept an optional `derivationKey`, a reasonable extension beyond the spec.
-
-### Server-Side Idempotency (Step 2 — Mostly Complete)
-- The "Search Before Work" pattern in `executeTransfer()` is correctly implemented: the worker searches by derivation key before downloading/uploading, short-circuiting with `emitSuccess()` if a match is found.
-- The `emitSuccess()` helper is a good refactoring — it deduplicates the completion event + broadcast action logic that was previously inlined.
-- The worker now routes `photos/image_transform_requested` events through `handleTransferRequested`, correctly expanding the event type handling.
-- Failure in the pre-work search is non-fatal (`catch` logs a warning and falls through to perform the work), which is the right defensive behavior.
-
-### Gemini Client Alignment (Step 3 — Partially Complete)
-- The `removeBackground` import and all client-side image processing logic have been removed from `gemini-client.ts`. This is a large, positive deletion (~70 lines of complex fetch/upload/fallback code removed).
-- The client now checks for already-processed images via `findFileByDerivationKey` using `generateDerivationKey("photos", img.id, "remove_bg")`.
-
-### Client-Side Idempotency (Bonus — Not in Spec)
-- `PhotoUploadManager.svelte` gained a client-side pre-check: before dispatching a sync request, it calls `findFileByDerivationKey` to resolve already-transferred images immediately. This is an optimization beyond the spec (the design says "the client can remain naive"), but it avoids unnecessary sync queue writes and is harmless.
-
-### All Upload Call Sites Updated
-Every `uploadImageToDrive` caller was updated to pass a `derivationKey`:
-- `listing-detail/+page.svelte`
-- `photo-history/+page.svelte` (two call sites)
-- `photos/+page.svelte`
-- `shopify-import/+page.svelte`
-- Both live test files
+| # | Original Issue | Addressed? | Verdict |
+|---|---|---|---|
+| 1 | Transform backend is stubbed | Partially | `remove_bg` implemented, but untested and likely broken (see below) |
+| 2 | Unstable derivation keys for direct uploads | **No** | Not touched at all |
+| 3 | Duplicate `generateDerivationKey` implementations | Yes | Extracted to `idempotency-utils.cjs` (server only) |
+| 4 | Duplicate `findFileByDerivationKey` implementations | **No** | Still duplicated across client and server |
+| 5 | Server-side query escaping | **No** | `escapeDriveQueryValue` imported but not used |
+| 6 | No integration tests | Partially | New test file exists but tests are weak |
+| 7 | E2E test timeout bump | **Worse** | Moved from poll option to `test.setTimeout(30000)` — now the whole test is 30s |
+| 8 | `uploadCSVToDrive` callers not updated | Partially | `csv/+page.svelte` updated; unclear if all CSV callers covered |
+| 9 | `extractTransferParams` fragility | **No** | Not addressed |
 
 ---
 
-## Issues & Gaps
+## Detailed Findings
 
-### 1. Transform Backend Is Stubbed — Not Implemented (Critical)
+### 1. `image-processor.cjs` — Likely Broken at Runtime (Critical)
 
-**Design says (Step 2):** "Add support for a new `photos/image_transform_requested` event type to handle idempotent edits. All transformation logic (background removal, cropping, etc.) will be performed by backend workers."
+The new `image-processor.cjs` attempts to use `@xenova/transformers` for background removal, but the code has several issues suggesting it was written speculatively without being run:
 
-**Reality:** The worker routes `image_transform_requested` to `executeTransfer()`, but the actual transform logic throws immediately:
-
+**a) `Blob` is not available in Node.js < 18 Cloud Functions runtimes:**
 ```javascript
-// photos-sync-worker.cjs, inside executeTransfer
-if (eventType.includes("transform")) {
-  throw new Error(`transform_not_implemented:${transformName}`);
-}
+const img = await RawImage.fromBlob(new Blob([inputBuffer]));
 ```
+Cloud Functions may or may not have `Blob` in the global scope depending on the runtime version. This is fragile.
 
-This means **background removal is currently broken** — the old client-side code was removed, and the new server-side code doesn't exist yet. The `gemini-client.ts` even comments: "In a full implementation, we would dispatch a `photos/image_transform_requested` sync event here and wait for completion. For now, we continue with the original image."
+**b) Pipeline output handling is guesswork:**
+```javascript
+const processedRawImage = output;  // "pipeline output can be a RawImage or a canvas-like object"
+```
+The comments literally say "usually" and "we might need to" — this is speculative code. The `image-segmentation` pipeline from `@xenova/transformers` returns an array of `{ label, score, mask }` objects, not a `RawImage`. Treating the array as if it has `.data`, `.width`, `.height` properties will throw a TypeError at runtime.
 
-**Impact:** Any listing creation workflow that previously relied on background removal now silently skips it. Images will remain unprocessed.
+**c) No error handling for model download:**
+The RMBG-1.4 model is ~170MB. On first invocation in Cloud Functions, `pipeline("image-segmentation", "briaai/RMBG-1.4")` will attempt to download this model. Cloud Functions have a `/tmp` directory with limited space (512MB default, configurable to 10GB). There's no configuration for the cache directory, no timeout handling for the download, and no fallback if the model fails to load.
 
-### 2. Client-Side Derivation Keys Use Unstable IDs for Direct Uploads
+**d) Memory concerns:**
+Loading a 170MB model into a Cloud Function that may have only 256MB–512MB of memory by default is a likely OOM scenario. No memory configuration is specified.
 
-For direct file uploads (drag-and-drop image replacement), the derivation key uses the *filename* as the source ID:
+**e) `sharp` on Cloud Functions:**
+`sharp` requires native binaries. It works on Cloud Functions but only if the deployment platform matches the build platform. This is typically fine with `npm install` during deploy but is a known pain point.
+
+**f) No unit or integration test exercises this code path.** The live test (`idempotency.test.ts`) only tests the Drive primitives (upload + search), not the actual background removal pipeline.
+
+### 2. `escapeDriveQueryValue` — Imported but Not Used (Still Broken)
+
+The original review flagged that the server's `findFileByDerivationKey` uses a naive `replace(/'/g, "\\'")` instead of the proper `escapeDriveQueryValue`. The follow-up commit:
+- Created `idempotency-utils.cjs` with a proper `escapeDriveQueryValue` function
+- Imported it into `photos-sync-worker.cjs` (line 5)
+- **Did not actually use it** in `findFileByDerivationKey` (line 177 still has the inline replace)
+
+This is the worst outcome: it looks fixed at a glance (the import is there) but the bug remains.
+
+### 3. `findFileByDerivationKey` — Still Fully Duplicated
+
+The original review noted this function exists in both `google-drive.ts` (client) and `photos-sync-worker.cjs` (server) with different code paths. The follow-up commit did not address this at all. The two implementations:
+- Client: uses `fetch()` + `escapeDriveQueryValue()` + `hydrateDriveFiles()`
+- Server: uses `driveRequestJson()` + inline `.replace(/'/g, "\\'")`
+
+These will diverge further over time.
+
+### 4. Unstable Derivation Keys — Not Addressed
+
+All direct upload call sites still use `Date.now()` in filenames passed as the derivation key source ID:
+- `listing-detail/+page.svelte:953`: `replace_${uploadKey}_${Date.now()}.jpg`
+- `photo-history/+page.svelte:107`: `replaced_${photoId}_${Date.now()}.jpg`
+- `photo-history/+page.svelte:362`: `manual_${suffix}_${photoId}_${Date.now()}.png`
+- `photos/+page.svelte:276`: uses filename with `Date.now()`
+
+Every upload generates a unique key, so idempotency is impossible for these paths.
+
+### 5. E2E Timeout — Made Worse
+
+Original: The poll's `timeout` option was bumped from 15s to 30s.
+Follow-up: Added `test.setTimeout(30000)` at the top of the test (line 5), so now the *entire test* has a 30s timeout, in addition to the 30s poll timeout already there. Per the project's own E2E guidelines: "Short, explicit timeouts — Long timeouts mask bugs and slow down the suite."
+
+No investigation into *why* the test needs more time was performed. The additional Drive API call in the worker's "Search Before Work" step adds latency to every sync event, including rejection paths. This should be measured, not papered over with doubled timeouts.
+
+### 6. `idempotency.test.ts` — Tests the Primitives, Not the System
+
+The new test file is welcome, but it only tests:
+1. Upload a file with a derivation key, then call `findFileByDerivationKey` — verifies the Drive API primitive works.
+2. Same thing but with a `remove_bg` derivation key.
+
+What the design's Section 4.1 actually calls for:
+- **"Dispatch two `image_transfer_requested` events for the same photo ID. Verify only one Drive file exists and both events resolve to the same ID."** — This requires a running worker and Firestore emulator. Not tested.
+- **"Dispatch two `image_transform_requested` events for the same Drive file and operation. Verify only one processed file exists."** — Not tested, and would fail anyway since the transform backend is broken.
+
+The tests don't exercise the "Search Before Work" logic, which is the entire point of the design.
+
+### 7. `gemini-client.ts` — Signature Change Breaks Unused Function
+
+`processMediaItems` gained 3 new leading parameters (`firestore`, `uid`, `processedFolderId`) and the `ensureFolderStructure` call was removed from inside. This function is currently not called from anywhere in the codebase (no imports found). This means:
+- The signature change can't cause a runtime error today.
+- But the function is exported and presumably intended to be called eventually. When it is, the caller must provide a Firestore instance and pre-resolve the processed folder ID externally — a non-obvious contract change that isn't documented.
+
+### 8. `gemini-client.ts` — 60-Second Silent Timeout
+
+The new sync queue dispatch in `processMediaItems` includes a hardcoded 60-second safety timeout:
 
 ```typescript
-// listing-detail/+page.svelte
-const filename = `replace_${uploadKey}_${Date.now()}.jpg`;
-generateDerivationKey("ext", filename, "identity")
+setTimeout(() => {
+  unsubscribe();
+  resolve(null);
+}, 60000);
 ```
 
-Since the filename includes `Date.now()`, every upload generates a unique derivation key, defeating idempotency entirely. The same issue exists in `photo-history/+page.svelte` and `photos/+page.svelte`. These uploads will never match an existing file.
+If the worker is down or slow, each image silently waits 60 seconds then falls back to the original (unprocessed) image. For a batch of 10 images, that's potentially 10 minutes of silent waiting. There's no user-facing indication of what's happening, no progress update, and no way to cancel.
 
-This is arguably intentional (user explicitly replacing an image should create a new file), but it contradicts the design goal of preventing "redundant copies" from `ext` sources. The design says the source ID for `ext` should be "a stable hash of the canonical URL."
+### 9. `gemini-client.ts` — `addDoc` Instead of Deterministic ID
 
-### 3. Duplicate `generateDerivationKey` Implementations
+The sync request is created with `addDoc` (auto-generated ID) rather than using a deterministic document ID:
 
-The function is duplicated between:
-- `src/lib/google-drive.ts` (TypeScript, typed parameters)
-- `functions/shared/photos-sync-worker.cjs` (CommonJS, untyped)
-
-These two implementations must stay in sync manually. The server version does `String(id || "")` while the client does a bare `.replace()` — if `id` is `undefined`, the client will throw while the server will produce `"undefined"`. This is a latent bug.
-
-A shared module or at minimum a shared test asserting parity would reduce drift risk.
-
-### 4. Duplicate `findFileByDerivationKey` Implementations
-
-Similarly duplicated between client (`google-drive.ts`) and server (`photos-sync-worker.cjs`). The server version uses the worker's `driveRequestJson` wrapper with API call logging. The client version uses raw `fetch` and calls `escapeDriveQueryValue`. Both construct queries correctly but via different code paths.
-
-### 5. SQL Injection Analog in Drive Query
-
-The server-side `findFileByDerivationKey` escapes single quotes in the derivation key:
-
-```javascript
-derivationKey.replace(/'/g, "\\'")
+```typescript
+await addDoc(collection(firestore, SYNC_COLLECTION), { ... });
 ```
 
-The client-side version delegates to `escapeDriveQueryValue()`, which (per `google-drive.ts:132`) likely does a more thorough escaping. The server's manual escaping is less robust. If a derivation key ever contains a backslash followed by a quote, the server escaping would be incorrect.
+Compare with `PhotoUploadManager.svelte` which uses `toSyncPhotoRequestDocId(item.id)` to create a deterministic doc ID via `setDoc`. The `addDoc` approach means if `processMediaItems` is called twice for the same image, it will create two separate sync requests — defeating idempotency at the request level. The worker's "Search Before Work" catches this at the Drive level, but the duplicate sync requests still waste Firestore writes and worker cycles.
 
-### 6. No Integration Tests Written
+Ironically, there's even a `toSyncPhotoRequestDocId` function defined at the top of the same file (line 19) but never called.
 
-**Design says (Section 4.1):** Write integration tests for duplicate transfer and duplicate transform scenarios.
+### 10. New Dependencies Added Without Justification
 
-**Reality:** No new test files were created. The only test changes are adding `derivationKey` parameters to existing live tests, which is necessary but doesn't verify idempotency behavior. The "Duplicate Transfer" and "Duplicate Transform" test cases specified in the design are absent.
+`functions/package.json` adds:
+- `@xenova/transformers@^2.17.2` — ~170MB model download at runtime
+- `sharp@^0.33.2` — native binary dependency
 
-### 7. E2E Test Timeout Bump
+These are heavyweight additions to a Cloud Functions deployment. No discussion of:
+- Memory/CPU requirements for the function
+- Cold start impact (model loading on first invocation)
+- `/tmp` storage requirements for the ONNX model cache
+- Whether these dependencies should be in a separate, dedicated function with higher resource limits
 
-`e2e/014-photos/sync-rejection.spec.ts` bumped a timeout from 15s to 30s. This is suspicious — the design doesn't explain why sync rejection would take longer. Possibly the extra `findFileByDerivationKey` API call in the worker adds latency, but doubling a timeout is a code smell per the project's E2E guidelines ("Short, explicit timeouts — long timeouts mask bugs").
+### 11. `csv/+page.svelte` Updated — But Derivation Key Is Still Unstable
 
-### 8. `uploadCSVToDrive` Callers Not Updated
-
-`uploadCSVToDrive` now accepts an optional `derivationKey`, but no callers were updated to pass one. This is inconsistent — either CSV uploads should be tracked (pass a key) or the parameter shouldn't have been added.
-
-### 9. Missing `extractTransferParams` Update
-
-The diff shows `extractTransferParams` now returns `payload`:
-
-```javascript
-const { sourceBaseUrl, filename, mimeType, targetFolderId, photoId, payload } = extractTransferParams(requestData);
+The follow-up correctly added a `generateDerivationKey` call to `csv/+page.svelte:191`:
+```typescript
+generateDerivationKey("ext", finalFilename, "identity")
 ```
-
-But the diff doesn't show the `extractTransferParams` function being updated. Either the function already returned `payload` (and it was unused before), or this destructuring silently produces `undefined`. If `payload` is `undefined`, then `payload?.transform` and `payload?.sourceType` both resolve to `undefined`, and the worker falls back to heuristics. This works but is fragile.
+But `finalFilename` already includes a timestamp, so this has the same unstable-key problem as the other direct upload sites.
 
 ---
 
-## Design Conformance Matrix
+## Updated Design Conformance Matrix
 
 | Design Step | Status | Notes |
 |---|---|---|
-| Step 1: `generateDerivationKey` | Done | Duplicated across client/server |
-| Step 1: `findFileByDerivationKey` | Done | Duplicated across client/server |
-| Step 1: `uploadImageToDrive` requires key | Done | All callers updated |
-| Step 2: Server "Search Before Work" | Done | Correct implementation |
-| Step 2: Server transform handling | Stubbed | Throws `transform_not_implemented` |
-| Step 3: Gemini client uses sync queue | Partial | Old code removed; new dispatch not wired |
+| Step 1: `generateDerivationKey` | Done | Server extracted to shared module; client still separate |
+| Step 1: `findFileByDerivationKey` | Done | Still duplicated across client/server |
+| Step 1: `uploadImageToDrive` requires key | Done | All callers updated (keys often non-idempotent though) |
+| Step 2: Server "Search Before Work" | Done | Correct, but escaping bug remains |
+| Step 2: Server `remove_bg` transform | Code exists | Almost certainly broken at runtime (wrong pipeline output handling) |
+| Step 3: Gemini client dispatches to sync queue | Done | But uses `addDoc` (non-idempotent) with 60s silent timeout |
 | Step 4: Redux state convergence | Not changed | Existing reducers relied upon (reasonable) |
-| Section 4.1: Integration tests | Missing | No idempotency-specific tests |
-| Section 5: Clean Slate note | N/A | Deployment concern, not code |
+| Section 4.1: Duplicate Transfer test | Missing | Live test only checks primitives |
+| Section 4.1: Duplicate Transform test | Missing | Would fail anyway — backend is broken |
 
 ---
 
-## Recommendations
+## Recommendations (Priority Order)
 
-1. **Implement backend transforms** — This is the critical gap. Without it, background removal is silently disabled. At minimum, add a `remove_bg` handler in the worker, or restore client-side processing as a temporary fallback.
+1. **Actually test `image-processor.cjs`** — Run it against a real image. The `image-segmentation` pipeline returns `[{ label, score, mask }]`, not a `RawImage`. This will throw at runtime. Fix the output handling before merging.
 
-2. **Add idempotency integration tests** — The design explicitly calls for "Duplicate Transfer" and "Duplicate Transform" test cases. These are essential to prove the system works.
+2. **Use `escapeDriveQueryValue` where it's imported** — Line 177 of `photos-sync-worker.cjs` still has inline escaping despite importing the utility. One-line fix.
 
-3. **Extract shared derivation key logic** — Move `generateDerivationKey` into a shared module importable by both client and server to prevent drift.
+3. **Use deterministic doc IDs in `gemini-client.ts`** — Replace `addDoc` with `setDoc` using the already-defined `toSyncPhotoRequestDocId` function. Without this, the client-side dispatch is not idempotent.
 
-4. **Fix unstable derivation keys for direct uploads** — Either use a content hash or accept that direct uploads are intentionally non-idempotent and document this as a known deviation.
+4. **Add real integration tests** — The design calls for end-to-end "dispatch two requests, verify one file" tests. The current tests only verify Drive API primitives.
 
-5. **Investigate the timeout bump** — Determine if the 15s→30s change in `sync-rejection.spec.ts` is masking a performance regression from the additional Drive API call.
+5. **Configure Cloud Functions resources** — If `image-processor.cjs` is meant to run in production, the function needs at minimum 1GB memory and probably 2GB, plus `/tmp` storage for the model cache. Document this or add it to the function config.
 
-6. **Harden server-side query escaping** — Use the same `escapeDriveQueryValue` utility on the server, or at least match the escaping logic.
+6. **Address the 60-second silent timeout** — Either add progress indication, make it configurable, or add a cancellation mechanism. Silent 60s waits per image will create a terrible user experience.
+
+7. **Decide on unstable derivation keys** — Either document that direct uploads are intentionally non-idempotent, or fix them to use content hashes. The current state contradicts the design without acknowledging the deviation.
+
+8. **Revert the timeout bump in E2E** — Investigate the root cause of the slowdown instead of doubling the timeout.

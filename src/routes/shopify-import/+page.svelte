@@ -17,6 +17,7 @@
     type DriveFile,
     ensureFolderStructure,
     generateDerivationKey,
+    calculateHash,
   } from "$lib/google-drive";
   import type { AnyAction } from "$lib/store";
   import {
@@ -800,12 +801,13 @@
         cachedOriginalsId = originalsId;
       }
       const driveFilename = `${Date.now()}_${filenameBase}.jpg`;
+      const contentHash = await calculateHash(blob);
       const driveFile = await uploadImageToDrive(
         blob,
         driveFilename,
         cachedOriginalsId,
         token.access_token,
-        generateDerivationKey("ext", driveFilename, "identity"),
+        generateDerivationKey("ext", contentHash, "identity"),
       );
       return (
         driveFile.publicUrl ||

@@ -2,6 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as GoogleDrive from "../../src/lib/google-drive";
 import { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const photosWorker = require("../../functions/shared/photos-sync-worker.cjs");
+
+const SYNC_COLLECTION = "sync";
+const SYNC_SECRETS_COLLECTION = "sync_secrets";
 
 const isLiveConfigured =
   process.env.E2E_GOOGLE_CLIENT_ID &&
@@ -106,6 +113,196 @@ describe.skipIf(!isLiveConfigured)(
       );
       expect(resolved).not.toBeNull();
       expect(resolved?.id).toBe(upload.id);
+    });
+
+    it("should resolve redundant transfer requests to the same Drive file", async () => {
+      const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const photoId = `worker-test-${uniqueId}`;
+      const filename = `${photoId}.png`;
+      // Use a known public image for testing
+      const sourceBaseUrl =
+        "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png";
+
+      const requestData = {
+        eventType: "photos/image_transfer_requested",
+        requestId: `req-${photoId}`,
+        creator: "test-user",
+        payload: {
+          photoId,
+          sourceBaseUrl,
+          filename,
+          targetFolderId: sandboxFolderId,
+        },
+      };
+
+      // Mock Firestore
+      const events: any[] = [];
+      const mockDb = {
+        collection: (colName: string) => ({
+          doc: (docId: string) => ({
+            get: async () => {
+              if (
+                colName === SYNC_SECRETS_COLLECTION &&
+                docId === "photos-secret-test-user"
+              ) {
+                return {
+                  exists: true,
+                  id: docId,
+                  data: () => ({
+                    driveAccessToken: accessToken,
+                    creator: "test-user",
+                  }),
+                };
+              }
+              return { exists: false };
+            },
+            set: async () => {},
+            create: async () => ({ created: true }),
+          }),
+          add: async (data: any) => {
+            events.push(data);
+            return { id: `event-${events.length}` };
+          },
+          where: () => ({
+            limit: () => ({ get: async () => ({ empty: true }) }),
+          }),
+        }),
+      } as any;
+
+      // 1. First execution - should perform real upload
+      const result1 = await photosWorker.processRequestEvent({
+        db: mockDb,
+        requestEventId: `evt1-${uniqueId}`,
+        requestData,
+        processor: "test",
+        creator: "test",
+        collectionName: SYNC_COLLECTION,
+      });
+
+      expect(result1.processed).toBe(true);
+      const driveFileId = result1.summary.driveFileId;
+      expect(driveFileId).toBeDefined();
+
+      // 2. Second execution with same photoId - should resolve to existing file
+      const result2 = await photosWorker.processRequestEvent({
+        db: mockDb,
+        requestEventId: `evt2-${uniqueId}`,
+        requestData,
+        processor: "test",
+        creator: "test",
+        collectionName: SYNC_COLLECTION,
+      });
+
+      expect(result2.processed).toBe(true);
+      expect(result2.summary.idempotent).toBe(true);
+      expect(result2.summary.driveFileId).toBe(driveFileId);
+
+      // Verify only one file exists in the sandbox for this derivation key
+      const sourceType = sourceBaseUrl.includes("googleusercontent.com")
+        ? "photos"
+        : "ext";
+      const derivationKey = GoogleDrive.generateDerivationKey(
+        sourceType,
+        photoId,
+        "identity",
+      );
+      const drive = google.drive({ version: "v3", auth });
+      const query = `'${sandboxFolderId}' in parents and ${GoogleDrive.buildDerivationKeyQuery(derivationKey)}`;
+
+      const searchRes = await drive.files.list({
+        q: query,
+        fields: "files(id, name, appProperties)",
+      });
+      expect(searchRes.data.files?.length).toBe(1);
+    });
+
+    it("should handle background removal transform idempotently in the worker", async () => {
+      const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const photoId = `transform-test-${uniqueId}`;
+      const sourceBaseUrl =
+        "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png";
+
+      const requestData = {
+        eventType: "photos/image_transform_requested",
+        requestId: `trans-req-${photoId}`,
+        creator: "test-user",
+        payload: {
+          photoId,
+          sourceBaseUrl,
+          transform: "remove_bg",
+          filename: `processed_${photoId}.png`,
+          targetFolderId: sandboxFolderId,
+        },
+      };
+
+      const mockDb = {
+        collection: (colName: string) => ({
+          doc: (docId: string) => ({
+            get: async () => {
+              if (
+                colName === SYNC_SECRETS_COLLECTION &&
+                docId === "photos-secret-test-user"
+              ) {
+                return {
+                  exists: true,
+                  id: docId,
+                  data: () => ({
+                    driveAccessToken: accessToken,
+                    creator: "test-user",
+                  }),
+                };
+              }
+              return { exists: false };
+            },
+            set: async () => {},
+            create: async () => ({ created: true }),
+          }),
+          add: async () => ({ id: "mock-event" }),
+          where: () => ({
+            limit: () => ({
+              get: async () => ({
+                empty: false,
+                docs: [
+                  {
+                    id: "photos-secret-test-user",
+                    data: () => ({
+                      driveAccessToken: accessToken,
+                      creator: "test-user",
+                    }),
+                  },
+                ],
+              }),
+            }),
+          }),
+        }),
+      } as any;
+
+      // 1. First execution - should perform transform
+      const result1 = await photosWorker.processRequestEvent({
+        db: mockDb,
+        requestEventId: `trans1-${uniqueId}`,
+        requestData,
+        processor: "test",
+        creator: "test",
+        collectionName: SYNC_COLLECTION,
+      });
+
+      expect(result1.processed).toBe(true);
+      const processedId = result1.summary.driveFileId;
+
+      // 2. Second execution - should resolve existing
+      const result2 = await photosWorker.processRequestEvent({
+        db: mockDb,
+        requestEventId: `trans2-${uniqueId}`,
+        requestData,
+        processor: "test",
+        creator: "test",
+        collectionName: SYNC_COLLECTION,
+      });
+
+      expect(result2.processed).toBe(true);
+      expect(result2.summary.idempotent).toBe(true);
+      expect(result2.summary.driveFileId).toBe(processedId);
     });
   },
 );

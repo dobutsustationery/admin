@@ -12,6 +12,16 @@ import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 export const DERIVATION_KEY_PROPERTY = "derivation_key";
 
 /**
+ * Calculate a simple SHA-256 hash of a Blob/File for stable identification.
+ */
+export async function calculateHash(blob: Blob): Promise<string> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * Generate a deterministic derivation key for a file in Drive
  * Format: {source_type}:{source_id}:{transform_name}
  */
@@ -131,6 +141,13 @@ function looksLikeDriveFileId(value: string): boolean {
 
 function escapeDriveQueryValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+/**
+ * Build a query string for searching by derivation key.
+ */
+export function buildDerivationKeyQuery(derivationKey: string): string {
+  return `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
 }
 
 /**
@@ -575,7 +592,7 @@ export async function findFileByDerivationKey(
   accessToken: string,
   derivationKey: string,
 ): Promise<DriveFile | null> {
-  const query = `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
+  const query = buildDerivationKeyQuery(derivationKey);
   const params = new URLSearchParams({
     q: query,
     fields:

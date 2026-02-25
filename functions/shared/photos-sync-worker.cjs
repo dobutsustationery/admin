@@ -3,6 +3,7 @@ const {
   DERIVATION_KEY_PROPERTY,
   generateDerivationKey,
   escapeDriveQueryValue,
+  buildDerivationKeyQuery,
 } = require("./idempotency-utils.cjs");
 const { removeBackground } = require("./image-processor.cjs");
 
@@ -174,7 +175,7 @@ function stripGoogleusercontentSuffix(url) {
  * Search for a file by its derivation key in appProperties.
  */
 async function findFileByDerivationKey(accessToken, derivationKey, onApiCall) {
-  const query = `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${derivationKey.replace(/'/g, "\\'")}' } and trashed=false`;
+  const query = buildDerivationKeyQuery(derivationKey);
   const params = new URLSearchParams({
     q: query,
     fields: "files(id,name,webViewLink,webContentLink,thumbnailLink,mimeType)",
@@ -657,7 +658,7 @@ async function executeTransfer({
         
         // 2. Process
         console.log(`[PhotosWorker] Removing background for ${photoId}...`);
-        bytes = await removeBackground(source.bytes);
+        bytes = await removeBackground(source.usedUrl, source.bytes);
         finalMimeType = "image/png"; // Result is always PNG from Sharp
         usedUrl = source.usedUrl;
       } else {

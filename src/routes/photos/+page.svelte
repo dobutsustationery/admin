@@ -13,6 +13,7 @@
     uploadImageToDrive,
     ensureFolderStructure,
     generateDerivationKey,
+    calculateHash,
   } from "$lib/google-drive";
 </script>
 
@@ -267,13 +268,14 @@
         byteNumbers[i] = byteChars.charCodeAt(i);
       const byteArray = new Uint8Array(byteNumbers);
       const uploadBlob = new Blob([byteArray], { type: "image/png" });
+      const contentHash = await calculateHash(uploadBlob);
 
       const uploaded = await uploadImageToDrive(
         uploadBlob,
         filename,
         folders.processedId,
         token.access_token,
-        generateDerivationKey("ext", filename, "identity"),
+        generateDerivationKey("ext", contentHash, "identity"),
       );
 
       const finalUrl =

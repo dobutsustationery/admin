@@ -10,6 +10,7 @@
     getStoredToken as getDriveToken,
     initiateOAuthFlow as initiateDriveAuth,
     generateDerivationKey,
+    calculateHash,
   } from "$lib/google-drive";
   import { getStoredToken, initiateOAuthFlow } from "$lib/google-photos";
   import Navigation from "$lib/components/Navigation.svelte";
@@ -105,12 +106,13 @@
 
       // 4. Upload to "Processed"
       const filename = `replaced_${photoId}_${Date.now()}.jpg`;
+      const contentHash = await calculateHash(file);
       const result = await uploadImageToDrive(
         file,
         filename,
         folders.processedId,
         token.access_token,
-        generateDerivationKey("ext", filename, "identity"),
+        generateDerivationKey("ext", contentHash, "identity"),
       );
 
       // 5. Complete Upload & Update History
@@ -361,6 +363,7 @@
 
       const filename = `manual_${suffix}_${photoId}_${Date.now()}.png`; // PNG for transparency
       const file = new File([blob], filename, { type: "image/png" });
+      const contentHash = await calculateHash(file);
 
       store.dispatch(initiate_upload({ id: photoId, timestamp: Date.now() }));
 
@@ -369,7 +372,7 @@
         filename,
         folders.processedId,
         token.access_token,
-        generateDerivationKey("ext", filename, "identity"),
+        generateDerivationKey("ext", contentHash, "identity"),
       );
 
       const safeUrl = toGoogleDrivePublicImageUrl(

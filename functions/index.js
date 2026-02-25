@@ -13,7 +13,7 @@ exports.syncRequest = onDocumentCreated(
   {
     document: `${syncDispatcher.SYNC_COLLECTION}/{requestId}`,
     timeoutSeconds: 300,
-    memory: "512MiB",
+    memory: "2GiB",
     concurrency: 10,
   },
   async (event) => {

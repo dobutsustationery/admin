@@ -8,6 +8,8 @@ import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 import {
   type Firestore,
   collection,
+  doc,
+  setDoc,
   addDoc,
   serverTimestamp,
   onSnapshot,
@@ -641,14 +643,19 @@ export async function processMediaItems(
           driveUrl = existing.publicUrl || existing.webContentLink || "";
         } else {
           // 2. Request Transform via Sync Queue
+          const requestId = `photo-transform-${img.id}`;
+          const syncRequestDocId = toSyncPhotoRequestDocId(img.id, "remove_bg");
           console.info(
             `[GeminiClient] Requesting transform for ${img.id} (${derivationKey})...`,
           );
 
-          const requestId = `photo-transform-${img.id}-${Date.now()}`;
+          notify(
+            `Requesting background removal for ${group.janCode}...`,
+            items.length,
+          );
 
-          // We use addDoc to the sync collection
-          await addDoc(collection(firestore, SYNC_COLLECTION), {
+          // We use setDoc with deterministic ID to prevent duplicate requests
+          await setDoc(doc(firestore, SYNC_COLLECTION, syncRequestDocId), {
             eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
             requestId,
             creator: uid,
@@ -679,6 +686,10 @@ export async function processMediaItems(
           });
 
           // 3. Poll for completion
+          notify(
+            `Waiting for server to process ${group.janCode}...`,
+            items.length,
+          );
           driveUrl = await new Promise<string | null>((resolve) => {
             const q = query(
               collection(firestore, SYNC_COLLECTION),
