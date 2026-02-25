@@ -37,7 +37,9 @@ export function generateDerivationKey(
   // without clashing with old cached results in Drive appProperties.
   let safeTransform = String(transform || "identity");
   if (safeTransform === "remove_bg") {
-    safeTransform = "remove_bg_v1";
+    safeTransform = "remove_bg_v2"; // v2 = RMBG-1.4
+  } else if (safeTransform === "color_correct") {
+    safeTransform = "color_correct_v1";
   }
 
   // Google Drive limit: Key + Value <= 124 bytes.

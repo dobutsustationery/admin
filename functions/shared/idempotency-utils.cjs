@@ -45,7 +45,9 @@ function generateDerivationKey(type, id, transform) {
   const safeType = String(type || "unknown");
   let safeTransform = String(transform || "identity");
   if (safeTransform === "remove_bg") {
-    safeTransform = "remove_bg_v1";
+    safeTransform = "remove_bg_v2";
+  } else if (safeTransform === "color_correct") {
+    safeTransform = "color_correct_v1";
   }
   let safeId = String(id).replace(/:/g, "_");
   const baseKey = `${safeType}:${safeId}:${safeTransform}`;

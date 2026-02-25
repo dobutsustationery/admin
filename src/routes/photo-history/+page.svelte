@@ -18,13 +18,25 @@
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import ManualCropModal from "$lib/components/ManualCropModal.svelte";
-  import { removeBackground } from "$lib/background-removal";
-  import { autoColorCorrect } from "$lib/color-correction";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
+  import {
+    addDoc,
+    collection,
+    query,
+    where,
+    limit,
+    onSnapshot,
+    serverTimestamp,
+  } from "firebase/firestore";
   import { user } from "$lib/user-store";
+  import {
+    SYNC_COLLECTION,
+    PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+  } from "$lib/sync-events";
+  import { findFileByDerivationKey } from "$lib/google-drive";
 
   // Actions are dispatched via broadcast to ensure persistence
 
@@ -285,6 +297,13 @@
     if (processingOp) return;
     processingOp = url + "_" + op;
 
+    const opToTransform = {
+      color: "color_correct",
+      bg: "remove_bg",
+      smart_crop: "crop",
+    };
+    const transform = opToTransform[op];
+
     // Optional live E2E hook: pause exactly after entering in-progress UI state.
     // This keeps screenshots deterministic without mocking or skipping real work.
     if (typeof window !== "undefined") {
@@ -295,50 +314,133 @@
     }
 
     try {
-      // 1. Get Safe Source
-      const safeDataUrl = await fetchSafeDataUrl(url); // This is "data:image/png;base64,..."
+      const token = getStoredToken();
+      if (!token) throw new Error("Not authenticated");
 
-      // Extract purely base64 for libraries that want it raw?
-      // removeBackground takes full URL or Base64? library says:
-      // "img.src = input.startsWith('data:') ? input : `data:image/png;base64,${input}`;"
-      // So passing full Data URL is SAFE and handled.
+      const sourceType = url.includes("googleusercontent.com")
+        ? "photos"
+        : "ext";
+      const derivationKey = generateDerivationKey(
+        sourceType,
+        photoId,
+        transform,
+      );
 
-      // autoColorCorrect also handles data: prefix?
-      // "img.src = input.startsWith('data:') ? input : ..."
-      // YES. Both libraries handle Data URLs.
+      // 1. Idempotency Check: Search Before Work
+      const existing = await findFileByDerivationKey(
+        token.access_token,
+        derivationKey,
+      );
 
-      let b64Result: string | null = null;
+      let finalUrl: string | null = null;
 
-      if (op === "bg") {
-        b64Result = await removeBackground(safeDataUrl);
-      } else if (op === "color") {
-        b64Result = await autoColorCorrect(safeDataUrl);
-      } else if (op === "smart_crop") {
-        // smartCrop returns RAW base64 (no prefix)
-        const { smartCrop: runSmartCrop } =
-          await import("$lib/background-removal");
-        b64Result = await runSmartCrop(safeDataUrl);
+      if (existing) {
+        console.info(
+          `[ManualOp] Idempotent match found for ${derivationKey}: ${existing.id}`,
+        );
+        finalUrl = existing.publicUrl || existing.apiUrl || "";
+      } else {
+        // 2. Request Transform via Sync Queue
+        const requestId = `manual-op-${transform}-${photoId}-${Date.now()}`;
+        const folders = await ensureFolderStructure(token.access_token);
+
+        console.info(
+          `[ManualOp] Requesting transform for ${photoId} (${derivationKey})...`,
+        );
+
+        // We use addDoc because sync collection is append-only
+        await addDoc(collection(firestore, SYNC_COLLECTION), {
+          eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+          requestId,
+          creator: $user.uid,
+          requestedBy: $user.uid,
+          requestedAt: Date.now(),
+          source: "manual-op",
+          photoId,
+          filename: `manual_${op}_${photoId}.png`,
+          mimeType: "image/png",
+          payloadVersion: 1,
+          payload: {
+            photoId,
+            sourceBaseUrl: url,
+            filename: `manual_${op}_${photoId}.png`,
+            mimeType: "image/png",
+            targetFolderId: folders.processedId,
+            sourceType,
+            transform,
+            derivationKey,
+            sourceRef: {
+              mediaItemId: photoId,
+              url,
+            },
+          },
+          createdAtMs: Date.now(),
+          createdAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
+        });
+
+        // 3. Poll for completion
+        finalUrl = await new Promise<string | null>((resolve) => {
+          const q = query(
+            collection(firestore, SYNC_COLLECTION),
+            where("requestId", "==", requestId),
+            where("eventType", "in", [
+              "photos/image_transform_completed",
+              "photos/image_transfer_completed",
+              "photos/image_transfer_failed",
+              "photos/image_transform_failed",
+            ]),
+            limit(1),
+          );
+
+          const unsubscribe = onSnapshot(
+            q,
+            (snap) => {
+              if (snap.empty) return;
+              const data = snap.docs[0].data();
+              unsubscribe();
+
+              if (data.eventType.endsWith("completed")) {
+                const payload = data.payload || {};
+                resolve(payload.permanentUrl || payload.apiUrl || null);
+              } else {
+                console.error(
+                  "[ManualOp] Transform failed",
+                  data.payload?.errorMessage,
+                );
+                resolve(null);
+              }
+            },
+            (err) => {
+              console.error("[ManualOp] Polling error", err);
+              unsubscribe();
+              resolve(null);
+            },
+          );
+
+          // Safety Timeout (60s)
+          setTimeout(() => {
+            unsubscribe();
+            resolve(null);
+          }, 60000);
+        });
       }
 
-      if (b64Result) {
-        // Result might be raw base64 or have prefix?
-        // Libraries usually return raw base64 string from canvas.toDataURL().split(',')[1] based on my reading.
-        // Let's normalize.
-        const cleanB64 = b64Result.includes("base64,")
-          ? b64Result.split("base64,")[1]
-          : b64Result;
+      if (finalUrl) {
+        // Re-dispatching as a completed upload effectively pushes this URL to the front
+        const action = complete_upload({
+          id: photoId,
+          permanentUrl: finalUrl,
+          webViewLink: finalUrl,
+        });
 
-        const byteChars = atob(cleanB64);
-        const byteNumbers = new Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++)
-          byteNumbers[i] = byteChars.charCodeAt(i);
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: "image/png" });
-
-        const suffix = op === "smart_crop" ? "crop" : op;
-        await uploadBlob(blob, suffix);
+        if ($user.uid) {
+          broadcast(firestore, $user.uid, action);
+        } else {
+          store.dispatch(action);
+        }
       } else {
-        throw new Error("No image data returned.");
+        throw new Error("Operation failed or timed out.");
       }
     } catch (e: any) {
       console.error("Manual Op Failed", e);

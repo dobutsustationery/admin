@@ -108,20 +108,28 @@ export function classifySyncRequestStatusFromEventTypes(
   if (eventTypes.length === 0) return null;
   const hasRequested = eventTypes.some(
     (t) =>
-      t.endsWith("/sync_requested") || t.endsWith("/image_transfer_requested"),
+      t.endsWith("/sync_requested") ||
+      t === "photos/image_transfer_requested" ||
+      t === "photos/image_transform_requested",
   );
   const hasStarted = eventTypes.some(
-    (t) => t.endsWith("/sync_claimed") || t.endsWith("/image_transfer_started"),
+    (t) =>
+      t.endsWith("/sync_claimed") ||
+      t === "photos/image_transfer_started" ||
+      t === "photos/image_transform_started",
   );
   const hasFailed = eventTypes.some(
     (t) =>
       t.endsWith("/sync_failed") ||
       t.endsWith("/sync_partial_failed") ||
-      t.endsWith("/image_transfer_failed"),
+      t === "photos/image_transfer_failed" ||
+      t === "photos/image_transform_failed",
   );
   const hasCompleted = eventTypes.some(
     (t) =>
-      t.endsWith("/sync_completed") || t.endsWith("/image_transfer_completed"),
+      t.endsWith("/sync_completed") ||
+      t === "photos/image_transfer_completed" ||
+      t === "photos/image_transform_completed",
   );
   if (hasFailed) return "failed";
   if (hasCompleted) return "success";

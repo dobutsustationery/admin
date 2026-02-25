@@ -8,7 +8,7 @@ const {
   toDrivePublicUrl,
   findFileByDerivationKey: sharedFindFileByDerivationKey,
 } = require("./idempotency-utils.cjs");
-const { removeBackground } = require("./image-processor.cjs");
+const { removeBackground, autoColorCorrect, smartCrop } = require("./image-processor.cjs");
 
 const SYNC_COLLECTION = "sync";
 const SYNC_SECRETS_COLLECTION = "sync_secrets";
@@ -634,6 +634,34 @@ async function executeTransfer({
         // 2. Process
         console.log(`[PhotosWorker] Removing background for ${photoId}...`);
         bytes = await removeBackground(source.usedUrl, source.bytes);
+        finalMimeType = "image/png"; // Result is always PNG from Sharp
+        usedUrl = source.usedUrl;
+      } else if (transformName === "color_correct") {
+        // 1. Fetch Source
+        const source = await fetchSourceBytes({
+          sourceBaseUrl,
+          photosAccessToken,
+          driveAccessToken,
+          onApiCall: logApiCall,
+        });
+        
+        // 2. Process
+        console.log(`[PhotosWorker] Color correcting for ${photoId}...`);
+        bytes = await autoColorCorrect(source.bytes);
+        finalMimeType = "image/png"; // Result is always PNG from Sharp
+        usedUrl = source.usedUrl;
+      } else if (transformName === "crop") {
+        // 1. Fetch Source
+        const source = await fetchSourceBytes({
+          sourceBaseUrl,
+          photosAccessToken,
+          driveAccessToken,
+          onApiCall: logApiCall,
+        });
+        
+        // 2. Process
+        console.log(`[PhotosWorker] Smart cropping for ${photoId}...`);
+        bytes = await smartCrop(source.bytes);
         finalMimeType = "image/png"; // Result is always PNG from Sharp
         usedUrl = source.usedUrl;
       } else {

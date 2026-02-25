@@ -7,8 +7,6 @@
     fail_edit,
     toggle_edit_status,
   } from "$lib/photos-slice";
-  import { smartCrop, removeBackground } from "$lib/background-removal";
-  import { autoColorCorrect } from "$lib/color-correction";
   import {
     uploadImageToDrive,
     ensureFolderStructure,
@@ -39,13 +37,26 @@
     type DriveFile,
   } from "$lib/google-drive";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
-  import { fetchImageInline } from "$lib/gemini-client";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import { store } from "$lib/store";
   import { broadcast } from "$lib/redux-firestore";
   import { auth, firestore } from "$lib/firebase";
+  import {
+    addDoc,
+    collection,
+    query,
+    where,
+    limit,
+    onSnapshot,
+    serverTimestamp,
+  } from "firebase/firestore";
   import { user } from "$lib/user-store";
   import { signOut } from "firebase/auth";
+  import {
+    SYNC_COLLECTION,
+    PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+  } from "$lib/sync-events";
+  import { findFileByDerivationKey } from "$lib/google-drive";
 
   // Local Auth State for UI
   let isPhotosAuthenticated = false;
@@ -186,38 +197,28 @@
 
   // --- EDIT QUEUE RUNNER ---
   let isEditing = false;
-  // Reactive list of pending items
+  // In-flight request tracking to avoid redundant sync requests
+  const inFlightEdits = new Set<string>();
+
+  // Reactive list of pending items for UI progress display
   $: pendingEdits = Object.entries(edits).filter(
     ([id, q]) => q.queue.length > 0 && !q.active,
   );
 
-  // Trigger processing whenever we have pending items and are not busy
-  $: if (!isEditing && pendingEdits.length > 0) {
-    processNextEdit();
-  }
+  async function dispatchTransformRequest(id: string, operation: string) {
+    const transform =
+      operation === "remove_background" ? "remove_bg" : operation;
+    const requestId = `photo-edit-${transform}-${id}`;
 
-  async function processNextEdit() {
-    if (isEditing || pendingEdits.length === 0) return;
-
-    isEditing = true;
-    const [id, q] = pendingEdits[0]; // Pick first
-    const operation = q.queue[0]; // Pick first op in queue
-
-    console.log(`[EditQueue] Starting ${operation} on ${id}`);
+    if (inFlightEdits.has(requestId)) return;
 
     try {
       const token = getStoredToken();
       if (!token) throw new Error("Not authenticated");
 
-      store.dispatch(begin_edit({ id, operation }));
-
-      // 1. Get Image
-      // Need to find the item to get its baseUrl.
-      // Could be in `selected` OR `janCodeToPhotos`?
-      // We need a lookup.
+      // 1. Get Item
       let item = photos.find((p) => p.id === id);
       if (!item) {
-        // Check JAN groups
         for (const code in janCodeToPhotos) {
           const found = janCodeToPhotos[code].find((p) => p.id === id);
           if (found) {
@@ -228,83 +229,191 @@
       }
       if (!item) throw new Error("Photo not found in state");
 
-      // Fetch logic (duplicated from gemini-client roughly)
-      // We rely on background-removal / color-correction taking URL or Base64.
-      // They need Base64 if we want to avoid CORS canvas taint.
-      // So we fetch to Base64 first using our proxy-friendly method.
+      const sourceType = item.baseUrl?.includes("googleusercontent.com")
+        ? "photos"
+        : "ext";
+      const derivationKey = generateDerivationKey(sourceType, id, transform);
 
-      // Import fetchImage logic dynamically or duplicate?
-      // Since it's inside `gemini-client` but not exported, let's duplicate the fetch logic briefly or move it helper.
-      // Getting it via `fetch` directly works for Drive/Photos IF we have headers.
-      // `background-removal` tries to load using `Image` tag which fails CORS for canvas.
-      // So we MUST fetch blob -> base64.
-
-      const fetched = await fetchImageInline(item.baseUrl, token.access_token);
-      const base64 = fetched.data;
-      const mimeType = fetched.mimeType || "image/jpeg";
-
-      // 2. Process
-      let resultBase64: string | null = null;
-      if (operation === "crop") {
-        resultBase64 = await smartCrop(base64);
-      } else if (operation === "color_correct") {
-        resultBase64 = await autoColorCorrect(base64);
-      } else if (operation === "remove_background") {
-        // Convert to data uri
-        resultBase64 = await removeBackground(
-          `data:${mimeType};base64,${base64}`,
-        );
-      }
-
-      if (!resultBase64) throw new Error("Operation returned no data");
-
-      // 3. Upload
-      const folders = await ensureFolderStructure(token.access_token);
-      const filename = `edited_${operation}_${id}_${Date.now()}.png`;
-      // Convert base64 back to blob for upload
-      const byteChars = atob(resultBase64);
-      const byteNumbers = new Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++)
-        byteNumbers[i] = byteChars.charCodeAt(i);
-      const byteArray = new Uint8Array(byteNumbers);
-      const uploadBlob = new Blob([byteArray], { type: "image/png" });
-      const contentHash = await calculateHash(uploadBlob);
-
-      const uploaded = await uploadImageToDrive(
-        uploadBlob,
-        filename,
-        folders.processedId,
+      // 2. Idempotency Check: Search Before Work
+      const existing = await findFileByDerivationKey(
         token.access_token,
-        generateDerivationKey("ext", contentHash, "identity"),
+        derivationKey,
       );
 
-      const finalUrl =
-        uploaded.publicUrl ||
-        uploaded.apiUrl ||
-        uploaded.thumbnailLink ||
-        uploaded.webViewLink;
+      if (existing) {
+        console.info(
+          `[EditQueue] Idempotent match found for ${derivationKey}: ${existing.id}`,
+        );
+        const finalUrl = existing.publicUrl || existing.apiUrl || "";
 
-      // 4. Complete & Broadcast
-      const completeAction = complete_edit({
-        id,
-        operation,
-        permanentUrl: finalUrl,
-      });
+        const completeAction = complete_edit({
+          id,
+          operation,
+          permanentUrl: finalUrl,
+        });
 
-      if ($user.uid) {
-        console.log(`[Batch] Broadcasting complete_edit for ${id}`);
-        broadcast(firestore, $user.uid, completeAction);
-      } else {
-        store.dispatch(completeAction);
+        if ($user.uid) {
+          broadcast(firestore, $user.uid, completeAction);
+        } else {
+          store.dispatch(completeAction);
+        }
+        return;
       }
+
+      // 3. Request Transform via Sync Queue
+      console.info(
+        `[EditQueue] Requesting transform for ${id} (${derivationKey})...`,
+      );
+      inFlightEdits.add(requestId);
+
+      const driveToken = getDriveStoredToken() || getStoredToken();
+      const folders = await ensureFolderStructure(driveToken!.access_token);
+
+      // We use addDoc because sync collection is append-only
+      await addDoc(collection(firestore, SYNC_COLLECTION), {
+        eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+        requestId,
+        creator: $user.uid,
+        requestedBy: $user.uid,
+        requestedAt: Date.now(),
+        source: "edit-queue-runner",
+        photoId: id,
+        filename: `edited_${operation}_${id}.png`,
+        mimeType: "image/png",
+        payloadVersion: 1,
+        payload: {
+          photoId: id,
+          sourceBaseUrl: item.baseUrl || "",
+          filename: `edited_${operation}_${id}.png`,
+          mimeType: "image/png",
+          targetFolderId: folders.processedId,
+          sourceType,
+          transform,
+          derivationKey,
+          sourceRef: {
+            mediaItemId: id,
+            url: item.baseUrl || "",
+          },
+        },
+        createdAtMs: Date.now(),
+        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+      });
     } catch (e: any) {
-      console.error(`Edit failed for ${id}:`, e);
+      console.error(`Edit dispatch failed for ${id}:`, e);
       store.dispatch(
         fail_edit({ id, operation: operation as any, error: e.message }),
       );
+    }
+  }
+
+  async function handleProcessImages() {
+    isEditing = true;
+    try {
+      // 1. Color Correct ALL Categorized Photos
+      const colorIds = scheduleBatch("color_correct");
+      if (colorIds.length > 0) {
+        console.log(
+          `[Batch] Dispatching ${colorIds.length} color_correct jobs...`,
+        );
+        // Dispatch ALL at once
+        await Promise.all(
+          colorIds.map((id) => dispatchTransformRequest(id, "color_correct")),
+        );
+
+        console.log(
+          `[Batch] Waiting for ${colorIds.length} color_correct jobs to complete...`,
+        );
+        await waitForBatchCompletion(colorIds, "color_correct");
+      }
+
+      // 2. Remove Background ALL Categorized Photos
+      const bgIds = scheduleBatch("remove_background");
+      if (bgIds.length > 0) {
+        console.log(
+          `[Batch] Dispatching ${bgIds.length} remove_background jobs...`,
+        );
+        // Dispatch ALL at once
+        await Promise.all(
+          bgIds.map((id) => dispatchTransformRequest(id, "remove_background")),
+        );
+
+        console.log(
+          `[Batch] Waiting for ${bgIds.length} remove_background jobs to complete...`,
+        );
+        await waitForBatchCompletion(bgIds, "remove_background");
+      }
+
+      console.log("[Batch] All processing complete.");
     } finally {
       isEditing = false;
     }
+  }
+
+  async function waitForBatchCompletion(ids: string[], operation: string) {
+    const promises = ids.map((id) => {
+      return new Promise<void>((resolve) => {
+        const transform =
+          operation === "remove_background" ? "remove_bg" : operation;
+        const requestId = `photo-edit-${transform}-${id}`;
+
+        // Poll for this specific job
+        const q = query(
+          collection(firestore, SYNC_COLLECTION),
+          where("requestId", "==", requestId),
+          where("eventType", "in", [
+            "photos/image_transform_completed",
+            "photos/image_transfer_completed",
+            "photos/image_transfer_failed",
+            "photos/image_transform_failed",
+          ]),
+          limit(1),
+        );
+
+        const unsubscribe = onSnapshot(
+          q,
+          (snap) => {
+            if (snap.empty) return;
+            const data = snap.docs[0].data();
+            unsubscribe();
+            inFlightEdits.delete(requestId);
+
+            if (data.eventType.endsWith("completed")) {
+              const payload = data.payload || {};
+              const finalUrl = payload.permanentUrl || payload.apiUrl || null;
+              if (finalUrl) {
+                const completeAction = complete_edit({
+                  id,
+                  operation,
+                  permanentUrl: finalUrl,
+                });
+                if ($user.uid) {
+                  broadcast(firestore, $user.uid, completeAction);
+                } else {
+                  store.dispatch(completeAction);
+                }
+              }
+            }
+            resolve();
+          },
+          (err) => {
+            console.error(`[Batch] Error polling ${requestId}:`, err);
+            unsubscribe();
+            inFlightEdits.delete(requestId);
+            resolve(); // Resolve anyway to not block whole batch
+          },
+        );
+
+        // Safety timeout
+        setTimeout(() => {
+          unsubscribe();
+          inFlightEdits.delete(requestId);
+          resolve();
+        }, 120000); // Longer timeout for batch
+      });
+    });
+
+    await Promise.all(promises);
   }
 
   function scheduleBatch(op: "crop" | "color_correct" | "remove_background") {
@@ -324,8 +433,7 @@
 
     const ids = Array.from(allIds);
     if (ids.length === 0) {
-      alert("No categorized photos to process.");
-      return;
+      return [];
     }
 
     const action = schedule_edit_batch({ ids, operation: op });
@@ -339,14 +447,8 @@
       console.warn("[Batch] No User UID! Dispatching locally only.");
       store.dispatch(action);
     }
-  }
 
-  function handleProcessImages() {
-    // Schedule Color Correct THEN Remove Background
-    scheduleBatch("color_correct");
-    scheduleBatch("remove_background");
-
-    // Note: Progress is tracked via pendingEdits
+    return ids;
   }
 
   // State

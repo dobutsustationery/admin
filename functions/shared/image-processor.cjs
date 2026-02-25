@@ -5,27 +5,26 @@
 const { AutoModel, AutoProcessor, RawImage } = require("@xenova/transformers");
 const sharp = require("sharp");
 
-let model = null;
-let processor = null;
+let rmbgModel = null;
+let rmbgProcessor = null;
 let loadingPromise = null;
 
 /**
- * Load the background removal model and processor
+ * Load the high-quality RMBG-1.4 model
  */
-async function loadModel() {
-  if (model && processor) return { model, processor };
+async function loadRMBGModel() {
+  if (rmbgModel && rmbgProcessor) return { model: rmbgModel, processor: rmbgProcessor };
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
-    console.log("[ImageProcessor] Loading Xenova/modnet model...");
-    // Use fp32 explicitly as per documentation and use Promise.all for speed
-    const [m, p] = await Promise.all([
-      AutoModel.from_pretrained("Xenova/modnet", { dtype: "fp32" }),
-      AutoProcessor.from_pretrained("Xenova/modnet"),
+    console.log("[ImageProcessor] Loading briaai/RMBG-1.4 model...");
+    const [model, processor] = await Promise.all([
+      AutoModel.from_pretrained("briaai/RMBG-1.4"),
+      AutoProcessor.from_pretrained("briaai/RMBG-1.4"),
     ]);
-    model = m;
-    processor = p;
-    console.log("[ImageProcessor] Model loaded.");
+    rmbgModel = model;
+    rmbgProcessor = processor;
+    console.log("[ImageProcessor] RMBG-1.4 model loaded.");
     return { model, processor };
   })();
 
@@ -81,17 +80,105 @@ async function smartCrop(inputBuffer) {
 }
 
 /**
- * Remove background from an image buffer using AI
+ * Auto Color Correct (Auto Levels)
+ */
+async function autoColorCorrect(originalBuffer) {
+  try {
+    const image = sharp(originalBuffer);
+    const { data, info } = await image
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const { width, height } = info;
+    const pixelCount = width * height;
+
+    // 1. Compute Histograms
+    const histR = new Uint32Array(256);
+    const histG = new Uint32Array(256);
+    const histB = new Uint32Array(256);
+
+    for (let i = 0; i < data.length; i += 4) {
+      histR[data[i]]++;
+      histG[data[i + 1]]++;
+      histB[data[i + 2]]++;
+    }
+
+    // 2. Find Min/Max using cumulative distribution (Auto Levels)
+    const clipPercent = 0.005; // 0.5%
+    const minCount = pixelCount * clipPercent;
+
+    const getLevels = (hist) => {
+      let min = 0;
+      let sum = 0;
+      for (let i = 0; i < 256; i++) {
+        sum += hist[i];
+        if (sum > minCount) {
+          min = i;
+          break;
+        }
+      }
+
+      let max = 255;
+      sum = 0;
+      for (let i = 255; i >= 0; i--) {
+        sum += hist[i];
+        if (sum > minCount) {
+          max = i;
+          break;
+        }
+      }
+      return { min, max };
+    };
+
+    const levelsR = getLevels(histR);
+    const levelsG = getLevels(histG);
+    const levelsB = getLevels(histB);
+
+    // 3. Apply Correction
+    const map = (val, min, max) => {
+      if (max === min) return val;
+      let v = Math.round(((val - min) * 255) / (max - min));
+      if (v < 0) v = 0;
+      if (v > 255) v = 255;
+      return v;
+    };
+
+    // Modify buffer in place
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = map(data[i], levelsR.min, levelsR.max);
+      data[i + 1] = map(data[i + 1], levelsG.min, levelsG.max);
+      data[i + 2] = map(data[i + 2], levelsB.min, levelsB.max);
+      // Alpha preserved automatically
+    }
+
+    return await sharp(data, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: 4,
+      },
+    })
+      .png()
+      .toBuffer();
+  } catch (e) {
+    console.error("[ImageProcessor] Color correction failed:", e);
+    throw e;
+  }
+}
+
+/**
+ * Remove background from an image buffer using high-quality AI (RMBG-1.4)
  */
 async function removeBackground(imageUrl, originalBuffer) {
   try {
     console.log(`[ImageProcessor] AI background removal for ${imageUrl}...`);
     
-    const { model, processor } = await loadModel();
+    const { model, processor } = await loadRMBGModel();
 
-    // 1. Load image using sharp to get raw pixel data
+    // 1. Load image using sharp to get raw pixel data (RGB)
     const { data: rawData, info: rawInfo } = await sharp(originalBuffer)
-      .removeAlpha() // MODNet expects 3 channels (RGB)
+      .removeAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
 
@@ -104,8 +191,6 @@ async function removeBackground(imageUrl, originalBuffer) {
     const { output } = await model({ input: pixel_values });
 
     // 4. Post-process mask (resize to original)
-    // Use canonical fromTensor API. MODNet output is [1, 1, H, W], 
-    // so output[0] gives [1, H, W] which fromTensor handles as a single-channel image.
     const mask = await RawImage.fromTensor(output[0].mul(255).to("uint8")).resize(
       img.width,
       img.height,
@@ -143,5 +228,6 @@ async function removeBackground(imageUrl, originalBuffer) {
 
 module.exports = {
   removeBackground,
+  autoColorCorrect,
   smartCrop,
 };

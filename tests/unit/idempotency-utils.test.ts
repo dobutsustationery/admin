@@ -10,7 +10,7 @@ describe("idempotency-utils", () => {
 
     it("should handle remove_bg versioning", () => {
       const key = generateDerivationKey("photos", "short-id", "remove_bg");
-      expect(key).toBe("photos:short-id:remove_bg_v1");
+      expect(key).toBe("photos:short-id:remove_bg_v2");
     });
 
     it("should shorten extremely long IDs to fit Google Drive limits", () => {

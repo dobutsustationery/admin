@@ -74,13 +74,13 @@ writeFileSync(
 // DEDUPLICATION: Generate CommonJS bridge for shared idempotency logic
 const idempotencySource = resolve(process.cwd(), "src/lib/idempotency-utils.ts");
 const idempotencyTarget = resolve(functionsDir, "shared/idempotency-utils.cjs");
-if (existsSync(idempotencySource)) {
-  try {
+try {
+  if (existsSync(idempotencySource)) {
     execSync(`npx esbuild "${idempotencySource}" --bundle --platform=node --format=cjs --outfile="${idempotencyTarget}"`);
     console.log(`Generated ${idempotencyTarget} from ${idempotencySource} using esbuild.`);
-  } catch (e) {
-    console.error("Failed to generate idempotency-utils.cjs:", e.message);
   }
+} catch (e) {
+  console.error("Failed to generate idempotency-utils.cjs:", e.message);
 }
 
 console.log(`Prepared functions/.env from ${sourceMap[env]} (${kept.length} vars).`);
