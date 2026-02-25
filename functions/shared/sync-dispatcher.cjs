@@ -105,6 +105,7 @@ async function dispatchSyncCreate({ db, requestEventId, requestData, processor, 
 
   if (
     eventType === `${PHOTOS_NAMESPACE}/image_transfer_requested` ||
+    eventType === `${PHOTOS_NAMESPACE}/image_transform_requested` ||
     eventType === `${PHOTOS_NAMESPACE}/image_transfer_secret_provided`
   ) {
     const result = await photosWorker.processRequestEvent({

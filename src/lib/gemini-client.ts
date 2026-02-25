@@ -5,6 +5,25 @@ import {
   generateDerivationKey,
 } from "$lib/google-drive";
 import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
+import {
+  type Firestore,
+  collection,
+  addDoc,
+  serverTimestamp,
+  onSnapshot,
+  query,
+  where,
+  limit,
+} from "firebase/firestore";
+import {
+  SYNC_COLLECTION,
+  PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+} from "$lib/sync-events";
+
+function toSyncPhotoRequestDocId(photoId: string, transform: string) {
+  const safe = String(photoId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `photos_request_${safe}_${transform}`;
+}
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
@@ -355,6 +374,9 @@ export interface LiveGroup {
 }
 
 export async function processMediaItems(
+  firestore: Firestore,
+  uid: string,
+  processedFolderId: string,
   items: { baseUrl: string; id: string }[],
   accessToken: string,
   apiKey?: string,
@@ -384,17 +406,6 @@ export async function processMediaItems(
 
   notify("Starting analysis...", 0);
   console.log(`Processing ${items.length} items...`);
-
-  // Ensure 'Processed' folder exists
-  let processedFolderId = "";
-  try {
-    const folders = await ensureFolderStructure(accessToken);
-    processedFolderId = folders.processedId;
-  } catch (e) {
-    console.error("Failed to ensure folder structure", e);
-    // Continue locally? Or fail?
-    // Warn and try to continue, but upload will fail.
-  }
 
   // 1. Group images by JAN code
   let processedCount = 0;
@@ -605,7 +616,6 @@ export async function processMediaItems(
 
     // 3. Edit Images (Background Removal & Crop)
     // Client-side processing is disabled in favor of backend workers.
-    // The client here checks for ALREADY processed images via derivation key.
     for (let imgIdx = 0; imgIdx < group.images.length; imgIdx++) {
       const img = group.images[imgIdx];
 
@@ -615,19 +625,112 @@ export async function processMediaItems(
           img.id,
           "remove_bg",
         );
+
+        // 1. Check for existing transform
         const existing = await findFileByDerivationKey(
           accessToken,
           derivationKey,
         );
 
-        if (existing) {
-          const driveUrl = existing.publicUrl || existing.webContentLink || "";
+        let driveUrl: string | null = null;
 
+        if (existing) {
+          console.info(
+            `[GeminiClient] Idempotent match found for ${derivationKey}: ${existing.id}`,
+          );
+          driveUrl = existing.publicUrl || existing.webContentLink || "";
+        } else {
+          // 2. Request Transform via Sync Queue
+          console.info(
+            `[GeminiClient] Requesting transform for ${img.id} (${derivationKey})...`,
+          );
+
+          const requestId = `photo-transform-${img.id}-${Date.now()}`;
+
+          // We use addDoc to the sync collection
+          await addDoc(collection(firestore, SYNC_COLLECTION), {
+            eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+            requestId,
+            creator: uid,
+            requestedBy: uid,
+            requestedAt: Date.now(),
+            source: "gemini-client",
+            photoId: img.id,
+            filename: `processed_${img.id}.png`,
+            mimeType: "image/png",
+            payloadVersion: 1,
+            payload: {
+              photoId: img.id,
+              sourceBaseUrl: img.baseUrl || "",
+              filename: `processed_${img.id}.png`,
+              mimeType: "image/png",
+              targetFolderId: processedFolderId,
+              sourceType: "photos",
+              transform: "remove_bg",
+              derivationKey,
+              sourceRef: {
+                mediaItemId: img.id,
+                url: img.baseUrl || "",
+              },
+            },
+            createdAtMs: Date.now(),
+            createdAt: serverTimestamp(),
+            timestamp: serverTimestamp(),
+          });
+
+          // 3. Poll for completion
+          driveUrl = await new Promise<string | null>((resolve) => {
+            const q = query(
+              collection(firestore, SYNC_COLLECTION),
+              where("requestId", "==", requestId),
+              where("eventType", "in", [
+                "photos/image_transform_completed",
+                "photos/image_transfer_completed", // Fallback if worker misreports
+                "photos/image_transfer_failed",
+                "photos/image_transform_failed",
+              ]),
+              limit(1),
+            );
+
+            const unsubscribe = onSnapshot(
+              q,
+              (snap) => {
+                if (snap.empty) return;
+                const data = snap.docs[0].data();
+                unsubscribe();
+
+                if (data.eventType.endsWith("completed")) {
+                  const payload = data.payload || {};
+                  resolve(payload.permanentUrl || payload.apiUrl || null);
+                } else {
+                  console.error(
+                    "[GeminiClient] Transform failed",
+                    data.payload?.errorMessage,
+                  );
+                  resolve(null);
+                }
+              },
+              (err) => {
+                console.error("[GeminiClient] Polling error", err);
+                unsubscribe();
+                resolve(null);
+              },
+            );
+
+            // Safety Timeout (60s)
+            setTimeout(() => {
+              unsubscribe();
+              resolve(null);
+            }, 60000);
+          });
+        }
+
+        if (driveUrl) {
           // Update Live Group
           const updatedLiveGroup = liveGroups.find(
             (g) => g.janCode === group.janCode,
           );
-          if (updatedLiveGroup && driveUrl) {
+          if (updatedLiveGroup) {
             const idx = liveGroups.indexOf(updatedLiveGroup);
             liveGroups[idx] = {
               ...updatedLiveGroup,
@@ -646,9 +749,7 @@ export async function processMediaItems(
             }
           }
         } else {
-          // No existing transform found.
-          // In a full implementation, we would dispatch a photos/image_transform_requested sync event here
-          // and wait for completion. For now, we continue with the original image.
+          // Fallback to original image if transform failed or timed out
           const updatedLiveGroup = liveGroups.find(
             (g) => g.janCode === group.janCode,
           );
@@ -658,7 +759,7 @@ export async function processMediaItems(
           }
         }
       } catch (e) {
-        console.error("Idempotent check failed", e);
+        console.error("Transform request failed", e);
       }
     }
 

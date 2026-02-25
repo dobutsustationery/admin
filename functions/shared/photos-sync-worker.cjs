@@ -1,21 +1,14 @@
 const { FieldValue } = require("firebase-admin/firestore");
+const {
+  DERIVATION_KEY_PROPERTY,
+  generateDerivationKey,
+  escapeDriveQueryValue,
+} = require("./idempotency-utils.cjs");
+const { removeBackground } = require("./image-processor.cjs");
 
 const SYNC_COLLECTION = "sync";
 const SYNC_SECRETS_COLLECTION = "sync_secrets";
 const PHOTOS_NS = "photos";
-
-// Constant for idempotency property
-const DERIVATION_KEY_PROPERTY = "derivation_key";
-
-/**
- * Generate a deterministic derivation key for a file in Drive
- * Format: {source_type}:{source_id}:{transform_name}
- */
-function generateDerivationKey(type, id, transform) {
-  // Simple normalization: no colons in IDs
-  const safeId = String(id || "").replace(/:/g, "_");
-  return `${type}:${safeId}:${transform}`;
-}
 
 function nowMs() {
   return Date.now();
@@ -653,9 +646,23 @@ async function executeTransfer({
     let bytes, finalMimeType, usedUrl;
 
     if (eventType.includes("transform")) {
-      // TODO: Implement backend transformation logic (remove_bg, crop)
-      // For now, we'll fail if transform is requested but not implemented
-      throw new Error(`transform_not_implemented:${transformName}`);
+      if (transformName === "remove_bg") {
+        // 1. Fetch Source
+        const source = await fetchSourceBytes({
+          sourceBaseUrl,
+          photosAccessToken,
+          driveAccessToken,
+          onApiCall: logApiCall,
+        });
+        
+        // 2. Process
+        console.log(`[PhotosWorker] Removing background for ${photoId}...`);
+        bytes = await removeBackground(source.bytes);
+        finalMimeType = "image/png"; // Result is always PNG from Sharp
+        usedUrl = source.usedUrl;
+      } else {
+        throw new Error(`transform_not_implemented:${transformName}`);
+      }
     } else {
       const source = await fetchSourceBytes({
         sourceBaseUrl,

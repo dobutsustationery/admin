@@ -14,6 +14,7 @@
     getStoredToken,
     clearToken,
     getFolderLink,
+    generateDerivationKey,
     type DriveFile,
   } from "$lib/google-drive";
 
@@ -187,6 +188,7 @@
         finalFilename,
         csv,
         token.access_token,
+        generateDerivationKey("ext", finalFilename, "identity"),
       );
       uploadSuccess = true;
       uploadedFileLink = fileInfo.webViewLink;

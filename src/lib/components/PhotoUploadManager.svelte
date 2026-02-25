@@ -284,7 +284,7 @@
         : "ext";
       const derivationKey = generateDerivationKey(
         sourceType,
-        item.id,
+        String(item.id),
         "identity",
       );
 

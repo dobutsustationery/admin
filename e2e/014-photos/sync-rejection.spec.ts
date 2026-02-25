@@ -2,6 +2,7 @@ import { test, expect } from "../fixtures/auth";
 
 test.describe("Sync Payload Validation", () => {
   test("should reject sync events with binary data or large payloads", async ({ page }) => {
+    test.setTimeout(30000);
     const firestoreUrl = process.env.FIRESTORE_EMULATOR_HOST 
       ? `http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/dobutsu-admin/databases/(default)/documents/sync`
       : "http://localhost:8080/v1/projects/dobutsu-admin/databases/(default)/documents/sync";
