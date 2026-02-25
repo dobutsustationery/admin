@@ -8,6 +8,23 @@
 import type { drive_v3 } from "googleapis";
 import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 
+// Constant for idempotency property
+export const DERIVATION_KEY_PROPERTY = "derivation_key";
+
+/**
+ * Generate a deterministic derivation key for a file in Drive
+ * Format: {source_type}:{source_id}:{transform_name}
+ */
+export function generateDerivationKey(
+  type: "photos" | "ext" | "drive",
+  id: string,
+  transform: "identity" | "remove_bg" | "crop" | string,
+): string {
+  // Simple normalization: no colons in IDs
+  const safeId = id.replace(/:/g, "_");
+  return `${type}:${safeId}:${transform}`;
+}
+
 // Environment configuration
 const CLIENT_ID =
   (typeof window !== "undefined" &&
@@ -552,23 +569,65 @@ export async function listAllImages(accessToken: string): Promise<DriveFile[]> {
 }
 
 /**
+ * Search for a file by its derivation key in appProperties.
+ */
+export async function findFileByDerivationKey(
+  accessToken: string,
+  derivationKey: string,
+): Promise<DriveFile | null> {
+  const query = `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
+  const params = new URLSearchParams({
+    q: query,
+    fields:
+      "files(id,name,mimeType,modifiedTime,size,webViewLink,webContentLink,thumbnailLink)",
+    pageSize: "1",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      console.error("Google Drive Token Expired (401). Clearing token.");
+      clearToken();
+    }
+    throw new Error(
+      `Failed to search by derivation key: ${response.statusText}`,
+    );
+  }
+
+  const data = (await response.json()) as { files?: DriveFile[] };
+  const first = (data.files || [])[0];
+  return first ? hydrateDriveFiles([first])[0] : null;
+}
+
+/**
  * Upload a CSV file to Google Drive
  */
 export async function uploadCSVToDrive(
   filename: string,
   csvContent: string,
   accessToken: string,
+  derivationKey?: string,
 ): Promise<DriveFileInfo> {
   if (!FOLDER_ID) {
     throw new Error("Google Drive folder ID is not configured");
   }
 
   // Create file metadata
-  const metadata = {
+  const metadata: any = {
     name: filename,
     mimeType: "text/csv",
     parents: [FOLDER_ID],
   };
+
+  if (derivationKey) {
+    metadata.appProperties = { [DERIVATION_KEY_PROPERTY]: derivationKey };
+  }
 
   // Create multipart request body with random boundary
   const boundary = `----FormBoundary${Math.random().toString(36).substring(2)}`;
@@ -815,10 +874,12 @@ export async function uploadImageToDrive(
   filename: string,
   folderId: string,
   accessToken: string,
+  derivationKey: string,
 ): Promise<DriveFileInfo> {
   const metadata = {
     name: filename,
     parents: [folderId],
+    appProperties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
   };
 
   const boundary = `----FormBoundary${Math.random().toString(36).substring(2)}`;

@@ -9,7 +9,11 @@
   } from "$lib/photos-slice";
   import { smartCrop, removeBackground } from "$lib/background-removal";
   import { autoColorCorrect } from "$lib/color-correction";
-  import { uploadImageToDrive, ensureFolderStructure } from "$lib/google-drive";
+  import {
+    uploadImageToDrive,
+    ensureFolderStructure,
+    generateDerivationKey,
+  } from "$lib/google-drive";
 </script>
 
 <script lang="ts">
@@ -269,6 +273,7 @@
         filename,
         folders.processedId,
         token.access_token,
+        generateDerivationKey("ext", filename, "identity"),
       );
 
       const finalUrl =

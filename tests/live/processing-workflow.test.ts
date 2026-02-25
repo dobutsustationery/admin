@@ -60,6 +60,7 @@ describe("Image Processing Workflow (@live)", () => {
       fixtureFileName,
       seedFolderId,
       accessToken,
+      GoogleDrive.generateDerivationKey("ext", fixtureFileName, "identity"),
     );
     fixtureFileId = fixtureUpload.id;
     expect(fixtureFileId).toBeTruthy();
@@ -90,6 +91,11 @@ describe("Image Processing Workflow (@live)", () => {
       `processed_${fixtureFileName}`,
       seedFolderId, // Or sandbox? Let's use Seed or Sandbox. Maybe Sandbox.
       accessToken,
+      GoogleDrive.generateDerivationKey(
+        "drive",
+        fixtureFileId,
+        "contract_test",
+      ),
     );
 
     expect(uploadRes.id).toBeDefined();

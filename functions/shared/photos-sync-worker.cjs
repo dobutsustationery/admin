@@ -4,6 +4,19 @@ const SYNC_COLLECTION = "sync";
 const SYNC_SECRETS_COLLECTION = "sync_secrets";
 const PHOTOS_NS = "photos";
 
+// Constant for idempotency property
+const DERIVATION_KEY_PROPERTY = "derivation_key";
+
+/**
+ * Generate a deterministic derivation key for a file in Drive
+ * Format: {source_type}:{source_id}:{transform_name}
+ */
+function generateDerivationKey(type, id, transform) {
+  // Simple normalization: no colons in IDs
+  const safeId = String(id || "").replace(/:/g, "_");
+  return `${type}:${safeId}:${transform}`;
+}
+
 function nowMs() {
   return Date.now();
 }
@@ -164,6 +177,85 @@ function stripGoogleusercontentSuffix(url) {
   return String(url || "").replace(/=[a-z0-9,-]+$/i, "");
 }
 
+/**
+ * Search for a file by its derivation key in appProperties.
+ */
+async function findFileByDerivationKey(accessToken, derivationKey, onApiCall) {
+  const query = `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${derivationKey.replace(/'/g, "\\'")}' } and trashed=false`;
+  const params = new URLSearchParams({
+    q: query,
+    fields: "files(id,name,webViewLink,webContentLink,thumbnailLink,mimeType)",
+    pageSize: "1",
+  });
+
+  const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
+  const details = await driveRequestJson(url, {
+    accessToken,
+    onApiCall,
+    apiMeta: {
+      requestType: "drive.files.list",
+      endpoint: "drive.files.list",
+      context: { derivationKey },
+    },
+  });
+
+  const first = (details.files || [])[0];
+  if (!first) return null;
+
+  return {
+    id: first.id,
+    name: first.name,
+    mimeType: first.mimeType,
+    webViewLink: first.webViewLink || "",
+    webContentLink: first.webContentLink || "",
+    thumbnailLink: first.thumbnailLink || "",
+    apiUrl: toDriveApiMediaUrl(first.id),
+    publicUrl: toDrivePublicUrl(first.id),
+  };
+}
+
+async function emitSuccess({
+  db,
+  collectionName,
+  requestEventId,
+  requestId,
+  processor,
+  creator,
+  requestedBy,
+  eventType,
+  payload,
+}) {
+  const completionEventType = eventType.includes("transform")
+    ? `${PHOTOS_NS}/image_transform_completed`
+    : `${PHOTOS_NS}/image_transfer_completed`;
+
+  await createIdempotentEvent(
+    db,
+    collectionName,
+    `result_${requestEventId}`,
+    baseEvent({
+      eventType: completionEventType,
+      requestId,
+      requestEventId,
+      creator,
+      processor,
+      requestedBy,
+      payload,
+    }),
+  );
+
+  await createIdempotentBroadcastAction(db, `photos_complete_${requestEventId}`, {
+    type: "photos/complete_upload",
+    creator,
+    payload: {
+      id: payload.photoId,
+      requestId,
+      permanentUrl: payload.permanentUrl,
+      webViewLink: payload.webViewLink || "",
+    },
+  });
+}
+
 async function fetchSourceBytes({
   sourceBaseUrl,
   photosAccessToken,
@@ -284,10 +376,19 @@ async function driveRequestJson(url, { method = "GET", accessToken, headers = {}
   return await resp.json();
 }
 
-async function uploadToDrive({ bytes, mimeType, filename, folderId, driveAccessToken, onApiCall }) {
+async function uploadToDrive({
+  bytes,
+  mimeType,
+  filename,
+  folderId,
+  driveAccessToken,
+  onApiCall,
+  derivationKey,
+}) {
   const metadata = {
     name: filename,
     parents: folderId ? [folderId] : undefined,
+    appProperties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
   };
   const { body, boundary } = buildMultipartBody({ metadata, bytes, mimeType });
   const file = await driveRequestJson(
@@ -451,7 +552,7 @@ async function executeTransfer({
   creator,
   secretDoc,
 }) {
-  const { sourceBaseUrl, filename, mimeType, targetFolderId, photoId } = extractTransferParams(requestData);
+  const { sourceBaseUrl, filename, mimeType, targetFolderId, photoId, payload } = extractTransferParams(requestData);
   const secret = secretDoc?.data || {};
   const photosAccessToken = normalizeString(secret.photosAccessToken);
   const driveAccessToken = normalizeString(secret.driveAccessToken);
@@ -469,12 +570,67 @@ async function executeTransfer({
     return { processed: false, reason: "missing_drive_token" };
   }
 
+  // Determine Derivation Key
+  const eventType = normalizeString(requestData?.eventType);
+  const transformName = eventType.includes("transform") ? normalizeString(payload?.transform || "unknown") : "identity";
+  const sourceType = normalizeString(payload?.sourceType) || (sourceBaseUrl.includes("googleusercontent.com") ? "photos" : "ext");
+  const derivationKey = generateDerivationKey(sourceType, photoId, transformName);
+
+  const requestedBy = requestingUid(requestData);
+  const logApiCall = (params) =>
+    emitPhotoApiCallEvent({
+      db,
+      collectionName,
+      requestEventId,
+      requestId,
+      processor,
+      creator,
+      requestedBy,
+      ...params,
+    });
+
+  // 1. Search Before Work
+  try {
+    const existingFile = await findFileByDerivationKey(driveAccessToken, derivationKey, logApiCall);
+    if (existingFile) {
+      console.log(`[PhotosWorker] Idempotent match found for ${derivationKey}: ${existingFile.id}`);
+      
+      await emitSuccess({
+        db,
+        collectionName,
+        requestEventId,
+        requestId,
+        processor,
+        creator,
+        requestedBy,
+        eventType,
+        payload: {
+          photoId,
+          filename: existingFile.name,
+          driveFileId: existingFile.id,
+          permanentUrl: existingFile.publicUrl || existingFile.apiUrl,
+          apiUrl: existingFile.apiUrl,
+          webViewLink: existingFile.webViewLink,
+          webContentLink: existingFile.webContentLink,
+          mimeType: existingFile.mimeType,
+          idempotent: true,
+          derivationKey,
+        },
+      });
+
+      return { processed: true, summary: { requestId, status: "completed", driveFileId: existingFile.id, idempotent: true } };
+    }
+  } catch (e) {
+    console.warn(`[PhotosWorker] Pre-work search failed for ${derivationKey}, continuing with work`, e);
+  }
+
+  // 2. Perform Work
   const started = await createIdempotentEvent(
     db,
     collectionName,
     `start_${requestEventId}`,
     baseEvent({
-      eventType: `${PHOTOS_NS}/image_transfer_started`,
+      eventType: eventType.includes("transform") ? `${PHOTOS_NS}/image_transform_started` : `${PHOTOS_NS}/image_transfer_started`,
       requestId,
       requestEventId,
       creator,
@@ -483,8 +639,9 @@ async function executeTransfer({
         photoId,
         filename,
         targetFolderId,
+        derivationKey,
       },
-      requestedBy: requestingUid(requestData),
+      requestedBy,
     }),
   );
 
@@ -493,68 +650,54 @@ async function executeTransfer({
   }
 
   try {
-    const requestedBy = requestingUid(requestData);
-    const logApiCall = (params) =>
-      emitPhotoApiCallEvent({
-        db,
-        collectionName,
-        requestEventId,
-        requestId,
-        processor,
-        creator,
-        requestedBy,
-        ...params,
-      });
+    let bytes, finalMimeType, usedUrl;
 
-    const source = await fetchSourceBytes({
-      sourceBaseUrl,
-      photosAccessToken,
-      driveAccessToken,
-      onApiCall: logApiCall,
-    });
+    if (eventType.includes("transform")) {
+      // TODO: Implement backend transformation logic (remove_bg, crop)
+      // For now, we'll fail if transform is requested but not implemented
+      throw new Error(`transform_not_implemented:${transformName}`);
+    } else {
+      const source = await fetchSourceBytes({
+        sourceBaseUrl,
+        photosAccessToken,
+        driveAccessToken,
+        onApiCall: logApiCall,
+      });
+      bytes = source.bytes;
+      finalMimeType = source.mimeType;
+      usedUrl = source.usedUrl;
+    }
 
     const uploaded = await uploadToDrive({
-      bytes: source.bytes,
-      mimeType: mimeType || source.mimeType,
+      bytes,
+      mimeType: mimeType || finalMimeType,
       filename,
       folderId: targetFolderId,
       driveAccessToken,
       onApiCall: logApiCall,
+      derivationKey,
     });
 
-    await createIdempotentEvent(
+    await emitSuccess({
       db,
       collectionName,
-      `result_${requestEventId}`,
-      baseEvent({
-        eventType: `${PHOTOS_NS}/image_transfer_completed`,
-        requestId,
-        requestEventId,
-        creator,
-        processor,
-        requestedBy: requestingUid(requestData),
-        payload: {
-          photoId,
-          filename,
-          sourceUrl: source.usedUrl,
-          driveFileId: uploaded.id,
-          permanentUrl: uploaded.publicUrl || uploaded.apiUrl,
-          apiUrl: uploaded.apiUrl,
-          webViewLink: uploaded.webViewLink,
-          webContentLink: uploaded.webContentLink,
-          mimeType: uploaded.mimeType || mimeType || source.mimeType,
-        },
-      }),
-    );
-
-    await createIdempotentBroadcastAction(db, `photos_complete_${requestEventId}`, {
-      type: "photos/complete_upload",
+      requestEventId,
+      requestId,
+      processor,
       creator,
+      requestedBy,
+      eventType,
       payload: {
-        id: photoId,
-        requestId,
+        photoId,
+        filename,
+        sourceUrl: usedUrl,
+        driveFileId: uploaded.id,
         permanentUrl: uploaded.publicUrl || uploaded.apiUrl,
-        webViewLink: uploaded.webViewLink || "",
+        apiUrl: uploaded.apiUrl,
+        webViewLink: uploaded.webViewLink,
+        webContentLink: uploaded.webContentLink,
+        mimeType: uploaded.mimeType || mimeType || finalMimeType,
+        derivationKey,
       },
     });
 
@@ -690,7 +833,10 @@ async function processRequestEvent({
     return { processed: false, reason: "invalid_request" };
   }
 
-  if (eventType === `${PHOTOS_NS}/image_transfer_requested`) {
+  if (
+    eventType === `${PHOTOS_NS}/image_transfer_requested` ||
+    eventType === `${PHOTOS_NS}/image_transform_requested`
+  ) {
     return handleTransferRequested({
       db,
       collectionName,

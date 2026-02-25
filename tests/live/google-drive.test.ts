@@ -117,6 +117,7 @@ describe.skipIf(!isLiveConfigured)("Google Drive Integration (@live)", () => {
       filename,
       sandboxFolderId,
       accessToken,
+      GoogleDrive.generateDerivationKey("ext", filename, "identity"),
     );
 
     expect(fileInfo.id).toBeDefined();
@@ -140,6 +141,7 @@ describe.skipIf(!isLiveConfigured)("Google Drive Integration (@live)", () => {
       filename,
       sandboxFolderId,
       accessToken,
+      GoogleDrive.generateDerivationKey("ext", filename, "identity"),
     );
 
     // It's already set by upload, but let's call it again to ensure no error

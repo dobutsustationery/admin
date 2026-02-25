@@ -16,6 +16,7 @@
     uploadImageToDrive,
     type DriveFile,
     ensureFolderStructure,
+    generateDerivationKey,
   } from "$lib/google-drive";
   import type { AnyAction } from "$lib/store";
   import {
@@ -804,6 +805,7 @@
         driveFilename,
         cachedOriginalsId,
         token.access_token,
+        generateDerivationKey("ext", driveFilename, "identity"),
       );
       return (
         driveFile.publicUrl ||

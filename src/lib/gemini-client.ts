@@ -1,5 +1,9 @@
-import { removeBackground } from "./background-removal";
-import { ensureFolderStructure, uploadImageToDrive } from "$lib/google-drive";
+import {
+  ensureFolderStructure,
+  uploadImageToDrive,
+  findFileByDerivationKey,
+  generateDerivationKey,
+} from "$lib/google-drive";
 import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 
 const GEMINI_API_URL =
@@ -600,130 +604,61 @@ export async function processMediaItems(
     });
 
     // 3. Edit Images (Background Removal & Crop)
+    // Client-side processing is disabled in favor of backend workers.
+    // The client here checks for ALREADY processed images via derivation key.
     for (let imgIdx = 0; imgIdx < group.images.length; imgIdx++) {
       const img = group.images[imgIdx];
-      const imgData = groupImagesData[imgIdx]; // Already fetched
-
-      // Mark as optimizing
-      if (liveGroup) {
-        // Clone the group to trigger reactivity
-        liveGroups[i] = {
-          ...liveGroup,
-          imageStatuses: [...liveGroup.imageStatuses],
-        };
-        liveGroups[i].imageStatuses[imgIdx] = "optimizing";
-        notify(
-          `Optimizing image ${imgIdx + 1}/${group.images.length} for ${group.janCode}...`,
-          items.length,
-        );
-      }
-
-      console.log(
-        `[Image Optimization] Starting optimization for ${group.janCode} image ${imgIdx + 1}`,
-      );
 
       try {
-        // Background removal and crop
-        console.log(
-          `[Image Optimization] Starting optimization for ${group.janCode} image ${imgIdx + 1}`,
+        const derivationKey = generateDerivationKey(
+          "photos",
+          img.id,
+          "remove_bg",
+        );
+        const existing = await findFileByDerivationKey(
+          accessToken,
+          derivationKey,
         );
 
-        // Use the already fetched Base64 data to avoid 403 Forbidden on re-fetch without headers
-        const inlineImgData =
-          imgData.kind === "inline"
-            ? imgData
-            : await fetchImageInline(img.baseUrl, accessToken);
-        const dataUriInput = `data:${inlineImgData.mimeType};base64,${inlineImgData.data}`;
-        const editedBase64 = await removeBackground(dataUriInput);
-
-        if (editedBase64) {
-          const dataUri = `data:image/png;base64,${editedBase64}`;
-
-          // UPLOAD TO DRIVE
-          let driveUrl = dataUri; // Fallback
-          if (processedFolderId) {
-            try {
-              // Convert to blob
-              const processedBlob = await (await fetch(dataUri)).blob();
-              const filename = `processed_${group.janCode}_${imgIdx}_${Date.now()}.png`;
-              const driveFile = await uploadImageToDrive(
-                processedBlob,
-                filename,
-                processedFolderId,
-                accessToken,
-              );
-              // Prefer publicUrl for external compatibility (Shopify), fall back to webContentLink or dataUri
-              driveUrl =
-                driveFile.publicUrl || driveFile.webContentLink || dataUri;
-            } catch (uploadErr) {
-              console.error("Failed to upload processed image", uploadErr);
-            }
-          }
+        if (existing) {
+          const driveUrl = existing.publicUrl || existing.webContentLink || "";
 
           // Update Live Group
           const updatedLiveGroup = liveGroups.find(
             (g) => g.janCode === group.janCode,
           );
-          if (updatedLiveGroup) {
+          if (updatedLiveGroup && driveUrl) {
             const idx = liveGroups.indexOf(updatedLiveGroup);
             liveGroups[idx] = {
               ...updatedLiveGroup,
               imageUrls: [...updatedLiveGroup.imageUrls],
               imageStatuses: [...updatedLiveGroup.imageStatuses],
             };
-            liveGroups[idx].imageUrls[imgIdx] = driveUrl; // LINK Update
+            liveGroups[idx].imageUrls[imgIdx] = driveUrl;
             liveGroups[idx].imageStatuses[imgIdx] = "done";
 
-            // Update Results as well!
+            // Update Results
             const resIdx = results.findIndex(
               (r) => r.janCode === group.janCode,
             );
             if (resIdx !== -1) {
               results[resIdx].imageUrls[imgIdx] = driveUrl;
             }
-
-            notify(
-              `Updated image ${imgIdx + 1} for ${group.janCode}`,
-              items.length,
-            );
-            console.log(
-              `[Image Optimization] Finished optimization for ${group.janCode} image ${imgIdx + 1} (Success)`,
-            );
           }
         } else {
-          console.warn(
-            `[Image Optimization] Failed optimization for ${group.janCode} image ${imgIdx + 1} (No data returned)`,
-          );
+          // No existing transform found.
+          // In a full implementation, we would dispatch a photos/image_transform_requested sync event here
+          // and wait for completion. For now, we continue with the original image.
           const updatedLiveGroup = liveGroups.find(
             (g) => g.janCode === group.janCode,
           );
           if (updatedLiveGroup) {
             const idx = liveGroups.indexOf(updatedLiveGroup);
-            liveGroups[idx] = {
-              ...updatedLiveGroup,
-              imageStatuses: [...updatedLiveGroup.imageStatuses],
-            };
             liveGroups[idx].imageStatuses[imgIdx] = "done";
-            notify(
-              `Optimization failed for image ${imgIdx + 1} of ${group.janCode}`,
-              items.length,
-            );
           }
         }
       } catch (e) {
-        console.error("Image optimization failed", e);
-        const updatedLiveGroup = liveGroups.find(
-          (g) => g.janCode === group.janCode,
-        );
-        if (updatedLiveGroup) {
-          const idx = liveGroups.indexOf(updatedLiveGroup);
-          liveGroups[idx] = {
-            ...updatedLiveGroup,
-            imageStatuses: [...updatedLiveGroup.imageStatuses],
-          };
-          liveGroups[idx].imageStatuses[imgIdx] = "done";
-          notify(`Optimization error for image ${imgIdx + 1}`, items.length);
-        }
+        console.error("Idempotent check failed", e);
       }
     }
 

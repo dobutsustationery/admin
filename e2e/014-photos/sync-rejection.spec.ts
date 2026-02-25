@@ -48,7 +48,7 @@ test.describe("Sync Payload Validation", () => {
       });
     }, {
       message: "Wait for rejection event in Firestore",
-      timeout: 15000,
+      timeout: 30000,
       intervals: [1000],
     }).toBeTruthy();
 

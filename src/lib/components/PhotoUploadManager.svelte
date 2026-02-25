@@ -17,7 +17,12 @@
   } from "firebase/firestore";
   import { getStoredToken as getPhotosToken } from "$lib/google-photos";
   import { getStoredToken as getDriveToken } from "$lib/google-drive";
-  import { ensureFolderStructure, getFolderId } from "$lib/google-drive";
+  import {
+    ensureFolderStructure,
+    getFolderId,
+    findFileByDerivationKey,
+    generateDerivationKey,
+  } from "$lib/google-drive";
   import { getUploadCandidates } from "$lib/upload-logic";
   import {
     PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
@@ -269,7 +274,50 @@
     const requestId = `photo-transfer-${item.id}-${Date.now()}`;
 
     try {
-      // Queue append-only sync intent so the backend worker can process transfer.
+      const driveToken = getDriveToken() || getPhotosToken();
+      if (!driveToken)
+        throw new Error("No token available for pre-upload check");
+
+      // 1. Idempotency Check: Search Before Sync Request
+      const sourceType = item.baseUrl?.includes("googleusercontent.com")
+        ? "photos"
+        : "ext";
+      const derivationKey = generateDerivationKey(
+        sourceType,
+        item.id,
+        "identity",
+      );
+
+      try {
+        const existing = await findFileByDerivationKey(
+          driveToken.access_token,
+          derivationKey,
+        );
+        if (existing) {
+          console.info(
+            `[PhotoUploadManager] Idempotent match found for ${item.id}: ${existing.id}`,
+          );
+          requestedPhotoIds.add(String(item.id));
+
+          await broadcast(firestore, uid, {
+            type: "photos/complete_upload",
+            payload: {
+              id: item.id,
+              requestId: `idempotent-resolve-${Date.now()}`,
+              permanentUrl: existing.publicUrl || existing.apiUrl,
+              webViewLink: existing.webViewLink || "",
+            },
+          });
+          return;
+        }
+      } catch (checkErr) {
+        console.warn(
+          "[PhotoUploadManager] Pre-upload check failed, continuing with request",
+          checkErr,
+        );
+      }
+
+      // 2. Queue append-only sync intent so the backend worker can process transfer.
       const syncRequestDocId = toSyncPhotoRequestDocId(item.id);
       const syncRequestRef = doc(firestore, SYNC_COLLECTION, syncRequestDocId);
       const existing = await getDoc(syncRequestRef);

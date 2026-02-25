@@ -39,6 +39,7 @@
     uploadImageToDrive,
     getStoredToken,
     initiateOAuthFlow,
+    generateDerivationKey,
   } from "$lib/google-drive";
   import { reorderListingImages } from "$lib/listing-image-ordering";
   import { buildDraftListingImages } from "$lib/listing-image-logic";
@@ -949,11 +950,13 @@
 
       const folders = await ensureFolderStructure(token.access_token);
       const uploadKey = mode === "create" ? janCode : handle;
+      const filename = `replace_${uploadKey}_${Date.now()}.jpg`;
       const result = await uploadImageToDrive(
         file,
-        `replace_${uploadKey}_${Date.now()}.jpg`,
+        filename,
         folders.processedId,
         token.access_token,
+        generateDerivationKey("ext", filename, "identity"),
       );
       const newUrl = toGoogleDrivePublicImageUrl(
         result.publicUrl ||
