@@ -373,6 +373,18 @@ export interface LiveGroup {
   status: "collecting" | "generating" | "done";
 }
 
+/**
+ * Orchestrates product proposal generation and image optimization.
+ * Uses a hybrid model:
+ * 1. AI analysis (detect variants, generate descriptions) happens on the client.
+ * 2. Heavy image transforms (background removal) are dispatched to backend sync queue.
+ *
+ * @param firestore Firestore instance for sync queue dispatch.
+ * @param uid Current user ID for audit/ownership.
+ * @param processedFolderId Drive folder ID where transformed images should be stored.
+ * @param items List of Google Photos media items to process.
+ * @param accessToken Google Drive/Photos OAuth token.
+ */
 export async function processMediaItems(
   firestore: Firestore,
   uid: string,

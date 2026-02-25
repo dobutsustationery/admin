@@ -718,12 +718,16 @@ async function executeTransfer({
       message.includes("missing_drive_token") ||
       message.includes("source_fetch_failed");
 
+    const failureEventType = eventType.includes("transform")
+      ? `${PHOTOS_NS}/image_transform_failed`
+      : `${PHOTOS_NS}/image_transfer_failed`;
+
     await createIdempotentEvent(
       db,
       collectionName,
       `result_${requestEventId}`,
       baseEvent({
-        eventType: `${PHOTOS_NS}/image_transfer_failed`,
+        eventType: failureEventType,
         requestId,
         requestEventId,
         creator,

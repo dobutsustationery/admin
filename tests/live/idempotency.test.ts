@@ -137,6 +137,7 @@ describe.skipIf(!isLiveConfigured)(
 
       // Mock Firestore
       const events: any[] = [];
+      const createdDocs = new Set<string>();
       const mockDb = {
         collection: (colName: string) => ({
           doc: (docId: string) => ({
@@ -154,10 +155,21 @@ describe.skipIf(!isLiveConfigured)(
                   }),
                 };
               }
-              return { exists: false };
+              return { exists: createdDocs.has(`${colName}/${docId}`) };
             },
-            set: async () => {},
-            create: async () => ({ created: true }),
+            set: async () => {
+              createdDocs.add(`${colName}/${docId}`);
+            },
+            create: async (data: any) => {
+              const path = `${colName}/${docId}`;
+              if (createdDocs.has(path)) {
+                const err: any = new Error("Already exists");
+                err.code = 6;
+                throw err;
+              }
+              createdDocs.add(path);
+              return { created: true };
+            },
           }),
           add: async (data: any) => {
             events.push(data);
@@ -235,6 +247,7 @@ describe.skipIf(!isLiveConfigured)(
         },
       };
 
+      const createdDocs = new Set<string>();
       const mockDb = {
         collection: (colName: string) => ({
           doc: (docId: string) => ({
@@ -252,10 +265,21 @@ describe.skipIf(!isLiveConfigured)(
                   }),
                 };
               }
-              return { exists: false };
+              return { exists: createdDocs.has(`${colName}/${docId}`) };
             },
-            set: async () => {},
-            create: async () => ({ created: true }),
+            set: async () => {
+              createdDocs.add(`${colName}/${docId}`);
+            },
+            create: async (data: any) => {
+              const path = `${colName}/${docId}`;
+              if (createdDocs.has(path)) {
+                const err: any = new Error("Already exists");
+                err.code = 6;
+                throw err;
+              }
+              createdDocs.add(path);
+              return { created: true };
+            },
           }),
           add: async () => ({ id: "mock-event" }),
           where: () => ({

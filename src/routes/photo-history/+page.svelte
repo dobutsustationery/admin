@@ -21,7 +21,6 @@
   import { removeBackground } from "$lib/background-removal";
   import { autoColorCorrect } from "$lib/color-correction";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
-  import { RawImage } from "@xenova/transformers"; // For color correct if needed or use simple canvas
 
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";

@@ -13,10 +13,9 @@ let processor = null;
  */
 async function loadModel() {
   if (model && processor) return { model, processor };
-  console.log("[ImageProcessor] Loading briaai/RMBG-1.4 model...");
-  // Use quantized model by default to save memory and download time
-  model = await AutoModel.from_pretrained("briaai/RMBG-1.4");
-  processor = await AutoProcessor.from_pretrained("briaai/RMBG-1.4");
+  console.log("[ImageProcessor] Loading Xenova/modnet model...");
+  model = await AutoModel.from_pretrained("Xenova/modnet");
+  processor = await AutoProcessor.from_pretrained("Xenova/modnet");
   console.log("[ImageProcessor] Model loaded.");
   return { model, processor };
 }
@@ -74,12 +73,17 @@ async function smartCrop(inputBuffer) {
  */
 async function removeBackground(imageUrl, originalBuffer) {
   try {
-    console.log(`[ImageProcessor] Processing background for ${imageUrl}...`);
+    console.log(`[ImageProcessor] AI background removal for ${imageUrl}...`);
     
     const { model, processor } = await loadModel();
 
-    // 1. Load image
-    const img = await RawImage.read(originalBuffer);
+    // 1. Load image using sharp to get raw pixel data
+    const { data: rawData, info: rawInfo } = await sharp(originalBuffer)
+      .removeAlpha() // MODNet expects 3 channels (RGB)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const img = new RawImage(rawData, rawInfo.width, rawInfo.height, 3);
 
     // 2. Pre-process
     const { pixel_values } = await processor(img);
@@ -88,11 +92,14 @@ async function removeBackground(imageUrl, originalBuffer) {
     const { output } = await model({ input: pixel_values });
 
     // 4. Post-process mask (resize to original)
-    // RMBG-1.4 output is [1, 1, H, W]
-    const mask = await RawImage.fromTensor(output.mul(255).to("uint8"), [
-      output.dims[2],
-      output.dims[3],
-    ]).resize(img.width, img.height);
+    // MODNet output is [1, 1, H, W]. 
+    const maskData = output.data; // This is a Float32Array of H*W
+    const mask = await new RawImage(
+      new Uint8ClampedArray(maskData.map((v) => v * 255)),
+      output.dims[3], // width
+      output.dims[2], // height
+      1, // channels
+    ).resize(img.width, img.height);
 
     // 5. Composite (Apply Mask) using sharp
     const { data: originalData, info } = await sharp(originalBuffer)
@@ -119,20 +126,8 @@ async function removeBackground(imageUrl, originalBuffer) {
     // 7. Smart Crop
     return await smartCrop(processedBuffer);
   } catch (e) {
-    console.error("[ImageProcessor] Background removal failed, falling back to basic crop:", e);
-    
-    // Fallback: Just return a smart-cropped version of the original with a white background
-    const image = sharp(originalBuffer);
-    const fallbackBuffer = await image
-      .resize(1024, 1024, {
-        fit: 'contain',
-        background: { r: 255, g: 255, b: 255, alpha: 1 }
-      })
-      .flatten({ background: '#ffffff' })
-      .png()
-      .toBuffer();
-      
-    return await smartCrop(fallbackBuffer);
+    console.error("[ImageProcessor] Background removal failed:", e);
+    throw e;
   }
 }
 
