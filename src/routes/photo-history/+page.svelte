@@ -12,6 +12,7 @@
     generateDerivationKey,
     calculateHash,
     findFileByDerivationKey,
+    extractDriveFileId,
   } from "$lib/google-drive";
   import { getStoredToken, initiateOAuthFlow } from "$lib/google-photos";
   import Navigation from "$lib/components/Navigation.svelte";
@@ -55,20 +56,6 @@
   $: item = selectedItem || categorizedItem;
   $: effectiveHistory =
     urlHistory.length > 0 ? urlHistory : item?.baseUrl ? [item.baseUrl] : [];
-
-  function extractDriveFileId(url: string): string | null {
-    if (!url) return null;
-    const patterns = [
-      /[?&]id=([a-zA-Z0-9_-]+)/,
-      /\/d\/([a-zA-Z0-9_-]+)/,
-      /drive\/v3\/files\/([a-zA-Z0-9_-]+)/,
-    ];
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match?.[1]) return match[1];
-    }
-    return null;
-  }
 
   function getDriveOpenLink(url: string): string | null {
     const fileId = extractDriveFileId(url);
@@ -274,8 +261,11 @@
     });
   }
 
+  let cropSourceUrl = "";
+
   async function openManualCrop(url: string) {
     try {
+      cropSourceUrl = url;
       // Pre-load to avoid CORS in cropper
       cropTargetUrl = await fetchSafeDataUrl(url);
       showCropModal = true;
@@ -284,10 +274,28 @@
     }
   }
 
-  async function handleCropSave(e: CustomEvent<Blob>) {
+  async function handleCropSave(e: CustomEvent<{ blob: Blob; cropData: any }>) {
     if (!photoId || !cropTargetUrl) return;
-    const blob = e.detail;
-    await uploadBlob(blob, "manual_crop");
+    const { blob, cropData } = e.detail;
+
+    // Identify source
+    const driveId = extractDriveFileId(cropSourceUrl);
+    const sourceType = driveId
+      ? "drive"
+      : cropSourceUrl.includes("googleusercontent.com")
+        ? "photos"
+        : "ext";
+    const sourceId = driveId || photoId;
+
+    // Generate transform name from crop data
+    const transform = `crop_${cropData.x}_${cropData.y}_${cropData.width}_${cropData.height}_r${cropData.rotate}`;
+    const derivationKey = generateDerivationKey(
+      sourceType,
+      sourceId,
+      transform,
+    );
+
+    await uploadBlob(blob, "manual_crop", derivationKey);
   }
 
   async function handleManualOp(
@@ -317,12 +325,17 @@
       const token = getStoredToken();
       if (!token) throw new Error("Not authenticated");
 
-      const sourceType = url.includes("googleusercontent.com")
-        ? "photos"
-        : "ext";
+      const driveId = extractDriveFileId(url);
+      const sourceType = driveId
+        ? "drive"
+        : url.includes("googleusercontent.com")
+          ? "photos"
+          : "ext";
+      const sourceId = driveId || photoId;
+
       const derivationKey = generateDerivationKey(
         sourceType,
-        photoId,
+        sourceId,
         transform,
       );
 
@@ -341,11 +354,11 @@
         finalUrl = existing.publicUrl || existing.apiUrl || "";
       } else {
         // 2. Request Transform via Sync Queue
-        const requestId = `manual-op-${transform}-${photoId}-${Date.now()}`;
+        const requestId = `manual-op-${transform}-${sourceId}-${Date.now()}`;
         const folders = await ensureFolderStructure(token.access_token);
 
         console.info(
-          `[ManualOp] Requesting transform for ${photoId} (${derivationKey})...`,
+          `[ManualOp] Requesting transform for ${sourceId} (${derivationKey})...`,
         );
 
         // We use addDoc because sync collection is append-only
@@ -357,13 +370,13 @@
           requestedAt: Date.now(),
           source: "manual-op",
           photoId,
-          filename: `manual_${op}_${photoId}.png`,
+          filename: `manual_${op}_${sourceId}.png`,
           mimeType: "image/png",
           payloadVersion: 1,
           payload: {
             photoId,
             sourceBaseUrl: url,
-            filename: `manual_${op}_${photoId}.png`,
+            filename: `manual_${op}_${sourceId}.png`,
             mimeType: "image/png",
             targetFolderId: folders.processedId,
             sourceType,
@@ -372,6 +385,7 @@
             sourceRef: {
               mediaItemId: photoId,
               url,
+              driveFileId: driveId,
             },
           },
           createdAtMs: Date.now(),
@@ -450,7 +464,11 @@
     }
   }
 
-  async function uploadBlob(blob: Blob, suffix: string) {
+  async function uploadBlob(
+    blob: Blob,
+    suffix: string,
+    derivationKey?: string | null,
+  ) {
     if (!photoId) return;
 
     try {
@@ -468,12 +486,39 @@
 
       store.dispatch(initiate_upload({ id: photoId, timestamp: Date.now() }));
 
+      const finalDerivationKey =
+        derivationKey || generateDerivationKey("ext", contentHash, "identity");
+
+      // Check for existing before upload if we have a derivation key
+      if (derivationKey) {
+        const existing = await findFileByDerivationKey(
+          token.access_token,
+          derivationKey,
+        );
+        if (existing) {
+          console.info(
+            `[UploadBlob] Idempotent match found for ${derivationKey}: ${existing.id}`,
+          );
+          const action = complete_upload({
+            id: photoId,
+            permanentUrl: existing.publicUrl || existing.apiUrl || "",
+            webViewLink: existing.webViewLink || "",
+          });
+          if ($user.uid) {
+            broadcast(firestore, $user.uid, action);
+          } else {
+            store.dispatch(action);
+          }
+          return;
+        }
+      }
+
       const result = await uploadImageToDrive(
         file,
         filename,
         folders.processedId,
         token.access_token,
-        generateDerivationKey("ext", contentHash, "identity"),
+        finalDerivationKey!,
       );
 
       const safeUrl = toGoogleDrivePublicImageUrl(

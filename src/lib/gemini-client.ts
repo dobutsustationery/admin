@@ -3,6 +3,7 @@ import {
   uploadImageToDrive,
   findFileByDerivationKey,
   generateDerivationKey,
+  extractDriveFileId,
 } from "$lib/google-drive";
 import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 import {
@@ -630,9 +631,13 @@ export async function processMediaItems(
       const img = group.images[imgIdx];
 
       try {
+        const driveId = extractDriveFileId(img.baseUrl);
+        const sourceType = driveId ? "drive" : "photos";
+        const sourceId = driveId || img.id;
+
         const derivationKey = generateDerivationKey(
-          "photos",
-          img.id,
+          sourceType,
+          sourceId,
           "remove_bg",
         );
 
@@ -651,7 +656,7 @@ export async function processMediaItems(
           driveUrl = existing.publicUrl || existing.webContentLink || "";
         } else {
           // 2. Request Transform via Sync Queue
-          const requestId = `photo-transform-${img.id}`;
+          const requestId = `photo-transform-${sourceId}`;
 
           if (inFlightRequests.has(requestId)) {
             console.info(
@@ -659,7 +664,7 @@ export async function processMediaItems(
             );
           } else {
             console.info(
-              `[GeminiClient] Requesting transform for ${img.id} (${derivationKey})...`,
+              `[GeminiClient] Requesting transform for ${sourceId} (${derivationKey})...`,
             );
             inFlightRequests.add(requestId);
 
@@ -686,12 +691,13 @@ export async function processMediaItems(
                 filename: `processed_${img.id}.png`,
                 mimeType: "image/png",
                 targetFolderId: processedFolderId,
-                sourceType: "photos",
+                sourceType,
                 transform: "remove_bg",
                 derivationKey,
                 sourceRef: {
                   mediaItemId: img.id,
                   url: img.baseUrl || "",
+                  driveFileId: driveId,
                 },
               },
               createdAtMs: Date.now(),

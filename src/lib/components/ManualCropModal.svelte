@@ -88,13 +88,24 @@
     if (!cropperInstance) return;
 
     try {
+      // Get crop data for derivation key
+      const cropData = cropperInstance.getData();
+
       // Use 'image/png' for transparency support
-      // options: { fillColor: 'transparent' } is default, but ensuring it helps
       cropperInstance
         .getCroppedCanvas({ fillColor: "transparent" })
         .toBlob((blob: Blob | null) => {
           if (blob) {
-            dispatch("save", blob);
+            dispatch("save", {
+              blob,
+              cropData: {
+                x: Math.round(cropData.x),
+                y: Math.round(cropData.y),
+                width: Math.round(cropData.width),
+                height: Math.round(cropData.height),
+                rotate: Math.round(cropData.rotate),
+              },
+            });
             open = false;
           }
         }, "image/png");

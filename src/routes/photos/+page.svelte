@@ -12,6 +12,7 @@
     ensureFolderStructure,
     generateDerivationKey,
     calculateHash,
+    extractDriveFileId,
   } from "$lib/google-drive";
 </script>
 
@@ -229,10 +230,19 @@
       }
       if (!item) throw new Error("Photo not found in state");
 
-      const sourceType = item.baseUrl?.includes("googleusercontent.com")
-        ? "photos"
-        : "ext";
-      const derivationKey = generateDerivationKey(sourceType, id, transform);
+      const driveId = extractDriveFileId(item.baseUrl);
+      const sourceType = driveId
+        ? "drive"
+        : item.baseUrl?.includes("googleusercontent.com")
+          ? "photos"
+          : "ext";
+      const sourceId = driveId || id;
+
+      const derivationKey = generateDerivationKey(
+        sourceType,
+        sourceId,
+        transform,
+      );
 
       // 2. Idempotency Check: Search Before Work
       const existing = await findFileByDerivationKey(
@@ -293,6 +303,7 @@
           sourceRef: {
             mediaItemId: id,
             url: item.baseUrl || "",
+            driveFileId: driveId,
           },
         },
         createdAtMs: Date.now(),

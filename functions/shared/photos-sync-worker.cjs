@@ -541,9 +541,20 @@ async function executeTransfer({
 
   // Determine Derivation Key
   const eventType = normalizeString(requestData?.eventType);
-  const transformName = eventType.includes("transform") ? normalizeString(payload?.transform || "unknown") : "identity";
-  const sourceType = normalizeString(payload?.sourceType) || (sourceBaseUrl.includes("googleusercontent.com") ? "photos" : "ext");
-  const derivationKey = generateDerivationKey(sourceType, photoId, transformName);
+  const transformName = eventType.includes("transform")
+    ? normalizeString(payload?.transform || "unknown")
+    : "identity";
+  const driveFileId = normalizeString(payload?.sourceRef?.driveFileId);
+  const sourceType = driveFileId
+    ? "drive"
+    : normalizeString(payload?.sourceType) ||
+      (sourceBaseUrl.includes("googleusercontent.com") ? "photos" : "ext");
+  const sourceId = driveFileId || photoId;
+  const derivationKey = generateDerivationKey(
+    sourceType,
+    sourceId,
+    transformName,
+  );
 
   const requestedBy = requestingUid(requestData);
   const logApiCall = (params) =>

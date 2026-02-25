@@ -152,6 +152,23 @@ function looksLikeDriveFileId(value: string): boolean {
 }
 
 /**
+ * Extract a Google Drive file ID from various URL patterns.
+ */
+export function extractDriveFileId(url: string | undefined): string | null {
+  if (!url) return null;
+  const patterns = [
+    /[?&]id=([a-zA-Z0-9_-]+)/,
+    /\/d\/([a-zA-Z0-9_-]+)/,
+    /drive\/v3\/files\/([a-zA-Z0-9_-]+)/,
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+  return null;
+}
+
+/**
  * Build a query string for searching by derivation key.
  */
 export function buildDerivationKeyQuery(derivationKey: string): string {
