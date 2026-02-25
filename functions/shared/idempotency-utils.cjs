@@ -1,103 +1,86 @@
-/**
- * Shared utilities for idempotent image handling.
- * This file is CommonJS to be compatible with Cloud Functions.
- */
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-const DERIVATION_KEY_PROPERTY = "derivation_key";
-exports.DERIVATION_KEY_PROPERTY = DERIVATION_KEY_PROPERTY;
-
-/**
- * Generate a deterministic derivation key for a file in Drive.
- * Format: {source_type}:{source_id}:{transform_name}
- * @param {string} type
- * @param {string} id
- * @param {string} transform
- * @returns {string|null}
- */
+// src/lib/idempotency-utils.ts
+var idempotency_utils_exports = {};
+__export(idempotency_utils_exports, {
+  DERIVATION_KEY_PROPERTY: () => DERIVATION_KEY_PROPERTY,
+  buildDerivationKeyQuery: () => buildDerivationKeyQuery,
+  escapeDriveQueryValue: () => escapeDriveQueryValue,
+  findFileByDerivationKey: () => findFileByDerivationKey,
+  generateDerivationKey: () => generateDerivationKey,
+  toDriveApiMediaUrl: () => toDriveApiMediaUrl,
+  toDrivePublicUrl: () => toDrivePublicUrl
+});
+module.exports = __toCommonJS(idempotency_utils_exports);
+var DERIVATION_KEY_PROPERTY = "derivation_key";
 function generateDerivationKey(type, id, transform) {
-  if (!id) return null;
-  // Simple normalization: no colons in IDs, ensure string
+  if (!id)
+    return null;
   const safeId = String(id).replace(/:/g, "_");
   const safeType = String(type || "unknown");
-
-  // VERSIONING: We append a version to transforms to allow model upgrades
-  // without clashing with old cached results in Drive appProperties.
   let safeTransform = String(transform || "identity");
   if (safeTransform === "remove_bg") {
     safeTransform = "remove_bg_v1";
   }
-
   return `${safeType}:${safeId}:${safeTransform}`;
 }
-exports.generateDerivationKey = generateDerivationKey;
-
-/**
- * Escape a value for use in a Google Drive API query string.
- * @param {string} value
- * @returns {string}
- */
 function escapeDriveQueryValue(value) {
-  if (!value) return "";
+  if (!value)
+    return "";
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
-exports.escapeDriveQueryValue = escapeDriveQueryValue;
-
-/**
- * Build a query string for searching by derivation key.
- * @param {string} derivationKey
- * @returns {string}
- */
 function buildDerivationKeyQuery(derivationKey) {
   return `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
 }
-exports.buildDerivationKeyQuery = buildDerivationKeyQuery;
-
-/**
- * @param {string} fileId
- * @returns {string}
- */
 function toDriveApiMediaUrl(fileId) {
   return `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
 }
-exports.toDriveApiMediaUrl = toDriveApiMediaUrl;
-
-/**
- * @param {string} fileId
- * @returns {string}
- */
 function toDrivePublicUrl(fileId) {
   return `https://lh3.googleusercontent.com/d/${fileId}=s0`;
 }
-exports.toDrivePublicUrl = toDrivePublicUrl;
-
-/**
- * Search for a file by its derivation key in appProperties.
- * This is a shared logic helper used by both client and server.
- * @param {string} derivationKey The key to search for.
- * @param {function} executeRequest A callback that takes (url) and returns the JSON response.
- * @returns {Promise<Object|null>} The first matching file object or null.
- */
 async function findFileByDerivationKey(derivationKey, executeRequest) {
   const query = buildDerivationKeyQuery(derivationKey);
-  // Fields needed by both client and server
-  const fields =
-    "id,name,mimeType,webViewLink,webContentLink,thumbnailLink,modifiedTime,size";
+  const fields = "id,name,mimeType,webViewLink,webContentLink,thumbnailLink,modifiedTime,size";
   const params = new URLSearchParams({
     q: query,
     fields: `files(${fields})`,
-    pageSize: "1",
+    pageSize: "1"
   });
-
   const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
   const data = await executeRequest(url);
   const first = (data.files || [])[0];
-  if (!first) return null;
-
-  // Add derived URLs used by both environments
+  if (!first)
+    return null;
   return {
     ...first,
     apiUrl: toDriveApiMediaUrl(first.id),
-    publicUrl: toDrivePublicUrl(first.id),
+    publicUrl: toDrivePublicUrl(first.id)
   };
 }
-exports.findFileByDerivationKey = findFileByDerivationKey;
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  DERIVATION_KEY_PROPERTY,
+  buildDerivationKeyQuery,
+  escapeDriveQueryValue,
+  findFileByDerivationKey,
+  generateDerivationKey,
+  toDriveApiMediaUrl,
+  toDrivePublicUrl
+});

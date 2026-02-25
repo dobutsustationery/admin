@@ -13,7 +13,7 @@ import {
   escapeDriveQueryValue as sharedEscapeDriveQueryValue,
   buildDerivationKeyQuery as sharedBuildDerivationKeyQuery,
   findFileByDerivationKey as sharedFindFileByDerivationKey,
-} from "../../functions/shared/idempotency-utils.cjs";
+} from "./idempotency-utils";
 
 // Constant for idempotency property
 export const DERIVATION_KEY_PROPERTY = SHARED_DERIVATION_KEY_PROPERTY;
