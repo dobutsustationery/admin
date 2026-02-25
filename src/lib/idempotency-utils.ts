@@ -72,7 +72,7 @@ export function escapeDriveQueryValue(value: string): string {
  * Build a query string for searching by derivation key.
  */
 export function buildDerivationKeyQuery(derivationKey: string): string {
-  return `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
+  return `properties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
 }
 
 /**
@@ -107,6 +107,8 @@ export async function findFileByDerivationKey(
     q: query,
     fields: `files(${fields})`,
     pageSize: "1",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
   });
 
   const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;

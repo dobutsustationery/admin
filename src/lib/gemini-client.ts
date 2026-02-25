@@ -4,6 +4,7 @@ import {
   findFileByDerivationKey,
   generateDerivationKey,
   extractDriveFileId,
+  getStoredToken as getDriveToken,
 } from "$lib/google-drive";
 import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 import {
@@ -185,6 +186,17 @@ export async function fetchImageInline(
 
 async function processResponse(response: Response): Promise<GeminiImageInput> {
   const blob = await response.blob();
+
+  // Refuse to process blobs larger than 4MB for inline transmission.
+  // Gemini supports up to 20MB for total request, but we want to avoid
+  // heavy client-side base64 encoding and transmission for large photos.
+  const MAX_SIZE = 4 * 1024 * 1024; // 4MB
+  if (blob.size > MAX_SIZE) {
+    throw new Error(
+      `Image is too large (${(blob.size / 1024 / 1024).toFixed(1)}MB) to send as inline data. Please use a public URL or a smaller version.`,
+    );
+  }
+
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -428,7 +440,8 @@ export async function processMediaItems(
     );
 
     try {
-      const imageDataPromise = fetchImage(item.baseUrl, accessToken);
+      const fetchUrl = toGeminiPublicImageUrl(item.baseUrl) || item.baseUrl;
+      const imageDataPromise = fetchImage(fetchUrl, accessToken);
       const imgData = await imageDataPromise;
 
       const janCheck = await imagePrompt(
@@ -825,6 +838,8 @@ export async function categorizeMediaItems(
   onProgress?.(0, total, "Starting categorization...");
 
   let lastSeenJanCode: string | null = null;
+  const driveToken = getDriveToken();
+  const effectiveToken = accessToken || driveToken?.access_token;
 
   for (const item of items) {
     current++;
@@ -832,7 +847,9 @@ export async function categorizeMediaItems(
 
     try {
       // 1. Fetch
-      const imageData = await fetchImage(item.baseUrl, accessToken);
+      // Prioritize public URL to use file_uri (no download)
+      const fetchUrl = toGeminiPublicImageUrl(item.baseUrl) || item.baseUrl;
+      const imageData = await fetchImage(fetchUrl, effectiveToken);
 
       // 2. Identify
       const janCheck = await imagePrompt(

@@ -357,11 +357,11 @@ async function uploadToDrive({
   const metadata = {
     name: filename,
     parents: folderId ? [folderId] : undefined,
-    appProperties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
+    properties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
   };
   const { body, boundary } = buildMultipartBody({ metadata, bytes, mimeType });
   const file = await driveRequestJson(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink",
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink&supportsAllDrives=true",
     {
       method: "POST",
       accessToken: driveAccessToken,

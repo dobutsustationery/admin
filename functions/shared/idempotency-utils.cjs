@@ -64,7 +64,7 @@ function escapeDriveQueryValue(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 function buildDerivationKeyQuery(derivationKey) {
-  return `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
+  return `properties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
 }
 function toDriveApiMediaUrl(fileId) {
   return `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
@@ -78,7 +78,9 @@ async function findFileByDerivationKey(derivationKey, executeRequest) {
   const params = new URLSearchParams({
     q: query,
     fields: `files(${fields})`,
-    pageSize: "1"
+    pageSize: "1",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true"
   });
   const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
   const data = await executeRequest(url);

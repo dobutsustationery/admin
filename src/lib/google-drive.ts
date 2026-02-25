@@ -66,6 +66,15 @@ const SCOPES = (
 const TOKEN_STORAGE_KEY = "google_drive_access_token";
 
 /**
+ * Singleton promise to prevent concurrent folder structure checks
+ * from creating duplicates within the same browser session.
+ */
+let inFlightFolderStructure: Promise<{
+  originalsId: string;
+  processedId: string;
+}> | null = null;
+
+/**
  * OAuth token information
  */
 export interface GoogleDriveToken {
@@ -657,7 +666,7 @@ export async function uploadCSVToDrive(
   };
 
   if (derivationKey) {
-    metadata.appProperties = { [DERIVATION_KEY_PROPERTY]: derivationKey };
+    metadata.properties = { [DERIVATION_KEY_PROPERTY]: derivationKey };
   }
 
   // Create multipart request body with random boundary
@@ -745,12 +754,42 @@ export async function findFolder(
   name: string,
   parentId: string,
   accessToken: string,
+  role?: string,
 ): Promise<string | null> {
+  // Try searching by role property first (most stable)
+  if (role) {
+    const roleQuery = `'${parentId}' in parents and properties has { key='folder_role' and value='${role}' } and trashed = false`;
+    const roleParams = new URLSearchParams({
+      q: roleQuery,
+      fields: "files(id, name, createdTime)",
+      pageSize: "10",
+      orderBy: "createdTime",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+
+    const roleRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?${roleParams.toString()}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+
+    if (roleRes.ok) {
+      const data = await roleRes.json();
+      if (data.files && data.files.length > 0) {
+        return data.files[0].id; // Pick oldest match
+      }
+    }
+  }
+
+  // Fallback to name-based search
   const query = `'${parentId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
   const params = new URLSearchParams({
     q: query,
-    fields: "files(id, name)",
-    pageSize: "1",
+    fields: "files(id, name, createdTime)",
+    pageSize: "10",
+    orderBy: "createdTime",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
   });
 
   const response = await fetch(
@@ -781,12 +820,17 @@ export async function createFolder(
   name: string,
   parentId: string,
   accessToken: string,
+  role?: string,
 ): Promise<string> {
-  const metadata = {
+  const metadata: any = {
     name,
     mimeType: "application/vnd.google-apps.folder",
     parents: [parentId],
   };
+
+  if (role) {
+    metadata.properties = { folder_role: role };
+  }
 
   const response = await fetch("https://www.googleapis.com/drive/v3/files", {
     method: "POST",
@@ -814,29 +858,71 @@ export async function createFolder(
 export async function ensureFolderStructure(
   accessToken: string,
 ): Promise<{ originalsId: string; processedId: string }> {
-  if (!FOLDER_ID) throw new Error("Root folder ID not configured");
+  if (inFlightFolderStructure) return inFlightFolderStructure;
 
-  // 1. Find or Create "Images" folder
-  let imagesId = await findFolder("Images", FOLDER_ID, accessToken);
-  if (!imagesId) {
-    imagesId = await createFolder("Images", FOLDER_ID, accessToken);
-    // Make Images folder public/readable if needed? Or just files?
-    // Usually standard to make files readable.
-  }
+  inFlightFolderStructure = (async () => {
+    try {
+      if (!FOLDER_ID) throw new Error("Root folder ID not configured");
 
-  // 2. Find or Create "Originals"
-  let originalsId = await findFolder("Originals", imagesId, accessToken);
-  if (!originalsId) {
-    originalsId = await createFolder("Originals", imagesId, accessToken);
-  }
+      // 1. Find or Create "Images" folder
+      let imagesId = await findFolder(
+        "Images",
+        FOLDER_ID,
+        accessToken,
+        "root_images",
+      );
+      if (!imagesId) {
+        imagesId = await createFolder(
+          "Images",
+          FOLDER_ID,
+          accessToken,
+          "root_images",
+        );
+      }
 
-  // 3. Find or Create "Processed"
-  let processedId = await findFolder("Processed", imagesId, accessToken);
-  if (!processedId) {
-    processedId = await createFolder("Processed", imagesId, accessToken);
-  }
+      // 2. Find or Create "Originals"
+      let originalsId = await findFolder(
+        "Originals",
+        imagesId,
+        accessToken,
+        "originals",
+      );
+      if (!originalsId) {
+        originalsId = await createFolder(
+          "Originals",
+          imagesId,
+          accessToken,
+          "originals",
+        );
+      }
 
-  return { originalsId, processedId };
+      // 3. Find or Create "Processed"
+      let processedId = await findFolder(
+        "Processed",
+        imagesId,
+        accessToken,
+        "processed",
+      );
+      if (!processedId) {
+        processedId = await createFolder(
+          "Processed",
+          imagesId,
+          accessToken,
+          "processed",
+        );
+      }
+
+      return { originalsId, processedId };
+    } finally {
+      // Clear the promise after a short delay to allow fresh checks later if needed,
+      // but long enough to cover the initial surge of concurrent calls.
+      setTimeout(() => {
+        inFlightFolderStructure = null;
+      }, 5000);
+    }
+  })();
+
+  return inFlightFolderStructure;
 }
 
 /**
@@ -868,6 +954,37 @@ export async function setFilePermissions(
     const err = await response.text();
     // Allow race condition where it's already public
     console.warn(`Failed to set permissions for ${fileId}: ${err}`);
+  }
+}
+
+/**
+ * Set a property on a Drive file
+ */
+export async function setFileProperty(
+  fileId: string,
+  key: string,
+  value: string,
+  accessToken: string,
+): Promise<void> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        properties: { [key]: value },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    console.warn(
+      `Failed to set property ${key}=${value} for ${fileId}: ${err}`,
+    );
   }
 }
 
@@ -910,7 +1027,7 @@ export async function uploadImageToDrive(
   const metadata = {
     name: filename,
     parents: [folderId],
-    appProperties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
+    properties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
   };
 
   const boundary = `----FormBoundary${Math.random().toString(36).substring(2)}`;
