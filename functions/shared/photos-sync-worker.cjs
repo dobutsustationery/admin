@@ -4,6 +4,9 @@ const {
   generateDerivationKey,
   escapeDriveQueryValue,
   buildDerivationKeyQuery,
+  toDriveApiMediaUrl,
+  toDrivePublicUrl,
+  findFileByDerivationKey: sharedFindFileByDerivationKey,
 } = require("./idempotency-utils.cjs");
 const { removeBackground } = require("./image-processor.cjs");
 
@@ -159,14 +162,6 @@ async function findRequestEventByRequestId(db, collectionName, requestId) {
   return { id: doc.id, data: doc.data() || {} };
 }
 
-function toDrivePublicUrl(fileId) {
-  return `https://lh3.googleusercontent.com/d/${fileId}=w1600`;
-}
-
-function toDriveApiMediaUrl(fileId) {
-  return `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-}
-
 function stripGoogleusercontentSuffix(url) {
   return String(url || "").replace(/=[a-z0-9,-]+$/i, "");
 }
@@ -175,37 +170,17 @@ function stripGoogleusercontentSuffix(url) {
  * Search for a file by its derivation key in appProperties.
  */
 async function findFileByDerivationKey(accessToken, derivationKey, onApiCall) {
-  const query = buildDerivationKeyQuery(derivationKey);
-  const params = new URLSearchParams({
-    q: query,
-    fields: "files(id,name,webViewLink,webContentLink,thumbnailLink,mimeType)",
-    pageSize: "1",
-  });
-
-  const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
-  const details = await driveRequestJson(url, {
-    accessToken,
-    onApiCall,
-    apiMeta: {
-      requestType: "drive.files.list",
-      endpoint: "drive.files.list",
-      context: { derivationKey },
-    },
-  });
-
-  const first = (details.files || [])[0];
-  if (!first) return null;
-
-  return {
-    id: first.id,
-    name: first.name,
-    mimeType: first.mimeType,
-    webViewLink: first.webViewLink || "",
-    webContentLink: first.webContentLink || "",
-    thumbnailLink: first.thumbnailLink || "",
-    apiUrl: toDriveApiMediaUrl(first.id),
-    publicUrl: toDrivePublicUrl(first.id),
-  };
+  return sharedFindFileByDerivationKey(derivationKey, (url) =>
+    driveRequestJson(url, {
+      accessToken,
+      onApiCall,
+      apiMeta: {
+        requestType: "drive.files.list",
+        endpoint: "drive.files.list",
+        context: { derivationKey },
+      },
+    }),
+  );
 }
 
 async function emitSuccess({

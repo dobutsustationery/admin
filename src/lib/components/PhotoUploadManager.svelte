@@ -318,6 +318,14 @@
       }
 
       // 2. Queue append-only sync intent so the backend worker can process transfer.
+      requestedPhotoIds.add(String(item.id));
+
+      // Broadcase Initiate immediately to update Redux state and prevent redundant loops
+      await broadcast(firestore, uid, {
+        type: "photos/initiate_upload",
+        payload: { id: item.id, timestamp: Date.now(), requestId },
+      });
+
       await addDoc(collection(firestore, SYNC_COLLECTION), {
         eventType: PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
         requestId,
@@ -346,13 +354,6 @@
         createdAtMs: Date.now(),
         createdAt: serverTimestamp(),
         timestamp: serverTimestamp(),
-      });
-      requestedPhotoIds.add(String(item.id));
-
-      // Broadcase Initiate
-      await broadcast(firestore, uid, {
-        type: "photos/initiate_upload",
-        payload: { id: item.id, timestamp: Date.now(), requestId },
       });
     } catch (e: any) {
       if (String(e?.code || "").includes("permission-denied")) {

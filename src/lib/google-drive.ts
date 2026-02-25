@@ -7,9 +7,23 @@
 
 import type { drive_v3 } from "googleapis";
 import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
+import {
+  DERIVATION_KEY_PROPERTY as SHARED_DERIVATION_KEY_PROPERTY,
+  generateDerivationKey as sharedGenerateDerivationKey,
+  escapeDriveQueryValue as sharedEscapeDriveQueryValue,
+  buildDerivationKeyQuery as sharedBuildDerivationKeyQuery,
+  findFileByDerivationKey as sharedFindFileByDerivationKey,
+} from "../../functions/shared/idempotency-utils.cjs";
 
 // Constant for idempotency property
-export const DERIVATION_KEY_PROPERTY = "derivation_key";
+export const DERIVATION_KEY_PROPERTY = SHARED_DERIVATION_KEY_PROPERTY;
+
+/**
+ * Escape a value for use in a Google Drive API query string.
+ */
+export function escapeDriveQueryValue(value: string): string {
+  return sharedEscapeDriveQueryValue(value);
+}
 
 /**
  * Calculate a simple SHA-256 hash of a Blob/File for stable identification.
@@ -30,9 +44,7 @@ export function generateDerivationKey(
   id: string,
   transform: "identity" | "remove_bg" | "crop" | string,
 ): string {
-  // Simple normalization: no colons in IDs
-  const safeId = id.replace(/:/g, "_");
-  return `${type}:${safeId}:${transform}`;
+  return sharedGenerateDerivationKey(type, id, transform) || "";
 }
 
 // Environment configuration
@@ -139,15 +151,11 @@ function looksLikeDriveFileId(value: string): boolean {
   return /^[A-Za-z0-9_-]{20,}$/.test(value.trim());
 }
 
-function escapeDriveQueryValue(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
 /**
  * Build a query string for searching by derivation key.
  */
 export function buildDerivationKeyQuery(derivationKey: string): string {
-  return `appProperties has { key='${DERIVATION_KEY_PROPERTY}' and value='${escapeDriveQueryValue(derivationKey)}' } and trashed=false`;
+  return sharedBuildDerivationKeyQuery(derivationKey);
 }
 
 /**
@@ -592,34 +600,23 @@ export async function findFileByDerivationKey(
   accessToken: string,
   derivationKey: string,
 ): Promise<DriveFile | null> {
-  const query = buildDerivationKeyQuery(derivationKey);
-  const params = new URLSearchParams({
-    q: query,
-    fields:
-      "files(id,name,mimeType,modifiedTime,size,webViewLink,webContentLink,thumbnailLink)",
-    pageSize: "1",
-  });
-
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
-    {
+  return sharedFindFileByDerivationKey(derivationKey, async (url: string) => {
+    const response = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
-    },
-  );
+    });
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      console.error("Google Drive Token Expired (401). Clearing token.");
-      clearToken();
+    if (!response.ok) {
+      if (response.status === 401) {
+        console.error("Google Drive Token Expired (401). Clearing token.");
+        clearToken();
+      }
+      throw new Error(
+        `Failed to search by derivation key: ${response.statusText}`,
+      );
     }
-    throw new Error(
-      `Failed to search by derivation key: ${response.statusText}`,
-    );
-  }
 
-  const data = (await response.json()) as { files?: DriveFile[] };
-  const first = (data.files || [])[0];
-  return first ? hydrateDriveFiles([first])[0] : null;
+    return response.json();
+  }) as Promise<DriveFile | null>;
 }
 
 /**

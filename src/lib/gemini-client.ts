@@ -20,13 +20,11 @@ import {
   PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
 } from "$lib/sync-events";
 
-function toSyncPhotoRequestDocId(photoId: string, transform: string) {
-  const safe = String(photoId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `photos_request_${safe}_${transform}`;
-}
-
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+// In-flight request tracking to avoid redundant sync requests
+const inFlightRequests = new Set<string>();
 
 export type GeminiImageInput =
   | { kind: "inline"; data: string; mimeType: string }
@@ -654,46 +652,53 @@ export async function processMediaItems(
         } else {
           // 2. Request Transform via Sync Queue
           const requestId = `photo-transform-${img.id}`;
-          const syncRequestDocId = toSyncPhotoRequestDocId(img.id, "remove_bg");
-          console.info(
-            `[GeminiClient] Requesting transform for ${img.id} (${derivationKey})...`,
-          );
 
-          notify(
-            `Requesting background removal for ${group.janCode}...`,
-            items.length,
-          );
+          if (inFlightRequests.has(requestId)) {
+            console.info(
+              `[GeminiClient] Request for ${requestId} already in flight, waiting...`,
+            );
+          } else {
+            console.info(
+              `[GeminiClient] Requesting transform for ${img.id} (${derivationKey})...`,
+            );
+            inFlightRequests.add(requestId);
 
-          // We use addDoc because sync collection is append-only
-          await addDoc(collection(firestore, SYNC_COLLECTION), {
-            eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
-            requestId,
-            creator: uid,
-            requestedBy: uid,
-            requestedAt: Date.now(),
-            source: "gemini-client",
-            photoId: img.id,
-            filename: `processed_${img.id}.png`,
-            mimeType: "image/png",
-            payloadVersion: 1,
-            payload: {
+            notify(
+              `Requesting background removal for ${group.janCode}...`,
+              items.length,
+            );
+
+            // We use addDoc because sync collection is append-only
+            await addDoc(collection(firestore, SYNC_COLLECTION), {
+              eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+              requestId,
+              creator: uid,
+              requestedBy: uid,
+              requestedAt: Date.now(),
+              source: "gemini-client",
               photoId: img.id,
-              sourceBaseUrl: img.baseUrl || "",
               filename: `processed_${img.id}.png`,
               mimeType: "image/png",
-              targetFolderId: processedFolderId,
-              sourceType: "photos",
-              transform: "remove_bg",
-              derivationKey,
-              sourceRef: {
-                mediaItemId: img.id,
-                url: img.baseUrl || "",
+              payloadVersion: 1,
+              payload: {
+                photoId: img.id,
+                sourceBaseUrl: img.baseUrl || "",
+                filename: `processed_${img.id}.png`,
+                mimeType: "image/png",
+                targetFolderId: processedFolderId,
+                sourceType: "photos",
+                transform: "remove_bg",
+                derivationKey,
+                sourceRef: {
+                  mediaItemId: img.id,
+                  url: img.baseUrl || "",
+                },
               },
-            },
-            createdAtMs: Date.now(),
-            createdAt: serverTimestamp(),
-            timestamp: serverTimestamp(),
-          });
+              createdAtMs: Date.now(),
+              createdAt: serverTimestamp(),
+              timestamp: serverTimestamp(),
+            });
+          }
 
           // 3. Poll for completion
           notify(
@@ -719,6 +724,7 @@ export async function processMediaItems(
                 if (snap.empty) return;
                 const data = snap.docs[0].data();
                 unsubscribe();
+                inFlightRequests.delete(requestId);
 
                 if (data.eventType.endsWith("completed")) {
                   const payload = data.payload || {};
@@ -734,6 +740,7 @@ export async function processMediaItems(
               (err) => {
                 console.error("[GeminiClient] Polling error", err);
                 unsubscribe();
+                inFlightRequests.delete(requestId);
                 resolve(null);
               },
             );
@@ -741,6 +748,7 @@ export async function processMediaItems(
             // Safety Timeout (60s)
             setTimeout(() => {
               unsubscribe();
+              inFlightRequests.delete(requestId);
               notify(
                 `Server timeout processing ${group.janCode}`,
                 items.length,

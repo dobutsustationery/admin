@@ -7,17 +7,29 @@ const sharp = require("sharp");
 
 let model = null;
 let processor = null;
+let loadingPromise = null;
 
 /**
  * Load the background removal model and processor
  */
 async function loadModel() {
   if (model && processor) return { model, processor };
-  console.log("[ImageProcessor] Loading Xenova/modnet model...");
-  model = await AutoModel.from_pretrained("Xenova/modnet");
-  processor = await AutoProcessor.from_pretrained("Xenova/modnet");
-  console.log("[ImageProcessor] Model loaded.");
-  return { model, processor };
+  if (loadingPromise) return loadingPromise;
+
+  loadingPromise = (async () => {
+    console.log("[ImageProcessor] Loading Xenova/modnet model...");
+    // Use fp32 explicitly as per documentation and use Promise.all for speed
+    const [m, p] = await Promise.all([
+      AutoModel.from_pretrained("Xenova/modnet", { dtype: "fp32" }),
+      AutoProcessor.from_pretrained("Xenova/modnet"),
+    ]);
+    model = m;
+    processor = p;
+    console.log("[ImageProcessor] Model loaded.");
+    return { model, processor };
+  })();
+
+  return loadingPromise;
 }
 
 /**
@@ -92,14 +104,12 @@ async function removeBackground(imageUrl, originalBuffer) {
     const { output } = await model({ input: pixel_values });
 
     // 4. Post-process mask (resize to original)
-    // MODNet output is [1, 1, H, W]. 
-    const maskData = output.data; // This is a Float32Array of H*W
-    const mask = await new RawImage(
-      new Uint8ClampedArray(maskData.map((v) => v * 255)),
-      output.dims[3], // width
-      output.dims[2], // height
-      1, // channels
-    ).resize(img.width, img.height);
+    // Use canonical fromTensor API. MODNet output is [1, 1, H, W], 
+    // so output[0] gives [1, H, W] which fromTensor handles as a single-channel image.
+    const mask = await RawImage.fromTensor(output[0].mul(255).to("uint8")).resize(
+      img.width,
+      img.height,
+    );
 
     // 5. Composite (Apply Mask) using sharp
     const { data: originalData, info } = await sharp(originalBuffer)
