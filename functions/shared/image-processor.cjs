@@ -2,8 +2,14 @@
  * Server-side image processing using transformers.js and sharp.
  */
 
-const { AutoModel, AutoProcessor, RawImage } = require("@xenova/transformers");
+const { env, AutoModel, AutoProcessor, RawImage } = require("@xenova/transformers");
 const sharp = require("sharp");
+const path = require("path");
+
+// Configure Transformers.js to use local model files only.
+// This avoids 429 Too Many Requests errors from Hugging Face and improves startup time.
+env.allowRemoteModels = false;
+env.localModelPath = path.join(__dirname, "../models");
 
 let rmbgModel = null;
 let rmbgProcessor = null;
@@ -17,7 +23,7 @@ async function loadRMBGModel() {
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
-    console.log("[ImageProcessor] Loading briaai/RMBG-1.4 model...");
+    console.log("[ImageProcessor] Loading briaai/RMBG-1.4 model from local path...");
     // Use AutoModel (generic) as it handles the custom Segformer mapping better in v2
     const [model, processor] = await Promise.all([
       AutoModel.from_pretrained("briaai/RMBG-1.4"),
