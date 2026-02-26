@@ -182,6 +182,7 @@ async function removeBackground(imageUrl, originalBuffer) {
     
     const { model, processor } = await loadRMBGModel();
 
+    console.log(`[ImageProcessor] Pre-processing ${imageUrl}...`);
     // 1. Load image using sharp to get raw pixel data (RGB)
     const { data: rawData, info: rawInfo } = await sharp(originalBuffer)
       .removeAlpha()
@@ -193,9 +194,11 @@ async function removeBackground(imageUrl, originalBuffer) {
     // 2. Pre-process
     const { pixel_values } = await processor(img);
 
+    console.log(`[ImageProcessor] Running inference for ${imageUrl}...`);
     // 3. Predict mask
     const { output } = await model({ input: pixel_values });
 
+    console.log(`[ImageProcessor] Post-processing mask for ${imageUrl}...`);
     // 4. Post-process mask (resize to original)
     // The output[0] is the mask tensor
     const mask = await RawImage.fromTensor(output[0].mul(255).to("uint8")).resize(
@@ -203,6 +206,7 @@ async function removeBackground(imageUrl, originalBuffer) {
       img.height,
     );
 
+    console.log(`[ImageProcessor] Compositing ${imageUrl}...`);
     // 5. Composite (Apply Mask) using sharp
     const { data: originalData, info } = await sharp(originalBuffer)
       .ensureAlpha()
@@ -214,6 +218,7 @@ async function removeBackground(imageUrl, originalBuffer) {
       originalData[i * 4 + 3] = mask.data[i];
     }
 
+    console.log(`[ImageProcessor] Finalizing ${imageUrl}...`);
     // 6. Convert back to Buffer via sharp
     const processedBuffer = await sharp(originalData, {
       raw: {
@@ -228,7 +233,7 @@ async function removeBackground(imageUrl, originalBuffer) {
     // 7. Smart Crop
     return await smartCrop(processedBuffer);
   } catch (e) {
-    console.error("[ImageProcessor] Background removal failed:", e);
+    console.error(`[ImageProcessor] Background removal failed for ${imageUrl}:`, e);
     throw e;
   }
 }

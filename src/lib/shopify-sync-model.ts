@@ -95,15 +95,20 @@ export function getSyncEventBaseType(eventType: string): string {
 export function inferSyncRequestDomainFromEvents(
   events: Pick<ShopifySyncEvent, "eventType">[],
 ): "shopify" | "photos" | "unknown" {
+  for (const ev of events) {
+    const rawType = String(ev?.eventType || "");
+    if (rawType.startsWith("photos/")) return "photos";
+    if (rawType.startsWith("shopify/")) return "shopify";
+  }
+  // Fallback check
   const first = String(events?.[0]?.eventType || "");
-  if (!first) return "unknown";
-  if (first.startsWith("photos/")) return "photos";
-  if (first.startsWith("shopify/") || first.includes("sync_")) return "shopify";
+  if (first.includes("sync_")) return "shopify";
   return "unknown";
 }
 
 export function classifySyncRequestStatusFromEventTypes(
   eventTypes: string[],
+  lastEventTimeMs?: number,
 ): GenericSyncRequestStatus | null {
   if (eventTypes.length === 0) return null;
 
@@ -133,7 +138,14 @@ export function classifySyncRequestStatusFromEventTypes(
       t.includes("_api_call") || // Any API activity means it's processing
       t.includes("secret_provided"),
   );
-  if (hasStarted) return "processing";
+
+  if (hasStarted) {
+    // TIMEOUT CHECK: If it's been processing for more than 5 minutes, consider it failed.
+    if (lastEventTimeMs && Date.now() - lastEventTimeMs > 5 * 60_000) {
+      return "failed";
+    }
+    return "processing";
+  }
 
   const hasRequested = eventTypes.some(
     (t) =>
@@ -241,6 +253,19 @@ export function foldSyncRequests(
   const handleToLatestRequestId: Record<string, string> = {};
 
   for (const request of requests) {
+    // Re-classify status to apply timeout logic
+    const eventTypes = request.timeline.map((e) => e.eventType);
+    const lastEvent = request.timeline[request.timeline.length - 1];
+    const lastEventTimeMs =
+      toMs(lastEvent?.timestamp) || Number(lastEvent?.createdAtMs || 0);
+    const finalStatus = classifySyncRequestStatusFromEventTypes(
+      eventTypes,
+      lastEventTimeMs,
+    );
+    if (finalStatus) {
+      request.status = finalStatus;
+    }
+
     requestsById[request.requestId] = request;
     requestIds.push(request.requestId);
     if (request.handle && !handleToLatestRequestId[request.handle]) {

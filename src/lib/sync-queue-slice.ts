@@ -1,6 +1,7 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import {
   classifySyncRequestStatusFromEventTypes,
+  inferSyncRequestDomainFromEvents,
   toMs,
 } from "./shopify-sync-model";
 
@@ -20,7 +21,7 @@ export type SyncJobStatus = "queued" | "processing" | "completed" | "failed";
 export type SyncJobSummary = {
   requestId: string;
   eventType: string;
-  domain: string;
+  domain: "shopify" | "photos" | "unknown";
   status: SyncJobStatus;
   creator: string;
   processor: string;
@@ -59,8 +60,14 @@ function eventTimeMs(ev: SyncEvent): number {
   return toMs(ev.timestamp) || Number(ev.createdAtMs || 0);
 }
 
-function classifyJobStatus(eventTypes: string[]): SyncJobStatus | null {
-  const status = classifySyncRequestStatusFromEventTypes(eventTypes);
+function classifyJobStatus(
+  eventTypes: string[],
+  lastEventTimeMs?: number,
+): SyncJobStatus | null {
+  const status = classifySyncRequestStatusFromEventTypes(
+    eventTypes,
+    lastEventTimeMs,
+  );
   if (status === "success") return "completed";
   if (status === "queued" || status === "processing" || status === "failed") {
     return status;
@@ -105,13 +112,13 @@ function buildQueueState(events: SyncEvent[]): Omit<
   for (const [requestId, jobEvents] of grouped.entries()) {
     const latest = jobEvents[jobEvents.length - 1];
     const eventTypes = jobEvents.map((e) => String(e.eventType || ""));
-    const status = classifyJobStatus(eventTypes);
+    const updatedAtMs = eventTimeMs(latest);
+    const status = classifyJobStatus(eventTypes, updatedAtMs);
     if (!status) continue;
 
     const createdAtMs = eventTimeMs(jobEvents[0]);
-    const updatedAtMs = eventTimeMs(latest);
     const eventType = String(jobEvents[0]?.eventType || "");
-    const domain = eventType.includes("/") ? eventType.split("/")[0] : "sync";
+    const domain = inferSyncRequestDomainFromEvents(jobEvents);
     const summary: SyncJobSummary = {
       requestId,
       eventType,
