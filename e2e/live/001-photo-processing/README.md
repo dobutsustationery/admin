@@ -24,7 +24,7 @@
 ![Color Completed](screenshots/002-color-completed.png)
 
 **Programmatic Verification:**
-- [ ] Color added at least one new history version
+- [ ] Color added one new history version
 
 ### 4. Auto Crop In Progress
 
@@ -39,7 +39,7 @@
 ![Auto Crop Completed](screenshots/004-auto-crop-completed.png)
 
 **Programmatic Verification:**
-- [ ] Auto Crop added at least one new history version
+- [ ] Auto Crop added one new history version
 
 ### 6. Remove BG In Progress
 
@@ -54,13 +54,13 @@
 ![Remove BG Completed](screenshots/006-remove-bg-completed.png)
 
 **Programmatic Verification:**
-- [ ] Remove BG added at least one new history version
+- [ ] Remove BG added one new history version
 
 ### 8. Processed Photo History
 
 ![Processed Photo History](screenshots/007-processed-history.png)
 
 **Programmatic Verification:**
-- [ ] History contains versions after processing
+- [ ] History contains expected versions after processing
 - [ ] Current image is visible after processing
 

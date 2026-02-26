@@ -55,7 +55,6 @@ async function decodeImage(inputBuffer) {
     // If it's potentially a HEIF issue, try manual decode
     if (e.message.includes("heif") || e.message.includes("decode") || e.message.includes("header")) {
       try {
-        console.log("[ImageProcessor] Sharp decode failed, trying heic-decode fallback...");
         const { width, height, data } = await heicDecode({ buffer: inputBuffer });
         const info = { width, height, channels: 4 };
         const image = sharp(Buffer.from(data), {
@@ -205,7 +204,6 @@ async function removeBackground(imageUrl, originalBuffer) {
     
     const { model, processor } = await loadRMBGModel();
 
-    console.log(`[ImageProcessor] Pre-processing ${imageUrl}...`);
     // 1. Load image using decodeImage helper to get raw pixel data (RGB)
     const { data: originalData, info } = await decodeImage(originalBuffer);
 
@@ -225,11 +223,9 @@ async function removeBackground(imageUrl, originalBuffer) {
     // 2. Pre-process
     const { pixel_values } = await processor(img);
 
-    console.log(`[ImageProcessor] Running inference for ${imageUrl}...`);
     // 3. Predict mask
     const { output } = await model({ input: pixel_values });
 
-    console.log(`[ImageProcessor] Post-processing mask for ${imageUrl}...`);
     // 4. Post-process mask (resize to original)
     // The output[0] is the mask tensor
     const mask = await RawImage.fromTensor(output[0].mul(255).to("uint8")).resize(
@@ -237,7 +233,6 @@ async function removeBackground(imageUrl, originalBuffer) {
       img.height,
     );
 
-    console.log(`[ImageProcessor] Compositing ${imageUrl}...`);
     // 5. Composite (Apply Mask) using sharp
     // originalData already has alpha from decodeImage
 
@@ -246,7 +241,6 @@ async function removeBackground(imageUrl, originalBuffer) {
       originalData[i * 4 + 3] = mask.data[i];
     }
 
-    console.log(`[ImageProcessor] Finalizing ${imageUrl}...`);
     // 6. Convert back to Buffer via sharp
     const processedBuffer = await sharp(originalData, {
       raw: {

@@ -515,8 +515,7 @@ test.describe("Live Photo Processing", () => {
       );
       await expect
         .poll(async () => await historyRows.count(), { timeout: 30000 })
-        .toBeGreaterThanOrEqual(expectedCount);
-      const finalCount = await historyRows.count();
+        .toBe(expectedCount);
       await expect
         .poll(
           async () => {
@@ -549,7 +548,7 @@ test.describe("Live Photo Processing", () => {
           { timeout: 60000 },
         )
         .toEqual([true, true]);
-      for (let i = 0; i < finalCount; i++) {
+      for (let i = 0; i < expectedCount; i++) {
         const row = historyRows.nth(i);
         await expect(row.locator("img").first()).toBeVisible({
           timeout: 30000,
@@ -558,9 +557,9 @@ test.describe("Live Photo Processing", () => {
 
       const completeChecks = [
         {
-          description: `${label} added at least one new history version`,
+          description: `${label} added one new history version`,
           check: async () =>
-            await expect(historyRows).toHaveCount(finalCount),
+            await expect(historyRows).toHaveCount(expectedCount),
         },
       ];
 
@@ -603,11 +602,11 @@ test.describe("Live Photo Processing", () => {
 
     const finalChecks = [
       {
-        description: "History contains versions after processing",
-        check: async () => {
-          const count = await historyRows.count();
-          expect(count).toBeGreaterThanOrEqual(initialPersistedHistoryCount + 3);
-        },
+        description: "History contains expected versions after processing",
+        check: async () =>
+          await expect(historyRows).toHaveCount(
+            initialPersistedHistoryCount + 3,
+          ),
       },
       {
         description: "Current image is visible after processing",
