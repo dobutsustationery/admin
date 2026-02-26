@@ -77,4 +77,57 @@ describe("shopify-sync-core buildProductPayload", () => {
 
     expect(payload.standard_product_type).toBe("Stationery");
   });
+
+  it("handles single default variant case correctly (Default Title and no options)", () => {
+    const payload = buildProductPayload(
+      {
+        handle: "test-handle",
+        listing: {
+          handle: "test-handle",
+          title: "Test Product",
+        },
+        variants: [
+          {
+            sku: "123ABC",
+            subtype: "Default",
+            price: 6,
+            janCode: "123",
+            weight: 10,
+          },
+        ],
+      },
+      null,
+    );
+
+    expect(payload.variants[0].option1).toBe("Default Title");
+    expect(payload.options).toBeUndefined();
+  });
+
+  it("includes options for products with multiple variants even if some are 'Default'", () => {
+    const payload = buildProductPayload(
+      {
+        handle: "test-handle",
+        listing: {
+          handle: "test-handle",
+          title: "Test Product",
+          option1Name: "Color",
+        },
+        variants: [
+          {
+            sku: "123A",
+            subtype: "Red",
+          },
+          {
+            sku: "123B",
+            subtype: "Default",
+          },
+        ],
+      },
+      null,
+    );
+
+    expect(payload.variants[0].option1).toBe("Red");
+    expect(payload.variants[1].option1).toBe("Default");
+    expect(payload.options).toEqual([{ name: "Color" }]);
+  });
 });

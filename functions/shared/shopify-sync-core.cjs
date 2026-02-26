@@ -538,6 +538,7 @@ function buildProductPayload(requestPayload, existingProduct) {
   const handle = String(requestPayload?.handle || "").trim();
   const listing = requestPayload?.listing || {};
   const variants = Array.isArray(requestPayload?.variants) ? requestPayload.variants : [];
+  const option1Name = String(listing.option1Name || "Subtype").trim() || "Subtype";
 
   if (!handle) throw new Error("Missing request payload handle");
   if (variants.length === 0) throw new Error("Request payload has no variants");
@@ -557,7 +558,10 @@ function buildProductPayload(requestPayload, existingProduct) {
     alt: img.alt,
   }));
 
-  const option1Name = String(listing.option1Name || "Subtype").trim() || "Subtype";
+  const isSingleDefaultVariant =
+    variants.length === 1 &&
+    (!variants[0].subtype ||
+      String(variants[0].subtype).trim().toLowerCase() === "default");
 
   const variantsPayload = variants.map((variant, idx) => {
     const sku = String(variant?.sku || "").trim();
@@ -565,7 +569,7 @@ function buildProductPayload(requestPayload, existingProduct) {
     const existingId = existingVariantIdBySku.get(sku);
     const payload = {
       sku,
-      option1: subtype || "Default",
+      option1: isSingleDefaultVariant ? "Default Title" : (subtype || "Default"),
       position: idx + 1,
       price: String(Number(variant?.price || 0)),
       barcode: String(variant?.janCode || ""),
@@ -598,10 +602,14 @@ function buildProductPayload(requestPayload, existingProduct) {
     standard_product_type: String(listing.productCategory || ""),
     tags: toTagsString(listing.tags),
     status: resolvedStatus,
-    options: [{ name: option1Name }],
     images: imagesPayload,
     variants: variantsPayload,
   };
+
+  // Only include options if it's not a single default variant
+  if (!isSingleDefaultVariant) {
+    payload.options = [{ name: option1Name }];
+  }
 
   if (!existingProduct) {
     // Ensure newly created products are assigned to the standard sales channels
