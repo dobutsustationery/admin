@@ -609,6 +609,19 @@ async function main() {
         driveFileId = uploadRes.data.id || "";
         if (!driveFileId) throw new Error("Drive upload did not return file id.");
       }
+      // Ensure file is publicly readable so lh3.googleusercontent.com URLs work
+      try {
+        await drive.permissions.create({
+          fileId: driveFileId,
+          requestBody: { role: "reader", type: "anyone" },
+          supportsAllDrives: true,
+        });
+      } catch (permErr: any) {
+        // 409 = permission already exists
+        if (permErr?.code !== 409 && permErr?.status !== 409) {
+          console.warn(`⚠️ [${fixture.id}] Could not set public permission: ${permErr.message}`);
+        }
+      }
       if (fixture.driveFileId !== driveFileId) {
         fixture.driveFileId = driveFileId;
         updated = true;
@@ -671,6 +684,13 @@ async function main() {
   if (updated) {
     writeManifest(manifest);
     console.log(`📝 Updated manifest: ${MANIFEST_PATH}`);
+  }
+
+  // Persist the first fixture's Drive file ID as the preferred media item for live E2E tests.
+  const firstDriveFileId = fixturesToSync.find((f) => f.driveFileId)?.driveFileId;
+  if (firstDriveFileId) {
+    upsertEnvVarFile(LIVE_ENV_PATH, "E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID", firstDriveFileId);
+    console.log(`📝 Set E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID=${firstDriveFileId} in .env.live.local`);
   }
 
   const expectedFilenames = fixturesToSync.map((fixture) =>
