@@ -418,11 +418,14 @@
                 const payload = data.payload || {};
                 resolve(payload.permanentUrl || payload.apiUrl || null);
               } else {
-                console.error(
-                  "[ManualOp] Transform failed",
-                  data.payload?.errorMessage,
-                );
+                const errorMsg =
+                  data.payload?.errorMessage || "Operation failed.";
+                console.error("[ManualOp] Transform failed", errorMsg);
                 resolve(null);
+                // We'll throw the error outside or just handle the null
+                if (errorMsg) {
+                  // actually let's keep it simple and match original: resolve(null)
+                }
               }
             },
             (err) => {

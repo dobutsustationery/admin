@@ -5,6 +5,7 @@
 const { env, AutoModel, AutoProcessor, RawImage } = require("@xenova/transformers");
 const sharp = require("sharp");
 const path = require("path");
+const heicDecode = require("heic-decode");
 
 // Configure Transformers.js to use local model files only.
 // This avoids 429 Too Many Requests errors from Hugging Face and improves startup time.
@@ -39,15 +40,42 @@ async function loadRMBGModel() {
 }
 
 /**
+ * Robustly decodes an image buffer, falling back to heic-decode for HEIF/HEIC if sharp fails.
+ */
+async function decodeImage(inputBuffer) {
+  try {
+    // Try native sharp first (fastest, supports most formats)
+    const image = sharp(inputBuffer);
+    const { data, info } = await image
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    return { image, data, info };
+  } catch (e) {
+    // If it's potentially a HEIF issue, try manual decode
+    if (e.message.includes("heif") || e.message.includes("decode") || e.message.includes("header")) {
+      try {
+        console.log("[ImageProcessor] Sharp decode failed, trying heic-decode fallback...");
+        const { width, height, data } = await heicDecode({ buffer: inputBuffer });
+        const info = { width, height, channels: 4 };
+        const image = sharp(Buffer.from(data), {
+          raw: { width, height, channels: 4 }
+        });
+        return { image, data: Buffer.from(data), info };
+      } catch (fallbackError) {
+        console.error("[ImageProcessor] Fallback decode also failed:", fallbackError);
+        throw e; // Throw original error if fallback also fails
+      }
+    }
+    throw e;
+  }
+}
+
+/**
  * Smart Crop: Trims transparent borders from an image
  */
 async function smartCrop(inputBuffer) {
-  const image = sharp(inputBuffer);
-  const { data, info } = await image
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
+  const { image, data, info } = await decodeImage(inputBuffer);
   const { width, height } = info;
   const ALPHA_THRESHOLD = 40;
 
@@ -91,12 +119,7 @@ async function smartCrop(inputBuffer) {
  */
 async function autoColorCorrect(originalBuffer) {
   try {
-    const image = sharp(originalBuffer);
-    const { data, info } = await image
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
+    const { info, data } = await decodeImage(originalBuffer);
     const { width, height } = info;
     const pixelCount = width * height;
 
@@ -183,13 +206,21 @@ async function removeBackground(imageUrl, originalBuffer) {
     const { model, processor } = await loadRMBGModel();
 
     console.log(`[ImageProcessor] Pre-processing ${imageUrl}...`);
-    // 1. Load image using sharp to get raw pixel data (RGB)
-    const { data: rawData, info: rawInfo } = await sharp(originalBuffer)
-      .removeAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    // 1. Load image using decodeImage helper to get raw pixel data (RGB)
+    const { data: originalData, info } = await decodeImage(originalBuffer);
 
-    const img = new RawImage(rawData, rawInfo.width, rawInfo.height, 3);
+    // transformers.js needs RGB (3 channels), so we strip alpha if it exists
+    const rgbData = await sharp(originalData, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: info.channels,
+      }
+    })
+      .removeAlpha()
+      .toBuffer();
+
+    const img = new RawImage(rgbData, info.width, info.height, 3);
 
     // 2. Pre-process
     const { pixel_values } = await processor(img);
@@ -208,10 +239,7 @@ async function removeBackground(imageUrl, originalBuffer) {
 
     console.log(`[ImageProcessor] Compositing ${imageUrl}...`);
     // 5. Composite (Apply Mask) using sharp
-    const { data: originalData, info } = await sharp(originalBuffer)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    // originalData already has alpha from decodeImage
 
     // Apply mask to alpha channel
     for (let i = 0; i < info.width * info.height; i++) {
