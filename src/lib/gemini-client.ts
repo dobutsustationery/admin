@@ -5,6 +5,10 @@ import {
   generateDerivationKey,
   extractDriveFileId,
   getStoredToken as getDriveToken,
+  JAN_CODE_FOUND_PROPERTY,
+  MERGE_WITH_PROPERTY,
+  getFileMetadata,
+  setFileProperty,
 } from "$lib/google-drive";
 import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 import {
@@ -825,12 +829,17 @@ export async function processMediaItems(
 
 const DEFAULT_UNCATEGORIZED_CODE = "UNCATEGORIZED";
 
+/**
+ * Identify JAN codes and group media items.
+ * Uses a hybrid approach: checks Drive metadata first, falls back to Gemini.
+ */
 export async function categorizeMediaItems(
   items: { baseUrl: string; id: string }[],
   accessToken: string,
   apiKey?: string,
   onMatch?: (item: { baseUrl: string; id: string }, janCode: string) => void,
   onProgress?: (current: number, total: number, message: string) => void,
+  force = false,
 ): Promise<void> {
   const total = items.length;
   let current = 0;
@@ -846,50 +855,105 @@ export async function categorizeMediaItems(
     onProgress?.(current, total, `Analyzing image ${current}/${total}...`);
 
     try {
-      // 1. Fetch
-      // Prioritize public URL to use file_uri (no download)
-      const fetchUrl = toGeminiPublicImageUrl(item.baseUrl) || item.baseUrl;
-      const imageData = await fetchImage(fetchUrl, effectiveToken);
+      const driveId = extractDriveFileId(item.baseUrl);
+      let janCode: string | null = null;
+      let foundType: "JAN Code Found" | "No Jan Code Found" | null = null;
 
-      // 2. Identify
-      const janCheck = await imagePrompt(
-        "Find the JAN code (Japanese Article Number, 8 or 13 digits) in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.",
-        [imageData],
-        accessToken,
-        apiKey,
-      );
-
-      let janCode = janCheck?.replace(/[^0-9]/g, "") || "";
-
-      // Validate length
-      if (janCode.length >= 8 && janCode !== "NONE") {
-        // FOUND A NEW JAN
-        lastSeenJanCode = janCode;
-        console.log(`[Categorize] ${item.id} -> Found JAN: ${janCode}`);
-      } else {
-        // NO JAN FOUND
-        if (lastSeenJanCode) {
-          janCode = lastSeenJanCode; // Inherit
-          console.log(
-            `[Categorize] ${item.id} -> No JAN, inheriting: ${janCode}`,
+      // 1. Check Metadata Cache (Skip LLM if present and not forced)
+      if (driveId && effectiveToken && !force) {
+        try {
+          const meta = await getFileMetadata(driveId, effectiveToken);
+          const props = meta.properties || {};
+          if (props[JAN_CODE_FOUND_PROPERTY]) {
+            foundType = props[JAN_CODE_FOUND_PROPERTY] as any;
+            janCode = props[MERGE_WITH_PROPERTY];
+            console.info(
+              `[Categorize] Using metadata for ${item.id}: ${foundType}, merge_with: ${janCode}`,
+            );
+          }
+        } catch (e) {
+          console.warn(
+            `[Categorize] Failed to read metadata for ${item.id}`,
+            e,
           );
-        } else {
-          janCode = DEFAULT_UNCATEGORIZED_CODE;
-          console.log(`[Categorize] ${item.id} -> No JAN, no history.`);
         }
       }
 
-      // 3. Notify
-      if (janCode !== DEFAULT_UNCATEGORIZED_CODE) {
+      // 2. LLM Analysis (Fallback)
+      if (!janCode) {
+        // Prioritize public URL to use file_uri (no download)
+        const fetchUrl = toGeminiPublicImageUrl(item.baseUrl) || item.baseUrl;
+        const imageData = await fetchImage(fetchUrl, effectiveToken);
+
+        const janCheck = await imagePrompt(
+          "Find the JAN code (Japanese Article Number, 8 or 13 digits) in this image. Return ONLY the numeric code. If no barcode is clearly visible, return 'NONE'.",
+          [imageData],
+          accessToken,
+          apiKey,
+        );
+
+        let detectedJan = janCheck?.replace(/[^0-9]/g, "") || "";
+
+        // Validate length
+        if (detectedJan.length >= 8 && detectedJan !== "NONE") {
+          // FOUND A NEW JAN
+          lastSeenJanCode = detectedJan;
+          janCode = detectedJan;
+          foundType = "JAN Code Found";
+          console.log(`[Categorize] ${item.id} -> Found JAN: ${janCode}`);
+        } else {
+          // NO JAN FOUND
+          foundType = "No Jan Code Found";
+          if (lastSeenJanCode) {
+            janCode = lastSeenJanCode; // Inherit
+            console.log(
+              `[Categorize] ${item.id} -> No JAN, inheriting: ${janCode}`,
+            );
+          } else {
+            janCode = DEFAULT_UNCATEGORIZED_CODE;
+            console.log(`[Categorize] ${item.id} -> No JAN, no history.`);
+          }
+        }
+
+        // 3. Store Results in Metadata (Persistence)
+        if (driveId && effectiveToken && foundType && janCode) {
+          try {
+            await Promise.all([
+              setFileProperty(
+                driveId,
+                JAN_CODE_FOUND_PROPERTY,
+                foundType,
+                effectiveToken,
+              ),
+              setFileProperty(
+                driveId,
+                MERGE_WITH_PROPERTY,
+                janCode,
+                effectiveToken,
+              ),
+            ]);
+          } catch (e) {
+            console.warn(
+              `[Categorize] Failed to write metadata for ${item.id}`,
+              e,
+            );
+          }
+        }
+      } else {
+        // Update last seen for subsequent items if we used cached jan
+        if (janCode && janCode !== DEFAULT_UNCATEGORIZED_CODE) {
+          lastSeenJanCode = janCode;
+        }
+      }
+
+      // 4. Notify
+      if (janCode && janCode !== DEFAULT_UNCATEGORIZED_CODE) {
         onMatch?.(item, janCode);
       } else {
         console.log(`[Categorize] Skipping ${item.id} (Uncategorized)`);
       }
     } catch (e: any) {
       console.error(`Error categorizing item ${item.id}:`, e);
-      // On error, do we inherit? Probably safer not to, or maybe yes?
-      // If fetch fails, we can't see the image.
-      // Let's NOT inherit on error to avoid grouping broken images blindly.
     }
   }
 

@@ -13,6 +13,8 @@
     generateDerivationKey,
     calculateHash,
     extractDriveFileId,
+    MERGE_WITH_PROPERTY,
+    setFileProperty,
   } from "$lib/google-drive";
 </script>
 
@@ -141,7 +143,7 @@
   import { categorizeMediaItems } from "$lib/gemini-client";
   let catProgress = { current: 0, total: 0, message: "" };
 
-  async function handleCategorize() {
+  async function handleCategorize(force = false) {
     if (photos.length === 0) return;
 
     // Broadcast begin (Sets flag)
@@ -183,6 +185,7 @@
         (current, total, message) => {
           catProgress = { current, total, message };
         },
+        force,
       );
     } catch (e: any) {
       checkAuthError(e);
@@ -1121,6 +1124,25 @@
       });
     }
     store.dispatch(rename_jan_group({ oldJan, newJan }));
+
+    // Persist to Metadata if possible
+    if (newJan) {
+      const photosToUpdate = janCodeToPhotos[oldJan] || [];
+      const token = getStoredToken() || getDriveStoredToken();
+      if (token) {
+        photosToUpdate.forEach((p) => {
+          const driveId = extractDriveFileId(p.baseUrl);
+          if (driveId) {
+            setFileProperty(
+              driveId,
+              MERGE_WITH_PROPERTY,
+              newJan,
+              token.access_token,
+            );
+          }
+        });
+      }
+    }
   }
 
   function handleInputKey(e: KeyboardEvent, oldJan: string) {
@@ -1143,6 +1165,23 @@
     }
     // Optimistic
     store.dispatch(merge_jan_groups({ sourceJan, targetJan }));
+
+    // Persist to Metadata
+    const photosToUpdate = janCodeToPhotos[sourceJan] || [];
+    const token = getStoredToken() || getDriveStoredToken();
+    if (token) {
+      photosToUpdate.forEach((p) => {
+        const driveId = extractDriveFileId(p.baseUrl);
+        if (driveId) {
+          setFileProperty(
+            driveId,
+            MERGE_WITH_PROPERTY,
+            targetJan,
+            token.access_token,
+          );
+        }
+      });
+    }
 
     hoveredRowIndex = null;
   }
@@ -1347,11 +1386,21 @@
           <div class="flex gap-2">
             {#if photos.length > 0}
               <button
-                on:click={handleCategorize}
+                on:click={() => handleCategorize(false)}
                 disabled={isCategorizing || isGenerating}
                 class="bg-teal-600 text-white px-4 py-2 rounded-md font-medium hover:bg-teal-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+                title="Categorize using metadata if available"
               >
                 Categorize Photos
+              </button>
+
+              <button
+                on:click={() => handleCategorize(true)}
+                disabled={isCategorizing || isGenerating}
+                class="bg-gray-100 text-gray-700 border border-gray-300 px-4 py-2 rounded-md font-medium hover:bg-gray-200 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+                title="Force Gemini re-analysis for all photos"
+              >
+                Re-categorize
               </button>
             {/if}
           </div>

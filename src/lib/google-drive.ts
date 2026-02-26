@@ -957,6 +957,35 @@ export async function setFilePermissions(
   }
 }
 
+export const FOLDER_ROLE_PROPERTY = "folder_role";
+export const JAN_CODE_FOUND_PROPERTY = "jan_code_found";
+export const MERGE_WITH_PROPERTY = "merge_with";
+
+/**
+ * Get full metadata for a file
+ */
+export async function getFileMetadata(
+  fileId: string,
+  accessToken: string,
+): Promise<any> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=*&supportsAllDrives=true`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to get metadata for ${fileId}: ${response.statusText}`,
+    );
+  }
+
+  return await response.json();
+}
+
 /**
  * Set a property on a Drive file
  */
