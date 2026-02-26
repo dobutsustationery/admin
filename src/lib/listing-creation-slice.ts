@@ -1623,29 +1623,13 @@ export const set_proposal_handle_thunk =
             variantId,
           }),
         );
-        if (targetGroup.length > 1) {
-          const extraTargets = targetGroup
-            .map((p) => p.janCode)
-            .filter((j) => j !== target.janCode);
-          if (extraTargets.length > 0) {
-            dispatch(
-              merge_proposals({
-                targetJan: target.janCode,
-                sourceJans: extraTargets,
-              }),
-            );
-          }
-        }
       } else {
-        // Merge all proposals that should share this handle at once.
-        const sourceJans = new Set<string>([janCode]);
-        targetGroup.forEach((p) => {
-          if (p.janCode !== target.janCode) sourceJans.add(p.janCode);
-        });
+        // Update handle first. RootReducer will orchestrate the merge when it sees the collision.
         dispatch(
-          merge_proposals({
-            targetJan: target.janCode,
-            sourceJans: Array.from(sourceJans),
+          update_proposal_field({
+            janCode,
+            field: "handle",
+            value: newHandle,
           }),
         );
       }
@@ -1728,27 +1712,6 @@ export const set_proposal_handle_thunk =
 
         if (isMultiVariant && variantId) {
           dispatch(split_variant({ janCode, variantId, newHandle }));
-          const updatedState = getState();
-          const freshProposals = Object.values(
-            updatedState.listingCreation.proposals,
-          ) as ListingProposal[];
-          const matching = freshProposals.filter((p) => {
-            const h = p.handle || generateHandle(p.title || "", p.janCode);
-            return h === newHandle;
-          });
-          if (matching.length > 1) {
-            const target =
-              matching.find((p) => p.janCode === variantId) || matching[0];
-            const sources = matching
-              .map((p) => p.janCode)
-              .filter((j) => j !== target.janCode);
-            dispatch(
-              merge_proposals({
-                targetJan: target.janCode,
-                sourceJans: sources,
-              }),
-            );
-          }
         } else {
           dispatch(
             update_proposal_field({
@@ -1757,27 +1720,6 @@ export const set_proposal_handle_thunk =
               value: newHandle,
             }),
           );
-          const updatedState = getState();
-          const freshProposals = Object.values(
-            updatedState.listingCreation.proposals,
-          ) as ListingProposal[];
-          const matching = freshProposals.filter((p) => {
-            const h = p.handle || generateHandle(p.title || "", p.janCode);
-            return h === newHandle;
-          });
-          if (matching.length > 1) {
-            const target =
-              matching.find((p) => p.janCode === janCode) || matching[0];
-            const sources = matching
-              .map((p) => p.janCode)
-              .filter((j) => j !== target.janCode);
-            dispatch(
-              merge_proposals({
-                targetJan: target.janCode,
-                sourceJans: sources,
-              }),
-            );
-          }
         }
       }
     }

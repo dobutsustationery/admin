@@ -915,6 +915,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       "listingCreation/split_variant",
       "listingCreation/move_variant",
       "listingCreation/merge_proposal",
+      "listingCreation/merge_proposals",
       "listingCreation/reorder_variants",
       "listingCreation/add_proposals",
       "listingCreation/start_batch",
@@ -923,6 +924,55 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
     if (criticalActions.includes(action.type)) {
       logger(action, nextState, action._timestamp);
+    }
+
+    // Handle Collision Orchestration (Draft Merging)
+    // If a handle update or split creates a collision, orchestrate a merge.
+    const isHandleUpdate =
+      action.type === "listingCreation/update_proposal_field" &&
+      action.payload.field === "handle";
+    const isSplit = action.type === "listingCreation/split_variant";
+
+    if (isHandleUpdate || isSplit) {
+      const janCode = isHandleUpdate
+        ? action.payload.janCode
+        : action.payload.variantId; // split uses variantId as new JAN
+      const newHandle = action.payload.value || action.payload.newHandle;
+
+      const allProposals = Object.values(
+        nextState.listingCreation.proposals,
+      ) as any[];
+      const matching = allProposals.filter((p) => {
+        if (p.janCode === janCode) return false;
+        const h = p.handle || generateHandle(p.title, p.janCode);
+        return h === newHandle;
+      });
+
+      if (matching.length > 0) {
+        const target = matching[0];
+        console.log(
+          `[RootReducer] Collision detected for handle '${newHandle}' (source: ${janCode}, target: ${target.janCode}). Orchestrating merge.`,
+        );
+
+        const mergeAction = {
+          type: "listingCreation/merge_proposals",
+          payload: {
+            targetJan: target.janCode,
+            sourceJans: [janCode],
+          },
+          _ephemeral: true,
+          timestamp: action.timestamp || action._timestamp,
+        };
+
+        nextState = {
+          ...nextState,
+          listingCreation: listingCreation(
+            nextState.listingCreation,
+            mergeAction,
+          ),
+        };
+        logger(mergeAction, nextState, action._timestamp);
+      }
     }
   }
 
