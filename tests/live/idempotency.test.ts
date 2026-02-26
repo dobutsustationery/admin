@@ -82,7 +82,7 @@ describe.skipIf(!isLiveConfigured)(
       // Let's verify our search primitive is robust.
       const drive = google.drive({ version: "v3", auth });
       const searchRes = await drive.files.list({
-        q: `appProperties has { key='${GoogleDrive.DERIVATION_KEY_PROPERTY}' and value='${derivationKey}' } and trashed=false`,
+        q: `properties has { key='${GoogleDrive.DERIVATION_KEY_PROPERTY}' and value='${derivationKey}' } and trashed=false`,
         fields: "files(id)",
       });
       expect(searchRes.data.files?.length).toBe(1);
@@ -223,7 +223,7 @@ describe.skipIf(!isLiveConfigured)(
 
       const searchRes = await drive.files.list({
         q: query,
-        fields: "files(id, name, appProperties)",
+        fields: "files(id, name, properties)",
       });
       expect(searchRes.data.files?.length).toBe(1);
     });

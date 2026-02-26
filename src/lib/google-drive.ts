@@ -620,7 +620,7 @@ export async function listAllImages(accessToken: string): Promise<DriveFile[]> {
 }
 
 /**
- * Search for a file by its derivation key in appProperties.
+ * Search for a file by its derivation key in properties.
  */
 export async function findFileByDerivationKey(
   accessToken: string,

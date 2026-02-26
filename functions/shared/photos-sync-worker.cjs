@@ -167,7 +167,7 @@ function stripGoogleusercontentSuffix(url) {
 }
 
 /**
- * Search for a file by its derivation key in appProperties.
+ * Search for a file by its derivation key in properties.
  */
 async function findFileByDerivationKey(accessToken, derivationKey, onApiCall) {
   return sharedFindFileByDerivationKey(derivationKey, (url) =>

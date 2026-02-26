@@ -12,7 +12,7 @@ Currently, image transfers and transformations create redundant files in Google 
 We will unify all image creation (copies and edits) into a single deterministic "Transform" model. Every image in our Google Drive "Registry" is the output of a transform applied to a source.
 
 ### 2.1 The Derivation Key
-Every image file created by the application in Google Drive will be tagged with an `appProperties.derivation_key` that uniquely identifies the *intent* that created it.
+Every image file created by the application in Google Drive will be tagged with a `properties.derivation_key` that uniquely identifies the *intent* that created it. (We use `properties` rather than `appProperties` for access-control reasons — `properties` are visible across apps and in the Drive UI, which is needed for cross-service queries.)
 
 **Key Format**: `{source_type}:{source_id}:{transform_name}`
 
@@ -34,17 +34,17 @@ The backend `sync` worker is the source of truth for idempotency.
 - **Search Before Work**: The worker searches Google Drive for any file matching that `derivation_key`.
 - **Resolution**:
   - **If found**: The worker immediately emits a `completed` event with the existing `fileId`, without performing any download or upload.
-  - **If not found**: The worker performs the work (transfer or transform), uploads the file with the `derivation_key` set in `appProperties`, and emits the `completed` event.
+  - **If not found**: The worker performs the work (transfer or transform), uploads the file with the `derivation_key` set in `properties`, and emits the `completed` event.
 
 This ensures the client can remain "naive"—it always requests the work it needs, and the server ensures that work is only done once.
 
 ## 3. Implementation Plan
 
 ### Step 1: Update `src/lib/google-drive.ts`
-- **Add `findFileByDerivationKey(key)`**: Helper to search for files in the configured folder tree using the `appProperties` query: `appProperties has { key='derivation_key' and value='...' }`.
+- **Add `findFileByDerivationKey(key)`**: Helper to search for files in the configured folder tree using the `properties` query: `properties has { key='derivation_key' and value='...' }`.
 - **Update `uploadImageToDrive`**:
   - Require `derivationKey` as a mandatory parameter to prevent untracked uploads.
-  - Include it in the `appProperties` metadata during upload.
+  - Include it in the `properties` metadata during upload.
 - **Expose `generateDerivationKey(type, id, transform)`**: Utility to ensure consistent key generation across client and server.
 
 ### Step 2: Backend Worker Idempotency (`functions/shared/photos-worker.cjs`)

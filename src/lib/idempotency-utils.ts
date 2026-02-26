@@ -34,7 +34,7 @@ export function generateDerivationKey(
   const safeType = String(type || "unknown");
 
   // VERSIONING: We append a version to transforms to allow model upgrades
-  // without clashing with old cached results in Drive appProperties.
+  // without clashing with old cached results in Drive properties.
   let safeTransform = String(transform || "identity");
   if (safeTransform === "remove_bg") {
     safeTransform = "remove_bg_v2"; // v2 = RMBG-1.4
@@ -92,7 +92,7 @@ export function toDrivePublicUrl(fileId: string): string {
 }
 
 /**
- * Search for a file by its derivation key in appProperties.
+ * Search for a file by its derivation key in properties.
  * This is a shared logic helper used by both client and server.
  */
 export async function findFileByDerivationKey(
