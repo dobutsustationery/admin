@@ -198,6 +198,12 @@
 
   // --- EDIT QUEUE RUNNER ---
   let isEditing = false;
+  let batchProgress = {
+    current: 0,
+    total: 0,
+    operation: "",
+    completedIds: [] as string[],
+  };
   // In-flight request tracking to avoid redundant sync requests
   const inFlightEdits = new Set<string>();
 
@@ -267,7 +273,7 @@
         } else {
           store.dispatch(completeAction);
         }
-        return "idempotent";
+        return true; // Mark as successfully handled (idempotent)
       }
 
       // 3. Request Transform via Sync Queue
@@ -311,7 +317,7 @@
         timestamp: serverTimestamp(),
       });
 
-      return docRef.id;
+      return docRef.id; // Return document ID for tracking if needed, or truthy for success
     } catch (e: any) {
       console.error(`Edit dispatch failed for ${id}:`, e);
       store.dispatch(
@@ -329,36 +335,80 @@
       // 1. Color Correct ALL Categorized Photos
       const colorIds = scheduleBatch("color_correct");
       if (colorIds.length > 0) {
-        console.log(
-          `[Batch] Dispatching ${colorIds.length} color_correct jobs...`,
-        );
-        // Dispatch with staggered delay to avoid quota spikes
+        batchProgress = {
+          current: 0,
+          total: colorIds.length,
+          operation: "Color Correcting",
+          completedIds: [],
+        };
+
+        const idsToWait: string[] = [];
+
+        // Dispatch with staggered delay
         for (const id of colorIds) {
-          await dispatchTransformRequest(id, "color_correct");
-          await new Promise((r) => setTimeout(r, 250));
+          const result = await dispatchTransformRequest(id, "color_correct");
+          if (result === true) {
+            // Idempotent match - already done
+            batchProgress.current++;
+            batchProgress.completedIds = [...batchProgress.completedIds, id];
+          } else if (result) {
+            // New request dispatched
+            idsToWait.push(id);
+          } else {
+            // Failed
+            batchProgress.total--;
+          }
+          await new Promise((r) => setTimeout(r, 100));
         }
 
-        console.log(
-          `[Batch] Waiting for ${colorIds.length} color_correct jobs to complete...`,
-        );
-        await waitForBatchCompletion(colorIds, "color_correct");
+        if (idsToWait.length > 0) {
+          console.log(
+            `[Batch] Waiting for ${idsToWait.length} color_correct jobs...`,
+          );
+          await waitForBatchCompletion(idsToWait, "color_correct", (id) => {
+            batchProgress.current++;
+            batchProgress.completedIds = [...batchProgress.completedIds, id];
+          });
+        }
       }
 
       // 2. Remove Background ALL Categorized Photos
       const bgIds = scheduleBatch("remove_background");
       if (bgIds.length > 0) {
-        console.log(
-          `[Batch] Dispatching ${bgIds.length} remove_background jobs...`,
-        );
+        batchProgress = {
+          current: 0,
+          total: bgIds.length,
+          operation: "Removing Backgrounds",
+          completedIds: [],
+        };
+
+        const idsToWait: string[] = [];
+
         for (const id of bgIds) {
-          await dispatchTransformRequest(id, "remove_background");
-          await new Promise((r) => setTimeout(r, 250));
+          const result = await dispatchTransformRequest(
+            id,
+            "remove_background",
+          );
+          if (result === true) {
+            batchProgress.current++;
+            batchProgress.completedIds = [...batchProgress.completedIds, id];
+          } else if (result) {
+            idsToWait.push(id);
+          } else {
+            batchProgress.total--;
+          }
+          await new Promise((r) => setTimeout(r, 100));
         }
 
-        console.log(
-          `[Batch] Waiting for ${bgIds.length} remove_background jobs to complete...`,
-        );
-        await waitForBatchCompletion(bgIds, "remove_background");
+        if (idsToWait.length > 0) {
+          console.log(
+            `[Batch] Waiting for ${idsToWait.length} remove_background jobs...`,
+          );
+          await waitForBatchCompletion(idsToWait, "remove_background", (id) => {
+            batchProgress.current++;
+            batchProgress.completedIds = [...batchProgress.completedIds, id];
+          });
+        }
       }
 
       console.log("[Batch] All processing complete.");
@@ -367,17 +417,21 @@
       alert("Error during image processing: " + err.message);
     } finally {
       isEditing = false;
+      batchProgress = { current: 0, total: 0, operation: "", completedIds: [] };
     }
   }
 
-  async function waitForBatchCompletion(ids: string[], operation: string) {
+  async function waitForBatchCompletion(
+    ids: string[],
+    operation: string,
+    onItemComplete: (id: string) => void,
+  ) {
     const promises = ids.map((id) => {
       return new Promise<void>((resolve) => {
         const transform =
           operation === "remove_background" ? "remove_bg" : operation;
         const requestId = `photo-edit-${transform}-${id}`;
 
-        // Poll for this specific job, filtering for NEW events (created after now - 1 minute)
         const q = query(
           collection(firestore, SYNC_COLLECTION),
           where("requestId", "==", requestId),
@@ -396,9 +450,6 @@
             if (snap.empty) return;
             const data = snap.docs[0].data();
 
-            // Important: With addDoc and non-unique requestId, we might see old events.
-            // But since the result is deterministic (same derivation key), any completed event is good.
-
             if (data.eventType.endsWith("completed")) {
               const payload = data.payload || {};
               const finalUrl = payload.permanentUrl || payload.apiUrl || null;
@@ -413,6 +464,7 @@
                 } else {
                   store.dispatch(completeAction);
                 }
+                onItemComplete(id);
               }
               unsubscribe();
               inFlightEdits.delete(requestId);
@@ -440,7 +492,7 @@
           unsubscribe();
           inFlightEdits.delete(requestId);
           resolve();
-        }, 180000); // 3 minutes for batch
+        }, 300000); // 5 minutes for batch items
       });
     });
 
@@ -1114,11 +1166,66 @@
               class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"
             ></span>
           </div>
-          <div>
-            <h3>Processing Images</h3>
-            <p>{pendingEdits.length} task(s) remaining in queue</p>
+          <div class="flex flex-col gap-1">
+            <h3 class="flex items-center gap-2">
+              {batchProgress.operation || "Processing Images"}
+              {#if batchProgress.total > 0}
+                <span class="text-xs bg-indigo-500/50 px-2 py-0.5 rounded-full">
+                  {Math.round(
+                    (batchProgress.current / batchProgress.total) * 100,
+                  )}%
+                </span>
+              {/if}
+            </h3>
+            <div class="flex items-center gap-4">
+              <p class="text-xs opacity-80 whitespace-nowrap">
+                {batchProgress.current} / {batchProgress.total} completed
+              </p>
+              {#if batchProgress.total > 0}
+                <div
+                  class="w-32 h-1.5 bg-gray-700 rounded-full overflow-hidden"
+                >
+                  <div
+                    class="h-full bg-indigo-500 transition-all duration-300"
+                    style="width: {(batchProgress.current /
+                      batchProgress.total) *
+                      100}%"
+                  ></div>
+                </div>
+              {/if}
+            </div>
           </div>
         </div>
+
+        {#if batchProgress.completedIds.length > 0}
+          <div class="completed-thumbnails-row">
+            {#each batchProgress.completedIds.slice(-8).reverse() as id}
+              {@const item =
+                registry[id] ||
+                photos.find((p) => p.id === id) ||
+                Object.values(janCodeToPhotos)
+                  .flat()
+                  .find((p) => p.id === id)}
+              {#if item}
+                <div
+                  class="mini-thumb"
+                  role="button"
+                  tabindex="0"
+                  on:click={() => goto(`/photo-history?id=${id}`)}
+                  on:keydown={(e) =>
+                    (e.key === "Enter" || e.key === " ") &&
+                    goto(`/photo-history?id=${id}`)}
+                  title="View History"
+                >
+                  <SecureImage
+                    src={displayUrl(item.baseUrl, "=w48-h48-c")}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/if}
 
         {#if activeId}
           {@const item =
@@ -1135,8 +1242,10 @@
                 />
               </div>
               <div class="operation-details">
-                <span class="op-label">Current Operation</span>
-                <span class="op-value">{activeOp?.replace("_", " ")}</span>
+                <span class="op-label">Current</span>
+                <span class="op-value truncate max-w-[80px]"
+                  >{activeOp?.replace("_", " ")}</span
+                >
               </div>
             </div>
           {/if}
@@ -1660,13 +1769,40 @@
   .active-item-card {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
     background-color: #1f2937; /* gray-800 */
     border-radius: 0.5rem;
-    padding: 0.5rem;
-    padding-right: 1rem;
+    padding: 0.4rem;
+    padding-right: 0.75rem;
     box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
     border: 1px solid #374151; /* gray-700 */
+    max-width: 180px;
+  }
+  .completed-thumbnails-row {
+    display: flex;
+    gap: 0.5rem;
+    flex: 1;
+    margin: 0 2rem;
+    overflow-x: auto;
+    scrollbar-width: none; /* Hide scrollbar Firefox */
+  }
+  .completed-thumbnails-row::-webkit-scrollbar {
+    display: none; /* Hide scrollbar Chrome/Safari */
+  }
+  .mini-thumb {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.25rem;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .mini-thumb:hover {
+    transform: scale(1.1);
+    border-color: #6366f1; /* indigo-500 */
+    z-index: 10;
   }
   .thumbnail-wrapper {
     width: 2.5rem; /* 10 */
