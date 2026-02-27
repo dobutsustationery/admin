@@ -955,24 +955,33 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         let subtype = "New Variant";
         let qty = 0;
 
-        if (janCode === targetJan) {
-          // Case (a): Same JAN -> Split from first existing variant's item
-          const firstVariant = targetProposal.variants[0];
-          itemId = firstVariant?.itemId || "";
+        // 1. Try to find a NEW item with this JAN (prefer unlisted, then listed elsewhere)
+        const invItem = Object.entries(nextState.inventory.idToItem).find(
+          ([id, item]: [string, any]) =>
+            item.janCode === janCode &&
+            item.handle !== targetHandle && // Not already in this listing
+            !targetProposal.inventoryItemIds.includes(id), // Not already in this proposal
+        );
+
+        if (invItem) {
+          itemId = invItem[0];
+          subtype = invItem[1].subtype || "Default";
+          qty = invItem[1].qty || 0;
         } else {
-          // Case (b): New JAN -> Find inventory
-          // We allow selecting items even if they have a handle (steal workflow).
-          // But we must NOT select an item that is already in the target proposal.
-          const invItem = Object.entries(nextState.inventory.idToItem).find(
-            ([id, item]: [string, any]) =>
-              item.janCode === janCode &&
-              item.handle !== targetHandle &&
-              !targetProposal.inventoryItemIds.includes(id),
-          );
-          if (invItem) {
-            itemId = invItem[0];
-            subtype = invItem[1].subtype || "Default";
-            qty = invItem[1].qty || 0;
+          // 2. If no new item found, check if JAN is already present in proposal -> Split from existing
+          const existingVariant = targetProposal.variants.find((v: any) => {
+            const item = nextState.inventory.idToItem[v.itemId];
+            return item?.janCode === janCode;
+          });
+
+          if (existingVariant) {
+            itemId = existingVariant.itemId;
+            subtype = "New Variant";
+            qty = 0;
+          } else if (janCode === targetJan) {
+            // Fallback for primary JAN if somehow not in variants yet
+            const firstVariant = targetProposal.variants[0];
+            itemId = firstVariant?.itemId || "";
           }
         }
 
@@ -993,8 +1002,11 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           };
           logger(sliceAction, nextState, action._timestamp);
 
-          // 2. Sync Inventory Handle (if new JAN)
-          if (janCode !== targetJan) {
+          // 2. Sync Inventory Handle (if a DIFFERENT item is brought in)
+          // (Note: Case (a) might reuse itemId, Case (b) always brings in new)
+          const isExistingInProposal =
+            targetProposal.inventoryItemIds.includes(itemId);
+          if (!isExistingInProposal) {
             const currentItemHandle =
               nextState.inventory.idToItem[itemId]?.handle || "";
             const inventoryAction = update_field({

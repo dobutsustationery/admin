@@ -212,8 +212,13 @@
 
   // Add Variant State
   let newVariantJan = "";
-  $: if (associatedItems.length > 0 && !newVariantJan) {
-    newVariantJan = associatedItems[0].janCode;
+  let lastDefaultJan = "";
+  $: {
+    const defaultJan = associatedItems[0]?.janCode || "";
+    if (defaultJan !== lastDefaultJan) {
+      newVariantJan = defaultJan;
+      lastDefaultJan = defaultJan;
+    }
   }
 
   function handleAddVariant() {

@@ -455,6 +455,159 @@ describe("Listing Creation - Variants & Merging", () => {
       expect(inventoryState.idToItem["item_a"].handle).toBe("handle-a");
     });
 
+    it("should prefer bringing in a new item over splitting existing when JAN matches", () => {
+      const store = configureStore({ reducer: rootReducer });
+      const jan = "jan_match";
+      const variantId = "new-v-id";
+
+      // 1. Setup inventory with one listed and one unlisted item of same JAN
+      store.dispatch(
+        bulk_import_items({
+          items: [
+            {
+              type: "new",
+              id: "item_listed",
+              item: {
+                janCode: jan,
+                handle: "handle-a",
+                qty: 5,
+                description: "A",
+                hsCode: "1",
+                pieces: 1,
+                shipped: 0,
+                subtype: "Default",
+                image: "",
+                creationDate: "",
+                timestamp: 0,
+              },
+            },
+            {
+              type: "new",
+              id: "item_unlisted",
+              item: {
+                janCode: jan,
+                qty: 10,
+                description: "B",
+                hsCode: "2",
+                pieces: 1,
+                shipped: 0,
+                subtype: "New Stock",
+                image: "",
+                creationDate: "",
+                timestamp: 0,
+              },
+            },
+          ],
+        }),
+      );
+
+      // 2. Setup proposal for the already listed item
+      store.dispatch(
+        add_proposals_internal([
+          {
+            janCode: jan,
+            inventoryItemIds: ["item_listed"],
+            photoGroupIds: [jan],
+            title: "Product A",
+            handle: "handle-a",
+            variants: [
+              { id: "v-1", itemId: "item_listed", option1Value: "Old", qty: 5 },
+            ],
+            status: "draft",
+            bodyHtml: "",
+            productCategory: "",
+            vendor: "",
+            tags: [],
+            option1Name: "Subtype",
+          },
+        ]),
+      );
+
+      // 3. Request adding variant with same JAN
+      store.dispatch(
+        add_variant_requested({ targetJan: jan, janCode: jan, variantId }),
+      );
+
+      const creationState = store.getState().listingCreation;
+      const inventoryState = store.getState().inventory;
+
+      // SHOULD HAVE BROUGHT IN item_unlisted INSTEAD OF SPLITTING item_listed
+      expect(creationState.proposals[jan].variants.length).toBe(2);
+      expect(creationState.proposals[jan].variants[1].itemId).toBe(
+        "item_unlisted",
+      );
+      expect(inventoryState.idToItem["item_unlisted"].handle).toBe("handle-a");
+    });
+
+    it("should allow splitting from a non-primary JAN that was previously merged in", () => {
+      const store = configureStore({ reducer: rootReducer });
+      const janA = "jan_a";
+      const janB = "jan_b";
+      const vId3 = "split-v-id";
+
+      // 1. Setup proposal with two items from different JANs
+      store.dispatch(
+        add_proposals_internal([
+          {
+            janCode: janA,
+            inventoryItemIds: ["item_a", "item_b"],
+            photoGroupIds: [janA, janB],
+            title: "Merged Product",
+            handle: "merged",
+            variants: [
+              { id: "v-a", itemId: "item_a", option1Value: "A", qty: 5 },
+              { id: "v-b", itemId: "item_b", option1Value: "B", qty: 5 },
+            ],
+            status: "draft",
+            bodyHtml: "",
+            productCategory: "",
+            vendor: "",
+            tags: [],
+            option1Name: "Subtype",
+          },
+        ]),
+      );
+
+      // 2. Ensure item_b record exists in inventory
+      store.dispatch(
+        bulk_import_items({
+          items: [
+            {
+              type: "new",
+              id: "item_b",
+              item: {
+                janCode: janB,
+                qty: 5,
+                description: "B",
+                hsCode: "123",
+                shipped: 0,
+                pieces: 1,
+                subtype: "B",
+                image: "",
+                creationDate: "",
+                timestamp: 0,
+              },
+            },
+          ],
+        }),
+      );
+
+      // 3. Request adding variant with janB (which is in variants but NOT the primary janA)
+      // Since no other janB items are in inventory, it should SPLIT from item_b.
+      store.dispatch(
+        add_variant_requested({
+          targetJan: janA,
+          janCode: janB,
+          variantId: vId3,
+        }),
+      );
+
+      const creationState = store.getState().listingCreation;
+      expect(creationState.proposals[janA].variants.length).toBe(3);
+      expect(creationState.proposals[janA].variants[2].itemId).toBe("item_b");
+      expect(creationState.proposals[janA].variants[2].id).toBe(vId3);
+    });
+
     it("should result in identical state when replaying intent actions from scratch", () => {
       const createStore = () =>
         configureStore({
