@@ -26,6 +26,8 @@
     remove_proposal,
     complete_batch,
     reorder_variants,
+    add_variant_requested,
+    remove_variant_requested,
   } from "$lib/listing-creation-slice";
   import { update_field } from "$lib/inventory";
   import { uncategorize_photo } from "$lib/photos-slice";
@@ -1490,7 +1492,68 @@
     imagePickerTargetJan = null;
   }
 
-  function handleDrop() {
+  function handleAddVariant(e: CustomEvent<{ janCode: string }>) {
+    const variantJan = e.detail.janCode;
+
+    if (mode === "create" && janCode) {
+      const variantId = `${variantJan}:New:${crypto.randomUUID().slice(0, 8)}`;
+      dispatchBroadcast(
+        add_variant_requested({
+          targetJan: janCode,
+          janCode: variantJan,
+          variantId,
+        }),
+      );
+    } else if (mode === "live" && handle) {
+      // In live mode, adding a variant means finding an item by JAN and setting its handle.
+      const inventory = $store.inventory.idToItem;
+      const itemId = Object.keys(inventory).find((id) => {
+        const item = inventory[id];
+        return item.janCode === variantJan && !item.handle;
+      });
+
+      if (itemId) {
+        dispatchBroadcast(
+          update_field({
+            id: itemId,
+            field: "handle",
+            from: "",
+            to: handle,
+          }),
+        );
+      } else {
+        alert(`No unlisted inventory found for JAN: ${variantJan}`);
+      }
+    }
+  }
+
+  function handleRemoveVariant(
+    e: CustomEvent<{ id: string; janCode: string }>,
+  ) {
+    const { id } = e.detail;
+
+    if (
+      confirm("Are you sure you want to remove this variant from this listing?")
+    ) {
+      if (mode === "create" && janCode) {
+        dispatchBroadcast(remove_variant_requested({ janCode, variantId: id }));
+      } else if (mode === "live" && handle) {
+        const item = $store.inventory.idToItem[id];
+        if (item) {
+          dispatchBroadcast(
+            update_field({
+              id,
+              field: "handle",
+              from: item.handle || "",
+              to: "",
+            }),
+          );
+        }
+      }
+    }
+  }
+
+  function handleRemoveProposal() {
     if (mode !== "create" || !janCode) return;
     const stateBefore = store.getState().listingCreation;
     const currentIndex = stateBefore.activeBatchJans.indexOf(janCode);
@@ -1844,7 +1907,9 @@
       on:reorderSubtypes={handleReorderSubtypes}
       on:addImage={openImagePicker}
       on:approve={handleApprove}
-      on:drop={handleDrop}
+      on:drop={handleRemoveProposal}
+      on:addVariant={handleAddVariant}
+      on:removeVariant={handleRemoveVariant}
     />
 
     <!-- Batch Navigation Footer -->

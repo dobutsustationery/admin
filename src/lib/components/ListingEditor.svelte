@@ -210,6 +210,19 @@
     return galleryImages.length > 0 ? galleryImages[0] : null;
   })();
 
+  // Add Variant State
+  let newVariantJan = "";
+  $: if (associatedItems.length > 0 && !newVariantJan) {
+    newVariantJan = associatedItems[0].janCode;
+  }
+
+  function handleAddVariant() {
+    if (!newVariantJan.trim()) return;
+    dispatch("addVariant", { janCode: newVariantJan.trim() });
+    // Keep it set to the same JAN for convenience? Or clear?
+    // prompt says "should default to same JAN code as first variant".
+  }
+
   // Interaction Handlers
   function handleSubtypeSelect(id: string) {
     hoveredImage = null;
@@ -542,6 +555,19 @@
                 : null) ||
               (item.image ? { url: item.image } : null)}
             <div class="subtype-row">
+              {#if !readOnly}
+                <button
+                  class="variant-remove-btn"
+                  on:click={() =>
+                    dispatch("removeVariant", {
+                      id: item.variantId || item.id,
+                      janCode: item.janCode,
+                    })}
+                  title="Remove Variant"
+                >
+                  ✕
+                </button>
+              {/if}
               <span
                 class="subtype-label {!readOnly ? 'editable' : ''}"
                 contenteditable={!readOnly}
@@ -630,6 +656,21 @@
               {/if}
             </div>
           {/each}
+
+          {#if !readOnly}
+            <div class="add-variant-row">
+              <input
+                type="text"
+                class="add-variant-input"
+                placeholder="Enter JAN for new variant..."
+                bind:value={newVariantJan}
+                on:keydown={(e) => e.key === "Enter" && handleAddVariant()}
+              />
+              <button class="add-variant-btn" on:click={handleAddVariant}>
+                + Add Variant
+              </button>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -1509,5 +1550,59 @@
   .category-add-btn:hover {
     background: #f3f4f6;
     color: #111827;
+  }
+
+  .variant-remove-btn {
+    color: #9ca3af;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+  }
+  .variant-remove-btn:hover {
+    color: #ef4444;
+  }
+
+  .add-variant-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding-left: 1.5rem; /* Offset for remove btn */
+  }
+
+  .add-variant-input {
+    flex: 1;
+    max-width: 250px;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+  .add-variant-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+
+  .add-variant-btn {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    padding: 0.4rem 1rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .add-variant-btn:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
   }
 </style>

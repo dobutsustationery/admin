@@ -914,6 +914,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       "listingCreation/set_variant_photo_group",
       "listingCreation/split_variant",
       "listingCreation/move_variant",
+      "listingCreation/add_variant",
+      "listingCreation/add_variant_requested",
+      "listingCreation/remove_variant",
+      "listingCreation/remove_variant_requested",
       "listingCreation/merge_proposal",
       "listingCreation/merge_proposals",
       "listingCreation/reorder_variants",
@@ -972,6 +976,124 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           ),
         };
         logger(mergeAction, nextState, action._timestamp);
+      }
+    }
+
+    // Add Variant Intent Handler
+    if (action.type === "listingCreation/add_variant_requested") {
+      const { targetJan, janCode, variantId } = action.payload;
+      const targetProposal = nextState.listingCreation.proposals[targetJan];
+      if (targetProposal) {
+        const targetHandle =
+          targetProposal.handle ||
+          generateHandle(targetProposal.title, targetProposal.janCode);
+
+        let itemId = "";
+        let subtype = "New Variant";
+        let qty = 0;
+
+        if (janCode === targetJan) {
+          // Case (a): Same JAN -> Split from first existing variant's item
+          const firstVariant = targetProposal.variants[0];
+          itemId = firstVariant?.itemId || "";
+        } else {
+          // Case (b): New JAN -> Find unlisted inventory
+          const invItem = Object.entries(nextState.inventory.idToItem).find(
+            ([id, item]: [string, any]) =>
+              item.janCode === janCode && !item.handle,
+          );
+          if (invItem) {
+            itemId = invItem[0];
+            subtype = invItem[1].subtype || "Default";
+            qty = invItem[1].qty || 0;
+          }
+        }
+
+        if (itemId) {
+          // 1. Apply Draft Change (Slice Reducer)
+          const sliceAction = {
+            type: "listingCreation/add_variant",
+            payload: { targetJan, janCode, itemId, subtype, qty, variantId },
+            _ephemeral: true,
+            timestamp: action.timestamp || action._timestamp,
+          };
+          nextState = {
+            ...nextState,
+            listingCreation: listingCreation(
+              nextState.listingCreation,
+              sliceAction,
+            ),
+          };
+          logger(sliceAction, nextState, action._timestamp);
+
+          // 2. Sync Inventory Handle (if new JAN)
+          if (janCode !== targetJan) {
+            const currentItemHandle =
+              nextState.inventory.idToItem[itemId]?.handle || "";
+            const inventoryAction = update_field({
+              id: itemId,
+              field: "handle",
+              from: currentItemHandle,
+              to: targetHandle,
+            });
+            nextState = {
+              ...nextState,
+              inventory: inventory(nextState.inventory, inventoryAction),
+            };
+            logger(inventoryAction, nextState, action._timestamp);
+          }
+        }
+      }
+    }
+
+    // Remove Variant Intent Handler
+    if (action.type === "listingCreation/remove_variant_requested") {
+      const { janCode, variantId } = action.payload;
+      const proposal = state.listingCreation.proposals[janCode];
+      if (proposal) {
+        const variant = proposal.variants.find((v: any) => v.id === variantId);
+        if (variant) {
+          const itemId = variant.itemId;
+
+          // 1. Apply Draft Change (Slice Reducer)
+          const sliceAction = {
+            type: "listingCreation/remove_variant",
+            payload: { janCode, variantId },
+            _ephemeral: true,
+            timestamp: action.timestamp || action._timestamp,
+          };
+          nextState = {
+            ...nextState,
+            listingCreation: listingCreation(
+              nextState.listingCreation,
+              sliceAction,
+            ),
+          };
+          logger(sliceAction, nextState, action._timestamp);
+
+          // 2. Clear Inventory Handle if no longer used in this proposal
+          const stillUsed = nextState.listingCreation.proposals[
+            janCode
+          ]?.variants.some((v: any) => v.itemId === itemId);
+
+          if (!stillUsed) {
+            const currentItemHandle =
+              nextState.inventory.idToItem[itemId]?.handle || "";
+            if (currentItemHandle) {
+              const inventoryAction = update_field({
+                id: itemId,
+                field: "handle",
+                from: currentItemHandle,
+                to: "",
+              });
+              nextState = {
+                ...nextState,
+                inventory: inventory(nextState.inventory, inventoryAction),
+              };
+              logger(inventoryAction, nextState, action._timestamp);
+            }
+          }
+        }
       }
     }
   }

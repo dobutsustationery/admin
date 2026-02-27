@@ -304,6 +304,24 @@ const listingCreationSlice = createSlice({
       proposal.variants = newVariants;
     },
 
+    // Intent Actions (handled by RootReducer)
+    add_variant_requested: (
+      state,
+      action: PayloadAction<{
+        targetJan: string;
+        janCode: string;
+        variantId: string;
+      }>,
+    ) => {
+      // No-op in slice, logic in RootReducer
+    },
+    remove_variant_requested: (
+      state,
+      action: PayloadAction<{ janCode: string; variantId: string }>,
+    ) => {
+      // No-op in slice, logic in RootReducer
+    },
+
     // Editing
     update_proposal_field: (
       state,
@@ -460,6 +478,70 @@ const listingCreationSlice = createSlice({
         }
       }
     },
+    add_variant: (
+      state,
+      action: PayloadAction<{
+        targetJan: string;
+        janCode: string;
+        itemId: string;
+        subtype: string;
+        qty: number;
+        variantId: string;
+      }>,
+    ) => {
+      const { targetJan, janCode, itemId, subtype, qty, variantId } =
+        action.payload;
+      const proposal = state.proposals[targetJan];
+      if (!proposal) return;
+
+      const newVariant = {
+        id: variantId,
+        itemId,
+        option1Value: subtype,
+        qty,
+      };
+
+      proposal.variants.push(newVariant);
+      if (!proposal.inventoryItemIds.includes(itemId)) {
+        proposal.inventoryItemIds.push(itemId);
+      }
+      if (janCode !== targetJan && !proposal.photoGroupIds.includes(janCode)) {
+        proposal.photoGroupIds.push(janCode);
+      }
+    },
+    remove_variant: (
+      state,
+      action: PayloadAction<{ janCode: string; variantId: string }>,
+    ) => {
+      const { janCode, variantId } = action.payload;
+      const proposal = state.proposals[janCode];
+      if (!proposal) return;
+
+      const vIdx = proposal.variants.findIndex((v) => v.id === variantId);
+      if (vIdx === -1) return;
+
+      const itemId = proposal.variants[vIdx].itemId;
+      proposal.variants.splice(vIdx, 1);
+
+      // Only remove itemId if no other variant uses it
+      const stillUsesItem = proposal.variants.some((v) => v.itemId === itemId);
+      if (!stillUsesItem) {
+        proposal.inventoryItemIds = proposal.inventoryItemIds.filter(
+          (id) => id !== itemId,
+        );
+      }
+
+      // If no variants left, remove proposal
+      if (proposal.variants.length === 0) {
+        delete state.proposals[janCode];
+        state.activeBatchJans = state.activeBatchJans.filter(
+          (j) => j !== janCode,
+        );
+        state.originalBatchJans = state.originalBatchJans.filter(
+          (j) => j !== janCode,
+        );
+      }
+    },
     split_variant: (
       state,
       action: PayloadAction<{
@@ -596,9 +678,6 @@ const listingCreationSlice = createSlice({
       // Cleanup Source
       delete state.proposals[sourceJan];
       state.activeBatchJans = state.activeBatchJans.filter(
-        (j) => j !== sourceJan,
-      );
-      state.originalBatchJans = state.originalBatchJans.filter(
         (j) => j !== sourceJan,
       );
       state.originalBatchJans = state.originalBatchJans.filter(
@@ -750,6 +829,10 @@ export const {
   update_variant_qty,
   update_variant_image,
   set_variant_photo_group,
+  add_variant,
+  add_variant_requested,
+  remove_variant,
+  remove_variant_requested,
   split_variant,
   reorder_variants,
   move_variant,
