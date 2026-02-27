@@ -291,8 +291,8 @@ describe("Listing Creation - Variants & Merging", () => {
         "item_b",
       );
 
-      // Inventory item should now have the handle linked
-      expect(inventoryState.idToItem["item_b"].handle).toBe("handle-a");
+      // Inventory item should NOT have the handle linked yet (it is still a draft)
+      expect(inventoryState.idToItem["item_b"].handle).toBeFalsy();
     });
 
     it("should allow 'stealing' a variant from another listing", () => {
@@ -360,11 +360,11 @@ describe("Listing Creation - Variants & Merging", () => {
       expect(creationState.proposals[janA].variants.length).toBe(2);
       expect(creationState.proposals[janA].variants[1].itemId).toBe("item_b");
 
-      // Inventory item should now have the handle linked to target
-      expect(inventoryState.idToItem["item_b"].handle).toBe("handle-a");
+      // Inventory item should STILL HAVE THE OLD HANDLE (transfer happens on approve)
+      expect(inventoryState.idToItem["item_b"].handle).toBe("other-handle");
     });
 
-    it("should remove a variant and clear inventory handle if no longer used", () => {
+    it("should remove a variant and NOT clear inventory handle in draft mode", () => {
       const store = configureStore({ reducer: rootReducer });
       const janA = "jan_a";
       const janB = "jan_b";
@@ -449,10 +449,8 @@ describe("Listing Creation - Variants & Merging", () => {
         "item_b",
       );
 
-      // Inventory item B should have its handle cleared
-      expect(inventoryState.idToItem["item_b"].handle).toBe("");
-      // Inventory item A should still have its handle
-      expect(inventoryState.idToItem["item_a"].handle).toBe("handle-a");
+      // Inventory item B should STILL have its handle (we don't mutate live data in drafts)
+      expect(inventoryState.idToItem["item_b"].handle).toBe("handle-a");
     });
 
     it("should prefer bringing in a new item over splitting existing when JAN matches", () => {
@@ -536,7 +534,8 @@ describe("Listing Creation - Variants & Merging", () => {
       expect(creationState.proposals[jan].variants[1].itemId).toBe(
         "item_unlisted",
       );
-      expect(inventoryState.idToItem["item_unlisted"].handle).toBe("handle-a");
+      // NOTE: In draft mode, inventory handle is NOT synced yet.
+      expect(inventoryState.idToItem["item_unlisted"].handle).toBeFalsy();
     });
 
     it("should allow splitting from a non-primary JAN that was previously merged in", () => {
@@ -746,10 +745,13 @@ describe("Listing Creation - Variants & Merging", () => {
       expect(stateA.listingCreation.proposals[janA].title).toBe("New Title");
       expect(stateA.listingCreation.proposals[janA].variants.length).toBe(1);
       expect(stateA.listingCreation.proposals[janA].variants[0].id).toBe(vId2);
-      expect(stateA.inventory.idToItem["item_a"].handle).toBeFalsy();
-      expect(stateA.inventory.idToItem["item_b"].handle).toBe(
+
+      // NOTE: item_a was in proposal, then removed. Handle should still be its starting value.
+      expect(stateA.inventory.idToItem["item_a"].handle).toBe(
         "product-a-jan_a",
       );
+      // NOTE: item_b was added to proposal. Handle should NOT be synced yet in draft mode.
+      expect(stateA.inventory.idToItem["item_b"].handle).toBeFalsy();
     });
   });
 });

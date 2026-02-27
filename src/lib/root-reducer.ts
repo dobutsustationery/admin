@@ -1002,25 +1002,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           };
           logger(sliceAction, nextState, action._timestamp);
 
-          // 2. Sync Inventory Handle (if a DIFFERENT item is brought in)
-          // (Note: Case (a) might reuse itemId, Case (b) always brings in new)
-          const isExistingInProposal =
-            targetProposal.inventoryItemIds.includes(itemId);
-          if (!isExistingInProposal) {
-            const currentItemHandle =
-              nextState.inventory.idToItem[itemId]?.handle || "";
-            const inventoryAction = update_field({
-              id: itemId,
-              field: "handle",
-              from: currentItemHandle,
-              to: targetHandle,
-            });
-            nextState = {
-              ...nextState,
-              inventory: inventory(nextState.inventory, inventoryAction),
-            };
-            logger(inventoryAction, nextState, action._timestamp);
-          }
+          // NOTE: We DO NOT sync inventory handle here.
+          // It will be synced during approve_proposal or if explicitly updated in live mode.
         }
       }
     }
@@ -1032,8 +1015,6 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       if (proposal) {
         const variant = proposal.variants.find((v: any) => v.id === variantId);
         if (variant) {
-          const itemId = variant.itemId;
-
           // 1. Apply Draft Change (Slice Reducer)
           const sliceAction = {
             type: "listingCreation/remove_variant",
@@ -1050,28 +1031,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           };
           logger(sliceAction, nextState, action._timestamp);
 
-          // 2. Clear Inventory Handle if no longer used in this proposal
-          const stillUsed = nextState.listingCreation.proposals[
-            janCode
-          ]?.variants.some((v: any) => v.itemId === itemId);
-
-          if (!stillUsed) {
-            const currentItemHandle =
-              nextState.inventory.idToItem[itemId]?.handle || "";
-            if (currentItemHandle) {
-              const inventoryAction = update_field({
-                id: itemId,
-                field: "handle",
-                from: currentItemHandle,
-                to: "",
-              });
-              nextState = {
-                ...nextState,
-                inventory: inventory(nextState.inventory, inventoryAction),
-              };
-              logger(inventoryAction, nextState, action._timestamp);
-            }
-          }
+          // NOTE: We DO NOT clear inventory handle here.
+          // Draft items are un-linked automatically upon approval or cleanup.
         }
       }
     }
