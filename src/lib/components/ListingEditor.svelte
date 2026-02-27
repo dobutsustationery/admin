@@ -227,8 +227,6 @@
   function handleAddVariant() {
     if (!newVariantJan.trim()) return;
     dispatch("addVariant", { janCode: newVariantJan.trim() });
-    // Keep it set to the same JAN for convenience? Or clear?
-    // prompt says "should default to same JAN code as first variant".
   }
 
   // Interaction Handlers
@@ -664,21 +662,21 @@
               {/if}
             </div>
           {/each}
+        </div>
+      {/if}
 
-          {#if !readOnly}
-            <div class="add-variant-row">
-              <input
-                type="text"
-                class="add-variant-input"
-                placeholder="Enter JAN for new variant..."
-                bind:value={newVariantJan}
-                on:keydown={(e) => e.key === "Enter" && handleAddVariant()}
-              />
-              <button class="add-variant-btn" on:click={handleAddVariant}>
-                + Add Variant
-              </button>
-            </div>
-          {/if}
+      {#if !readOnly}
+        <div class="add-variant-row">
+          <input
+            type="text"
+            class="add-variant-input"
+            placeholder="Enter JAN for new variant..."
+            bind:value={newVariantJan}
+            on:keydown={(e) => e.key === "Enter" && handleAddVariant()}
+          />
+          <button class="add-variant-btn" on:click={handleAddVariant}>
+            + Add Variant
+          </button>
         </div>
       {/if}
     </div>

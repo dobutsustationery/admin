@@ -49,6 +49,7 @@
   import { buildDraftListingImages } from "$lib/listing-image-logic";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import ListingEditor from "$lib/components/ListingEditor.svelte";
+  import ListingVariantModal from "$lib/components/ListingVariantModal.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
   import type { ShopifySyncRequestView } from "$lib/shopify-sync-model";
@@ -63,6 +64,15 @@
     $page.url.searchParams.get("janCode") || $page.url.searchParams.get("jan");
   $: handle = $page.url.searchParams.get("handle");
   $: isLiveMode = mode === "live" || (!!handle && mode !== "create");
+  $: proposal = janCode ? $store.listingCreation.proposals[janCode] : null;
+  $: readOnly = !isLiveMode && proposal?.status === "approved";
+
+  // Variant Modal State
+  let showVariantModal = false;
+  let variantModalMode: "add" | "split" | "remove" = "add";
+  let variantModalJan = "";
+  let variantModalSourceItem: any = null;
+  let variantModalOtherVariants: any[] = [];
 
   // Batch Navigation State
   $: activeBatchJans = $store.listingCreation.activeBatchJans || [];
@@ -1521,93 +1531,163 @@
 
   function handleAddVariant(e: CustomEvent<{ janCode: string }>) {
     const variantJan = e.detail.janCode;
-    console.log(
-      `[ListingDetail] Adding variant for JAN: ${variantJan} (Mode: ${mode})`,
-    );
+
+    const inventory = $store.inventory.idToItem;
+
+    // 1. Check for items ALREADY on this listing (Case A - split)
+    let existingOnListingId = "";
+    if (mode === "create" && janCode) {
+      const proposal = $store.listingCreation.proposals[janCode];
+      existingOnListingId =
+        proposal?.inventoryItemIds.find((id: string) => {
+          const item = inventory[id];
+          return item?.janCode === variantJan;
+        }) || "";
+    } else if (mode === "live" && handle) {
+      existingOnListingId =
+        Object.keys(inventory).find((id) => {
+          const item = inventory[id];
+          return item.janCode === variantJan && item.handle === handle;
+        }) || "";
+    }
+
+    if (existingOnListingId) {
+      variantModalMode = "split";
+      variantModalJan = variantJan;
+      variantModalSourceItem = {
+        ...inventory[existingOnListingId],
+        id: existingOnListingId,
+      };
+      showVariantModal = true;
+      return;
+    }
+
+    // 2. Check for suitable inventory elsewhere (Case B - add/steal)
+    const listedItemId = Object.keys(inventory).find((id) => {
+      const item = inventory[id];
+      // Match JAN and not already in this listing/proposal
+      if (item.janCode !== variantJan) return false;
+      if (mode === "create" && janCode) {
+        const proposal = $store.listingCreation.proposals[janCode];
+        return !proposal?.inventoryItemIds.includes(id);
+      } else {
+        return item.handle !== handle;
+      }
+    });
+
+    if (listedItemId) {
+      variantModalMode = "add";
+      variantModalJan = variantJan;
+      variantModalSourceItem = {
+        ...inventory[listedItemId],
+        id: listedItemId,
+      };
+      showVariantModal = true;
+      return;
+    }
+
+    alert(`No inventory found for JAN: ${variantJan}`);
+  }
+
+  function onConfirmAddVariant(e: CustomEvent<any>) {
+    const { itemId, subtype, qty } = e.detail;
+    showVariantModal = false;
 
     if (mode === "create" && janCode) {
-      const variantId = `${variantJan}:New:${crypto.randomUUID().slice(0, 8)}`;
+      const variantId = `${variantModalJan}:${subtype}:${crypto.randomUUID().slice(0, 8)}`;
       dispatchBroadcast(
         add_variant_requested({
           targetJan: janCode,
-          janCode: variantJan,
+          janCode: variantModalJan,
+          variantId,
+          subtype,
+          qty,
+        }),
+      );
+    } else if (mode === "live" && handle) {
+      const item = $store.inventory.idToItem[itemId];
+      if (!item) return;
+
+      const fromHandle = item.handle || "";
+      // 1. Sync Handle
+      dispatchBroadcast(
+        update_field({
+          id: itemId,
+          field: "handle",
+          from: fromHandle,
+          to: handle,
+        }),
+      );
+      // 2. Sync Subtype
+      if (subtype && subtype !== item.subtype) {
+        dispatchBroadcast(
+          update_field({
+            id: itemId,
+            field: "subtype",
+            from: item.subtype || "",
+            to: subtype,
+          }),
+        );
+      }
+      // 3. Sync Qty
+      if (typeof qty === "number" && qty !== item.qty) {
+        dispatchBroadcast(
+          update_field({
+            id: itemId,
+            field: "qty",
+            from: item.qty,
+            to: qty,
+          }),
+        );
+      }
+    }
+  }
+
+  function onConfirmSplitVariant(e: CustomEvent<any>) {
+    const { sourceId, sourceSubtype, sourceQty, newSubtype, newQty } = e.detail;
+    showVariantModal = false;
+
+    if (mode === "create" && janCode) {
+      const variantId = `${variantModalJan}:${newSubtype}:${crypto.randomUUID().slice(0, 8)}`;
+      dispatchBroadcast(
+        add_variant_requested({
+          targetJan: janCode,
+          janCode: variantModalJan,
           variantId,
         }),
       );
     } else if (mode === "live" && handle) {
-      const inventory = $store.inventory.idToItem;
+      const newId = makeInventoryItemKey(variantModalJan, newSubtype);
 
-      // 1. Check for unlisted items first (Case B in prompt - new JAN)
-      const unlistedItemId = Object.keys(inventory).find((id) => {
-        const item = inventory[id];
-        return item.janCode === variantJan && !item.handle;
-      });
+      // 1. Perform Split
+      dispatchBroadcast(
+        split_inventory_item({
+          sourceId: sourceId as any,
+          splits: [{ newId: newId as any, qty: newQty, subtype: newSubtype }],
+        }),
+      );
 
-      if (unlistedItemId) {
-        console.log(
-          `[ListingDetail] Found unlisted item: ${unlistedItemId}. Linking to handle ${handle}`,
-        );
+      // 2. Update Source Subtype if changed
+      const item = $store.inventory.idToItem[sourceId];
+      if (item && sourceSubtype !== item.subtype) {
         dispatchBroadcast(
           update_field({
-            id: unlistedItemId,
-            field: "handle",
-            from: "",
-            to: handle,
+            id: sourceId,
+            field: "subtype",
+            from: item.subtype || "",
+            to: sourceSubtype,
           }),
         );
-        return;
       }
 
-      // 2. Check for items ALREADY on this listing (Case A in prompt - same JAN split)
-      const existingOnListingId = Object.keys(inventory).find((id) => {
-        const item = inventory[id];
-        return item.janCode === variantJan && item.handle === handle;
-      });
-
-      if (existingOnListingId) {
-        console.log(
-          `[ListingDetail] Found existing item on listing: ${existingOnListingId}. Performing immediate split.`,
-        );
-        const vId = crypto.randomUUID().slice(0, 8);
-        const newId = makeInventoryItemKey(variantJan, `New-${vId}`);
-
-        dispatchBroadcast(
-          split_inventory_item({
-            sourceId: existingOnListingId as any,
-            splits: [
-              { newId: newId as any, qty: 0, subtype: `New Variant ${vId}` },
-            ],
-          }),
-        );
-        return;
-      }
-
-      // 3. Check for items listed elsewhere (Steal workflow)
-      const listedElsewhereId = Object.keys(inventory).find((id) => {
-        const item = inventory[id];
-        return item.janCode === variantJan;
-      });
-
-      if (listedElsewhereId) {
-        const item = inventory[listedElsewhereId];
-        const fromHandle = item.handle || "";
-        const confirmMsg = `Item ${listedElsewhereId} currently belongs to listing '${fromHandle}'. Moving it to '${handle}' will un-list it from its current home. Continue?`;
-
-        if (confirm(confirmMsg)) {
-          dispatchBroadcast(
-            update_field({
-              id: listedElsewhereId,
-              field: "handle",
-              from: fromHandle,
-              to: handle,
-            }),
-          );
-        }
-        return;
-      }
-
-      alert(
-        `No suitable inventory found for JAN: ${variantJan} anywhere in the system.`,
+      // 3. Ensure Handle is set on NEW item
+      dispatchBroadcast(
+        update_field({
+          id: newId,
+          field: "handle",
+          from: "",
+          to: handle,
+        }),
       );
     }
   }
@@ -1615,25 +1695,73 @@
   function handleRemoveVariant(
     e: CustomEvent<{ id: string; janCode: string }>,
   ) {
+    if (readOnly) return;
     const { id } = e.detail;
+    const item = $store.inventory.idToItem[id];
+    if (!item) return;
 
-    if (
-      confirm("Are you sure you want to remove this variant from this listing?")
-    ) {
-      if (mode === "create" && janCode) {
+    if (mode === "create" && janCode) {
+      if (
+        confirm(
+          "Are you sure you want to remove this variant from this listing?",
+        )
+      ) {
         dispatchBroadcast(remove_variant_requested({ janCode, variantId: id }));
-      } else if (mode === "live" && handle) {
-        const item = $store.inventory.idToItem[id];
-        if (item) {
+      }
+    } else if (mode === "live" && handle) {
+      // Live mode removal: Show modal to handle allocation
+      variantModalMode = "remove";
+      variantModalJan = item.janCode;
+      variantModalSourceItem = { ...item, id };
+      // Potential targets for quantity transfer
+      variantModalOtherVariants = associatedItems.filter((i) => i.id !== id);
+      showVariantModal = true;
+    }
+  }
+
+  function onConfirmRemoveVariant(e: CustomEvent<any>) {
+    const { sourceId, targetId, qty } = e.detail;
+    showVariantModal = false;
+
+    if (mode === "live" && handle) {
+      // 1. Transfer Quantity (if target selected)
+      if (targetId && qty > 0) {
+        const sourceItem = $store.inventory.idToItem[sourceId];
+        const targetItem = $store.inventory.idToItem[targetId];
+
+        if (sourceItem && targetItem) {
+          // Subtract from source
           dispatchBroadcast(
             update_field({
-              id,
-              field: "handle",
-              from: item.handle || "",
-              to: "",
+              id: sourceId,
+              field: "qty",
+              from: sourceItem.qty,
+              to: sourceItem.qty - qty,
+            }),
+          );
+          // Add to target
+          dispatchBroadcast(
+            update_field({
+              id: targetId,
+              field: "qty",
+              from: targetItem.qty,
+              to: targetItem.qty + qty,
             }),
           );
         }
+      }
+
+      // 2. Clear Handle on source item
+      const item = $store.inventory.idToItem[sourceId];
+      if (item) {
+        dispatchBroadcast(
+          update_field({
+            id: sourceId,
+            field: "handle",
+            from: item.handle || "",
+            to: "",
+          }),
+        );
       }
     }
   }
@@ -1973,7 +2101,7 @@
       {associatedItems}
       knownCategories={$store.listings.knownCategories || []}
       bind:selectedSubtypeId
-      readOnly={false}
+      {readOnly}
       isCreationMode={mode === "create"}
       {isGeneratingTitle}
       {isGeneratingDescription}
@@ -1995,6 +2123,18 @@
       on:drop={handleRemoveProposal}
       on:addVariant={handleAddVariant}
       on:removeVariant={handleRemoveVariant}
+    />
+
+    <ListingVariantModal
+      open={showVariantModal}
+      mode={variantModalMode}
+      janCode={variantModalJan}
+      sourceItem={variantModalSourceItem}
+      otherVariants={variantModalOtherVariants}
+      on:cancel={() => (showVariantModal = false)}
+      on:confirmAdd={onConfirmAddVariant}
+      on:confirmSplit={onConfirmSplitVariant}
+      on:confirmRemove={onConfirmRemoveVariant}
     />
 
     <!-- Batch Navigation Footer -->

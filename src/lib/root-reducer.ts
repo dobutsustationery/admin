@@ -944,7 +944,13 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
     // Add Variant Intent Handler
     if (action.type === "listingCreation/add_variant_requested") {
-      const { targetJan, janCode, variantId } = action.payload;
+      const {
+        targetJan,
+        janCode,
+        variantId,
+        subtype: reqSubtype,
+        qty: reqQty,
+      } = action.payload;
       const targetProposal = nextState.listingCreation.proposals[targetJan];
       if (targetProposal) {
         const targetHandle =
@@ -952,8 +958,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           generateHandle(targetProposal.title, targetProposal.janCode);
 
         let itemId = "";
-        let subtype = "New Variant";
-        let qty = 0;
+        let subtype = reqSubtype || "New Variant";
+        let qty = reqQty || 0;
 
         // 1. Try to find a NEW item with this JAN (prefer unlisted, then listed elsewhere)
         const invItem = Object.entries(nextState.inventory.idToItem).find(
@@ -965,8 +971,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
         if (invItem) {
           itemId = invItem[0];
-          subtype = invItem[1].subtype || "Default";
-          qty = invItem[1].qty || 0;
+          subtype = reqSubtype || invItem[1].subtype || "Default";
+          qty = reqQty !== undefined ? reqQty : invItem[1].qty || 0;
         } else {
           // 2. If no new item found, check if JAN is already present in proposal -> Split from existing
           const existingVariant = targetProposal.variants.find((v: any) => {
@@ -976,8 +982,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
           if (existingVariant) {
             itemId = existingVariant.itemId;
-            subtype = "New Variant";
-            qty = 0;
+            subtype = reqSubtype || "New Variant";
+            qty = reqQty || 0;
           } else if (janCode === targetJan) {
             // Fallback for primary JAN if somehow not in variants yet
             const firstVariant = targetProposal.variants[0];
