@@ -213,11 +213,14 @@
   // Add Variant State
   let newVariantJan = "";
   let lastDefaultJan = "";
+
   $: {
-    const defaultJan = associatedItems[0]?.janCode || "";
-    if (defaultJan !== lastDefaultJan) {
-      newVariantJan = defaultJan;
-      lastDefaultJan = defaultJan;
+    // Only auto-initialize if we haven't set a JAN yet,
+    // OR if the underlying associatedItems[0] JAN has changed (e.g. batch navigation)
+    const currentDefault = associatedItems[0]?.janCode || "";
+    if (currentDefault !== lastDefaultJan) {
+      newVariantJan = currentDefault;
+      lastDefaultJan = currentDefault;
     }
   }
 

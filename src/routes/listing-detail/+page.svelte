@@ -29,7 +29,8 @@
     add_variant_requested,
     remove_variant_requested,
   } from "$lib/listing-creation-slice";
-  import { update_field } from "$lib/inventory";
+  import { update_field, split_inventory_item } from "$lib/inventory";
+  import { makeInventoryItemKey } from "$lib/sku";
   import { uncategorize_photo } from "$lib/photos-slice";
   import { goto } from "$app/navigation";
   import { broadcast } from "$lib/redux-firestore";
@@ -1520,6 +1521,9 @@
 
   function handleAddVariant(e: CustomEvent<{ janCode: string }>) {
     const variantJan = e.detail.janCode;
+    console.log(
+      `[ListingDetail] Adding variant for JAN: ${variantJan} (Mode: ${mode})`,
+    );
 
     if (mode === "create" && janCode) {
       const variantId = `${variantJan}:New:${crypto.randomUUID().slice(0, 8)}`;
@@ -1531,34 +1535,80 @@
         }),
       );
     } else if (mode === "live" && handle) {
-      // In live mode, adding a variant means finding an item by JAN and setting its handle.
-      // We allow selecting items even if they have a handle (steal workflow).
       const inventory = $store.inventory.idToItem;
-      const itemId = Object.keys(inventory).find((id) => {
+
+      // 1. Check for unlisted items first (Case B in prompt - new JAN)
+      const unlistedItemId = Object.keys(inventory).find((id) => {
         const item = inventory[id];
-        return item.janCode === variantJan && item.handle !== handle;
+        return item.janCode === variantJan && !item.handle;
       });
 
-      if (itemId) {
-        const item = inventory[itemId];
-        const fromHandle = item.handle || "";
-        const confirmMsg = fromHandle
-          ? `Item ${itemId} currently belongs to listing '${fromHandle}'. Moving it to '${handle}' will un-list it from its current home. Continue?`
-          : null;
-
-        if (confirmMsg && !confirm(confirmMsg)) return;
-
+      if (unlistedItemId) {
+        console.log(
+          `[ListingDetail] Found unlisted item: ${unlistedItemId}. Linking to handle ${handle}`,
+        );
         dispatchBroadcast(
           update_field({
-            id: itemId,
+            id: unlistedItemId,
             field: "handle",
-            from: fromHandle,
+            from: "",
             to: handle,
           }),
         );
-      } else {
-        alert(`No suitable inventory found for JAN: ${variantJan}`);
+        return;
       }
+
+      // 2. Check for items ALREADY on this listing (Case A in prompt - same JAN split)
+      const existingOnListingId = Object.keys(inventory).find((id) => {
+        const item = inventory[id];
+        return item.janCode === variantJan && item.handle === handle;
+      });
+
+      if (existingOnListingId) {
+        console.log(
+          `[ListingDetail] Found existing item on listing: ${existingOnListingId}. Performing immediate split.`,
+        );
+        const vId = crypto.randomUUID().slice(0, 8);
+        const newId = makeInventoryItemKey(variantJan, `New-${vId}`);
+
+        dispatchBroadcast(
+          split_inventory_item({
+            sourceId: existingOnListingId as any,
+            splits: [
+              { newId: newId as any, qty: 0, subtype: `New Variant ${vId}` },
+            ],
+          }),
+        );
+        return;
+      }
+
+      // 3. Check for items listed elsewhere (Steal workflow)
+      const listedElsewhereId = Object.keys(inventory).find((id) => {
+        const item = inventory[id];
+        return item.janCode === variantJan;
+      });
+
+      if (listedElsewhereId) {
+        const item = inventory[listedElsewhereId];
+        const fromHandle = item.handle || "";
+        const confirmMsg = `Item ${listedElsewhereId} currently belongs to listing '${fromHandle}'. Moving it to '${handle}' will un-list it from its current home. Continue?`;
+
+        if (confirm(confirmMsg)) {
+          dispatchBroadcast(
+            update_field({
+              id: listedElsewhereId,
+              field: "handle",
+              from: fromHandle,
+              to: handle,
+            }),
+          );
+        }
+        return;
+      }
+
+      alert(
+        `No suitable inventory found for JAN: ${variantJan} anywhere in the system.`,
+      );
     }
   }
 
