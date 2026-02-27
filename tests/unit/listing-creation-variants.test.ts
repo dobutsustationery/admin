@@ -295,6 +295,75 @@ describe("Listing Creation - Variants & Merging", () => {
       expect(inventoryState.idToItem["item_b"].handle).toBe("handle-a");
     });
 
+    it("should allow 'stealing' a variant from another listing", () => {
+      const store = configureStore({ reducer: rootReducer });
+      const janA = "jan_a";
+      const janB = "jan_b";
+      const variantId = "steal-v-id";
+
+      // 1. Setup inventory for JAN B (already listed elsewhere)
+      store.dispatch(
+        bulk_import_items({
+          items: [
+            {
+              type: "new",
+              id: "item_b",
+              item: {
+                janCode: janB,
+                subtype: "Blue",
+                handle: "other-handle",
+                qty: 5,
+                description: "B",
+                hsCode: "123",
+                shipped: 0,
+                pieces: 1,
+                image: "",
+                creationDate: "",
+                timestamp: 0,
+              },
+            },
+          ],
+        }),
+      );
+
+      // 2. Setup proposal for JAN A
+      store.dispatch(
+        add_proposals_internal([
+          {
+            janCode: janA,
+            inventoryItemIds: ["item_a"],
+            photoGroupIds: [janA],
+            title: "Product A",
+            handle: "handle-a",
+            variants: [
+              { id: "v-a", itemId: "item_a", option1Value: "Red", qty: 10 },
+            ],
+            status: "draft",
+            bodyHtml: "",
+            productCategory: "",
+            vendor: "",
+            tags: [],
+            option1Name: "Subtype",
+          },
+        ]),
+      );
+
+      // 3. Request adding variant from JAN B (which is currently on 'other-handle')
+      store.dispatch(
+        add_variant_requested({ targetJan: janA, janCode: janB, variantId }),
+      );
+
+      const creationState = store.getState().listingCreation;
+      const inventoryState = store.getState().inventory;
+
+      // Proposal should have new variant
+      expect(creationState.proposals[janA].variants.length).toBe(2);
+      expect(creationState.proposals[janA].variants[1].itemId).toBe("item_b");
+
+      // Inventory item should now have the handle linked to target
+      expect(inventoryState.idToItem["item_b"].handle).toBe("handle-a");
+    });
+
     it("should remove a variant and clear inventory handle if no longer used", () => {
       const store = configureStore({ reducer: rootReducer });
       const janA = "jan_a";

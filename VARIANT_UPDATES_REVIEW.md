@@ -1,68 +1,49 @@
-# Variant Updates Review (Updated After `a46919e`)
+# Variant Updates Review (Updated After `43a8284`)
 
 ## Scope Reviewed
-- `src/lib/components/ListingEditor.svelte`
-- `src/lib/listing-creation-slice.ts`
 - `src/lib/root-reducer.ts`
 - `src/routes/listing-detail/+page.svelte`
 - `tests/unit/listing-creation-variants.test.ts`
 
 ## Validation Run
 - `npm run check`: pass (0 errors, 0 warnings)
-- `npm test -- tests/unit/listing-creation-variants.test.ts tests/unit/shopify-sync-core.test.ts`: pass
+- `npm test -- tests/unit/listing-creation-variants.test.ts`: pass
 
 ## Summary
-Most of the previously-blocking issues are fixed in `a46919e`:
-- thunk broadcasting replaced with serializable intent actions,
-- non-deterministic reducer UUID generation removed,
-- illegal `store.getState()` usage removed,
-- compile errors resolved,
-- targeted unit tests added.
+The new changes address the two prior recommendations:
+- Approval preflight now warns when approving a draft would move items from another listing (`handleApprove` collision warning).
+- Replay-equivalence coverage was added (`should result in identical state when replaying intent actions from scratch`).
 
-I found one remaining product-safety gap and one testing gap.
+I found one remaining behavior mismatch against your stated requirement.
 
-## Findings (ordered by severity)
+## Findings
 
-### 1) High: missing transfer warning when an item will be moved from another listing
-- `src/lib/root-reducer.ts:1001`
-- `src/routes/listing-detail/+page.svelte:1510`
+### 1) High: “steal from existing live listing” is still blocked during add-variant selection
+- `src/lib/root-reducer.ts:964`
+- `src/routes/listing-detail/+page.svelte:1512`
 
-Given the current data model (`inventory item -> single handle`), moving an item between listings is valid behavior, but the user should be warned before approval if a move will happen.
+Current selection logic for cross-JAN add only accepts items with no handle:
+- `item.janCode === janCode && !item.handle`
 
-Today there is no explicit user warning in the approval flow when an item already belongs to another listing (live or already-approved draft). The item is silently reassigned on approve.
+So items already attached to a live listing are not selectable for draft add, which prevents the intended “steal on approve with warning” workflow.
 
 Impact:
-- Users may accidentally remove inventory from an existing listing when approving a new draft.
-- Reassignment is technically correct for this model, but easy to do unintentionally without visibility.
+- Users cannot stage a transfer from an existing live listing into a new draft via add-variant.
+- The new approval warning works, but only for collisions that are already present in the draft; this specific entry path never creates those collisions.
 
 Recommendation:
-- Keep current “steal/transfer” behavior, but add a confirmation warning in `handleApprove` before dispatching approve.
-- Preflight check each proposal variant item against `inventory.idToItem[itemId].handle`:
-  - if handle is non-empty and different from the target handle, include it in warning list.
-- Warning text should explicitly name source handle and destination handle.
-- Proceed only on user confirmation.
+- In create mode intent handling, allow selecting inventory items where:
+  - `item.janCode === janCode`
+  - item is not already in the same target proposal
+  - item can have any `handle` (including another live listing)
+- Keep the new approval warning as the confirmation gate before the actual transfer.
 
-This satisfies your desired UX:
-- If two drafts share an item, warning appears when approving the second draft after the first has been approved (because the first approval sets the item handle).
-- If stealing from an existing live listing, warning appears at approval time and allows intentional transfer.
-
-### 2) Medium: no explicit replay-equivalence test for intent-action path
-- `tests/unit/listing-creation-variants.test.ts`
-
-The added tests validate add/remove behavior, but they do not assert replay equivalence (same final state when replaying the same action log from empty state).
-
-Recommendation:
-- Add a replay test that records dispatched broadcast actions (`*_requested`, `update_field`, etc.), replays them into a fresh store, and asserts deep state equality for:
-  - `listingCreation.proposals`,
-  - `inventory.idToItem` handles,
-  - variant IDs and ordering.
-
-## What Is Good Now
-- Intent-action architecture is a strong improvement for event sourcing.
-- Reducer-level add/remove operations are now deterministic with payload-provided `variantId`.
-- Root reducer now uses pre/post reducer state instead of external store access.
-- Tests cover merge plus add/remove intent flows.
+## What Looks Good
+- Intent actions remain serializable and replay-safe.
+- Deterministic variant IDs are still maintained (payload-provided).
+- Replay test now exists and passes.
+- Approval warning message correctly lists source handles and destination handle.
 
 ## Ship Recommendation
-- I recommend adding finding #1 before broad rollout, because it prevents accidental inventory transfer while preserving intended behavior.
-- After that, add replay-equivalence coverage to reduce regression risk.
+- Close the remaining selection constraint (finding #1) to fully match desired transfer behavior.
+- After that, this flow is aligned with the stated product rule.

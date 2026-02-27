@@ -1532,23 +1532,32 @@
       );
     } else if (mode === "live" && handle) {
       // In live mode, adding a variant means finding an item by JAN and setting its handle.
+      // We allow selecting items even if they have a handle (steal workflow).
       const inventory = $store.inventory.idToItem;
       const itemId = Object.keys(inventory).find((id) => {
         const item = inventory[id];
-        return item.janCode === variantJan && !item.handle;
+        return item.janCode === variantJan && item.handle !== handle;
       });
 
       if (itemId) {
+        const item = inventory[itemId];
+        const fromHandle = item.handle || "";
+        const confirmMsg = fromHandle
+          ? `Item ${itemId} currently belongs to listing '${fromHandle}'. Moving it to '${handle}' will un-list it from its current home. Continue?`
+          : null;
+
+        if (confirmMsg && !confirm(confirmMsg)) return;
+
         dispatchBroadcast(
           update_field({
             id: itemId,
             field: "handle",
-            from: "",
+            from: fromHandle,
             to: handle,
           }),
         );
       } else {
-        alert(`No unlisted inventory found for JAN: ${variantJan}`);
+        alert(`No suitable inventory found for JAN: ${variantJan}`);
       }
     }
   }

@@ -960,10 +960,14 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           const firstVariant = targetProposal.variants[0];
           itemId = firstVariant?.itemId || "";
         } else {
-          // Case (b): New JAN -> Find unlisted inventory
+          // Case (b): New JAN -> Find inventory
+          // We allow selecting items even if they have a handle (steal workflow).
+          // But we must NOT select an item that is already in the target proposal.
           const invItem = Object.entries(nextState.inventory.idToItem).find(
             ([id, item]: [string, any]) =>
-              item.janCode === janCode && !item.handle,
+              item.janCode === janCode &&
+              item.handle !== targetHandle &&
+              !targetProposal.inventoryItemIds.includes(id),
           );
           if (invItem) {
             itemId = invItem[0];
