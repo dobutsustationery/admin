@@ -1134,6 +1134,32 @@
   // Approval
   function handleApprove() {
     if (mode === "create" && janCode) {
+      // Preflight check for items that will be "stolen" from other listings
+      const proposal = $store.listingCreation.proposals[janCode];
+      if (proposal) {
+        const targetHandle =
+          proposal.handle || generateHandle(proposal.title, proposal.janCode);
+        const collisions: { itemId: string; currentHandle: string }[] = [];
+
+        proposal.variants.forEach((v: any) => {
+          const item = $store.inventory.idToItem[v.itemId];
+          if (item && item.handle && item.handle !== targetHandle) {
+            collisions.push({ itemId: v.itemId, currentHandle: item.handle });
+          }
+        });
+
+        if (collisions.length > 0) {
+          const warning =
+            `Warning: ${collisions.length} item(s) in this proposal currently belong to other listings:\n\n` +
+            collisions
+              .map((c) => `- Item ${c.itemId} belongs to '${c.currentHandle}'`)
+              .join("\n") +
+            `\n\nApproving will move these items to '${targetHandle}'. Continue?`;
+
+          if (!confirm(warning)) return;
+        }
+      }
+
       approve_proposal_thunk(janCode)(
         dispatchBroadcast,
         store.getState,

@@ -1,16 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll } from "vitest";
 import { configureStore } from "@reduxjs/toolkit";
+import { setAutoFreeze } from "immer";
 import { rootReducer } from "../../src/lib/root-reducer";
 import {
   set_proposal_handle_thunk,
   add_proposals_internal,
   add_variant_requested,
   remove_variant_requested,
+  update_proposal_field,
   type ListingProposal,
 } from "../../src/lib/listing-creation-slice";
-import { bulk_import_items } from "../../src/lib/inventory";
+import { bulk_import_items, update_field } from "../../src/lib/inventory";
 
 describe("Listing Creation - Variants & Merging", () => {
+  beforeAll(() => {
+    setAutoFreeze(false);
+  });
+
   it("should merge two proposals when their handles are set to the same value", () => {
     const store = configureStore({ reducer: rootReducer });
 
@@ -378,6 +384,150 @@ describe("Listing Creation - Variants & Merging", () => {
       expect(inventoryState.idToItem["item_b"].handle).toBe("");
       // Inventory item A should still have its handle
       expect(inventoryState.idToItem["item_a"].handle).toBe("handle-a");
+    });
+
+    it("should result in identical state when replaying intent actions from scratch", () => {
+      const createStore = () =>
+        configureStore({
+          reducer: rootReducer,
+          middleware: (getDefault) =>
+            getDefault({
+              immutableCheck: false,
+              serializableCheck: false,
+            }),
+        });
+      const storeA = createStore();
+      const storeB = createStore();
+
+      const janA = "jan_a";
+      const janB = "jan_b";
+      const vId1 = "v-id-1";
+      const vId2 = "v-id-2";
+
+      const actions = [
+        // 1. Initial Inventory
+        {
+          ...bulk_import_items({
+            items: [
+              {
+                type: "new",
+                id: "item_a",
+                item: {
+                  janCode: janA,
+                  qty: 10,
+                  description: "A",
+                  hsCode: "1",
+                  pieces: 1,
+                  shipped: 0,
+                  subtype: "Default",
+                  image: "",
+                  creationDate: "",
+                  timestamp: 0,
+                },
+              },
+              {
+                type: "new",
+                id: "item_b",
+                item: {
+                  janCode: janB,
+                  qty: 5,
+                  description: "B",
+                  hsCode: "2",
+                  pieces: 1,
+                  shipped: 0,
+                  subtype: "Default",
+                  image: "",
+                  creationDate: "",
+                  timestamp: 0,
+                },
+              },
+            ],
+          }),
+          timestamp: 1000,
+        },
+        // 2. Initial Proposal
+        {
+          ...add_proposals_internal([
+            {
+              janCode: janA,
+              inventoryItemIds: ["item_a"],
+              photoGroupIds: [janA],
+              title: "Product A",
+              handle: "product-a-jan_a",
+              variants: [
+                {
+                  id: vId1,
+                  itemId: "item_a",
+                  option1Value: "Default",
+                  qty: 10,
+                },
+              ],
+              status: "draft",
+              bodyHtml: "",
+              productCategory: "",
+              vendor: "",
+              tags: [],
+              option1Name: "Subtype",
+            },
+          ]),
+          timestamp: 2000,
+        },
+        // 2.5 Ensure item_a is linked (simulating what add_proposals interceptor would do)
+        {
+          ...update_field({
+            id: "item_a",
+            field: "handle",
+            from: "",
+            to: "product-a-jan_a",
+          }),
+          timestamp: 3000,
+        },
+        // 3. Add variant from JAN B
+        {
+          ...add_variant_requested({
+            targetJan: janA,
+            janCode: janB,
+            variantId: vId2,
+          }),
+          timestamp: 4000,
+        },
+        // 4. Update a field
+        {
+          ...update_proposal_field({
+            janCode: janA,
+            field: "title",
+            value: "New Title",
+          }),
+          timestamp: 5000,
+        },
+        // 5. Remove original variant
+        {
+          ...remove_variant_requested({ janCode: janA, variantId: vId1 }),
+          timestamp: 6000,
+        },
+      ];
+
+      // Apply all actions to store A
+      actions.forEach((a) => storeA.dispatch(a));
+
+      // Replay all actions to store B
+      actions.forEach((a) => storeB.dispatch(JSON.parse(JSON.stringify(a))));
+
+      const stateA = JSON.parse(JSON.stringify(storeA.getState()));
+      const stateB = JSON.parse(JSON.stringify(storeB.getState()));
+
+      // Assert deep equality of relevant slices
+      expect(stateA.listingCreation).toEqual(stateB.listingCreation);
+      expect(stateA.inventory).toEqual(stateB.inventory);
+
+      // Sanity checks on the final state
+      expect(stateA.listingCreation.proposals[janA].title).toBe("New Title");
+      expect(stateA.listingCreation.proposals[janA].variants.length).toBe(1);
+      expect(stateA.listingCreation.proposals[janA].variants[0].id).toBe(vId2);
+      expect(stateA.inventory.idToItem["item_a"].handle).toBeFalsy();
+      expect(stateA.inventory.idToItem["item_b"].handle).toBe(
+        "product-a-jan_a",
+      );
     });
   });
 });

@@ -1,104 +1,68 @@
-# Variant Updates Review (Live + Draft + Replay)
+# Variant Updates Review (Updated After `a46919e`)
 
 ## Scope Reviewed
 - `src/lib/components/ListingEditor.svelte`
 - `src/lib/listing-creation-slice.ts`
 - `src/lib/root-reducer.ts`
 - `src/routes/listing-detail/+page.svelte`
+- `tests/unit/listing-creation-variants.test.ts`
 
-I reviewed the uncommitted variant add/remove changes with specific focus on first-run behavior and broadcast replay determinism.
+## Validation Run
+- `npm run check`: pass (0 errors, 0 warnings)
+- `npm test -- tests/unit/listing-creation-variants.test.ts tests/unit/shopify-sync-core.test.ts`: pass
 
-## Executive Summary
-The current change set is **not safe to merge**. It introduces multiple blocking issues:
-1. Build/typecheck failures.
-2. Non-serializable action broadcast in create mode.
-3. Non-deterministic variant IDs generated inside a reducer (breaks replay consistency).
-4. Root reducer references `store.getState()` from inside reducer logic (and `store` is undefined).
+## Summary
+Most of the previously-blocking issues are fixed in `a46919e`:
+- thunk broadcasting replaced with serializable intent actions,
+- non-deterministic reducer UUID generation removed,
+- illegal `store.getState()` usage removed,
+- compile errors resolved,
+- targeted unit tests added.
 
-These issues directly impact the requirement that behavior must work both when first executed and when replayed from broadcast.
+I found one remaining product-safety gap and one testing gap.
 
 ## Findings (ordered by severity)
 
-### 1) Critical: create-mode add variant broadcasts a thunk function, not an action
-- File: `src/routes/listing-detail/+page.svelte:1498`
-- Code path: `dispatchBroadcast(add_variant_thunk(janCode, variantJan));`
+### 1) High: missing transfer warning when an item will be moved from another listing
+- `src/lib/root-reducer.ts:1001`
+- `src/routes/listing-detail/+page.svelte:1510`
 
-`dispatchBroadcast` calls Firestore `broadcast(...)` directly and expects a plain serializable action object. Here it receives a thunk function. This means:
-- The action is not representable as a replayable Redux event.
-- Broadcast persistence may write malformed docs (missing `type`).
-- Replay/dispatch can fail or diverge.
+Given the current data model (`inventory item -> single handle`), moving an item between listings is valid behavior, but the user should be warned before approval if a move will happen.
 
-Recommendation:
-- Do **not** broadcast thunks.
-- Move enrichment logic into reducer interception (intent-action pattern), e.g. broadcast `listingCreation/add_variant_requested` and resolve item selection in root reducer using current state.
-- Alternatively, execute thunk locally and ensure it emits only concrete serializable actions that are broadcast.
+Today there is no explicit user warning in the approval flow when an item already belongs to another listing (live or already-approved draft). The item is silently reassigned on approve.
 
-### 2) Critical: non-deterministic ID generation inside reducer breaks replay
-- File: `src/lib/listing-creation-slice.ts:477`
-- Code: `crypto.randomUUID()` used in `add_variant` reducer.
-
-Reducers must be deterministic for event replay. Here `variantId` differs across clients/replays. Any later action referencing the original ID (e.g. remove/reorder/edit) can no-op on replay, causing state divergence.
+Impact:
+- Users may accidentally remove inventory from an existing listing when approving a new draft.
+- Reassignment is technically correct for this model, but easy to do unintentionally without visibility.
 
 Recommendation:
-- Generate `variantId` before dispatch (in action creator) and include it in payload.
-- Or derive a deterministic ID from payload + timestamp/event id (stable across replay).
-- Keep reducer pure and deterministic.
+- Keep current “steal/transfer” behavior, but add a confirmation warning in `handleApprove` before dispatching approve.
+- Preflight check each proposal variant item against `inventory.idToItem[itemId].handle`:
+  - if handle is non-empty and different from the target handle, include it in warning list.
+- Warning text should explicitly name source handle and destination handle.
+- Proceed only on user confirmation.
 
-### 3) Critical: root reducer has invalid reference and impure state source
-- File: `src/lib/root-reducer.ts:1012`
-- Code: `const prevState = store.getState();`
+This satisfies your desired UX:
+- If two drafts share an item, warning appears when approving the second draft after the first has been approved (because the first approval sets the item handle).
+- If stealing from an existing live listing, warning appears at approval time and allows intentional transfer.
 
-`store` is not imported/defined in this file (fails typecheck), and using global store from reducer violates reducer purity and replay determinism.
+### 2) Medium: no explicit replay-equivalence test for intent-action path
+- `tests/unit/listing-creation-variants.test.ts`
 
-Recommendation:
-- Use the `state` argument (pre-action) and `nextState` (post-action) only.
-- For remove-variant sync logic, compute from `state.listingCreation` and `nextState.listingCreation` without external reads.
-
-### 4) Critical: current workspace does not compile
-`npm run check` reports:
-- `src/lib/root-reducer.ts:1012` `Cannot find name 'store'`
-- `src/lib/listing-creation-slice.ts:791` duplicate `set_current_step` key
-- `src/routes/listing-detail/+page.svelte:1494` `Cannot find name 'readOnly'`
-- `src/routes/listing-detail/+page.svelte:1498` `Cannot find name 'add_variant_thunk'`
-- `src/routes/listing-detail/+page.svelte:1524` `Cannot find name 'readOnly'`
-- `src/routes/listing-detail/+page.svelte:1531` `Cannot find name 'remove_variant'`
+The added tests validate add/remove behavior, but they do not assert replay equivalence (same final state when replaying the same action log from empty state).
 
 Recommendation:
-- Resolve all typecheck failures before functional validation.
-- Remove duplicate reducer key.
-- Fix missing imports/usages in `+page.svelte`.
+- Add a replay test that records dispatched broadcast actions (`*_requested`, `update_field`, etc.), replays them into a fresh store, and asserts deep state equality for:
+  - `listingCreation.proposals`,
+  - `inventory.idToItem` handles,
+  - variant IDs and ordering.
 
-### 5) High: remove-variant inventory cleanup can compute wrong `from` value
-- File: `src/lib/root-reducer.ts:1026`
-- Code uses `from: proposal.handle || ""` when clearing inventory `handle`.
-
-`from` should match the item’s current handle, not proposal handle. If they differ, the action audit trail becomes inaccurate and can affect guard logic in reducers that rely on `from` consistency.
-
-Recommendation:
-- Use `state.inventory.idToItem[itemId]?.handle || ""` as `from`.
-
-### 6) Medium: draft add/remove flow has no targeted automated tests
-No tests were found for the new `add_variant` / `remove_variant` paths or replay behavior.
-
-Recommendation:
-- Add unit tests for reducer determinism and root-reducer orchestration.
-- Add replay tests that dispatch an action sequence twice into fresh stores and assert identical final state.
-
-## Replay-Safety Recommendations
-1. Introduce explicit intent actions:
-   - `listingCreation/add_variant_requested`
-   - `listingCreation/remove_variant_requested`
-2. Resolve all state-derived fields (item selection, handle sync, IDs) inside root reducer using only `(state, action)`.
-3. Emit deterministic internal actions with fixed payloads and log them (with propagated timestamp).
-4. Prohibit non-plain-object actions from broadcast (`validateAction` should hard-fail if `type` is missing/non-string).
-
-## Suggested Test Matrix
-1. Draft mode add same-JAN variant, then rename/reorder/remove; replay action log and compare final state.
-2. Draft mode add cross-JAN variant (unlisted inventory item), verify inventory handle linkage and replay equivalence.
-3. Live mode add/remove variant via `update_field(handle)` and confirm listing membership updates correctly.
-4. Sequence test: add -> edit subtype -> remove; ensure remove always targets existing variant ID after replay.
-5. Negative test: malformed action (missing `type`) is rejected by broadcast validation.
+## What Is Good Now
+- Intent-action architecture is a strong improvement for event sourcing.
+- Reducer-level add/remove operations are now deterministic with payload-provided `variantId`.
+- Root reducer now uses pre/post reducer state instead of external store access.
+- Tests cover merge plus add/remove intent flows.
 
 ## Ship Recommendation
-- **Do not ship yet.**
-- Fix critical items 1-4 first, then add replay-focused tests before merge.
+- I recommend adding finding #1 before broad rollout, because it prevents accidental inventory transfer while preserving intended behavior.
+- After that, add replay-equivalence coverage to reduce regression risk.

@@ -521,7 +521,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
     if (listingUpdates && listingUpdates.length > 0) {
       let nextListings = nextState.listings;
-      listingUpdates.forEach((u: any) => {
+      listingUpdates.forEach((u) => {
         if (u.type === "add_image") {
           const internalAction = {
             ...add_listing_image({ handle: u.handle, image: u.image }),
