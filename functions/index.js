@@ -14,7 +14,7 @@ exports.syncRequest = onDocumentCreated(
     document: `${syncDispatcher.SYNC_COLLECTION}/{requestId}`,
     timeoutSeconds: 300,
     memory: "2GiB",
-    concurrency: 10,
+    concurrency: 3,
   },
   async (event) => {
     const requestData = event.data?.data();
@@ -30,7 +30,11 @@ exports.syncRequest = onDocumentCreated(
         processor,
         logger,
       });
-      if (dispatched.handled && dispatched.result && !dispatched.result.processed) {
+      if (
+        dispatched.handled &&
+        dispatched.result &&
+        !dispatched.result.processed
+      ) {
         logger.info("Sync event not processed", {
           requestId,
           reason: dispatched.result.reason,
