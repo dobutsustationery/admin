@@ -434,7 +434,9 @@
       : "Price not set";
 
   $: stockCount = associatedItems.reduce(
-    (sum, item) => sum + (item.qty || 0),
+    (sum, item) =>
+      sum +
+      (item.allocatedQty !== undefined ? item.allocatedQty : item.qty || 0),
     0,
   );
 </script>
@@ -759,8 +761,12 @@
           <span class="option-label">{listing.option1Name || "Option"}</span>
           <div class="options-list" role="list">
             {#each displayedSubtypes as item (item.variantId || item.id)}
+              {@const effectiveQty =
+                item.allocatedQty !== undefined
+                  ? item.allocatedQty
+                  : item.qty || 0}
               <button
-                class="option-btn {item.qty > 0
+                class="option-btn {effectiveQty > 0
                   ? 'available'
                   : 'unavailable'} {selectedSubtypeId ===
                 (item.variantId || item.id)

@@ -8,7 +8,9 @@
   export let inventory: Record<string, any> = {}; // Full inventory for search
   export let mode: "add" | "remove" | "split" = "add";
   export let janCode = "";
-  export let sourceItem: (Item & { id: string }) | null = null; // Item being added or removed
+  export let sourceItem:
+    | (Item & { id: string; variantId?: string; allocatedQty?: number })
+    | null = null; // Item being added or removed
   export let otherVariants: any[] = []; // For remove mode transfer options
 
   $: if (open) {
@@ -49,6 +51,7 @@
   let proposedQtys: Record<string, number> = {};
   let pendingRemovals = new Set<string>();
   let selectedItemToAdd: (Item & { id: string }) | null = null;
+  let selectedSourceRowId: string | null = null;
   let newSubtypeName = "New Variant";
   let newVariantQty = 0;
 
@@ -58,23 +61,31 @@
       associatedCount: associatedItems.length,
       mode,
       sourceItemId: sourceItem?.id,
+      janCode,
     });
 
     // 1. Reset all state
     searchQuery = "";
     pendingRemovals = new Set<string>();
     proposedQtys = {};
+    selectedSourceRowId = null;
 
-    // 2. Initialize existing variants
+    // 2. Initialize existing variants using variantId or id as stable key
     associatedItems.forEach((item) => {
-      proposedQtys[item.id] = item.qty || 0;
+      const rowId = item.variantId || item.id;
+      proposedQtys[rowId] =
+        item.allocatedQty !== undefined ? item.allocatedQty : item.qty || 0;
     });
 
     // 3. Initialize addition/split source
     if (mode === "add" && sourceItem) {
       selectedItemToAdd = sourceItem;
+      selectedSourceRowId = sourceItem.variantId || sourceItem.id;
       newSubtypeName = sourceItem.subtype || "Default";
-      newVariantQty = sourceItem.qty || 0;
+      newVariantQty =
+        sourceItem.allocatedQty !== undefined
+          ? sourceItem.allocatedQty
+          : sourceItem.qty || 0;
     } else {
       selectedItemToAdd = null;
       newSubtypeName = "New Variant";
@@ -91,31 +102,25 @@
     proposedQtys = {};
     pendingRemovals = new Set<string>();
     selectedItemToAdd = null;
+    selectedSourceRowId = null;
+    searchQuery = "";
   }
 
   // Validation Logic
   // Total available is sum of all variants currently on listing
   // PLUS the quantity of any NEW item being brought in.
   $: totalAvailable = (() => {
-    const existingTotal = associatedItems.reduce(
-      (sum, i) => sum + (i.qty || 0),
-      0,
-    );
+    // Sum unique inventory item quantities
+    const sourceMap = new Map<string, number>();
+    associatedItems.forEach((i) => sourceMap.set(i.id, i.qty || 0));
     if (selectedItemToAdd) {
-      const isAlreadyOnListing = associatedItems.some(
-        (i) => i.id === selectedItemToAdd?.id,
-      );
-      // If stealing or splitting a DIFFERENT item, add its quantity to the pool.
-      // If splitting an item ALREADY on the listing, it's already in existingTotal.
-      return isAlreadyOnListing
-        ? existingTotal
-        : existingTotal + (selectedItemToAdd.qty || 0);
+      if (!sourceMap.has(selectedItemToAdd.id)) {
+        sourceMap.set(selectedItemToAdd.id, selectedItemToAdd.qty || 0);
+      }
     }
-    return existingTotal;
+    return Array.from(sourceMap.values()).reduce((sum, q) => sum + q, 0);
   })();
 
-  // Total allocated is sum of all proposed quantities for existing items
-  // PLUS the quantity assigned to the new variant.
   $: totalAllocated = (() => {
     const existingAllocated = Object.values(proposedQtys).reduce(
       (sum, q) => sum + (q || 0),
@@ -126,14 +131,14 @@
 
   $: isAllocationValid = Math.abs(totalAllocated - totalAvailable) < 0.001;
 
-  function toggleRemoval(id: string) {
-    console.log("[VariantModal] toggleRemoval:", id);
+  function toggleRemoval(rowId: string) {
+    console.log("[VariantModal] toggleRemoval:", rowId);
     const next = new Set(pendingRemovals);
-    if (next.has(id)) {
-      next.delete(id);
+    if (next.has(rowId)) {
+      next.delete(rowId);
     } else {
-      next.add(id);
-      proposedQtys[id] = 0; // Zero out qty on removal
+      next.add(rowId);
+      proposedQtys[rowId] = 0; // Zero out qty on removal
     }
     pendingRemovals = next;
   }
@@ -142,6 +147,15 @@
     console.log("[VariantModal] selectItem:", key, item.description);
     selectedItemToAdd = { ...item, id: key };
     searchQuery = "";
+
+    // Find if this item is already on the listing
+    const existingMatches = associatedItems.filter((i) => i.id === key);
+    if (existingMatches.length > 0) {
+      selectedSourceRowId =
+        existingMatches[0].variantId || existingMatches[0].id;
+    } else {
+      selectedSourceRowId = null;
+    }
 
     // If it's a new JAN or an item listed elsewhere, we use its current values as default
     // If it's an item ALREADY on the listing, it becomes a split source.
@@ -159,17 +173,19 @@
     });
 
     if (mode === "add" && selectedItemToAdd) {
-      // Check if we are splitting an existing variant (Same JAN)
-      const existingMatchingJan = associatedItems.find(
-        (i) => i.janCode === selectedItemToAdd?.janCode,
+      // Find exact source item match if splitting
+      const existingMatch = associatedItems.find(
+        (i) => (i.variantId || i.id) === selectedSourceRowId,
       );
 
-      if (existingMatchingJan) {
+      if (existingMatch) {
         // CASE A: SPLIT
+        const rowId = existingMatch.variantId || existingMatch.id;
         dispatch("confirmSplit", {
-          sourceId: existingMatchingJan.id,
-          sourceSubtype: existingMatchingJan.subtype,
-          sourceQty: proposedQtys[existingMatchingJan.id],
+          sourceId: existingMatch.id,
+          sourceVariantId: existingMatch.variantId,
+          sourceSubtype: existingMatch.subtype,
+          sourceQty: proposedQtys[rowId],
           newSubtype: newSubtypeName,
           newQty: newVariantQty,
           janCode: selectedItemToAdd.janCode,
@@ -177,7 +193,7 @@
           removals,
         });
       } else {
-        // CASE B: ADD NEW JAN
+        // CASE B: ADD NEW JAN or Item
         dispatch("confirmAdd", {
           itemId: selectedItemToAdd.id,
           subtype: newSubtypeName,
@@ -223,10 +239,12 @@
               <button
                 class="quick-btn"
                 on:click={() => {
-                  if (otherVariants[0]) {
-                    proposedQtys[otherVariants[0].id] += sourceItem?.qty || 0;
-                    proposedQtys[sourceItem?.id || ""] = 0;
-                  }
+                  const targetRowId =
+                    otherVariants[0].variantId || otherVariants[0].id;
+                  const sourceRowId = sourceItem?.id || "";
+                  proposedQtys[targetRowId] += proposedQtys[sourceRowId] || 0;
+                  proposedQtys[sourceRowId] = 0;
+                  proposedQtys = proposedQtys; // trigger reactivity
                 }}
               >
                 Transfer all {sourceItem.qty} to {otherVariants[0].subtype ||
@@ -264,8 +282,8 @@
                         <ImageThumbnail
                           src={item.image}
                           alt={item.description}
-                          width="30px"
-                          height="30px"
+                          width="32px"
+                          height="32px"
                         />
                       {/if}
                     </div>
@@ -329,13 +347,24 @@
           </div>
           <div class="allocation-list">
             {#each associatedItems as item}
+              {@const rowId = item.variantId || item.id}
+              {@const isPotentialSource =
+                selectedItemToAdd && item.id === selectedItemToAdd.id}
               <div
                 class="allocation-row"
-                class:is-source={selectedItemToAdd &&
-                  item.id === selectedItemToAdd.id}
-                class:is-removed={pendingRemovals.has(item.id)}
+                class:is-source={selectedSourceRowId === rowId}
+                class:is-removed={pendingRemovals.has(rowId)}
               >
                 <div class="flex items-center gap-3">
+                  {#if isPotentialSource}
+                    <input
+                      type="radio"
+                      name="source-selector"
+                      checked={selectedSourceRowId === rowId}
+                      on:change={() => (selectedSourceRowId = rowId)}
+                      title="Set as Split Source"
+                    />
+                  {/if}
                   <div class="alloc-thumb">
                     {#if item.image}
                       <ImageThumbnail
@@ -351,26 +380,29 @@
                       <span class="alloc-subtype"
                         >{item.subtype || "Default"}</span
                       >
-                      {#if pendingRemovals.has(item.id)}
+                      {#if pendingRemovals.has(rowId)}
                         <span class="removed-badge">Removing</span>
+                      {/if}
+                      {#if selectedSourceRowId === rowId}
+                        <span class="source-badge">Source</span>
                       {/if}
                     </div>
                     <span class="alloc-id">{item.id}</span>
                   </div>
                 </div>
                 <div class="alloc-input-group">
-                  {#if !pendingRemovals.has(item.id)}
-                    <label for="qty-{item.id}">Qty:</label>
+                  {#if !pendingRemovals.has(rowId)}
+                    <label for="qty-{rowId}">Qty:</label>
                     <input
-                      id="qty-{item.id}"
+                      id="qty-{rowId}"
                       type="number"
-                      bind:value={proposedQtys[item.id]}
+                      bind:value={proposedQtys[rowId]}
                     />
                     <button
                       class="row-remove-btn"
                       on:click={(e) => {
                         e.stopPropagation();
-                        toggleRemoval(item.id);
+                        toggleRemoval(rowId);
                       }}
                       title="Remove Variant"
                     >
@@ -379,7 +411,7 @@
                   {:else}
                     <button
                       class="row-restore-btn"
-                      on:click={() => toggleRemoval(item.id)}>Restore</button
+                      on:click={() => toggleRemoval(rowId)}>Restore</button
                     >
                   {/if}
                 </div>
@@ -606,6 +638,15 @@
     font-weight: 700;
     text-transform: uppercase;
   }
+  .source-badge {
+    font-size: 0.65rem;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 0.1rem 0.4rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
   .row-remove-btn {
     background: none;
     border: none;
@@ -632,41 +673,19 @@
   .allocation-row:last-child {
     border-bottom: none;
   }
-  .flex {
-    display: flex;
-  }
-  .items-center {
-    align-items: center;
-  }
-  .justify-between {
-    justify-content: space-between;
-  }
-  .gap-2 {
-    gap: 0.5rem;
-  }
-  .gap-3 {
-    gap: 0.75rem;
-  }
-  .mb-2 {
-    margin-bottom: 0.5rem;
-  }
-  .m-0 {
-    margin: 0;
-  }
-  .text-green-600 {
-    color: #16a34a;
-  }
-  .text-red-600 {
-    color: #dc2626;
-  }
-  .allocation-summary {
-    font-size: 0.85rem;
-  }
   .allocation-row.is-source {
     background: #fffbeb;
   }
   .allocation-row.is-new {
     background: #ecfdf5;
+  }
+  .alloc-thumb {
+    width: 32px;
+    height: 32px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
   }
   .alloc-info {
     display: flex;
@@ -680,14 +699,6 @@
     font-size: 0.7rem;
     color: #9ca3af;
     font-family: monospace;
-  }
-  .alloc-thumb {
-    width: 32px;
-    height: 32px;
-    background: #f3f4f6;
-    border-radius: 4px;
-    overflow: hidden;
-    flex-shrink: 0;
   }
   .alloc-label {
     font-size: 0.8rem;
@@ -749,5 +760,36 @@
   .btn-save:disabled {
     background: #9ca3af;
     cursor: not-allowed;
+  }
+
+  .flex {
+    display: flex;
+  }
+  .items-center {
+    align-items: center;
+  }
+  .justify-between {
+    justify-content: space-between;
+  }
+  .gap-2 {
+    gap: 0.5rem;
+  }
+  .gap-3 {
+    gap: 0.75rem;
+  }
+  .mb-2 {
+    margin-bottom: 0.5rem;
+  }
+  .m-0 {
+    margin: 0;
+  }
+  .text-green-600 {
+    color: #16a34a;
+  }
+  .text-red-600 {
+    color: #dc2626;
+  }
+  .allocation-summary {
+    font-size: 0.85rem;
   }
 </style>

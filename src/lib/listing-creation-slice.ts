@@ -313,6 +313,7 @@ const listingCreationSlice = createSlice({
         variantId: string;
         subtype?: string;
         qty?: number;
+        sourceVariantId?: string;
       }>,
     ) => {
       // No-op in slice, logic in RootReducer

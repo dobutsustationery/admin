@@ -32,8 +32,10 @@ import listingCreation, {
   add_variants_internal,
   add_proposals_internal,
   update_variant_value,
+  update_variant_qty,
   set_variant_photo_group,
   remove_proposal,
+  remove_variant_requested,
   complete_batch,
 } from "./listing-creation-slice";
 import { ui } from "./ui-slice";
@@ -268,6 +270,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                   janCodeToPhotos: nextJanCodeToPhotos,
                 },
               };
+
+              // Log synthetic action
               logger(
                 {
                   type: "photos/rename_jan_group (synthetic)",
@@ -279,52 +283,84 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               );
             }
 
-            // 2. Update variant's photoGroupKey reference (Listings Creation)
-            const listingCreationState = nextState.listingCreation;
-            const nextProposal = listingCreationState.proposals[janCode];
-            if (nextProposal) {
-              const nextVariants = nextProposal.variants.map((v: any) => {
-                if (v.id === variantId || v.itemId === variantId) {
-                  return { ...v, photoGroupKey: newPhotoKey };
-                }
-                return v;
-              });
-
-              nextState = {
-                ...nextState,
-                listingCreation: {
-                  ...listingCreationState,
-                  proposals: {
-                    ...listingCreationState.proposals,
-                    [janCode]: {
-                      ...nextProposal,
-                      variants: nextVariants,
-                    },
-                  },
-                },
-              };
-            }
+            // 2. Update the variant's photoGroupKey reference
+            const creationAction = set_variant_photo_group({
+              janCode,
+              variantId,
+              groupKey: newPhotoKey,
+            });
+            nextState = {
+              ...nextState,
+              listingCreation: listingCreation(
+                nextState.listingCreation,
+                creationAction,
+              ),
+            };
+            logger(creationAction, nextState, action._timestamp);
           }
         }
       }
     }
   }
 
-  // Listing <-> Inventory Sync (Title/Description)
+  // Order Import Interceptor (Event Sourcing Logic)
+  if (action.type === "orderImport/import_batch") {
+    const { filter, options } = action.payload;
+    console.log(
+      `[RootReducer] Intercepting Order Import Batch { filter: '${filter}' }`,
+    );
+
+    const { updates, indices } = computeOrderImportBatch(
+      nextState.orderImport,
+      nextState.inventory.idToItem,
+      filter,
+    );
+
+    const bulkUpdates: BulkImportItem[] = updates.map((u) => ({
+      type: u.type,
+      id: u.id,
+      item: u.type === "new" ? mapOrderToInventory(u.item) : u.item,
+    }));
+
+    if (bulkUpdates.length > 0) {
+      const internalAction = {
+        ...bulk_import_items({ items: bulkUpdates }),
+        _ephemeral: true,
+        timestamp: action.timestamp || action._timestamp,
+      };
+
+      nextState = {
+        ...nextState,
+        inventory: inventory(nextState.inventory, internalAction),
+      };
+      logger(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
+    }
+
+    if (indices.length > 0) {
+      const markAction = markOrderDone({ indices });
+      nextState = {
+        ...nextState,
+        orderImport: orderImport(nextState.orderImport, markAction),
+      };
+      logger(markAction, nextState, action._timestamp); // LOG SUB-ACTION
+    }
+  }
+
+  // Intercept update_field for cross-domain orchestration (Sync Titles/Descriptions)
   if (action.type === "update_field") {
     const { id, field, to } = action.payload;
 
-    // Case A: Linking (Handle Set)
-    if (field === "handle") {
-      const handle = to;
-      const listing = nextState.listings.handleToListing[handle];
+    // A) If HANDLE changed on an ITEM, sync its description to the listing title
+    if (field === "handle" && to) {
+      const listing = nextState.listings.handleToListing[to as string];
       if (listing) {
-        if (nextState.inventory.idToItem[id].description !== listing.title) {
+        const item = nextState.inventory.idToItem[id];
+        if (item && item.description !== listing.title) {
           const syncAction = {
             ...update_field({
               id,
               field: "description",
-              from: nextState.inventory.idToItem[id].description,
+              from: item.description,
               to: listing.title,
             }),
             _ephemeral: true,
@@ -339,147 +375,85 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       }
     }
 
-    // Case B: Item Description Update -> Propagate to Listing & Siblings
+    // B) If DESCRIPTION changed on an ITEM, sync it to the listing title (and siblings)
     if (field === "description") {
-      const item = nextState.inventory.idToItem[id];
-      if (item && item.handle) {
-        const listing = nextState.listings.handleToListing[item.handle];
+      const handle = nextState.listings.idToHandle[id];
+      if (handle) {
+        const listing = nextState.listings.handleToListing[handle];
         if (listing) {
-          // 1. Update Listing Title (if not already updated by listings slice)
+          // 1. Sync Listing Title (if not already synced by slice reducer)
           if (listing.title !== to) {
-            const updateListingAction = {
-              ...update_listing({
-                handle: item.handle,
-                changes: { title: to },
-              }),
+            const syncListingAction = {
+              ...update_listing({ handle, changes: { title: to as string } }),
               _ephemeral: true,
               timestamp: action.timestamp || action._timestamp,
             };
             nextState = {
               ...nextState,
-              listings: listings(nextState.listings, updateListingAction),
+              listings: listings(nextState.listings, syncListingAction),
             };
-            logger(updateListingAction, nextState, action._timestamp);
+            logger(syncListingAction, nextState, action._timestamp);
           }
 
-          // 2. Update Siblings (Always check consistency)
-          const handle = item.handle;
-          const newTitle = to;
-          for (const otherId in nextState.inventory.idToItem) {
-            const otherItem = nextState.inventory.idToItem[otherId];
-            if (
-              otherItem.handle === handle &&
-              otherItem.description !== newTitle
-            ) {
-              const syncSiblingAction = {
+          // 2. Sync ALL Sibling Items (including original if needed, but here id is excluded for safety)
+          Object.entries(nextState.inventory.idToItem).forEach(
+            ([itemId, item]: any) => {
+              if (itemId !== id && item.handle === handle) {
+                if (item.description !== to) {
+                  const syncItemAction = {
+                    ...update_field({
+                      id: itemId,
+                      field: "description",
+                      from: item.description,
+                      to: to as string,
+                    }),
+                    _ephemeral: true,
+                    timestamp: action.timestamp || action._timestamp,
+                  };
+                  nextState = {
+                    ...nextState,
+                    inventory: inventory(nextState.inventory, syncItemAction),
+                  };
+                  logger(syncItemAction, nextState, action._timestamp);
+                }
+              }
+            },
+          );
+        }
+      }
+    }
+  }
+
+  // Intercept update_listing for cross-domain orchestration (Sync Titles to Items)
+  if (action.type === "update_listing") {
+    const { handle, changes } = action.payload;
+    const title = changes.title;
+
+    if (title) {
+      // Find all items linked to this handle
+      Object.entries(nextState.inventory.idToItem).forEach(
+        ([id, item]: any) => {
+          if (item.handle === handle) {
+            if (item.description !== title) {
+              const syncAction = {
                 ...update_field({
-                  id: otherId,
+                  id,
                   field: "description",
-                  from: otherItem.description,
-                  to: newTitle,
+                  from: item.description,
+                  to: title,
                 }),
                 _ephemeral: true,
                 timestamp: action.timestamp || action._timestamp,
               };
               nextState = {
                 ...nextState,
-                inventory: inventory(nextState.inventory, syncSiblingAction),
+                inventory: inventory(nextState.inventory, syncAction),
               };
-              logger(syncSiblingAction, nextState, action._timestamp);
+              logger(syncAction, nextState, action._timestamp);
             }
           }
-        }
-      }
-    }
-  }
-
-  if (action.type === "update_listing") {
-    const { handle, changes } = action.payload;
-    if (changes.title) {
-      const newTitle = changes.title;
-      // Propagate title to ALL items with this handle
-      for (const id in nextState.inventory.idToItem) {
-        const item = nextState.inventory.idToItem[id];
-        if (
-          item.handle === handle &&
-          newTitle &&
-          item.description !== newTitle
-        ) {
-          const syncAction = {
-            ...update_field({
-              id,
-              field: "description",
-              from: item.description,
-              to: newTitle,
-            }),
-            _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
-          };
-          nextState = {
-            ...nextState,
-            inventory: inventory(nextState.inventory, syncAction),
-          };
-          logger(syncAction, nextState, action._timestamp);
-        }
-      }
-    }
-  }
-
-  // Order Import Batch
-  if (action.type === "orderImport/import_batch" && state.orderImport) {
-    console.log(
-      "[RootReducer] Intercepting Order Import Batch",
-      action.payload,
-    );
-
-    const { updates, indices } = computeOrderImportBatch(
-      state.orderImport,
-      state.inventory.idToItem,
-      action.payload.filter,
-    );
-
-    // Map updates to BulkImportItem (if compute returns raw objects)
-    const bulkUpdates: BulkImportItem[] = updates.map((u) => ({
-      type: u.type,
-      id: u.id,
-      item: u.type === "new" ? mapOrderToInventory(u.item) : u.item,
-    }));
-
-    if (bulkUpdates.length > 0) {
-      const internalAction = {
-        ...bulk_import_items({ items: bulkUpdates }),
-        _ephemeral: true,
-        timestamp: action.timestamp || action._timestamp, // Uses propagated timestamp
-      };
-
-      // Apply to Inventory
-      nextState = {
-        ...nextState,
-        inventory: inventory(nextState.inventory, internalAction),
-      };
-      logger(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
-
-      // Apply to Listings
-      nextState = {
-        ...nextState,
-        listings: listings(nextState.listings, internalAction),
-      };
-      // Listings sub-log
-      logger(
-        { ...internalAction, type: "bulk_import_items (listings)" },
-        nextState,
-        action._timestamp,
+        },
       );
-    }
-
-    // Mark Items Done in Order Import Slice
-    if (indices.length > 0) {
-      const markAction = markOrderDone({ indices });
-      nextState = {
-        ...nextState,
-        orderImport: orderImport(nextState.orderImport, markAction),
-      };
-      logger(markAction, nextState, action._timestamp); // LOG SUB-ACTION
     }
   }
 
@@ -950,6 +924,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         variantId,
         subtype: reqSubtype,
         qty: reqQty,
+        sourceVariantId,
       } = action.payload;
       const targetProposal = nextState.listingCreation.proposals[targetJan];
       if (targetProposal) {
@@ -975,13 +950,16 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           qty = reqQty !== undefined ? reqQty : invItem[1].qty || 0;
         } else {
           // 2. If no new item found, check if JAN is already present in proposal -> Split from existing
-          const existingVariant = targetProposal.variants.find((v: any) => {
-            const item = nextState.inventory.idToItem[v.itemId];
-            return item?.janCode === janCode;
-          });
+          // Prefer matching by sourceVariantId if provided
+          const sourceVariant = sourceVariantId
+            ? targetProposal.variants.find((v: any) => v.id === sourceVariantId)
+            : targetProposal.variants.find((v: any) => {
+                const item = nextState.inventory.idToItem[v.itemId];
+                return item?.janCode === janCode;
+              });
 
-          if (existingVariant) {
-            itemId = existingVariant.itemId;
+          if (sourceVariant) {
+            itemId = sourceVariant.itemId;
             subtype = reqSubtype || "New Variant";
             qty = reqQty || 0;
           } else if (janCode === targetJan) {
@@ -1353,6 +1331,36 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         logger(completeAction, nextState, action._timestamp);
       }
     }
+  }
+
+  // Critical Action Logging
+  const criticalActions = [
+    "listingCreation/set_global_prompts",
+    "listingCreation/update_proposal_field",
+    "listingCreation/exclude_proposal_photo",
+    "listingCreation/include_proposal_photo",
+    "listingCreation/add_listing_only_image",
+    "listingCreation/remove_listing_only_image",
+    "listingCreation/update_variant_value",
+    "listingCreation/update_variant_qty",
+    "listingCreation/update_variant_image",
+    "listingCreation/set_variant_photo_group",
+    "listingCreation/split_variant",
+    "listingCreation/move_variant",
+    "listingCreation/add_variant",
+    "listingCreation/add_variant_requested",
+    "listingCreation/remove_variant",
+    "listingCreation/remove_variant_requested",
+    "listingCreation/merge_proposal",
+    "listingCreation/merge_proposals",
+    "listingCreation/reorder_variants",
+    "listingCreation/add_proposals",
+    "listingCreation/start_batch",
+    "listingCreation/set_current_step",
+  ];
+
+  if (criticalActions.includes(action.type)) {
+    logger(action, nextState, action._timestamp);
   }
 
   return nextState;

@@ -15,6 +15,9 @@ import {
   generate_proposals,
   set_drive_connection_status,
   approve_proposal_thunk,
+  set_current_step,
+  add_variant_requested,
+  remove_variant_requested,
 } from "./listing-creation-slice";
 
 // Persistence Logic
@@ -151,6 +154,9 @@ if (typeof window !== "undefined") {
         generate_proposals,
         set_drive_connection_status,
         approve_proposal_thunk,
+        set_current_step,
+        add_variant_requested,
+        remove_variant_requested,
       },
     };
     console.log("[Redux] Exposed window.testHelpers for E2E testing");
