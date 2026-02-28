@@ -328,15 +328,14 @@ function applyHandleUpdate(
   newHandle: string,
   previousHandle?: string,
 ) {
-  if (!newHandle) return;
-
   const priorHandle = previousHandle || state.idToHandle[id];
-  if (priorHandle === newHandle) {
-    state.idToHandle[id] = newHandle;
-    return;
-  }
+  if (priorHandle === newHandle) return;
 
-  state.idToHandle[id] = newHandle;
+  if (newHandle) {
+    state.idToHandle[id] = newHandle;
+  } else {
+    delete state.idToHandle[id];
+  }
 
   if (!priorHandle) return;
 
@@ -344,6 +343,16 @@ function applyHandleUpdate(
   const isStillUsed = Object.values(state.idToHandle).includes(priorHandle);
 
   const priorListing = state.handleToListing[priorHandle];
+
+  if (!newHandle) {
+    // Un-listing logic: if no one else uses the old handle, delete the listing
+    if (!isStillUsed && priorListing) {
+      delete state.handleToListing[priorHandle];
+    }
+    return;
+  }
+
+  // Move/Split logic (only if newHandle is truthy)
   const targetListing = state.handleToListing[newHandle];
 
   if (priorListing && !targetListing) {

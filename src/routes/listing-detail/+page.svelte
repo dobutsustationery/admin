@@ -1529,68 +1529,65 @@
     imagePickerTargetJan = null;
   }
 
-  function handleAddVariant(e: CustomEvent<{ janCode: string }>) {
-    const variantJan = e.detail.janCode;
+  function handleAddVariant() {
+    if (readOnly) return;
+    variantModalMode = "add";
+    variantModalJan = "";
+    variantModalSourceItem = null;
+    showVariantModal = true;
+  }
 
-    const inventory = $store.inventory.idToItem;
+  function handleRemovals(removals: string[]) {
+    console.log("[ListingDetail] handleRemovals", removals);
+    if (!removals || removals.length === 0) return;
 
-    // 1. Check for items ALREADY on this listing (Case A - split)
-    let existingOnListingId = "";
-    if (mode === "create" && janCode) {
-      const proposal = $store.listingCreation.proposals[janCode];
-      existingOnListingId =
-        proposal?.inventoryItemIds.find((id: string) => {
-          const item = inventory[id];
-          return item?.janCode === variantJan;
-        }) || "";
-    } else if (mode === "live" && handle) {
-      existingOnListingId =
-        Object.keys(inventory).find((id) => {
-          const item = inventory[id];
-          return item.janCode === variantJan && item.handle === handle;
-        }) || "";
-    }
+    if (isLiveMode && handle) {
+      removals.forEach((itemId: string) => {
+        const item = $store.inventory.idToItem[itemId];
+        const handleInListings = $store.listings.idToHandle[itemId];
+        const handleInInventory = item?.handle || "";
 
-    if (existingOnListingId) {
-      variantModalMode = "split";
-      variantModalJan = variantJan;
-      variantModalSourceItem = {
-        ...inventory[existingOnListingId],
-        id: existingOnListingId,
-      };
-      showVariantModal = true;
-      return;
-    }
+        console.log(`[ListingDetail] Removing item ${itemId}:`, {
+          existsInInventory: !!item,
+          handleInListings,
+          handleInInventory,
+          targetHandle: handle,
+          match: handleInListings === handle || handleInInventory === handle,
+        });
 
-    // 2. Check for suitable inventory elsewhere (Case B - add/steal)
-    const listedItemId = Object.keys(inventory).find((id) => {
-      const item = inventory[id];
-      // Match JAN and not already in this listing/proposal
-      if (item.janCode !== variantJan) return false;
-      if (mode === "create" && janCode) {
+        if (handleInListings === handle || handleInInventory === handle) {
+          dispatchBroadcast(
+            update_field({
+              id: itemId,
+              field: "handle",
+              from: handleInInventory || handle, // Use existing or target
+              to: "",
+            }),
+          );
+        }
+      });
+    } else if (mode === "create" && janCode) {
+      removals.forEach((itemId: string) => {
         const proposal = $store.listingCreation.proposals[janCode];
-        return !proposal?.inventoryItemIds.includes(id);
-      } else {
-        return item.handle !== handle;
-      }
-    });
-
-    if (listedItemId) {
-      variantModalMode = "add";
-      variantModalJan = variantJan;
-      variantModalSourceItem = {
-        ...inventory[listedItemId],
-        id: listedItemId,
-      };
-      showVariantModal = true;
-      return;
+        if (proposal) {
+          const variant = proposal.variants.find(
+            (v: any) => v.itemId === itemId,
+          );
+          if (variant) {
+            console.log(
+              `[ListingDetail] Requesting removal of variant ${variant.id} (item: ${itemId})`,
+            );
+            dispatchBroadcast(
+              remove_variant_requested({ janCode, variantId: variant.id }),
+            );
+          }
+        }
+      });
     }
-
-    alert(`No inventory found for JAN: ${variantJan}`);
   }
 
   function onConfirmAddVariant(e: CustomEvent<any>) {
-    const { itemId, subtype, qty } = e.detail;
+    const { itemId, subtype, qty, proposedQtys, removals } = e.detail;
     showVariantModal = false;
 
     if (mode === "create" && janCode) {
@@ -1604,12 +1601,33 @@
           qty,
         }),
       );
-    } else if (mode === "live" && handle) {
+      handleRemovals(removals);
+    } else if (isLiveMode && handle) {
+      // 1. Apply all quantity changes from the allocation view
+      if (proposedQtys) {
+        Object.entries(proposedQtys).forEach(([id, newQty]) => {
+          const item = $store.inventory.idToItem[id];
+          if (item && item.qty !== newQty) {
+            dispatchBroadcast(
+              update_field({
+                id,
+                field: "qty",
+                from: item.qty,
+                to: newQty as number,
+              }),
+            );
+          }
+        });
+      }
+
       const item = $store.inventory.idToItem[itemId];
-      if (!item) return;
+      if (!item) {
+        handleRemovals(removals);
+        return;
+      }
 
       const fromHandle = item.handle || "";
-      // 1. Sync Handle
+      // 2. Sync Handle
       dispatchBroadcast(
         update_field({
           id: itemId,
@@ -1618,7 +1636,7 @@
           to: handle,
         }),
       );
-      // 2. Sync Subtype
+      // 3. Sync Subtype
       if (subtype && subtype !== item.subtype) {
         dispatchBroadcast(
           update_field({
@@ -1629,7 +1647,7 @@
           }),
         );
       }
-      // 3. Sync Qty
+      // 4. Sync Qty (for the new item itself)
       if (typeof qty === "number" && qty !== item.qty) {
         dispatchBroadcast(
           update_field({
@@ -1640,11 +1658,20 @@
           }),
         );
       }
+      handleRemovals(removals);
     }
   }
 
   function onConfirmSplitVariant(e: CustomEvent<any>) {
-    const { sourceId, sourceSubtype, sourceQty, newSubtype, newQty } = e.detail;
+    const {
+      sourceId,
+      sourceSubtype,
+      sourceQty,
+      newSubtype,
+      newQty,
+      proposedQtys,
+      removals,
+    } = e.detail;
     showVariantModal = false;
 
     if (mode === "create" && janCode) {
@@ -1656,10 +1683,29 @@
           variantId,
         }),
       );
-    } else if (mode === "live" && handle) {
+      handleRemovals(removals);
+    } else if (isLiveMode && handle) {
+      // 1. Apply all other quantity changes first
+      if (proposedQtys) {
+        Object.entries(proposedQtys).forEach(([id, qty]) => {
+          if (id === sourceId) return; // Skip source as it's handled by split
+          const item = $store.inventory.idToItem[id];
+          if (item && item.qty !== qty) {
+            dispatchBroadcast(
+              update_field({
+                id,
+                field: "qty",
+                from: item.qty,
+                to: qty as number,
+              }),
+            );
+          }
+        });
+      }
+
       const newId = makeInventoryItemKey(variantModalJan, newSubtype);
 
-      // 1. Perform Split
+      // 2. Perform Split
       dispatchBroadcast(
         split_inventory_item({
           sourceId: sourceId as any,
@@ -1667,7 +1713,7 @@
         }),
       );
 
-      // 2. Update Source Subtype if changed
+      // 3. Update Source Subtype if changed
       const item = $store.inventory.idToItem[sourceId];
       if (item && sourceSubtype !== item.subtype) {
         dispatchBroadcast(
@@ -1680,7 +1726,7 @@
         );
       }
 
-      // 3. Ensure Handle is set on NEW item
+      // 4. Ensure Handle is set on NEW item
       dispatchBroadcast(
         update_field({
           id: newId,
@@ -1689,6 +1735,7 @@
           to: handle,
         }),
       );
+      handleRemovals(removals);
     }
   }
 
@@ -1719,50 +1766,62 @@
     }
   }
 
-  function onConfirmRemoveVariant(e: CustomEvent<any>) {
-    const { sourceId, targetId, qty } = e.detail;
+  function onConfirmManage(e: CustomEvent<any>) {
+    const { proposedQtys, removals } = e.detail;
+    console.log("[ListingDetail] onConfirmManage", {
+      proposedQtys,
+      removals,
+      mode,
+      handle,
+      janCode,
+      isLiveMode,
+    });
     showVariantModal = false;
 
-    if (mode === "live" && handle) {
-      // 1. Transfer Quantity (if target selected)
-      if (targetId && qty > 0) {
-        const sourceItem = $store.inventory.idToItem[sourceId];
-        const targetItem = $store.inventory.idToItem[targetId];
-
-        if (sourceItem && targetItem) {
-          // Subtract from source
-          dispatchBroadcast(
-            update_field({
-              id: sourceId,
-              field: "qty",
-              from: sourceItem.qty,
-              to: sourceItem.qty - qty,
-            }),
+    if (isLiveMode && handle) {
+      // 1. Apply all quantity changes
+      Object.entries(proposedQtys).forEach(([itemId, newQty]) => {
+        const item = $store.inventory.idToItem[itemId];
+        if (item && item.qty !== newQty) {
+          console.log(
+            `[ListingDetail] Updating live qty for ${itemId}: ${item.qty} -> ${newQty}`,
           );
-          // Add to target
           dispatchBroadcast(
             update_field({
-              id: targetId,
+              id: itemId,
               field: "qty",
-              from: targetItem.qty,
-              to: targetItem.qty + qty,
+              from: item.qty,
+              to: newQty as number,
             }),
           );
         }
-      }
+      });
 
-      // 2. Clear Handle on source item
-      const item = $store.inventory.idToItem[sourceId];
-      if (item) {
-        dispatchBroadcast(
-          update_field({
-            id: sourceId,
-            field: "handle",
-            from: item.handle || "",
-            to: "",
-          }),
-        );
-      }
+      handleRemovals(removals);
+    } else if (mode === "create" && janCode) {
+      // 1. Apply quantity changes to variants
+      Object.entries(proposedQtys).forEach(([itemId, newQty]) => {
+        const proposal = $store.listingCreation.proposals[janCode];
+        if (proposal) {
+          const variant = proposal.variants.find(
+            (v: any) => v.itemId === itemId,
+          );
+          if (variant && variant.qty !== newQty) {
+            console.log(
+              `[ListingDetail] Updating draft qty for variant ${variant.id} (item ${itemId}): ${variant.qty} -> ${newQty}`,
+            );
+            dispatchBroadcast(
+              update_variant_qty({
+                janCode,
+                variantId: variant.id,
+                qty: newQty as number,
+              }),
+            );
+          }
+        }
+      });
+
+      handleRemovals(removals);
     }
   }
 
@@ -2131,10 +2190,12 @@
       janCode={variantModalJan}
       sourceItem={variantModalSourceItem}
       otherVariants={variantModalOtherVariants}
+      {associatedItems}
+      inventory={$store.inventory.idToItem}
       on:cancel={() => (showVariantModal = false)}
       on:confirmAdd={onConfirmAddVariant}
       on:confirmSplit={onConfirmSplitVariant}
-      on:confirmRemove={onConfirmRemoveVariant}
+      on:confirmManage={onConfirmManage}
     />
 
     <!-- Batch Navigation Footer -->

@@ -210,25 +210,6 @@
     return galleryImages.length > 0 ? galleryImages[0] : null;
   })();
 
-  // Add Variant State
-  let newVariantJan = "";
-  let lastDefaultJan = "";
-
-  $: {
-    // Only auto-initialize if we haven't set a JAN yet,
-    // OR if the underlying associatedItems[0] JAN has changed (e.g. batch navigation)
-    const currentDefault = associatedItems[0]?.janCode || "";
-    if (currentDefault !== lastDefaultJan) {
-      newVariantJan = currentDefault;
-      lastDefaultJan = currentDefault;
-    }
-  }
-
-  function handleAddVariant() {
-    if (!newVariantJan.trim()) return;
-    dispatch("addVariant", { janCode: newVariantJan.trim() });
-  }
-
   // Interaction Handlers
   function handleSubtypeSelect(id: string) {
     hoveredImage = null;
@@ -561,19 +542,6 @@
                 : null) ||
               (item.image ? { url: item.image } : null)}
             <div class="subtype-row">
-              {#if !readOnly}
-                <button
-                  class="variant-remove-btn"
-                  on:click={() =>
-                    dispatch("removeVariant", {
-                      id: item.variantId || item.id,
-                      janCode: item.janCode,
-                    })}
-                  title="Remove Variant"
-                >
-                  ✕
-                </button>
-              {/if}
               <span
                 class="subtype-label {!readOnly ? 'editable' : ''}"
                 contenteditable={!readOnly}
@@ -667,15 +635,11 @@
 
       {#if !readOnly}
         <div class="add-variant-row">
-          <input
-            type="text"
-            class="add-variant-input"
-            placeholder="Enter JAN for new variant..."
-            bind:value={newVariantJan}
-            on:keydown={(e) => e.key === "Enter" && handleAddVariant()}
-          />
-          <button class="add-variant-btn" on:click={handleAddVariant}>
-            + Add Variant
+          <button
+            class="add-variant-btn"
+            on:click={() => dispatch("addVariant")}
+          >
+            Manage Variants
           </button>
         </div>
       {/if}
