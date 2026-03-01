@@ -328,6 +328,20 @@
         return true; // Mark as successfully handled (idempotent)
       }
 
+      // If we are here, we don't have a successful result in Drive for this derivation key.
+      // If the current state thinks it IS done, it's a "lying" state (e.g. remembered a failure
+      // or was partially synced). We should clear the status so the UI/logic knows it needs work.
+      const currentStatus = edits[id]?.status;
+      if (
+        currentStatus &&
+        currentStatus[operation as keyof typeof currentStatus]
+      ) {
+        console.info(
+          `[EditQueue] Clearing stale 'done' status for ${id}:${operation} as no Drive file exists.`,
+        );
+        store.dispatch(toggle_edit_status({ id, operation: operation as any }));
+      }
+
       // 3. Request Transform via Sync Queue
       console.info(
         `[EditQueue] Requesting transform for ${id} (${derivationKey})...`,
@@ -520,8 +534,12 @@
     Object.values(janCodeToPhotos)
       .flat()
       .forEach((p) => {
-        const status = edits[p.id]?.status;
+        const q = edits[p.id];
+        const status = q?.status;
         const isDone = status && status[op];
+
+        // We skip ONLY if it is truly done (successful idempotent result exists or was just completed).
+        // If it was previously failed, it won't be 'done' in status, so it will be included.
         if (!isDone) {
           allIds.add(p.id);
         }

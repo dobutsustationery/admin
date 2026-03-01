@@ -407,14 +407,24 @@ const photosSlice = createSlice({
       if (state.edits && state.edits[id]) {
         const q = state.edits[id];
         q.active = undefined;
-        // Optionally mark as failed?
-        q.history.push({
-          operation,
-          timestamp: Date.now(),
-          status: "failed",
-          error,
-        });
-        // Optionally re-queue? For now, failure is terminal unless manual retry.
+
+        // Optimized: Only add to history if the last entry isn't an identical failure.
+        // This prevents bloat when re-processing failed batches.
+        const last = q.history[q.history.length - 1];
+        if (
+          last?.operation === operation &&
+          last?.status === "failed" &&
+          last?.error === error
+        ) {
+          last.timestamp = Date.now(); // Just update timestamp
+        } else {
+          q.history.push({
+            operation,
+            timestamp: Date.now(),
+            status: "failed",
+            error,
+          });
+        }
       }
     },
     toggle_edit_status: (

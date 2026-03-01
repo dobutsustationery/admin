@@ -5,7 +5,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const syncDispatcher = require("./shared/sync-dispatcher.cjs");
 
 initializeApp();
-setGlobalOptions({ maxInstances: 2 });
+setGlobalOptions({ maxInstances: 10 });
 
 const db = getFirestore();
 
@@ -14,7 +14,7 @@ exports.syncRequest = onDocumentCreated(
     document: `${syncDispatcher.SYNC_COLLECTION}/{requestId}`,
     timeoutSeconds: 300,
     memory: "2GiB",
-    concurrency: 3,
+    concurrency: 2,
   },
   async (event) => {
     const requestData = event.data?.data();
