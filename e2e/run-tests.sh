@@ -145,14 +145,17 @@ npm run build:local
 echo ""
 echo "▶️  Running Playwright tests..."
 
+# Default to CI mode to avoid interactive prompts unless explicitly overridden
+export CI="${CI:-1}"
+
 # Record test start time
-TEST_START_TIME=$(date +%s)
+START_TIME_TEST=$(date +%s)
 npx playwright test --config=playwright.nonlive.config.ts "$@"
 TEST_EXIT_CODE=$?
 
 # Calculate test duration
-TEST_END_TIME=$(date +%s)
-TEST_DURATION=$((TEST_END_TIME - TEST_START_TIME))
+END_TIME_TEST=$(date +%s)
+TEST_DURATION=$((END_TIME_TEST - START_TIME_TEST))
 
 echo ""
 if [ $TEST_EXIT_CODE -eq 0 ]; then

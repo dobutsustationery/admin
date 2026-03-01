@@ -1,74 +1,40 @@
-# Image Pipeline Review (Fresh Pass)
+# Image Pipeline Review (Updated)
+
+## Scope Reviewed
+- `src/lib/root-reducer.ts`
+- `src/lib/photos-slice.ts`
+- `functions/shared/idempotency-utils.cjs`
+- `e2e/014-photos/processing-pipeline.spec.ts`
+- Supporting test runner/package script updates
+
+## Validation Run
+- `npm run check`: pass
+- `npm test -- tests/unit/photos-slice.test.ts`: pass
+- `npm run test:e2e:simple -- e2e/014-photos/processing-pipeline.spec.ts`: pass (1/1)
 
 ## Findings (ordered by severity)
 
-### 1) [BLOCKER] Processing config is overwritten on every hydrate, so user config does not persist
+### 1) [FIXED] Hydration migration was resetting processing config
+- Migration logic now correctly detects old format by step element type (string) instead of only checking array-ness.
+- Verified in code:
+  - `src/lib/root-reducer.ts:108`
+- E2E now includes a HYDRATE persistence check and passes.
 
-- `src/lib/root-reducer.ts:108` checks `Array.isArray(oldConfig.steps)`.
-- New config shape also uses an array (`steps: ProcessingStep[]`), so this condition is true for both old and new formats.
-- Result: hydration resets config back to defaults (`crop=false, color_correct=true, remove_background=true`) every time.
+### 2) [FIXED] `remove_bg` vs `remove_background` status mismatch
+- `complete_edit` now marks `remove_background` as complete for either operation string.
+- Verified in code:
+  - `src/lib/photos-slice.ts:373`
 
-Impact:
-
-- Configurable pipeline is not actually persistent across reload/replay.
-- User changes in modal can appear saved briefly, then revert on next hydration.
-
-Recommendation:
-
-- Migrate by validating element shape (string vs `{ type, enabled }`), not by `Array.isArray`.
-
-### 2) [HIGH] `remove_background` completion from worker does not set done status in client queue
-
-- Worker broadcasts operation as transform name, e.g. `remove_bg`:
-  - `functions/shared/photos-sync-worker.cjs:224`
-- Client queue tracks status key as `remove_background`:
-  - `src/lib/photos-slice.ts:358`
-- `photos/+page.svelte` now relies on worker broadcast for non-idempotent completion:
-  - `src/routes/photos/+page.svelte:440`
-
-Impact:
-
-- `remove_background` jobs can complete but remain unchecked in `edits[id].status`.
-- Subsequent runs can reschedule background removal unnecessarily.
-
-Recommendation:
-
-- Normalize operation naming at one boundary:
-  - Either worker emits `remove_background`,
-  - Or slice maps `remove_bg` -> `remove_background` before status update.
-
-### 3) [MEDIUM] New E2E test is stale against current modal DOM and defaults
-
-- Test selects `.space-y-2 > div`:
-  - `e2e/014-photos/processing-pipeline.spec.ts:39`
-- Modal now renders `.steps-list` / `.step-row`:
-  - `src/lib/components/ProcessingConfigModal.svelte:77`
-- Test expects initial order `Crop, Background, Color`:
-  - `e2e/014-photos/processing-pipeline.spec.ts:38`
-- Current default is `Crop (disabled), Color, Background`:
-  - `src/lib/photos-slice.ts:63`
-
-Impact:
-
-- Coverage added for this feature is likely failing or not asserting real behavior.
-
-Recommendation:
-
-- Update selectors and expected default ordering/enabled states.
-- Add assertion that persisted config survives a hydrate cycle.
-
-## What Looks Good
-
-- Worker now emits `photos/complete_edit` for transform completions, reducing duplicate client-side completion dispatching (`functions/shared/photos-sync-worker.cjs:218`).
-- Step enable/disable + reordering UI is cleanly wired into store state (`src/lib/components/ProcessingConfigModal.svelte`, `src/routes/photos/+page.svelte:1157`).
-- Idempotency transform versioning was expanded (`crop_v3`) and shared between client/server utils.
-
-## Validation Performed
-
-- `npm run check`: pass
-- `npm test -- tests/unit/photos-slice.test.ts`: pass
+### 3) [FIXED] Pipeline config E2E test was stale
+- Test selectors and expectations were updated to current modal structure and defaults.
+- Test now validates:
+  - enable/disable behavior,
+  - reorder behavior,
+  - persistence after save,
+  - persistence through HYDRATE.
+- Verified in:
+  - `e2e/014-photos/processing-pipeline.spec.ts:5`
 
 ## Overall Recommendation
-
-- Not ready to merge yet due to findings #1 and #2.
-- Fix those two first, then rerun `check`, unit tests, and pipeline E2E.
+- No open blockers found in this pass.
+- Current pipeline configurability changes are in good shape based on the reviewed scope and executed checks.

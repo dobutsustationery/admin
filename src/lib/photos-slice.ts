@@ -370,7 +370,7 @@ const photosSlice = createSlice({
           };
         if (operation === "crop") q.status.crop = true;
         if (operation === "color_correct") q.status.color_correct = true;
-        if (operation === "remove_background")
+        if (operation === "remove_background" || operation === "remove_bg")
           q.status.remove_background = true;
       }
 

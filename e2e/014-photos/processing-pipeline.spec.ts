@@ -2,7 +2,7 @@ import { test, expect } from "../fixtures/auth";
 import { waitForAppReady } from "../helpers/loading-helper";
 
 test.describe("Photo Processing Pipeline Configuration", () => {
-  test("User can reorder processing steps", async ({
+  test("User can enable/disable and reorder processing steps", async ({
     authenticatedPage: page,
   }) => {
     // 1. Navigate to Photos page
@@ -12,7 +12,7 @@ test.describe("Photo Processing Pipeline Configuration", () => {
     // Wait for test helpers to be available
     await page.waitForFunction(() => (window as any).testHelpers);
 
-    // Inject mock data to make the Categorized section visible
+    // Inject mock data
     await page.evaluate(() => {
       const { store, actions } = (window as any).testHelpers;
       const mockPhoto = {
@@ -42,33 +42,49 @@ test.describe("Photo Processing Pipeline Configuration", () => {
     );
     await expect(modalTitle).toBeVisible();
 
-    // 4. Check initial order
-    // Default: 1. Auto-Crop, 2. Background Removal, 3. Color Correction
-    const steps = page.locator(".space-y-2 > div");
-    await expect(steps).toHaveCount(3);
-    await expect(steps.nth(0)).toContainText("Auto-Crop");
-    await expect(steps.nth(1)).toContainText("Background Removal");
-    await expect(steps.nth(2)).toContainText("Color Correction");
+    // 4. Check initial order and enabled states
+    // Default: 1. Auto-Crop (disabled), 2. Color Correction, 3. Background Removal
+    const stepsList = page.locator(".steps-list");
+    const stepRows = stepsList.locator(".step-row");
+    await expect(stepRows).toHaveCount(3);
 
-    // 5. Reorder: Move Color Correction up to the top
-    // Initial: 1. Crop, 2. BG, 3. Color
-    const colorRow = steps.filter({ hasText: "Color Correction" });
-    const moveUpColor = colorRow.locator('button[title="Move Up"]');
+    // Check Auto-Crop (Initial: 1st, Disabled)
+    const cropRow = stepRows.nth(0);
+    await expect(cropRow).toContainText("Auto-Crop");
+    await expect(cropRow).toHaveClass(/disabled/);
+    const cropSwitch = cropRow.locator('input[type="checkbox"]');
+    const cropSlider = cropRow.locator('.slider');
+    await expect(cropSwitch).not.toBeChecked();
 
-    // Click up: Color moves to 2nd position
-    await moveUpColor.click();
-    await expect(colorRow).toContainText("2.");
-    await expect(steps.nth(1)).toContainText("Color Correction");
+    // Check Color Correction (Initial: 2nd, Enabled)
+    const colorRow = stepRows.nth(1);
+    await expect(colorRow).toContainText("Color Correction");
+    await expect(colorRow).not.toHaveClass(/disabled/);
+    const colorSwitch = colorRow.locator('input[type="checkbox"]');
+    await expect(colorSwitch).toBeChecked();
 
-    // Click up again: Color moves to 1st position
-    await moveUpColor.click();
-    await expect(colorRow).toContainText("1.");
-    await expect(steps.nth(0)).toContainText("Color Correction");
+    // Check Background Removal (Initial: 3rd, Enabled)
+    const bgRow = stepRows.filter({ hasText: "Background Removal" });
+    await expect(bgRow).toContainText("Background Removal");
+    await expect(bgRow).not.toHaveClass(/disabled/);
+    const bgSwitch = bgRow.locator('input[type="checkbox"]');
+    await expect(bgSwitch).toBeChecked();
 
-    // Verify full order
-    await expect(steps.nth(0)).toContainText("Color Correction");
-    await expect(steps.nth(1)).toContainText("Auto-Crop");
-    await expect(steps.nth(2)).toContainText("Background Removal");
+    // 5. Modify: Enable Auto-Crop, Move BG Removal to top
+    // Enable Auto-Crop
+    await cropSlider.click();
+    await expect(cropRow).not.toHaveClass(/disabled/);
+    await expect(cropSwitch).toBeChecked();
+
+    // Move BG Removal Up twice to reach the top
+    const moveUpBg = bgRow.locator('button[title="Move Up"]');
+    await moveUpBg.click(); // Now 2nd
+    await moveUpBg.click(); // Now 1st
+
+    // Verify new order
+    await expect(stepRows.nth(0)).toContainText("Background Removal");
+    await expect(stepRows.nth(1)).toContainText("Auto-Crop");
+    await expect(stepRows.nth(2)).toContainText("Color Correction");
 
     // 6. Save Configuration
     const saveBtn = page.locator('button:has-text("Save Configuration")');
@@ -77,11 +93,27 @@ test.describe("Photo Processing Pipeline Configuration", () => {
     // 7. Verify Modal is closed
     await expect(modalTitle).not.toBeVisible();
 
-    // 8. Open again and verify order persisted in state
+    // 8. Open again and verify order and states persisted
     await configBtn.click();
-    await expect(steps.nth(0)).toContainText("Color Correction");
-    await expect(steps.nth(1)).toContainText("Auto-Crop");
-    await expect(steps.nth(2)).toContainText("Background Removal");
+    await expect(stepRows.nth(0)).toContainText("Background Removal");
+    await expect(stepRows.nth(1)).toContainText("Auto-Crop");
+    await expect(stepRows.nth(2)).toContainText("Color Correction");
+    await expect(stepRows.nth(1).locator('input[type="checkbox"]')).toBeChecked();
+
+    // 9. HYDRATE Test: Verify config survives hydration
+    await page.evaluate(() => {
+      const { store } = (window as any).testHelpers;
+      const state = store.getState();
+      store.dispatch({
+        type: "HYDRATE",
+        payload: { ...state }
+      });
+    });
+
+    // Re-verify modal after simulated hydration
+    await expect(stepRows.nth(0)).toContainText("Background Removal");
+    await expect(stepRows.nth(1)).toContainText("Auto-Crop");
+    await expect(stepRows.nth(2)).toContainText("Color Correction");
 
     await page.locator('button:has-text("Cancel")').click();
   });

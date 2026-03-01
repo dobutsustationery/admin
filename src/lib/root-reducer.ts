@@ -105,7 +105,13 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
     // Migration: Ensure photos.processingConfig exists and follows the new object structure
     if (hydratedState.photos) {
       const oldConfig = hydratedState.photos.processingConfig;
-      if (!oldConfig || Array.isArray(oldConfig.steps)) {
+      const isOldFormat =
+        !oldConfig ||
+        !oldConfig.steps ||
+        (Array.isArray(oldConfig.steps) &&
+          typeof oldConfig.steps[0] === "string");
+
+      if (isOldFormat) {
         // If config is missing or using the old array of strings format
         hydratedState.photos.processingConfig = {
           steps: [
