@@ -395,10 +395,46 @@ export function clearToken(): void {
 }
 
 /**
+ * Get information about token expiry
+ */
+export function getExpiryInfo(): {
+  expired: boolean;
+  expiresInSeconds: number;
+  expiresAt: number;
+} | null {
+  const token = getStoredToken();
+  if (!token) return null;
+
+  const now = Date.now();
+  const expiresInSeconds = Math.max(
+    0,
+    Math.floor((token.expires_at - now) / 1000),
+  );
+
+  return {
+    expired: expiresInSeconds <= 0,
+    expiresInSeconds,
+    expiresAt: token.expires_at,
+  };
+}
+
+/**
+ * Attempt to refresh tokens silently.
+ * For now, this triggers a redirect flow if refresh is needed.
+ */
+export async function refreshTokensSilently(): Promise<boolean> {
+  if (!isDriveConfigured()) return false;
+  console.log("[DriveAuth] Refreshing tokens via redirect...");
+  initiateOAuthFlow();
+  return true;
+}
+
+/**
  * Check if user is authenticated with Google Drive
  */
 export function isAuthenticated(): boolean {
-  return getStoredToken() !== null;
+  const expiry = getExpiryInfo();
+  return !!expiry && !expiry.expired;
 }
 
 /**
