@@ -51,14 +51,17 @@ export function generateDerivationKey(
 const CLIENT_ID =
   (typeof window !== "undefined" &&
     (window as any).__GOOGLE_DRIVE_CLIENT_ID__) ||
-  import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
+  import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID ||
+  process.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
 const FOLDER_ID =
   (typeof window !== "undefined" &&
     (window as any).__GOOGLE_DRIVE_FOLDER_ID__) ||
-  import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID;
+  import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID ||
+  process.env.VITE_GOOGLE_DRIVE_FOLDER_ID;
 const SCOPES = (
   (typeof window !== "undefined" && (window as any).__GOOGLE_DRIVE_SCOPES__) ||
   import.meta.env.VITE_GOOGLE_DRIVE_SCOPES ||
+  process.env.VITE_GOOGLE_DRIVE_SCOPES ||
   "https://www.googleapis.com/auth/drive.file"
 ).split(",");
 
@@ -334,6 +337,7 @@ export function isDriveConfigured(): boolean {
  */
 export function getStoredToken(): GoogleDriveToken | null {
   try {
+    if (typeof localStorage === "undefined") return null;
     const tokenJson = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!tokenJson) return null;
 
@@ -363,7 +367,9 @@ export function getStoredToken(): GoogleDriveToken | null {
     return token;
   } catch (e) {
     console.error("Error retrieving stored token:", e);
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
     return null;
   }
 }
@@ -373,6 +379,7 @@ export function getStoredToken(): GoogleDriveToken | null {
  */
 export function storeToken(token: GoogleDriveToken): void {
   try {
+    if (typeof localStorage === "undefined") return;
     localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(token));
   } catch (e) {
     console.error("Error storing token:", e);
@@ -383,6 +390,7 @@ export function storeToken(token: GoogleDriveToken): void {
  * Clear stored access token
  */
 export function clearToken(): void {
+  if (typeof localStorage === "undefined") return;
   localStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
@@ -1081,36 +1089,49 @@ export async function uploadImageToDrive(
   const uploadUrl = initRes.headers.get("Location");
   if (!uploadUrl) throw new Error("No upload location returned");
 
-  // 2. Upload Data with Progress (using XHR for progress events)
-  const uploadPromise = new Promise<any>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", uploadUrl);
+  // 2. Upload Data with Progress (using XHR if available for progress events)
+  let fileData: any;
+  if (typeof XMLHttpRequest !== "undefined") {
+    const uploadPromise = new Promise<any>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", uploadUrl);
 
-    if (onProgress) {
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          onProgress(e.loaded, e.total);
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            onProgress(e.loaded, e.total);
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch (e) {
+            reject(new Error("Failed to parse upload response"));
+          }
+        } else {
+          reject(new Error(`Upload failed with status ${xhr.status}`));
         }
       };
+
+      xhr.onerror = () => reject(new Error("XHR Upload failed"));
+      xhr.send(blob);
+    });
+    fileData = await uploadPromise;
+  } else {
+    // Fallback for Node.js environment where XHR is missing
+    const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      body: blob,
+    });
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      throw new Error(`Upload failed: ${uploadRes.status} ${errText}`);
     }
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText));
-        } catch (e) {
-          reject(new Error("Failed to parse upload response"));
-        }
-      } else {
-        reject(new Error(`Upload failed with status ${xhr.status}`));
-      }
-    };
-
-    xhr.onerror = () => reject(new Error("XHR Upload failed"));
-    xhr.send(blob);
-  });
-
-  const fileData = await uploadPromise;
+    fileData = await uploadRes.json();
+  }
 
   // 3. Make public immediately
   await setFilePermissions(fileData.id, accessToken);
