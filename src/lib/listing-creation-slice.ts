@@ -1064,9 +1064,17 @@ export const generate_proposals =
       );
 
       const candidates: CleanListingProposal[] = [];
-      const baseJanKeys = Object.entries(baseJanMap);
+      const baseJanKeys = Object.entries(baseJanMap).filter(
+        ([baseJan]) => !listingCreation.proposals[baseJan],
+      );
       const totalBaseJans = baseJanKeys.length;
       let processedBase = 0;
+
+      if (totalBaseJans === 0) {
+        console.log(
+          "[Generate] All organized photo groups already have associated proposals. Nothing to generate.",
+        );
+      }
 
       // 3. Iterate Base JANs
       for (const [baseJan, photoGroups] of baseJanKeys) {
