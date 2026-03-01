@@ -57,6 +57,8 @@ const reducerObject = {
   syncQueue,
   listingCreation,
   ui,
+  schemaVersion: (state: number = CURRENT_SCHEMA_VERSION) =>
+    state || CURRENT_SCHEMA_VERSION,
 };
 const combinedReducer = combineReducers(reducerObject);
 
