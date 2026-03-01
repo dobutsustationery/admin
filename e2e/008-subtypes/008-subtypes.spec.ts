@@ -1,5 +1,5 @@
 import { expect, test } from "../fixtures/auth";
-import { waitForAppReady } from "../helpers/loading-helper";
+import { waitForAppReady, waitForImages } from "../helpers/loading-helper";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import * as path from "path";
@@ -136,17 +136,7 @@ test.describe("Subtypes Page", () => {
     await signInButton.waitFor({ state: "hidden", timeout: 50000 });
 
     // Image loading wait logic
-    console.log("   ⏳ Waiting for images to load...");
-    await page.evaluate(async () => {
-      const loaders = Array.from(document.images).map((img) => {
-        if (img.complete) return Promise.resolve();
-        return new Promise((resolve) => {
-          img.onload = resolve;
-          img.onerror = resolve;
-        });
-      });
-      await Promise.all(loaders);
-    });
+    await waitForImages(page);
 
     const step2Verifications = [
       {
@@ -191,16 +181,7 @@ test.describe("Subtypes Page", () => {
     await heading.waitFor({ state: "visible", timeout: 50000 });
 
     // Wait for all images again to ensure full load
-    await page.evaluate(async () => {
-      const loaders = Array.from(document.images).map((img) => {
-        if (img.complete) return Promise.resolve();
-        return new Promise((resolve) => {
-          img.onload = resolve;
-          img.onerror = resolve;
-        });
-      });
-      await Promise.all(loaders);
-    });
+    await waitForImages(page);
 
     const step3Verifications = [
       {

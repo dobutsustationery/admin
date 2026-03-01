@@ -19,3 +19,32 @@ export async function waitForAppReady(page: Page) {
   await loadingOverlay.waitFor({ state: "detached", timeout: 30000 });
   console.log("   ✓ Application ready (loading screen removed)");
 }
+
+/**
+ * Waits for all images on the page to be fully loaded, decoded, and ready for display.
+ * This is crucial for stable visual snapshots, especially to avoid antialiasing issues.
+ */
+export async function waitForImages(page: Page) {
+  console.log("⏳ Waiting for images to load and decode...");
+  await page.evaluate(async () => {
+    const loaders = Array.from(document.images).map(async (img) => {
+      if (img.src) {
+        try {
+          if (!img.complete) {
+            await new Promise((resolve) => {
+              img.onload = resolve;
+              img.onerror = resolve;
+            });
+          }
+          // Ensure the image is decoded and ready for rendering
+          await img.decode();
+        } catch (e) {
+          // Ignore decode errors for broken images
+        }
+      }
+    });
+    await Promise.all(loaders);
+    // Extra frame to ensure layout/rendering has settled
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+}

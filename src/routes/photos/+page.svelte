@@ -333,9 +333,7 @@
           console.info(
             `[EditQueue] Clearing stale 'failed' upload status for ${id} as processed Drive file exists.`,
           );
-          store.dispatch(
-            complete_upload({ id, permanentUrl: item.baseUrl || "" }),
-          );
+          store.dispatch(complete_upload({ id, permanentUrl: finalUrl }));
         }
 
         return true; // Mark as successfully handled (idempotent)
@@ -362,6 +360,7 @@
         console.info(
           `[EditQueue] Resetting failed upload status for ${id} to allow retry.`,
         );
+        // Using the original baseUrl (likely ephemeral Photos URL) to reset to a 'pending' transfer state
         store.dispatch(
           complete_upload({ id, permanentUrl: item.baseUrl || "" }),
         );
@@ -571,10 +570,12 @@
       const q = edits[p.id];
       const status = q?.status;
       const isDone = status && status[op];
+      const isUploadFailed = uploads[p.id]?.status === "failed";
 
       // We skip ONLY if it is truly done (successful idempotent result exists or was just completed).
       // If it was previously failed, it won't be 'done' in status, so it will be included.
-      if (!isDone) {
+      // We ALWAYS include if the initial upload failed, because the source is missing.
+      if (!isDone || isUploadFailed) {
         allIds.add(p.id);
       }
     });
