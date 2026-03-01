@@ -199,6 +199,33 @@
     });
   }
 
+  async function refreshSecrets() {
+    if (!$user?.uid) return;
+    const uid = $user.uid;
+    const { photosToken, driveToken } = getLongestAvailableDriveToken();
+    if (!photosToken && !driveToken) return;
+
+    const secretDocId = `photos-secret-${uid}`;
+    const secretData: any = {
+      creator: uid,
+      source: "photo-upload-manager:queue-refresh",
+      updatedAtMs: Date.now(),
+      expiresAtMs: Date.now() + 60 * 60 * 1000,
+    };
+
+    if (photosToken) secretData.photosAccessToken = photosToken.access_token;
+    if (driveToken) secretData.driveAccessToken = driveToken.access_token;
+
+    console.log(
+      `[UploadManager] Refreshing backend secrets for user ${uid}...`,
+    );
+    await setDoc(
+      doc(firestore, SYNC_SECRETS_COLLECTION, secretDocId),
+      secretData,
+      { merge: true },
+    );
+  }
+
   async function processQueue() {
     // Requirements: User signed in (Firebase) AND a Drive-capable token available
     if (!$user || !$user.uid) return;
@@ -223,6 +250,8 @@
         `[UploadManager] Found ${candidates.length} candidates`,
         candidates.map((c) => c.id),
       );
+      // Ensure secrets are fresh before processing a batch
+      await refreshSecrets();
     }
 
     if (candidates.length === 0) return;

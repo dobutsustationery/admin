@@ -60,11 +60,14 @@
     limit,
     onSnapshot,
     serverTimestamp,
+    setDoc,
+    doc,
   } from "firebase/firestore";
   import { user } from "$lib/user-store";
   import { signOut } from "firebase/auth";
   import {
     SYNC_COLLECTION,
+    SYNC_SECRETS_COLLECTION,
     PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
   } from "$lib/sync-events";
 
@@ -425,6 +428,42 @@
     remove_background: "Removing Backgrounds",
   };
 
+  async function provideSecretsToBackend() {
+    const uid = $user.uid;
+    if (!uid) return;
+
+    const photosToken = getStoredToken();
+    const driveToken = getDriveStoredToken();
+
+    if (!photosToken && !driveToken) {
+      console.warn("[Secrets] No tokens available to refresh backend.");
+      return;
+    }
+
+    const secretDocId = `photos-secret-${uid}`;
+    const secretData: any = {
+      creator: uid,
+      source: "photos-page:batch-start",
+      updatedAtMs: Date.now(),
+    };
+
+    if (photosToken) {
+      secretData.photosAccessToken = photosToken.access_token;
+      secretData.photosExpiresAtMs = photosToken.expires_at;
+    }
+    if (driveToken) {
+      secretData.driveAccessToken = driveToken.access_token;
+      secretData.driveExpiresAtMs = driveToken.expires_at;
+    }
+
+    console.log(`[Secrets] Refreshing backend secrets for user ${uid}...`);
+    await setDoc(
+      doc(firestore, SYNC_SECRETS_COLLECTION, secretDocId),
+      secretData,
+      { merge: true },
+    );
+  }
+
   async function handleProcessImages() {
     if (isEditing) return;
     isEditing = true;
@@ -435,6 +474,9 @@
     );
 
     try {
+      // 0. Ensure backend has current tokens before starting work
+      await provideSecretsToBackend();
+
       for (const step of pipelineSteps as ProcessingStepType[]) {
         const ids = scheduleBatch(step);
         console.log(`[Batch] Step ${step} scheduled ${ids.length} items.`);
@@ -451,16 +493,26 @@
 
         // Dispatch with staggered delay
         for (const id of ids) {
-          const result = await dispatchTransformRequest(id, step);
-          if (result === true) {
-            // Idempotent match - already done
-            batchProgress.current++;
-            batchProgress.completedIds = [...batchProgress.completedIds, id];
-          } else if (result) {
-            // New request dispatched
-            idsToWait.push(id);
-          } else {
-            // Failed
+          try {
+            const result = await dispatchTransformRequest(id, step);
+            if (result === true) {
+              // Idempotent match - already done
+              batchProgress.current++;
+              batchProgress.completedIds = [...batchProgress.completedIds, id];
+            } else if (result) {
+              // New request dispatched
+              idsToWait.push(id);
+            } else {
+              // Failed dispatch - try refreshing secrets once
+              await provideSecretsToBackend();
+              batchProgress.total--;
+            }
+          } catch (e) {
+            console.warn(
+              `[Batch] Dispatch error for ${id}, refreshing secrets:`,
+              e,
+            );
+            await provideSecretsToBackend();
             batchProgress.total--;
           }
           await new Promise((r) => setTimeout(r, 100));
