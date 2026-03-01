@@ -9,7 +9,6 @@
 ![Connect Flow](screenshots/000-connect.png)
 
 **Programmatic Verification:**
-
 - [ ] Navigate to Photos page
 - [ ] Verify Connect Button
 - [ ] Simulate OAuth Callback
@@ -20,7 +19,7 @@
 ![Picker Flow](screenshots/001-picker-selection.png)
 
 **Programmatic Verification:**
-
 - [ ] Start Selection
 - [ ] Wait for Polling (Mocked)
 - [ ] Verify Photos
+

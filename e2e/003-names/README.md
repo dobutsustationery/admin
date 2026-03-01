@@ -9,7 +9,6 @@
 ![Signed Out State](screenshots/000-signed-out-state.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated "Sign In" button is visible
 - [ ] Validated heading contains "Recently Used Names"
 
@@ -18,7 +17,6 @@
 ![Signed In State](screenshots/001-signed-in-state.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated "Sign In" button is hidden
 - [ ] Validated Redux store has user state
 
@@ -27,9 +25,9 @@
 ![Names Page Loaded](screenshots/002-names-loaded.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated heading is "Recently Used Names"
 - [ ] Validated ID input is visible
 - [ ] Validated Value input is visible
 - [ ] Validated Add button is visible
 - [ ] Validated Redux store has names state
+

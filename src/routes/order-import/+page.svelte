@@ -1000,12 +1000,12 @@
         <div class="split-list">
           {#if currentConflictItem.conflictType === "DATA_MISMATCH"}
             <div class="hs-resolution">
-              <p class="font-bold mb-2">Resolve Data Mismatches:</p>
+              <p class="resolution-title">Resolve Data Mismatches:</p>
 
               {#each currentConflictItem.conflictingFields || [] as field}
-                <div class="mb-4">
-                  <p class="text-sm font-semibold mb-1">{field}</p>
-                  <div class="flex flex-col gap-2">
+                <div class="field-conflict">
+                  <p class="field-name">{field}</p>
+                  <div class="options-group">
                     <!-- Incoming Option -->
                     <label class="radio-label">
                       <input
@@ -1014,7 +1014,7 @@
                         value="incoming"
                       />
                       <div class="radio-content">
-                        <span class="text-sm"
+                        <span class="option-text"
                           >Use Incoming:
                           <strong>
                             {field === "HS Code"
@@ -1045,7 +1045,7 @@
                         value="existing"
                       />
                       <div class="radio-content">
-                        <span class="text-sm"
+                        <span class="option-text"
                           >Keep Existing:
                           <strong>
                             {field === "HS Code"
@@ -1263,7 +1263,23 @@
     gap: 1rem;
     margin-top: 1rem;
   }
-
+  .resolution-title {
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .field-conflict {
+    margin-bottom: 1rem;
+  }
+  .field-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  .options-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
   .radio-label {
     display: flex;
     align-items: flex-start;
@@ -1274,16 +1290,16 @@
     border-radius: 6px;
     transition: background 0.2s;
   }
-
   .radio-label:hover {
     background: #f9f9f9;
   }
-
   .radio-content {
     display: flex;
     flex-direction: column;
   }
-
+  .option-text {
+    font-size: 0.875rem;
+  }
   .hs-desc {
     font-size: 0.85rem;
     color: #666;

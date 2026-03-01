@@ -44,12 +44,8 @@
 
 <div class="celebration-overlay">
   <div class="content">
-    <h1 class="text-4xl font-bold text-blue-600 mb-4 animate-bounce">
-      Batch Complete!
-    </h1>
-    <p class="text-xl text-gray-700">
-      Great job! All listings have been processed.
-    </p>
+    <h1 class="victory-title">Batch Complete!</h1>
+    <p class="victory-message">Great job! All listings have been processed.</p>
   </div>
 </div>
 
@@ -79,6 +75,31 @@
       0 20px 25px -5px rgba(0, 0, 0, 0.1),
       0 10px 10px -5px rgba(0, 0, 0, 0.04);
     border: 2px solid #3b82f6;
+  }
+
+  .victory-title {
+    font-size: 2.25rem; /* text-4xl */
+    font-weight: 700; /* font-bold */
+    color: #2563eb; /* text-blue-600 */
+    margin-bottom: 1rem; /* mb-4 */
+    animation: bounce 1s infinite;
+  }
+
+  .victory-message {
+    font-size: 1.25rem; /* text-xl */
+    color: #374151; /* text-gray-700 */
+  }
+
+  @keyframes bounce {
+    0%,
+    100% {
+      transform: translateY(-25%);
+      animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+    }
+    50% {
+      transform: translateY(0);
+      animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+    }
   }
 
   @keyframes fadeOut {

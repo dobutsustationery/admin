@@ -975,20 +975,18 @@
 
         <!-- Migration Panel -->
         {#if pendingMigrations.length > 0}
-          <div class="panel migration-panel mb-4 bg-blue-50 border-blue-200">
-            <div class="flex justify-between items-center">
+          <div class="migration-panel">
+            <div class="migration-header">
               <div>
-                <h3 class="text-blue-800 m-0">Image Migration</h3>
-                <p class="text-sm text-blue-600 mt-1">
+                <h3 class="migration-title">Image Migration</h3>
+                <p class="migration-description">
                   {pendingMigrations.length} products have Shopify CDN images that
                   need to be backed up to Drive.
                 </p>
               </div>
-              <div class="flex items-center gap-3">
+              <div class="migration-actions">
                 {#if processing && uploadStatus}
-                  <span class="text-xs text-blue-600 animate-pulse"
-                    >{uploadStatus}</span
-                  >
+                  <span class="migration-status-text">{uploadStatus}</span>
                 {/if}
                 <button
                   class="btn-primary"
@@ -999,10 +997,10 @@
                 </button>
               </div>
             </div>
-            <div class="w-full bg-blue-200 h-1 mt-3 rounded overflow-hidden">
+            <div class="migration-progress-track">
               <!-- Simple visual feedback if migrating -->
               {#if processing && uploadStatus.includes("Migrating")}
-                <div class="h-full bg-blue-600 animate-progress"></div>
+                <div class="migration-progress-fill"></div>
               {/if}
             </div>
           </div>
@@ -1113,41 +1111,33 @@
                 <h2>Preview: {selectedFile.name}</h2>
 
                 <!-- Description Toggle -->
-                <div class="mb-4 p-4 bg-gray-50 rounded border border-gray-200">
-                  <label
-                    class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border"
-                  >
-                    <input
-                      type="checkbox"
-                      bind:checked={useShopifyDescription}
-                    />
-                    Accept Shopify Descriptions
-                  </label>
-                  <label
-                    class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border"
-                  >
-                    <input type="checkbox" bind:checked={useShopifyImages} />
-                    Accept Shopify Images
-                  </label>
-                  <label
-                    class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border"
-                  >
-                    <input type="checkbox" bind:checked={useShopifyHandles} />
-                    Accept Shopify Handles
-                  </label>
-                  <label
-                    class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border"
-                  >
-                    <input type="checkbox" bind:checked={useShopifyWeights} />
-                    Accept Shopify Weights
-                  </label>
-                  <label
-                    class="flex items-center gap-2 text-sm bg-white px-3 py-1 rounded shadow-sm border"
-                  >
-                    <input type="checkbox" bind:checked={ignoreShopifyQty} />
-                    Ignore Shopify quantities
-                  </label>
-                  <p class="text-xs text-muted mt-1">
+                <div class="import-settings">
+                  <div class="settings-grid">
+                    <label class="setting-label">
+                      <input
+                        type="checkbox"
+                        bind:checked={useShopifyDescription}
+                      />
+                      Accept Shopify Descriptions
+                    </label>
+                    <label class="setting-label">
+                      <input type="checkbox" bind:checked={useShopifyImages} />
+                      Accept Shopify Images
+                    </label>
+                    <label class="setting-label">
+                      <input type="checkbox" bind:checked={useShopifyHandles} />
+                      Accept Shopify Handles
+                    </label>
+                    <label class="setting-label">
+                      <input type="checkbox" bind:checked={useShopifyWeights} />
+                      Accept Shopify Weights
+                    </label>
+                    <label class="setting-label">
+                      <input type="checkbox" bind:checked={ignoreShopifyQty} />
+                      Ignore Shopify quantities
+                    </label>
+                  </div>
+                  <p class="settings-hint">
                     If checked, existing descriptions and handles will be
                     overwritten. If "Ignore" is checked, quantity mismatches
                     will flag conflicts but import will skip quantity updates.
@@ -1206,9 +1196,7 @@
                           >
                         </td>
                         <td class="font-mono">{item.janCode}</td>
-                        <td class="truncate" style="max-width: 250px;"
-                          >{item.description}</td
-                        >
+                        <td class="truncate-cell">{item.description}</td>
                         <td>{item.qty}</td>
                         <td>
                           {#if item.status === "CONFLICT"}
@@ -1253,18 +1241,18 @@
         <p>JAN: <strong>{currentConflictItem.janCode}</strong></p>
 
         {#if currentConflictItem.conflictType === "MULTIPLE_MATCHES"}
-          <div class="message error mb-4">
-            <p class="font-bold">Multiple Matches Found</p>
-            <p class="text-sm">
+          <div class="message error conflict-alert">
+            <p class="alert-title">Multiple Matches Found</p>
+            <p class="alert-msg">
               This product matches multiple items in your inventory. This
               indicates a data integrity issue (duplicate JAN codes).
             </p>
             {#if currentConflictItem.matchingKeys}
-              <p class="text-xs font-mono mt-2 p-2 bg-red-100 rounded">
+              <p class="matching-keys-list">
                 Matches: {currentConflictItem.matchingKeys.join(", ")}
               </p>
             {/if}
-            <p class="text-sm mt-2">
+            <p class="alert-msg-sub">
               Please fix the inventory data manually in the Admin Console or
               select one to sync (not yet supported in UI).
             </p>
@@ -1272,8 +1260,8 @@
         {:else if currentConflictItem.conflictingFields}
           {#each currentConflictItem.conflictingFields as field}
             <div class="conflict-group">
-              <p class="font-bold mb-2">{field}</p>
-              <div class="flex flex-col gap-2">
+              <p class="field-title">{field}</p>
+              <div class="options-container">
                 <label class="radio-label">
                   <input
                     type="radio"
@@ -1281,7 +1269,7 @@
                     bind:group={fieldResolutions[field]}
                   />
                   <div class="radio-content">
-                    <span class="text-sm"
+                    <span class="option-label"
                       >Shopify:
                       {#if field === "Image"}
                         <div
@@ -1317,7 +1305,7 @@
                     bind:group={fieldResolutions[field]}
                   />
                   <div class="radio-content">
-                    <span class="text-sm"
+                    <span class="option-label"
                       >Existing:
                       {#if field === "Image"}
                         <div
@@ -1341,9 +1329,9 @@
                           {getExistingValue(field)}
                         </span>
                       {:else if field === "Handle" && !currentConflictItem.existingItem.handle}
-                        <span class="text-gray-400 font-normal"
+                        <span class="auto-gen-handle"
                           >{getExistingValue(field)}
-                          <span class="text-xs italic">(auto-generated)</span
+                          <span class="auto-gen-tag">(auto-generated)</span
                           ></span
                         >
                       {:else}
@@ -1392,6 +1380,51 @@
     align-items: center;
     gap: 1rem;
   }
+  .migration-panel {
+    margin-bottom: 1rem;
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    padding: 1rem;
+    border-radius: 8px;
+  }
+  .migration-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .migration-title {
+    color: #1e40af;
+    margin: 0;
+  }
+  .migration-description {
+    font-size: 0.875rem;
+    color: #2563eb;
+    margin-top: 0.25rem;
+  }
+  .migration-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .migration-status-text {
+    font-size: 0.75rem;
+    color: #2563eb;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  .migration-progress-track {
+    width: 100%;
+    background-color: #bfdbfe;
+    height: 0.25rem;
+    margin-top: 0.75rem;
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+  .migration-progress-fill {
+    height: 100%;
+    background-color: #2563eb;
+    animation: progress 2s ease-in-out infinite;
+  }
+
   .layout-grid {
     display: grid;
     grid-template-columns: 300px 1fr;
@@ -1427,6 +1460,56 @@
     color: #4f46e5;
     font-weight: 500;
   }
+  .placeholder {
+    color: #9ca3af;
+    text-align: center;
+    padding: 3rem 0;
+  }
+  .loading {
+    color: #6b7280;
+    text-align: center;
+    padding: 2rem 0;
+  }
+
+  .preview-header {
+    margin-bottom: 1.5rem;
+  }
+  .import-settings {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background-color: #f9fafb;
+    border-radius: 0.5rem;
+    border: 1px solid #e5e7eb;
+  }
+  .settings-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .setting-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    background-color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    border: 1px solid #d1d5db;
+    cursor: pointer;
+  }
+  .settings-hint {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-top: 0.5rem;
+  }
+
+  .batch-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
   .table-container {
     margin-top: 1rem;
     overflow-x: auto;
@@ -1441,6 +1524,13 @@
     padding: 0.75rem;
     border-bottom: 1px solid #eee;
   }
+  .truncate-cell {
+    max-width: 250px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .badge {
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
@@ -1472,6 +1562,7 @@
     color: #475569;
     border: 1px solid #cbd5e1;
   }
+
   .btn-primary {
     background: #4f46e5;
     color: white;
@@ -1479,6 +1570,14 @@
     border-radius: 6px;
     border: none;
     cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: #4338ca;
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .btn-secondary {
     background: white;
@@ -1488,6 +1587,10 @@
     border-radius: 6px;
     cursor: pointer;
     margin-right: 0.5rem;
+    font-weight: 500;
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: #f9fafb;
   }
   .btn-small {
     padding: 0.25rem 0.5rem;
@@ -1497,6 +1600,7 @@
     border-radius: 4px;
     cursor: pointer;
   }
+
   .modal-overlay {
     position: fixed;
     top: 0;
@@ -1517,6 +1621,74 @@
     max-width: 500px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   }
+  .conflict-alert {
+    background-color: #fef2f2;
+    color: #991b1b;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .alert-title {
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .alert-msg {
+    font-size: 0.875rem;
+  }
+  .alert-msg-sub {
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+  }
+  .matching-keys-list {
+    font-size: 0.75rem;
+    font-family: monospace;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background-color: #fee2e2;
+    border-radius: 0.25rem;
+  }
+
+  .conflict-group {
+    margin-bottom: 1rem;
+  }
+  .field-title {
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .options-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .radio-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    transition: background 0.2s;
+  }
+  .radio-label:hover {
+    background: #f9f9f9;
+  }
+  .radio-content {
+    display: flex;
+    flex-direction: column;
+  }
+  .option-label {
+    font-size: 0.875rem;
+  }
+  .auto-gen-handle {
+    color: #9ca3af;
+    font-weight: 400;
+  }
+  .auto-gen-tag {
+    font-size: 0.75rem;
+    font-style: italic;
+  }
+
   .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -1545,29 +1717,12 @@
     background: #fee2e2;
     color: #991b1b;
   }
-  .radio-label {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    cursor: pointer;
-    padding: 0.5rem;
-    border: 1px solid #eee;
-    border-radius: 6px;
-    transition: background 0.2s;
-    margin-bottom: 0.5rem;
-  }
-  .radio-label:hover {
-    background: #f9f9f9;
-  }
   .text-muted {
     color: #9ca3af;
   }
   .text-success {
     color: #166534;
     font-weight: 500;
-  }
-  .conflict-group {
-    margin-bottom: 1rem;
   }
 
   .conflict-thumb-wrapper {
@@ -1719,5 +1874,27 @@
     background: #f9fafb;
     border-color: #d1d5db;
     opacity: 0.8;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes progress {
+    0% {
+      transform: translateX(-100%);
+    }
+    50% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(100%);
+    }
   }
 </style>

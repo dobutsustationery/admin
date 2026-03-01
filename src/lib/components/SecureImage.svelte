@@ -263,19 +263,12 @@
 </script>
 
 {#if loading}
-  <div
-    class="{className} bg-gray-200 animate-pulse flex items-center justify-center"
-  >
-    <span class="text-xs text-gray-400">Loading...</span>
+  <div class="secure-image-loading {className}">
+    <span class="loading-text">Loading...</span>
   </div>
 {:else if error}
-  <div
-    class="{className} bg-red-100 flex items-center justify-center p-2 text-center"
-  >
-    <span
-      class="text-xs text-red-500 font-medium overflow-hidden text-ellipsis px-1"
-      title={error}
-    >
+  <div class="secure-image-error {className}">
+    <span class="error-text" title={error}>
       {error}
     </span>
   </div>
@@ -284,7 +277,7 @@
     src={objectUrl}
     {alt}
     aria-busy={isUploading}
-    class={className}
+    class="secure-image-ready {className}"
     style="width: 100%; height: 100%; display: block; {style}"
     referrerpolicy={referrerPolicyVal}
     crossorigin={crossOriginVal}
@@ -306,3 +299,47 @@
     }}
   />
 {/if}
+
+<style>
+  .secure-image-loading {
+    background-color: #e5e7eb; /* gray-200 */
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .loading-text {
+    font-size: 0.75rem; /* text-xs */
+    color: #9ca3af; /* gray-400 */
+  }
+
+  .secure-image-error {
+    background-color: #fee2e2; /* red-100 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem; /* p-2 */
+    text-align: center;
+  }
+
+  .error-text {
+    font-size: 0.75rem; /* text-xs */
+    color: #ef4444; /* red-500 */
+    font-weight: 500; /* font-medium */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+</style>

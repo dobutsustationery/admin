@@ -4,6 +4,7 @@ This document contains instructions and key information for me, the Gemini Assis
 
 ## 1. Core Architectural Concepts
 
+- **No Tailwind CSS:** Utility-first CSS (Tailwind style) is strictly forbidden. All styling MUST use scoped Svelte `<style>` blocks with semantic classes. Avoid global styles unless absolutely necessary for theme consistency.
 - **Event Sourcing:** The application's state is not stored directly but is reconstructed by replaying an append-only log of immutable actions.
   - **Source of Truth:** The `broadcast` collection in Firestore. Every significant state change is an action document in this collection.
   - **Implication:** To understand the current state, one must process the actions from the beginning. The `transfer-data.js` script is essential for getting this history into a local environment.

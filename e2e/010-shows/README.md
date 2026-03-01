@@ -9,7 +9,6 @@
 ![Signed Out State](screenshots/000-signed-out-state.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated "Sign In" button is visible
 - [ ] Validated heading contains "Create and view event sales"
 
@@ -18,7 +17,6 @@
 ![Signed In State](screenshots/001-signed-in-state.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated "Sign In" button is hidden
 - [ ] Validated Redux store has user state
 
@@ -27,8 +25,8 @@
 ![Shows Loaded](screenshots/002-shows-loaded.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated heading contains "Create and view event sales"
 - [ ] Validated "Available Archives" heading (if visible)
 - [ ] Validated table exists (if visible)
 - [ ] Validated Redux store has sales events state
+

@@ -1214,25 +1214,20 @@
   on:save={handleSaveConfig}
 />
 
-<div class="p-8 max-w-6xl mx-auto relative">
-  <div class="flex justify-between items-center mb-8">
+<div class="page-container">
+  <div class="header-section">
     <div>
-      <h1 class="text-3xl font-bold text-gray-800">Google Photos Import</h1>
-      <div class="mt-2 flex items-center gap-3">
+      <h1 class="page-title">Google Photos Import</h1>
+      <div class="auth-status-row">
         <!-- Status Indicator -->
         {#if isPhotosAuthenticated}
-          <span
-            class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-green-100 text-green-800"
-            title={connectedEmail}
-          >
-            <span class="w-2 h-2 rounded-full bg-green-600"></span>
+          <span class="status-badge connected" title={connectedEmail}>
+            <span class="status-dot green"></span>
             Connected {connectedEmail ? `as ${connectedEmail}` : ""}
           </span>
         {:else}
-          <span
-            class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800"
-          >
-            <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+          <span class="status-badge disconnected">
+            <span class="status-dot gray"></span>
             Not Connected
           </span>
         {/if}
@@ -1240,7 +1235,7 @@
         <!-- Switch Button -->
         <button
           on:click={() => initiateOAuthFlow(true)}
-          class="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium"
+          class="btn-auth-action"
         >
           {isPhotosAuthenticated ? "Switch Account" : "Connect Account"}
         </button>
@@ -1249,27 +1244,21 @@
   </div>
 
   <!-- CONTENT AREA -->
-  <div
-    class="bg-white p-6 rounded-lg shadow-md min-h-[400px]"
-    data-testid="selection-area"
-  >
+  <div class="selection-area-card" data-testid="selection-area">
     {#if error}
-      <div class="p-4 bg-red-50 text-red-700 rounded mb-4 mt-6">
+      <div class="error-alert">
         {error}
       </div>
     {/if}
 
     {#if !isGenerating}
-      <div
-        class="bg-slate-50 relative mt-8"
-        style="margin: 1em; padding: 0.5em; border: 2px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"
-      >
+      <div class="selection-controls-card">
         <!-- Controls area inside card -->
-        <div class="flex justify-between items-center px-4 pt-4 pb-2">
-          <div class="flex gap-2">
+        <div class="controls-toolbar">
+          <div class="btn-group">
             <button
               on:click={handleClearPhotos}
-              class="bg-red-100 text-red-700 px-3 py-2 rounded-md font-medium hover:bg-red-200 transition text-sm mr-2"
+              class="btn-clear"
               title="Remove all photos"
             >
               Clear
@@ -1278,12 +1267,10 @@
             <button
               on:click={() => handleSelectPhotos("replace")}
               disabled={loading || isPolling}
-              class="bg-green-600 text-white px-4 py-2 rounded-md font-medium hover:bg-green-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+              class="btn-action primary-green"
             >
               {#if isPolling && selectionMode === "replace"}
-                <span
-                  class="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"
-                ></span>
+                <span class="spinner-small"></span>
                 Waiting...
               {:else}
                 Select Photos
@@ -1293,12 +1280,10 @@
             <button
               on:click={() => handleSelectPhotos("add")}
               disabled={loading || isPolling}
-              class="bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+              class="btn-action primary-blue"
             >
               {#if isPolling && selectionMode === "add"}
-                <span
-                  class="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"
-                ></span>
+                <span class="spinner-small"></span>
                 Waiting...
               {:else}
                 Add Photos
@@ -1306,12 +1291,12 @@
             </button>
           </div>
 
-          <div class="flex gap-2">
+          <div class="btn-group">
             {#if photos.length > 0}
               <button
                 on:click={() => handleCategorize(false)}
                 disabled={isCategorizing || isGenerating}
-                class="bg-teal-600 text-white px-4 py-2 rounded-md font-medium hover:bg-teal-700 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+                class="btn-action primary-teal"
                 title="Categorize using metadata if available"
               >
                 Categorize Photos
@@ -1320,7 +1305,7 @@
               <button
                 on:click={() => handleCategorize(true)}
                 disabled={isCategorizing || isGenerating}
-                class="bg-gray-100 text-gray-700 border border-gray-300 px-4 py-2 rounded-md font-medium hover:bg-gray-200 transition disabled:opacity-50 flex items-center gap-2 text-sm"
+                class="btn-action secondary-outline"
                 title="Force Gemini re-analysis for all photos"
               >
                 Re-categorize
@@ -1330,17 +1315,12 @@
         </div>
 
         <!-- Thumbnails Row (Selected / Uncategorized) -->
-        <div
-          class="flex flex-row flex-wrap gap-4 mt-2 mb-6 p-4 min-h-[160px]"
-          data-testid="selected-queue"
-          style="display: flex; flex-direction: row; flex-wrap: wrap;"
-        >
+        <div class="photo-thumbnails-row" data-testid="selected-queue">
           {#if photos.length > 0}
             <!-- EXISTING PHOTO LOOP -->
             {#each photos as photo (photo.id)}
               <div
-                class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
-                style="width: 148px; height: 148px; flex-shrink: 0;"
+                class="photo-card"
                 role="button"
                 tabindex="0"
                 data-testid="photo-thumbnail-{photo.id}"
@@ -1369,24 +1349,16 @@
                 {#if edits[photo.id]}
                   {@const q = edits[photo.id]}
                   {#if q.active}
-                    <div
-                      class="absolute inset-0 bg-blue-600/40 flex items-center justify-center z-20 backdrop-blur-[1px]"
-                    >
-                      <div
-                        class="text-white text-xs font-bold flex flex-col items-center drop-shadow-md"
-                      >
-                        <span
-                          class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mb-1"
-                        ></span>
-                        <span class="uppercase tracking-wider text-[10px]"
+                    <div class="edit-overlay active">
+                      <div class="edit-status-content">
+                        <span class="spinner-small white"></span>
+                        <span class="edit-op-label"
                           >{q.active.operation.replace("_", " ")}</span
                         >
                       </div>
                     </div>
                   {:else if q.queue.length > 0}
-                    <div
-                      class="absolute top-1 right-1 bg-yellow-400 text-yellow-900 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-20 border border-yellow-500"
-                    >
+                    <div class="edit-queue-badge">
                       {q.queue.length}
                     </div>
                   {/if}
@@ -1395,35 +1367,29 @@
                 <!-- Upload Status Overlay -->
                 {#if uploads[photo.id]}
                   {#if uploads[photo.id].status === "uploading"}
-                    <div
-                      class="absolute inset-0 bg-black/30 flex items-center justify-center"
-                    >
-                      <span
-                        class="animate-spin h-6 w-6 border-2 border-white border-t-transparent rounded-full"
-                      ></span>
+                    <div class="upload-overlay uploading">
+                      <span class="spinner-small white large"></span>
                     </div>
                   {:else if uploads[photo.id].status === "failed"}
                     <div
-                      class="absolute inset-0 bg-red-500/30 flex items-center justify-center"
+                      class="upload-overlay failed"
                       title={uploads[photo.id].error}
                     >
-                      <span class="text-white font-bold text-xl">!</span>
+                      <span class="error-icon">!</span>
                     </div>
                   {/if}
                 {/if}
               </div>
             {/each}
           {:else if isPolling}
-            <div class="w-full text-center py-10 text-gray-500">
+            <div class="empty-queue-msg">
               <p>Selection in progress...</p>
             </div>
           {:else if isCategorizing}
             <!-- While categorizing, list empties, so this might show temporarily. -->
-            <div class="w-full text-center py-10 text-gray-500 italic">
-              Processing...
-            </div>
+            <div class="empty-queue-msg italic">Processing...</div>
           {:else}
-            <div class="w-full text-center py-10 text-gray-400 italic">
+            <div class="empty-queue-msg italic muted">
               No photos queued. Select or Add photos to begin.
             </div>
           {/if}
@@ -1432,27 +1398,22 @@
 
       <!-- CATEGORIZED RESULTS -->
       {#if Object.keys(janCodeToPhotos).length > 0}
-        <div
-          class="bg-white p-6 rounded-lg shadow-md mt-8 border-t-4 border-teal-500"
-          data-testid="categorized-section"
-        >
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold text-gray-800">Categorized Photos</h2>
-            <div class="flex gap-4 items-center">
-              <label
-                class="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded border border-gray-200 cursor-pointer hover:bg-gray-100 transition"
-              >
+        <div class="categorized-section-card" data-testid="categorized-section">
+          <div class="section-header">
+            <h2 class="section-title">Categorized Photos</h2>
+            <div class="section-actions-row">
+              <label class="toggle-completed-label">
                 <input
                   type="checkbox"
                   bind:checked={showCompleted}
-                  class="rounded text-teal-600 focus:ring-teal-500"
+                  class="checkbox-input"
                 />
                 <span>Show completed groups</span>
               </label>
 
               <button
                 on:click={() => (showConfigModal = true)}
-                class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md font-bold hover:bg-slate-300 transition text-sm flex items-center gap-2"
+                class="btn-config"
                 title="Configure processing steps and order"
               >
                 <span>⚙️</span>
@@ -1461,59 +1422,35 @@
               <button
                 on:click={handleProcessImages}
                 disabled={isEditing}
-                class="bg-indigo-600 text-white px-4 py-2 rounded-md font-bold hover:bg-indigo-700 transition disabled:opacity-50 text-sm flex items-center gap-2 shadow-sm"
+                class="btn-action primary-indigo"
                 title="Auto-process all categorized images using the configured pipeline"
               >
                 {#if isEditing}
-                  <span
-                    class="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"
-                  ></span>
+                  <span class="spinner-small"></span>
                 {/if}
                 <span>Process Images</span>
               </button>
               <button
                 on:click={() => goto("/listings/create")}
-                class="bg-green-600 text-white px-4 py-2 rounded-md font-bold hover:bg-green-700 transition text-sm flex items-center gap-2 shadow-sm"
+                class="btn-action primary-green"
                 title="Create listings from these photos"
               >
                 <span>Create Listings →</span>
               </button>
             </div>
           </div>
-          <div
-            class="border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm"
-          >
+          <div class="categorized-table-container">
             <!-- Header -->
-            <div
-              class="flex flex-row bg-slate-200 border-b-2 border-slate-300 text-slate-700"
-              style="display: flex; flex-direction: row;"
-            >
-              <div
-                class="w-48 flex-none p-4 font-bold text-center uppercase tracking-wide text-sm"
-                style="width: 200px; flex: none;"
-              >
-                JAN Code
-              </div>
-              <div
-                class="flex-1 p-4 font-bold text-sm uppercase tracking-wide"
-                style="flex: 1;"
-              >
-                Photos
-              </div>
+            <div class="table-header-row">
+              <div class="col-jan-header">JAN Code</div>
+              <div class="col-photos-header">Photos</div>
             </div>
 
             {#each categorizedEntries as [jan, items], index}
-              <!-- 
-                        Highlight Logic:
-                        - Current Row Hover: Handled by .categorized-row:hover (CSS)
-                        - Previous Row (Highlight): IF `hoveredRowIndex` is `index + 1` (the row below this one), highlight THIS one.
-                        - AND `hoveredColumn` must be 'photos' as requested.
-                    -->
               <div
-                class="flex flex-row categorized-row group"
+                class="categorized-row-item group"
                 class:related-highlight={hoveredRowIndex === index + 1 &&
                   hoveredColumn === "photos"}
-                style="display: flex; flex-direction: row relative;"
                 role="group"
                 data-testid="group-{jan}"
                 on:mouseleave={() => {
@@ -1523,14 +1460,8 @@
               >
                 <!-- JAN Column -->
                 <div
-                  class="w-48 flex-none p-4 font-mono text-lg font-medium text-teal-700 break-all bg-gray-50/50 group-hover:bg-transparent transition-colors z-10"
-                  class:bg-red-100={!isValidJan(jan)}
-                  class:text-red-800={!isValidJan(jan)}
-                  style="width: 200px; flex: none; display: flex; align-items: center; justify-content: center; border-right: 1px solid #e2e8f0; {!isValidJan(
-                    jan,
-                  )
-                    ? 'background-color: #fee2e2;'
-                    : ''}"
+                  class="col-jan-cell"
+                  class:invalid-jan={!isValidJan(jan)}
                   role="group"
                   on:mouseenter={() => {
                     hoveredRowIndex = index;
@@ -1549,8 +1480,7 @@
 
                 <!-- Photos Column: The Merge Trigger Zone -->
                 <div
-                  class="flex-1 p-4 min-w-0 relative"
-                  style="flex: 1; min-width: 0; position: relative;"
+                  class="col-photos-cell"
                   role="group"
                   on:mouseenter={() => {
                     hoveredRowIndex = index;
@@ -1560,8 +1490,7 @@
                   <!-- Merge Trigger Button (Only if NOT the first row) -->
                   {#if hoveredRowIndex === index && hoveredColumn === "photos" && index > 0}
                     <button
-                      class="absolute -top-3 right-4 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 border border-yellow-300 rounded-full px-3 py-1 text-xs font-bold shadow-sm z-50 flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
-                      style="position: absolute; top: -12px; right: 16px;"
+                      class="btn-merge-up"
                       on:click|stopPropagation={() => handleMergeUp(index)}
                       title="Merge these photos into the previous group"
                       transition:fade={{ duration: 100 }}
@@ -1570,14 +1499,10 @@
                     </button>
                   {/if}
 
-                  <div
-                    class="flex flex-row flex-wrap gap-4 mt-6 mb-6 p-4"
-                    style="display: flex; flex-direction: row; flex-wrap: wrap;"
-                  >
+                  <div class="categorized-photos-grid">
                     {#each items as item}
                       <div
-                        class="bg-white rounded-lg overflow-hidden border border-gray-200 shadow-sm relative group/item cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
-                        style="width: 80px; height: 80px; flex-shrink: 0;"
+                        class="photo-card small"
                         role="button"
                         tabindex="0"
                         data-testid="photo-thumbnail-{item.id}"
@@ -1602,31 +1527,27 @@
                             uploads[item.id].status === "uploading"}
                         />
                         <!-- Filename Overlay -->
-                        <div
-                          class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] p-0.5 truncate opacity-0 group-hover/item:opacity-100 transition-opacity"
-                        >
+                        <div class="filename-overlay">
                           {item.filename}
                         </div>
 
                         <!-- Status Icons -->
-                        <div
-                          class="absolute top-1 right-1 flex flex-col gap-0.5"
-                        >
+                        <div class="status-dots-container">
                           {#if edits[item.id]?.status?.crop}
                             <div
-                              class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-sm border border-white"
+                              class="status-dot-mini green"
                               title="Cropped"
                             ></div>
                           {/if}
                           {#if edits[item.id]?.status?.color_correct}
                             <div
-                              class="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm border border-white"
+                              class="status-dot-mini indigo"
                               title="Color Corrected"
                             ></div>
                           {/if}
                           {#if edits[item.id]?.status?.remove_background}
                             <div
-                              class="w-1.5 h-1.5 rounded-full bg-pink-500 shadow-sm border border-white"
+                              class="status-dot-mini pink"
                               title="BG Removed"
                             ></div>
                           {/if}
@@ -1634,19 +1555,11 @@
 
                         {#if uploads[item.id]}
                           {#if uploads[item.id].status === "uploading"}
-                            <div
-                              class="absolute inset-0 bg-black/30 flex items-center justify-center"
-                            >
-                              <span
-                                class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"
-                              ></span>
+                            <div class="upload-overlay-mini uploading">
+                              <span class="spinner-mini"></span>
                             </div>
                           {:else if uploads[item.id].status === "failed"}
-                            <div
-                              class="absolute inset-0 bg-red-500/30 flex items-center justify-center font-bold text-white text-xs"
-                            >
-                              !
-                            </div>
+                            <div class="upload-overlay-mini failed">!</div>
                           {/if}
                         {/if}
                       </div>
@@ -1665,23 +1578,543 @@
 </div>
 
 <style>
-  .categorized-row {
+  .page-container {
+    padding: 2rem;
+    max-width: 80rem;
+    margin: 0 auto;
+    position: relative;
+  }
+  .header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  .page-title {
+    font-size: 1.875rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+  }
+  .auth-status-row {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .status-badge.connected {
+    background-color: #dcfce7;
+    color: #166534;
+  }
+  .status-badge.disconnected {
+    background-color: #f3f4f6;
+    color: #1f2937;
+  }
+  .status-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+  }
+  .status-dot.green {
+    background-color: #16a34a;
+  }
+  .status-dot.gray {
+    background-color: #9ca3af;
+  }
+  .btn-auth-action {
+    font-size: 0.875rem;
+    color: #2563eb;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-auth-action:hover {
+    color: #1e40af;
+    text-decoration: underline;
+  }
+
+  .selection-area-card {
+    background-color: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    min-height: 400px;
+  }
+  .error-alert {
+    padding: 1rem;
+    background-color: #fef2f2;
+    color: #b91c1c;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  .selection-controls-card {
+    background-color: #f8fafc;
+    position: relative;
+    margin-top: 2rem;
+    padding: 0.5rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 16px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+  .controls-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1rem 0.5rem;
+  }
+  .btn-group {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .btn-clear {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    font-size: 0.875rem;
+    margin-right: 0.5rem;
+    transition: background-color 0.2s;
+  }
+  .btn-clear:hover {
+    background-color: #fecaca;
+  }
+  .btn-action {
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background-color 0.2s;
+  }
+  .btn-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .primary-green {
+    background-color: #16a34a;
+    color: white;
+  }
+  .primary-green:hover:not(:disabled) {
+    background-color: #15803d;
+  }
+  .primary-blue {
+    background-color: #2563eb;
+    color: white;
+  }
+  .primary-blue:hover:not(:disabled) {
+    background-color: #1d4ed8;
+  }
+  .primary-teal {
+    background-color: #0d9488;
+    color: white;
+  }
+  .primary-teal:hover:not(:disabled) {
+    background-color: #0f766e;
+  }
+  .primary-indigo {
+    background-color: #4f46e5;
+    color: white;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+  .primary-indigo:hover:not(:disabled) {
+    background-color: #4338ca;
+  }
+  .secondary-outline {
+    background-color: #f9fafb;
+    color: #374151;
+    border: 1px solid #d1d5db;
+  }
+  .secondary-outline:hover:not(:disabled) {
+    background-color: #f3f4f6;
+  }
+
+  .photo-thumbnails-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    min-height: 160px;
+  }
+  .photo-card {
+    background-color: white;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 148px;
+    height: 148px;
+    flex-shrink: 0;
+  }
+  .photo-card:hover {
+    box-shadow: 0 0 0 2px #6366f1;
+  }
+  .photo-card.small {
+    width: 80px;
+    height: 80px;
+  }
+
+  .edit-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    backdrop-filter: blur(1px);
+  }
+  .edit-overlay.active {
+    background-color: rgba(37, 99, 235, 0.4);
+  }
+  .edit-status-content {
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+  .edit-op-label {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+  }
+  .edit-queue-badge {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    background-color: #facc15;
+    color: #713f12;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    z-index: 20;
+    border: 1px solid #eab308;
+  }
+
+  .upload-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .upload-overlay.uploading {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+  .upload-overlay.failed {
+    background-color: rgba(239, 68, 68, 0.3);
+  }
+  .error-icon {
+    color: white;
+    font-weight: 700;
+    font-size: 1.25rem;
+  }
+
+  .empty-queue-msg {
+    width: 100%;
+    text-align: center;
+    padding: 2.5rem 0;
+    color: #6b7280;
+  }
+  .empty-queue-msg.italic {
+    font-style: italic;
+  }
+  .empty-queue-msg.muted {
+    color: #9ca3af;
+  }
+
+  .categorized-section-card {
+    background-color: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    margin-top: 2rem;
+    border-top: 4px solid #14b8a6;
+  }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .section-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+  }
+  .section-actions-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  .toggle-completed-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: #4b5563;
+    background-color: #f9fafb;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  .toggle-completed-label:hover {
+    background-color: #f3f4f6;
+  }
+  .checkbox-input {
+    border-radius: 0.25rem;
+    color: #0d9488;
+  }
+  .btn-config {
+    background-color: #e2e8f0;
+    color: #334155;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background-color 0.2s;
+  }
+  .btn-config:hover {
+    background-color: #cbd5e1;
+  }
+
+  .categorized-table-container {
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background-color: white;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+  .table-header-row {
+    display: flex;
+    background-color: #e2e8f0;
+    border-bottom: 2px solid #cbd5e1;
+    color: #334155;
+  }
+  .col-jan-header {
+    width: 200px;
+    flex: none;
+    padding: 1rem;
+    font-weight: 700;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.875rem;
+  }
+  .col-photos-header {
+    flex: 1;
+    padding: 1rem;
+    font-weight: 700;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .categorized-row-item {
+    display: flex;
     border-bottom: 1px solid #e2e8f0;
     transition: background-color 0.1s;
+    position: relative;
   }
-  .categorized-row:hover {
-    background-color: #eff6ff; /* blue-50 */
+  .categorized-row-item:hover {
+    background-color: #eff6ff;
   }
-  .related-highlight {
-    background-color: #fef9c3 !important; /* yellow-100 */
-    border: 2px dashed #facc15 !important; /* yellow-400 */
+  .categorized-row-item.related-highlight {
+    background-color: #fef9c3 !important;
+    border: 2px dashed #facc15 !important;
+  }
+
+  .col-jan-cell {
+    width: 200px;
+    flex: none;
+    padding: 1rem;
+    font-family: monospace;
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: #0f766e;
+    word-break: break-all;
+    background-color: rgba(249, 250, 251, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid #e2e8f0;
+    z-index: 10;
+  }
+  .col-jan-cell.invalid-jan {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+  .col-photos-cell {
+    flex: 1;
+    padding: 1rem;
+    min-width: 0;
+    position: relative;
+  }
+  .btn-merge-up {
+    position: absolute;
+    top: -12px;
+    right: 16px;
+    background-color: #fef9c3;
+    color: #854d0e;
+    border: 1px solid #fde68a;
+    border-radius: 9999px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .btn-merge-up:hover {
+    background-color: #fef08a;
+    transform: scale(1.05);
+  }
+
+  .categorized-photos-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 1.5rem 0;
+    padding: 1rem;
+  }
+  .filename-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 9px;
+    padding: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .photo-card:hover .filename-overlay {
+    opacity: 1;
+  }
+  .status-dots-container {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+  .status-dot-mini {
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 9999px;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    border: 1px solid white;
+  }
+  .status-dot-mini.green {
+    background-color: #22c55e;
+  }
+  .status-dot-mini.indigo {
+    background-color: #6366f1;
+  }
+  .status-dot-mini.pink {
+    background-color: #ec4899;
+  }
+
+  .upload-overlay-mini {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .upload-overlay-mini.uploading {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+  .upload-overlay-mini.failed {
+    background-color: rgba(239, 68, 68, 0.3);
+    color: white;
+    font-weight: 700;
+    font-size: 0.75rem;
+  }
+
+  .spinner-small {
+    animation: spin 1s linear infinite;
+    height: 0.75rem;
+    width: 0.75rem;
+    border: 2px solid #ffffff;
+    border-top-color: transparent;
+    border-radius: 9999px;
+  }
+  .spinner-small.white {
+    border-color: white;
+    border-top-color: transparent;
+  }
+  .spinner-small.large {
+    height: 1.5rem;
+    width: 1.5rem;
+  }
+  .spinner-mini {
+    animation: spin 1s linear infinite;
+    height: 1.25rem;
+    width: 1.25rem;
+    border: 2px solid white;
+    border-top-color: transparent;
+    border-radius: 9999px;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .editable-jan {
     width: 100%;
     text-align: center;
     background-color: transparent;
-    border: 1px solid transparent; /* Reserve space for border */
+    border: 1px solid transparent;
     border-radius: 4px;
     padding: 2px 4px;
     outline: none;
@@ -1689,12 +2122,11 @@
   }
   .editable-jan:hover {
     background-color: white;
-    border-color: #d1d5db; /* gray-300 */
+    border-color: #d1d5db;
   }
   .editable-jan:focus {
     background-color: white;
-    border-color: #14b8a6; /* teal-500 */
+    border-color: #14b8a6;
     box-shadow: 0 0 0 1px #14b8a6;
   }
-  /* Let's fix the highlighting logic in the HTML block instead of CSS tricks */
 </style>

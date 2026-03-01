@@ -252,16 +252,16 @@
           on:click={() => handleViewModeChange("month")}>Month</button
         >
         <button
+          class="btn-view-mode"
           class:active={viewMode === "search"}
           on:click={() => handleViewModeChange("search")}
-          class="flex items-center gap-1"
         >
           <Search size={16} /> Search
         </button>
 
         <button
           on:click={handleExport}
-          class="flex items-center gap-1 export-btn"
+          class="btn-view-mode export-btn"
           title="Export filtered broadcast actions to JSONL"
         >
           <Download size={16} /> Export
@@ -352,7 +352,6 @@
 <style>
   .audit-container {
     padding: 2rem;
-    max-width: 1200px;
     margin: 0 auto;
   }
 
@@ -375,18 +374,20 @@
     gap: 0.5rem;
   }
 
-  .view-modes button {
+  .view-modes button,
+  .btn-view-mode {
     padding: 0.5rem 1rem;
     border: 1px solid #ccc;
     background: white;
     cursor: pointer;
     border-radius: 4px;
-    display: flex; /* alignment for search icon */
+    display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.25rem; /* gap-1 */
   }
 
-  .view-modes button.active {
+  .view-modes button.active,
+  .btn-view-mode.active {
     background: #007bff;
     color: white;
     border-color: #007bff;

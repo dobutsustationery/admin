@@ -9,7 +9,6 @@
 ![Signed Out State](screenshots/000-signed-out-state.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated "Sign In" button is visible
 - [ ] Validated heading contains "Archives"
 
@@ -18,7 +17,6 @@
 ![Signed In State](screenshots/001-signed-in-state.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated "Sign In" button is hidden
 - [ ] Validated Redux store has user state
 
@@ -27,8 +25,8 @@
 ![Archives Loaded](screenshots/002-archives-loaded.png)
 
 **Programmatic Verification:**
-
 - [ ] Validated heading is "Archives"
 - [ ] Validated archive input is visible
 - [ ] Validated Add Archive button is visible
 - [ ] Validated Redux store has archives state
+

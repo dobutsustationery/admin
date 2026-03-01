@@ -97,7 +97,7 @@
 
 <style>
   .dashboard {
-    max-width: 1200px;
+    padding: 2rem;
     margin: 0 auto;
   }
 

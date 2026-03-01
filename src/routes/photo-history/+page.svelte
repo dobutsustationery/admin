@@ -671,7 +671,7 @@
                   <input
                     type="file"
                     accept="image/*"
-                    class="hidden"
+                    class="hidden-input"
                     bind:this={fileInput}
                     on:change={handleFileUpload}
                   />
@@ -690,15 +690,11 @@
         </div>
 
         <div class="card">
-          <div class="flex justify-between items-center mb-6">
-            <h2 class="card-title m-0">History</h2>
+          <div class="history-header">
+            <h2 class="card-title history-title">History</h2>
             {#if metadataLoading}
-              <div
-                class="flex items-center gap-2 text-xs text-indigo-600 font-medium animate-pulse"
-              >
-                <div
-                  class="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"
-                ></div>
+              <div class="sync-status">
+                <div class="spinner-small"></div>
                 Syncing with Drive...
               </div>
             {/if}
@@ -711,8 +707,8 @@
               <table class="history-table">
                 <thead class="table-header">
                   <tr>
-                    <th class="header-cell w-12">#</th>
-                    <th class="header-cell w-32">Preview</th>
+                    <th class="header-cell col-index">#</th>
+                    <th class="header-cell col-preview">Preview</th>
                     <th class="header-cell">Operation</th>
                     <th class="header-cell">Date</th>
                     <th class="header-cell">Source</th>
@@ -1008,6 +1004,9 @@
     font-size: 0.875rem;
     color: #6b7280;
   }
+  .hidden-input {
+    display: none;
+  }
   .active-row {
     background-color: rgba(238, 242, 255, 0.3);
   }
@@ -1127,35 +1126,39 @@
   .bg-btn:hover:not(:disabled) {
     background-color: #f0fdfa;
   }
-  .w-12 {
+  .col-index {
     width: 3rem;
   }
-  .w-32 {
+  .col-preview {
     width: 8rem;
   }
-  .flex {
+  .history-header {
     display: flex;
-  }
-  .justify-between {
     justify-content: space-between;
-  }
-  .items-center {
     align-items: center;
+    margin-bottom: 1.5rem; /* mb-6 */
   }
-  .gap-2 {
-    gap: 0.5rem;
+  .history-title {
+    margin: 0;
   }
-  .text-xs {
-    font-size: 0.75rem;
-  }
-  .text-indigo-600 {
-    color: #4f46e5;
-  }
-  .font-medium {
-    font-weight: 500;
-  }
-  .animate-pulse {
+  .sync-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem; /* gap-2 */
+    font-size: 0.75rem; /* text-xs */
+    color: #4f46e5; /* text-indigo-600 */
+    font-weight: 500; /* font-medium */
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  .spinner-small {
+    width: 0.75rem; /* w-3 */
+    height: 0.75rem; /* h-3 */
+    border-width: 2px; /* border-2 */
+    border-style: solid;
+    border-color: #4f46e5; /* border-indigo-600 */
+    border-top-color: transparent; /* border-t-transparent */
+    border-radius: 9999px; /* rounded-full */
+    animation: spin 1s linear infinite;
   }
   @keyframes pulse {
     0%,
@@ -1165,24 +1168,6 @@
     50% {
       opacity: 0.5;
     }
-  }
-  .w-3 {
-    width: 0.75rem;
-  }
-  .h-3 {
-    height: 0.75rem;
-  }
-  .border-2 {
-    border-width: 2px;
-  }
-  .border-t-transparent {
-    border-top-color: transparent;
-  }
-  .rounded-full {
-    border-radius: 9999px;
-  }
-  .animate-spin {
-    animation: spin 1s linear infinite;
   }
   @keyframes spin {
     from {
