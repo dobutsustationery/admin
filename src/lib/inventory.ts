@@ -526,7 +526,10 @@ export const inventory = createReducer(initialState, (r) => {
         }
       }
     } else {
-      console.warn(`Skipping update_field for missing item: ${itemKey}`);
+      console.warn(
+        `Skipping update_field for missing item: ${itemKey}`,
+        action.payload,
+      );
     }
   });
   r.addCase(new_order, (state, action) => {
@@ -587,6 +590,11 @@ export const inventory = createReducer(initialState, (r) => {
         desc: `Packaged ${qty} for ${orderID}`,
         val: state.orderIdToOrder[orderID].date.getTime(), // orderIdToOrder[orderID].date is derived from action TS above
       });
+    } else {
+      console.warn(
+        `Skipping package_item for missing item: ${itemKey}`,
+        action.payload,
+      );
     }
   });
   r.addCase(quantify_item, (state, action) => {
@@ -646,6 +654,11 @@ export const inventory = createReducer(initialState, (r) => {
         desc: `Quantified ${qty} for ${orderID}`,
         val: state.orderIdToOrder[orderID].date.getTime(),
       });
+    } else {
+      console.warn(
+        `Skipping quantify_item for missing item: ${itemKey}`,
+        action.payload,
+      );
     }
   });
   r.addCase(retype_item, (state, action) => {
@@ -679,6 +692,11 @@ export const inventory = createReducer(initialState, (r) => {
     ) {
       state.idToItem[itemKey].shipped -= qty;
       state.idToItem[newItemKey].shipped += qty;
+    } else {
+      console.warn(
+        `Skipping retype_item shipped update for missing item(s): ${itemKey} or ${newItemKey}`,
+        action.payload,
+      );
     }
     if (!state.idToHistory[itemKey]) {
       console.warn(
@@ -800,6 +818,11 @@ export const inventory = createReducer(initialState, (r) => {
         val,
       });
       return state;
+    } else {
+      console.warn(
+        `Skipping rename_subtype for missing item: ${itemKey}`,
+        action.payload,
+      );
     }
   });
   r.addCase(delete_empty_order, (state, action) => {
