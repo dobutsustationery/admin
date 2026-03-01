@@ -6,7 +6,7 @@ export const canonicalizeJanCode = (janCode: string): string =>
   (janCode || "").trim().replace(/\s+/g, "");
 
 export const canonicalizeSubtype = (subtype?: string): string =>
-  (subtype || "").trim().replace(/[^a-zA-Z0-9-_]/g, "");
+  (subtype || "").trim();
 
 export const makeInventoryItemKey = (
   janCode: string,

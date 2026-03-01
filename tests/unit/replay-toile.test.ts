@@ -24,12 +24,12 @@ describe("Replay Toile SKU Fail", () => {
     expect(listing).toBeDefined();
     expect(listing.title).toBe("Dobutsu Toile Stationery Pouch");
 
-    const blueVariantId = "4542804117844BlueToilePattern";
+    const blueVariantId = "4542804117844Blue Toile Pattern";
     const blueItem = state.inventory.idToItem[blueVariantId];
     expect(blueItem).toBeDefined();
     expect(blueItem.description).toBe(listing.title);
 
-    const brownVariantId = "4542804117844BrownToilePattern";
+    const brownVariantId = "4542804117844Brown Toile Pattern";
     const brownItem = state.inventory.idToItem[brownVariantId];
     expect(brownItem).toBeDefined();
     expect(brownItem.description).toBe(listing.title);
