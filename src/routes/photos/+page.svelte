@@ -135,6 +135,9 @@
   }
 
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
+  import BatchProgressBanner from "$lib/components/BatchProgressBanner.svelte";
+  import CategorizationProgressBanner from "$lib/components/CategorizationProgressBanner.svelte";
+  import { activeBanners } from "$lib/banner-store";
   import ProgressBar from "$lib/components/ProgressBar.svelte";
   import {
     begin_categorize,
@@ -215,6 +218,41 @@
     operation: "",
     completedIds: [] as string[],
   };
+
+  $: {
+    if (isEditing && batchProgress.total > 0) {
+      activeBanners.register({
+        id: "batch-edit-progress",
+        component: BatchProgressBanner,
+        props: {
+          batchProgress,
+          registry,
+          photos,
+          janCodeToPhotos,
+        },
+        priority: 10,
+      });
+    } else {
+      activeBanners.unregister("batch-edit-progress");
+    }
+
+    if (isCategorizing) {
+      activeBanners.register({
+        id: "categorize-progress",
+        component: CategorizationProgressBanner,
+        props: { progress: catProgress },
+        priority: 15,
+      });
+    } else {
+      activeBanners.unregister("categorize-progress");
+    }
+  }
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    activeBanners.unregister("batch-edit-progress");
+    activeBanners.unregister("categorize-progress");
+  });
   // In-flight request tracking to avoid redundant sync requests
   const inFlightEdits = new Set<string>();
 
@@ -1177,110 +1215,6 @@
 />
 
 <div class="p-8 max-w-6xl mx-auto relative">
-  <!-- BATCH PROGRESS OVERLAY -->
-  {#if isEditing}
-    {@const activeEntry = Object.entries(edits).find(([_, q]) => q.active)}
-    {@const activeId = activeEntry ? activeEntry[0] : null}
-    {@const activeOp = activeEntry ? activeEntry[1].active?.operation : null}
-
-    <div class="batch-progress-overlay" transition:fade>
-      <div class="overlay-content">
-        <div class="status-indicator">
-          <div class="relative">
-            <span
-              class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"
-            ></span>
-            <span
-              class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"
-            ></span>
-          </div>
-          <div class="flex flex-col gap-1">
-            <h3 class="flex items-center gap-2">
-              {batchProgress.operation || "Processing Images"}
-              {#if batchProgress.total > 0}
-                <span class="text-xs bg-indigo-500/50 px-2 py-0.5 rounded-full">
-                  {Math.round(
-                    (batchProgress.current / batchProgress.total) * 100,
-                  )}%
-                </span>
-              {/if}
-            </h3>
-            <div class="flex items-center gap-4">
-              <p class="text-xs opacity-80 whitespace-nowrap">
-                {batchProgress.current} / {batchProgress.total} completed
-              </p>
-              {#if batchProgress.total > 0}
-                <div
-                  class="w-32 h-1.5 bg-gray-700 rounded-full overflow-hidden"
-                >
-                  <div
-                    class="h-full bg-indigo-500 transition-all duration-300"
-                    style="width: {(batchProgress.current /
-                      batchProgress.total) *
-                      100}%"
-                  ></div>
-                </div>
-              {/if}
-            </div>
-          </div>
-        </div>
-
-        {#if batchProgress.completedIds.length > 0}
-          <div class="completed-thumbnails-row">
-            {#each batchProgress.completedIds.slice(-8).reverse() as id}
-              {@const item =
-                registry[id] ||
-                photos.find((p) => p.id === id) ||
-                Object.values(janCodeToPhotos)
-                  .flat()
-                  .find((p) => p.id === id)}
-              {#if item}
-                <div
-                  class="mini-thumb"
-                  role="button"
-                  tabindex="0"
-                  on:click={() => goto(`/photo-history?id=${id}`)}
-                  on:keydown={(e) =>
-                    (e.key === "Enter" || e.key === " ") &&
-                    goto(`/photo-history?id=${id}`)}
-                  title="View History"
-                >
-                  <SecureImage
-                    src={displayUrl(item.baseUrl, "=w48-h48-c")}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              {/if}
-            {/each}
-          </div>
-        {/if}
-
-        {#if activeId}
-          {@const item =
-            photos.find((p) => p.id === activeId) ||
-            Object.values(janCodeToPhotos)
-              .flat()
-              .find((p) => p.id === activeId)}
-          {#if item}
-            <div class="active-item-card">
-              <div class="thumbnail-wrapper">
-                <SecureImage
-                  src={displayUrl(item.baseUrl, "=w64-h64-c")}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div class="operation-details">
-                <span class="op-label">Current</span>
-                <span class="op-value truncate max-w-[80px]"
-                  >{activeOp?.replace("_", " ")}</span
-                >
-              </div>
-            </div>
-          {/if}
-        {/if}
-      </div>
-    </div>
-  {/if}
   <div class="flex justify-between items-center mb-8">
     <div>
       <h1 class="text-3xl font-bold text-gray-800">Google Photos Import</h1>
@@ -1394,16 +1328,6 @@
             {/if}
           </div>
         </div>
-
-        <!-- Progress Bar for Categorization -->
-        {#if isCategorizing}
-          <ProgressBar
-            current={catProgress.current}
-            total={catProgress.total}
-            message={`Categorizing... ${catProgress.message}`}
-            colorClass="bg-teal-500"
-          />
-        {/if}
 
         <!-- Thumbnails Row (Selected / Uncategorized) -->
         <div
@@ -1773,109 +1697,4 @@
     box-shadow: 0 0 0 1px #14b8a6;
   }
   /* Let's fix the highlighting logic in the HTML block instead of CSS tricks */
-
-  .batch-progress-overlay {
-    position: sticky;
-    top: 0;
-    left: 0;
-    right: 0;
-    background-color: rgba(17, 24, 39, 0.9); /* gray-900 / 90% */
-    color: white;
-    padding: 1rem;
-    z-index: 50;
-    backdrop-filter: blur(4px);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    border-bottom-left-radius: 0.5rem;
-    border-bottom-right-radius: 0.5rem;
-    margin-bottom: 1.5rem;
-    margin-left: -1rem;
-    margin-right: -1rem;
-    margin-top: -1rem;
-    transition: transform 0.3s;
-  }
-  .overlay-content {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-  }
-  .status-indicator h3 {
-    font-weight: 700;
-    font-size: 1.125rem;
-  }
-  .status-indicator p {
-    color: #d1d5db; /* gray-300 */
-    font-size: 0.875rem;
-  }
-  .active-item-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    background-color: #1f2937; /* gray-800 */
-    border-radius: 0.5rem;
-    padding: 0.4rem;
-    padding-right: 0.75rem;
-    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
-    border: 1px solid #374151; /* gray-700 */
-    max-width: 180px;
-  }
-  .completed-thumbnails-row {
-    display: flex;
-    gap: 0.5rem;
-    flex: 1;
-    margin: 0 2rem;
-    overflow-x: auto;
-    scrollbar-width: none; /* Hide scrollbar Firefox */
-  }
-  .completed-thumbnails-row::-webkit-scrollbar {
-    display: none; /* Hide scrollbar Chrome/Safari */
-  }
-  .mini-thumb {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 0.25rem;
-    overflow: hidden;
-    flex-shrink: 0;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    cursor: pointer;
-    transition: transform 0.2s;
-  }
-  .mini-thumb:hover {
-    transform: scale(1.1);
-    border-color: #6366f1; /* indigo-500 */
-    z-index: 10;
-  }
-  .thumbnail-wrapper {
-    width: 2.5rem; /* 10 */
-    height: 2.5rem;
-    flex-shrink: 0;
-    border-radius: 0.25rem;
-    overflow: hidden;
-    background-color: #374151;
-    position: relative;
-    border: 1px solid #4b5563; /* gray-600 */
-  }
-  .operation-details {
-    display: flex;
-    flex-direction: column;
-  }
-  .op-label {
-    font-size: 0.625rem; /* 10px */
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #9ca3af; /* gray-400 */
-    font-weight: 700;
-  }
-  .op-value {
-    font-family:
-      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-      "Courier New", monospace;
-    font-size: 0.75rem; /* xs */
-    color: #a5b4fc; /* indigo-300 */
-    white-space: nowrap;
-  }
 </style>

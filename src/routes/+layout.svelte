@@ -3,7 +3,7 @@
   import Navigation from "$lib/components/Navigation.svelte";
   import PhotoUploadManager from "$lib/components/PhotoUploadManager.svelte";
   import LoadingScreen from "$lib/components/LoadingScreen.svelte";
-  import SyncQueueStatusBar from "$lib/components/SyncQueueStatusBar.svelte";
+  import StickyBannerContainer from "$lib/components/StickyBannerContainer.svelte";
   import Signin from "$lib/Signin.svelte"; // Static import
   import { onAuthStateChanged, signOut } from "firebase/auth";
   import { auth, firestore, googleAuthProvider } from "$lib/firebase"; // Ensure imports are correct based on file context
@@ -336,7 +336,7 @@
     <PhotoUploadManager />
 
     <main class="main-content" class:nav-open={navigationOpen}>
-      <SyncQueueStatusBar syncQueue={$store.syncQueue} />
+      <StickyBannerContainer />
       <slot />
     </main>
   </div>

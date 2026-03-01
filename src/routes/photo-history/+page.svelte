@@ -27,6 +27,8 @@
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import ManualCropModal from "$lib/components/ManualCropModal.svelte";
+  import UploadProgressBanner from "$lib/components/UploadProgressBanner.svelte";
+  import { activeBanners } from "$lib/banner-store";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 
   import { broadcast } from "$lib/redux-firestore";
@@ -231,6 +233,24 @@
   let uploading = false;
   let uploadError = "";
   let uploadProgress = { loaded: 0, total: 0, percent: 0 };
+
+  $: {
+    if (uploading) {
+      activeBanners.register({
+        id: "upload-progress",
+        component: UploadProgressBanner,
+        props: { progress: uploadProgress },
+        priority: 20,
+      });
+    } else {
+      activeBanners.unregister("upload-progress");
+    }
+  }
+
+  import { onDestroy } from "svelte";
+  onDestroy(() => {
+    activeBanners.unregister("upload-progress");
+  });
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B";
@@ -605,28 +625,6 @@
   </div>
 
   <main>
-    {#if uploading}
-      <div class="upload-banner">
-        <div class="upload-banner-content">
-          <div class="upload-info">
-            <span class="upload-status">Uploading to Google Drive...</span>
-            <span class="upload-stats">
-              {formatBytes(uploadProgress.loaded)} of {formatBytes(
-                uploadProgress.total,
-              )}
-              ({uploadProgress.percent}%)
-            </span>
-          </div>
-          <div class="progress-container">
-            <div
-              class="progress-bar"
-              style="width: {uploadProgress.percent}%"
-            ></div>
-          </div>
-        </div>
-      </div>
-    {/if}
-
     {#if !photoId}
       <div class="alert alert-warning">
         <p class="bold">No Photo ID provided.</p>
@@ -1193,52 +1191,5 @@
     to {
       transform: rotate(360deg);
     }
-  }
-
-  .upload-banner {
-    background-color: #eff6ff;
-    border: 1px solid #bfdbfe;
-    border-radius: 0.75rem;
-    padding: 1rem 1.5rem;
-    margin-bottom: 2rem;
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  }
-
-  .upload-banner-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .upload-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.875rem;
-  }
-
-  .upload-status {
-    font-weight: 600;
-    color: #1e40af;
-  }
-
-  .upload-stats {
-    font-family:
-      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    color: #60a5fa;
-  }
-
-  .progress-container {
-    height: 0.5rem;
-    background-color: #dbeafe;
-    border-radius: 9999px;
-    overflow: hidden;
-  }
-
-  .progress-bar {
-    height: 100%;
-    background-color: #3b82f6;
-    border-radius: 9999px;
-    transition: width 0.3s ease-out;
   }
 </style>
