@@ -153,13 +153,12 @@ export function itemsLookIdentical(oldItem: Item, mergeItem: Item) {
 function applyInventoryUpdate(
   state: InventoryState,
   id: string,
-  item: Item,
-  timestamp?: any,
+  item: Partial<Item>,
+  timestamp: any,
 ) {
   if (!id) {
     console.error(
       "[InventoryDebug] applyInventoryUpdate called with missing ID",
-      item,
     );
     return;
   }
@@ -171,6 +170,17 @@ function applyInventoryUpdate(
   }
 
   id = id.trim();
+
+  // Validation: check if the provided ID matches the canonical ID
+  // derived from its janCode + subtype. If not, log an error.
+  if (item.janCode) {
+    const canonicalId = makeInventoryItemKey(item.janCode, item.subtype || "");
+    if (id !== canonicalId) {
+      console.error(
+        `[InventoryValidation] Item update ID mismatch! Passed ID: "${id}", Expected Canonical ID: "${canonicalId}" (JAN: "${item.janCode}", Subtype: "${item.subtype || ""}")`,
+      );
+    }
+  }
 
   // Robust Timestamp Parsing
   let val = Date.now(); // Default to now
