@@ -278,7 +278,7 @@
     if (inFlightEdits.has(requestId)) return null;
 
     try {
-      const token = getStoredToken();
+      const token = getDriveStoredToken() || getStoredToken();
       if (!token) throw new Error("Not authenticated");
 
       // 1. Get Item from Store State directly (reactive var 'photos' can be stale in loops)
@@ -618,22 +618,16 @@
       `[Batch] scheduleBatch(${op}) total categorized items: ${categorizedItems.length}`,
     );
 
+    // Optimization: We now include ALL categorized items in the batch.
+    // dispatchTransformRequest will perform a real-time idempotency check against Drive.
+    // This allows us to recover from "lying" local states where an item is marked done
+    // but the file is missing, while still efficiently skipping truly completed work.
     categorizedItems.forEach((p) => {
-      const q = edits[p.id];
-      const status = q?.status;
-      const isDone = status && status[op];
-      const isUploadFailed = uploads[p.id]?.status === "failed";
-
-      // We skip ONLY if it is truly done (successful idempotent result exists or was just completed).
-      // If it was previously failed, it won't be 'done' in status, so it will be included.
-      // We ALWAYS include if the initial upload failed, because the source is missing.
-      if (!isDone || isUploadFailed) {
-        allIds.add(p.id);
-      }
+      allIds.add(p.id);
     });
 
     console.log(
-      `[Batch] scheduleBatch(${op}) items needing work: ${allIds.size}`,
+      `[Batch] scheduleBatch(${op}) items to evaluate: ${allIds.size}`,
     );
     const ids = Array.from(allIds);
     if (ids.length === 0) return [];
