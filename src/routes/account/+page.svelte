@@ -7,11 +7,24 @@
     getStoredToken,
     clearToken,
     initiateOAuthFlow,
+    getExpiryInfo,
+    refreshTokensSilently,
     type GooglePhotosToken,
   } from "$lib/google-photos";
+  import {
+    getStoredToken as getDriveToken,
+    getExpiryInfo as getDriveExpiry,
+    refreshTokensSilently as refreshDriveSilently,
+  } from "$lib/google-drive";
   import { goto } from "$app/navigation";
+  import AuthRefreshBanner from "$lib/components/AuthRefreshBanner.svelte";
 
   let token: GooglePhotosToken | null = null;
+  let driveToken: any = null;
+  let photosExpiry: any = null;
+  let driveExpiry: any = null;
+  let isRefreshing = false;
+
   let scopes: string[] = [];
   let testResult = "";
   let loading = false;
@@ -32,15 +45,61 @@
 
   onMount(() => {
     loadTokenInfo();
+    const interval = setInterval(loadTokenInfo, 1000);
+    return () => clearInterval(interval);
   });
 
-  function loadTokenInfo() {
+  async function loadTokenInfo() {
     token = getStoredToken();
+    driveToken = getDriveToken();
+    photosExpiry = getExpiryInfo();
+    driveExpiry = getDriveExpiry();
+
     if (token) {
-      // Token scope is a space-separated string
       scopes = token.scope.split(" ");
     } else {
       scopes = [];
+    }
+
+    // Auto-refresh logic: if token is valid but expires in less than 5 mins, refresh.
+    if (!isRefreshing) {
+      if (
+        photosExpiry &&
+        !photosExpiry.expired &&
+        photosExpiry.expiresInSeconds < 300
+      ) {
+        handleRefresh();
+      } else if (
+        driveExpiry &&
+        !driveExpiry.expired &&
+        driveExpiry.expiresInSeconds < 300
+      ) {
+        handleRefresh();
+      }
+    }
+  }
+
+  function formatExpiry(expiry: any) {
+    if (!expiry) return "Not Authenticated";
+    if (expiry.expired) return "Expired";
+    const mins = Math.floor(expiry.expiresInSeconds / 60);
+    const secs = expiry.expiresInSeconds % 60;
+    return `${mins}m ${secs}s remaining`;
+  }
+
+  async function handleRefresh() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+    try {
+      // In our current flow, Photos flow grants both Drive and Photos scopes
+      await refreshTokensSilently();
+    } catch (e) {
+      console.error("Refresh failed", e);
+    } finally {
+      // Keep banner for a moment so user sees it
+      setTimeout(() => {
+        isRefreshing = false;
+      }, 2000);
     }
   }
 
@@ -174,6 +233,26 @@
     {#if token}
       <div class="stack">
         <div class="stack-item">
+          <div class="kv-label label-inline">Expiry Status:</div>
+          <div class="expiry-row">
+            <span
+              class="mono"
+              class:text-danger={photosExpiry?.expired ||
+                photosExpiry?.expiresInSeconds < 300}
+            >
+              {formatExpiry(photosExpiry)}
+            </span>
+            <button
+              on:click={handleRefresh}
+              disabled={isRefreshing}
+              class="btn btn-neutral btn-small"
+            >
+              {isRefreshing ? "Refreshing..." : "Refresh Access"}
+            </button>
+          </div>
+        </div>
+
+        <div class="stack-item">
           <div class="kv-label label-inline">Current Scopes:</div>
           <div class="pill-wrap">
             {#each scopes as scope}
@@ -240,7 +319,22 @@
   </div>
 </div>
 
+{#if isRefreshing}
+  <AuthRefreshBanner />
+{/if}
+
 <style>
+  .expiry-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .text-danger {
+    color: #dc2626;
+    font-weight: 600;
+  }
+
   .account-page {
     max-width: 64rem;
     margin: 0 auto;

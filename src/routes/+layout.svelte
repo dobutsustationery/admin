@@ -41,6 +41,15 @@
     SYNC_COLLECTION,
     toShopifySyncListenerEvent,
   } from "$lib/sync-events";
+  import {
+    getExpiryInfo as getPhotosExpiry,
+    refreshTokensSilently as refreshPhotosSilently,
+  } from "$lib/google-photos";
+  import {
+    getExpiryInfo as getDriveExpiry,
+    refreshTokensSilently as refreshDriveSilently,
+  } from "$lib/google-drive";
+  import AuthRefreshBanner from "$lib/components/AuthRefreshBanner.svelte";
 
   // Start hydration immediately
   const hydrationPromise =
@@ -59,6 +68,43 @@
   let me: User = { signedIn: false };
   let loadingState: "initializing" | "loading" | "ready" = "initializing";
   let navigationOpen = false;
+  let isRefreshingTokens = false;
+
+  async function checkAndRefreshTokens() {
+    if (!me.signedIn || isRefreshingTokens) return;
+
+    const photosExpiry = getPhotosExpiry();
+    const driveExpiry = getDriveExpiry();
+
+    // Auto-refresh if valid but expires in < 10 mins
+    const NEEDS_REFRESH_SECONDS = 600;
+
+    const photosNeedsRefresh =
+      photosExpiry &&
+      !photosExpiry.expired &&
+      photosExpiry.expiresInSeconds < NEEDS_REFRESH_SECONDS;
+    const driveNeedsRefresh =
+      driveExpiry &&
+      !driveExpiry.expired &&
+      driveExpiry.expiresInSeconds < NEEDS_REFRESH_SECONDS;
+
+    if (photosNeedsRefresh || driveNeedsRefresh) {
+      console.log("[Layout] Tokens nearing expiry, initiating auto-refresh...");
+      isRefreshingTokens = true;
+      try {
+        // Our current flow merges these, but we try both for robustness
+        if (photosNeedsRefresh) await refreshPhotosSilently();
+        else if (driveNeedsRefresh) await refreshDriveSilently();
+      } catch (e) {
+        console.error("[Layout] Auto-refresh failed", e);
+      } finally {
+        // Keep banner visible for a moment
+        setTimeout(() => {
+          isRefreshingTokens = false;
+        }, 3000);
+      }
+    }
+  }
 
   function handleUserChange(firebaseUser: any) {
     if (firebaseUser && firebaseUser.email) {
@@ -313,10 +359,16 @@
       if (me.signedIn) loadingState = "ready";
     }, 10000);
 
+    // Auto-refresh timer (every 60s)
+    const refreshInterval = setInterval(checkAndRefreshTokens, 60000);
+    // Also check once immediately on mount (delayed slightly to allow hydration)
+    setTimeout(checkAndRefreshTokens, 2000);
+
     return () => {
       unsubscribe();
       if (unsubscribeBroadcast) unsubscribeBroadcast();
       if (unsubscribeShopifySync) unsubscribeShopifySync();
+      clearInterval(refreshInterval);
       if (typeof window !== "undefined") delete (window as any).__store;
     };
   });
@@ -339,6 +391,10 @@
       <StickyBannerContainer />
       <slot />
     </main>
+
+    {#if isRefreshingTokens}
+      <AuthRefreshBanner />
+    {/if}
   </div>
 
   {#if loadingState !== "ready"}
