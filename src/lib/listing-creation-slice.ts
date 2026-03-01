@@ -1064,9 +1064,18 @@ export const generate_proposals =
       );
 
       const candidates: CleanListingProposal[] = [];
-      const baseJanKeys = Object.entries(baseJanMap).filter(
-        ([baseJan]) => !listingCreation.proposals[baseJan],
-      );
+      const baseJanKeys = Object.entries(baseJanMap).filter(([baseJan]) => {
+        // 1. Skip if proposal already exists in drafts
+        if (listingCreation.proposals[baseJan]) return false;
+
+        // 2. Skip if no unlisted inventory items with qty > 0 exist for this JAN
+        const hasUnlistedInventory = Object.values(inventory.idToItem).some(
+          (item: any) =>
+            item.janCode === baseJan && !item.handle && item.qty > 0,
+        );
+
+        return hasUnlistedInventory;
+      });
       const totalBaseJans = baseJanKeys.length;
       let processedBase = 0;
 
