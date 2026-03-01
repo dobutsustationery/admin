@@ -39,6 +39,7 @@ npm run dev:local
 ```
 
 **Notes**:
+
 - This transfers the complete broadcast action history (required for app to function)
 - Users collection is included
 - Orders (dobutsu collection) are included by default
@@ -61,6 +62,7 @@ npm run data:transfer -- --from production --to staging
 ```
 
 **Notes**:
+
 - This transfers the complete dataset (all broadcast history, users, and orders)
 - Essential for keeping staging environment in sync with production
 
@@ -87,6 +89,7 @@ cd backups && tar -czf backup-$(date +%Y-%m-%d).tar.gz backup-$(date +%Y-%m-%d)
 ```
 
 **Notes**:
+
 - Exports complete broadcast history with exact timestamps
 - Includes all collections (broadcast, users, and orders) by default
 - Store backups securely; they contain sensitive data
@@ -138,6 +141,7 @@ npm run data:import -- \
 ```
 
 **Critical Notes**:
+
 - **ALWAYS backup current production first** before restoring
 - Requires `service-account-production-write.json` (separate from read credentials)
 - Must use `--force` flag
@@ -165,6 +169,7 @@ npm run data:import -- \
 ```
 
 **Notes**:
+
 - Complete broadcast history is still transferred (required for app to function)
 - Only orders are excluded
 - Useful when orders contain sensitive customer information
@@ -190,6 +195,7 @@ npm run data:import -- \
 ```
 
 **Notes**:
+
 - Exports complete dataset with all collections
 - Timestamps are preserved with full precision for exact action replay
 - Ensure the new project has the same Firestore structure
@@ -200,6 +206,7 @@ npm run data:import -- \
 ### Issue: "Service account key not found"
 
 **Solution**:
+
 ```bash
 # Check if the file exists in the project root
 ls -la service-account-*.json
@@ -215,6 +222,7 @@ ls -la service-account-*.json
 ### Issue: "Cannot connect to emulator"
 
 **Solution**:
+
 ```bash
 # Make sure emulators are running
 # In a separate terminal:
@@ -227,6 +235,7 @@ npm run emulators
 ### Issue: "Permission denied" when accessing Firestore
 
 **Solution**:
+
 - Ensure the service account has "Cloud Datastore User" role
 - Check in Firebase Console > IAM & Admin
 - Regenerate the service account key if needed
@@ -234,6 +243,7 @@ npm run emulators
 ### Issue: Transfer is very slow
 
 **Solution**:
+
 ```bash
 # Large datasets take time - be patient
 # The broadcast collection requires all historical data for the app to function
@@ -284,6 +294,7 @@ echo "Done! Backup saved at $BACKUP_DIR"
 ```
 
 Make it executable and run:
+
 ```bash
 chmod +x weekly-staging-refresh.sh
 ./weekly-staging-refresh.sh

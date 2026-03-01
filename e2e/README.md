@@ -32,6 +32,7 @@ npm run test:e2e
 ```
 
 This script will:
+
 1. Start Firebase emulators if not already running
 2. Load test data into the emulator
 3. Build the application for emulator mode
@@ -86,6 +87,7 @@ e2e/
 ```
 
 Each test follows the pattern:
+
 - `###-<testname>/###-<testname>.spec.ts` - The test file with user story
 - `###-<testname>/README.md` - Documentation with screenshot gallery and direct image links
 - `###-<testname>/screenshots/` - Baseline screenshots (checked into git)
@@ -109,28 +111,28 @@ See [e2e/inventory/README.md](inventory/README.md) for a complete example.
 ### Writing a User Story Test
 
 ```typescript
-import { test, expect } from '../fixtures/auth';
-import { createScreenshotHelper } from '../helpers/screenshot-helper';
+import { test, expect } from "../fixtures/auth";
+import { createScreenshotHelper } from "../helpers/screenshot-helper";
 
-test('complete user workflow', async ({ page }) => {
+test("complete user workflow", async ({ page }) => {
   const screenshots = createScreenshotHelper();
-  
+
   // Step 1: Starting state
-  await page.goto('/my-route');
-  await screenshots.capture(page, 'initial-state', {
+  await page.goto("/my-route");
+  await screenshots.capture(page, "initial-state", {
     programmaticCheck: async () => {
-      await expect(page.locator('h1')).toBeVisible();
-    }
+      await expect(page.locator("h1")).toBeVisible();
+    },
   });
-  
+
   // Step 2: User action
   await page.click('button:has-text("Click Me")');
-  await screenshots.capture(page, 'after-click', {
+  await screenshots.capture(page, "after-click", {
     programmaticCheck: async () => {
-      await expect(page.locator('.result')).toHaveText('Success');
-    }
+      await expect(page.locator(".result")).toHaveText("Success");
+    },
   });
-  
+
   // Step 3: Final state
   // ... continue the story
 });
@@ -144,15 +146,15 @@ Use `createScreenshotHelper()` to manage numbered screenshots:
 const screenshots = createScreenshotHelper();
 
 // Captures 000-description.png
-await screenshots.capture(page, 'description');
+await screenshots.capture(page, "description");
 
 // Captures 001-next-step.png
-await screenshots.capture(page, 'next-step', {
-  fullPage: true,  // Optional
+await screenshots.capture(page, "next-step", {
+  fullPage: true, // Optional
   programmaticCheck: async () => {
     // Run assertions before screenshot
-    await expect(page.locator('.element')).toBeVisible();
-  }
+    await expect(page.locator(".element")).toBeVisible();
+  },
 });
 
 screenshots.getCounter(); // Returns 2
@@ -182,13 +184,13 @@ See [e2e/000-inventory/README.md](000-inventory/README.md) as a template.
 For simple tests that don't need the full user story pattern:
 
 ```typescript
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 
-test('my test', async ({ page }) => {
-  await page.goto('/my-route');
-  
+test("my test", async ({ page }) => {
+  await page.goto("/my-route");
+
   // Your test assertions
-  await expect(page.locator('h1')).toBeVisible();
+  await expect(page.locator("h1")).toBeVisible();
 });
 ```
 
@@ -197,9 +199,9 @@ test('my test', async ({ page }) => {
 Tests can use the `authenticatedPage` fixture for pre-authenticated tests:
 
 ```typescript
-test('authenticated test', async ({ authenticatedPage: page }) => {
+test("authenticated test", async ({ authenticatedPage: page }) => {
   // User is already signed in
-  await page.goto('/protected-route');
+  await page.goto("/protected-route");
 });
 ```
 
@@ -208,6 +210,7 @@ Or handle authentication manually within the test for user story tests.
 ### Test Data
 
 Test data is loaded from `test-data/firestore-export.json` before tests run. This includes:
+
 - `broadcast` collection: Action history for state reconstruction
 - `users` collection: Admin user data
 - `dobutsu` collection: Orders and payments
@@ -217,6 +220,7 @@ Test data is loaded from `test-data/firestore-export.json` before tests run. Thi
 All screenshots use Playwright's visual regression testing with **zero-pixel tolerance**:
 
 **How it works:**
+
 1. Baseline screenshots are stored in `e2e/<test-name>.spec.ts-snapshots/`
 2. Tests compare current screenshots against baselines with exact pixel matching
 3. Tests fail if **any** visual difference is detected (0-pixel tolerance)
@@ -231,6 +235,7 @@ All screenshots use Playwright's visual regression testing with **zero-pixel tol
 - **It is YOUR responsibility** to ensure baselines are updated when you make changes that affect them
 
 **Generating/Updating baselines:**
+
 ```bash
 # Generate initial baselines for new tests
 # IMPORTANT: Load test data with --match-jancodes=10 first!
@@ -251,6 +256,7 @@ git commit -m "Add/Update baseline screenshots"
 **⚠️ CRITICAL**: Always use `--match-jancodes=10` when loading test data for baseline generation. This must match the CI configuration to prevent false visual regression failures.
 
 **Reviewing failures:**
+
 - Check `test-results/` for diff images showing what changed
 - If intentional, update baseline with `--update-snapshots` and commit
 - If a bug, fix the code
@@ -262,6 +268,7 @@ For comprehensive guidelines, see [E2E_TEST_GUIDELINES.md](../E2E_TEST_GUIDELINE
 ## CI/CD
 
 Tests run automatically in GitHub Actions on:
+
 - Push to `main` or `develop` branches
 - Pull requests to `main` or `develop`
 - Manual workflow dispatch
@@ -365,28 +372,23 @@ When adding new E2E tests:
    - Each test should tell a complete story from start to finish
    - Start from a realistic initial state (usually signed out)
    - Progress through meaningful user interactions
-   
 2. **Use numbered screenshots**
    - Import and use `createScreenshotHelper()` from `e2e/helpers/screenshot-helper`
    - Capture screenshots in sequence: `000-description.png`, `001-next-step.png`, etc.
    - Use descriptive names that explain what the screenshot shows
-   
 3. **Include both programmatic and visual verification**
    - Use `expect()` assertions for data validation
    - Use `programmaticCheck` option in `screenshots.capture()` to run assertions before screenshots
    - Screenshots provide visual regression testing
-   
 4. **Create test documentation**
    - Create `e2e/###-<testname>/README.md` documenting the user story
    - Include a screenshot gallery with **direct image links** to `screenshots/` subdirectory
    - List what to verify in each screenshot (programmatic + manual)
    - Use `e2e/000-inventory/README.md` as a template
-   
 5. **Place files correctly**
    - Test spec: `e2e/###-<testname>/###-<testname>.spec.ts`
    - Documentation: `e2e/###-<testname>/README.md`
    - Snapshots in: `e2e/###-<testname>/screenshots/`
-   
 6. **Baseline screenshots are tracked in git**
    - Screenshots in `screenshots/` directories are committed
    - These serve as visual regression baselines
@@ -397,21 +399,22 @@ When adding new E2E tests:
    - Commit baselines: `git add e2e/###-<testname>/screenshots/`
 
 Example test structure:
-```typescript
-import { test, expect } from '../fixtures/auth';
-import { createScreenshotHelper } from '../helpers/screenshot-helper';
 
-test('my user story', async ({ page }) => {
+```typescript
+import { test, expect } from "../fixtures/auth";
+import { createScreenshotHelper } from "../helpers/screenshot-helper";
+
+test("my user story", async ({ page }) => {
   const screenshots = createScreenshotHelper();
-  
+
   // Step 1
-  await page.goto('/route');
-  await screenshots.capture(page, 'initial-state', {
+  await page.goto("/route");
+  await screenshots.capture(page, "initial-state", {
     programmaticCheck: async () => {
-      await expect(page.locator('.element')).toBeVisible();
-    }
+      await expect(page.locator(".element")).toBeVisible();
+    },
   });
-  
+
   // Continue the story...
 });
 ```

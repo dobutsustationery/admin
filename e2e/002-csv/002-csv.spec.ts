@@ -186,7 +186,8 @@ test.describe("CSV Export Page with Google Drive", () => {
     console.log("\n📖 STEP 2: Sign in to application");
 
     // Create authenticated user
-    const authEmulatorUrl = process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
+    const authEmulatorUrl =
+      process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
     const testEmail = `test-${Date.now()}@example.com`;
     const testPassword = "testpassword123";
 
@@ -400,7 +401,9 @@ test.describe("CSV Export Page with Google Drive", () => {
     // or checks the mock file list response
 
     // Wait for the success message to appear, which confirms the upload finished
-    await expect(page.locator('.success-message')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator(".success-message")).toBeVisible({
+      timeout: 10000,
+    });
 
     const step5Verifications = [
       {

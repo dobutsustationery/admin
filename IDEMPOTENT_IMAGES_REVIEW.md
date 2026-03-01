@@ -6,15 +6,15 @@ Review of `486e4c7` ("Final idempotent image handling cleanup and dedup"), which
 
 ## Scorecard: Fourth Review Issues
 
-| # | Issue | Addressed? | Verdict |
-|---|---|---|---|
-| Must-1 | Add `dtype: 'fp32'` to model loading | **Yes** | Explicit `{ dtype: "fp32" }` passed to `AutoModel.from_pretrained`. |
-| Must-2 | Guard `loadModel()` against concurrent calls | **Yes** | Promise-based singleton with `loadingPromise`. Model + processor loaded via `Promise.all`. |
-| Must-3 | Remove dead `toSyncPhotoRequestDocId` and `syncRequestDocId` | **Yes** | Function and variable both removed. |
-| Should-4 | Use canonical `RawImage.fromTensor` API | **Yes** | `output[0].mul(255).to("uint8")` matches HuggingFace docs exactly. |
-| Should-5 | Version derivation key for transforms | **Yes** | `remove_bg` → `remove_bg_v1` in shared `generateDerivationKey`. |
-| Nice-6 | Client-side request dedup | **Yes** | `inFlightRequests` Set in gemini-client; `requestedPhotoIds` moved before `addDoc` in PhotoUploadManager. |
-| Nice-7 | Unify `findFileByDerivationKey` | **Yes** | Shared implementation in `idempotency-utils.cjs` with callback-based `executeRequest` pattern. |
+| #        | Issue                                                        | Addressed? | Verdict                                                                                                   |
+| -------- | ------------------------------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------- |
+| Must-1   | Add `dtype: 'fp32'` to model loading                         | **Yes**    | Explicit `{ dtype: "fp32" }` passed to `AutoModel.from_pretrained`.                                       |
+| Must-2   | Guard `loadModel()` against concurrent calls                 | **Yes**    | Promise-based singleton with `loadingPromise`. Model + processor loaded via `Promise.all`.                |
+| Must-3   | Remove dead `toSyncPhotoRequestDocId` and `syncRequestDocId` | **Yes**    | Function and variable both removed.                                                                       |
+| Should-4 | Use canonical `RawImage.fromTensor` API                      | **Yes**    | `output[0].mul(255).to("uint8")` matches HuggingFace docs exactly.                                        |
+| Should-5 | Version derivation key for transforms                        | **Yes**    | `remove_bg` → `remove_bg_v1` in shared `generateDerivationKey`.                                           |
+| Nice-6   | Client-side request dedup                                    | **Yes**    | `inFlightRequests` Set in gemini-client; `requestedPhotoIds` moved before `addDoc` in PhotoUploadManager. |
+| Nice-7   | Unify `findFileByDerivationKey`                              | **Yes**    | Shared implementation in `idempotency-utils.cjs` with callback-based `executeRequest` pattern.            |
 
 **All seven items addressed.**
 
@@ -25,6 +25,7 @@ Review of `486e4c7` ("Final idempotent image handling cleanup and dedup"), which
 ### Shared `idempotency-utils.cjs` Is Now the Single Source of Truth
 
 The biggest structural improvement in this commit. The shared module now owns:
+
 - `generateDerivationKey` (with versioning)
 - `escapeDriveQueryValue`
 - `buildDerivationKeyQuery`
@@ -36,6 +37,7 @@ Both the server (`photos-sync-worker.cjs`) and client (`google-drive.ts`) delega
 ### Derivation Key Versioning Is Transparent
 
 The versioning logic is inside the shared `generateDerivationKey`:
+
 ```javascript
 if (safeTransform === "remove_bg") {
   safeTransform = "remove_bg_v1";
@@ -79,12 +81,14 @@ import { ... } from "../../functions/shared/idempotency-utils.cjs";
 ```
 
 This imports a CommonJS file from outside the `src/` directory into a SvelteKit client module. I verified this works:
+
 - `svelte-check` passes with 0 errors
 - Vite handles CJS imports via esbuild transformation
 
 However, this is unconventional for SvelteKit projects. The import path uses `../../functions/shared/` which couples the client source tree to the functions directory layout. If the `functions/` directory is ever moved or restructured, this import breaks. More importantly, anyone reading `google-drive.ts` won't expect imports from outside `src/`.
 
 **Not a blocker** — it works, and code sharing is the right goal. But consider adding a `$lib/shared/` symlink or a Vite alias to make the import path clearer:
+
 ```typescript
 import { ... } from "$lib/shared/idempotency-utils";
 ```
@@ -98,6 +102,7 @@ The old worker-local `toDrivePublicUrl` used `=w1600` (width-limited). The share
 The current versioning maps `"remove_bg"` → `"remove_bg_v1"`. If the model changes from `Xenova/modnet` to a different model but the output is semantically equivalent (still "remove background"), the version should still be bumped. But the version string is tied to the transform name, not the model. This means someone could change the model in `image-processor.cjs` without remembering to bump the version in `idempotency-utils.cjs`.
 
 A comment linking the two would help:
+
 ```javascript
 // IMPORTANT: Bump version when changing the model in image-processor.cjs
 if (safeTransform === "remove_bg") {
@@ -127,17 +132,17 @@ Line 323: `// Broadcase Initiate immediately` → should be `// Broadcast Initia
 
 ## Design Conformance: Final Status
 
-| Design Step | Status | Notes |
-|---|---|---|
-| Step 1: Shared derivation key infrastructure | **Done** | Single source in `idempotency-utils.cjs` |
-| Step 1: Shared `findFileByDerivationKey` | **Done** | Callback-based, used by both client and server |
-| Step 1: `uploadImageToDrive` requires key | **Done** | All callers use content hashes |
-| Step 2: Server "Search Before Work" | **Done** | Correct |
-| Step 2: Server `remove_bg` transform | **Done** | Real MODNet model, canonical API, singleton loading |
-| Step 3: Client dispatches to sync queue | **Done** | Append-only `addDoc`, with in-flight dedup |
-| Step 4: Redux state convergence | **Done** | `initiate_upload` broadcast before sync request |
-| Section 4.1: Integration tests | **Done** | Worker-level tests with stateful mock Firestore |
-| Versioning | **Done** | `remove_bg` → `remove_bg_v1` transparently |
+| Design Step                                  | Status   | Notes                                               |
+| -------------------------------------------- | -------- | --------------------------------------------------- |
+| Step 1: Shared derivation key infrastructure | **Done** | Single source in `idempotency-utils.cjs`            |
+| Step 1: Shared `findFileByDerivationKey`     | **Done** | Callback-based, used by both client and server      |
+| Step 1: `uploadImageToDrive` requires key    | **Done** | All callers use content hashes                      |
+| Step 2: Server "Search Before Work"          | **Done** | Correct                                             |
+| Step 2: Server `remove_bg` transform         | **Done** | Real MODNet model, canonical API, singleton loading |
+| Step 3: Client dispatches to sync queue      | **Done** | Append-only `addDoc`, with in-flight dedup          |
+| Step 4: Redux state convergence              | **Done** | `initiate_upload` broadcast before sync request     |
+| Section 4.1: Integration tests               | **Done** | Worker-level tests with stateful mock Firestore     |
+| Versioning                                   | **Done** | `remove_bg` → `remove_bg_v1` transparently          |
 
 ---
 

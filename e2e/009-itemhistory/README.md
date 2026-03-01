@@ -9,6 +9,7 @@
 ![Signed Out State](screenshots/000-signed-out-state.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated "Sign In" button is visible
 - [ ] Validated heading contains "Item History"
 
@@ -17,6 +18,7 @@
 ![Signed In State](screenshots/001-signed-in-state.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated "Sign In" button is hidden
 - [ ] Validated Redux store has user state
 
@@ -25,7 +27,7 @@
 ![Item History Loaded](screenshots/002-itemhistory-loaded.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated heading contains item key
 - [ ] Validated history table (if visible)
 - [ ] Validated Redux store has history state
-

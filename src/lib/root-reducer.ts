@@ -101,7 +101,22 @@ const mapShopifyToInventory = (importItem: any): Item => {
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
 export const rootReducer = (state: any, action: any, logger = logAction) => {
   if (action.type === "HYDRATE") {
-    return { ...state, ...action.payload };
+    const hydratedState = { ...state, ...action.payload };
+    // Migration: Ensure photos.processingConfig exists and follows the new object structure
+    if (hydratedState.photos) {
+      const oldConfig = hydratedState.photos.processingConfig;
+      if (!oldConfig || Array.isArray(oldConfig.steps)) {
+        // If config is missing or using the old array of strings format
+        hydratedState.photos.processingConfig = {
+          steps: [
+            { type: "crop", enabled: false },
+            { type: "color_correct", enabled: true },
+            { type: "remove_background", enabled: true },
+          ],
+        };
+      }
+    }
+    return hydratedState;
   }
 
   // 1. Standard Reducer Execution

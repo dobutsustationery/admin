@@ -50,7 +50,8 @@ setup("authenticate", async ({ page, context }) => {
   };
 
   // Create a real Firebase emulator user and inject auth persistence.
-  const authEmulatorUrl = process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
+  const authEmulatorUrl =
+    process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
   const testEmail = "live-e2e@example.com";
   const testPassword = "testpassword123";
 
@@ -70,11 +71,15 @@ setup("authenticate", async ({ page, context }) => {
   if (signUpResponse.ok()) {
     authData = await signUpResponse.json();
   } else {
-    const signUpBody = await signUpResponse.json().catch(() => ({} as any));
+    const signUpBody = await signUpResponse.json().catch(() => ({}) as any);
     const alreadyExists =
-      signUpBody?.error?.message === "EMAIL_EXISTS" || signUpBody?.error?.message === "EMAIL_EXISTS : Password hash should be specified.";
+      signUpBody?.error?.message === "EMAIL_EXISTS" ||
+      signUpBody?.error?.message ===
+        "EMAIL_EXISTS : Password hash should be specified.";
     if (!alreadyExists) {
-      throw new Error(`Auth emulator sign-up failed: ${signUpResponse.status()} ${JSON.stringify(signUpBody)}`);
+      throw new Error(
+        `Auth emulator sign-up failed: ${signUpResponse.status()} ${JSON.stringify(signUpBody)}`,
+      );
     }
 
     const signInResponse = await page.request.post(
@@ -88,7 +93,9 @@ setup("authenticate", async ({ page, context }) => {
       },
     );
     if (!signInResponse.ok()) {
-      throw new Error(`Auth emulator sign-in failed: ${signInResponse.status()}`);
+      throw new Error(
+        `Auth emulator sign-in failed: ${signInResponse.status()}`,
+      );
     }
     authData = await signInResponse.json();
   }
@@ -96,7 +103,10 @@ setup("authenticate", async ({ page, context }) => {
   await context.addInitScript(
     ({ drive, photos, authInfo }) => {
       localStorage.setItem("google_drive_access_token", JSON.stringify(drive));
-      localStorage.setItem("google_photos_access_token", JSON.stringify(photos));
+      localStorage.setItem(
+        "google_photos_access_token",
+        JSON.stringify(photos),
+      );
 
       const authKey = "firebase:authUser:demo-api-key:[DEFAULT]";
       localStorage.setItem(

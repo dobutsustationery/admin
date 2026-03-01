@@ -20,6 +20,7 @@ This guide describes how to deploy the Antigravity Admin application to producti
 ## Multi-Project Configuration
 
 The application uses a split configuration:
+
 - **Data (Firestore/Auth)**: Managed by `dobutsu-stationery-6b227` (Project A). This is configured via `VITE_` environment variables.
 - **Hosting**: Deployed to `dobutsu-admin` (Project B). This is configured via `.firebaserc` aliases.
 
@@ -70,11 +71,13 @@ For the Drive integration to work in production, you must configure the OAuth Cl
 
 1.  **Authentication**:
     Ensure you are logged into the correct Firebase account that has access to both projects.
+
     ```bash
     npm run auth
     ```
 
 2.  **Install Dependencies**:
+
     ```bash
     npm ci
     ```
@@ -94,6 +97,7 @@ For the Drive integration to work in production, you must configure the OAuth Cl
 ## Verification
 
 After deployment:
+
 1.  Visit `https://your-production-url.com/csv`.
 2.  Open the Developer Console (F12).
 3.  Click "Connect to Google Drive".

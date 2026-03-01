@@ -6,6 +6,7 @@
     complete_edit,
     fail_edit,
     toggle_edit_status,
+    set_processing_config,
   } from "$lib/photos-slice";
   import {
     uploadImageToDrive,
@@ -32,6 +33,11 @@
     isAuthenticated as checkAuth,
   } from "$lib/google-photos";
   import type { MediaItem } from "$lib/google-photos";
+  import type {
+    ProcessingConfig,
+    ProcessingStep,
+    ProcessingStepType,
+  } from "$lib/photos-slice";
   import {
     listAllImages,
     findSingleImage,
@@ -42,6 +48,7 @@
   } from "$lib/google-drive";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import SecureImage from "$lib/components/SecureImage.svelte";
+  import ProcessingConfigModal from "$lib/components/ProcessingConfigModal.svelte";
   import { store } from "$lib/store";
   import { broadcast } from "$lib/redux-firestore";
   import { auth, firestore } from "$lib/firebase";
@@ -201,6 +208,7 @@
 
   // --- EDIT QUEUE RUNNER ---
   let isEditing = false;
+  let showConfigModal = false;
   let batchProgress = {
     current: 0,
     total: 0,
@@ -215,6 +223,11 @@
     ([id, q]) => q.queue.length > 0 && !q.active,
   );
 
+  // Reactive pipeline steps with fallback for safety (hydration)
+  $: pipelineSteps = ($store.photos.processingConfig?.steps || [])
+    .filter((s: any) => s.enabled)
+    .map((s: any) => s.type);
+
   async function dispatchTransformRequest(id: string, operation: string) {
     const transform =
       operation === "remove_background" ? "remove_bg" : operation;
@@ -226,15 +239,13 @@
       const token = getStoredToken();
       if (!token) throw new Error("Not authenticated");
 
-      // 1. Get Item
-      let item = photos.find((p) => p.id === id);
+      // 1. Get Item from Store State directly (reactive var 'photos' can be stale in loops)
+      const state = store.getState().photos;
+      let item = state.selected.find((p: any) => p.id === id);
       if (!item) {
-        for (const code in janCodeToPhotos) {
-          const found = janCodeToPhotos[code].find((p) => p.id === id);
-          if (found) {
-            item = found;
-            break;
-          }
+        for (const code in state.janCodeToPhotos) {
+          item = state.janCodeToPhotos[code].find((p: any) => p.id === id);
+          if (item) break;
         }
       }
       if (!item) throw new Error("Photo not found in state");
@@ -267,7 +278,7 @@
 
         const completeAction = complete_edit({
           id,
-          operation,
+          operation: operation as any,
           permanentUrl: finalUrl,
         });
 
@@ -288,6 +299,22 @@
       const driveToken = getDriveStoredToken() || getStoredToken();
       const folders = await ensureFolderStructure(driveToken!.access_token);
 
+      const syncPayload: any = {
+        photoId: id,
+        sourceBaseUrl: item.baseUrl || "",
+        filename: `edited_${operation}_${id}.png`,
+        mimeType: "image/png",
+        targetFolderId: folders.processedId,
+        sourceType,
+        transform,
+        derivationKey,
+        sourceRef: {
+          mediaItemId: id,
+          url: item.baseUrl || "",
+          driveFileId: driveId,
+        },
+      };
+
       // We use addDoc because sync collection is append-only
       const docRef = await addDoc(collection(firestore, SYNC_COLLECTION), {
         eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
@@ -300,21 +327,7 @@
         filename: `edited_${operation}_${id}.png`,
         mimeType: "image/png",
         payloadVersion: 1,
-        payload: {
-          photoId: id,
-          sourceBaseUrl: item.baseUrl || "",
-          filename: `edited_${operation}_${id}.png`,
-          mimeType: "image/png",
-          targetFolderId: folders.processedId,
-          sourceType,
-          transform,
-          derivationKey,
-          sourceRef: {
-            mediaItemId: id,
-            url: item.baseUrl || "",
-            driveFileId: driveId,
-          },
-        },
+        payload: syncPayload,
         createdAtMs: Date.now(),
         createdAt: serverTimestamp(),
         timestamp: serverTimestamp(),
@@ -330,26 +343,33 @@
     }
   }
 
+  const stepOperationLabels: Record<string, string> = {
+    crop: "Auto-Cropping",
+    color_correct: "Color Correcting",
+    remove_background: "Removing Backgrounds",
+  };
+
   async function handleProcessImages() {
     if (isEditing) return;
     isEditing = true;
 
     try {
-      // 1. Color Correct ALL Categorized Photos
-      const colorIds = scheduleBatch("color_correct");
-      if (colorIds.length > 0) {
+      for (const step of pipelineSteps as ProcessingStepType[]) {
+        const ids = scheduleBatch(step);
+        if (ids.length === 0) continue;
+
         batchProgress = {
           current: 0,
-          total: colorIds.length,
-          operation: "Color Correcting",
+          total: ids.length,
+          operation: stepOperationLabels[step] || step,
           completedIds: [],
         };
 
         const idsToWait: string[] = [];
 
         // Dispatch with staggered delay
-        for (const id of colorIds) {
-          const result = await dispatchTransformRequest(id, "color_correct");
+        for (const id of ids) {
+          const result = await dispatchTransformRequest(id, step);
           if (result === true) {
             // Idempotent match - already done
             batchProgress.current++;
@@ -366,48 +386,9 @@
 
         if (idsToWait.length > 0) {
           console.log(
-            `[Batch] Waiting for ${idsToWait.length} color_correct jobs...`,
+            `[Batch] Waiting for ${idsToWait.length} ${step} jobs...`,
           );
-          await waitForBatchCompletion(idsToWait, "color_correct", (id) => {
-            batchProgress.current++;
-            batchProgress.completedIds = [...batchProgress.completedIds, id];
-          });
-        }
-      }
-
-      // 2. Remove Background ALL Categorized Photos
-      const bgIds = scheduleBatch("remove_background");
-      if (bgIds.length > 0) {
-        batchProgress = {
-          current: 0,
-          total: bgIds.length,
-          operation: "Removing Backgrounds",
-          completedIds: [],
-        };
-
-        const idsToWait: string[] = [];
-
-        for (const id of bgIds) {
-          const result = await dispatchTransformRequest(
-            id,
-            "remove_background",
-          );
-          if (result === true) {
-            batchProgress.current++;
-            batchProgress.completedIds = [...batchProgress.completedIds, id];
-          } else if (result) {
-            idsToWait.push(id);
-          } else {
-            batchProgress.total--;
-          }
-          await new Promise((r) => setTimeout(r, 100));
-        }
-
-        if (idsToWait.length > 0) {
-          console.log(
-            `[Batch] Waiting for ${idsToWait.length} remove_background jobs...`,
-          );
-          await waitForBatchCompletion(idsToWait, "remove_background", (id) => {
+          await waitForBatchCompletion(idsToWait, step, (id) => {
             batchProgress.current++;
             batchProgress.completedIds = [...batchProgress.completedIds, id];
           });
@@ -433,6 +414,7 @@
       return new Promise<void>((resolve) => {
         const transform =
           operation === "remove_background" ? "remove_bg" : operation;
+
         const requestId = `photo-edit-${transform}-${id}`;
 
         const q = query(
@@ -457,16 +439,8 @@
               const payload = data.payload || {};
               const finalUrl = payload.permanentUrl || payload.apiUrl || null;
               if (finalUrl) {
-                const completeAction = complete_edit({
-                  id,
-                  operation,
-                  permanentUrl: finalUrl,
-                });
-                if ($user.uid) {
-                  broadcast(firestore, $user.uid, completeAction);
-                } else {
-                  store.dispatch(completeAction);
-                }
+                // The worker already broadcasted the completion event via idempotent broadcast action.
+                // We just need to update our internal list of completed items for the progress UI.
                 onItemComplete(id);
               }
               unsubscribe();
@@ -1185,7 +1159,22 @@
 
     hoveredRowIndex = null;
   }
+
+  function handleSaveConfig(e: CustomEvent<ProcessingConfig>) {
+    const action = set_processing_config(e.detail);
+    if ($user.uid) {
+      broadcast(firestore, $user.uid, action);
+    } else {
+      store.dispatch(action);
+    }
+  }
 </script>
+
+<ProcessingConfigModal
+  bind:open={showConfigModal}
+  config={$store.photos.processingConfig}
+  on:save={handleSaveConfig}
+/>
 
 <div class="p-8 max-w-6xl mx-auto relative">
   <!-- BATCH PROGRESS OVERLAY -->
@@ -1538,10 +1527,18 @@
               </label>
 
               <button
+                on:click={() => (showConfigModal = true)}
+                class="bg-slate-200 text-slate-700 px-3 py-2 rounded-md font-bold hover:bg-slate-300 transition text-sm flex items-center gap-2"
+                title="Configure processing steps and order"
+              >
+                <span>⚙️</span>
+              </button>
+
+              <button
                 on:click={handleProcessImages}
                 disabled={isEditing}
                 class="bg-indigo-600 text-white px-4 py-2 rounded-md font-bold hover:bg-indigo-700 transition disabled:opacity-50 text-sm flex items-center gap-2 shadow-sm"
-                title="Auto-process all categorized images (Color Correct + Remove Background)"
+                title="Auto-process all categorized images using the configured pipeline"
               >
                 {#if isEditing}
                   <span
@@ -1550,7 +1547,6 @@
                 {/if}
                 <span>Process Images</span>
               </button>
-
               <button
                 on:click={() => goto("/listings/create")}
                 class="bg-green-600 text-white px-4 py-2 rounded-md font-bold hover:bg-green-700 transition text-sm flex items-center gap-2 shadow-sm"

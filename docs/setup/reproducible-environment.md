@@ -64,10 +64,12 @@ npm run dev
    ```
 
 **Access:**
+
 - Application: http://localhost:5173
 - Emulator UI: http://localhost:4000
 
 **Features:**
+
 - No internet connection required (after initial setup)
 - Data persists only during emulator session
 - Safe to experiment without affecting production
@@ -92,15 +94,19 @@ npm run emulators:import
 1. Create a Firebase project for staging (if you haven't already)
 2. Get your Firebase web app configuration from the Firebase Console
 3. Convert it to `.env.staging` format using the Firebase config converter:
+
    ```bash
    npm run firebase:convert:staging
    ```
+
    Then paste your Firebase config when prompted, or use:
+
    ```bash
    node scripts/firebase-config-to-env.js --input firebase-config.json --env staging --output .env.staging
    ```
-   
+
    Alternatively, manually edit `.env.staging` with your staging Firebase credentials:
+
    ```
    VITE_FIREBASE_ENV=staging
    VITE_FIREBASE_STAGING_API_KEY=your-staging-api-key
@@ -111,12 +117,14 @@ npm run emulators:import
    VITE_FIREBASE_STAGING_APP_ID=your-staging-app-id
    VITE_FIREBASE_STAGING_MEASUREMENT_ID=your-staging-measurement-id
    ```
+
 4. Run:
    ```bash
    npm run dev:staging
    ```
 
 **Features:**
+
 - Real Firebase cloud environment
 - Isolated from production data
 - Can test Firebase features not available in emulators
@@ -135,6 +143,7 @@ npm run dev:production
 ```
 
 **⚠️ Important:**
+
 - This connects to the live production database
 - Changes affect real data and real users
 - Use with caution during development
@@ -157,23 +166,30 @@ npm run firebase:convert:production
 This utility converts the standard Firebase web app configuration (from the Firebase Console) to the `.env` format used by this project. See `scripts/README.md` for detailed usage instructions.
 
 ### `.env.emulator`
+
 Pre-configured for Firebase emulators. This file is loaded when using `npm run dev:local` or `--mode emulator`. Uses localhost ports:
+
 - Firestore: localhost:8080
 - Auth: localhost:9099
 
 Note: `.env.local` is also available and loaded by Vite in all non-production modes, but `.env.emulator` is the primary configuration for local development.
 
 ### `.env.staging`
+
 Template for staging environment. **Requires manual configuration** with your staging Firebase project credentials, or use the Firebase config converter utility.
 
 ### `.env.production`
+
 Pre-configured with production Firebase credentials. Ready to use.
 
 ### `.env.example`
+
 Comprehensive documentation of all available environment variables. Use as a reference.
 
 ### `.env`
+
 Your active environment configuration. Created by:
+
 - Running `npm run env:*` commands
 - Manually copying an `.env.*` file
 - Creating from `.env.example`
@@ -199,6 +215,7 @@ Your active environment configuration. Created by:
 ### Staging Variables
 
 Same as production but prefixed with `STAGING`:
+
 - `VITE_FIREBASE_STAGING_API_KEY`
 - `VITE_FIREBASE_STAGING_AUTH_DOMAIN`
 - etc.
@@ -227,21 +244,25 @@ npm run build:production
 ## Troubleshooting
 
 ### Environment not switching
+
 - Check that you're using the correct npm script
 - Verify the `.env` file contains the expected values
 - Restart the dev server after changing environments
 
 ### Emulators not connecting
+
 - Ensure Firebase emulators are running: `npm run emulators`
 - Check that ports 8080 and 9099 are not in use
 - Verify `VITE_FIREBASE_ENV=local` in your environment
 
 ### Staging environment not working
+
 - Confirm you've added your staging Firebase credentials to `.env.staging`
 - Check that all required variables are set
 - Verify your staging Firebase project exists and is properly configured
 
 ### Production data appearing in development
+
 - Double-check which environment you're running
 - Look for the console messages showing Firebase environment and project
 - Switch to local or staging environment for development

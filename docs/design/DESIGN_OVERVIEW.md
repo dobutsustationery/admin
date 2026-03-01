@@ -7,6 +7,7 @@ This is an admin portal for managing inventory, orders, and payments for Dobutsu
 ## Technology Stack
 
 ### Frontend
+
 - **SvelteKit**: Modern framework for building reactive web applications
 - **TypeScript**: Type-safe JavaScript with enhanced developer experience
 - **Redux Toolkit**: State management with Redux integrated into Svelte stores
@@ -14,6 +15,7 @@ This is an admin portal for managing inventory, orders, and payments for Dobutsu
 - **ZXing Library**: Barcode scanning functionality for inventory management
 
 ### Backend & Infrastructure
+
 - **Firebase**:
   - **Firestore**: Real-time NoSQL database for inventory, orders, and user data
   - **Authentication**: Google OAuth for admin user authentication
@@ -21,6 +23,7 @@ This is an admin portal for managing inventory, orders, and payments for Dobutsu
   - **Firestore Broadcast System**: Real-time action synchronization across clients
 
 ### Build & Development Tools
+
 - **Vite**: Fast build tool and development server
 - **Biome**: Fast linter and formatter (replacing ESLint/Prettier)
 - **Vitest**: Unit testing framework
@@ -60,83 +63,95 @@ The application uses a broadcast pattern for multi-user synchronization:
 ### Data Models
 
 #### Inventory Item
+
 ```typescript
 interface Item {
-  janCode: string;      // Japanese Article Number barcode
-  subtype: string;      // Product variant
-  description: string;  // Item description
-  hsCode: string;       // Harmonized System code for customs
-  image: string;        // Product image URL
-  qty: number;          // Quantity in stock
-  pieces: number;       // Items per package
-  shipped: number;      // Quantity already shipped
+  janCode: string; // Japanese Article Number barcode
+  subtype: string; // Product variant
+  description: string; // Item description
+  hsCode: string; // Harmonized System code for customs
+  image: string; // Product image URL
+  qty: number; // Quantity in stock
+  pieces: number; // Items per package
+  shipped: number; // Quantity already shipped
 }
 ```
 
 #### Order
+
 ```typescript
 interface OrderInfo {
-  id: string;           // Order ID
-  date: Date;           // Order date
-  email?: string;       // Customer email
-  product?: string;     // Product name
-  items: LineItem[];    // Items in order
+  id: string; // Order ID
+  date: Date; // Order date
+  email?: string; // Customer email
+  product?: string; // Product name
+  items: LineItem[]; // Items in order
 }
 ```
 
 ## Application Routes
 
 ### `/` (Home/Inventory Entry)
+
 - Barcode scanning interface
 - Add new items to inventory
 - Image search integration for product photos
 - Auto-suggest for HS codes, subtypes, etc.
 
 ### `/inventory`
+
 - View all current inventory
 - Edit item details inline
 - Shows quantity, shipped, and remaining stock
 - Sortable and filterable table
 
 ### `/orders`
+
 - List all orders from PayPal/Firestore
 - Click to pack an order
 - Integration with payment system
 
 ### `/order?orderId=...`
+
 - Pack a specific order
 - Scan items to add to order
 - Auto-track shipped quantities
 - Retype items if needed (variant selection)
 
 ### `/csv`
+
 - Export inventory to CSV format
 - Useful for customs declarations
 
 ### `/names`
+
 - Manage frequently-used values
 - Add/remove HS codes, subtypes, etc.
 - Shows usage statistics
 
 ### `/payments`
+
 - View payment transactions
 - Monitor PayPal integration
 
 ## Key Features
 
 ### Barcode Scanning
+
 - Uses device camera to scan JAN codes
 - Supports QR codes and Data Matrix formats
 - Auto-lookup in inventory
 - Beep confirmation sound
 
 ### Image Management
+
 - Snapshot from camera
 - Google Custom Search integration
 - Common substring algorithm for auto-description
 - Manual image selection from search results
 
 ### Multi-User Coordination
+
 - Real-time updates across all connected admins
 - Activity tracking with timestamps
 - User presence indicators
@@ -147,7 +162,6 @@ interface OrderInfo {
 
 1. **`broadcast`**: Action log for state synchronization
    - Fields: type, payload, timestamp, creator
-   
 2. **`dobutsu`**: Order and payment data
    - Payment information from PayPal
    - Order details and line items
@@ -159,6 +173,7 @@ interface OrderInfo {
 4. **`jailed`**: Invalid actions quarantine
 
 ### Hosting Configuration
+
 - Static adapter for SvelteKit
 - Build output: `build/` directory
 - Clean URLs enabled
@@ -167,6 +182,7 @@ interface OrderInfo {
 ## Development Workflow
 
 ### Setup
+
 ```bash
 # Install dependencies (choose one)
 bun install  # Recommended
@@ -178,6 +194,7 @@ npm run dev
 ```
 
 ### Building
+
 ```bash
 # Build for production
 bun run build
@@ -189,6 +206,7 @@ npm run preview
 ```
 
 ### Code Quality
+
 ```bash
 # Linting
 bun run lint
@@ -208,6 +226,7 @@ npm run check
 ```
 
 ### Testing
+
 ```bash
 # Run tests
 bun test
@@ -219,6 +238,7 @@ npm run test:watch
 ```
 
 ### Deployment
+
 ```bash
 # Deploy to Firebase
 firebase deploy --only hosting
@@ -227,6 +247,7 @@ firebase deploy --only hosting
 ## Known Issues & TODOs
 
 ### Security Concerns
+
 1. **API Keys in Code**: Firebase config is hardcoded in `src/lib/firebase.ts`
    - Consider using environment variables
    - Implement Firebase App Check for production
@@ -293,18 +314,21 @@ firebase deploy --only hosting
 ## Recommended Next Steps
 
 ### High Priority
+
 1. Move Firebase config to environment variables
 2. Add comprehensive error handling and user feedback
 3. Implement proper role-based access control
 4. Add unit tests for Redux reducers and business logic
 
 ### Medium Priority
+
 1. Optimize Firestore queries with pagination
 2. Implement Firebase Storage for images
 3. Add inventory alerts and notifications
 4. Create admin dashboard with metrics
 
 ### Low Priority
+
 1. Add bulk import/export functionality
 2. Implement order status workflow
 3. Add customer-facing order tracking
@@ -313,18 +337,21 @@ firebase deploy --only hosting
 ## Architecture Decisions
 
 ### Why Redux + Svelte?
+
 - Redux provides time-travel debugging and action logging
 - Broadcast pattern requires serializable actions
 - Redux DevTools integration helpful for debugging
 - Svelte reactivity complements Redux well
 
 ### Why Firebase?
+
 - Real-time synchronization out of the box
 - Serverless architecture reduces operational complexity
 - Built-in authentication
 - Scalable without infrastructure management
 
 ### Why SvelteKit over React?
+
 - Smaller bundle sizes
 - Simpler component model
 - Better performance
@@ -333,18 +360,21 @@ firebase deploy --only hosting
 ## Contributing Guidelines
 
 ### Code Style
+
 - Use Biome for linting and formatting
 - TypeScript strict mode enabled
 - Follow existing patterns for Redux actions
 - Document complex business logic
 
 ### Git Workflow
+
 - Feature branches from main
 - Descriptive commit messages
 - Test before committing
 - Use provided extraction script for maintaining git history
 
 ### Adding Features
+
 1. Define Redux actions in appropriate slice
 2. Update TypeScript interfaces
 3. Add component in `src/routes/` or `src/lib/`

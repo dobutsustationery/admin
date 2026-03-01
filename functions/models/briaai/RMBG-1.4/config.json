@@ -1,8 +1,6 @@
 {
   "_name_or_path": "briaai/RMBG-1.4",
-  "architectures": [
-    "BriaRMBG"
-  ],
+  "architectures": ["BriaRMBG"],
   "auto_map": {
     "AutoConfig": "MyConfig.RMBGConfig",
     "AutoModelForImageSegmentation": "briarmbg.BriaRMBG"
@@ -10,9 +8,7 @@
   "custom_pipelines": {
     "image-segmentation": {
       "impl": "MyPipe.RMBGPipe",
-      "pt": [
-        "AutoModelForImageSegmentation"
-      ],
+      "pt": ["AutoModelForImageSegmentation"],
       "tf": [],
       "type": "image"
     }

@@ -7,6 +7,7 @@ Verify audit log displays correctly for a known date (2024-10-10) with multiple 
 ![Rich Data View](screenshots/000-audit-rich-data.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated specific action is visible
 - [ ] Validated human-readable description matches
 
@@ -15,5 +16,5 @@ Verify audit log displays correctly for a known date (2024-10-10) with multiple 
 ![Action Details](screenshots/001-audit-action-details.png)
 
 **Programmatic Verification:**
-- [ ] Validated expanded JSON details
 
+- [ ] Validated expanded JSON details

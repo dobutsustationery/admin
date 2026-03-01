@@ -34,9 +34,9 @@ type ImageId = string;
 type ImageVersionId = string;
 
 interface ImageVersion {
-  versionId: ImageVersionId;    // unique
+  versionId: ImageVersionId; // unique
   imageId: ImageId;
-  url: string;                  // concrete URL for this version
+  url: string; // concrete URL for this version
   createdAt: number;
   source: "photos-picker" | "drive-upload" | "manual-edit" | "import";
 }
@@ -61,6 +61,7 @@ interface ImageRef {
 ```
 
 Examples:
+
 - `ListingImage` stores `imageRef` (+ alt/position metadata), not `url`.
 - Inventory variant image field stores `imageRef` (or `imageId`) instead of URL.
 - Any cross-entity linkage uses `imageId`.

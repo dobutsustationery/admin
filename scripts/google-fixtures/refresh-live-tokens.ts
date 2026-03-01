@@ -31,7 +31,8 @@ function parseEnvFile(filePath: string): Record<string, string> {
 }
 
 const fileEnv = parseEnvFile(ENV_PATH);
-const projectId = process.env.E2E_GOOGLE_PROJECT_ID || fileEnv.E2E_GOOGLE_PROJECT_ID;
+const projectId =
+  process.env.E2E_GOOGLE_PROJECT_ID || fileEnv.E2E_GOOGLE_PROJECT_ID;
 
 if (!projectId) {
   console.error("Missing E2E_GOOGLE_PROJECT_ID.");

@@ -8,14 +8,18 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
+  if ((from && typeof from === "object") || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
       if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+        __defProp(to, key, {
+          get: () => from[key],
+          enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable,
+        });
   }
   return to;
 };
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __toCommonJS = (mod) =>
+  __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/lib/idempotency-utils.ts
 var idempotency_utils_exports = {};
@@ -25,8 +29,9 @@ __export(idempotency_utils_exports, {
   escapeDriveQueryValue: () => escapeDriveQueryValue,
   findFileByDerivationKey: () => findFileByDerivationKey,
   generateDerivationKey: () => generateDerivationKey,
+  getVersionedTransform: () => getVersionedTransform,
   toDriveApiMediaUrl: () => toDriveApiMediaUrl,
-  toDrivePublicUrl: () => toDrivePublicUrl
+  toDrivePublicUrl: () => toDrivePublicUrl,
 });
 module.exports = __toCommonJS(idempotency_utils_exports);
 var DERIVATION_KEY_PROPERTY = "derivation_key";
@@ -39,16 +44,22 @@ function crc32(str) {
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
-function generateDerivationKey(type, id, transform) {
-  if (!id)
-    return null;
-  const safeType = String(type || "unknown");
-  let safeTransform = String(transform || "identity");
-  if (safeTransform === "remove_bg") {
-    safeTransform = "remove_bg_v2";
-  } else if (safeTransform === "color_correct") {
-    safeTransform = "color_correct_v1";
+function getVersionedTransform(transform) {
+  if (transform === "remove_bg" || transform === "remove_background") {
+    return "remove_bg_v2";
   }
+  if (transform === "color_correct") {
+    return "color_correct_v1";
+  }
+  if (transform === "crop") {
+    return "crop_v3";
+  }
+  return transform;
+}
+function generateDerivationKey(type, id, transform) {
+  if (!id) return null;
+  const safeType = String(type || "unknown");
+  const safeTransform = getVersionedTransform(String(transform || "identity"));
   let safeId = String(id).replace(/:/g, "_");
   const baseKey = `${safeType}:${safeId}:${safeTransform}`;
   if (baseKey.length > 110) {
@@ -59,8 +70,7 @@ function generateDerivationKey(type, id, transform) {
   return `${safeType}:${safeId}:${safeTransform}`;
 }
 function escapeDriveQueryValue(value) {
-  if (!value)
-    return "";
+  if (!value) return "";
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 function buildDerivationKeyQuery(derivationKey) {
@@ -74,32 +84,34 @@ function toDrivePublicUrl(fileId) {
 }
 async function findFileByDerivationKey(derivationKey, executeRequest) {
   const query = buildDerivationKeyQuery(derivationKey);
-  const fields = "id,name,mimeType,webViewLink,webContentLink,thumbnailLink,modifiedTime,size";
+  const fields =
+    "id,name,mimeType,webViewLink,webContentLink,thumbnailLink,modifiedTime,size";
   const params = new URLSearchParams({
     q: query,
     fields: `files(${fields})`,
     pageSize: "1",
     supportsAllDrives: "true",
-    includeItemsFromAllDrives: "true"
+    includeItemsFromAllDrives: "true",
   });
   const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
   const data = await executeRequest(url);
   const first = (data.files || [])[0];
-  if (!first)
-    return null;
+  if (!first) return null;
   return {
     ...first,
     apiUrl: toDriveApiMediaUrl(first.id),
-    publicUrl: toDrivePublicUrl(first.id)
+    publicUrl: toDrivePublicUrl(first.id),
   };
 }
 // Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  DERIVATION_KEY_PROPERTY,
-  buildDerivationKeyQuery,
-  escapeDriveQueryValue,
-  findFileByDerivationKey,
-  generateDerivationKey,
-  toDriveApiMediaUrl,
-  toDrivePublicUrl
-});
+0 &&
+  (module.exports = {
+    DERIVATION_KEY_PROPERTY,
+    buildDerivationKeyQuery,
+    escapeDriveQueryValue,
+    findFileByDerivationKey,
+    generateDerivationKey,
+    getVersionedTransform,
+    toDriveApiMediaUrl,
+    toDrivePublicUrl,
+  });

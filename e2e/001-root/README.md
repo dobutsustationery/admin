@@ -9,6 +9,7 @@
 ![Signed Out State](screenshots/000-signed-out-state.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated "Sign In" button is visible
 - [ ] Validated heading contains "Dobutsu Admin"
 
@@ -17,7 +18,7 @@
 ![Dashboard Loaded](screenshots/001-dashboard-loaded.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated heading contains "Dashboard"
 - [ ] Validated Quick Actions are visible
 - [ ] Validated Metrics Grid is visible
-

@@ -9,6 +9,7 @@ This runbook is step-by-step and intended to be followed in order.
 The browser writes append-only events to Firestore collection `shopify_sync`.
 
 Event sequence for one request:
+
 1. `sync_requested` (from UI or CLI)
 2. `sync_claimed` (function/worker claims request)
 3. `sync_api_call` (one event per Shopify API call)
@@ -59,6 +60,7 @@ SHOPIFY_CLIENT_SECRET=xxxxxxxxxxxxxxxx
 ```
 
 How this is used:
+
 - `npm run emulators` automatically prepares `functions/.env` from `./.env.emulator`.
 - `npm run deploy:staging` automatically prepares `functions/.env` from `./.env.staging`.
 - `npm run deploy:production` automatically prepares `functions/.env` from `./.env.production`.
@@ -66,6 +68,7 @@ How this is used:
 No manual shell `export` is required.
 
 Where to find values in Shopify:
+
 1. Open your store admin (for example `DobutsuDev`) -> `Apps and sales channels`.
 2. Open your app (created in Dev Dashboard).
 3. Copy `Client ID` and `Client secret`.
@@ -74,16 +77,19 @@ Where to find values in Shopify:
 ## 4. Start Local Stack (App + Firestore/Auth/Functions Emulators)
 
 Open terminal A:
+
 ```bash
 npm run emulators
 ```
 
 Open terminal B:
+
 ```bash
 npm run dev:local
 ```
 
 Expected local endpoints:
+
 - App: `http://localhost:5173`
 - Emulator UI: `http://localhost:4000`
 - Functions emulator: `http://localhost:5001`
@@ -93,12 +99,14 @@ Expected local endpoints:
 You need a listing in live mode with at least one linked variant.
 
 Options:
+
 1. Use existing local emulator data.
 2. Import data to emulator via your existing data tools.
 3. Create/edit listing in UI until `listing-detail` live mode exists:
    - `/listing-detail?mode=live&handle=<handle>`
 
 Checklist before syncing:
+
 - Listing has handle, title, body, and at least one image (recommended).
 - At least one associated variant exists.
 - Each variant has `janCode` and `subtype` (SKU derives from both).
@@ -120,6 +128,7 @@ Checklist before syncing:
 ## 7. Inspect Raw Events (Audit)
 
 Use emulator UI (`http://localhost:4000`):
+
 1. Firestore -> `shopify_sync`
 2. Filter by `requestId`
 3. Confirm append-only event chain with server `timestamp` ordering.
@@ -129,16 +138,19 @@ Also inspect `broadcast` collection for mirrored `shopify_api_log` entries.
 ## 8. Test CLI Queue + Worker (Same Event Stream)
 
 Queue request into `shopify_sync`:
+
 ```bash
 npm run shopify:sync:request -- --firestore-env emulator --handle <handle>
 ```
 
 Execute queued requests via worker:
+
 ```bash
 npm run shopify:sync:worker -- --firestore-env emulator --limit 10
 ```
 
 Or execute one event doc ID:
+
 ```bash
 npm run shopify:sync:worker -- --firestore-env emulator --request-doc-id <eventDocId>
 ```

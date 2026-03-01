@@ -3,55 +3,66 @@
 This repository is configured for AI assistance. As an Antigravity agent, you must adhere to the following guidelines to ensure effective collaboration and code quality.
 
 ## 1. Coding Standards & Project Context
+
 **Primary Source of Truth**: `.github/copilot-instructions.md` from the repo root.
+
 - **Strictly follow** the coding style, patterns, and architectural guidelines defined there.
 - Pay special attention to:
-    - **TypeScript**: Strict typing (despite current errors, strive for no new errors).
-    - **Redux Toolkit**: Use `createAction` and `broadcast` patterns for state sync.
-    - **Firebase**: Use modular v9+ SDK.
+  - **TypeScript**: Strict typing (despite current errors, strive for no new errors).
+  - **Redux Toolkit**: Use `createAction` and `broadcast` patterns for state sync.
+  - **Firebase**: Use modular v9+ SDK.
 
 ## 2. Agent Workflow Artifacts & Process
+
 We use a **Strict Design-First Workflow** in this repository.
 
 ### The 4-Step Development Cycle
+
 1.  **Design Doc**: Create a design document for the task.
 2.  **Milestones**: Subdivide the design doc into intermediate milestones that can be independently verified.
-3.  **Implementation**: For *each* milestone, write:
+3.  **Implementation**: For _each_ milestone, write:
     - Code
     - Unit Tests
     - **E2E Tests** (Critical for verification)
-4.  **Regression**: Run *all* E2E tests to ensure nothing was broken.
+4.  **Regression**: Run _all_ E2E tests to ensure nothing was broken.
 
 ### Key Artifacts
+
 - **`task.md`**: Tracks the Milestones defined in step 2.
 - **`implementation_plan.md`**: Documents the Design (Step 1).
 - **`walkthrough.md`**: Summary of verification results.
 
 ## 3. Environment & Verification
+
 - **E2E Tests (`e2e/`)**: **REQUIRED**.
-    - E2E tests are the primary verification mechanism.
-    - Each E2E directory has a `README.md` that is the source of truth for functionality validation.
-    - Run all: `npm run test:e2e` (or specific scripts as defined in package.json).
+  - E2E tests are the primary verification mechanism.
+  - Each E2E directory has a `README.md` that is the source of truth for functionality validation.
+  - Run all: `npm run test:e2e` (or specific scripts as defined in package.json).
 - **Unit Tests (`tests/`)**: `bun run test` (Vitest).
 - **Linter**: `bun run lint:fix`.
 - **Type Checking**: `bun run check`.
 
 ## 4. Specific "Gotchas"
+
 - **Imports**: Use `$lib/` aliases.
 - **Strict Verification**: User relies on E2E `README.md` files to validate functionality. Ensure your tests align with these descriptions.
 
 ## 5. Multi-Tasking & Context Switching
+
 Use the GitHub CLI (`gh`) to manage context between different tasks/PRs.
 
 ### Switching Contexts
+
 When the user asks to switch to a different PR (e.g., "Switch to PR #123"):
+
 1.  **Checkout**: `gh pr checkout 123`
 2.  **Read Context**: `gh pr view --comments` (This is your source of truth for the task status).
 3.  **Resume**: Continue work based on the PR description and latest comments.
 
 ### creating a New Task
+
 1.  Create a branch: `git checkout -b feature/name`
 2.  Follow the **Strict Design-First Workflow** (Design -> Milestones -> Code).
 3.  **Push and create PR**: `gh pr create --draft`.
-    - You MUST create a PR for every new task/branch. 
+    - You MUST create a PR for every new task/branch.
     - This allows you to track progress and gives the user a place to review.

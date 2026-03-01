@@ -75,9 +75,13 @@ function parseDotEnvFile(filePath: string): Record<string, string> {
 }
 
 function loadLocalEnvDefaults(): Record<string, string> {
-  const emulatorEnv = parseDotEnvFile(path.resolve(process.cwd(), ".env.emulator"));
+  const emulatorEnv = parseDotEnvFile(
+    path.resolve(process.cwd(), ".env.emulator"),
+  );
   const localEnv = parseDotEnvFile(path.resolve(process.cwd(), ".env.local"));
-  const liveLocalEnv = parseDotEnvFile(path.resolve(process.cwd(), ".env.live.local"));
+  const liveLocalEnv = parseDotEnvFile(
+    path.resolve(process.cwd(), ".env.live.local"),
+  );
   return {
     ...emulatorEnv,
     ...localEnv,
@@ -183,7 +187,11 @@ function printProjectConsoleLinks(projectId: string) {
   );
 }
 
-function ensureProject(projectId: string, projectName: string, createProject: boolean) {
+function ensureProject(
+  projectId: string,
+  projectName: string,
+  createProject: boolean,
+) {
   const existing = sh(
     `gcloud projects describe ${projectId} --format='value(projectId)'`,
     { allowFail: true },
@@ -193,18 +201,24 @@ function ensureProject(projectId: string, projectName: string, createProject: bo
     return;
   }
   if (!createProject) {
-    throw new Error(`Project ${projectId} does not exist and --no-create-project was used.`);
+    throw new Error(
+      `Project ${projectId} does not exist and --no-create-project was used.`,
+    );
   }
   const name = projectName || projectId;
   console.log(`🆕 Creating project ${projectId} (${name})...`);
-  sh(`gcloud projects create ${projectId} --name='${name.replace(/'/g, "\\'")}'`);
+  sh(
+    `gcloud projects create ${projectId} --name='${name.replace(/'/g, "\\'")}'`,
+  );
 }
 
 function maybeAddFirebase(projectId: string, addFirebase: boolean) {
   if (!addFirebase) return;
   const firebaseCmd = sh("command -v firebase", { allowFail: true });
   if (!firebaseCmd) {
-    console.warn("⚠️ firebase CLI not found; skipping Firebase project initialization.");
+    console.warn(
+      "⚠️ firebase CLI not found; skipping Firebase project initialization.",
+    );
     return;
   }
   console.log(`🔥 Adding Firebase services to ${projectId}...`);
@@ -226,7 +240,9 @@ function enableApis(projectId: string) {
 function ensureAdcLogin(skipAdcLogin: boolean) {
   if (skipAdcLogin && fs.existsSync(ADC_PATH)) return;
   if (skipAdcLogin && !fs.existsSync(ADC_PATH)) {
-    throw new Error(`ADC credentials not found at ${ADC_PATH} and --skip-adc-login was set.`);
+    throw new Error(
+      `ADC credentials not found at ${ADC_PATH} and --skip-adc-login was set.`,
+    );
   }
   console.log("🔐 Running gcloud ADC login for Drive/Photos scopes...");
   console.log("   (Uses cloud-platform scope for project automation only)");
@@ -239,7 +255,9 @@ function readAdcCreds(): AdcCreds {
   if (!fs.existsSync(ADC_PATH)) {
     throw new Error(`ADC credentials file not found: ${ADC_PATH}`);
   }
-  const raw = JSON.parse(fs.readFileSync(ADC_PATH, "utf-8")) as Partial<AdcCreds>;
+  const raw = JSON.parse(
+    fs.readFileSync(ADC_PATH, "utf-8"),
+  ) as Partial<AdcCreds>;
   if (!raw.client_id || !raw.client_secret || !raw.refresh_token) {
     throw new Error("ADC file missing client_id/client_secret/refresh_token.");
   }
@@ -293,7 +311,9 @@ async function getRefreshToken(
   const tokenResponse = await oauth2Client.getToken(code);
   const refreshToken = tokenResponse.tokens.refresh_token;
   if (!refreshToken) {
-    throw new Error(`No refresh token returned for ${label}. Ensure consent is granted with prompt=consent.`);
+    throw new Error(
+      `No refresh token returned for ${label}. Ensure consent is granted with prompt=consent.`,
+    );
   }
   return refreshToken;
 }
@@ -309,7 +329,11 @@ async function createOrFindDriveFolder(
   const drive = google.drive({ version: "v3", auth });
 
   const query = `name='${folderName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and 'root' in parents`;
-  const existing = await drive.files.list({ q: query, fields: "files(id,name)", pageSize: 1 });
+  const existing = await drive.files.list({
+    q: query,
+    fields: "files(id,name)",
+    pageSize: 1,
+  });
   if (existing.data.files && existing.data.files.length > 0) {
     return existing.data.files[0].id as string;
   }
@@ -326,25 +350,33 @@ async function createOrFindDriveFolder(
   return created.data.id as string;
 }
 
-async function countAlbumItemsViaSearch(accessToken: string, albumId: string): Promise<number> {
+async function countAlbumItemsViaSearch(
+  accessToken: string,
+  albumId: string,
+): Promise<number> {
   let count = 0;
   let nextPageToken = "";
   while (true) {
-    const response = await fetch("https://photoslibrary.googleapis.com/v1/mediaItems:search", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
+    const response = await fetch(
+      "https://photoslibrary.googleapis.com/v1/mediaItems:search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          albumId,
+          pageSize: 100,
+          ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+        }),
       },
-      body: JSON.stringify({
-        albumId,
-        pageSize: 100,
-        ...(nextPageToken ? { pageToken: nextPageToken } : {}),
-      }),
-    });
+    );
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Failed to read album ${albumId}: ${response.status} ${text}`);
+      throw new Error(
+        `Failed to read album ${albumId}: ${response.status} ${text}`,
+      );
     }
     const payload = (await response.json()) as {
       mediaItems?: Array<{ id?: string }>;
@@ -357,8 +389,14 @@ async function countAlbumItemsViaSearch(accessToken: string, albumId: string): P
   return count;
 }
 
-async function listAllAlbums(accessToken: string): Promise<Array<{ id?: string; title?: string; mediaItemsCount?: string }>> {
-  const albums: Array<{ id?: string; title?: string; mediaItemsCount?: string }> = [];
+async function listAllAlbums(
+  accessToken: string,
+): Promise<Array<{ id?: string; title?: string; mediaItemsCount?: string }>> {
+  const albums: Array<{
+    id?: string;
+    title?: string;
+    mediaItemsCount?: string;
+  }> = [];
   let nextPageToken = "";
   while (true) {
     const query = new URLSearchParams({
@@ -404,7 +442,10 @@ async function createOrFindPhotosAlbum(
     const ranked = await Promise.all(
       titleMatches.map(async (album) => ({
         id: album.id as string,
-        visibleCount: await countAlbumItemsViaSearch(accessToken, album.id as string),
+        visibleCount: await countAlbumItemsViaSearch(
+          accessToken,
+          album.id as string,
+        ),
       })),
     );
     ranked.sort((a, b) => b.visibleCount - a.visibleCount);
@@ -415,14 +456,17 @@ async function createOrFindPhotosAlbum(
     return best.id;
   }
 
-  const response = await fetch("https://photoslibrary.googleapis.com/v1/albums", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
+  const response = await fetch(
+    "https://photoslibrary.googleapis.com/v1/albums",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ album: { title } }),
     },
-    body: JSON.stringify({ album: { title } }),
-  });
+  );
 
   if (!response.ok) {
     const text = await response.text();
@@ -438,7 +482,9 @@ function writeEnvFile(values: Record<string, string>) {
   fs.writeFileSync(ENV_OUTPUT_PATH, `${lines.join("\n")}\n`, "utf8");
 }
 
-function loadOAuthClientJsonDefaults(inputPath: string): OAuthClientJsonDefaults {
+function loadOAuthClientJsonDefaults(
+  inputPath: string,
+): OAuthClientJsonDefaults {
   const resolvedPath = path.resolve(process.cwd(), inputPath);
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(`OAuth client JSON file not found: ${resolvedPath}`);
@@ -448,7 +494,9 @@ function loadOAuthClientJsonDefaults(inputPath: string): OAuthClientJsonDefaults
   try {
     parsed = JSON.parse(fs.readFileSync(resolvedPath, "utf8"));
   } catch (err: any) {
-    throw new Error(`Failed to parse OAuth client JSON: ${resolvedPath}\n${err?.message || err}`);
+    throw new Error(
+      `Failed to parse OAuth client JSON: ${resolvedPath}\n${err?.message || err}`,
+    );
   }
 
   const web = (parsed as { web?: unknown }).web as
@@ -505,10 +553,14 @@ async function main() {
             "Delete all of these and create one fresh project? [y/N]: ",
           );
           if (!isYes(answer)) {
-            throw new Error("Aborting to avoid creating more dobutsu-e2e projects.");
+            throw new Error(
+              "Aborting to avoid creating more dobutsu-e2e projects.",
+            );
           }
           matchingProjects.forEach(deleteProject);
-          projectId = normalizeProjectId(`dobutsu-e2e-${Date.now().toString().slice(-8)}`);
+          projectId = normalizeProjectId(
+            `dobutsu-e2e-${Date.now().toString().slice(-8)}`,
+          );
           projectName = args.projectName || projectId;
           createProject = true;
         } else if (matchingProjects.length === 1) {
@@ -523,13 +575,17 @@ async function main() {
             console.log(`♻️ Reusing existing project: ${projectId}`);
           } else {
             deleteProject(existingId);
-            projectId = normalizeProjectId(`dobutsu-e2e-${Date.now().toString().slice(-8)}`);
+            projectId = normalizeProjectId(
+              `dobutsu-e2e-${Date.now().toString().slice(-8)}`,
+            );
             projectName = args.projectName || projectId;
             createProject = true;
           }
         } else {
           console.log("\nNo existing dobutsu-e2e project found; creating one.");
-          projectId = normalizeProjectId(`dobutsu-e2e-${Date.now().toString().slice(-8)}`);
+          projectId = normalizeProjectId(
+            `dobutsu-e2e-${Date.now().toString().slice(-8)}`,
+          );
           projectName = args.projectName || projectId;
           createProject = true;
         }
@@ -558,15 +614,23 @@ async function main() {
 
     let useProvided = defaultClientId && defaultClientSecret;
     if (!useProvided) {
-      console.log("\n⚠️  A project-specific OAuth Web Client is required for Drive/Photos scopes.");
+      console.log(
+        "\n⚠️  A project-specific OAuth Web Client is required for Drive/Photos scopes.",
+      );
       console.log("I looked for defaults in:");
-      console.log("  - E2E_GOOGLE_CLIENT_ID / E2E_GOOGLE_CLIENT_SECRET env vars");
+      console.log(
+        "  - E2E_GOOGLE_CLIENT_ID / E2E_GOOGLE_CLIENT_SECRET env vars",
+      );
       console.log("  - .env.emulator, .env.local, and .env.live.local");
-      console.log("  - VITE_GOOGLE_DRIVE_CLIENT_ID / VITE_GOOGLE_PHOTOS_CLIENT_ID in those files");
+      console.log(
+        "  - VITE_GOOGLE_DRIVE_CLIENT_ID / VITE_GOOGLE_PHOTOS_CLIENT_ID in those files",
+      );
       console.log("\nTo get the CLIENT SECRET:");
       console.log("  1) Open Google Cloud Console for your project");
       console.log("  2) Go to Google Auth Platform -> Clients");
-      console.log("  3) Open (or create) an OAuth Client of type: Web application");
+      console.log(
+        "  3) Open (or create) an OAuth Client of type: Web application",
+      );
       printProjectConsoleLinks(projectId);
       console.log("  4) Add authorized redirect URI:");
       console.log(`   ${REDIRECT_URI}`);
@@ -582,7 +646,8 @@ async function main() {
         )
       ).trim();
       if (oauthClientJsonPath) {
-        const oauthClientJsonDefaults = loadOAuthClientJsonDefaults(oauthClientJsonPath);
+        const oauthClientJsonDefaults =
+          loadOAuthClientJsonDefaults(oauthClientJsonPath);
         console.log(
           `🔑 Loaded OAuth client defaults from JSON: ${path.resolve(process.cwd(), oauthClientJsonPath)}`,
         );

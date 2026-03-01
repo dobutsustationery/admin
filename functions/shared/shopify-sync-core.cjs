@@ -42,7 +42,10 @@ function hasStaticAccessToken(config) {
 }
 
 function hasClientCredentials(config) {
-  return !!normalizeString(config?.clientId) && !!normalizeString(config?.clientSecret);
+  return (
+    !!normalizeString(config?.clientId) &&
+    !!normalizeString(config?.clientSecret)
+  );
 }
 
 function hasAnyCredentials(config) {
@@ -74,18 +77,23 @@ async function fetchAppAccessToken(config) {
 
   const json = await res.json().catch(async () => ({ raw: await res.text() }));
   if (!res.ok) {
-    throw new Error(`Token exchange failed (${res.status}): ${JSON.stringify(json)}`);
+    throw new Error(
+      `Token exchange failed (${res.status}): ${JSON.stringify(json)}`,
+    );
   }
 
   const token = normalizeString(json?.access_token);
   if (!token) {
-    throw new Error(`Token exchange response missing access_token: ${JSON.stringify(json)}`);
+    throw new Error(
+      `Token exchange response missing access_token: ${JSON.stringify(json)}`,
+    );
   }
 
   const expiresInSec = Number(json?.expires_in || 0);
-  const expiresAtMs = Number.isFinite(expiresInSec) && expiresInSec > 0
-    ? Date.now() + expiresInSec * 1000
-    : 0;
+  const expiresAtMs =
+    Number.isFinite(expiresInSec) && expiresInSec > 0
+      ? Date.now() + expiresInSec * 1000
+      : 0;
 
   return { token, expiresAtMs };
 }
@@ -104,7 +112,10 @@ async function resolveAccessToken(config) {
   const cached = tokenCache.get(key);
   if (cached?.token) {
     const refreshBufferMs = 60 * 1000;
-    if (!cached.expiresAtMs || Date.now() < cached.expiresAtMs - refreshBufferMs) {
+    if (
+      !cached.expiresAtMs ||
+      Date.now() < cached.expiresAtMs - refreshBufferMs
+    ) {
       return cached.token;
     }
   }
@@ -146,10 +157,7 @@ function parseNextLink(linkHeader) {
     const relSegment = segments.find((s) => s.startsWith("rel="));
     if (!relSegment) continue;
 
-    const relValue = relSegment
-      .slice(4)
-      .trim()
-      .replace(/^"|"$/g, "");
+    const relValue = relSegment.slice(4).trim().replace(/^"|"$/g, "");
     if (relValue === "next") return urlMatch[1];
   }
   return null;
@@ -164,7 +172,9 @@ function toTagsString(tags) {
 }
 
 function mapStatus(input) {
-  const status = String(input || "active").trim().toLowerCase();
+  const status = String(input || "active")
+    .trim()
+    .toLowerCase();
   if (status === "archived") return "archived";
   if (status === "draft") return "draft";
   return "active";
@@ -218,7 +228,9 @@ function buildGalleryImageEntries(requestPayload) {
 }
 
 function buildVariantAttachmentEntries(requestPayload) {
-  const variants = Array.isArray(requestPayload?.variants) ? requestPayload.variants : [];
+  const variants = Array.isArray(requestPayload?.variants)
+    ? requestPayload.variants
+    : [];
   const entries = [];
   variants.forEach((variant) => {
     const sku = String(variant?.sku || "").trim();
@@ -328,7 +340,9 @@ function pickOnlineStorePublication(publications) {
   }));
   return (
     normalized.find((p) => p.id && p.name.toLowerCase() === "online store") ||
-    normalized.find((p) => p.id && p.name.toLowerCase().includes("online store")) ||
+    normalized.find(
+      (p) => p.id && p.name.toLowerCase().includes("online store"),
+    ) ||
     null
   );
 }
@@ -348,7 +362,9 @@ async function listShopifyPublications(config) {
     `,
     {},
   );
-  return Array.isArray(data?.publications?.nodes) ? data.publications.nodes : [];
+  return Array.isArray(data?.publications?.nodes)
+    ? data.publications.nodes
+    : [];
 }
 
 async function ensureProductPublishedToOnlineStore(config, productId) {
@@ -392,13 +408,16 @@ async function ensureProductPublishedToOnlineStore(config, productId) {
   const result = data?.publishablePublish;
   const userErrors = Array.isArray(result?.userErrors) ? result.userErrors : [];
   if (userErrors.length > 0) {
-    throw new Error(`publishablePublish userErrors: ${JSON.stringify(userErrors)}`);
+    throw new Error(
+      `publishablePublish userErrors: ${JSON.stringify(userErrors)}`,
+    );
   }
 
   return {
     publicationId: onlineStore.id,
     publicationName: onlineStore.name,
-    productId: extractNumericId(result?.publishable?.id) || extractNumericId(productId),
+    productId:
+      extractNumericId(result?.publishable?.id) || extractNumericId(productId),
     productStatus: String(result?.publishable?.status || ""),
   };
 }
@@ -463,9 +482,13 @@ async function findProductByHandle(config, handle) {
       headers,
     });
 
-    const json = await res.json().catch(async () => ({ raw: await res.text() }));
+    const json = await res
+      .json()
+      .catch(async () => ({ raw: await res.text() }));
     if (!res.ok) {
-      throw new Error(`Product lookup failed (${res.status}): ${JSON.stringify(json)}`);
+      throw new Error(
+        `Product lookup failed (${res.status}): ${JSON.stringify(json)}`,
+      );
     }
 
     const products = Array.isArray(json.products) ? json.products : [];
@@ -474,7 +497,8 @@ async function findProductByHandle(config, handle) {
 
     if (products.length === 0) return null;
     sinceId = Number(products[products.length - 1]?.id || 0);
-    if (!Number.isFinite(sinceId) || sinceId <= 0 || products.length < 250) return null;
+    if (!Number.isFinite(sinceId) || sinceId <= 0 || products.length < 250)
+      return null;
   }
 }
 
@@ -499,21 +523,28 @@ async function findProductByVariantSku(config, skus) {
     const url = `https://${storeUrl}/admin/api/${apiVersion}/products.json?${params.toString()}`;
     const headers = await buildShopifyHeaders(config);
     const res = await fetch(url, { headers });
-    const json = await res.json().catch(async () => ({ raw: await res.text() }));
+    const json = await res
+      .json()
+      .catch(async () => ({ raw: await res.text() }));
     if (!res.ok) {
-      throw new Error(`Product SKU lookup failed (${res.status}): ${JSON.stringify(json)}`);
+      throw new Error(
+        `Product SKU lookup failed (${res.status}): ${JSON.stringify(json)}`,
+      );
     }
 
     const products = Array.isArray(json.products) ? json.products : [];
     for (const product of products) {
       const variants = Array.isArray(product?.variants) ? product.variants : [];
-      const hasMatch = variants.some((v) => wanted.has(String(v?.sku || "").trim()));
+      const hasMatch = variants.some((v) =>
+        wanted.has(String(v?.sku || "").trim()),
+      );
       if (hasMatch) return product;
     }
 
     if (products.length === 0) return null;
     sinceId = Number(products[products.length - 1]?.id || 0);
-    if (!Number.isFinite(sinceId) || sinceId <= 0 || products.length < 250) return null;
+    if (!Number.isFinite(sinceId) || sinceId <= 0 || products.length < 250)
+      return null;
   }
 }
 
@@ -537,8 +568,11 @@ async function resolveLocationId(config) {
 function buildProductPayload(requestPayload, existingProduct) {
   const handle = String(requestPayload?.handle || "").trim();
   const listing = requestPayload?.listing || {};
-  const variants = Array.isArray(requestPayload?.variants) ? requestPayload.variants : [];
-  const option1Name = String(listing.option1Name || "Subtype").trim() || "Subtype";
+  const variants = Array.isArray(requestPayload?.variants)
+    ? requestPayload.variants
+    : [];
+  const option1Name =
+    String(listing.option1Name || "Subtype").trim() || "Subtype";
 
   if (!handle) throw new Error("Missing request payload handle");
   if (variants.length === 0) throw new Error("Request payload has no variants");
@@ -569,7 +603,7 @@ function buildProductPayload(requestPayload, existingProduct) {
     const existingId = existingVariantIdBySku.get(sku);
     const payload = {
       sku,
-      option1: isSingleDefaultVariant ? "Default Title" : (subtype || "Default"),
+      option1: isSingleDefaultVariant ? "Default Title" : subtype || "Default",
       position: idx + 1,
       price: String(Number(variant?.price || 0)),
       barcode: String(variant?.janCode || ""),
@@ -729,7 +763,10 @@ async function reconcileProductGallery(config, productId, requestPayload) {
     if (!imageId) continue;
     const currentPos = toNumberOrNull(current?.position);
     const currentAlt = String(current?.alt || "");
-    if (currentPos !== desired.position || currentAlt !== String(desired.alt || "")) {
+    if (
+      currentPos !== desired.position ||
+      currentAlt !== String(desired.alt || "")
+    ) {
       await updateProductImage(config, productId, imageId, {
         position: desired.position,
         alt: String(desired.alt || ""),
@@ -737,7 +774,10 @@ async function reconcileProductGallery(config, productId, requestPayload) {
     }
   }
 
-  return { product: await fetchProductById(config, productId), variantImageIdBySku };
+  return {
+    product: await fetchProductById(config, productId),
+    variantImageIdBySku,
+  };
 }
 
 async function updateVariantFields(config, variantId, fields) {
@@ -758,10 +798,16 @@ async function reconcileVariantOrderAndImages(config, product, requestPayload) {
   const productId = toNumberOrNull(product?.id);
   if (!productId) return product;
 
-  const requestVariants = Array.isArray(requestPayload?.variants) ? requestPayload.variants : [];
+  const requestVariants = Array.isArray(requestPayload?.variants)
+    ? requestPayload.variants
+    : [];
   if (requestVariants.length === 0) return product;
 
-  const galleryResult = await reconcileProductGallery(config, productId, requestPayload);
+  const galleryResult = await reconcileProductGallery(
+    config,
+    productId,
+    requestPayload,
+  );
   const variantImageIdBySku = galleryResult?.variantImageIdBySku || new Map();
   if (galleryResult?.product) {
     product = galleryResult.product;
@@ -855,7 +901,9 @@ async function syncProductCategory(config, productId, categoryPath) {
   const result = data?.productUpdate;
   const userErrors = Array.isArray(result?.userErrors) ? result.userErrors : [];
   if (userErrors.length > 0) {
-    console.error(`productUpdate Category userErrors: ${JSON.stringify(userErrors)}`);
+    console.error(
+      `productUpdate Category userErrors: ${JSON.stringify(userErrors)}`,
+    );
   }
 
   return result?.product;
@@ -865,7 +913,9 @@ async function upsertProductFromRequest(config, requestPayload) {
   const { storeUrl, apiVersion } = config;
   const handle = String(requestPayload?.handle || "").trim();
   const listing = requestPayload?.listing || {};
-  const requestSkus = (Array.isArray(requestPayload?.variants) ? requestPayload.variants : [])
+  const requestSkus = (
+    Array.isArray(requestPayload?.variants) ? requestPayload.variants : []
+  )
     .map((v) => String(v?.sku || "").trim())
     .filter(Boolean);
 
@@ -883,7 +933,9 @@ async function upsertProductFromRequest(config, requestPayload) {
       }),
     });
     if (!json.product?.id) {
-      throw new Error(`Unexpected product update response: ${JSON.stringify(json)}`);
+      throw new Error(
+        `Unexpected product update response: ${JSON.stringify(json)}`,
+      );
     }
     return { json, productPayload };
   }
@@ -899,7 +951,9 @@ async function upsertProductFromRequest(config, requestPayload) {
       }),
     });
     if (!json.product?.id) {
-      throw new Error(`Unexpected product create response: ${JSON.stringify(json)}`);
+      throw new Error(
+        `Unexpected product create response: ${JSON.stringify(json)}`,
+      );
     }
     return { json, productPayload };
   }
@@ -925,7 +979,8 @@ async function upsertProductFromRequest(config, requestPayload) {
 
   const createdHandle = String(json.product?.handle || "");
   const requestedHandle = String(opResult.productPayload?.handle || "").trim();
-  const wasCreate = !existing || Number(existing?.id) !== Number(json.product?.id);
+  const wasCreate =
+    !existing || Number(existing?.id) !== Number(json.product?.id);
   const dedupedCreate =
     wasCreate &&
     requestedHandle &&
@@ -946,17 +1001,23 @@ async function upsertProductFromRequest(config, requestPayload) {
       method: "PUT",
       headers,
       body: JSON.stringify({
-        product: { id: conflictTarget.id, ...buildProductPayload(requestPayload, conflictTarget) },
+        product: {
+          id: conflictTarget.id,
+          ...buildProductPayload(requestPayload, conflictTarget),
+        },
       }),
     });
 
     const duplicateId = toNumberOrNull(json.product?.id);
     if (duplicateId) {
       try {
-        await fetchJson(`https://${storeUrl}/admin/api/${apiVersion}/products/${duplicateId}.json`, {
-          method: "DELETE",
-          headers,
-        });
+        await fetchJson(
+          `https://${storeUrl}/admin/api/${apiVersion}/products/${duplicateId}.json`,
+          {
+            method: "DELETE",
+            headers,
+          },
+        );
       } catch (_) {
         // Non-fatal: avoid masking the successful overwrite path.
       }
@@ -969,26 +1030,36 @@ async function upsertProductFromRequest(config, requestPayload) {
 
   // Sync category via GraphQL for the final product
   if (finalProduct?.id && listing.productCategory) {
-    await syncProductCategory(config, finalProduct.id, listing.productCategory).catch(
-      (err) => console.error("Failed to sync product category:", err),
-    );
+    await syncProductCategory(
+      config,
+      finalProduct.id,
+      listing.productCategory,
+    ).catch((err) => console.error("Failed to sync product category:", err));
   }
 
   return reconcileVariantOrderAndImages(config, finalProduct, requestPayload);
 }
 
-async function setInventoryLevel(config, locationId, inventoryItemId, available) {
+async function setInventoryLevel(
+  config,
+  locationId,
+  inventoryItemId,
+  available,
+) {
   const { storeUrl, apiVersion } = config;
   const headers = await buildShopifyHeaders(config);
-  return fetchJson(`https://${storeUrl}/admin/api/${apiVersion}/inventory_levels/set.json`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      location_id: locationId,
-      inventory_item_id: inventoryItemId,
-      available,
-    }),
-  });
+  return fetchJson(
+    `https://${storeUrl}/admin/api/${apiVersion}/inventory_levels/set.json`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        location_id: locationId,
+        inventory_item_id: inventoryItemId,
+        available,
+      }),
+    },
+  );
 }
 
 async function fetchAllVariantsBySku(config) {
@@ -1009,9 +1080,13 @@ async function fetchAllVariantsBySku(config) {
       headers,
     });
 
-    const json = await res.json().catch(async () => ({ raw: await res.text() }));
+    const json = await res
+      .json()
+      .catch(async () => ({ raw: await res.text() }));
     if (!res.ok) {
-      throw new Error(`Shopify products fetch failed (${res.status}): ${JSON.stringify(json)}`);
+      throw new Error(
+        `Shopify products fetch failed (${res.status}): ${JSON.stringify(json)}`,
+      );
     }
 
     const products = Array.isArray(json.products) ? json.products : [];
@@ -1034,7 +1109,8 @@ async function fetchAllVariantsBySku(config) {
 
     if (products.length === 0) break;
     sinceId = Number(products[products.length - 1]?.id || 0);
-    if (!Number.isFinite(sinceId) || sinceId <= 0 || products.length < 250) break;
+    if (!Number.isFinite(sinceId) || sinceId <= 0 || products.length < 250)
+      break;
   }
 
   return variantsBySku;

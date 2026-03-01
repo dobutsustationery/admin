@@ -46,6 +46,7 @@ A persistent navigation header will be present on all routes, containing:
 The navigation menu will include the following primary items, organized logically:
 
 **Inventory Management**
+
 - Dashboard (Home icon) - New default landing page
 - Inventory Entry (Plus/Add icon) - Current `/` route
 - View Inventory (List icon) - `/inventory` route
@@ -53,22 +54,26 @@ The navigation menu will include the following primary items, organized logicall
 - Archives (Archive icon) - `/archives` route
 
 **Order Processing**
+
 - Orders (Package icon) - `/orders` route
 - Payments (Dollar/Currency icon) - `/payments` route
 
 **Data & Settings**
+
 - Export CSV (Download icon) - `/csv` route
 - Manage Names (Tags icon) - `/names` route
 
 ### Navigation Behavior
 
 #### Desktop (≥768px)
+
 - Horizontal navigation bar with text labels and icons
 - All menu items visible at once
 - Active route highlighted with different background color or underline
 - Dropdown menus for grouped items (e.g., "Inventory" dropdown containing Entry, View, Subtypes, Archives)
 
 #### Mobile (<768px)
+
 - Hamburger menu icon in top-left
 - Slide-out drawer navigation panel
 - Touch-friendly spacing between menu items
@@ -103,12 +108,14 @@ The new dashboard at `/` (or `/dashboard`) will serve as the default landing pag
 #### 1. Inventory Summary (Top Section)
 
 **Key Metrics Cards** - Large, prominent cards displaying:
+
 - **Total SKUs in Stock**: Count of unique item keys with qty > 0
 - **Total Items**: Sum of all quantities across all items
 - **Low Stock Alerts**: Items below threshold (if/when implemented)
 - **Items Shipped Today**: Count from order activity
 
 Each metric card would have:
+
 - Large number (primary metric)
 - Small label (metric name)
 - Optional trend indicator (up/down arrow with percentage)
@@ -117,6 +124,7 @@ Each metric card would have:
 #### 2. Quick Actions (Center Section)
 
 Large, touch-friendly buttons for most common tasks:
+
 - **Add Inventory** → Navigate to inventory entry (`/`)
 - **View All Inventory** → Navigate to inventory list (`/inventory`)
 - **Process Orders** → Navigate to orders list (`/orders`)
@@ -125,11 +133,13 @@ Large, touch-friendly buttons for most common tasks:
 #### 3. Recent Activity (Bottom Section)
 
 A concise feed showing:
+
 - Recent inventory additions (last 5-10 items)
 - Recently packed orders (last 5-10 orders)
 - Recent user activity (if multi-user context is important)
 
 Each activity item shows:
+
 - Icon indicating type of activity
 - Brief description
 - Timestamp (relative, e.g., "5 minutes ago")
@@ -138,6 +148,7 @@ Each activity item shows:
 #### 4. System Status (Footer or Sidebar)
 
 Small indicators showing:
+
 - **Connection Status**: Online/Offline indicator
 - **Sync Status**: Shows unsynced actions count (already exists in current layout)
 - **Last Data Refresh**: Timestamp of last broadcast action received
@@ -146,6 +157,7 @@ Small indicators showing:
 ### Dashboard Layout
 
 **Desktop (≥768px)**:
+
 ```
 +------------------------------------------+
 |          Navigation Header               |
@@ -160,6 +172,7 @@ Small indicators showing:
 ```
 
 **Mobile (<768px)**:
+
 ```
 +-------------------------+
 |    [☰] Dashboard        |  ← Header with hamburger menu
@@ -191,6 +204,7 @@ Currently, navigating between routes triggers a full page reload, causing the br
 Leverage SvelteKit's built-in client-side routing to implement true SPA navigation:
 
 **Key Benefits**:
+
 1. **No State Reload**: Switching routes doesn't reload broadcast actions
 2. **Instant Navigation**: Route changes happen immediately via client-side routing
 3. **Shared State**: All routes share the same Redux store instance
@@ -224,6 +238,7 @@ Leverage SvelteKit's built-in client-side routing to implement true SPA navigati
 A full-screen loading overlay that appears on first load, showing:
 
 **Visual Components**:
+
 1. **Application Logo/Branding** - Centered at top
 2. **Progress Indicator** - Multi-stage progress bar or spinner
 3. **Status Messages** - Text describing current loading stage
@@ -235,6 +250,7 @@ A full-screen loading overlay that appears on first load, showing:
    - "Ready!" (100%)
 
 **Technical Implementation** (conceptual):
+
 - Track `watchBroadcastActions()` progress
 - Count loaded actions vs. total actions
 - Display percentage or stage-based progress
@@ -242,6 +258,7 @@ A full-screen loading overlay that appears on first load, showing:
 - Enable navigation only when ready
 
 **Loading States**:
+
 ```
 State 1: Blank/Splash
   ↓
@@ -261,6 +278,7 @@ State 7: Application ready, show dashboard
 #### Subsequent Route Changes
 
 No loading screen - instant navigation with optional:
+
 - Subtle page transition animation (fade in/out)
 - Route-specific skeleton screens for data-heavy pages
 - Minimal loading spinner for async operations (e.g., Firebase queries on `/payments`)
@@ -268,11 +286,13 @@ No loading screen - instant navigation with optional:
 ### Deep Linking Support
 
 While using SPA architecture, maintain support for:
+
 - Direct URL access (e.g., bookmarking `/orders`)
 - Browser back/forward buttons
 - URL-based state (e.g., `/order?orderId=123`)
 
 All routes should:
+
 1. Load the initial broadcast data once
 2. Render the appropriate route component
 3. Work correctly when accessed directly via URL
@@ -282,6 +302,7 @@ All routes should:
 ### Breakpoints
 
 Define consistent breakpoints:
+
 - **Mobile**: 0px - 767px (single column, touch-optimized)
 - **Desktop**: 768px+ (multi-column, mouse-optimized)
 
@@ -405,6 +426,7 @@ Reuse consistent patterns across the application:
 ### Example 1: Adding New Inventory
 
 **Current Flow** (with new navigation):
+
 1. User lands on Dashboard
 2. Sees "Total SKUs: 245" metric
 3. Clicks "Add Inventory" quick action button
@@ -416,6 +438,7 @@ Reuse consistent patterns across the application:
 ### Example 2: Processing an Order
 
 **Current Flow** (with new navigation):
+
 1. User lands on Dashboard
 2. Sees "Recent Activity" showing new order
 3. Clicks "Process Orders" quick action or "Orders" in navigation
@@ -429,6 +452,7 @@ Reuse consistent patterns across the application:
 ### Example 3: Exporting Data for Customs
 
 **Current Flow** (with new navigation):
+
 1. User navigates to "Export CSV" from navigation menu
 2. Page shows CSV preview
 3. User copies CSV or downloads (if download functionality added)
@@ -437,6 +461,7 @@ Reuse consistent patterns across the application:
 ### Example 4: First-Time User
 
 **Current Flow** (with new features):
+
 1. User opens application URL
 2. Loading screen appears: "Initializing authentication..."
 3. Google sign-in prompt appears
@@ -453,30 +478,35 @@ Reuse consistent patterns across the application:
 While this document avoids specific code implementation details, a phased approach is recommended:
 
 ### Phase 1: Foundation (Core Navigation)
+
 - Create persistent navigation header component
 - Implement mobile hamburger menu
 - Add route highlighting for active page
 - Ensure SPA routing works correctly across all routes
 
 ### Phase 2: Dashboard
+
 - Create dashboard route and component
 - Implement inventory summary metrics (SKU count)
 - Add quick action buttons
 - Create basic layout structure
 
 ### Phase 3: Loading Experience
+
 - Implement initial loading screen
 - Add progress tracking for broadcast actions
 - Add status messages during load
 - Implement fade-in/fade-out transitions
 
 ### Phase 4: Enhanced Dashboard
+
 - Add recent activity feed
 - Add system status indicators
 - Implement responsive layouts for all breakpoints
 - Polish visual design
 
 ### Phase 5: Refinements
+
 - Add breadcrumbs where appropriate
 - Implement keyboard shortcuts
 - Add micro-interactions and animations

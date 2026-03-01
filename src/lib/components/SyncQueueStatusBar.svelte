@@ -22,6 +22,7 @@
   let celebrationPhase: CelebrationPhase = "idle";
   let celebrationReason = "";
   let previousHasActiveWork = false;
+  let allowCelebration = false;
   let rootEl: HTMLElement;
   let statusCardEl: HTMLDivElement;
   let measuredBarHeightPx = 0;
@@ -66,7 +67,12 @@
       clearCelebrationTimers();
       celebrationPhase = "idle";
     }
-    if (!isAutomatedUi && previousHasActiveWork && !hasActiveWork) {
+    if (
+      allowCelebration &&
+      !isAutomatedUi &&
+      previousHasActiveWork &&
+      !hasActiveWork
+    ) {
       startCelebration();
     }
     previousHasActiveWork = hasActiveWork;
@@ -79,6 +85,18 @@
   onMount(() => {
     isAutomatedUi =
       typeof navigator !== "undefined" && Boolean(navigator.webdriver);
+
+    // Capture the initial state IMMEDIATELY to prevent triggers from hydrated transitions.
+    // If the store is already idle, we don't want to celebrate a "finish" that hasn't happened yet.
+    previousHasActiveWork = hasActiveWork;
+
+    // Short settle period to ignore the initial sync/catch-up burst.
+    const settleTimer = setTimeout(() => {
+      allowCelebration = true;
+      console.log(
+        "[SyncStatus] Settle complete. Celebration eligibility active.",
+      );
+    }, 500);
 
     const updateMeasuredHeight = () => {
       measuredBarHeightPx = Math.max(
@@ -103,6 +121,7 @@
     window.addEventListener("resize", updateLaneRenderWidth);
 
     return () => {
+      clearTimeout(settleTimer);
       ro.disconnect();
       window.removeEventListener("resize", updateLaneRenderWidth);
     };

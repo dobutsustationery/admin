@@ -7,7 +7,7 @@ import { devtoolsMiddleware } from "./devtools-middleware";
 import { driveSyncMiddleware } from "./drive-sync-middleware";
 import { bulk_import_items } from "./inventory";
 import { create_listing, delete_listing } from "./listings-slice";
-import { categorize_photo } from "./photos-slice";
+import { categorize_photo, register_media_items } from "./photos-slice";
 import {
   add_proposals,
   start_batch,
@@ -149,6 +149,7 @@ if (typeof window !== "undefined") {
         delete_listing,
         add_proposals,
         categorize_photo,
+        register_media_items,
         start_batch,
         generate_descriptions_for_batch,
         generate_proposals,

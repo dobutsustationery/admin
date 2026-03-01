@@ -21,6 +21,22 @@ function crc32(str: string): string {
 }
 
 /**
+ * Get the versioned name for a transform to ensure idempotency across model upgrades.
+ */
+export function getVersionedTransform(transform: string): string {
+  if (transform === "remove_bg" || transform === "remove_background") {
+    return "remove_bg_v2"; // v2 = RMBG-1.4
+  }
+  if (transform === "color_correct") {
+    return "color_correct_v1";
+  }
+  if (transform === "crop") {
+    return "crop_v3";
+  }
+  return transform;
+}
+
+/**
  * Generate a deterministic derivation key for a file in Drive.
  * Format: {source_type}:{source_id}:{transform_name}
  */
@@ -35,12 +51,7 @@ export function generateDerivationKey(
 
   // VERSIONING: We append a version to transforms to allow model upgrades
   // without clashing with old cached results in Drive properties.
-  let safeTransform = String(transform || "identity");
-  if (safeTransform === "remove_bg") {
-    safeTransform = "remove_bg_v2"; // v2 = RMBG-1.4
-  } else if (safeTransform === "color_correct") {
-    safeTransform = "color_correct_v1";
-  }
+  const safeTransform = getVersionedTransform(String(transform || "identity"));
 
   // Google Drive limit: Key + Value <= 124 bytes.
   // "derivation_key" is 14 bytes. So value must be <= 110 bytes.

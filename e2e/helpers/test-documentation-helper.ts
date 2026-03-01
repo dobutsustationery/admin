@@ -30,7 +30,7 @@ export class TestDocumentationHelper {
   addStep(
     title: string,
     screenshotFile: string,
-    verifications: VerificationStep[]
+    verifications: VerificationStep[],
   ) {
     this.steps.push({
       title,
@@ -39,10 +39,7 @@ export class TestDocumentationHelper {
     });
   }
 
-  async runStep(
-    stepIndex: number,
-    runChecks: boolean = true
-  ): Promise<void> {
+  async runStep(stepIndex: number, runChecks: boolean = true): Promise<void> {
     const step = this.steps[stepIndex];
     if (!step) {
       throw new Error(`Step index ${stepIndex} out of bounds`);
@@ -61,7 +58,7 @@ export class TestDocumentationHelper {
 
   generateMarkdown(): string {
     let md = `# ${this.title}\n\n`;
-    
+
     // User Story section
     if (this.userStory) {
       md += `${this.userStory}\n\n`;
@@ -71,7 +68,7 @@ export class TestDocumentationHelper {
     this.steps.forEach((step, index) => {
       md += `### ${index + 1}. ${step.title}\n\n`;
       md += `![${step.title}](screenshots/${step.screenshotFile})\n\n`;
-      
+
       if (step.verifications.length > 0) {
         md += `**Programmatic Verification:**\n`;
         step.verifications.forEach((v) => {

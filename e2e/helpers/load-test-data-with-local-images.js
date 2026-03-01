@@ -5,7 +5,7 @@
  *
  * This version rewrites external image URLs to use locally downloaded images
  * for reliable e2e testing without external dependencies.
- * 
+ *
  * Usage:
  *   node e2e/helpers/load-test-data-with-local-images.js --match-jancodes=10
  */
@@ -44,7 +44,7 @@ function extractJanCode(broadcast) {
 
   // For update_field and other actions, payload.id might be the janCode (or janCode + suffix)
   // Extract numeric prefix from payload.id
-  if (payload.id && typeof payload.id === 'string') {
+  if (payload.id && typeof payload.id === "string") {
     const match = payload.id.match(/^(\d+)/);
     if (match) return match[1];
   }
@@ -59,22 +59,25 @@ function extractJanCode(broadcast) {
  * 3. Else → include (actions unrelated to JAN codes)
  */
 function filterByJanCodes(broadcasts, janCodes) {
-  return broadcasts.filter(broadcast => {
+  return broadcasts.filter((broadcast) => {
     // Step 1: Check if any target JAN code appears in the JSON
     const jsonStr = JSON.stringify(broadcast);
-    const hasMatchingJanCode = janCodes.some(janCode => jsonStr.includes(janCode));
+    const hasMatchingJanCode = janCodes.some((janCode) =>
+      jsonStr.includes(janCode),
+    );
 
     if (hasMatchingJanCode) {
-      return true;  // Include: action involves target JAN codes
+      return true; // Include: action involves target JAN codes
     }
 
     // Step 2: Check if action has itemKey or janCode field
     const payload = broadcast.data?.payload;
     const hasItemKey = payload?.itemKey !== undefined;
-    const hasJanCode = payload?.janCode !== undefined || payload?.item?.janCode !== undefined;
+    const hasJanCode =
+      payload?.janCode !== undefined || payload?.item?.janCode !== undefined;
 
     if (hasItemKey || hasJanCode) {
-      return false;  // Exclude: action references OTHER JAN codes
+      return false; // Exclude: action references OTHER JAN codes
     }
 
     // Step 3: Include actions unrelated to JAN codes
@@ -96,7 +99,7 @@ async function loadTestData() {
     process.cwd(),
     "e2e",
     "test-images",
-    "url-mapping.json"
+    "url-mapping.json",
   );
 
   console.log(`\n📥 Loading test data from ${testDataPath}...`);
@@ -123,27 +126,38 @@ async function loadTestData() {
   let urlMapping = {};
   if (existsSync(mappingPath)) {
     urlMapping = JSON.parse(readFileSync(mappingPath, "utf8"));
-    console.log(`   📍 Loaded ${Object.keys(urlMapping).length} image URL mappings`);
+    console.log(
+      `   📍 Loaded ${Object.keys(urlMapping).length} image URL mappings`,
+    );
   } else {
     console.log(`   ⚠️  No image URL mapping found at ${mappingPath}`);
     console.log(`      Run: node e2e/helpers/download-test-images.js first`);
   }
 
   // Parse --match-jancodes argument if provided
-  const matchJancodesArg = process.argv.find(arg => arg.startsWith('--match-jancodes='));
-  const matchJancodesLimit = matchJancodesArg ? parseInt(matchJancodesArg.split('=')[1], 10) : null;
+  const matchJancodesArg = process.argv.find((arg) =>
+    arg.startsWith("--match-jancodes="),
+  );
+  const matchJancodesLimit = matchJancodesArg
+    ? parseInt(matchJancodesArg.split("=")[1], 10)
+    : null;
 
   if (matchJancodesLimit) {
-    console.log(`   ⚠️  Match JAN codes mode: Loading records matching JAN codes from first ${matchJancodesLimit} records`);
+    console.log(
+      `   ⚠️  Match JAN codes mode: Loading records matching JAN codes from first ${matchJancodesLimit} records`,
+    );
   }
 
   // If using --match-jancodes, extract JAN codes from first N records
   let janCodesToMatch = null;
   if (matchJancodesLimit && exportData.collections.broadcast) {
-    const firstNRecords = exportData.collections.broadcast.slice(0, matchJancodesLimit);
+    const firstNRecords = exportData.collections.broadcast.slice(
+      0,
+      matchJancodesLimit,
+    );
     const janCodesSet = new Set();
 
-    firstNRecords.forEach(broadcast => {
+    firstNRecords.forEach((broadcast) => {
       const janCode = extractJanCode(broadcast);
       if (janCode) {
         janCodesSet.add(janCode);
@@ -151,7 +165,9 @@ async function loadTestData() {
     });
 
     janCodesToMatch = Array.from(janCodesSet);
-    console.log(`   Found ${janCodesToMatch.length} unique JAN codes in first ${matchJancodesLimit} records`);
+    console.log(
+      `   Found ${janCodesToMatch.length} unique JAN codes in first ${matchJancodesLimit} records`,
+    );
   }
 
   for (const [collectionName, documents] of Object.entries(
@@ -160,7 +176,7 @@ async function loadTestData() {
     // Determine docs to load based on filtering
     let docsToLoad;
 
-    if (collectionName === 'broadcast') {
+    if (collectionName === "broadcast") {
       if (matchJancodesLimit && janCodesToMatch) {
         docsToLoad = filterByJanCodes(documents, janCodesToMatch);
       } else {
@@ -171,8 +187,10 @@ async function loadTestData() {
     }
 
     console.log(`\n  Loading ${collectionName} (${docsToLoad.length} docs)...`);
-    if (collectionName === 'broadcast' && matchJancodesLimit) {
-      console.log(`    (Filtered ${documents.length} broadcast events to ${docsToLoad.length} matching JAN codes)`);
+    if (collectionName === "broadcast" && matchJancodesLimit) {
+      console.log(
+        `    (Filtered ${documents.length} broadcast events to ${docsToLoad.length} matching JAN codes)`,
+      );
     }
 
     let batch = db.batch();
@@ -219,8 +237,6 @@ async function loadTestData() {
         batchCount = 0;
       }
     }
-
-
 
     if (batchCount > 0) {
       await batch.commit();

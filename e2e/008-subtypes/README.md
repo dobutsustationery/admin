@@ -9,6 +9,7 @@
 ![Signed Out State](screenshots/000-signed-out-state.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated "Sign In" button is visible
 - [ ] Validated heading contains "Items with Subtypes"
 
@@ -17,6 +18,7 @@
 ![Signed In State](screenshots/001-signed-in-state.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated "Sign In" button is hidden
 - [ ] Validated Redux store has user state
 
@@ -25,6 +27,6 @@
 ![Subtypes Loaded](screenshots/002-subtypes-loaded.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated heading contains "Items with Subtypes"
 - [ ] Validated Redux inventory state
-

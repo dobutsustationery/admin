@@ -166,8 +166,8 @@ function validateConfig(config) {
   if (missingFields.length > 0) {
     throw new Error(
       `Missing required fields: ${missingFields.join(", ")}\n` +
-      "A valid Firebase config must include: " +
-      requiredFields.join(", "),
+        "A valid Firebase config must include: " +
+        requiredFields.join(", "),
     );
   }
 

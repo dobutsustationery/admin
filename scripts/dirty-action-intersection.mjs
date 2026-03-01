@@ -114,25 +114,35 @@ function main() {
       diagnostics.update_item.total += 1;
       if (payload?.item && typeof payload.item === "object") {
         diagnostics.update_item.payloadHasItem += 1;
-        if (Object.prototype.hasOwnProperty.call(payload.item, "qty")) diagnostics.update_item.itemHasQty += 1;
-        if (Object.prototype.hasOwnProperty.call(payload.item, "shipped")) diagnostics.update_item.itemHasShipped += 1;
-        if (Object.prototype.hasOwnProperty.call(payload.item, "timestamp")) diagnostics.update_item.itemHasTimestamp += 1;
-        if (Object.prototype.hasOwnProperty.call(payload.item, "creationDate")) diagnostics.update_item.itemHasCreationDate += 1;
+        if (Object.prototype.hasOwnProperty.call(payload.item, "qty"))
+          diagnostics.update_item.itemHasQty += 1;
+        if (Object.prototype.hasOwnProperty.call(payload.item, "shipped"))
+          diagnostics.update_item.itemHasShipped += 1;
+        if (Object.prototype.hasOwnProperty.call(payload.item, "timestamp"))
+          diagnostics.update_item.itemHasTimestamp += 1;
+        if (Object.prototype.hasOwnProperty.call(payload.item, "creationDate"))
+          diagnostics.update_item.itemHasCreationDate += 1;
       }
     } else if (type === "retype_item") {
       diagnostics.retype_item.total += 1;
-      if (Object.prototype.hasOwnProperty.call(payload || {}, "qty")) diagnostics.retype_item.withQty += 1;
-      if (Object.prototype.hasOwnProperty.call(payload || {}, "janCode")) diagnostics.retype_item.withJanCode += 1;
-      if (Object.prototype.hasOwnProperty.call(payload || {}, "subtype")) diagnostics.retype_item.withSubtype += 1;
+      if (Object.prototype.hasOwnProperty.call(payload || {}, "qty"))
+        diagnostics.retype_item.withQty += 1;
+      if (Object.prototype.hasOwnProperty.call(payload || {}, "janCode"))
+        diagnostics.retype_item.withJanCode += 1;
+      if (Object.prototype.hasOwnProperty.call(payload || {}, "subtype"))
+        diagnostics.retype_item.withSubtype += 1;
     } else if (type === "listingCreation/add_proposals") {
       diagnostics["listingCreation/add_proposals"].total += 1;
       if (Array.isArray(payload)) {
         diagnostics["listingCreation/add_proposals"].payloadIsArray += 1;
-        diagnostics["listingCreation/add_proposals"].proposalsTotal += payload.length;
+        diagnostics["listingCreation/add_proposals"].proposalsTotal +=
+          payload.length;
         for (const p of payload) {
           for (const v of p?.variants || []) {
             if (Object.prototype.hasOwnProperty.call(v, "qty")) {
-              diagnostics["listingCreation/add_proposals"].proposalsWithVariantsQty += 1;
+              diagnostics[
+                "listingCreation/add_proposals"
+              ].proposalsWithVariantsQty += 1;
             }
           }
         }
@@ -167,4 +177,3 @@ function main() {
 }
 
 main();
-

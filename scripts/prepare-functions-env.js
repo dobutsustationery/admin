@@ -17,7 +17,9 @@ const VALID_ENVS = ["local", "staging", "production"];
 const env = process.argv[2];
 
 if (!env || !VALID_ENVS.includes(env)) {
-  console.log("Usage: node scripts/prepare-functions-env.js [local|staging|production]");
+  console.log(
+    "Usage: node scripts/prepare-functions-env.js [local|staging|production]",
+  );
   process.exit(1);
 }
 
@@ -44,7 +46,11 @@ const lines = source
   .filter((line) => line && !line.trimStart().startsWith("#"))
   .filter((line) => line.includes("="));
 
-const keepPrefixes = ["SHOPIFY_", "FIREBASE_", "GOOGLE_APPLICATION_CREDENTIALS"];
+const keepPrefixes = [
+  "SHOPIFY_",
+  "FIREBASE_",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+];
 const kept = lines.filter((line) => {
   const key = line.split("=")[0]?.trim() || "";
   if (!key) return false;
@@ -72,15 +78,24 @@ writeFileSync(
 );
 
 // DEDUPLICATION: Generate CommonJS bridge for shared idempotency logic
-const idempotencySource = resolve(process.cwd(), "src/lib/idempotency-utils.ts");
+const idempotencySource = resolve(
+  process.cwd(),
+  "src/lib/idempotency-utils.ts",
+);
 const idempotencyTarget = resolve(functionsDir, "shared/idempotency-utils.cjs");
 try {
   if (existsSync(idempotencySource)) {
-    execSync(`npx esbuild "${idempotencySource}" --bundle --platform=node --format=cjs --outfile="${idempotencyTarget}"`);
-    console.log(`Generated ${idempotencyTarget} from ${idempotencySource} using esbuild.`);
+    execSync(
+      `npx esbuild "${idempotencySource}" --bundle --platform=node --format=cjs --outfile="${idempotencyTarget}"`,
+    );
+    console.log(
+      `Generated ${idempotencyTarget} from ${idempotencySource} using esbuild.`,
+    );
   }
 } catch (e) {
   console.error("Failed to generate idempotency-utils.cjs:", e.message);
 }
 
-console.log(`Prepared functions/.env from ${sourceMap[env]} (${kept.length} vars).`);
+console.log(
+  `Prepared functions/.env from ${sourceMap[env]} (${kept.length} vars).`,
+);

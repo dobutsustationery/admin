@@ -30,15 +30,27 @@ if (handleIndex !== -1) {
     process.exit(1);
   }
 
-  const passArgs = args.filter((arg, idx) => idx !== handleIndex && idx !== handleIndex + 1);
-  const result = spawnSync("bun", ["scripts/shopify-sync-request.ts", "--handle", handle, ...passArgs], {
-    stdio: "inherit",
-  });
+  const passArgs = args.filter(
+    (arg, idx) => idx !== handleIndex && idx !== handleIndex + 1,
+  );
+  const result = spawnSync(
+    "bun",
+    ["scripts/shopify-sync-request.ts", "--handle", handle, ...passArgs],
+    {
+      stdio: "inherit",
+    },
+  );
   process.exit(result.status ?? 1);
 }
 
-const filteredArgs = args.filter((arg) => arg !== "--process-requests" && arg !== "--apply");
-const result = spawnSync("bun", ["scripts/shopify-sync-worker.ts", ...filteredArgs], {
-  stdio: "inherit",
-});
+const filteredArgs = args.filter(
+  (arg) => arg !== "--process-requests" && arg !== "--apply",
+);
+const result = spawnSync(
+  "bun",
+  ["scripts/shopify-sync-worker.ts", ...filteredArgs],
+  {
+    stdio: "inherit",
+  },
+);
 process.exit(result.status ?? 1);

@@ -9,6 +9,6 @@
 ![Scanner Loaded](screenshots/000-scanner-loaded.png)
 
 **Programmatic Verification:**
+
 - [ ] Validated heading contains "Inventory"
 - [ ] Validated JAN Code input is visible
-

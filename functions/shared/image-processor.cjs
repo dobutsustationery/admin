@@ -2,7 +2,12 @@
  * Server-side image processing using transformers.js and sharp.
  */
 
-const { env, AutoModel, AutoProcessor, RawImage } = require("@xenova/transformers");
+const {
+  env,
+  AutoModel,
+  AutoProcessor,
+  RawImage,
+} = require("@xenova/transformers");
 const sharp = require("sharp");
 const path = require("path");
 const heicDecode = require("heic-decode");
@@ -20,11 +25,14 @@ let loadingPromise = null;
  * Load the high-quality RMBG-1.4 model
  */
 async function loadRMBGModel() {
-  if (rmbgModel && rmbgProcessor) return { model: rmbgModel, processor: rmbgProcessor };
+  if (rmbgModel && rmbgProcessor)
+    return { model: rmbgModel, processor: rmbgProcessor };
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
-    console.log("[ImageProcessor] Loading briaai/RMBG-1.4 model from local path...");
+    console.log(
+      "[ImageProcessor] Loading briaai/RMBG-1.4 model from local path...",
+    );
     // Use AutoModel (generic) as it handles the custom Segformer mapping better in v2
     const [model, processor] = await Promise.all([
       AutoModel.from_pretrained("briaai/RMBG-1.4"),
@@ -53,16 +61,25 @@ async function decodeImage(inputBuffer) {
     return { image, data, info };
   } catch (e) {
     // If it's potentially a HEIF issue, try manual decode
-    if (e.message.includes("heif") || e.message.includes("decode") || e.message.includes("header")) {
+    if (
+      e.message.includes("heif") ||
+      e.message.includes("decode") ||
+      e.message.includes("header")
+    ) {
       try {
-        const { width, height, data } = await heicDecode({ buffer: inputBuffer });
+        const { width, height, data } = await heicDecode({
+          buffer: inputBuffer,
+        });
         const info = { width, height, channels: 4 };
         const image = sharp(Buffer.from(data), {
-          raw: { width, height, channels: 4 }
+          raw: { width, height, channels: 4 },
         });
         return { image, data: Buffer.from(data), info };
       } catch (fallbackError) {
-        console.error("[ImageProcessor] Fallback decode also failed:", fallbackError);
+        console.error(
+          "[ImageProcessor] Fallback decode also failed:",
+          fallbackError,
+        );
         throw e; // Throw original error if fallback also fails
       }
     }
@@ -73,10 +90,37 @@ async function decodeImage(inputBuffer) {
 /**
  * Smart Crop: Trims transparent borders from an image
  */
+/**
+ * Generates a subject mask using the RMBG model.
+ */
+async function getSubjectMask(inputBuffer) {
+  const { model, processor } = await loadRMBGModel();
+  const { data, info } = await decodeImage(inputBuffer);
+
+  const rgbData = await sharp(data, {
+    raw: {
+      width: info.width,
+      height: info.height,
+      // @ts-ignore
+      channels: info.channels,
+    },
+  })
+    .removeAlpha()
+    .toBuffer();
+
+  const img = new RawImage(rgbData, info.width, info.height, 3);
+  const { pixel_values } = await processor(img);
+  const { output } = await model({ input: pixel_values });
+
+  return await RawImage.fromTensor(output[0].mul(255).to("uint8")).resize(
+    img.width,
+    img.height,
+  );
+}
 async function smartCrop(inputBuffer) {
   const { image, data, info } = await decodeImage(inputBuffer);
   const { width, height } = info;
-  const ALPHA_THRESHOLD = 40;
+  const ALPHA_THRESHOLD = 10;
 
   let minX = width,
     minY = height,
@@ -97,15 +141,90 @@ async function smartCrop(inputBuffer) {
     }
   }
 
+  // If the transparency-based bounding box is the full image, it's likely an opaque image.
+  // In this case, we fall back to AI subject detection.
+  const isFullImage =
+    foundPixel &&
+    minX === 0 &&
+    minY === 0 &&
+    maxX === width - 1 &&
+    maxY === height - 1;
+
+  let finalMargin = 20;
+
+  if (!foundPixel || isFullImage) {
+    try {
+      console.log(
+        "[ImageProcessor] No transparency or full image detected, using AI subject detection for cropping...",
+      );
+      const mask = await getSubjectMask(inputBuffer);
+      let maxScore = 0;
+      for (let i = 0; i < mask.data.length; i++) {
+        if (mask.data[i] > maxScore) maxScore = mask.data[i];
+      }
+
+      const dynamicThreshold = Math.max(128, maxScore * 0.5);
+
+      let aiFoundPixel = false;
+      let aiMinX = width,
+        aiMinY = height,
+        aiMaxX = 0,
+        aiMaxY = 0;
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const score = mask.data[y * width + x];
+          if (score >= dynamicThreshold) {
+            if (x < aiMinX) aiMinX = x;
+            if (x > aiMaxX) aiMaxX = x;
+            if (y < aiMinY) aiMinY = y;
+            if (y > aiMaxY) aiMaxY = y;
+            aiFoundPixel = true;
+          }
+        }
+      }
+
+      if (aiFoundPixel) {
+        minX = aiMinX;
+        minY = aiMinY;
+        maxX = aiMaxX;
+        maxY = aiMaxY;
+        foundPixel = true;
+        finalMargin = 50; // Use larger margin for AI crop
+        console.log(
+          `[ImageProcessor] AI Bounding Box: (${minX},${minY}) to (${maxX},${maxY}) with 50px margin`,
+        );
+      }
+    } catch (e) {
+      console.warn(
+        "[ImageProcessor] AI subject detection failed for cropping, returning original image",
+        e,
+      );
+      return inputBuffer;
+    }
+  }
+
   if (!foundPixel) return inputBuffer;
 
-  const margin = 15;
-  const left = Math.max(0, minX - margin);
-  const top = Math.max(0, minY - margin);
-  const extractWidth = Math.min(width, maxX + margin) - left;
-  const extractHeight = Math.min(height, maxY + margin) - top;
+  const left = Math.max(0, minX - finalMargin);
+  const top = Math.max(0, minY - finalMargin);
+  const extractWidth = Math.min(width, maxX + finalMargin + 1) - left;
+  const extractHeight = Math.min(height, maxY + finalMargin + 1) - top;
 
-  if (extractWidth <= 0 || extractHeight <= 0) return inputBuffer;
+  // If the final crop is still basically the full image, return original to avoid unnecessary processing
+  const isStillFullImage =
+    left === 0 &&
+    top === 0 &&
+    extractWidth === width &&
+    extractHeight === height;
+  if (isStillFullImage) {
+    console.log("[ImageProcessor] Resulting crop is full image, skipping.");
+    return inputBuffer;
+  }
+
+  console.log(
+    `[ImageProcessor] Cropping ${width}x${height} -> ${extractWidth}x${extractHeight} at (${left}, ${top})`,
+  );
 
   return await image
     .extract({ left, top, width: extractWidth, height: extractHeight })
@@ -201,47 +320,13 @@ async function autoColorCorrect(originalBuffer) {
 async function removeBackground(imageUrl, originalBuffer) {
   try {
     console.log(`[ImageProcessor] AI background removal for ${imageUrl}...`);
-    
-    const { model, processor } = await loadRMBGModel();
-
-    // 1. Load image using decodeImage helper to get raw pixel data (RGB)
+    const mask = await getSubjectMask(originalBuffer);
     const { data: originalData, info } = await decodeImage(originalBuffer);
 
-    // transformers.js needs RGB (3 channels), so we strip alpha if it exists
-    const rgbData = await sharp(originalData, {
-      raw: {
-        width: info.width,
-        height: info.height,
-        channels: info.channels,
-      }
-    })
-      .removeAlpha()
-      .toBuffer();
-
-    const img = new RawImage(rgbData, info.width, info.height, 3);
-
-    // 2. Pre-process
-    const { pixel_values } = await processor(img);
-
-    // 3. Predict mask
-    const { output } = await model({ input: pixel_values });
-
-    // 4. Post-process mask (resize to original)
-    // The output[0] is the mask tensor
-    const mask = await RawImage.fromTensor(output[0].mul(255).to("uint8")).resize(
-      img.width,
-      img.height,
-    );
-
-    // 5. Composite (Apply Mask) using sharp
-    // originalData already has alpha from decodeImage
-
-    // Apply mask to alpha channel
     for (let i = 0; i < info.width * info.height; i++) {
       originalData[i * 4 + 3] = mask.data[i];
     }
 
-    // 6. Convert back to Buffer via sharp
     const processedBuffer = await sharp(originalData, {
       raw: {
         width: info.width,
@@ -255,7 +340,10 @@ async function removeBackground(imageUrl, originalBuffer) {
     // 7. Smart Crop
     return await smartCrop(processedBuffer);
   } catch (e) {
-    console.error(`[ImageProcessor] Background removal failed for ${imageUrl}:`, e);
+    console.error(
+      `[ImageProcessor] Background removal failed for ${imageUrl}:`,
+      e,
+    );
     throw e;
   }
 }
