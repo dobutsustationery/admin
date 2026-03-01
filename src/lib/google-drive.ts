@@ -1044,7 +1044,7 @@ export async function renameFile(
 }
 
 /**
- * Upload a Blob/File to Drive
+ * Upload a Blob/File to Drive with progress reporting
  */
 export async function uploadImageToDrive(
   blob: Blob,
@@ -1052,6 +1052,7 @@ export async function uploadImageToDrive(
   folderId: string,
   accessToken: string,
   derivationKey: string,
+  onProgress?: (loaded: number, total: number) => void,
 ): Promise<DriveFileInfo> {
   const metadata = {
     name: filename,
@@ -1059,25 +1060,7 @@ export async function uploadImageToDrive(
     properties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
   };
 
-  const boundary = `----FormBoundary${Math.random().toString(36).substring(2)}`;
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
-
-  // Read blob as base64 or text? Mutipart expects the binary.
-  // Actually easiest way for binary upload in browser with metadata is strictly multipart
-  // But we need to construct the body carefully.
-  // Converting blob to string is tricky without FileReader.
-
-  // Let's use FileReader to get ArrayBuffer -> String
-  // OR just two separate requests if that's easier?
-  // Drive API supports resumable upload which is cleaner but more steps.
-  // Simple multipart:
-
-  // Convert blob to string is the hard part for X HR body.
-  // Let's use the resumable upload flow for robustness with binary data.
   // 1. Initiate Resumable Session
-  // 2. Upload bytes
-
   const initRes = await fetch(
     "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
     {
@@ -1085,7 +1068,6 @@ export async function uploadImageToDrive(
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
-        // We must specify X-Upload-Content-Type or Content-Type in body
       },
       body: JSON.stringify(metadata),
     },
@@ -1099,28 +1081,41 @@ export async function uploadImageToDrive(
   const uploadUrl = initRes.headers.get("Location");
   if (!uploadUrl) throw new Error("No upload location returned");
 
-  // 2. Upload Data
-  const uploadRes = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      // No Authorization header needed for the session URL usually, but can include
-    },
-    body: blob,
+  // 2. Upload Data with Progress (using XHR for progress events)
+  const uploadPromise = new Promise<any>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          onProgress(e.loaded, e.total);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch (e) {
+          reject(new Error("Failed to parse upload response"));
+        }
+      } else {
+        reject(new Error(`Upload failed with status ${xhr.status}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("XHR Upload failed"));
+    xhr.send(blob);
   });
 
-  if (!uploadRes.ok) throw new Error("Failed to upload file data");
-
-  const fileData = await uploadRes.json();
+  const fileData = await uploadPromise;
 
   // 3. Make public immediately
   await setFilePermissions(fileData.id, accessToken);
 
-  // 4. Get WebContentLink (might need a re-fetch if not in response)
-  // File resource is returned in fileData
-  // We need webContentLink or webViewLink.
-  // By default create returns minimal fields.
-  // We can fetch details.
-
+  // 4. Get Details
   const detailsParam = new URLSearchParams({
     fields: "id,name,webViewLink,webContentLink,thumbnailLink",
   });
@@ -1135,15 +1130,9 @@ export async function uploadImageToDrive(
   const details = await detailsRes.json();
   console.log("Drive Upload Details:", details);
 
-  // Optimize usage: thumbnailLink is usually better for embedding.
-  // The API-provided `thumbnailLink` can be ephemeral (drive-storage signed links).
-  // We prefer the 'permanent' endpoint that redirects to a fresh thumbnail.
-  // This ensures the URL stored in our DB works forever.
   if (fileData.id) {
     details.thumbnailLink = `https://drive.google.com/thumbnail?id=${fileData.id}`;
-    // Add stable full-size public image URL for app + external systems (e.g. Shopify)
     details.publicUrl = toGoogleDrivePublicImageUrl(String(fileData.id));
-    // Add stable API URL for internal app usage (SecureImage)
     details.apiUrl = `https://www.googleapis.com/drive/v3/files/${fileData.id}?alt=media`;
   }
 

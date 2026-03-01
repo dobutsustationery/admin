@@ -230,6 +230,15 @@
   let fileInput: HTMLInputElement;
   let uploading = false;
   let uploadError = "";
+  let uploadProgress = { loaded: 0, total: 0, percent: 0 };
+
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  }
 
   async function handleFileUpload(event: Event) {
     const target = event.target as HTMLInputElement;
@@ -237,6 +246,8 @@
     const file = target.files[0];
     uploading = true;
     uploadError = "";
+    uploadProgress = { loaded: 0, total: file.size, percent: 0 };
+
     try {
       const token = getDriveToken() || getPhotosToken();
       if (!token) {
@@ -257,6 +268,13 @@
         folders.processedId,
         token.access_token,
         derivationKey,
+        (loaded, total) => {
+          uploadProgress = {
+            loaded,
+            total,
+            percent: Math.round((loaded / total) * 100),
+          };
+        },
       );
       const permanentUrl = toGoogleDrivePublicImageUrl(
         result.publicUrl || result.apiUrl || "",
@@ -516,6 +534,8 @@
     derivationKey?: string | null,
   ) {
     if (!photoId) return;
+    uploading = true;
+    uploadProgress = { loaded: 0, total: blob.size, percent: 0 };
     try {
       const token = getDriveToken() || getPhotosToken();
       if (!token) {
@@ -535,6 +555,13 @@
         folders.processedId,
         token.access_token,
         finalDerivationKey!,
+        (loaded, total) => {
+          uploadProgress = {
+            loaded,
+            total,
+            percent: Math.round((loaded / total) * 100),
+          };
+        },
       );
       const safeUrl = toGoogleDrivePublicImageUrl(
         result.publicUrl || result.apiUrl || "",
@@ -548,6 +575,8 @@
       else store.dispatch(action);
     } catch (e: any) {
       alert("Failed: " + e.message);
+    } finally {
+      uploading = false;
     }
   }
 
@@ -576,6 +605,28 @@
   </div>
 
   <main>
+    {#if uploading}
+      <div class="upload-banner">
+        <div class="upload-banner-content">
+          <div class="upload-info">
+            <span class="upload-status">Uploading to Google Drive...</span>
+            <span class="upload-stats">
+              {formatBytes(uploadProgress.loaded)} of {formatBytes(
+                uploadProgress.total,
+              )}
+              ({uploadProgress.percent}%)
+            </span>
+          </div>
+          <div class="progress-container">
+            <div
+              class="progress-bar"
+              style="width: {uploadProgress.percent}%"
+            ></div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     {#if !photoId}
       <div class="alert alert-warning">
         <p class="bold">No Photo ID provided.</p>
@@ -1142,5 +1193,52 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  .upload-banner {
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 0.75rem;
+    padding: 1rem 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  .upload-banner-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .upload-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.875rem;
+  }
+
+  .upload-status {
+    font-weight: 600;
+    color: #1e40af;
+  }
+
+  .upload-stats {
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: #60a5fa;
+  }
+
+  .progress-container {
+    height: 0.5rem;
+    background-color: #dbeafe;
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background-color: #3b82f6;
+    border-radius: 9999px;
+    transition: width 0.3s ease-out;
   }
 </style>

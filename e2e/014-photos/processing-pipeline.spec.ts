@@ -53,7 +53,7 @@ test.describe("Photo Processing Pipeline Configuration", () => {
     await expect(cropRow).toContainText("Auto-Crop");
     await expect(cropRow).toHaveClass(/disabled/);
     const cropSwitch = cropRow.locator('input[type="checkbox"]');
-    const cropSlider = cropRow.locator('.slider');
+    const cropSlider = cropRow.locator(".slider");
     await expect(cropSwitch).not.toBeChecked();
 
     // Check Color Correction (Initial: 2nd, Enabled)
@@ -98,7 +98,9 @@ test.describe("Photo Processing Pipeline Configuration", () => {
     await expect(stepRows.nth(0)).toContainText("Background Removal");
     await expect(stepRows.nth(1)).toContainText("Auto-Crop");
     await expect(stepRows.nth(2)).toContainText("Color Correction");
-    await expect(stepRows.nth(1).locator('input[type="checkbox"]')).toBeChecked();
+    await expect(
+      stepRows.nth(1).locator('input[type="checkbox"]'),
+    ).toBeChecked();
 
     // 9. HYDRATE Test: Verify config survives hydration
     await page.evaluate(() => {
@@ -106,7 +108,7 @@ test.describe("Photo Processing Pipeline Configuration", () => {
       const state = store.getState();
       store.dispatch({
         type: "HYDRATE",
-        payload: { ...state }
+        payload: { ...state },
       });
     });
 
