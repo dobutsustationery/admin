@@ -43,6 +43,7 @@ import { logAction } from "./devtools-middleware";
 import { generateHandle } from "./handle-utils";
 import { buildDraftListingImages } from "./listing-image-logic";
 import { canonicalizeInventoryItemKey, makeInventoryItemKey } from "./sku";
+import { CURRENT_SCHEMA_VERSION } from "./schema-version";
 
 const reducerObject = {
   names,
@@ -102,33 +103,29 @@ const mapShopifyToInventory = (importItem: any): Item => {
 export const rootReducer = (state: any, action: any, logger = logAction) => {
   if (action.type === "HYDRATE") {
     const hydratedState = { ...state, ...action.payload };
-    // Migration: Ensure photos.processingConfig exists and follows the new object structure
-    if (hydratedState.photos) {
-      const oldConfig = hydratedState.photos.processingConfig;
-      const isOldFormat =
-        !oldConfig ||
-        !oldConfig.steps ||
-        (Array.isArray(oldConfig.steps) &&
-          typeof oldConfig.steps[0] === "string");
 
-      if (isOldFormat) {
-        // If config is missing or using the old array of strings format
-        hydratedState.photos.processingConfig = {
-          steps: [
-            { type: "crop", enabled: false },
-            { type: "color_correct", enabled: true },
-            { type: "remove_background", enabled: true },
-          ],
-        };
-      }
+    // Schema Version Validation:
+    // If the hydrated state has an outdated schema version (or none),
+    // discard it and return the current state (initial) to force a full replay.
+    if (hydratedState.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+      console.warn(
+        `[Hydrate] Schema mismatch (Expected: ${CURRENT_SCHEMA_VERSION}, Found: ${hydratedState.schemaVersion}). Discarding snapshot and forcing replay.`,
+      );
+      return state;
     }
+
     return hydratedState;
   }
 
   // 1. Standard Reducer Execution
-  let nextState = combinedReducer(state, action);
+  let nextState: any = combinedReducer(state, action);
 
-  // 2. Interception & Composition
+  // 2. Ensure schemaVersion is always present in the state
+  if (nextState.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    nextState = { ...nextState, schemaVersion: CURRENT_SCHEMA_VERSION };
+  }
+
+  // 3. Interception & Composition
 
   // Synchronize Listings idToHandle and Photo Groups when item keys change
   const isRetype = action.type === "retype_item";
@@ -662,7 +659,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
         // Check if image already exists in group
         const exists = group.some(
-          (p) => p.baseUrl === item.image || p.productUrl === item.image,
+          (p: any) => p.baseUrl === item.image || p.productUrl === item.image,
         );
 
         if (!exists) {
@@ -811,7 +808,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           });
 
           const galleryImages: any[] = [];
-          existingListing.images.forEach((img) => {
+          existingListing.images.forEach((img: any) => {
             const count = variantImageCounts.get(img.url);
             if (count && count > 0) {
               // Claim this listing image for the variant
@@ -859,7 +856,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               payload: {
                 janCode,
                 field: "listingImageOrder",
-                value: existingListing.images.map((img) => img.id),
+                value: existingListing.images.map((img: any) => img.id),
               },
               _ephemeral: true,
               timestamp: action.timestamp || action._timestamp,
@@ -967,8 +964,8 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
         if (invItem) {
           itemId = invItem[0];
-          subtype = reqSubtype || invItem[1].subtype || "Default";
-          qty = reqQty !== undefined ? reqQty : invItem[1].qty || 0;
+          subtype = reqSubtype || (invItem[1] as any).subtype || "Default";
+          qty = reqQty !== undefined ? reqQty : (invItem[1] as any).qty || 0;
         } else {
           // 2. If no new item found, check if JAN is already present in proposal -> Split from existing
           // Prefer matching by sourceVariantId if provided
