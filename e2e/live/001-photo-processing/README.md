@@ -7,6 +7,7 @@
 ![Photos View Loaded](screenshots/000-photos-view.png)
 
 **Programmatic Verification:**
+
 - [ ] At least 1 real photo is visible in Photos view
 - [ ] Chosen photo is ready for processing
 - [ ] Chosen photo thumbnail has fully loaded
@@ -16,6 +17,7 @@
 ![Color In Progress](screenshots/001-color-in-progress.png)
 
 **Programmatic Verification:**
+
 - [ ] Color operation entered in-progress state
 - [ ] Current/history images are fully loaded during in-progress state
 
@@ -24,6 +26,7 @@
 ![Color Completed](screenshots/002-color-completed.png)
 
 **Programmatic Verification:**
+
 - [ ] Color added one new history version
 
 ### 4. Auto Crop In Progress
@@ -31,6 +34,7 @@
 ![Auto Crop In Progress](screenshots/003-auto-crop-in-progress.png)
 
 **Programmatic Verification:**
+
 - [ ] Auto Crop operation entered in-progress state
 - [ ] Current/history images are fully loaded during in-progress state
 
@@ -39,6 +43,7 @@
 ![Auto Crop Completed](screenshots/004-auto-crop-completed.png)
 
 **Programmatic Verification:**
+
 - [ ] Auto Crop added one new history version
 
 ### 6. Remove BG In Progress
@@ -46,6 +51,7 @@
 ![Remove BG In Progress](screenshots/005-remove-bg-in-progress.png)
 
 **Programmatic Verification:**
+
 - [ ] Remove BG operation entered in-progress state
 - [ ] Current/history images are fully loaded during in-progress state
 
@@ -54,6 +60,7 @@
 ![Remove BG Completed](screenshots/006-remove-bg-completed.png)
 
 **Programmatic Verification:**
+
 - [ ] Remove BG added one new history version
 
 ### 8. Processed Photo History
@@ -61,6 +68,6 @@
 ![Processed Photo History](screenshots/007-processed-history.png)
 
 **Programmatic Verification:**
+
 - [ ] History contains expected versions after processing
 - [ ] Current image is visible after processing
-

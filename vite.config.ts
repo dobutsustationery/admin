@@ -5,7 +5,9 @@ import { defineConfig, loadEnv, searchForWorkspaceRoot } from "vite";
 
 function safeGit(command: string): string {
   try {
-    return execSync(command, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    return execSync(command, { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
   } catch {
     return "";
   }
@@ -38,7 +40,8 @@ export default defineConfig(({ mode }) => {
     VITE_APP_GIT_HASH: env.VITE_APP_GIT_HASH || gitHash,
     VITE_APP_GIT_SHORT_HASH: env.VITE_APP_GIT_SHORT_HASH || gitShortHash,
     VITE_APP_GIT_BRANCH: env.VITE_APP_GIT_BRANCH || gitBranch,
-    VITE_APP_GIT_DIRTY: env.VITE_APP_GIT_DIRTY || (gitStatus ? "true" : "false"),
+    VITE_APP_GIT_DIRTY:
+      env.VITE_APP_GIT_DIRTY || (gitStatus ? "true" : "false"),
     VITE_APP_BUILD_TIME_ISO: env.VITE_APP_BUILD_TIME_ISO || buildTimeIso,
     VITE_APP_BUILD_MODE: env.VITE_APP_BUILD_MODE || mode,
   };
@@ -51,10 +54,18 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: Object.fromEntries(
-      Object.entries(versionEnv).map(([key, value]) => [`import.meta.env.${key}`, JSON.stringify(value)]),
+      Object.entries(versionEnv).map(([key, value]) => [
+        `import.meta.env.${key}`,
+        JSON.stringify(value),
+      ]),
     ),
     optimizeDeps: {
-      exclude: ["firebase", "firebase/app", "firebase/auth", "firebase/firestore"],
+      exclude: [
+        "firebase",
+        "firebase/app",
+        "firebase/auth",
+        "firebase/firestore",
+      ],
     },
   };
 });

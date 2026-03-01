@@ -8,21 +8,34 @@ export interface UploadState {
   error?: string;
 }
 
-export interface KnownUpload {
-  baseUrl: string;
-  productUrl?: string;
-}
-
 export interface PhotoEditQueue {
-  queue: ("crop" | "color_correct" | "remove_background")[];
-  active?: { operation: string; startTime: number };
+  active?: {
+    operation: string;
+    startTime: number;
+  };
+  queue: string[];
   history: {
     operation: string;
     timestamp: number;
     status: "success" | "failed";
     error?: string;
   }[];
-  status: { crop: boolean; color_correct: boolean; remove_background: boolean };
+  status: {
+    crop: boolean;
+    color_correct: boolean;
+    remove_background: boolean;
+  };
+}
+
+export type ProcessingStepType = "crop" | "color_correct" | "remove_background";
+
+export interface ProcessingStep {
+  type: ProcessingStepType;
+  enabled: boolean;
+}
+
+export interface ProcessingConfig {
+  steps: ProcessingStep[];
 }
 
 export interface PhotosState {
@@ -34,6 +47,7 @@ export interface PhotosState {
   registry: Record<string, MediaItem>; // Cache/Registry of known items
   generating: boolean;
   categorizing: boolean;
+  processingConfig: ProcessingConfig;
 }
 
 const initialState: PhotosState = {
@@ -45,6 +59,13 @@ const initialState: PhotosState = {
   registry: {},
   generating: false,
   categorizing: false,
+  processingConfig: {
+    steps: [
+      { type: "crop", enabled: false },
+      { type: "color_correct", enabled: true },
+      { type: "remove_background", enabled: true },
+    ],
+  },
 };
 
 function isEphemeralPhotosUrl(url: string | undefined): boolean {
@@ -55,30 +76,8 @@ const photosSlice = createSlice({
   name: "photos",
   initialState,
   reducers: {
-    // ... existing reducers ...
-    // Register media items (Fact/Cache) - Persisted to ensure availability
-    register_media_items: (
-      state,
-      action: PayloadAction<{ items: MediaItem[] }>,
-    ) => {
-      if (!state.registry) state.registry = {};
-      if (!state.urlHistory) state.urlHistory = {};
-
-      action.payload.items.forEach((item) => {
-        state.registry[item.id] = item;
-        if (!state.urlHistory[item.id]) {
-          state.urlHistory[item.id] = isEphemeralPhotosUrl(item.baseUrl)
-            ? []
-            : [item.baseUrl];
-        }
-      });
-    },
-
-    // REPLACE operation (Intent: Selection)
     select_photos: (state, action: PayloadAction<{ ids: string[] }>) => {
-      // Hydration safety
-      if (!state.selected) state.selected = [];
-      if (!state.registry) state.registry = {};
+      // 1. Initialize maps if missing
       if (!state.urlHistory) state.urlHistory = {};
       if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
       if (!state.edits) state.edits = {};
@@ -90,116 +89,54 @@ const photosSlice = createSlice({
       // Hydrate from Registry
       state.selected = action.payload.ids
         .map((id) => state.registry[id])
-        .filter((item) => !!item) // Filter out missing items
-        .map((item) => {
-          // Ensure we use best known URL
-          const hist = state.urlHistory[item.id] || [];
-          const currentBestUrl = hist[0] || item.baseUrl;
-          return { ...item, baseUrl: currentBestUrl };
-        });
-
-      const newIds = new Set(state.selected.map((p) => p.id));
-
-      // Also protect IDs currently in janCodeToPhotos (Categorized)
-      if (state.janCodeToPhotos) {
-        Object.values(state.janCodeToPhotos)
-          .flat()
-          .forEach((p) => newIds.add(p.id));
-      }
-
-      if (!state.uploads) state.uploads = {};
-      for (const id in state.uploads) {
-        if (!newIds.has(id)) delete state.uploads[id];
-      }
-
-      if (!state.edits) state.edits = {};
-      for (const id in state.edits) {
-        if (!newIds.has(id)) delete state.edits[id];
-      }
+        .filter(Boolean);
     },
-
-    // APPEND operation (Intent: Selection)
     add_selected_photos: (state, action: PayloadAction<{ ids: string[] }>) => {
-      if (!state.selected) state.selected = [];
+      if (!state.urlHistory) state.urlHistory = {};
+      if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
+      if (!state.edits) state.edits = {};
+
+      action.payload.ids.forEach((id) => {
+        const item = state.registry[id];
+        if (item && !state.selected.find((p) => p.id === id)) {
+          state.selected.push(item);
+        }
+      });
+    },
+    register_media_items: (
+      state,
+      action: PayloadAction<{ items: MediaItem[] }>,
+    ) => {
       if (!state.registry) state.registry = {};
       if (!state.urlHistory) state.urlHistory = {};
 
-      console.log(
-        `[Reducer] Add Selected Photos: appending ${action.payload.ids.length} items.`,
-      );
+      action.payload.items.forEach((item) => {
+        // Only update if not already registered OR if registered is ephemeral and new is not
+        const existing = state.registry[item.id];
+        const isBetter =
+          !existing ||
+          (isEphemeralPhotosUrl(existing.baseUrl) &&
+            !isEphemeralPhotosUrl(item.baseUrl));
 
-      const existingIds = new Set(state.selected.map((p) => p.id));
-      const newIds = action.payload.ids.filter((id) => !existingIds.has(id));
+        if (isBetter) {
+          state.registry[item.id] = item;
+        }
 
-      newIds.forEach((id) => {
-        const item = state.registry[id];
-        if (item) {
-          const hist = state.urlHistory[id] || [];
-          const currentBestUrl = hist[0] || item.baseUrl;
-          state.selected.push({
-            ...item,
-            baseUrl: currentBestUrl,
-          });
+        // Initialize history if missing
+        if (!state.urlHistory[item.id]) {
+          state.urlHistory[item.id] = [];
+        }
+        // Don't add ephemeral baseUrls to history automatically, usually we only want durable Drive URLs
+        if (
+          !isEphemeralPhotosUrl(item.baseUrl) &&
+          !state.urlHistory[item.id].includes(item.baseUrl)
+        ) {
+          state.urlHistory[item.id].unshift(item.baseUrl);
         }
       });
-
-      // No cleanup needed for adds
     },
-    // ...
-
     clear_photos: (state) => {
       state.selected = [];
-      state.uploads = {};
-      // Do NOT clear urlHistory, janCodeToPhotos
-    },
-    merge_jan_groups: (
-      state,
-      action: PayloadAction<{ sourceJan: string; targetJan: string }>,
-    ) => {
-      const { sourceJan, targetJan } = action.payload;
-      if (!state.janCodeToPhotos) return;
-
-      const sourcePhotos = state.janCodeToPhotos[sourceJan] || [];
-      if (sourcePhotos.length === 0) return;
-
-      // Move photos to target
-      if (!state.janCodeToPhotos[targetJan]) {
-        state.janCodeToPhotos[targetJan] = [];
-      }
-      state.janCodeToPhotos[targetJan].push(...sourcePhotos);
-
-      // Remove source
-      delete state.janCodeToPhotos[sourceJan];
-    },
-    rename_jan_group: (
-      state,
-      action: PayloadAction<{ oldJan: string; newJan: string }>,
-    ) => {
-      const { oldJan, newJan } = action.payload;
-      if (!state.janCodeToPhotos) return;
-
-      // Validation: Check content
-      const cleanNewJan = newJan ? newJan.trim() : "";
-
-      if (cleanNewJan === oldJan) return;
-
-      const sourcePhotos = state.janCodeToPhotos[oldJan] || [];
-      if (sourcePhotos.length === 0) return;
-
-      // CASE 1: Empty New JAN -> Delete Group
-      if (!cleanNewJan) {
-        delete state.janCodeToPhotos[oldJan];
-        return;
-      }
-
-      // CASE 2: Rename / Merge
-      if (!state.janCodeToPhotos[cleanNewJan]) {
-        state.janCodeToPhotos[cleanNewJan] = [];
-      }
-      state.janCodeToPhotos[cleanNewJan].push(...sourcePhotos);
-
-      // Delete old key
-      delete state.janCodeToPhotos[oldJan];
     },
     set_generating: (state, action: PayloadAction<boolean>) => {
       state.generating = action.payload;
@@ -216,20 +153,21 @@ const photosSlice = createSlice({
     ) => {
       const { janCode, photo } = action.payload;
       if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
-
-      // Add to mapped group
       if (!state.janCodeToPhotos[janCode]) {
         state.janCodeToPhotos[janCode] = [];
       }
-      // Dedupe check
+
+      // 1. Remove from selected
+      state.selected = state.selected.filter((p) => p.id !== photo.id);
+
+      // 2. Add to group
       if (!state.janCodeToPhotos[janCode].find((p) => p.id === photo.id)) {
         state.janCodeToPhotos[janCode].push(photo);
       }
 
-      // Remove from selected list
-      if (state.selected) {
-        state.selected = state.selected.filter((p) => p.id !== photo.id);
-      }
+      // 3. Update Registry (Keep latest info)
+      if (!state.registry) state.registry = {};
+      state.registry[photo.id] = photo;
     },
     uncategorize_photo: (
       state,
@@ -237,29 +175,55 @@ const photosSlice = createSlice({
     ) => {
       const { janCode, photoId } = action.payload;
       if (!state.janCodeToPhotos || !state.janCodeToPhotos[janCode]) return;
-      state.janCodeToPhotos[janCode] = state.janCodeToPhotos[janCode].filter(
-        (p) => p.id !== photoId,
+
+      const photo = state.janCodeToPhotos[janCode].find(
+        (p) => p.id === photoId,
       );
-      if (state.janCodeToPhotos[janCode].length === 0) {
-        delete state.janCodeToPhotos[janCode];
+      if (photo) {
+        state.janCodeToPhotos[janCode] = state.janCodeToPhotos[janCode].filter(
+          (p) => p.id !== photoId,
+        );
+        if (!state.selected.find((p) => p.id === photoId)) {
+          state.selected.push(photo);
+        }
+      }
+    },
+    rename_jan_group: (
+      state,
+      action: PayloadAction<{ oldJan: string; newJan: string }>,
+    ) => {
+      const { oldJan, newJan } = action.payload;
+      if (state.janCodeToPhotos[oldJan]) {
+        state.janCodeToPhotos[newJan] = state.janCodeToPhotos[oldJan];
+        delete state.janCodeToPhotos[oldJan];
+      }
+    },
+    merge_jan_groups: (
+      state,
+      action: PayloadAction<{ sourceJan: string; targetJan: string }>,
+    ) => {
+      const { sourceJan, targetJan } = action.payload;
+      if (state.janCodeToPhotos[sourceJan]) {
+        if (!state.janCodeToPhotos[targetJan]) {
+          state.janCodeToPhotos[targetJan] = [];
+        }
+        state.janCodeToPhotos[targetJan].push(
+          ...state.janCodeToPhotos[sourceJan],
+        );
+        delete state.janCodeToPhotos[sourceJan];
       }
     },
     initiate_upload: (
       state,
       action: PayloadAction<{ id: string; timestamp: number }>,
     ) => {
-      const { id, timestamp } = action.payload;
-      if (!state.uploads) state.uploads = {}; // Hydration safety
-      if (!state.uploads[id]) {
-        state.uploads[id] = {
-          status: "uploading",
-          retryCount: 0,
-          lastAttempt: timestamp,
-        };
-      } else {
-        state.uploads[id].status = "uploading";
-        state.uploads[id].lastAttempt = timestamp;
-      }
+      const { id } = action.payload;
+      if (!state.uploads) state.uploads = {};
+      state.uploads[id] = {
+        status: "uploading",
+        retryCount: 0,
+        lastAttempt: action.payload.timestamp,
+      };
     },
     complete_upload: (
       state,
@@ -290,8 +254,10 @@ const photosSlice = createSlice({
       if (!state.urlHistory[id]) {
         state.urlHistory[id] = [];
       }
-      // Unshift to front (Current Best)
-      state.urlHistory[id].unshift(permanentUrl);
+      // Unshift to front (Current Best) - Prevent consecutive identical URLs
+      if (state.urlHistory[id][0] !== permanentUrl) {
+        state.urlHistory[id].unshift(permanentUrl);
+      }
 
       // Update Registry
       if (state.registry[id]) {
@@ -301,22 +267,23 @@ const photosSlice = createSlice({
         }
       }
 
-      // Update the actual item in selected list
-      const itemIndex = state.selected.findIndex((p) => p.id === id);
-      if (itemIndex >= 0) {
-        state.selected[itemIndex].baseUrl = permanentUrl;
+      // Update current collections
+      const selIdx = state.selected.findIndex((p) => p.id === id);
+      if (selIdx >= 0) {
+        state.selected[selIdx].baseUrl = permanentUrl;
         if (webViewLink) {
-          state.selected[itemIndex].productUrl = webViewLink;
+          state.selected[selIdx].productUrl = webViewLink;
         }
       }
 
-      // Update item in janCodeToPhotos as well
       for (const code in state.janCodeToPhotos) {
-        const idx = state.janCodeToPhotos[code].findIndex((p) => p.id === id);
-        if (idx >= 0) {
-          state.janCodeToPhotos[code][idx].baseUrl = permanentUrl;
+        const catIdx = state.janCodeToPhotos[code].findIndex(
+          (p) => p.id === id,
+        );
+        if (catIdx >= 0) {
+          state.janCodeToPhotos[code][catIdx].baseUrl = permanentUrl;
           if (webViewLink) {
-            state.janCodeToPhotos[code][idx].productUrl = webViewLink;
+            state.janCodeToPhotos[code][catIdx].productUrl = webViewLink;
           }
         }
       }
@@ -326,26 +293,24 @@ const photosSlice = createSlice({
       action: PayloadAction<{ id: string; error: string }>,
     ) => {
       const { id, error } = action.payload;
-      if (!state.uploads) state.uploads = {}; // Hydration safety
+      if (!state.uploads) state.uploads = {};
       if (state.uploads[id]) {
         state.uploads[id].status = "failed";
         state.uploads[id].error = error;
-        state.uploads[id].retryCount += 1;
       } else {
         state.uploads[id] = {
           status: "failed",
-          error,
-          retryCount: 1,
+          retryCount: 0,
           lastAttempt: Date.now(),
+          error,
         };
       }
     },
+
+    // --- PHOTO EDIT QUEUE ---
     schedule_edit_batch: (
       state,
-      action: PayloadAction<{
-        ids: string[];
-        operation: "crop" | "color_correct" | "remove_background";
-      }>,
+      action: PayloadAction<{ ids: string[]; operation: string }>,
     ) => {
       const { ids, operation } = action.payload;
       if (!state.edits) state.edits = {};
@@ -362,21 +327,9 @@ const photosSlice = createSlice({
             },
           };
         }
-        const q = state.edits[id];
-
-        // Check if already marked as DONE (User Logic: avoid reprocessing if checked)
-        if (q.status && q.status[operation]) return;
-
-        // Check if already queued
-        if (q.queue.includes(operation)) return;
-
-        // Check if active
-        if (q.active?.operation === operation) return;
-
-        // REMOVED Legacy Check: "Check if most recent history is THIS operation"
-        // We now rely solely on q.status (checkboxes) above.
-
-        q.queue.push(operation);
+        if (!state.edits[id].queue.includes(operation)) {
+          state.edits[id].queue.push(operation);
+        }
       });
     },
     begin_edit: (
@@ -384,17 +337,11 @@ const photosSlice = createSlice({
       action: PayloadAction<{ id: string; operation: string }>,
     ) => {
       const { id, operation } = action.payload;
-      if (!state.edits || !state.edits[id]) return;
-
-      const q = state.edits[id];
-      // Remove from queue
-      // Note: It might not be at index 0 if we prioritized something else, but typically it is.
-      // Or we just strictly pop head?
-      // Let's assume the runner picked the specific op.
-      const idx = q.queue.indexOf(operation as any);
-      if (idx !== -1) q.queue.splice(idx, 1);
-
-      q.active = { operation, startTime: Date.now() };
+      if (state.edits && state.edits[id]) {
+        const q = state.edits[id];
+        q.active = { operation, startTime: Date.now() };
+        q.queue = q.queue.filter((op) => op !== operation);
+      }
     },
     complete_edit: (
       state,
@@ -405,6 +352,8 @@ const photosSlice = createSlice({
       }>,
     ) => {
       const { id, operation, permanentUrl } = action.payload;
+      if (!state.urlHistory) state.urlHistory = {};
+      if (!state.registry) state.registry = {};
 
       // 1. Update Edits State
       if (state.edits && state.edits[id]) {
@@ -421,33 +370,32 @@ const photosSlice = createSlice({
           };
         if (operation === "crop") q.status.crop = true;
         if (operation === "color_correct") q.status.color_correct = true;
-        if (operation === "remove_background")
+        if (operation === "remove_background" || operation === "remove_bg")
           q.status.remove_background = true;
       }
 
       // 2. Update URL History & Selected Item (Similar to complete_upload)
-      if (!state.urlHistory) state.urlHistory = {};
-      if (!state.registry) state.registry = {};
       if (!state.urlHistory[id]) state.urlHistory[id] = [];
-      state.urlHistory[id].unshift(permanentUrl);
+      // Unshift to front (Current Best) - Prevent consecutive identical URLs
+      if (state.urlHistory[id][0] !== permanentUrl) {
+        state.urlHistory[id].unshift(permanentUrl);
+      }
 
       // Update Registry
       if (state.registry[id]) {
         state.registry[id].baseUrl = permanentUrl;
       }
 
+      // Update Current view
       const itemIndex = state.selected.findIndex((p) => p.id === id);
       if (itemIndex >= 0) {
         state.selected[itemIndex].baseUrl = permanentUrl;
       }
 
-      // Update Jan Groups
-      if (state.janCodeToPhotos) {
-        for (const code in state.janCodeToPhotos) {
-          const idx = state.janCodeToPhotos[code].findIndex((p) => p.id === id);
-          if (idx >= 0) {
-            state.janCodeToPhotos[code][idx].baseUrl = permanentUrl; // Update view
-          }
+      for (const code in state.janCodeToPhotos) {
+        const idx = state.janCodeToPhotos[code].findIndex((p) => p.id === id);
+        if (idx >= 0) {
+          state.janCodeToPhotos[code][idx].baseUrl = permanentUrl; // Update view
         }
       }
     },
@@ -459,7 +407,7 @@ const photosSlice = createSlice({
       if (state.edits && state.edits[id]) {
         const q = state.edits[id];
         q.active = undefined;
-        // Push to history as failed?
+        // Optionally mark as failed?
         q.history.push({
           operation,
           timestamp: Date.now(),
@@ -478,18 +426,9 @@ const photosSlice = createSlice({
     ) => {
       const { id, operation } = action.payload;
       if (!state.edits) state.edits = {};
-      if (!state.edits[id]) {
-        state.edits[id] = {
-          queue: [],
-          history: [],
-          status: {
-            crop: false,
-            color_correct: false,
-            remove_background: false,
-          },
-        };
-      }
       const q = state.edits[id];
+      if (!q) return;
+
       if (!q.status)
         q.status = {
           crop: false,
@@ -498,6 +437,9 @@ const photosSlice = createSlice({
         };
 
       q.status[operation] = !q.status[operation];
+    },
+    set_processing_config: (state, action: PayloadAction<ProcessingConfig>) => {
+      state.processingConfig = action.payload;
     },
   },
 });
@@ -522,5 +464,6 @@ export const {
   complete_edit,
   fail_edit,
   toggle_edit_status,
+  set_processing_config,
 } = photosSlice.actions;
 export const photos = photosSlice.reducer;

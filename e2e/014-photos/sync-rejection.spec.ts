@@ -1,8 +1,10 @@
 import { test, expect } from "../fixtures/auth";
 
 test.describe("Sync Payload Validation", () => {
-  test("should reject sync events with binary data or large payloads", async ({ page }) => {
-    const firestoreUrl = process.env.FIRESTORE_EMULATOR_HOST 
+  test("should reject sync events with binary data or large payloads", async ({
+    page,
+  }) => {
+    const firestoreUrl = process.env.FIRESTORE_EMULATOR_HOST
       ? `http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/dobutsu-admin/databases/(default)/documents/sync`
       : "http://localhost:8080/v1/projects/dobutsu-admin/databases/(default)/documents/sync";
 
@@ -20,12 +22,12 @@ test.describe("Sync Payload Validation", () => {
           payload: {
             mapValue: {
               fields: {
-                largeData: { stringValue: largeString }
-              }
-            }
-          }
-        }
-      }
+                largeData: { stringValue: largeString },
+              },
+            },
+          },
+        },
+      },
     });
 
     expect(response.ok()).toBe(true);
@@ -33,33 +35,48 @@ test.describe("Sync Payload Validation", () => {
 
     // 2. Poll for the rejection event
     // The dispatcher should write a document with eventType "shopify/rejected" and the same requestId.
-    console.log(`⏳ Waiting for rejection event for requestId: ${requestId}...`);
-    
-    await expect.poll(async () => {
-      const queryResponse = await page.request.get(`${firestoreUrl}?mask.fieldPaths=eventType&mask.fieldPaths=requestId&mask.fieldPaths=payload`);
-      if (!queryResponse.ok()) return false;
-      
-      const body = await queryResponse.json();
-      const documents = body.documents || [];
-      return documents.find((doc: any) => {
-        const fields = doc.fields || {};
-        return fields.requestId?.stringValue === requestId && 
-               fields.eventType?.stringValue === "shopify/rejected";
-      });
-    }, {
-      message: "Wait for rejection event in Firestore",
-      timeout: 15000,
-      intervals: [1000],
-    }).toBeTruthy();
+    console.log(
+      `⏳ Waiting for rejection event for requestId: ${requestId}...`,
+    );
+
+    await expect
+      .poll(
+        async () => {
+          const queryResponse = await page.request.get(
+            `${firestoreUrl}?mask.fieldPaths=eventType&mask.fieldPaths=requestId&mask.fieldPaths=payload`,
+          );
+          if (!queryResponse.ok()) return false;
+
+          const body = await queryResponse.json();
+          const documents = body.documents || [];
+          return documents.find((doc: any) => {
+            const fields = doc.fields || {};
+            return (
+              fields.requestId?.stringValue === requestId &&
+              fields.eventType?.stringValue === "shopify/rejected"
+            );
+          });
+        },
+        {
+          message: "Wait for rejection event in Firestore",
+          timeout: 15000,
+          intervals: [1000],
+        },
+      )
+      .toBeTruthy();
 
     // 3. Verify the rejection details
-    const finalQueryResponse = await page.request.get(`${firestoreUrl}?mask.fieldPaths=eventType&mask.fieldPaths=requestId&mask.fieldPaths=payload`);
+    const finalQueryResponse = await page.request.get(
+      `${firestoreUrl}?mask.fieldPaths=eventType&mask.fieldPaths=requestId&mask.fieldPaths=payload`,
+    );
     const body = await finalQueryResponse.json();
     const documents = body.documents || [];
     const rejection = documents.find((doc: any) => {
       const fields = doc.fields || {};
-      return fields.requestId?.stringValue === requestId && 
-             fields.eventType?.stringValue === "shopify/rejected";
+      return (
+        fields.requestId?.stringValue === requestId &&
+        fields.eventType?.stringValue === "shopify/rejected"
+      );
     });
 
     expect(rejection).toBeDefined();

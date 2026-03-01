@@ -8,7 +8,11 @@ const {
   toDrivePublicUrl,
   findFileByDerivationKey: sharedFindFileByDerivationKey,
 } = require("./idempotency-utils.cjs");
-const { removeBackground, autoColorCorrect, smartCrop } = require("./image-processor.cjs");
+const {
+  removeBackground,
+  autoColorCorrect,
+  smartCrop,
+} = require("./image-processor.cjs");
 
 const SYNC_COLLECTION = "sync";
 const SYNC_SECRETS_COLLECTION = "sync_secrets";
@@ -71,7 +75,12 @@ async function createEvent(db, collectionName, event) {
   await syncCollection(db, collectionName).add(event);
 }
 
-async function createIdempotentEvent(db, collectionName, deterministicId, event) {
+async function createIdempotentEvent(
+  db,
+  collectionName,
+  deterministicId,
+  event,
+) {
   try {
     await eventDoc(db, collectionName, deterministicId).create(event);
     return { created: true };
@@ -87,10 +96,13 @@ async function createIdempotentEvent(db, collectionName, deterministicId, event)
 
 async function createIdempotentBroadcastAction(db, deterministicId, action) {
   try {
-    await db.collection("broadcast").doc(deterministicId).create({
-      ...action,
-      timestamp: FieldValue.serverTimestamp(),
-    });
+    await db
+      .collection("broadcast")
+      .doc(deterministicId)
+      .create({
+        ...action,
+        timestamp: FieldValue.serverTimestamp(),
+      });
     return { created: true };
   } catch (error) {
     const code = error?.code || error?.status;
@@ -193,8 +205,10 @@ async function emitSuccess({
   requestedBy,
   eventType,
   payload,
+  transformName,
 }) {
-  const completionEventType = eventType.includes("transform")
+  const isTransform = eventType.includes("transform");
+  const completionEventType = isTransform
     ? `${PHOTOS_NS}/image_transform_completed`
     : `${PHOTOS_NS}/image_transfer_completed`;
 
@@ -213,16 +227,33 @@ async function emitSuccess({
     }),
   );
 
-  await createIdempotentBroadcastAction(db, `photos_complete_${requestEventId}`, {
-    type: "photos/complete_upload",
-    creator,
-    payload: {
-      id: payload.photoId,
-      requestId,
-      permanentUrl: payload.permanentUrl,
-      webViewLink: payload.webViewLink || "",
-    },
-  });
+  const broadcastAction = isTransform
+    ? {
+        type: "photos/complete_edit",
+        creator,
+        payload: {
+          id: payload.photoId,
+          operation: transformName || payload.transform || "unknown",
+          permanentUrl: payload.permanentUrl,
+          sourceUrl: payload.sourceUrl,
+        },
+      }
+    : {
+        type: "photos/complete_upload",
+        creator,
+        payload: {
+          id: payload.photoId,
+          requestId,
+          permanentUrl: payload.permanentUrl,
+          webViewLink: payload.webViewLink || "",
+        },
+      };
+
+  await createIdempotentBroadcastAction(
+    db,
+    `photos_complete_${requestEventId}`,
+    broadcastAction,
+  );
 }
 
 async function fetchSourceBytes({
@@ -237,7 +268,9 @@ async function fetchSourceBytes({
   }
 
   const isGoogleusercontent = baseUrl.includes("googleusercontent.com");
-  const candidates = isGoogleusercontent ? [`${stripGoogleusercontentSuffix(baseUrl)}=d`] : [baseUrl];
+  const candidates = isGoogleusercontent
+    ? [`${stripGoogleusercontentSuffix(baseUrl)}=d`]
+    : [baseUrl];
 
   let resp = null;
   let usedUrl = "";
@@ -299,7 +332,9 @@ async function fetchSourceBytes({
   }
 
   const arrayBuffer = await resp.arrayBuffer();
-  const mimeType = normalizeString(resp.headers.get("content-type")) || "application/octet-stream";
+  const mimeType =
+    normalizeString(resp.headers.get("content-type")) ||
+    "application/octet-stream";
   return {
     bytes: Buffer.from(arrayBuffer),
     mimeType,
@@ -316,11 +351,25 @@ function buildMultipartBody({ metadata, bytes, mimeType }) {
     `--${boundary}\r\n` +
     `Content-Type: ${mimeType}\r\n\r\n`;
   const tail = `\r\n--${boundary}--`;
-  const body = Buffer.concat([Buffer.from(head, "utf8"), bytes, Buffer.from(tail, "utf8")]);
+  const body = Buffer.concat([
+    Buffer.from(head, "utf8"),
+    bytes,
+    Buffer.from(tail, "utf8"),
+  ]);
   return { body, boundary };
 }
 
-async function driveRequestJson(url, { method = "GET", accessToken, headers = {}, body, onApiCall, apiMeta } = {}) {
+async function driveRequestJson(
+  url,
+  {
+    method = "GET",
+    accessToken = undefined,
+    headers = {},
+    body = undefined,
+    onApiCall = undefined,
+    apiMeta = undefined,
+  } = {},
+) {
   const resp = await fetch(url, {
     method,
     headers: {
@@ -339,7 +388,9 @@ async function driveRequestJson(url, { method = "GET", accessToken, headers = {}
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    throw new Error(`drive_request_failed:${method}:${resp.status}:${text.slice(0, 300)}`);
+    throw new Error(
+      `drive_request_failed:${method}:${resp.status}:${text.slice(0, 300)}`,
+    );
   }
   if (resp.status === 204) return {};
   return await resp.json();
@@ -421,9 +472,9 @@ async function uploadToDrive({
 
 async function getSecretDoc(db, secretRef) {
   const docId =
-    normalizeString(secretRef?.docId) ||
-    normalizeString(secretRef?.id);
-  const collection = normalizeString(secretRef?.collection) || SYNC_SECRETS_COLLECTION;
+    normalizeString(secretRef?.docId) || normalizeString(secretRef?.id);
+  const collection =
+    normalizeString(secretRef?.collection) || SYNC_SECRETS_COLLECTION;
   if (!docId) return null;
   const snap = await db.collection(collection).doc(docId).get();
   if (!snap.exists) return null;
@@ -434,13 +485,13 @@ async function findReusableSecretDocForUser(db, uid) {
   const requestedBy = normalizeString(uid);
   if (!requestedBy) return null;
   const preferredDocId = `photos-secret-${requestedBy}`;
-  const preferred = await db.collection(SYNC_SECRETS_COLLECTION).doc(preferredDocId).get();
+  const preferred = await db
+    .collection(SYNC_SECRETS_COLLECTION)
+    .doc(preferredDocId)
+    .get();
   if (preferred.exists) {
     const data = preferred.data() || {};
-    if (
-      isSecretUsable(data) &&
-      normalizeString(data.creator) === requestedBy
-    ) {
+    if (isSecretUsable(data) && normalizeString(data.creator) === requestedBy) {
       return { id: preferred.id, data, collection: SYNC_SECRETS_COLLECTION };
     }
   }
@@ -452,7 +503,11 @@ async function findReusableSecretDocForUser(db, uid) {
     .get();
   if (snap.empty) return null;
   const docs = snap.docs
-    .map((d) => ({ id: d.id, data: d.data() || {}, collection: SYNC_SECRETS_COLLECTION }))
+    .map((d) => ({
+      id: d.id,
+      data: d.data() || {},
+      collection: SYNC_SECRETS_COLLECTION,
+    }))
     .filter((d) => isSecretUsable(d.data))
     .sort((a, b) => {
       const aMs = Number(a.data.updatedAtMs || a.data.createdAtMs || 0);
@@ -503,12 +558,23 @@ async function emitSecretRequired({
 
 function extractTransferParams(requestData) {
   const payload = requestData?.payload || {};
-  const sourceBaseUrl = normalizeString(payload?.sourceBaseUrl || requestData?.sourceBaseUrl);
-  const filename = normalizeString(payload?.filename || requestData?.filename) || "photo.jpg";
-  const mimeType = normalizeString(payload?.mimeType || requestData?.mimeType) || "image/jpeg";
+  const sourceBaseUrl = normalizeString(
+    payload?.sourceBaseUrl || requestData?.sourceBaseUrl,
+  );
+  const filename =
+    normalizeString(payload?.filename || requestData?.filename) || "photo.jpg";
+  const mimeType =
+    normalizeString(payload?.mimeType || requestData?.mimeType) || "image/jpeg";
   const targetFolderId = normalizeString(payload?.targetFolderId);
   const photoId = normalizeString(payload?.photoId || requestData?.photoId);
-  return { sourceBaseUrl, filename, mimeType, targetFolderId, photoId, payload };
+  return {
+    sourceBaseUrl,
+    filename,
+    mimeType,
+    targetFolderId,
+    photoId,
+    payload,
+  };
 }
 
 async function executeTransfer({
@@ -521,7 +587,14 @@ async function executeTransfer({
   creator,
   secretDoc,
 }) {
-  const { sourceBaseUrl, filename, mimeType, targetFolderId, photoId, payload } = extractTransferParams(requestData);
+  const {
+    sourceBaseUrl,
+    filename,
+    mimeType,
+    targetFolderId,
+    photoId,
+    payload,
+  } = extractTransferParams(requestData);
   const secret = secretDoc?.data || {};
   const photosAccessToken = normalizeString(secret.photosAccessToken);
   const driveAccessToken = normalizeString(secret.driveAccessToken);
@@ -571,10 +644,16 @@ async function executeTransfer({
 
   // 1. Search Before Work
   try {
-    const existingFile = await findFileByDerivationKey(driveAccessToken, derivationKey, logApiCall);
+    const existingFile = await findFileByDerivationKey(
+      driveAccessToken,
+      derivationKey,
+      logApiCall,
+    );
     if (existingFile) {
-      console.log(`[PhotosWorker] Idempotent match found for ${derivationKey}: ${existingFile.id}`);
-      
+      console.log(
+        `[PhotosWorker] Idempotent match found for ${derivationKey}: ${existingFile.id}`,
+      );
+
       await emitSuccess({
         db,
         collectionName,
@@ -584,6 +663,7 @@ async function executeTransfer({
         creator,
         requestedBy,
         eventType,
+        transformName,
         payload: {
           photoId,
           filename: existingFile.name,
@@ -598,10 +678,21 @@ async function executeTransfer({
         },
       });
 
-      return { processed: true, summary: { requestId, status: "completed", driveFileId: existingFile.id, idempotent: true } };
+      return {
+        processed: true,
+        summary: {
+          requestId,
+          status: "completed",
+          driveFileId: existingFile.id,
+          idempotent: true,
+        },
+      };
     }
   } catch (e) {
-    console.warn(`[PhotosWorker] Pre-work search failed for ${derivationKey}, continuing with work`, e);
+    console.warn(
+      `[PhotosWorker] Pre-work search failed for ${derivationKey}, continuing with work`,
+      e,
+    );
   }
 
   // 2. Perform Work
@@ -610,7 +701,9 @@ async function executeTransfer({
     collectionName,
     `start_${requestEventId}`,
     baseEvent({
-      eventType: eventType.includes("transform") ? `${PHOTOS_NS}/image_transform_started` : `${PHOTOS_NS}/image_transfer_started`,
+      eventType: eventType.includes("transform")
+        ? `${PHOTOS_NS}/image_transform_started`
+        : `${PHOTOS_NS}/image_transfer_started`,
       requestId,
       requestEventId,
       creator,
@@ -641,7 +734,7 @@ async function executeTransfer({
           driveAccessToken,
           onApiCall: logApiCall,
         });
-        
+
         // 2. Process
         console.log(`[PhotosWorker] Removing background for ${photoId}...`);
         bytes = await removeBackground(source.usedUrl, source.bytes);
@@ -655,7 +748,7 @@ async function executeTransfer({
           driveAccessToken,
           onApiCall: logApiCall,
         });
-        
+
         // 2. Process
         console.log(`[PhotosWorker] Color correcting for ${photoId}...`);
         bytes = await autoColorCorrect(source.bytes);
@@ -669,7 +762,7 @@ async function executeTransfer({
           driveAccessToken,
           onApiCall: logApiCall,
         });
-        
+
         // 2. Process
         console.log(`[PhotosWorker] Smart cropping for ${photoId}...`);
         bytes = await smartCrop(source.bytes);
@@ -709,6 +802,7 @@ async function executeTransfer({
       creator,
       requestedBy,
       eventType,
+      transformName,
       payload: {
         photoId,
         filename,
@@ -723,7 +817,10 @@ async function executeTransfer({
       },
     });
 
-    return { processed: true, summary: { requestId, status: "completed", driveFileId: uploaded.id } };
+    return {
+      processed: true,
+      summary: { requestId, status: "completed", driveFileId: uploaded.id },
+    };
   } catch (error) {
     const message = String(error?.message || error || "unknown_error");
     const retryable =
@@ -783,7 +880,15 @@ async function executeTransfer({
 }
 
 async function handleTransferRequested(args) {
-  const { db, collectionName, requestEventId, requestData, requestId, processor, creator } = args;
+  const {
+    db,
+    collectionName,
+    requestEventId,
+    requestData,
+    requestId,
+    processor,
+    creator,
+  } = args;
   const payload = requestData?.payload || {};
   const secretRef = payload?.secretRef || null;
   const requestedBy = requestingUid(requestData);

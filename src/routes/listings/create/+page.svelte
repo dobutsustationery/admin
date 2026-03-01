@@ -722,19 +722,17 @@
   }
 </script>
 
-<div class="container mx-auto p-6">
-  <h1 class="text-3xl font-bold mb-6">Create Listings</h1>
+<div class="page-container">
+  <h1 class="page-title">Create Listings</h1>
 
   {#if showCelebration}
     <Celebration />
     {#if showReturnToDashboard}
-      <div
-        class="fixed inset-0 flex items-center justify-center z-50 pointer-events-none"
-      >
-        <div class="pointer-events-auto mt-64">
+      <div class="celebration-action-overlay">
+        <div class="celebration-action-container">
           <button
             on:click={handleReturnToDashboard}
-            class="bg-white text-blue-600 px-8 py-4 rounded-full font-bold text-xl shadow-2xl hover:scale-105 transition-transform border-4 border-blue-100"
+            class="btn-return-dashboard"
           >
             Return to Dashboard
           </button>
@@ -744,46 +742,33 @@
   {/if}
 
   {#if driveStatus === "disconnected"}
-    <div class="bg-yellow-50 p-8 rounded border border-yellow-200 text-center">
-      <h2 class="text-xl font-bold mb-4 text-yellow-800">
-        Google Drive Connection Required
-      </h2>
-      <p class="mb-6 text-yellow-700">
+    <div class="connection-required-panel">
+      <h2 class="panel-title">Google Drive Connection Required</h2>
+      <p class="panel-message">
         Please connect Google Drive to scan for product photos.
       </p>
-      <button
-        on:click={handleConnect}
-        class="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 font-bold shadow-lg"
-      >
+      <button on:click={handleConnect} class="btn-connect">
         Connect Google Drive
       </button>
     </div>
   {:else if isBulkEditMode}
-    <div
-      id="bulk-editor-container"
-      class="h-[calc(100vh-100px)] -mx-6 flex flex-col"
-    >
-      <div
-        class="flex justify-between items-center px-6 py-2 bg-white border-b gap-4"
-      >
-        <div class="flex-1">
-          <div class="flex items-center justify-between mb-1">
-            <h2 class="text-xl font-bold">
+    <div id="bulk-editor-container" class="editor-layout">
+      <div class="editor-header">
+        <div class="editor-progress-section">
+          <div class="progress-info">
+            <h2 class="editor-title">
               Batch Editor ({remainingInBatch} items remaining)
             </h2>
-            <span class="text-sm text-gray-500"
+            <span class="progress-stats"
               >{doneInBatch} / {totalInBatch} Completed</span
             >
           </div>
-          <div class="w-full bg-gray-200 rounded-full h-2.5">
-            <div
-              class="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
-              style="width: {progressPercent}%"
-            ></div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: {progressPercent}%"></div>
           </div>
         </div>
         <button
-          class="btn-save start-review-btn ml-4"
+          class="btn-save start-review-btn"
           on:click={() => {
             dispatchBroadcast(recalculate_batch_navigation());
             dispatchBroadcast(set_current_step(0));
@@ -806,34 +791,27 @@
       />
     </div>
   {:else if draftCount > 0}
-    <div class="bg-white p-8 rounded shadow text-center">
-      <h2 class="text-2xl font-bold mb-4">{draftCount} Drafts Ready</h2>
-      <p class="mb-6 text-gray-600">
+    <div class="drafts-ready-panel">
+      <h2 class="panel-title">{draftCount} Drafts Ready</h2>
+      <p class="panel-message">
         Start a batch to review and publish the next 10 listings.
       </p>
-      <button
-        on:click={handleStartBatch}
-        class="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 font-bold"
-      >
+      <button on:click={handleStartBatch} class="btn-start-batch">
         Start Batch
       </button>
     </div>
   {:else}
-    <div
-      class="bg-gray-50 p-8 rounded border border-dashed border-gray-300 text-center"
-    >
-      <h2 class="text-xl font-medium mb-4 text-gray-500">No proposals found</h2>
+    <div class="empty-batch-panel">
+      <h2 class="empty-panel-title">No proposals found</h2>
 
       {#if !hasOrganizedPhotos}
-        <div
-          class="mb-4 text-orange-600 bg-orange-50 p-4 rounded inline-block text-left max-w-lg"
-        >
-          <p class="font-bold">No organized photos found.</p>
+        <div class="photo-warning-box">
+          <p class="warning-title">No organized photos found.</p>
           <p>
             Creating listings requires photos to be matched to JAN codes first.
           </p>
-          <p class="mt-2">
-            Please go to <a href="/photos" class="underline font-bold"
+          <p class="warning-action">
+            Please go to <a href="/photos" class="warning-link"
               >Photos &gt; Organize</a
             > to categorize your uploads.
           </p>
@@ -841,23 +819,21 @@
         <br />
       {/if}
 
-      <div class="flex flex-col items-center justify-center gap-4 w-full">
+      <div class="scan-controls-container">
         {#if isScanning}
           {@const now = Date.now()}
           {@const lastUpdate = scanProgress?.lastUpdate || 0}
           {@const isStalled = lastUpdate === 0 || now - lastUpdate > 30000}
-          <div class="w-full max-w-md">
+          <div class="scan-progress-wrapper">
             <ProgressBar
               current={scanProgress?.current || 0}
               total={scanProgress?.total || 0}
               message={scanProgress?.message || "Scanning..."}
-              colorClass={isStalled ? "bg-orange-500" : "bg-blue-600"}
+              color={isStalled ? "orange" : "blue"}
             />
             {#if isStalled}
-              <div
-                class="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-md"
-              >
-                <p class="text-orange-800 text-sm mb-3">
+              <div class="stall-warning-box">
+                <p class="stall-message">
                   {#if lastUpdate === 0}
                     The scan state was restored but it doesn't seem to be
                     running.
@@ -867,21 +843,15 @@
                     )}s).
                   {/if}
                 </p>
-                <button
-                  on:click={handleGenerate}
-                  class="bg-orange-600 text-white px-4 py-2 rounded font-bold hover:bg-orange-700 transition shadow-sm"
-                >
+                <button on:click={handleGenerate} class="btn-resume-scan">
                   Resume / Force Restart
                 </button>
               </div>
             {/if}
           </div>
         {:else}
-          <div class="flex items-center justify-center gap-4">
-            <button
-              on:click={handleGenerate}
-              class="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 font-bold shadow-lg transition-transform hover:scale-105"
-            >
+          <div class="scan-actions">
+            <button on:click={handleGenerate} class="btn-scan">
               Scan for matched items
             </button>
             <button
@@ -961,7 +931,7 @@
   <div class="modal-backdrop prompt-backdrop">
     <div class="modal prompt-modal">
       <h3 class="modal-title">Edit Subtype Detection Prompt</h3>
-      <div class="mb-4 text-sm text-gray-500">
+      <div class="prompt-hint">
         This prompt is used by Gemini to detect variants in photos. It must
         return strict JSON in the specified format.
       </div>
@@ -981,11 +951,236 @@
 {/if}
 
 <style>
+  .page-container {
+    margin: 0 auto;
+    padding: 1.5rem;
+  }
+  .page-title {
+    font-size: 1.875rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+  }
+  .celebration-action-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    pointer-events: none;
+  }
+  .celebration-action-container {
+    pointer-events: auto;
+    margin-top: 16rem;
+  }
+  .btn-return-dashboard {
+    background-color: white;
+    color: #2563eb;
+    padding: 1rem 2rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 1.25rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    transition: transform 0.2s;
+    border: 4px solid #dbeafe;
+    cursor: pointer;
+  }
+  .btn-return-dashboard:hover {
+    transform: scale(1.05);
+  }
+
+  .connection-required-panel,
+  .drafts-ready-panel {
+    background-color: #fffbeb;
+    padding: 2rem;
+    border-radius: 0.5rem;
+    border: 1px solid #fef3c7;
+    text-align: center;
+  }
+  .drafts-ready-panel {
+    background-color: white;
+    box-shadow:
+      0 1px 3px 0 rgba(0, 0, 0, 0.1),
+      0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    border: none;
+  }
+  .panel-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: #92400e;
+  }
+  .drafts-ready-panel .panel-title {
+    color: #111827;
+    font-size: 1.5rem;
+  }
+  .panel-message {
+    margin-bottom: 1.5rem;
+    color: #b45309;
+  }
+  .drafts-ready-panel .panel-message {
+    color: #4b5563;
+  }
+  .btn-connect,
+  .btn-start-batch,
+  .btn-scan {
+    background-color: #2563eb;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.375rem;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.2s;
+  }
+  .btn-connect:hover,
+  .btn-start-batch:hover,
+  .btn-scan:hover {
+    background-color: #1d4ed8;
+  }
+
+  .editor-layout {
+    height: calc(100vh - 100px);
+    margin-left: -1.5rem;
+    margin-right: -1.5rem;
+    display: flex;
+    flex-direction: column;
+  }
+  .editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 1.5rem;
+    background-color: white;
+    border-bottom: 1px solid #e5e7eb;
+    gap: 1rem;
+  }
+  .editor-progress-section {
+    flex: 1;
+  }
+  .progress-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+  }
+  .editor-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+  }
+  .progress-stats {
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+  .progress-track {
+    width: 100%;
+    background-color: #e5e7eb;
+    border-radius: 9999px;
+    height: 0.625rem;
+  }
+  .progress-fill {
+    background-color: #2563eb;
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 0.5s;
+  }
+
+  .empty-batch-panel {
+    background-color: #f9fafb;
+    padding: 2rem;
+    border-radius: 0.5rem;
+    border: 1px dashed #d1d5db;
+    text-align: center;
+  }
+  .empty-panel-title {
+    font-size: 1.25rem;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    color: #6b7280;
+  }
+  .photo-warning-box {
+    margin-bottom: 1rem;
+    color: #ea580c;
+    background-color: #fff7ed;
+    padding: 1rem;
+    border-radius: 0.375rem;
+    display: inline-block;
+    text-align: left;
+    max-width: 32rem;
+  }
+  .warning-title {
+    font-weight: 700;
+  }
+  .warning-action {
+    margin-top: 0.5rem;
+  }
+  .warning-link {
+    text-decoration: underline;
+    font-weight: 700;
+  }
+
+  .scan-controls-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    width: 100%;
+  }
+  .scan-progress-wrapper {
+    width: 100%;
+    max-width: 28rem;
+  }
+  .stall-warning-box {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 0.375rem;
+  }
+  .stall-message {
+    color: #9a3412;
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+  }
+  .btn-resume-scan {
+    background-color: #ea580c;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+  .btn-resume-scan:hover {
+    background-color: #c2410c;
+  }
+  .scan-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+  }
+  .btn-scan:hover {
+    transform: scale(1.05);
+  }
+
   .start-review-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     white-space: nowrap;
+    padding: 0.5rem 1rem;
+    background-color: #2563eb;
+    color: white;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
   }
   .modal-backdrop {
     position: fixed;
@@ -1014,6 +1209,11 @@
   }
   .prompt-backdrop {
     z-index: 2000;
+  }
+  .prompt-hint {
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    color: #6b7280;
   }
   .body-textarea {
     min-height: 320px;
@@ -1066,6 +1266,7 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 1rem;
+    gap: 0.5rem;
   }
   .btn-cancel {
     padding: 0.5rem 0.75rem;

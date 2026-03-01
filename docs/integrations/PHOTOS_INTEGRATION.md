@@ -13,12 +13,14 @@ The previous integration used the Google Photos Library API to access shared alb
 ## Google Photos Picker API Overview
 
 ### API Service
+
 - **Name**: Google Photos Picker API
 - **Version**: v1
 - **Documentation**: https://developers.google.com/photos
 - **Base URL**: `https://photoslibrary.googleapis.com/v1`
 
 ### Key Capabilities
+
 - Access to user's photo library and shared albums
 - Retrieve media items (photos and videos) with metadata
 - Search and filter media items by album
@@ -146,6 +148,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "album": {
@@ -195,12 +198,14 @@ Content-Type: application/json
 ```
 
 **Request Parameters:**
+
 - `albumId`: ID of the album to retrieve photos from
 - `pageSize`: Number of items to return (1-100, default 25)
 - `orderBy`: Sort order - use `"MediaMetadata.creation_time"` for chronological order
 - `pageToken`: Token for pagination (from previous response)
 
 **Response:**
+
 ```json
 {
   "mediaItems": [
@@ -247,6 +252,7 @@ The API returns results in pages. To retrieve all photos:
 3. Repeat until no `nextPageToken` is returned
 
 **Example Pagination Flow:**
+
 ```
 Request 1: { albumId: "...", pageSize: 100 }
 Response 1: { mediaItems: [...], nextPageToken: "TOKEN_1" }
@@ -263,21 +269,25 @@ Response 3: { mediaItems: [...] }  // No nextPageToken = last page
 The `baseUrl` in the response is a temporary URL that can be modified to download the photo at various sizes:
 
 **URL Format:**
+
 ```
 {baseUrl}=w{WIDTH}-h{HEIGHT}
 ```
 
 **Examples:**
+
 - Original size: `{baseUrl}=d` (download original)
 - Specific dimensions: `{baseUrl}=w2048-h2048` (max 2048px on longest side)
 - Thumbnail: `{baseUrl}=w500-h500`
 
 **Important Notes:**
+
 - `baseUrl` is temporary and expires after 60 minutes
 - Always fetch fresh URLs from the API before downloading
 - URLs cannot be stored for later use
 
 **Download Example:**
+
 ```http
 GET https://lh3.googleusercontent.com/lr/ENCODED_DATA=d
 ```
@@ -344,6 +354,7 @@ This returns the raw image data (JPEG, PNG, etc.)
 ### Configuration Requirements
 
 **Environment Variables:**
+
 ```bash
 # Google Cloud Project
 GOOGLE_CLOUD_PROJECT_ID=dobutsu-stationery-admin
@@ -363,13 +374,14 @@ PHOTO_BATCH_SIZE=100
 ```
 
 **Firestore Collections:**
+
 ```
 /photos_integration/
   /config/
     album_id: string
     last_sync_time: timestamp
     share_token: string
-  
+
   /processed_photos/
     {media_item_id}/
       processed_at: timestamp
@@ -492,13 +504,14 @@ To avoid reprocessing photos, track the last processed photo:
 
 ```typescript
 interface ProcessingState {
-  lastProcessedTime: Date;        // Creation time of last photo processed
+  lastProcessedTime: Date; // Creation time of last photo processed
   lastProcessedMediaItemId: string; // ID of last photo processed
-  albumMediaItemsCount: number;   // Last known count of photos in album
+  albumMediaItemsCount: number; // Last known count of photos in album
 }
 ```
 
 **Detection Logic:**
+
 1. Fetch album metadata to check `mediaItemsCount`
 2. If count increased, fetch new photos since `lastProcessedTime`
 3. Process new photos in chronological order
@@ -541,38 +554,40 @@ interface ProcessingState {
 Google provides official client libraries for various languages:
 
 ### Node.js (Recommended for SvelteKit)
+
 ```bash
 npm install googleapis
 ```
 
 **Example Usage:**
+
 ```javascript
-const { google } = require('googleapis');
+const { google } = require("googleapis");
 
 // Initialize OAuth2 client
 const oauth2Client = new google.auth.OAuth2(
   CLIENT_ID,
   CLIENT_SECRET,
-  REDIRECT_URI
+  REDIRECT_URI,
 );
 
 // Set credentials
 oauth2Client.setCredentials({
   access_token: ACCESS_TOKEN,
-  refresh_token: REFRESH_TOKEN
+  refresh_token: REFRESH_TOKEN,
 });
 
 // Initialize Photos Library API
 const photosLibrary = google.photoslibrary({
-  version: 'v1',
-  auth: oauth2Client
+  version: "v1",
+  auth: oauth2Client,
 });
 
 // Join shared album
 const album = await photosLibrary.sharedAlbums.join({
   requestBody: {
-    shareToken: SHARE_TOKEN
-  }
+    shareToken: SHARE_TOKEN,
+  },
 });
 
 // List media items
@@ -580,12 +595,13 @@ const response = await photosLibrary.mediaItems.search({
   requestBody: {
     albumId: album.data.album.id,
     pageSize: 100,
-    orderBy: 'MediaMetadata.creation_time'
-  }
+    orderBy: "MediaMetadata.creation_time",
+  },
 });
 ```
 
 ### Python (Alternative)
+
 ```bash
 pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
 ```
@@ -618,6 +634,7 @@ pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-pyt
 ### Rollback Plan
 
 If issues occur:
+
 1. Disable automatic photo polling
 2. Revert to manual product entry
 3. Investigate and fix issues

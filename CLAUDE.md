@@ -9,6 +9,7 @@ SvelteKit + Firebase admin portal for managing inventory and orders for a Japane
 ## Commands
 
 ### Development
+
 ```bash
 bun install               # Install dependencies
 npm run dev:local         # Dev server with Firebase emulators
@@ -18,6 +19,7 @@ npm run auth              # Firebase login
 ```
 
 ### Build & Deploy
+
 ```bash
 npm run build:local       # Build for emulator mode
 npm run build             # Build for production
@@ -26,12 +28,14 @@ npm run deploy:staging    # Deploy to staging
 ```
 
 ### Code Quality
+
 ```bash
 bun run lint:fix          # Format with Prettier (run before committing)
 bun run check             # Type-check with svelte-check
 ```
 
 ### Testing
+
 ```bash
 bun run test              # Unit tests (Vitest) with coverage
 npm run test:watch        # Unit tests in watch mode
@@ -43,16 +47,19 @@ npm run test:e2e:report   # View last HTML report
 ```
 
 To run a single E2E test file:
+
 ```bash
 npx playwright test e2e/000-inventory/
 ```
 
 To run unit tests matching a pattern:
+
 ```bash
 bun run test -- --reporter=verbose -t "pattern"
 ```
 
 ### Live Integration Tests (requires OAuth setup)
+
 ```bash
 VITEST_INCLUDE_LIVE=1 npm run test:live:contracts
 npm run test:live:e2e
@@ -62,6 +69,7 @@ npm run test:live:doctor  # Health check
 ## Architecture
 
 ### Tech Stack
+
 - **Framework**: SvelteKit 1.20.4 with `adapter-static` (outputs to `build/`)
 - **State**: Redux Toolkit 1.9.7 with Immer
 - **Backend**: Firebase 12 (Firestore, Auth, Hosting) + Cloud Functions
@@ -79,11 +87,13 @@ The app uses a **Redux action broadcast** pattern for multi-user sync:
 4. This creates eventual consistency across all admin users
 
 Key files:
+
 - `src/lib/redux-firestore.ts` — Firestore broadcast middleware
 - `src/lib/store.ts` — Store setup with middleware chain
 - `src/lib/root-reducer.ts` — Combined reducers (~1200 lines)
 
 ### State Slices (`src/lib/`)
+
 - `inventory.ts` — Core item management, quantities, shipping (~31KB)
 - `listing-creation-slice.ts` — Photo-based product creation with Gemini AI (~58KB)
 - `listings-slice.ts` — Shopify listing sync
@@ -95,6 +105,7 @@ Key files:
 - `gemini-client.ts` — LLM image analysis & descriptions
 
 ### Firebase Collections
+
 - `broadcast` — Action log for state sync (timestamped, creator tracked)
 - `dobutsu` — Orders and payments
 - `users` — Admin user activity
@@ -103,6 +114,7 @@ Key files:
 - `photos` — Photo categorization state
 
 ### Firestore Projects
+
 - `default`/`production`: `dobutsu-admin`
 - `staging`: `dobutsu-admin-staging`
 - Local: Firebase emulators (Firestore :8080, Auth :9099, Functions :5001)
@@ -110,28 +122,31 @@ Key files:
 ## Code Patterns
 
 ### Redux Actions (required pattern)
+
 ```typescript
 // 1. Define action in slice file
 export const action_name = createAction<PayloadType>("action_name");
 
 // 2. Add reducer case using Immer draft
 r.addCase(action_name, (state, action) => {
-  state.field = action.payload.value;  // Mutable draft syntax
+  state.field = action.payload.value; // Mutable draft syntax
 });
 
 // 3. Dispatch with Firestore broadcast for multi-user sync
-broadcast(firestore, $user.uid, action_name({...payload}));
+broadcast(firestore, $user.uid, action_name({ ...payload }));
 // Or for local-only (no sync needed):
-store.dispatch(action_name({...payload}));
+store.dispatch(action_name({ ...payload }));
 ```
 
 ### Svelte Components
+
 - Use `<script lang="ts">` always
 - Use `$lib/` alias for all imports: `import { store } from '$lib/store'`
 - Component files: PascalCase (`MyComponent.svelte`)
 - Route files: SvelteKit conventions (`+page.svelte`, `+layout.svelte`)
 
 ### Adding New State
+
 1. Create slice in `src/lib/` (e.g., `my-slice.ts`)
 2. Define interface and actions with `createAction`
 3. Create reducer with `createReducer`
@@ -139,6 +154,7 @@ store.dispatch(action_name({...payload}));
 5. Access as `$store.mySlice` in components
 
 ### Adding New Routes
+
 1. Create directory in `src/routes/route-name/`
 2. Add `+page.svelte` (and `+page.ts` if load function needed)
 3. Auth is handled by root `+layout.svelte`
@@ -146,6 +162,7 @@ store.dispatch(action_name({...payload}));
 ## E2E Testing
 
 E2E tests are the **primary verification mechanism**. Each test suite in `e2e/NNN-name/` contains:
+
 - `NNN-name.spec.ts` — Playwright tests
 - `README.md` — Source of truth for functionality validation (includes screenshot gallery)
 - `screenshots/` — Visual regression baselines (committed to git, 0-pixel tolerance)
@@ -183,6 +200,7 @@ Test data loads from `e2e/test-data/firestore-export.json`. The emulator is pre-
 ## Agent Workflow (Design-First)
 
 For non-trivial tasks, follow this 4-step cycle:
+
 1. **Design Doc** — Write `implementation_plan.md` documenting the approach
 2. **Milestones** — Subdivide into independently verifiable steps in `task.md`
 3. **Implementation** — For each milestone: code + unit tests + E2E tests
@@ -206,6 +224,7 @@ The pre-commit hook (`scripts/check-no-wait-for-timeout.js`) rejects `waitForTim
 The development environment is defined by a **Nix flake** (`flake.nix`). `direnv` automatically loads the flake when you enter the project directory (via `.envrc`).
 
 When a tool is missing from the shell:
+
 - **Do not install it globally** with `brew`, `npm -g`, or similar.
 - **Add it to the flake** so all contributors and CI get the same version automatically.
 - After editing `flake.nix`, run `direnv reload` (or `cd` out and back in) to apply the change.

@@ -1,7 +1,9 @@
 # ACTION_MIGRATION_PLAN
 
 ## Goal
+
 Move all persisted broadcast actions to an intent-only event model:
+
 - no computed values in payload
 - no duplicated store snapshots
 - reducers derive computed state deterministically
@@ -20,24 +22,31 @@ Move all persisted broadcast actions to an intent-only event model:
 ## Phase 1: High-Risk Fixes First
 
 ## 1) Replace `listingCreation/add_proposals`
+
 Current:
+
 - stores full computed proposals including computed qty and generated IDs.
 
 Target:
+
 - introduce `listingCreation/generate_proposals_intent` with minimal payload:
   - source jan keys / selection scope
   - optional prompt overrides
 - reducer/interceptor computes proposals from current state.
 
 Compatibility:
+
 - keep handler for legacy `add_proposals` during migration window.
 - mark deprecated and stop broadcasting it from UI immediately.
 
 ## 2) Remove computed `resolvedActions` from conflict events
+
 Current:
+
 - `orderImport/resolve_conflict` and `shopifyImport/resolve_conflict` persist precomputed action arrays.
 
 Target:
+
 - persist resolution intent only:
   - row index
   - per-field choice (`incoming` or `existing`)
@@ -45,17 +54,22 @@ Target:
 - reducer computes resulting inventory/listing updates.
 
 Compatibility:
+
 - support both schemas in root reducer.
 
 ## 3) Stop persisting `update_field.from`
+
 Current:
+
 - persisted `from` is copied from store at callsite.
 
 Target:
+
 - payload = `{ id, field, to }`
 - reducer computes previous value internally for history text.
 
 Compatibility:
+
 - allow optional `from` for old events, ignore when absent.
 
 ---
@@ -63,10 +77,13 @@ Compatibility:
 ## Phase 2: Remove Snapshot-Style Events
 
 ## 4) Replace `photos/select_photos` full snapshots
+
 Current:
+
 - persists full selected list (often merged with current state).
 
 Target:
+
 - new intent events:
   - `photos/selection_replace { ids | sourceSessionId }`
   - `photos/selection_add { ids }`
@@ -74,10 +91,13 @@ Target:
 - resolver builds selected state in reducer.
 
 ## 5) Replace snapshot-style `update_item` usage
+
 Current:
+
 - several flows send full `{ ...existingItem, ...changes }`.
 
 Target:
+
 - patch/intention actions:
   - `inventory/adjust_qty`
   - `inventory/set_fields`
@@ -90,6 +110,7 @@ Target:
 ## Phase 3: Ephemeral/UI De-Persistence
 
 Stop broadcasting these:
+
 - `listingCreation/set_current_step`
 - `listingCreation/set_scan_progress`
 - `listingCreation/set_scanning`
@@ -99,6 +120,7 @@ Stop broadcasting these:
 - optionally `ui/set_column_width` (if kept, treat as preference channel, not domain event channel)
 
 Use:
+
 - local store dispatch only, or a separate preferences persistence path.
 
 ---
@@ -106,11 +128,13 @@ Use:
 ## Phase 4: Timestamp Hygiene
 
 Remove payload timestamps where redundant:
+
 - `listingCreation/start_batch.createdAt`
 - `make_sales.date` (if business date needed, use explicit user-entered date)
 - upload initiation timestamps in payload
 
 Use:
+
 - server event timestamp metadata for ordering/audit.
 
 ---
@@ -118,9 +142,11 @@ Use:
 ## Phase 5: Audit Export Safety
 
 Problem:
+
 - exported logs may include derived `children`.
 
 Fix:
+
 - export only canonical broadcast fields.
 - strip `children` and any computed/derived display fields from exports.
 - add a replay validator to reject non-canonical keys.
@@ -149,4 +175,3 @@ Fix:
    - reducer-computable totals/allocations
    - full copied records where patch intent is sufficient
 5. Audit export contains canonical events only.
-

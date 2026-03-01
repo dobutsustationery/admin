@@ -1,6 +1,9 @@
 import { type Page } from "@playwright/test";
 import { type ScreenshotHelper } from "./screenshot-helper";
-import { type TestDocumentationHelper, type VerificationStep } from "./test-documentation-helper";
+import {
+  type TestDocumentationHelper,
+  type VerificationStep,
+} from "./test-documentation-helper";
 
 /**
  * FlowHelper couples test documentation with screenshot capture.
@@ -10,7 +13,7 @@ export class FlowHelper {
   constructor(
     private page: Page,
     private screenshots: ScreenshotHelper,
-    private docHelper: TestDocumentationHelper
+    private docHelper: TestDocumentationHelper,
   ) {}
 
   /**
@@ -18,7 +21,7 @@ export class FlowHelper {
    * 1. Adds the step to the documentation helper.
    * 2. Captures a screenshot (numbered automatically by ScreenshotHelper).
    * 3. Runs the verification checks immediately during screenshot capture (programmaticCheck).
-   * 
+   *
    * @param title The human-readable title of the step (e.g. "View Files")
    * @param screenshotName The base name for the screenshot (e.g. "view-files" -> "NNN-view-files.png")
    * @param verifications Array of verification checks to run
@@ -28,7 +31,7 @@ export class FlowHelper {
     title: string,
     screenshotName: string,
     verifications: VerificationStep[],
-    screenshotOptions: { fullPage?: boolean } = {}
+    screenshotOptions: { fullPage?: boolean } = {},
   ) {
     // 1. Determine the filename that ScreenshotHelper will use
     // We need to know the counter to generate the filename for documentation.

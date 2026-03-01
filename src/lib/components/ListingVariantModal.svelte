@@ -333,14 +333,12 @@
         {/if}
 
         <div class="allocation-section">
-          <div class="flex items-center justify-between mb-2">
-            <h4 class="section-title m-0">
-              Final Listing Variants & Allocations
-            </h4>
+          <div class="allocation-header">
+            <h4 class="section-title">Final Listing Variants & Allocations</h4>
             <div
-              class="allocation-summary {isAllocationValid
-                ? 'text-green-600'
-                : 'text-red-600'}"
+              class="allocation-summary"
+              class:valid={isAllocationValid}
+              class:invalid={!isAllocationValid}
             >
               Total: <strong>{totalAllocated}</strong> / {totalAvailable}
             </div>
@@ -355,7 +353,7 @@
                 class:is-source={selectedSourceRowId === rowId}
                 class:is-removed={pendingRemovals.has(rowId)}
               >
-                <div class="flex items-center gap-3">
+                <div class="row-left">
                   {#if isPotentialSource}
                     <input
                       type="radio"
@@ -376,7 +374,7 @@
                     {/if}
                   </div>
                   <div class="alloc-info">
-                    <div class="flex items-center gap-2">
+                    <div class="subtype-row">
                       <span class="alloc-subtype"
                         >{item.subtype || "Default"}</span
                       >
@@ -422,7 +420,7 @@
               {@const newItemId = selectedItemToAdd.id}
               {#if !associatedItems.find((i) => i.id === newItemId)}
                 <div class="allocation-row is-new">
-                  <div class="flex items-center gap-3">
+                  <div class="row-left">
                     <div class="alloc-thumb">
                       {#if selectedItemToAdd.image}
                         <ImageThumbnail
@@ -601,13 +599,31 @@
   }
 
   /* Allocation */
+  .allocation-section {
+    margin-top: 0.5rem;
+  }
+  .allocation-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
   .section-title {
     font-size: 0.9rem;
     font-weight: 600;
     color: #374151;
-    margin: 0 0 0.75rem 0;
+    margin: 0;
     text-transform: uppercase;
     letter-spacing: 0.025em;
+  }
+  .allocation-summary {
+    font-size: 0.85rem;
+  }
+  .allocation-summary.valid {
+    color: #16a34a;
+  }
+  .allocation-summary.invalid {
+    color: #dc2626;
   }
   .allocation-list {
     display: flex;
@@ -624,6 +640,16 @@
     padding: 0.75rem;
     background: #fff;
     border-bottom: 1px solid #f3f4f6;
+  }
+  .row-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .subtype-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
   .allocation-row.is-removed {
     background: #fef2f2;
@@ -760,36 +786,5 @@
   .btn-save:disabled {
     background: #9ca3af;
     cursor: not-allowed;
-  }
-
-  .flex {
-    display: flex;
-  }
-  .items-center {
-    align-items: center;
-  }
-  .justify-between {
-    justify-content: space-between;
-  }
-  .gap-2 {
-    gap: 0.5rem;
-  }
-  .gap-3 {
-    gap: 0.75rem;
-  }
-  .mb-2 {
-    margin-bottom: 0.5rem;
-  }
-  .m-0 {
-    margin: 0;
-  }
-  .text-green-600 {
-    color: #16a34a;
-  }
-  .text-red-600 {
-    color: #dc2626;
-  }
-  .allocation-summary {
-    font-size: 0.85rem;
   }
 </style>

@@ -1,18 +1,23 @@
 # Branch Review: Listings Creation
 
 ## Findings (ordered by severity)
+
 No remaining high-severity findings from the original review checklist.
 
 ## Design mismatches / missing pieces
+
 - **Batch queue is capped (now 1000 proposals).** `generate_proposals` stops after 1000 items, so the “to-do list” still doesn’t reflect the full backlog. The design calls for a larger (or unbounded) proposal pool with batch selection at review time. (`src/lib/listing-creation-slice.ts:366-409`)
 
 ## TODOs / cleanup
+
 - **Clarify photo ordering source of truth.** `listingImageOrder` is stored only on the primary proposal, but the detail view merges photos from all sibling proposals. If a handle group is split later, ordering information may be lost or inconsistent. (Design: `docs/design/listings-creation-photos.md:72-99`)
 
 ## Suggested closure checklist
-1) Resolve the batch queue cap (remove cap or align docs to 1000 limit).
+
+1. Resolve the batch queue cap (remove cap or align docs to 1000 limit).
 
 ## Resolved since last review
+
 - **Duplicate import in listings create page** (was a build break). The extra `recalculate_batch_navigation` import was removed. (`src/routes/listings/create/+page.svelte:6-18`)
 - **Listing images undefined on approve** fixed by using `baseUrl`/`productUrl` and `filename`. (`src/lib/listing-creation-slice.ts:468-472`)
 - **Approve dropped sibling JAN photos** fixed by aggregating photos across all handle-group proposals. (`src/lib/listing-creation-slice.ts:453-479`)

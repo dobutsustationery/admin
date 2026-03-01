@@ -4,9 +4,36 @@ import {
   select_photos,
   register_media_items,
   complete_upload,
+  set_processing_config,
 } from "../../src/lib/photos-slice";
 
 describe("photos slice", () => {
+  it("allows updating processing configuration", () => {
+    const initial = photos(undefined, { type: "@@INIT" } as any);
+    expect(initial.processingConfig.steps).toEqual([
+      { type: "crop", enabled: false },
+      { type: "color_correct", enabled: true },
+      { type: "remove_background", enabled: true },
+    ]);
+
+    const next = photos(
+      initial,
+      set_processing_config({
+        steps: [
+          { type: "remove_background", enabled: true },
+          { type: "crop", enabled: true },
+          { type: "color_correct", enabled: false },
+        ],
+      }),
+    );
+
+    expect(next.processingConfig.steps).toEqual([
+      { type: "remove_background", enabled: true },
+      { type: "crop", enabled: true },
+      { type: "color_correct", enabled: false },
+    ]);
+  });
+
   it("does not persist ephemeral googleusercontent URLs into history on initial selection", () => {
     const initial = photos(undefined, { type: "@@INIT" } as any);
     const item = {
@@ -18,11 +45,18 @@ describe("photos slice", () => {
       mediaMetadata: { creationTime: "", width: "1", height: "1" },
     };
 
-    const registered = photos(initial, register_media_items({ items: [item] }));
-    const state = photos(registered, select_photos({ ids: ["photo-1"] }));
+    const next = photos(initial, select_photos({ ids: ["photo-1"] }));
+    // Registry is empty, so select_photos should return empty selected
+    expect(next.selected).toEqual([]);
 
-    expect(state.urlHistory["photo-1"]).toEqual([]);
-    expect(state.selected[0].baseUrl).toContain("googleusercontent.com/ppa/");
+    // Now register it
+    const registered = photos(initial, register_media_items({ items: [item] }));
+    expect(registered.registry["photo-1"]).toBeDefined();
+    // history should remain empty for ephemeral URL
+    expect(registered.urlHistory["photo-1"]).toEqual([]);
+
+    const selected = photos(registered, select_photos({ ids: ["photo-1"] }));
+    expect(selected.selected[0].id).toBe("photo-1");
   });
 
   it("stores durable upload URL as current history entry", () => {
@@ -37,13 +71,10 @@ describe("photos slice", () => {
     };
 
     const registered = photos(initial, register_media_items({ items: [item] }));
-    const withSelection = photos(
-      registered,
-      select_photos({ ids: ["photo-1"] }),
-    );
+    const selected = photos(registered, select_photos({ ids: ["photo-1"] }));
 
     const final = photos(
-      withSelection,
+      selected,
       complete_upload({
         id: "photo-1",
         permanentUrl: "https://drive.google.com/thumbnail?id=drive-file-id",

@@ -2266,11 +2266,9 @@
     {@const candidates = buildImagePickerCandidates(showAllPhotos)}
     <div class="modal-backdrop">
       <div class="modal image-picker-modal">
-        <div class="flex justify-between items-center mb-4">
+        <div class="modal-header-row">
           <h3 class="modal-title">Select listing image</h3>
-          <label
-            class="flex items-center gap-2 text-sm cursor-pointer select-none"
-          >
+          <label class="show-all-label">
             <input type="checkbox" bind:checked={showAllPhotos} />
             Show all photos
           </label>
@@ -2288,17 +2286,15 @@
             {/each}
           </div>
         {:else}
-          <div
-            class="p-8 text-center text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300 mt-4"
-          >
-            <p class="font-medium">No photos found.</p>
-            <p class="text-xs mt-2">
+          <div class="empty-picker-state">
+            <p class="empty-picker-main">No photos found.</p>
+            <p class="empty-picker-sub">
               Searched for photos associated with JAN codes:
             </p>
-            <code class="text-xs block mt-1 bg-white p-1 rounded border">
+            <code class="jan-code-list">
               {associatedItems.map((i) => i.janCode).join(", ") || "None"}
             </code>
-            <p class="text-xs mt-2 text-gray-400">
+            <p class="debug-text">
               (Debug: Store has {Object.keys(
                 $store.photos.janCodeToPhotos || {},
               ).length} photo groups)
@@ -2306,7 +2302,7 @@
           </div>
         {/if}
 
-        <div class="modal-actions flex justify-end gap-2">
+        <div class="modal-actions">
           <button
             class="btn-cancel"
             on:click={() => {
@@ -2343,7 +2339,7 @@
           class="body-textarea"
           placeholder="Enter your instructions for the AI..."
         ></textarea>
-        <div class="modal-actions flex justify-end gap-2">
+        <div class="modal-actions">
           <button class="btn-cancel" on:click={() => (showPromptModal = false)}
             >Cancel</button
           >
@@ -2370,7 +2366,6 @@
 
 <style>
   .container {
-    max-width: 1200px;
     margin: 0 auto;
     padding: 2rem;
     font-family: sans-serif;
@@ -2636,6 +2631,50 @@
     max-width: 500px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
   }
+  .modal-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .show-all-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .empty-picker-state {
+    padding: 2rem;
+    text-align: center;
+    color: #6b7280;
+    background-color: #f9fafb;
+    border-radius: 0.5rem;
+    border: 1px dashed #d1d5db;
+    margin-top: 1rem;
+  }
+  .empty-picker-main {
+    font-weight: 500;
+  }
+  .empty-picker-sub {
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+  }
+  .jan-code-list {
+    font-size: 0.75rem;
+    display: block;
+    margin-top: 0.25rem;
+    background-color: white;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    border: 1px solid #e5e7eb;
+  }
+  .debug-text {
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+    color: #9ca3af;
+  }
   /* .image-tools-toolbar removed */
   .prompt-modal {
     max-width: 720px;
@@ -2661,6 +2700,12 @@
     color: white;
     border: none;
     cursor: pointer;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+    gap: 0.5rem;
   }
   .image-picker-modal {
     max-width: 720px;

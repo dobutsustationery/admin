@@ -19,6 +19,7 @@ VITE_GOOGLE_DRIVE_SCOPES=https://www.googleapis.com/auth/drive.file
 ```
 
 **These mock credentials:**
+
 - ✅ Show the Google Drive UI in the application
 - ✅ Display "Connect to Google Drive" button and export interface
 - ✅ Allow E2E tests to verify UI components
@@ -138,6 +139,7 @@ npm run test:e2e
 ```
 
 The CSV export test validates:
+
 - UI elements are present
 - Google Drive section displays correctly
 - Authentication flow works
@@ -186,7 +188,7 @@ Tokens are stored in localStorage with the key `google_drive_access_token`. The 
 {
   access_token: string;
   expires_in: number;
-  expires_at: number;  // Unix timestamp
+  expires_at: number; // Unix timestamp
   scope: string;
   token_type: string;
 }

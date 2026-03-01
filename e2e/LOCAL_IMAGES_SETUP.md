@@ -5,9 +5,10 @@ This directory contains tools for downloading external images referenced in test
 ## Problem
 
 About 43% of external images fail to load in Playwright tests due to:
+
 - CDN bot protection (Cloudflare/Akamai blocking headless browsers)
 - CORS policy restrictions
-- SSL certificate chain issues in headless mode  
+- SSL certificate chain issues in headless mode
 - Browser security settings
 
 This causes screenshots to contain broken image placeholders, making visual regression testing unreliable.
@@ -27,6 +28,7 @@ node e2e/helpers/download-test-images.js
 ```
 
 This will:
+
 - Extract all unique image URLs from test data
 - Download each image using curl
 - Save them to `e2e/test-images/` with hash-based filenames
@@ -109,6 +111,7 @@ node e2e/helpers/download-test-images.js | grep "Success:"
 ### Troubleshoot Failed Downloads
 
 Some images may fail to download due to:
+
 - Timeout (5 second limit)
 - 403 Forbidden (bot protection)
 - URL no longer exists

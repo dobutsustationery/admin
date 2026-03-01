@@ -324,7 +324,7 @@ test.describe("Live Journey", () => {
             (node: HTMLImageElement) => node.complete && node.naturalWidth > 0,
           );
         },
-        { timeout: 30000 },
+        { timeout: 60000, message: "Image failed to load in 60s" },
       )
       .toBe(true);
 

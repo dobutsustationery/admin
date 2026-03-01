@@ -40,6 +40,7 @@
     "test:e2e:local-images": "CI=1 bash e2e/run-tests-local-images.sh",
     "test:download-images": "node e2e/helpers/download-test-images.js",
     "test:e2e:simple": "CI=1 bash e2e/run-tests-simple.sh",
+    "test:e2e:interactive": "CI=0 bash e2e/run-tests.sh",
     "test:e2e:screenshots": "CI=1 bash e2e/run-tests.sh --update-snapshots",
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:headed": "npx playwright test --headed",

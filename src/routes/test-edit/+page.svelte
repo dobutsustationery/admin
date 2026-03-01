@@ -87,65 +87,184 @@
   }
 </script>
 
-<div class="p-8 max-w-4xl mx-auto">
-  <h1 class="text-2xl font-bold mb-4">Gemini Image Edit Testbed</h1>
+<div class="testbed-container">
+  <h1 class="testbed-title">Gemini Image Edit Testbed</h1>
 
-  <div class="space-y-4">
+  <div class="testbed-content">
     <!-- Controls -->
-    <div class="bg-white p-4 rounded shadow space-y-4">
-      <div>
-        <label class="block font-semibold mb-1" for="file-upload">Image</label>
+    <div class="controls-card">
+      <div class="input-group">
+        <label class="input-label" for="file-upload">Image</label>
         <input
           id="file-upload"
           type="file"
           accept="image/*"
           bind:files
-          class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+          class="file-input"
         />
       </div>
 
-      <button
-        on:click={handleRun}
-        disabled={loading}
-        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-      >
+      <button on:click={handleRun} disabled={loading} class="btn-run">
         {loading
           ? "Processing (Downloading model on first run)..."
           : "Run Background Removal (Local)"}
       </button>
 
       {#if error}
-        <div class="p-2 bg-red-100 text-red-700 rounded">{error}</div>
+        <div class="error-box">{error}</div>
       {/if}
     </div>
 
     <!-- Results -->
-    <div class="grid grid-cols-2 gap-4">
+    <div class="results-grid">
       <!-- Log Output -->
-      <div
-        class="bg-gray-900 text-green-400 p-4 rounded font-mono text-xs h-[500px] overflow-auto whitespace-pre-wrap"
-      >
+      <div class="log-panel">
         {logs.join("\n")}
       </div>
 
       <!-- Image Preview -->
-      <div
-        class="bg-gray-100 p-4 rounded flex items-center justify-center min-h-[500px] border-2 border-dashed border-gray-300"
-      >
+      <div class="preview-panel">
         {#if resultImage}
           <SecureImage
             src={resultImage}
             alt="Result"
-            className="max-w-full max-h-full object-contain shadow-lg"
+            className="result-image"
           />
         {:else if loading}
-          <div
-            class="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-400"
-          ></div>
+          <div class="loading-spinner"></div>
         {:else}
-          <span class="text-gray-400">Result will appear here</span>
+          <span class="placeholder-text">Result will appear here</span>
         {/if}
       </div>
     </div>
   </div>
 </div>
+
+<style>
+  .testbed-container {
+    padding: 2rem;
+    max-width: 56rem;
+    margin: 0 auto;
+  }
+  .testbed-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+  .testbed-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .controls-card {
+    background-color: white;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .input-group {
+    display: flex;
+    flex-direction: column;
+  }
+  .input-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  .file-input {
+    display: block;
+    width: 100%;
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+  .file-input::file-selector-button {
+    margin-right: 1rem;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    border: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    cursor: pointer;
+  }
+  .file-input::file-selector-button:hover {
+    background-color: #dbeafe;
+  }
+  .btn-run {
+    padding: 0.5rem 1rem;
+    background-color: #2563eb;
+    color: white;
+    border-radius: 0.375rem;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-run:hover:not(:disabled) {
+    background-color: #1d4ed8;
+  }
+  .btn-run:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .error-box {
+    padding: 0.5rem;
+    background-color: #fee2e2;
+    color: #b91c1c;
+    border-radius: 0.25rem;
+  }
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .log-panel {
+    background-color: #111827;
+    color: #4ade80;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    height: 500px;
+    overflow: auto;
+    white-space: pre-wrap;
+  }
+  .preview-panel {
+    background-color: #f3f4f6;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 500px;
+    border: 2px dashed #d1d5db;
+  }
+  :global(.result-image) {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  }
+  .loading-spinner {
+    animation: spin 1s linear infinite;
+    border-radius: 9999px;
+    height: 3rem;
+    width: 3rem;
+    border-bottom: 2px solid #9ca3af;
+  }
+  .placeholder-text {
+    color: #9ca3af;
+  }
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

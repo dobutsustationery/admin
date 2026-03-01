@@ -16,10 +16,12 @@ I reviewed the latest Gemini fixes again and re-ran the image-related unit tests
 ### Validation
 
 Executed:
+
 - `npx vitest run tests/unit/listing-creation-approve.test.ts tests/unit/listing-creation-split.test.ts tests/unit/listing-image-ordering.test.ts`
 - `npx vitest run tests/unit/listing-creation-*.test.ts tests/unit/listing-image-ordering.test.ts`
 
 Result:
+
 - all passed (no failing tests in this set)
 
 ### Remaining risk (non-blocking)

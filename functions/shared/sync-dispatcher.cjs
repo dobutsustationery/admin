@@ -15,7 +15,9 @@ function toLegacyShopifyEventType(eventType) {
 }
 
 function getShopifyConfig() {
-  const storeUrl = shopifyCore.normalizeStoreUrl(process.env.SHOPIFY_STORE_URL || "");
+  const storeUrl = shopifyCore.normalizeStoreUrl(
+    process.env.SHOPIFY_STORE_URL || "",
+  );
   const accessToken = process.env.SHOPIFY_ACCESS_TOKEN || "";
   const clientId = process.env.SHOPIFY_CLIENT_ID || "";
   const clientSecret = process.env.SHOPIFY_CLIENT_SECRET || "";
@@ -32,9 +34,9 @@ function getShopifyConfig() {
 
 function hasBinaryPayload(payload) {
   if (!payload || typeof payload !== "object") return false;
-  
+
   const MAX_STRING_LENGTH = 10 * 1024; // 10 KB
-  
+
   function checkValue(val) {
     if (typeof val === "string") {
       if (val.startsWith("data:") || val.startsWith("blob:")) return true;
@@ -50,25 +52,34 @@ function hasBinaryPayload(payload) {
     }
     return false;
   }
-  
+
   return checkValue(payload);
 }
 
-async function dispatchSyncCreate({ db, requestEventId, requestData, processor, logger }) {
+async function dispatchSyncCreate({
+  db,
+  requestEventId,
+  requestData,
+  processor,
+  logger,
+}) {
   const eventType = String(requestData?.eventType || "").trim();
   if (!eventType) {
     return { handled: false, reason: "missing_event_type" };
   }
 
   if (hasBinaryPayload(requestData?.payload)) {
-    logger?.error?.("Sync event rejected: payload contains binary data or exceeds size limits", {
-      requestId: requestEventId,
-      eventType,
-    });
+    logger?.error?.(
+      "Sync event rejected: payload contains binary data or exceeds size limits",
+      {
+        requestId: requestEventId,
+        eventType,
+      },
+    );
     // Write a rejection event to prevent the client from hanging indefinitely
     try {
       await db.collection(SYNC_COLLECTION).add({
-        eventType: `${eventType.split('/')[0] || 'system'}/rejected`,
+        eventType: `${eventType.split("/")[0] || "system"}/rejected`,
         requestEventId,
         requestId: requestData?.requestId || requestEventId,
         creator: "sync-dispatcher",
@@ -78,7 +89,7 @@ async function dispatchSyncCreate({ db, requestEventId, requestData, processor, 
           errorCode: "binary_payload_rejected",
           errorMessage: "Payload contains binary data or exceeds size limits",
           retryable: false,
-        }
+        },
       });
     } catch (e) {
       logger?.error?.("Failed to write rejection event", e);

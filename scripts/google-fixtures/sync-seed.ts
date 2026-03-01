@@ -18,7 +18,10 @@ const MANIFEST_PATH = path.resolve(
   process.cwd(),
   "e2e/fixtures/google-media-manifest.json",
 );
-const DEFAULT_FIXTURE_DIR = path.resolve(process.cwd(), "e2e/fixtures/photo-data");
+const DEFAULT_FIXTURE_DIR = path.resolve(
+  process.cwd(),
+  "e2e/fixtures/photo-data",
+);
 const LIVE_ENV_PATH = path.resolve(process.cwd(), ".env.live.local");
 const DRIVE_SEED_FOLDER_NAME = "Seed";
 const DEFAULT_FIXTURE_ALBUM_TITLE = "DobutsuE2EFixtures";
@@ -125,7 +128,11 @@ async function ensureDriveSeedFolder(
   driveRootId: string,
 ): Promise<string> {
   const q = `'${driveRootId}' in parents and name = '${DRIVE_SEED_FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-  const listRes = await drive.files.list({ q, fields: "files(id)", pageSize: 1 });
+  const listRes = await drive.files.list({
+    q,
+    fields: "files(id)",
+    pageSize: 1,
+  });
   if (listRes.data.files && listRes.data.files.length > 0) {
     const existing = listRes.data.files[0].id;
     if (!existing) throw new Error("Drive returned Seed folder without id.");
@@ -142,7 +149,8 @@ async function ensureDriveSeedFolder(
     },
     fields: "id",
   });
-  if (!createRes.data.id) throw new Error("Drive did not return created Seed folder id.");
+  if (!createRes.data.id)
+    throw new Error("Drive did not return created Seed folder id.");
   console.log(`✅ Created Seed folder: ${createRes.data.id}`);
   return createRes.data.id;
 }
@@ -151,14 +159,17 @@ async function createPhotosAlbum(
   accessToken: string,
   title: string,
 ): Promise<string> {
-  const response = await fetch("https://photoslibrary.googleapis.com/v1/albums", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
+  const response = await fetch(
+    "https://photoslibrary.googleapis.com/v1/albums",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ album: { title } }),
     },
-    body: JSON.stringify({ album: { title } }),
-  });
+  );
   if (!response.ok) {
     throw new Error(
       `Photos album creation failed: ${response.status} ${await response.text()}`,
@@ -191,7 +202,10 @@ async function resolveConfiguredAlbumId(accessToken: string): Promise<string> {
     );
   }
 
-  const created = await createPhotosAlbum(accessToken, DEFAULT_FIXTURE_ALBUM_TITLE);
+  const created = await createPhotosAlbum(
+    accessToken,
+    DEFAULT_FIXTURE_ALBUM_TITLE,
+  );
   process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID = created;
   upsertEnvVarFile(LIVE_ENV_PATH, "E2E_GOOGLE_PHOTOS_ALBUM_ID", created);
   console.log(
@@ -252,24 +266,28 @@ async function uploadToPhotos(
   fileName: string,
   description?: string,
 ): Promise<string> {
-  const uploadResponse = await fetch("https://photoslibrary.googleapis.com/v1/uploads", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/octet-stream",
-      "X-Goog-Upload-Content-Type": inferMimeType(fileName),
-      "X-Goog-Upload-File-Name": fileName,
-      "X-Goog-Upload-Protocol": "raw",
+  const uploadResponse = await fetch(
+    "https://photoslibrary.googleapis.com/v1/uploads",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/octet-stream",
+        "X-Goog-Upload-Content-Type": inferMimeType(fileName),
+        "X-Goog-Upload-File-Name": fileName,
+        "X-Goog-Upload-Protocol": "raw",
+      },
+      body: fs.readFileSync(filePath),
     },
-    body: fs.readFileSync(filePath),
-  });
+  );
   if (!uploadResponse.ok) {
     throw new Error(
       `Photos upload failed: ${uploadResponse.status} ${await uploadResponse.text()}`,
     );
   }
   const uploadToken = (await uploadResponse.text()).trim();
-  if (!uploadToken) throw new Error("Photos upload did not return an upload token.");
+  if (!uploadToken)
+    throw new Error("Photos upload did not return an upload token.");
 
   const createResponse = await fetch(
     "https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate",
@@ -307,13 +325,18 @@ async function uploadToPhotos(
   const result = payload.newMediaItemResults?.[0];
   const statusCode = result?.status?.code || 0;
   const statusMessage = result?.status?.message || "";
-  if (statusCode !== 0 && statusMessage !== "Success" && statusMessage !== "OK") {
+  if (
+    statusCode !== 0 &&
+    statusMessage !== "Success" &&
+    statusMessage !== "OK"
+  ) {
     throw new Error(
       `Photos batchCreate status ${statusCode}: ${statusMessage || "unknown error"}`,
     );
   }
   const mediaItemId = result?.mediaItem?.id || "";
-  if (!mediaItemId) throw new Error("Photos batchCreate did not return media item id.");
+  if (!mediaItemId)
+    throw new Error("Photos batchCreate did not return media item id.");
   return mediaItemId;
 }
 
@@ -385,14 +408,35 @@ function buildExifDateSegment(dateTime = "2000:01:01 00:00:00"): Buffer {
 
   // IFD0 entries: DateTime + ExifIFDPointer
   tiffPayload.writeUInt16LE(ifd0Entries, ifd0Offset);
-  writeExifAsciiTag(tiffPayload, ifd0Offset, 0, 0x0132, dateTimeOffset, ascii.length);
+  writeExifAsciiTag(
+    tiffPayload,
+    ifd0Offset,
+    0,
+    0x0132,
+    dateTimeOffset,
+    ascii.length,
+  );
   writeExifLongTag(tiffPayload, ifd0Offset, 1, 0x8769, exifIfdOffset);
   tiffPayload.writeUInt32LE(0, ifd0Offset + 2 + ifd0Entries * 12); // no next IFD
 
   // Exif IFD entries: DateTimeOriginal + DateTimeDigitized
   tiffPayload.writeUInt16LE(exifIfdEntries, exifIfdOffset);
-  writeExifAsciiTag(tiffPayload, exifIfdOffset, 0, 0x9003, dateTimeOriginalOffset, ascii.length);
-  writeExifAsciiTag(tiffPayload, exifIfdOffset, 1, 0x9004, dateTimeDigitizedOffset, ascii.length);
+  writeExifAsciiTag(
+    tiffPayload,
+    exifIfdOffset,
+    0,
+    0x9003,
+    dateTimeOriginalOffset,
+    ascii.length,
+  );
+  writeExifAsciiTag(
+    tiffPayload,
+    exifIfdOffset,
+    1,
+    0x9004,
+    dateTimeDigitizedOffset,
+    ascii.length,
+  );
   tiffPayload.writeUInt32LE(0, exifIfdOffset + 2 + exifIfdEntries * 12); // no next IFD
 
   ascii.copy(tiffPayload, dateTimeOffset);
@@ -429,7 +473,10 @@ function stampJpegExifDate(filePath: string, dateTime = "2000:01:01 00:00:00") {
       offset + 10 <= bytes.length &&
       bytes.subarray(offset + 4, offset + 10).toString("ascii") === "Exif\0\0"
     ) {
-      const withoutExif = Buffer.concat([bytes.subarray(0, offset), bytes.subarray(next)]);
+      const withoutExif = Buffer.concat([
+        bytes.subarray(0, offset),
+        bytes.subarray(next),
+      ]);
       fs.writeFileSync(filePath, withoutExif);
       return stampJpegExifDate(filePath, dateTime);
     }
@@ -437,7 +484,11 @@ function stampJpegExifDate(filePath: string, dateTime = "2000:01:01 00:00:00") {
   }
 
   const exifSegment = buildExifDateSegment(dateTime);
-  const stamped = Buffer.concat([bytes.subarray(0, 2), exifSegment, bytes.subarray(2)]);
+  const stamped = Buffer.concat([
+    bytes.subarray(0, 2),
+    exifSegment,
+    bytes.subarray(2),
+  ]);
   fs.writeFileSync(filePath, stamped);
   const jan1 = new Date("2000-01-01T00:00:00Z");
   fs.utimesSync(filePath, jan1, jan1);
@@ -450,7 +501,11 @@ function preparePhotosUploadAsset(
 ): { filePath: string; fileName: string; cleanup: () => void } {
   const lower = sourceFileName.toLowerCase();
   if (!lower.endsWith(".heic") && !lower.endsWith(".heif")) {
-    return { filePath: sourcePath, fileName: sourceFileName, cleanup: () => {} };
+    return {
+      filePath: sourcePath,
+      fileName: sourceFileName,
+      cleanup: () => {},
+    };
   }
 
   const outputName = toPhotosUploadName(sourceFileName);
@@ -458,9 +513,13 @@ function preparePhotosUploadAsset(
     os.tmpdir(),
     `${path.parse(outputName).name}-${Date.now()}.jpg`,
   );
-  const result = spawnSync("sips", ["-s", "format", "jpeg", sourcePath, "--out", outputPath], {
-    encoding: "utf8",
-  });
+  const result = spawnSync(
+    "sips",
+    ["-s", "format", "jpeg", sourcePath, "--out", outputPath],
+    {
+      encoding: "utf8",
+    },
+  );
   if (result.status !== 0) {
     throw new Error(
       `HEIC to JPEG conversion failed for ${sourceFileName}: ${result.stderr || result.stdout || "sips failed"}`,
@@ -468,7 +527,11 @@ function preparePhotosUploadAsset(
   }
   stampJpegExifDate(outputPath);
   // Avoid Photos content-dedupe collisions with older probe files by making bytes fixture-stable.
-  fs.appendFileSync(outputPath, `\nDOBUTSU_FIXTURE_JPEG:${fixtureId}\n`, "utf8");
+  fs.appendFileSync(
+    outputPath,
+    `\nDOBUTSU_FIXTURE_JPEG:${fixtureId}\n`,
+    "utf8",
+  );
 
   return {
     filePath: outputPath,
@@ -519,7 +582,10 @@ async function waitForFilenamesInAlbum(
 async function main() {
   const missingVars = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
   if (missingVars.length > 0) {
-    console.error("❌ Missing required environment variables:", missingVars.join(", "));
+    console.error(
+      "❌ Missing required environment variables:",
+      missingVars.join(", "),
+    );
     process.exit(1);
   }
 
@@ -535,14 +601,18 @@ async function main() {
     : manifest.fixtures;
   console.log(
     `📦 Syncing ${fixturesToSync.length} fixture(s)` +
-      (limit ? ` (limit=${limit}, total=${manifest.fixtures.length})` : ` (total=${manifest.fixtures.length})`) +
+      (limit
+        ? ` (limit=${limit}, total=${manifest.fixtures.length})`
+        : ` (total=${manifest.fixtures.length})`) +
       "...",
   );
 
   const clientId = process.env.E2E_GOOGLE_CLIENT_ID as string;
   const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET as string;
-  const driveRefreshToken = process.env.E2E_GOOGLE_DRIVE_REFRESH_TOKEN as string;
-  const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN as string;
+  const driveRefreshToken = process.env
+    .E2E_GOOGLE_DRIVE_REFRESH_TOKEN as string;
+  const photosRefreshToken = process.env
+    .E2E_GOOGLE_PHOTOS_REFRESH_TOKEN as string;
   const driveRootId = process.env.E2E_GOOGLE_DRIVE_FOLDER_ID as string;
 
   const driveAuth = new OAuth2Client(clientId, clientSecret);
@@ -558,10 +628,17 @@ async function main() {
   console.log(`🎯 Using Photos fixture album: ${photosAlbumId}`);
 
   const seedFolderId = await ensureDriveSeedFolder(drive, driveRootId);
-  const existingAlbumItems = await listAlbumMediaItems(photosToken, photosAlbumId);
+  const existingAlbumItems = await listAlbumMediaItems(
+    photosToken,
+    photosAlbumId,
+  );
   const albumIds = new Set(existingAlbumItems.map((item) => item.id));
-  const albumFilenameById = new Map(existingAlbumItems.map((item) => [item.id, item.filename]));
-  const albumByFilename = new Map(existingAlbumItems.map((item) => [item.filename, item.id]));
+  const albumFilenameById = new Map(
+    existingAlbumItems.map((item) => [item.id, item.filename]),
+  );
+  const albumByFilename = new Map(
+    existingAlbumItems.map((item) => [item.filename, item.id]),
+  );
 
   let updated = false;
   let success = true;
@@ -597,7 +674,9 @@ async function main() {
       });
       let driveFileId = driveRes.data.files?.[0]?.id || "";
       if (!driveFileId) {
-        console.log(`⬆️ [${fixture.id}] Uploading to Drive: ${fixture.filename}`);
+        console.log(
+          `⬆️ [${fixture.id}] Uploading to Drive: ${fixture.filename}`,
+        );
         const uploadRes = await drive.files.create({
           requestBody: { name: fixture.filename, parents: [seedFolderId] },
           media: {
@@ -607,7 +686,8 @@ async function main() {
           fields: "id",
         });
         driveFileId = uploadRes.data.id || "";
-        if (!driveFileId) throw new Error("Drive upload did not return file id.");
+        if (!driveFileId)
+          throw new Error("Drive upload did not return file id.");
       }
       // Ensure file is publicly readable so lh3.googleusercontent.com URLs work
       try {
@@ -619,7 +699,9 @@ async function main() {
       } catch (permErr: any) {
         // 409 = permission already exists
         if (permErr?.code !== 409 && permErr?.status !== 409) {
-          console.warn(`⚠️ [${fixture.id}] Could not set public permission: ${permErr.message}`);
+          console.warn(
+            `⚠️ [${fixture.id}] Could not set public permission: ${permErr.message}`,
+          );
         }
       }
       if (fixture.driveFileId !== driveFileId) {
@@ -628,14 +710,21 @@ async function main() {
       }
       console.log(`✅ [${fixture.id}] Drive ready: ${fixture.filename}`);
     } catch (err: any) {
-      console.error(`❌ [${fixture.id}] Drive sync failed for ${fixture.filename}:`, err.message);
+      console.error(
+        `❌ [${fixture.id}] Drive sync failed for ${fixture.filename}:`,
+        err.message,
+      );
       success = false;
       continue;
     }
 
     try {
       let photosMediaItemId = "";
-      const prepared = preparePhotosUploadAsset(localPath, fixture.filename, fixture.id);
+      const prepared = preparePhotosUploadAsset(
+        localPath,
+        fixture.filename,
+        fixture.id,
+      );
       try {
         const expectedName = prepared.fileName;
         if (
@@ -651,7 +740,9 @@ async function main() {
         }
 
         if (!photosMediaItemId) {
-          console.log(`⬆️ [${fixture.id}] Uploading to Photos: ${expectedName}`);
+          console.log(
+            `⬆️ [${fixture.id}] Uploading to Photos: ${expectedName}`,
+          );
           photosMediaItemId = await uploadToPhotos(
             photosToken,
             photosAlbumId,
@@ -676,7 +767,10 @@ async function main() {
       albumIds.add(photosMediaItemId);
       console.log(`✅ [${fixture.id}] Photos ready: ${fixture.filename}`);
     } catch (err: any) {
-      console.error(`❌ [${fixture.id}] Photos sync failed for ${fixture.filename}:`, err.message);
+      console.error(
+        `❌ [${fixture.id}] Photos sync failed for ${fixture.filename}:`,
+        err.message,
+      );
       success = false;
     }
   }
@@ -687,19 +781,32 @@ async function main() {
   }
 
   // Persist the first fixture's Drive file ID as the preferred media item for live E2E tests.
-  const firstDriveFileId = fixturesToSync.find((f) => f.driveFileId)?.driveFileId;
+  const firstDriveFileId = fixturesToSync.find(
+    (f) => f.driveFileId,
+  )?.driveFileId;
   if (firstDriveFileId) {
-    upsertEnvVarFile(LIVE_ENV_PATH, "E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID", firstDriveFileId);
-    console.log(`📝 Set E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID=${firstDriveFileId} in .env.live.local`);
+    upsertEnvVarFile(
+      LIVE_ENV_PATH,
+      "E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID",
+      firstDriveFileId,
+    );
+    console.log(
+      `📝 Set E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID=${firstDriveFileId} in .env.live.local`,
+    );
   }
 
   const expectedFilenames = fixturesToSync.map((fixture) =>
     toPhotosUploadName(fixture.filename),
   );
   if (
-    fixturesToSync.some((fixture) => !fixture.photosMediaItemId || fixture.photosMediaItemId.length === 0)
+    fixturesToSync.some(
+      (fixture) =>
+        !fixture.photosMediaItemId || fixture.photosMediaItemId.length === 0,
+    )
   ) {
-    console.error("❌ Photos sync did not produce media item ids for all fixtures.");
+    console.error(
+      "❌ Photos sync did not produce media item ids for all fixtures.",
+    );
     process.exit(1);
   }
 

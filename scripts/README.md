@@ -14,7 +14,7 @@ const firebaseConfig = {
   storageBucket: "your-project.appspot.com",
   messagingSenderId: "123456789",
   appId: "1:123456789:web:abc...",
-  measurementId: "G-ABC..."
+  measurementId: "G-ABC...",
 };
 ```
 
@@ -49,6 +49,7 @@ npm run firebase:convert:production
 ```
 
 These commands will:
+
 1. Prompt you to paste your Firebase config
 2. Convert it to the appropriate format
 3. Save it to `.env.staging` or `.env.production`
@@ -106,11 +107,12 @@ const firebaseConfig = {
   storageBucket: "your-project.appspot.com",
   messagingSenderId: "123456789",
   appId: "1:123456789:web:abc...",
-  measurementId: "G-ABC..."
+  measurementId: "G-ABC...",
 };
 ```
 
 The utility automatically handles:
+
 - Variable declarations (`const`, `var`, `let`)
 - Single-line comments (`//`)
 - Multi-line comments (`/* */`)
@@ -156,12 +158,14 @@ node scripts/firebase-config-to-env.js --input firebase-config.json
 ### Production
 
 For production environment (`--env production`):
+
 - Creates variables with `VITE_FIREBASE_` prefix
 - Example: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_PROJECT_ID`
 
 ### Staging
 
 For staging environment (`--env staging`):
+
 - Creates variables with `VITE_FIREBASE_STAGING_` prefix
 - Example: `VITE_FIREBASE_STAGING_API_KEY`, `VITE_FIREBASE_STAGING_PROJECT_ID`
 

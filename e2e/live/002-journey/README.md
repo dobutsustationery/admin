@@ -7,6 +7,7 @@
 ![Initial Photos State](screenshots/000-initial-photos-state.png)
 
 **Programmatic Verification:**
+
 - [ ] Photos page is visible and interactive
 - [ ] Selection controls are visible
 
@@ -15,7 +16,7 @@
 ![Post Categorization State](screenshots/001-post-categorization-state.png)
 
 **Programmatic Verification:**
+
 - [ ] Categorization run completed (button enabled if present)
 - [ ] Post-categorization view keeps photos visible (queue or grouped)
 - [ ] Chosen imported image remains fully loaded (not Loading...)
-

@@ -33,10 +33,10 @@ async function findOrCreateFolder(
   drive: any,
   name: string,
   parentId: string,
-  role: string
+  role: string,
 ): Promise<string> {
   console.log(`🔍 Checking for ${name} (role: ${role})...`);
-  
+
   // Try finding by role first
   const roleQuery = `'${parentId}' in parents and properties has { key='folder_role' and value='${role}' } and trashed = false`;
   const roleList = await drive.files.list({
@@ -63,13 +63,15 @@ async function findOrCreateFolder(
 
   if (nameList.data.files?.length) {
     const id = nameList.data.files[0].id;
-    console.log(`✅ Found existing ${name} by name: ${id}. Tagging with role...`);
+    console.log(
+      `✅ Found existing ${name} by name: ${id}. Tagging with role...`,
+    );
     await drive.files.update({
       fileId: id,
       requestBody: {
-        properties: { folder_role: role }
+        properties: { folder_role: role },
       },
-      supportsAllDrives: true
+      supportsAllDrives: true,
     });
     return id;
   }
@@ -81,10 +83,10 @@ async function findOrCreateFolder(
       name,
       mimeType: "application/vnd.google-apps.folder",
       parents: [parentId],
-      properties: { folder_role: role }
+      properties: { folder_role: role },
     },
     fields: "id",
-    supportsAllDrives: true
+    supportsAllDrives: true,
   });
   console.log(`✅ Created ${name}: ${created.data.id}`);
   return created.data.id;
@@ -109,9 +111,24 @@ async function main() {
 
   console.log(`=== Setting up folder structure for root ${rootId} ===`);
 
-  const imagesId = await findOrCreateFolder(drive, "Images", rootId, "root_images");
-  const originalsId = await findOrCreateFolder(drive, "Originals", imagesId, "originals");
-  const processedId = await findOrCreateFolder(drive, "Processed", imagesId, "processed");
+  const imagesId = await findOrCreateFolder(
+    drive,
+    "Images",
+    rootId,
+    "root_images",
+  );
+  const originalsId = await findOrCreateFolder(
+    drive,
+    "Originals",
+    imagesId,
+    "originals",
+  );
+  const processedId = await findOrCreateFolder(
+    drive,
+    "Processed",
+    imagesId,
+    "processed",
+  );
   const seedId = await findOrCreateFolder(drive, "Seed", rootId, "seed");
 
   // Set world-readable permissions on all folders so public URLs work
@@ -135,7 +152,9 @@ async function main() {
       if (e?.code === 409 || e?.status === 409) {
         console.log(`🔓 ${folder.name} already public: ${folder.id}`);
       } else {
-        console.warn(`⚠️ Failed to set permissions on ${folder.name}: ${e?.message || e}`);
+        console.warn(
+          `⚠️ Failed to set permissions on ${folder.name}: ${e?.message || e}`,
+        );
       }
     }
   }

@@ -1,10 +1,10 @@
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
 async function globalTeardown() {
-  console.log('🌍 [Live Teardown] Cleaning up...');
+  console.log("🌍 [Live Teardown] Cleaning up...");
 
-  const envFile = path.resolve(process.cwd(), 'e2e/live/.env.live.json');
+  const envFile = path.resolve(process.cwd(), "e2e/live/.env.live.json");
   if (!fs.existsSync(envFile)) {
     return;
   }

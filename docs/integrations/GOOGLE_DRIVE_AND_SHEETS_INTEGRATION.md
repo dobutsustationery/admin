@@ -9,6 +9,7 @@ This document describes the design for integrating Google Drive and Google Sheet
 ## Business Requirements
 
 The admin site needs to:
+
 1. Access a specific folder in dobustustationery@gmail.com's Google Drive
 2. Create and upload CSV files for inventory exports
 3. Create and upload log files for audit trails and debugging
@@ -138,6 +139,7 @@ This approach uses a service account for backend operations without user interac
 **Key Endpoints:**
 
 1. **List Files in Folder**
+
    ```
    GET https://www.googleapis.com/drive/v3/files
    Query parameters:
@@ -147,6 +149,7 @@ This approach uses a service account for backend operations without user interac
    ```
 
 2. **Upload File**
+
    ```
    POST https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart
    Body: multipart/related with metadata and file content
@@ -159,6 +162,7 @@ This approach uses a service account for backend operations without user interac
    ```
 
 3. **Update File**
+
    ```
    PATCH https://www.googleapis.com/upload/drive/v3/files/{fileId}?uploadType=media
    Body: new file content
@@ -180,6 +184,7 @@ This approach uses a service account for backend operations without user interac
 **Key Endpoints:**
 
 1. **Create New Spreadsheet**
+
    ```
    POST https://sheets.googleapis.com/v4/spreadsheets
    Body:
@@ -200,6 +205,7 @@ This approach uses a service account for backend operations without user interac
    ```
 
 2. **Write Data to Sheet**
+
    ```
    PUT https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}/values/{range}?valueInputOption=USER_ENTERED
    Body:
@@ -214,11 +220,13 @@ This approach uses a service account for backend operations without user interac
    ```
 
 3. **Read Data from Sheet**
+
    ```
    GET https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}/values/{range}
    ```
 
 4. **Format Cells**
+
    ```
    POST https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}:batchUpdate
    Body: requests array with formatting operations
@@ -258,6 +266,7 @@ Add to `package.json`:
 - `@googleapis/sheets`: Dedicated Sheets API client (alternative to full googleapis)
 
 **Note**: If bundle size is a concern for the frontend, consider:
+
 - Using only `@googleapis/drive` and `@googleapis/sheets` (smaller than full `googleapis`)
 - Or making API calls from Firebase Cloud Functions instead of the client
 - Or using the REST API directly with `fetch` (no package needed, but more manual work)
@@ -315,6 +324,7 @@ VITE_GOOGLE_DRIVE_REPORTS_FOLDER_ID=reports-folder-id
 #### Pattern 1: CSV Export to Drive
 
 **Current Implementation** (from `/csv` route):
+
 - Generates CSV in memory using `@json2csv/plainjs`
 - Displays in browser as `<pre>` text
 
@@ -322,37 +332,37 @@ VITE_GOOGLE_DRIVE_REPORTS_FOLDER_ID=reports-folder-id
 
 ```typescript
 // Example pseudocode (not actual implementation)
-import { google } from 'googleapis';
+import { google } from "googleapis";
 
 async function exportInventoryToDrive(inventoryData, accessToken) {
-  const drive = google.drive({ version: 'v3', auth: accessToken });
-  
+  const drive = google.drive({ version: "v3", auth: accessToken });
+
   // Generate CSV
   const parser = new Parser({ fields });
   const csvContent = parser.parse(inventoryData);
-  
+
   // Create file metadata
-  const fileName = `inventory-export-${new Date().toISOString().split('T')[0]}.csv`;
+  const fileName = `inventory-export-${new Date().toISOString().split("T")[0]}.csv`;
   const fileMetadata = {
     name: fileName,
     parents: [process.env.VITE_GOOGLE_DRIVE_INVENTORY_FOLDER_ID],
-    mimeType: 'text/csv'
+    mimeType: "text/csv",
   };
-  
+
   // Upload to Drive
   const response = await drive.files.create({
     requestBody: fileMetadata,
     media: {
-      mimeType: 'text/csv',
-      body: csvContent
+      mimeType: "text/csv",
+      body: csvContent,
     },
-    fields: 'id, name, webViewLink'
+    fields: "id, name, webViewLink",
   });
-  
+
   return {
     fileId: response.data.id,
     fileName: response.data.name,
-    viewLink: response.data.webViewLink
+    viewLink: response.data.webViewLink,
   };
 }
 ```
@@ -361,84 +371,99 @@ async function exportInventoryToDrive(inventoryData, accessToken) {
 
 ```typescript
 // Example pseudocode (not actual implementation)
-import { google } from 'googleapis';
+import { google } from "googleapis";
 
 async function createInventorySheet(inventoryData, accessToken) {
-  const sheets = google.sheets({ version: 'v4', auth: accessToken });
-  const drive = google.drive({ version: 'v3', auth: accessToken });
-  
+  const sheets = google.sheets({ version: "v4", auth: accessToken });
+  const drive = google.drive({ version: "v3", auth: accessToken });
+
   // Create spreadsheet
   const createResponse = await sheets.spreadsheets.create({
     requestBody: {
       properties: {
-        title: `Inventory - ${new Date().toLocaleDateString()}`
+        title: `Inventory - ${new Date().toLocaleDateString()}`,
       },
-      sheets: [{
-        properties: {
-          title: 'Inventory',
-          gridProperties: { frozenRowCount: 1 }
-        }
-      }]
-    }
+      sheets: [
+        {
+          properties: {
+            title: "Inventory",
+            gridProperties: { frozenRowCount: 1 },
+          },
+        },
+      ],
+    },
   });
-  
+
   const spreadsheetId = createResponse.data.spreadsheetId;
-  
+
   // Prepare data rows
-  const headers = ['JAN Code', 'Subtype', 'Description', 'HS Code', 'Qty', 'Pieces', 'Shipped'];
-  const rows = inventoryData.map(item => [
+  const headers = [
+    "JAN Code",
+    "Subtype",
+    "Description",
+    "HS Code",
+    "Qty",
+    "Pieces",
+    "Shipped",
+  ];
+  const rows = inventoryData.map((item) => [
     item.janCode,
     item.subtype,
     item.description,
     item.hsCode,
     item.qty,
     item.pieces,
-    item.shipped
+    item.shipped,
   ]);
-  
+
   // Write data
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: 'Inventory!A1',
-    valueInputOption: 'USER_ENTERED',
+    range: "Inventory!A1",
+    valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [headers, ...rows]
-    }
+      values: [headers, ...rows],
+    },
   });
-  
+
   // Format header row
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: {
-      requests: [{
-        repeatCell: {
-          range: {
-            sheetId: 0,
-            startRowIndex: 0,
-            endRowIndex: 1
+      requests: [
+        {
+          repeatCell: {
+            range: {
+              sheetId: 0,
+              startRowIndex: 0,
+              endRowIndex: 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.2, green: 0.5, blue: 0.8 },
+                textFormat: {
+                  bold: true,
+                  foregroundColor: { red: 1, green: 1, blue: 1 },
+                },
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat)",
           },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: { red: 0.2, green: 0.5, blue: 0.8 },
-              textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }
-            }
-          },
-          fields: 'userEnteredFormat(backgroundColor,textFormat)'
-        }
-      }]
-    }
+        },
+      ],
+    },
   });
-  
+
   // Move to designated folder
   await drive.files.update({
     fileId: spreadsheetId,
     addParents: process.env.VITE_GOOGLE_DRIVE_INVENTORY_FOLDER_ID,
-    removeParents: 'root'
+    removeParents: "root",
   });
-  
+
   return {
     spreadsheetId,
-    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
+    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
   };
 }
 ```
@@ -448,35 +473,35 @@ async function createInventorySheet(inventoryData, accessToken) {
 ```typescript
 // Example pseudocode (not actual implementation)
 async function appendToLogFile(logEntry, accessToken) {
-  const drive = google.drive({ version: 'v3', auth: accessToken });
-  
-  const fileName = `app-log-${new Date().toISOString().split('T')[0]}.txt`;
-  
+  const drive = google.drive({ version: "v3", auth: accessToken });
+
+  const fileName = `app-log-${new Date().toISOString().split("T")[0]}.txt`;
+
   // Search for existing log file
   const searchResponse = await drive.files.list({
     q: `name='${fileName}' and '${process.env.VITE_GOOGLE_DRIVE_LOGS_FOLDER_ID}' in parents and trashed=false`,
-    fields: 'files(id, name)'
+    fields: "files(id, name)",
   });
-  
+
   let fileId;
-  
+
   if (searchResponse.data.files.length > 0) {
     // File exists, download and append
     fileId = searchResponse.data.files[0].id;
-    
+
     const existingContent = await drive.files.get({
       fileId,
-      alt: 'media'
+      alt: "media",
     });
-    
-    const newContent = existingContent.data + '\n' + logEntry;
-    
+
+    const newContent = existingContent.data + "\n" + logEntry;
+
     await drive.files.update({
       fileId,
       media: {
-        mimeType: 'text/plain',
-        body: newContent
-      }
+        mimeType: "text/plain",
+        body: newContent,
+      },
     });
   } else {
     // Create new log file
@@ -484,18 +509,18 @@ async function appendToLogFile(logEntry, accessToken) {
       requestBody: {
         name: fileName,
         parents: [process.env.VITE_GOOGLE_DRIVE_LOGS_FOLDER_ID],
-        mimeType: 'text/plain'
+        mimeType: "text/plain",
       },
       media: {
-        mimeType: 'text/plain',
-        body: logEntry
+        mimeType: "text/plain",
+        body: logEntry,
       },
-      fields: 'id'
+      fields: "id",
     });
-    
+
     fileId = createResponse.data.id;
   }
-  
+
   return { fileId, fileName };
 }
 ```
@@ -560,12 +585,14 @@ async function appendToLogFile(logEntry, accessToken) {
 #### Token Storage
 
 **Client-Side (Browser):**
+
 - Store access tokens in memory only (React/Svelte state)
 - Store refresh tokens in secure HttpOnly cookies (if possible)
 - Alternative: Encrypted storage in Firestore with user-specific encryption key
 - Never store in localStorage (vulnerable to XSS)
 
 **Server-Side (Firebase Functions):**
+
 - Use Firebase Secret Manager
 - Encrypt tokens before storing in Firestore
 - Implement automatic token rotation
@@ -573,6 +600,7 @@ async function appendToLogFile(logEntry, accessToken) {
 #### Access Control
 
 1. **Firestore Security Rules** (for token storage):
+
    ```javascript
    match /userTokens/{userId} {
      allow read, write: if request.auth.uid == userId;
@@ -668,6 +696,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 ### Migration and Rollout Plan
 
 #### Phase 1: Basic Drive Integration
+
 - Implement OAuth flow
 - Token storage and management
 - Basic file upload (CSV export)
@@ -675,12 +704,14 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 - Manual export only
 
 #### Phase 2: Enhanced Features
+
 - Google Sheets creation
 - File listing and management
 - Log file creation and appending
 - Scheduled/automatic exports
 
 #### Phase 3: Advanced Features
+
 - Collaborative editing alerts
 - Real-time sync from Sheets back to Firestore
 - Advanced formatting and templates
@@ -729,18 +760,21 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 ### Testing Strategy
 
 #### Unit Tests
+
 - Token refresh logic
 - CSV generation
 - Sheet formatting
 - Error handling
 
 #### Integration Tests
+
 - OAuth flow (using test accounts)
 - File upload/download
 - Sheet creation and updates
 - Permission checks
 
 #### E2E Tests
+
 - Complete user flow: login → export → verify in Drive
 - Error scenarios: network failure, expired token
 - Multi-user scenarios
@@ -774,12 +808,14 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 #### Alternative 1: Firebase Cloud Functions + Drive
 
 **Pros:**
+
 - Keeps API keys server-side
 - Better security
 - Can handle larger files
 - Background processing
 
 **Cons:**
+
 - Additional complexity
 - Cold start latency
 - Additional Firebase costs
@@ -788,12 +824,14 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 #### Alternative 2: Direct REST API (No googleapis package)
 
 **Pros:**
+
 - Smaller bundle size
 - More control over requests
 - No dependency on googleapis package
 - Easier to debug network issues
 
 **Cons:**
+
 - More manual implementation
 - Need to handle OAuth flow manually
 - Less type safety
@@ -802,12 +840,14 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 #### Alternative 3: Server-Side Only (Service Account)
 
 **Pros:**
+
 - No user authentication needed
 - Simpler implementation
 - More reliable
 - Better for automated tasks
 
 **Cons:**
+
 - Can't access user-specific data
 - No user context for audit logs
 - Requires additional server infrastructure

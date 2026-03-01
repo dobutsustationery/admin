@@ -97,7 +97,8 @@ async function listAlbumItemsViaSearch(
       nextPageToken?: string;
     };
     for (const item of payload.mediaItems || []) {
-      if (item.id && item.filename) items.push({ id: item.id, filename: item.filename });
+      if (item.id && item.filename)
+        items.push({ id: item.id, filename: item.filename });
     }
     if (!payload.nextPageToken) break;
     nextPageToken = payload.nextPageToken;
@@ -124,10 +125,14 @@ async function main() {
 
   const clientId = process.env.E2E_GOOGLE_CLIENT_ID as string;
   const clientSecret = process.env.E2E_GOOGLE_CLIENT_SECRET as string;
-  const driveRefreshToken = process.env.E2E_GOOGLE_DRIVE_REFRESH_TOKEN as string;
-  const photosRefreshToken = process.env.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN as string;
+  const driveRefreshToken = process.env
+    .E2E_GOOGLE_DRIVE_REFRESH_TOKEN as string;
+  const photosRefreshToken = process.env
+    .E2E_GOOGLE_PHOTOS_REFRESH_TOKEN as string;
   const driveRootId = process.env.E2E_GOOGLE_DRIVE_FOLDER_ID as string;
-  const photosAlbumId = (process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID as string).trim();
+  const photosAlbumId = (
+    process.env.E2E_GOOGLE_PHOTOS_ALBUM_ID as string
+  ).trim();
   const expectedFilenames = loadExpectedFixtureFilenames();
 
   console.log("Testing Drive Access...");
@@ -195,8 +200,12 @@ async function main() {
     );
     if (tokenInfoResponse.ok) {
       const tokenInfo = (await tokenInfoResponse.json()) as { scope?: string };
-      const scopeSet = new Set((tokenInfo.scope || "").split(/\s+/).filter(Boolean));
-      if (!scopeSet.has("https://www.googleapis.com/auth/photoslibrary.readonly")) {
+      const scopeSet = new Set(
+        (tokenInfo.scope || "").split(/\s+/).filter(Boolean),
+      );
+      if (
+        !scopeSet.has("https://www.googleapis.com/auth/photoslibrary.readonly")
+      ) {
         throw new Error(
           "Photos token is missing photoslibrary.readonly scope. Run: npm run setup:live:tokens",
         );
@@ -226,7 +235,10 @@ async function main() {
     };
     const metadataCount =
       Number.parseInt(String(album.mediaItemsCount || "0"), 10) || 0;
-    const visibleItems = await listAlbumItemsViaSearch(accessToken, photosAlbumId);
+    const visibleItems = await listAlbumItemsViaSearch(
+      accessToken,
+      photosAlbumId,
+    );
     const visibleCount = visibleItems.length;
     const unexpectedFilenames = Array.from(
       new Set(

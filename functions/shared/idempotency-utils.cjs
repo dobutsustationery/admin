@@ -25,6 +25,7 @@ __export(idempotency_utils_exports, {
   escapeDriveQueryValue: () => escapeDriveQueryValue,
   findFileByDerivationKey: () => findFileByDerivationKey,
   generateDerivationKey: () => generateDerivationKey,
+  getVersionedTransform: () => getVersionedTransform,
   toDriveApiMediaUrl: () => toDriveApiMediaUrl,
   toDrivePublicUrl: () => toDrivePublicUrl
 });
@@ -39,16 +40,23 @@ function crc32(str) {
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
+function getVersionedTransform(transform) {
+  if (transform === "remove_bg" || transform === "remove_background") {
+    return "remove_bg_v2";
+  }
+  if (transform === "color_correct") {
+    return "color_correct_v1";
+  }
+  if (transform === "crop") {
+    return "crop_v3";
+  }
+  return transform;
+}
 function generateDerivationKey(type, id, transform) {
   if (!id)
     return null;
   const safeType = String(type || "unknown");
-  let safeTransform = String(transform || "identity");
-  if (safeTransform === "remove_bg") {
-    safeTransform = "remove_bg_v2";
-  } else if (safeTransform === "color_correct") {
-    safeTransform = "color_correct_v1";
-  }
+  const safeTransform = getVersionedTransform(String(transform || "identity"));
   let safeId = String(id).replace(/:/g, "_");
   const baseKey = `${safeType}:${safeId}:${safeTransform}`;
   if (baseKey.length > 110) {
@@ -100,6 +108,7 @@ async function findFileByDerivationKey(derivationKey, executeRequest) {
   escapeDriveQueryValue,
   findFileByDerivationKey,
   generateDerivationKey,
+  getVersionedTransform,
   toDriveApiMediaUrl,
   toDrivePublicUrl
 });

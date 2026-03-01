@@ -5,6 +5,7 @@ Administration portal for managing inventory, sales, and operations for Dobutsu 
 ## Overview
 
 This is a SvelteKit-based admin application with Firebase backend providing tools for:
+
 - **Inventory Management**: Track and manage stationery products using barcode scanning
 - **Order Processing**: Pack and ship orders
 - **Sales Processing**: Handle transactions and payments via PayPal
@@ -22,6 +23,7 @@ This is a SvelteKit-based admin application with Firebase backend providing tool
 ## Quick Start
 
 ### Prerequisites
+
 - Node.js 18+ or Bun 1.0+
 - Firebase CLI: `npm install -g firebase-tools`
 - Git
@@ -30,6 +32,7 @@ This is a SvelteKit-based admin application with Firebase backend providing tool
 ### Installation
 
 1.  **Clone the repository**
+
     ```bash
     git clone https://github.com/dobutsustationery/admin.git
     cd admin
@@ -37,10 +40,12 @@ This is a SvelteKit-based admin application with Firebase backend providing tool
 
 2.  **Activate the Environment**
     This project uses Nix and Direnv to manage dependencies (Node.js, Bun, Java/OpenJDK, etc.) deterministically.
+
     ```bash
     direnv allow
     ```
-    *Note: If you need to add system-level tools (like a specific CLI or language runtime), update `flake.nix` and run `direnv allow` again.*
+
+    _Note: If you need to add system-level tools (like a specific CLI or language runtime), update `flake.nix` and run `direnv allow` again._
 
 3.  **Install dependencies**
     ```bash
@@ -49,13 +54,15 @@ This is a SvelteKit-based admin application with Firebase backend providing tool
     npm install
     ```
 
-> **Note for npm users**: 
+> **Note for npm users**:
+>
 > - A postinstall script automatically installs the correct Biome CLI package for your platform (Linux, macOS, or Windows)
 > - This approach ensures reliable installation while maintaining full linter functionality on all platforms
 
 ### Environment Configuration
 
 This application supports three environments:
+
 1. **Local** - Firebase emulators for offline development
 2. **Staging** - Staging Firebase project (optional)
 3. **Production** - Production Firebase project
@@ -95,7 +102,7 @@ If you prefer to use `npm run dev` without specifying the mode each time, you ca
 # Switch to local environment
 npm run env:local
 
-# Switch to staging environment  
+# Switch to staging environment
 npm run env:staging
 
 # Switch to production environment
@@ -108,8 +115,9 @@ npm run dev
 This copies the selected environment configuration to `.env`, which becomes your default environment.
 
 **Note:** The actual environment files are:
+
 - Local: `.env.emulator` (used with `--mode emulator`)
-- Staging: `.env.staging` (used with `--mode staging`)  
+- Staging: `.env.staging` (used with `--mode staging`)
 - Production: `.env.production` (used with `--mode production`)
 
 The `.env.local` file is also present and loaded by Vite in all non-production modes.
@@ -300,6 +308,7 @@ npm run test:live:e2e
 ```
 
 **Key principles:**
+
 - Tests must come with committed baseline screenshots
 - Zero-pixel tolerance is enforced (exact match required)
 - No arbitrary delays or retries allowed
@@ -338,18 +347,21 @@ admin/
 ## Features
 
 ### Barcode Scanning
+
 - Scan JAN codes using device camera
 - Supports QR codes and Data Matrix formats
 - Auto-lookup in inventory database
 - Audio feedback on successful scan
 
 ### Multi-User Synchronization
+
 - Real-time updates across all connected admins
 - Firebase-based action broadcasting
 - Conflict resolution for concurrent edits
 - Activity tracking and presence indicators
 
 ### Image Management
+
 - Camera snapshot capability
 - Google Custom Search integration
 - Automatic description generation
@@ -383,6 +395,7 @@ Proprietary - All rights reserved. See [LICENSE](LICENSE) file for details.
 ## Support
 
 For issues or questions:
+
 - Check the [DESIGN_OVERVIEW.md](docs/design/DESIGN_OVERVIEW.md) for architecture details
 - Review existing code for patterns
 - Open an issue on GitHub
