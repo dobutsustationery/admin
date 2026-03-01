@@ -148,6 +148,7 @@
     select_photos,
     add_selected_photos,
     register_media_items,
+    complete_upload,
   } from "$lib/photos-slice";
 
   import { categorizeMediaItems } from "$lib/gemini-client";
@@ -325,6 +326,18 @@
         } else {
           store.dispatch(completeAction);
         }
+
+        // If the item previously had a failed upload status, but we just found its
+        // processed version in Drive, we should clear the failure state.
+        if (uploads[id]?.status === "failed") {
+          console.info(
+            `[EditQueue] Clearing stale 'failed' upload status for ${id} as processed Drive file exists.`,
+          );
+          store.dispatch(
+            complete_upload({ id, permanentUrl: item.baseUrl || "" }),
+          );
+        }
+
         return true; // Mark as successfully handled (idempotent)
       }
 
@@ -340,6 +353,18 @@
           `[EditQueue] Clearing stale 'done' status for ${id}:${operation} as no Drive file exists.`,
         );
         store.dispatch(toggle_edit_status({ id, operation: operation as any }));
+      }
+
+      // If the item's initial TRANSFER to drive failed, we normally skip processing.
+      // However, if the user explicitly clicks "Process Images", we should allow it to try again
+      // by clearing the failure state.
+      if (uploads[id]?.status === "failed") {
+        console.info(
+          `[EditQueue] Resetting failed upload status for ${id} to allow retry.`,
+        );
+        store.dispatch(
+          complete_upload({ id, permanentUrl: item.baseUrl || "" }),
+        );
       }
 
       // 3. Request Transform via Sync Queue
@@ -405,9 +430,15 @@
     if (isEditing) return;
     isEditing = true;
 
+    console.log(
+      `[Batch] Starting processing with ${pipelineSteps.length} enabled steps:`,
+      pipelineSteps,
+    );
+
     try {
       for (const step of pipelineSteps as ProcessingStepType[]) {
         const ids = scheduleBatch(step);
+        console.log(`[Batch] Step ${step} scheduled ${ids.length} items.`);
         if (ids.length === 0) continue;
 
         batchProgress = {
@@ -531,20 +562,26 @@
   function scheduleBatch(op: "crop" | "color_correct" | "remove_background") {
     // Schedule for CATEGORIZED photos only (as per user request)
     const allIds = new Set<string>();
-    Object.values(janCodeToPhotos)
-      .flat()
-      .forEach((p) => {
-        const q = edits[p.id];
-        const status = q?.status;
-        const isDone = status && status[op];
+    const categorizedItems = Object.values(janCodeToPhotos).flat();
+    console.log(
+      `[Batch] scheduleBatch(${op}) total categorized items: ${categorizedItems.length}`,
+    );
 
-        // We skip ONLY if it is truly done (successful idempotent result exists or was just completed).
-        // If it was previously failed, it won't be 'done' in status, so it will be included.
-        if (!isDone) {
-          allIds.add(p.id);
-        }
-      });
+    categorizedItems.forEach((p) => {
+      const q = edits[p.id];
+      const status = q?.status;
+      const isDone = status && status[op];
 
+      // We skip ONLY if it is truly done (successful idempotent result exists or was just completed).
+      // If it was previously failed, it won't be 'done' in status, so it will be included.
+      if (!isDone) {
+        allIds.add(p.id);
+      }
+    });
+
+    console.log(
+      `[Batch] scheduleBatch(${op}) items needing work: ${allIds.size}`,
+    );
     const ids = Array.from(allIds);
     if (ids.length === 0) return [];
 
