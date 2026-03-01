@@ -40,8 +40,22 @@ export async function hydrate() {
     const loaded = await loadSnapshot();
     if (loaded && loaded.state) {
       store.dispatch({ type: "HYDRATE", payload: loaded.state });
-      snapshotMetadata = loaded.lastAction || null;
-      console.log("[Store] Hydrated state from IDB", snapshotMetadata);
+
+      // Schema Validation:
+      // If the reducer discarded the hydration due to a schema mismatch,
+      // the store's schemaVersion will be CURRENT_SCHEMA_VERSION (from reducer default),
+      // while the payload might have had an old version (or none).
+      // We check if the store state actually matches the payload we just sent.
+      const state = store.getState();
+      if (state.schemaVersion === (loaded.state as any).schemaVersion) {
+        snapshotMetadata = loaded.lastAction || null;
+        console.log("[Store] Hydrated state from IDB", snapshotMetadata);
+      } else {
+        console.warn(
+          "[Store] Hydration rejected by reducer (schema mismatch). Replay will start from beginning.",
+        );
+        snapshotMetadata = null;
+      }
     }
   } catch (e) {
     console.error("Hydration failed", e);
