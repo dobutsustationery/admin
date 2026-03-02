@@ -17,6 +17,9 @@ const {
 const SYNC_COLLECTION = "sync";
 const SYNC_SECRETS_COLLECTION = "sync_secrets";
 const PHOTOS_NS = "photos";
+const E2E_FIXED_CREATED_TIME = normalizeString(
+  process.env.E2E_FIXED_CREATED_TIME,
+);
 
 function nowMs() {
   return Date.now();
@@ -262,6 +265,16 @@ async function fetchSourceBytes({
   driveAccessToken,
   onApiCall,
 }) {
+  const extractDriveFileId = (url) => {
+    const value = normalizeString(url);
+    if (!value) return "";
+    const pathMatch = value.match(/\/d\/([A-Za-z0-9_-]{10,})/);
+    if (pathMatch?.[1]) return pathMatch[1];
+    const queryMatch = value.match(/[?&]id=([A-Za-z0-9_-]{10,})/);
+    if (queryMatch?.[1]) return queryMatch[1];
+    return "";
+  };
+
   const baseUrl = normalizeString(sourceBaseUrl);
   if (!baseUrl) {
     throw new Error("missing_source_base_url");
@@ -309,21 +322,35 @@ async function fetchSourceBytes({
     }
   }
 
-  if (!resp && !isGoogleusercontent && driveAccessToken) {
-    const driveAuth = await fetch(baseUrl, {
-      headers: { Authorization: `Bearer ${driveAccessToken}` },
-    }).catch(() => null);
-    await onApiCall?.({
-      requestType: "drive.fetch_source",
-      endpoint: "source",
-      success: !!driveAuth?.ok,
-      status: driveAuth?.status || 0,
-      context: { candidate: baseUrl, auth: "drive" },
-      response: { ok: !!driveAuth?.ok },
-    });
-    if (driveAuth?.ok) {
-      resp = driveAuth;
-      usedUrl = baseUrl;
+  if (!resp && driveAccessToken) {
+    const driveCandidates = [];
+    const driveFileId = extractDriveFileId(baseUrl);
+    if (driveFileId) {
+      driveCandidates.push(
+        `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
+      );
+    }
+    if (!isGoogleusercontent) {
+      driveCandidates.push(baseUrl);
+    }
+
+    for (const candidate of driveCandidates) {
+      const driveAuth = await fetch(candidate, {
+        headers: { Authorization: `Bearer ${driveAccessToken}` },
+      }).catch(() => null);
+      await onApiCall?.({
+        requestType: "drive.fetch_source",
+        endpoint: "source",
+        success: !!driveAuth?.ok,
+        status: driveAuth?.status || 0,
+        context: { candidate, auth: "drive" },
+        response: { ok: !!driveAuth?.ok },
+      });
+      if (driveAuth?.ok) {
+        resp = driveAuth;
+        usedUrl = candidate;
+        break;
+      }
     }
   }
 
@@ -405,10 +432,14 @@ async function uploadToDrive({
   onApiCall,
   derivationKey,
 }) {
+  const properties = { [DERIVATION_KEY_PROPERTY]: derivationKey };
+  if (E2E_FIXED_CREATED_TIME) {
+    properties.e2e_created_time = E2E_FIXED_CREATED_TIME;
+  }
   const metadata = {
     name: filename,
     parents: folderId ? [folderId] : undefined,
-    properties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
+    properties,
   };
   const { body, boundary } = buildMultipartBody({ metadata, bytes, mimeType });
   const file = await driveRequestJson(
@@ -617,6 +648,9 @@ async function executeTransfer({
   const transformName = eventType.includes("transform")
     ? normalizeString(payload?.transform || "unknown")
     : "identity";
+  const forceFunctionsPath =
+    payload?.forceFunctionsPath === true ||
+    normalizeString(process.env.E2E_FORCE_FUNCTIONS_PATH) === "1";
   const driveFileId = normalizeString(payload?.sourceRef?.driveFileId);
   const sourceType = driveFileId
     ? "drive"
@@ -643,55 +677,61 @@ async function executeTransfer({
     });
 
   // 1. Search Before Work
-  try {
-    const existingFile = await findFileByDerivationKey(
-      driveAccessToken,
-      derivationKey,
-      logApiCall,
-    );
-    if (existingFile) {
-      console.log(
-        `[PhotosWorker] Idempotent match found for ${derivationKey}: ${existingFile.id}`,
+  if (!forceFunctionsPath) {
+    try {
+      const existingFile = await findFileByDerivationKey(
+        driveAccessToken,
+        derivationKey,
+        logApiCall,
       );
+      if (existingFile) {
+        console.log(
+          `[PhotosWorker] Idempotent match found for ${derivationKey}: ${existingFile.id}`,
+        );
 
-      await emitSuccess({
-        db,
-        collectionName,
-        requestEventId,
-        requestId,
-        processor,
-        creator,
-        requestedBy,
-        eventType,
-        transformName,
-        payload: {
-          photoId,
-          filename: existingFile.name,
-          driveFileId: existingFile.id,
-          permanentUrl: existingFile.publicUrl || existingFile.apiUrl,
-          apiUrl: existingFile.apiUrl,
-          webViewLink: existingFile.webViewLink,
-          webContentLink: existingFile.webContentLink,
-          mimeType: existingFile.mimeType,
-          idempotent: true,
-          derivationKey,
-        },
-      });
-
-      return {
-        processed: true,
-        summary: {
+        await emitSuccess({
+          db,
+          collectionName,
+          requestEventId,
           requestId,
-          status: "completed",
-          driveFileId: existingFile.id,
-          idempotent: true,
-        },
-      };
+          processor,
+          creator,
+          requestedBy,
+          eventType,
+          transformName,
+          payload: {
+            photoId,
+            filename: existingFile.name,
+            driveFileId: existingFile.id,
+            permanentUrl: existingFile.publicUrl || existingFile.apiUrl,
+            apiUrl: existingFile.apiUrl,
+            webViewLink: existingFile.webViewLink,
+            webContentLink: existingFile.webContentLink,
+            mimeType: existingFile.mimeType,
+            idempotent: true,
+            derivationKey,
+          },
+        });
+
+        return {
+          processed: true,
+          summary: {
+            requestId,
+            status: "completed",
+            driveFileId: existingFile.id,
+            idempotent: true,
+          },
+        };
+      }
+    } catch (e) {
+      console.warn(
+        `[PhotosWorker] Pre-work search failed for ${derivationKey}, continuing with work`,
+        e,
+      );
     }
-  } catch (e) {
-    console.warn(
-      `[PhotosWorker] Pre-work search failed for ${derivationKey}, continuing with work`,
-      e,
+  } else {
+    console.log(
+      `[PhotosWorker] forceFunctionsPath=true; skipping idempotency pre-work search for ${derivationKey}`,
     );
   }
 

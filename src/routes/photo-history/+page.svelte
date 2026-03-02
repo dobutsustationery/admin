@@ -228,6 +228,13 @@
     return !!getDriveOpenLink(url);
   }
 
+  function resolveHistoryCreatedTime(meta: any): string {
+    const fixed = String(meta?.properties?.e2e_created_time || "").trim();
+    if (fixed) return fixed;
+    const createdTime = String(meta?.createdTime || "").trim();
+    return createdTime;
+  }
+
   // --- UI Handlers ---
   let fileInput: HTMLInputElement;
   let uploading = false;
@@ -442,6 +449,9 @@
     try {
       const token = getDriveToken() || getPhotosToken();
       if (!token) throw new Error("Not authenticated");
+      const forceFunctionsPath = Boolean(
+        (window as any).__E2E_FORCE_FUNCTIONS_PATH__,
+      );
       let currentUrl = url;
       for (const step of steps) {
         const transform =
@@ -454,14 +464,17 @@
           sourceId,
           transform,
         );
-        const existing = await findFileByDerivationKey(
-          token.access_token,
-          derivationKey,
-        );
+        const existing = forceFunctionsPath
+          ? null
+          : await findFileByDerivationKey(token.access_token, derivationKey);
         let finalUrl: string | null = null;
         if (existing) {
           finalUrl = existing.publicUrl || existing.apiUrl || "";
         } else {
+          const pauseAtStart = (window as any).__E2E_PAUSE_OPERATION_AT_START__;
+          if (typeof pauseAtStart === "function") {
+            await pauseAtStart();
+          }
           const requestId = `manual-op-${transform}-${sourceId}-${Date.now()}`;
           const folders = await ensureFolderStructure(token.access_token);
           const syncPayload: any = {
@@ -473,6 +486,7 @@
             sourceType,
             transform,
             derivationKey,
+            forceFunctionsPath,
             sourceRef: {
               mediaItemId: photoId,
               url: currentUrl,
@@ -732,9 +746,10 @@
                         ><span class="op-name">{item.label}</span></td
                       >
                       <td class="data-cell">
-                        {#if item.meta?.createdTime}<span class="timestamp"
+                        {#if resolveHistoryCreatedTime(item.meta)}<span
+                            class="timestamp"
                             >{new Date(
-                              item.meta.createdTime,
+                              resolveHistoryCreatedTime(item.meta),
                             ).toLocaleString()}</span
                           >
                         {:else}<span class="timestamp-na">N/A</span>{/if}

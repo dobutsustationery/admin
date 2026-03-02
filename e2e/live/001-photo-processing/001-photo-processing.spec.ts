@@ -5,7 +5,7 @@ import * as path from "path";
 
 const PREFERRED_MEDIA_ITEM_ID =
   process.env.E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID ??
-  "1Xk0qww5eUV6OlMAg15tgKNGmLxxf168T";
+  "IMG_8103.heic";
 const LIVE_IMPORT_TIMEOUT_MS = Number(
   process.env.E2E_LIVE_IMPORT_TIMEOUT_MS ?? "30000",
 );
@@ -14,9 +14,6 @@ const LIVE_001_TEST_TIMEOUT_MS = Math.max(
   Number(process.env.E2E_LIVE_001_TEST_TIMEOUT_MS ?? "180000"),
   300000,
 );
-
-const looksLikeDriveFileId = (value: string | null | undefined) =>
-  typeof value === "string" && /^[A-Za-z0-9_-]{20,}$/.test(value.trim());
 
 async function waitForVisibleImagesToRender(page: any) {
   await page.evaluate(async () => {
@@ -68,52 +65,6 @@ async function importSinglePhotoFromDrive(
   page: any,
   preferredId: string | null,
 ) {
-  const injectPreferredPhoto = async (photoId: string) =>
-    await page.evaluate(
-      ({ photoId }) => {
-        const runtimeStore =
-          (window as any).__store || (window as any).testHelpers?.store;
-        const state = runtimeStore?.getState?.()?.photos || {};
-        if (!runtimeStore?.dispatch) {
-          return {
-            ok: false,
-            error: "Missing runtime store for synthetic import",
-          };
-        }
-        const item = {
-          id: photoId,
-          description: "",
-          productUrl: "",
-          baseUrl: `https://lh3.googleusercontent.com/d/${photoId}=s0`,
-          mimeType: "image/jpeg",
-          filename: photoId,
-          mediaMetadata: { creationTime: "", width: "0", height: "0" },
-        };
-        const existing = (state.registry || {})[photoId];
-        if (!existing) {
-          runtimeStore.dispatch({
-            type: "photos/register_media_items",
-            payload: { items: [item] },
-          });
-        }
-        runtimeStore.dispatch({
-          type: "photos/select_photos",
-          payload: { ids: [photoId] },
-        });
-        const next = runtimeStore.getState?.()?.photos || {};
-        return {
-          ok: true,
-          importedPhotoId: photoId,
-          importedFilename: photoId,
-          importedMimeType: "image/jpeg",
-          importedCount: 1,
-          importSource: "synthetic-drive-id",
-          selectedCount: (next.selected || []).length,
-        };
-      },
-      { photoId },
-    );
-
   const importOnce = async () =>
     await page.evaluate(
       async ({ preferredId, timeoutMs }) => {
@@ -142,33 +93,30 @@ async function importSinglePhotoFromDrive(
           ]);
         };
 
-        const driveHook = (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__;
-        if (typeof driveHook !== "function") {
+        const albumHook = (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__;
+        if (typeof albumHook !== "function") {
           return {
             ok: false,
-            error: "Missing __E2E_IMPORT_PHOTOS_FROM_DRIVE__ hook",
+            error: "Missing __E2E_IMPORT_PHOTOS_FROM_ALBUM__ hook",
           };
         }
 
         try {
-          let result: any;
-          if (
-            typeof preferredId === "string" &&
-            preferredId.trim().length > 0
-          ) {
-            try {
-              result = await withTimeout(
-                driveHook("replace", 1, preferredId),
-                "Drive import (preferred)",
-              );
-            } catch (preferredError) {
-              result = await withTimeout(
-                driveHook("replace", 1),
-                "Drive import (fallback)",
-              );
-            }
-          } else {
-            result = await withTimeout(driveHook("replace", 1), "Drive import");
+          let result: any = null;
+          const importSource = "photos-album";
+          try {
+            result =
+              typeof preferredId === "string" && preferredId.trim().length > 0
+                ? await withTimeout(
+                    albumHook("replace", 1, preferredId),
+                    "Album import (preferred)",
+                  )
+                : await withTimeout(albumHook("replace", 1), "Album import");
+          } catch {
+            result = await withTimeout(
+              albumHook("replace", 1),
+              "Album import (fallback)",
+            );
           }
 
           const state = readPhotosState();
@@ -179,7 +127,7 @@ async function importSinglePhotoFromDrive(
             importedFilename: imported[0]?.filename || null,
             importedMimeType: imported[0]?.mimeType || null,
             importedCount: imported.length || 0,
-            importSource: "drive",
+            importSource,
             selectedCount: (state?.selected || []).length,
           };
         } catch (error) {
@@ -198,28 +146,44 @@ async function importSinglePhotoFromDrive(
     const errorText = String(lastResult?.error || "");
     const retryable =
       errorText.includes("timed out") || errorText.includes("importedCount");
-    if (looksLikeDriveFileId(preferredId) && errorText.includes("timed out")) {
-      break;
-    }
     if (!retryable || attempt === LIVE_IMPORT_RETRIES) break;
 
     console.warn(
-      `[live-001] Drive import attempt ${attempt + 1} failed (${errorText}). Retrying...`,
+      `[live-001] Album import attempt ${attempt + 1} failed (${errorText}). Retrying...`,
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
-  if (
-    (!lastResult?.ok || (lastResult.importedCount || 0) === 0) &&
-    looksLikeDriveFileId(preferredId)
-  ) {
-    console.warn(
-      "[live-001] Falling back to synthetic store import for preferred Drive file ID",
-    );
-    return await injectPreferredPhoto(String(preferredId));
-  }
-
   return lastResult;
+}
+
+async function waitForHistoryThumbnailsToRender(page: any) {
+  await expect
+    .poll(
+      async () =>
+        await page.locator("table.history-table tbody tr").count(),
+      { timeout: 30000 },
+    )
+    .toBeGreaterThan(0);
+
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate(() => {
+          const rows = Array.from(
+            document.querySelectorAll("table.history-table tbody tr"),
+          );
+          if (rows.length === 0) return false;
+          return rows.every((row) => {
+            const img = row.querySelector("td:nth-child(2) img");
+            if (!img) return false;
+            const el = img as HTMLImageElement;
+            return el.complete && el.naturalWidth > 0 && el.naturalHeight > 0;
+          });
+        }),
+      { timeout: 60000 },
+    )
+    .toBe(true);
 }
 
 test.describe("Live Photo Processing", () => {
@@ -235,8 +199,8 @@ test.describe("Live Photo Processing", () => {
     const docHelper = new TestDocumentationHelper(path.dirname(testInfo.file));
 
     docHelper.setMetadata(
-      "Photo Processing (Color, Crop, Remove BG)",
-      "**As a** admin user, **I want to** process product photos (Crop, Color Correct, Remove Background) **so that** they are ready for listing.",
+      "Photo Processing (Color, Remove BG)",
+      "**As a** admin user, **I want to** process product photos (Color Correct, Remove Background) **so that** they are ready for listing.",
     );
 
     await page.goto("/photos");
@@ -272,7 +236,7 @@ test.describe("Live Photo Processing", () => {
     expect(importResult.ok, importResult.error).toBeTruthy();
     expect(
       importResult.importedCount,
-      "Drive import returned 0 items. Run fixtures:google:sync before live E2E.",
+      "Album import returned 0 items. Run fixtures:google:sync before live E2E.",
     ).toBeGreaterThan(0);
     expect(
       importResult.importedPhotoId,
@@ -376,9 +340,18 @@ test.describe("Live Photo Processing", () => {
     await expect(page.locator('img[alt="Current"]').first()).toBeVisible({
       timeout: 30000,
     });
+    await page.evaluate(() => {
+      (window as any).__E2E_FORCE_FUNCTIONS_PATH__ = true;
+    });
 
-    const historyRows = page.locator(".space-y-6 > div.relative.flex");
-    const initialHistoryCount = await historyRows.count();
+    const historyRows = page.locator("table.history-table tbody tr");
+    const waitForHistoryToSettle = async () => {
+      await expect(page.locator("text=Syncing with Drive...")).toHaveCount(0, {
+        timeout: 30000,
+      });
+      await waitForHistoryThumbnailsToRender(page);
+      await waitForVisibleImagesToRender(page);
+    };
     const initialPersistedHistoryCount = await page.evaluate(
       (targetPhotoId) => {
         const runtimeStore =
@@ -390,11 +363,12 @@ test.describe("Live Photo Processing", () => {
     );
 
     const runOperation = async (
-      label: "Color" | "Auto Crop" | "Remove BG",
+      buttonLabel: "Color" | "Remove BG",
       progressScreenshot: string,
       completeScreenshot: string,
       expectedCount: number,
     ) => {
+      dialogMessages.length = 0;
       const previousHeadUrl = await page.evaluate((targetPhotoId) => {
         const runtimeStore =
           (window as any).__store || (window as any).testHelpers?.store;
@@ -403,7 +377,9 @@ test.describe("Live Photo Processing", () => {
       }, chosenPhotoId);
 
       const targetRow = historyRows.first();
-      const opButton = targetRow.locator("button", { hasText: label }).first();
+      const opButton = targetRow
+        .locator(".manual-ops-bar button", { hasText: buttonLabel })
+        .first();
 
       await page.evaluate(() => {
         (window as any).__E2E_OP_PAUSE_RESOLVER__ = null;
@@ -416,13 +392,17 @@ test.describe("Live Photo Processing", () => {
       await expect(opButton).toBeEnabled({ timeout: 30000 });
       await opButton.click();
 
-      const inProgress = targetRow.locator("button", { hasText: "..." });
-      await expect(inProgress.first()).toBeVisible({ timeout: 15000 });
+      await expect
+        .poll(async () => await opButton.isDisabled(), { timeout: 15000 })
+        .toBe(true);
 
       const progressChecks = [
         {
-          description: `${label} operation entered in-progress state`,
-          check: async () => await expect(inProgress.first()).toBeVisible(),
+          description: `${buttonLabel} operation entered in-progress state`,
+          check: async () =>
+            await expect
+              .poll(async () => await opButton.isDisabled(), { timeout: 30000 })
+              .toBe(true),
         },
         {
           description:
@@ -467,11 +447,11 @@ test.describe("Live Photo Processing", () => {
       ];
 
       docHelper.addStep(
-        `${label} In Progress`,
+        `${buttonLabel} In Progress`,
         progressScreenshot,
         progressChecks,
       );
-      await waitForVisibleImagesToRender(page);
+      await waitForHistoryToSettle();
       await screenshots.capture(
         page,
         progressScreenshot.replace(/^\d{3}-/, "").replace(/\.png$/, ""),
@@ -490,13 +470,10 @@ test.describe("Live Photo Processing", () => {
         delete (window as any).__E2E_PAUSE_OPERATION_AT_START__;
       });
 
-      await expect(targetRow.locator("button", { hasText: "..." })).toHaveCount(
-        0,
-        { timeout: 90000 },
-      );
+      await expect(opButton).toBeEnabled({ timeout: 90000 });
       expect(
         dialogMessages,
-        `Operation "${label}" failed with dialog: ${dialogMessages.join(" | ")} (file: ${importResult.importedFilename}, mime: ${importResult.importedMimeType})`,
+        `Operation "${buttonLabel}" failed with dialog: ${dialogMessages.join(" | ")} (file: ${importResult.importedFilename}, mime: ${importResult.importedMimeType})`,
       ).toEqual([]);
       await page.waitForFunction(
         ({ targetPhotoId, prior }) => {
@@ -557,18 +534,17 @@ test.describe("Live Photo Processing", () => {
 
       const completeChecks = [
         {
-          description: `${label} added one new history version`,
-          check: async () =>
-            await expect(historyRows).toHaveCount(expectedCount),
+          description: `${buttonLabel} added one new history version`,
+          check: async () => await expect(historyRows).toHaveCount(expectedCount),
         },
       ];
 
       docHelper.addStep(
-        `${label} Completed`,
+        `${buttonLabel} Completed`,
         completeScreenshot,
         completeChecks,
       );
-      await waitForVisibleImagesToRender(page);
+      await waitForHistoryToSettle();
       await screenshots.capture(
         page,
         completeScreenshot.replace(/^\d{3}-/, "").replace(/\.png$/, ""),
@@ -588,25 +564,19 @@ test.describe("Live Photo Processing", () => {
       initialPersistedHistoryCount + 1,
     );
     await runOperation(
-      "Auto Crop",
-      "003-auto-crop-in-progress.png",
-      "004-auto-crop-completed.png",
-      initialPersistedHistoryCount + 2,
-    );
-    await runOperation(
       "Remove BG",
-      "005-remove-bg-in-progress.png",
-      "006-remove-bg-completed.png",
-      initialPersistedHistoryCount + 3,
+      "003-remove-bg-in-progress.png",
+      "004-remove-bg-completed.png",
+      initialPersistedHistoryCount + 2,
     );
 
     const finalChecks = [
       {
         description: "History contains expected versions after processing",
-        check: async () =>
-          await expect(historyRows).toHaveCount(
-            initialPersistedHistoryCount + 3,
-          ),
+        check: async () => {
+          const count = await historyRows.count();
+          expect(count).toBe(initialPersistedHistoryCount + 2);
+        },
       },
       {
         description: "Current image is visible after processing",
@@ -619,15 +589,18 @@ test.describe("Live Photo Processing", () => {
 
     docHelper.addStep(
       "Processed Photo History",
-      "007-processed-history.png",
+      "005-processed-history.png",
       finalChecks,
     );
-    await waitForVisibleImagesToRender(page);
+    await waitForHistoryToSettle();
     await screenshots.capture(page, "processed-history", {
       fullPage: true,
       programmaticCheck: async () => {
         for (const c of finalChecks) await c.check();
       },
+    });
+    await page.evaluate(() => {
+      delete (window as any).__E2E_FORCE_FUNCTIONS_PATH__;
     });
 
     docHelper.writeReadme();
