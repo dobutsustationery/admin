@@ -52,7 +52,27 @@
     req: ShopifySyncRequestView | null,
   ): "shopify" | "photos" | "unknown" {
     if (!req) return "unknown";
-    return inferSyncRequestDomainFromEvents(req.timeline || []);
+    const fromEvents = inferSyncRequestDomainFromEvents(req.timeline || []);
+    if (fromEvents !== "unknown") return fromEvents;
+
+    const requestId = String(req.requestId || "").toLowerCase();
+    const source = String(req.source || "").toLowerCase();
+    const processor = String(req.processor || "").toLowerCase();
+    if (
+      requestId.startsWith("photo-") ||
+      source.includes("photo") ||
+      processor.includes("photos-sync")
+    ) {
+      return "photos";
+    }
+    if (
+      source.includes("shopify") ||
+      processor.includes("shopify-sync") ||
+      !!req.handle
+    ) {
+      return "shopify";
+    }
+    return "unknown";
   }
 
   function getEventBaseType(ev: ShopifySyncEvent): string {

@@ -92,10 +92,10 @@ export interface MediaItem {
   productUrl: string;
   baseUrl: string;
   mimeType: string;
-  mediaMetadata: {
-    creationTime: string;
-    width: string;
-    height: string;
+  mediaMetadata?: {
+    creationTime?: string;
+    width?: string;
+    height?: string;
     photo?: {
       cameraMake?: string;
       cameraModel?: string;
@@ -112,6 +112,33 @@ export interface MediaItem {
     };
   };
   filename: string;
+}
+
+function normalizeMediaItem(raw: any): MediaItem {
+  const mediaFile = raw?.mediaFile || {};
+  const metadata = raw?.mediaMetadata || {};
+  const mediaFileMetadata = mediaFile?.mediaFileMetadata || {};
+  return {
+    id: String(raw?.id || ""),
+    description: raw?.description,
+    productUrl: String(raw?.productUrl || mediaFile?.productUrl || ""),
+    baseUrl: String(raw?.baseUrl || mediaFile?.baseUrl || ""),
+    mimeType: String(raw?.mimeType || mediaFile?.mimeType || ""),
+    filename: String(raw?.filename || mediaFile?.filename || ""),
+    mediaMetadata: {
+      // Picker responses can use creationTime or createTime.
+      creationTime:
+        metadata.creationTime ||
+        mediaFileMetadata?.creationTime ||
+        metadata.createTime ||
+        raw?.createTime ||
+        "",
+      width: String(metadata.width || mediaFileMetadata?.width || ""),
+      height: String(metadata.height || mediaFileMetadata?.height || ""),
+      photo: metadata.photo || mediaFileMetadata?.photo,
+      video: metadata.video || mediaFileMetadata?.video,
+    },
+  };
 }
 
 /**
@@ -208,8 +235,13 @@ export async function listSessionMediaItems(
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");
 
+  const params = new URLSearchParams({
+    sessionId,
+    pageSize: String(pageSize),
+  });
+
   const response = await fetch(
-    `https://photospicker.googleapis.com/v1/sessions/${sessionId}/mediaItems?pageSize=${pageSize}`,
+    `https://photospicker.googleapis.com/v1/mediaItems?${params.toString()}`,
     {
       method: "GET",
       headers: { Authorization: `Bearer ${token.access_token}` },
@@ -224,7 +256,7 @@ export async function listSessionMediaItems(
   }
 
   const data = await response.json();
-  return (data.mediaItems || []) as MediaItem[];
+  return ((data.mediaItems || []) as any[]).map(normalizeMediaItem);
 }
 
 /**
@@ -260,7 +292,7 @@ export async function listAlbumMediaItems(
   }
 
   const data = await response.json();
-  return (data.mediaItems || []) as MediaItem[];
+  return ((data.mediaItems || []) as any[]).map(normalizeMediaItem);
 }
 
 /**

@@ -308,7 +308,8 @@
         throw new Error("No token available for pre-upload check");
 
       // 1. Idempotency Check: Search Before Sync Request
-      const sourceType = item.baseUrl?.includes("googleusercontent.com")
+      const sourceBaseUrl = item.baseUrl || item.productUrl || "";
+      const sourceType = sourceBaseUrl.includes("googleusercontent.com")
         ? "photos"
         : "ext";
       const derivationKey = generateDerivationKey(
@@ -368,16 +369,14 @@
         payloadVersion: 1,
         payload: {
           photoId: item.id,
-          sourceBaseUrl: item.baseUrl || "",
+          sourceBaseUrl,
           filename: item.filename || `${item.id}.jpg`,
           mimeType: item.mimeType || "image/jpeg",
           targetFolderId: folderId,
-          sourceType: item.baseUrl?.includes("googleusercontent.com")
-            ? "photos"
-            : "ext",
+          sourceType,
           sourceRef: {
             mediaItemId: item.id,
-            url: item.baseUrl || "",
+            url: sourceBaseUrl,
           },
         },
         createdAtMs: Date.now(),

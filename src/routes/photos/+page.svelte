@@ -130,9 +130,9 @@
       filename: item.filename,
       description: item.description,
       mediaMetadata: {
-        creationTime: item.mediaMetadata.creationTime,
-        width: item.mediaMetadata.width,
-        height: item.mediaMetadata.height,
+        creationTime: item.mediaMetadata?.creationTime || "",
+        width: item.mediaMetadata?.width || "",
+        height: item.mediaMetadata?.height || "",
       },
     };
   }

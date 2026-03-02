@@ -3,6 +3,7 @@ import { normalizeShopifySyncEventType } from "$lib/sync-events";
 export type ShopifySyncEvent = {
   id: string;
   eventType: string;
+  normalizedEventType?: string;
   requestId: string;
   requestEventId?: string;
   handle?: string;
@@ -190,7 +191,7 @@ export function foldSyncRequests(
     const normalizedEventType = normalizeShopifySyncEventType(ev.eventType);
     req.timeline.push({
       ...ev,
-      eventType: normalizedEventType,
+      normalizedEventType,
     });
 
     if (normalizedEventType === "sync_requested") {
