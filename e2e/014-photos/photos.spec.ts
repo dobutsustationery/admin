@@ -169,6 +169,7 @@ test.describe("Google Photos Integration", () => {
   test("should allow connecting and selecting photos via Picker", async ({
     authenticatedPage: page,
   }, testInfo) => {
+    test.setTimeout(30000);
     const outputDir = path.dirname(testInfo.file);
     const screenshots = createScreenshotHelper();
     const docHelper = new TestDocumentationHelper(outputDir);
@@ -190,37 +191,224 @@ test.describe("Google Photos Integration", () => {
       if (msg.type() === "error") console.log(`[Browser Error] ${msg.text()}`);
     });
 
-    // Mock Picker API calls (will be used after connection)
-    await page.route(
-      "https://photospicker.googleapis.com/v1/sessions",
-      async (route: any) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            id: "sess_123",
-            pickerUri: "http://example.com/picker",
-          }),
-        });
-      },
-    );
-
+    // Unified Mock for ALL Google API calls to handle CORS correctly
     let pollCount = 0;
-    await page.route(
-      "https://photospicker.googleapis.com/v1/sessions/sess_123",
-      async (route: any) => {
-        pollCount++;
+    await page.route("**/*googleapis.com/**", async (route) => {
+      const url = route.request().url();
+      const method = route.request().method();
+      const corsHeaders = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Upload-Content-Type",
+        "Access-Control-Expose-Headers": "Location",
+      };
+
+      if (method === "OPTIONS") {
+        await route.fulfill({ status: 204, headers: corsHeaders });
+        return;
+      }
+
+      // OAuth User Info
+      if (url.includes("/oauth2/v2/userinfo")) {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
+          headers: corsHeaders,
+          body: JSON.stringify({ email: "test@example.com", name: "Test User" }),
+        });
+        return;
+      }
+
+      // Picker Sessions
+      if (url.includes("/v1/sessions")) {
+        if (method === "POST") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            headers: corsHeaders,
+            body: JSON.stringify({
+              id: "sess_123",
+              pickerUri: "http://example.com/picker",
+            }),
+          });
+          return;
+        }
+        if (method === "GET" && url.includes("/sess_123")) {
+          pollCount++;
+          // Simulate user taking some time to select photos (3 polls)
+          const isReady = pollCount > 2;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            headers: corsHeaders,
+            body: JSON.stringify({
+              id: "sess_123",
+              pickerUri: "http://example.com/picker",
+              mediaItemsSet: isReady,
+            }),
+          });
+          return;
+        }
+      }
+
+      // Album Media Items
+      if (url.includes("/v1/albums/") && url.includes("/mediaItems")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          headers: corsHeaders,
           body: JSON.stringify({
-            id: "sess_123",
-            pickerUri: "http://example.com/picker",
-            mediaItemsSet: true,
+            mediaItems: [
+              {
+                id: "album_1",
+                description: "Album Photo 1",
+                productUrl: "http://example.com/a1",
+                baseUrl: "https://mock.photos/album1.jpg",
+                filename: "album1.jpg",
+                mimeType: "image/jpeg",
+                mediaMetadata: {
+                  creationTime: "2023-01-01T00:00:00Z",
+                  width: "100",
+                  height: "100",
+                },
+              },
+            ],
           }),
         });
-      },
-    );
+        return;
+      }
+
+      // Media Items
+      if (url.includes("/v1/mediaItems") || url.includes("/v1/sessions/sess_123/mediaItems")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          headers: corsHeaders,
+          body: JSON.stringify({
+            mediaItems: [
+              {
+                id: "1",
+                description: "Photo 1",
+                productUrl: "http://example.com/1",
+                mediaFile: {
+                  baseUrl: "https://mock.photos/photo1.jpg",
+                  filename: "photo1.jpg",
+                  mimeType: "image/jpeg",
+                  mediaFileMetadata: { width: "100", height: "100" },
+                },
+                mediaMetadata: {
+                  creationTime: "2023-01-01T00:00:00Z",
+                  width: "100",
+                  height: "100",
+                },
+              },
+              {
+                id: "2",
+                description: "Photo 2",
+                productUrl: "http://example.com/2",
+                mediaFile: {
+                  baseUrl: "https://mock.photos/photo2.jpg",
+                  filename: "photo2.jpg",
+                  mimeType: "image/jpeg",
+                  mediaFileMetadata: { width: "100", height: "100" },
+                },
+                mediaMetadata: {
+                  creationTime: "2023-01-01T00:00:00Z",
+                  width: "100",
+                  height: "100",
+                },
+              },
+            ],
+          }),
+        });
+        return;
+      }
+
+      // Drive API
+      if (url.includes("/drive/v3/files")) {
+        if (method === "GET") {
+          // findFolder() queries or details fetch
+          if (url.includes("?q=")) {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              headers: corsHeaders,
+              body: JSON.stringify({ files: [] }),
+            });
+            return;
+          }
+          const idMatch = url.match(/\/drive\/v3\/files\/([^?]+)/);
+          const fileId = idMatch?.[1] || "mock-file-id";
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            headers: corsHeaders,
+            body: JSON.stringify({
+              id: fileId,
+              name: "mock-upload.jpg",
+              webViewLink: `https://drive.google.com/file/d/${fileId}/view`,
+              webContentLink: `https://drive.google.com/uc?id=${fileId}&export=download`,
+              thumbnailLink: `https://drive.google.com/thumbnail?id=${fileId}`,
+            }),
+          });
+          return;
+        }
+        if (method === "POST") {
+          // Check if it's a permissions request
+          if (url.includes("/permissions")) {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              headers: corsHeaders,
+              body: JSON.stringify({ id: "mock-perm-123" }),
+            });
+            return;
+          }
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            headers: corsHeaders,
+            body: JSON.stringify({ id: `folder_${Date.now()}` }),
+          });
+          return;
+        }
+        if (method === "PATCH") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            headers: corsHeaders,
+            body: "{}",
+          });
+          return;
+        }
+      }
+
+      // Resumable Upload Initializer
+      if (url.includes("/upload/drive/v3/files") && method === "POST") {
+        await route.fulfill({
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            "Access-Control-Expose-Headers": "Location",
+            Location: "https://mock.upload/session/1",
+          },
+          body: JSON.stringify({ id: "mock-file-id" }),
+        });
+        return;
+      }
+
+      // Resumable Upload Data Transfer (PUT)
+      if (url.startsWith("https://mock.upload/session/") && method === "PUT") {
+        await route.fulfill({
+          status: 200,
+          headers: corsHeaders,
+          body: JSON.stringify({ id: "mock-file-id" }),
+        });
+        return;
+      }
+
+      await route.continue();
+    });
 
     await page.route("https://mock.photos/**", async (route: any) => {
       if (route.request().method() === "OPTIONS") {
@@ -259,129 +447,6 @@ test.describe("Google Photos Integration", () => {
       },
     );
 
-    // Mock Drive folder discovery/creation + upload path used by the upload manager after selection
-    await page.route(
-      "https://www.googleapis.com/drive/v3/files**",
-      async (route: any) => {
-        const req = route.request();
-        const url = req.url();
-        const method = req.method();
-        const corsHeaders = {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
-          "Access-Control-Allow-Headers": "Authorization, Content-Type",
-        };
-
-        if (method === "OPTIONS") {
-          await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
-          return;
-        }
-
-        if (method === "GET") {
-          // findFolder() queries should return "not found" so app creates folders deterministically
-          if (url.includes("/drive/v3/files?")) {
-            await route.fulfill({
-              status: 200,
-              contentType: "application/json",
-              headers: corsHeaders,
-              body: JSON.stringify({ files: [] }),
-            });
-            return;
-          }
-          // file details fetch after upload
-          const idMatch = url.match(/\/drive\/v3\/files\/([^?]+)/);
-          const fileId = idMatch?.[1] || "mock-file-id";
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            headers: corsHeaders,
-            body: JSON.stringify({
-              id: fileId,
-              name: "mock-upload.jpg",
-              webViewLink: `https://drive.google.com/file/d/${fileId}/view`,
-              webContentLink: `https://drive.google.com/uc?id=${fileId}&export=download`,
-              thumbnailLink: `https://drive.google.com/thumbnail?id=${fileId}`,
-            }),
-          });
-          return;
-        }
-
-        if (method === "POST") {
-          // createFolder() and any non-upload file creation
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            headers: corsHeaders,
-            body: JSON.stringify({ id: `folder_${Date.now()}` }),
-          });
-          return;
-        }
-
-        if (method === "PATCH") {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            headers: corsHeaders,
-            body: "{}",
-          });
-          return;
-        }
-
-        await route.continue();
-      },
-    );
-
-    await page.route(
-      "https://www.googleapis.com/drive/v3/files/**/permissions",
-      async (route: any) => {
-        if (route.request().method() === "OPTIONS") {
-          await route.fulfill({
-            status: 204,
-            headers: {
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "POST, OPTIONS",
-              "Access-Control-Allow-Headers": "Authorization, Content-Type",
-            },
-            body: "",
-          });
-          return;
-        }
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          headers: { "Access-Control-Allow-Origin": "*" },
-          body: "{}",
-        });
-      },
-    );
-
-    await page.route(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
-      async (route: any) => {
-        if (route.request().method() === "OPTIONS") {
-          await route.fulfill({
-            status: 204,
-            headers: {
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "POST, OPTIONS",
-              "Access-Control-Allow-Headers": "Authorization, Content-Type",
-            },
-            body: "",
-          });
-          return;
-        }
-        await route.fulfill({
-          status: 200,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Expose-Headers": "Location",
-            Location: "https://mock.upload/session/1",
-          },
-          body: "",
-        });
-      },
-    );
-
     await page.route("https://mock.upload/session/**", async (route: any) => {
       if (route.request().method() === "OPTIONS") {
         await route.fulfill({
@@ -402,51 +467,6 @@ test.describe("Google Photos Integration", () => {
         body: JSON.stringify({ id: `uploaded_${Date.now()}` }),
       });
     });
-
-    await page.route(
-      "https://photospicker.googleapis.com/v1/mediaItems**",
-      async (route: any) => {
-        await route.fulfill({
-          status: 200,
-          json: {
-            mediaItems: [
-              {
-                id: "1",
-                description: "Photo 1",
-                productUrl: "http://example.com/1",
-                mediaFile: {
-                  baseUrl: "https://mock.photos/photo1.jpg",
-                  filename: "photo1.jpg",
-                  mimeType: "image/jpeg",
-                  mediaFileMetadata: { width: "100", height: "100" },
-                },
-                mediaMetadata: {
-                  creationTime: "2023-01-01T00:00:00Z",
-                  width: "100",
-                  height: "100",
-                },
-              },
-              {
-                id: "2",
-                description: "Photo 2",
-                productUrl: "http://example.com/2",
-                mediaFile: {
-                  baseUrl: "https://mock.photos/photo2.jpg",
-                  filename: "photo2.jpg",
-                  mimeType: "image/jpeg",
-                  mediaFileMetadata: { width: "100", height: "100" },
-                },
-                mediaMetadata: {
-                  creationTime: "2023-01-01T00:00:00Z",
-                  width: "100",
-                  height: "100",
-                },
-              },
-            ],
-          },
-        });
-      },
-    );
 
     // 2. Connect Flow
     await flow.step("Connect Flow", "connect", [
@@ -482,7 +502,6 @@ test.describe("Google Photos Integration", () => {
           await expect(
             page.getByRole("button", { name: "Switch Account" }),
           ).toBeVisible();
-          // await expect(page.locator('button', { hasText: 'Photos Library' })).toBeVisible();
         },
       },
     ]);
@@ -494,7 +513,7 @@ test.describe("Google Photos Integration", () => {
         check: async () => {
           const btn = page.getByRole("button", { name: "Select Photos" });
           await btn.waitFor({ state: "visible", timeout: 5000 });
-          await btn.evaluate((node: any) => node.click());
+          await btn.click();
         },
       },
       {
@@ -503,10 +522,16 @@ test.describe("Google Photos Integration", () => {
           await expect(
             page.locator("text=Selection in progress..."),
           ).toBeVisible();
+
+          // Wait for it to disappear, indicating loadSelectedPhotos finished
+          await expect(
+            page.locator("text=Selection in progress..."),
+          ).toBeHidden({ timeout: 15000 });
+
           // Check that 2 photos are rendered
           await expect(
             page.locator('[data-testid^="photo-thumbnail-"]'),
-          ).toHaveCount(2);
+          ).toHaveCount(2, { timeout: 15000 });
         },
       },
       {

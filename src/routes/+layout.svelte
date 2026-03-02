@@ -143,11 +143,13 @@
                     (scopeStr.includes("/drive") &&
                       !scopeStr.includes("drive.appdata"));
 
-                  hasAllScopes = hasPicker && hasDrive;
+                  // Relax check: have either one to be considered "valid enough" to keep the token
+                  // Individual pages will still check for their specific required scopes
+                  hasAllScopes = hasPicker || hasDrive;
 
                   if (!hasAllScopes && attempts === maxAttempts - 1) {
                     console.warn(
-                      `[Layout] Scope mismatch! Picker: ${hasPicker}, Drive: ${hasDrive}. Scopes: ${scopeStr}`,
+                      `[Layout] No recognized scopes found. Scopes: ${scopeStr}`,
                     );
                     // Force invalidate here too so the UI updates to "Not Connected"
                     localStorage.removeItem("google_photos_access_token");

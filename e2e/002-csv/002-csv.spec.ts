@@ -95,14 +95,63 @@ test.describe("CSV Export Page with Google Drive", () => {
           status: 204,
           headers: {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Upload-Content-Type",
           },
         });
         return;
       }
 
       // Handle Drive API
+      if (url.includes("/upload/drive/v3/files") && method === "POST") {
+        // Initial resumable upload request
+        await route.fulfill({
+          status: 200,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "Location",
+            Location: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=mock-upload-123",
+          },
+          body: JSON.stringify({ id: "mock-file-456" }),
+        });
+        return;
+      }
+
+      if (url.includes("upload_id=mock-upload-123") && method === "PUT") {
+        // Actual file data upload
+        await route.fulfill({
+          status: 200,
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: JSON.stringify({ id: "mock-file-456" }),
+        });
+        return;
+      }
+
+      if (url.includes("/permissions") && method === "POST") {
+        // Set permissions
+        await route.fulfill({
+          status: 200,
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: JSON.stringify({ id: "mock-perm-123" }),
+        });
+        return;
+      }
+
+      if (url.includes("/drive/v3/files/mock-file-456") && method === "GET") {
+        // Get file details
+        await route.fulfill({
+          status: 200,
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: JSON.stringify({
+            id: "mock-file-456",
+            name: "test-export.csv",
+            webViewLink: "https://drive.google.com/file/d/mock-file-456/view",
+            webContentLink: "https://drive.google.com/uc?id=mock-file-456&export=download",
+          }),
+        });
+        return;
+      }
+
       if (url.includes("/drive/v3/files")) {
         if (method === "GET") {
           // Mock list files response
@@ -126,24 +175,18 @@ test.describe("CSV Export Page with Google Drive", () => {
           });
           return;
         }
+      }
 
-        if (method === "POST") {
-          // Mock file upload response
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            headers: { "Access-Control-Allow-Origin": "*" },
-            body: JSON.stringify({
-              id: "mock-file-456",
-              name: "test-export.csv",
-              mimeType: "text/csv",
-              webViewLink: "https://drive.google.com/file/d/mock-file-456/view",
-              webContentLink:
-                "https://drive.google.com/uc?id=mock-file-456&export=download",
-            }),
-          });
-          return;
-        }
+      if (url.includes("/oauth2/v2/userinfo")) {
+        await route.fulfill({
+          status: 200,
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: JSON.stringify({
+            email: "test@example.com",
+            name: "Test User",
+          }),
+        });
+        return;
       }
 
       await route.continue();
@@ -339,7 +382,7 @@ test.describe("CSV Export Page with Google Drive", () => {
         token_type: "Bearer",
       };
       localStorage.setItem(
-        "google_drive_access_token",
+        "google_photos_access_token",
         JSON.stringify(mockToken),
       );
     });

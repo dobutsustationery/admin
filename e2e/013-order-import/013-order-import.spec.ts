@@ -130,7 +130,7 @@ test.describe("Inventory Receipt with Google Drive", () => {
     await authenticatedPage.addInitScript(() => {
       (window as any).__MOCK_DRIVE_CONFIG__ = true;
       localStorage.setItem(
-        "google_drive_access_token",
+        "google_photos_access_token",
         JSON.stringify({
           access_token: "mock-access-token",
           expires_in: 3600,
