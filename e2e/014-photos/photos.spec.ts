@@ -219,8 +219,10 @@ test.describe("Google Photos Integration", () => {
         return;
       }
 
+      const requestUrl = new URL(url);
+
       // Picker Sessions
-      if (url.includes("/v1/sessions")) {
+      if (requestUrl.pathname.includes("/v1/sessions")) {
         if (method === "POST") {
           await route.fulfill({
             status: 200,
@@ -233,7 +235,12 @@ test.describe("Google Photos Integration", () => {
           });
           return;
         }
-        if (method === "GET" && url.includes("/sess_123")) {
+        // Poll endpoint only: /v1/sessions/{id}
+        // Do not match /v1/sessions/{id}/mediaItems
+        if (
+          method === "GET" &&
+          requestUrl.pathname === "/v1/sessions/sess_123"
+        ) {
           pollCount++;
           // Simulate user taking some time to select photos (3 polls)
           const isReady = pollCount > 2;
@@ -279,7 +286,10 @@ test.describe("Google Photos Integration", () => {
       }
 
       // Media Items
-      if (url.includes("/v1/mediaItems") || url.includes("/v1/sessions/sess_123/mediaItems")) {
+      if (
+        url.includes("/v1/mediaItems") ||
+        requestUrl.pathname === "/v1/sessions/sess_123/mediaItems"
+      ) {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -290,12 +300,9 @@ test.describe("Google Photos Integration", () => {
                 id: "1",
                 description: "Photo 1",
                 productUrl: "http://example.com/1",
-                mediaFile: {
-                  baseUrl: "https://mock.photos/photo1.jpg",
-                  filename: "photo1.jpg",
-                  mimeType: "image/jpeg",
-                  mediaFileMetadata: { width: "100", height: "100" },
-                },
+                baseUrl: "https://mock.photos/photo1.jpg",
+                filename: "photo1.jpg",
+                mimeType: "image/jpeg",
                 mediaMetadata: {
                   creationTime: "2023-01-01T00:00:00Z",
                   width: "100",
@@ -306,12 +313,9 @@ test.describe("Google Photos Integration", () => {
                 id: "2",
                 description: "Photo 2",
                 productUrl: "http://example.com/2",
-                mediaFile: {
-                  baseUrl: "https://mock.photos/photo2.jpg",
-                  filename: "photo2.jpg",
-                  mimeType: "image/jpeg",
-                  mediaFileMetadata: { width: "100", height: "100" },
-                },
+                baseUrl: "https://mock.photos/photo2.jpg",
+                filename: "photo2.jpg",
+                mimeType: "image/jpeg",
                 mediaMetadata: {
                   creationTime: "2023-01-01T00:00:00Z",
                   width: "100",
