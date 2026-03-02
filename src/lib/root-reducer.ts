@@ -44,6 +44,12 @@ import { generateHandle } from "./handle-utils";
 import { buildDraftListingImages } from "./listing-image-logic";
 import { canonicalizeInventoryItemKey, makeInventoryItemKey } from "./sku";
 import { CURRENT_SCHEMA_VERSION } from "./schema-version";
+import {
+  keyAudit,
+  key_audit_observe_canonical,
+  key_audit_record_ghost_access,
+  key_audit_register_ghost,
+} from "./key-audit-slice";
 
 const reducerObject = {
   names,
@@ -57,10 +63,166 @@ const reducerObject = {
   syncQueue,
   listingCreation,
   ui,
+  keyAudit,
   schemaVersion: (state: number = CURRENT_SCHEMA_VERSION) =>
     state || CURRENT_SCHEMA_VERSION,
 };
 const combinedReducer = combineReducers(reducerObject);
+
+const normalizeActionTimestampMs = (action: any): number => {
+  const ts = action?.timestamp || action?._timestamp;
+  if (typeof ts === "number") return ts;
+  if (ts?.seconds) return ts.seconds * 1000;
+  if (ts?.toDate) return ts.toDate().getTime();
+  return Date.now();
+};
+
+const getIncomingIdObservations = (
+  action: any,
+): Array<{
+  actionPath: string;
+  incomingId: string;
+}> => {
+  const p = action?.payload || {};
+  const observations: Array<{ actionPath: string; incomingId: string }> = [];
+  const maybePush = (actionPath: string, rawValue: any) => {
+    const value = typeof rawValue === "string" ? rawValue.trim() : "";
+    if (value) observations.push({ actionPath, incomingId: value });
+  };
+
+  switch (action?.type) {
+    case "update_field":
+    case "update_item":
+      maybePush("payload.id", p.id);
+      break;
+    case "package_item":
+    case "quantify_item":
+    case "retype_item":
+    case "rename_subtype":
+      maybePush("payload.itemKey", p.itemKey);
+      break;
+    case "split_inventory_item":
+      maybePush("payload.sourceId", p.sourceId);
+      break;
+    case "listingCreation/remove_variant_requested":
+      maybePush("payload.itemId", p.itemId);
+      break;
+  }
+
+  return observations;
+};
+
+const applyKeyAuditInstrumentation = (
+  state: any,
+  action: any,
+  nextState: any,
+) => {
+  let nextKeyAudit = nextState.keyAudit;
+  const atMs = normalizeActionTimestampMs(action);
+  const priorInventory = state?.inventory?.idToItem || {};
+  const nextInventory = nextState?.inventory?.idToItem || {};
+  const priorGhostMap = state?.keyAudit?.ghostMap || {};
+
+  // 1) Global canonicalization observation and collision detection
+  const observations = getIncomingIdObservations(action);
+  observations.forEach(({ incomingId }) => {
+    const canonicalId = canonicalizeInventoryItemKey(incomingId);
+    nextKeyAudit = keyAudit(
+      nextKeyAudit,
+      key_audit_observe_canonical({
+        atMs,
+        actionType: action.type,
+        incomingId,
+        canonicalId,
+      }),
+    );
+  });
+
+  // 2) Track would-be ghost IDs when subtype rename re-keys old -> new and old key disappears
+  const maybeSubtypeRekey =
+    action?.type === "rename_subtype" ||
+    (action?.type === "update_field" && action?.payload?.field === "subtype");
+  if (maybeSubtypeRekey) {
+    const oldId =
+      action?.type === "rename_subtype"
+        ? action?.payload?.itemKey
+        : action?.payload?.id;
+    const oldItem = oldId ? priorInventory[oldId] : undefined;
+    if (oldItem) {
+      const newSubtype =
+        action?.type === "rename_subtype"
+          ? (action?.payload?.subtype || "").trim()
+          : (action?.payload?.to || "").trim();
+      const canonicalId = makeInventoryItemKey(oldItem.janCode, newSubtype);
+      const oldMissingAfter = oldId && !nextInventory[oldId];
+      const newExistsAfter = !!nextInventory[canonicalId];
+      if (
+        oldId &&
+        canonicalId &&
+        oldId !== canonicalId &&
+        oldMissingAfter &&
+        newExistsAfter
+      ) {
+        nextKeyAudit = keyAudit(
+          nextKeyAudit,
+          key_audit_register_ghost({
+            ghostId: oldId,
+            canonicalId,
+            janCode: oldItem.janCode || "",
+            oldSubtype: oldItem.subtype || "",
+            newSubtype,
+            renamedAtMs: atMs,
+            renamedByActionType: action.type,
+          }),
+        );
+      }
+    }
+  }
+
+  // 3) Record ghost access attempts (read/write intents against stale IDs)
+  observations.forEach(({ actionPath, incomingId }) => {
+    const canonicalCandidate = canonicalizeInventoryItemKey(incomingId);
+    const knownGhost = !!priorGhostMap[incomingId];
+    const mappedCanonicalId = priorGhostMap[incomingId]?.canonicalId;
+    const hasRaw = !!priorInventory[incomingId];
+    const hasCanonical = !!priorInventory[canonicalCandidate];
+    const isPotentialGhostAccess =
+      knownGhost ||
+      (!hasRaw && (incomingId !== canonicalCandidate || hasCanonical));
+
+    if (!isPotentialGhostAccess) return;
+
+    const outcome = hasRaw
+      ? "found_raw"
+      : hasCanonical
+        ? "found_under_canonical"
+        : "missing";
+    const eventId = [
+      String(atMs),
+      action.type,
+      actionPath,
+      incomingId,
+      canonicalCandidate,
+    ].join("|");
+
+    nextKeyAudit = keyAudit(
+      nextKeyAudit,
+      key_audit_record_ghost_access({
+        id: eventId,
+        atMs,
+        actionType: action.type,
+        actionPath,
+        requestedId: incomingId,
+        canonicalCandidate,
+        knownGhost,
+        mappedCanonicalId,
+        outcome,
+      }),
+    );
+  });
+
+  return { ...nextState, keyAudit: nextKeyAudit };
+};
 
 // Helper to map Order Import Item to Inventory Item
 const mapOrderToInventory = (importItem: any): Item => {
@@ -126,6 +288,9 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
   if (nextState.schemaVersion !== CURRENT_SCHEMA_VERSION) {
     nextState = { ...nextState, schemaVersion: CURRENT_SCHEMA_VERSION };
   }
+
+  // 2.5 Key integrity observability (non-blocking, no behavior changes)
+  nextState = applyKeyAuditInstrumentation(state, action, nextState);
 
   // 3. Interception & Composition
 

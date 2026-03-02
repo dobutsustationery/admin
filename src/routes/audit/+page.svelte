@@ -25,6 +25,10 @@
   let loading = true;
   let viewMode: DateRangeView = "day";
   let currentDate = new Date();
+  let keyAuditSnapshot: any = null;
+  let ghostRows: any[] = [];
+  let ghostAccessRows: any[] = [];
+  let collisionRows: any[] = [];
 
   // Search State
   let searchTerm = "";
@@ -34,6 +38,13 @@
   $: dateRange = getDateRange(viewMode, currentDate);
   $: startDateInput = format(dateRange.start, "yyyy-MM-dd");
   $: endDateInput = format(dateRange.end, "yyyy-MM-dd");
+  $: ghostRows = Object.values(
+    (keyAuditSnapshot?.ghostMap || {}) as Record<string, any>,
+  );
+  $: ghostAccessRows = (keyAuditSnapshot?.ghostAccessEvents || []) as any[];
+  $: collisionRows = Object.values(
+    (keyAuditSnapshot?.canonicalCollisions || {}) as Record<string, any>,
+  );
 
   async function fetchActions() {
     loading = true;
@@ -103,6 +114,7 @@
           });
 
         applySearchFilter();
+        recomputeKeyAuditSnapshot(cached);
       } else {
         const broadcasts = collection(firestore, "broadcast");
         const q = query(
@@ -122,11 +134,42 @@
             ? format(doc.data().timestamp.toDate(), "yyyy-MM-dd")
             : "Unknown",
         }));
+        recomputeKeyAuditSnapshot(actions);
       }
     } catch (e) {
       console.error("Error fetching audit logs:", e);
     } finally {
       loading = false;
+    }
+  }
+
+  function toTimestampKey(item: any): number {
+    if (item?.timestamp?.seconds) {
+      const nanos = item.timestamp.nanoseconds || 0;
+      return item.timestamp.seconds * 1_000_000_000 + nanos;
+    }
+    if (typeof item?.timestamp === "number") {
+      return item.timestamp * 1_000_000_000;
+    }
+    if (item?.timestamp?.toDate) {
+      return item.timestamp.toDate().getTime() * 1_000_000_000;
+    }
+    return 0;
+  }
+
+  function recomputeKeyAuditSnapshot(sourceActions: any[]) {
+    try {
+      const replayActions = [...(sourceActions || [])].sort(
+        (a, b) => toTimestampKey(a) - toTimestampKey(b),
+      );
+      let state = rootReducer(undefined, { type: "@@INIT" });
+      replayActions.forEach((action) => {
+        state = rootReducer(state, action, () => {});
+      });
+      keyAuditSnapshot = state?.keyAudit || null;
+    } catch (e) {
+      console.warn("Failed to compute key audit snapshot:", e);
+      keyAuditSnapshot = null;
     }
   }
 
@@ -206,20 +249,7 @@
     }
 
     // Sort Ascending for Replay (Oldest First), with nanos for deterministic order
-    const getTimestampKey = (item: any) => {
-      if (item.timestamp?.seconds) {
-        const nanos = item.timestamp.nanoseconds || 0;
-        return item.timestamp.seconds * 1_000_000_000 + nanos;
-      }
-      if (typeof item.timestamp === "number") {
-        return item.timestamp * 1_000_000_000;
-      }
-      if (item.timestamp?.toDate) {
-        return item.timestamp.toDate().getTime() * 1_000_000_000;
-      }
-      return 0;
-    };
-    exportable.sort((a, b) => getTimestampKey(a) - getTimestampKey(b));
+    exportable.sort((a, b) => toTimestampKey(a) - toTimestampKey(b));
 
     const jsonl = exportable.map((a) => JSON.stringify(a)).join("\n");
     const blob = new Blob([jsonl], { type: "application/x-jsonlines" });
@@ -346,6 +376,128 @@
         </div>
       {/each}
     </div>
+  {/if}
+
+  {#if keyAuditSnapshot}
+    <section class="key-audit-section">
+      <h2>Key Audit</h2>
+
+      <h3>Ghost ID Map</h3>
+      {#if ghostRows.length === 0}
+        <div class="empty-small">No ghost IDs recorded.</div>
+      {:else}
+        <div class="table-wrap">
+          <table class="key-audit-table">
+            <thead>
+              <tr>
+                <th>Ghost ID</th>
+                <th>Canonical ID</th>
+                <th>Transition</th>
+                <th>Action</th>
+                <th>When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each ghostRows as row}
+                <tr>
+                  <td>{row.ghostId}</td>
+                  <td>{row.canonicalId}</td>
+                  <td
+                    >{row.oldSubtype || "(blank)"} → {row.newSubtype ||
+                      "(blank)"}</td
+                  >
+                  <td>{row.renamedByActionType}</td>
+                  <td
+                    >{format(
+                      new Date(row.renamedAtMs),
+                      "yyyy-MM-dd HH:mm:ss",
+                    )}</td
+                  >
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+
+      <h3>Ghost Access Events</h3>
+      {#if ghostAccessRows.length === 0}
+        <div class="empty-small">No ghost accesses recorded.</div>
+      {:else}
+        <div class="table-wrap">
+          <table class="key-audit-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Action</th>
+                <th>Path</th>
+                <th>Requested ID</th>
+                <th>Canonical</th>
+                <th>Known Ghost</th>
+                <th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each ghostAccessRows as row}
+                <tr>
+                  <td>{format(new Date(row.atMs), "yyyy-MM-dd HH:mm:ss")}</td>
+                  <td>{row.actionType}</td>
+                  <td>{row.actionPath}</td>
+                  <td>{row.requestedId}</td>
+                  <td
+                    >{row.mappedCanonicalId || row.canonicalCandidate || ""}</td
+                  >
+                  <td>{row.knownGhost ? "yes" : "no"}</td>
+                  <td>{row.outcome}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+
+      <h3>Canonical Collision Reports (Global)</h3>
+      {#if collisionRows.length === 0}
+        <div class="empty-small">No canonical collisions recorded.</div>
+      {:else}
+        <div class="table-wrap">
+          <table class="key-audit-table">
+            <thead>
+              <tr>
+                <th>Canonical ID</th>
+                <th>Incoming IDs</th>
+                <th>Occurrences</th>
+                <th>Last Action</th>
+                <th>First Seen</th>
+                <th>Last Seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each collisionRows as row}
+                <tr>
+                  <td>{row.canonicalId}</td>
+                  <td>{row.incomingIds.join(", ")}</td>
+                  <td>{row.occurrences}</td>
+                  <td>{row.lastActionType}</td>
+                  <td
+                    >{format(
+                      new Date(row.firstSeenAtMs),
+                      "yyyy-MM-dd HH:mm:ss",
+                    )}</td
+                  >
+                  <td
+                    >{format(
+                      new Date(row.lastSeenAtMs),
+                      "yyyy-MM-dd HH:mm:ss",
+                    )}</td
+                  >
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </section>
   {/if}
 </div>
 
@@ -496,5 +648,49 @@
     text-align: center;
     padding: 3rem;
     color: #666;
+  }
+
+  .key-audit-section {
+    margin-top: 2rem;
+    border-top: 2px solid #ddd;
+    padding-top: 1.5rem;
+  }
+
+  .key-audit-section h2 {
+    margin: 0 0 1rem;
+  }
+
+  .key-audit-section h3 {
+    margin: 1rem 0 0.5rem;
+    font-size: 1rem;
+  }
+
+  .empty-small {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    margin-bottom: 1rem;
+  }
+
+  .key-audit-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.85rem;
+  }
+
+  .key-audit-table th,
+  .key-audit-table td {
+    border: 1px solid #ddd;
+    padding: 0.4rem 0.5rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .key-audit-table th {
+    background: #f6f7f8;
   }
 </style>
