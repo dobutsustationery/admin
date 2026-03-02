@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { user } from "$lib/user-store";
-  import { auth } from "$lib/firebase";
+  import { auth, firestore } from "$lib/firebase";
   import { signOut } from "firebase/auth";
   import {
     getStoredToken,
@@ -9,20 +9,13 @@
     initiateOAuthFlow,
     getExpiryInfo,
     refreshTokensSilently,
-    type GooglePhotosToken,
-  } from "$lib/google-photos";
-  import {
-    getStoredToken as getDriveToken,
-    getExpiryInfo as getDriveExpiry,
-    refreshTokensSilently as refreshDriveSilently,
-  } from "$lib/google-drive";
+    type GoogleAuthToken as GooglePhotosToken,
+  } from "$lib/google-auth-unified";
   import { goto } from "$app/navigation";
   import AuthRefreshBanner from "$lib/components/AuthRefreshBanner.svelte";
 
   let token: GooglePhotosToken | null = null;
-  let driveToken: any = null;
-  let photosExpiry: any = null;
-  let driveExpiry: any = null;
+  let expiryInfo: any = null;
   let isRefreshing = false;
 
   let scopes: string[] = [];
@@ -49,11 +42,9 @@
     return () => clearInterval(interval);
   });
 
-  async function loadTokenInfo() {
+  function loadTokenInfo() {
     token = getStoredToken();
-    driveToken = getDriveToken();
-    photosExpiry = getExpiryInfo();
-    driveExpiry = getDriveExpiry();
+    expiryInfo = getExpiryInfo();
 
     if (token) {
       scopes = token.scope.split(" ");
@@ -62,20 +53,13 @@
     }
 
     // Auto-refresh logic: if token is valid but expires in less than 5 mins, refresh.
-    if (!isRefreshing) {
-      if (
-        photosExpiry &&
-        !photosExpiry.expired &&
-        photosExpiry.expiresInSeconds < 300
-      ) {
-        handleRefresh();
-      } else if (
-        driveExpiry &&
-        !driveExpiry.expired &&
-        driveExpiry.expiresInSeconds < 300
-      ) {
-        handleRefresh();
-      }
+    if (
+      !isRefreshing &&
+      expiryInfo &&
+      !expiryInfo.expired &&
+      expiryInfo.expiresInSeconds < 300
+    ) {
+      handleRefresh();
     }
   }
 
@@ -91,7 +75,6 @@
     if (isRefreshing) return;
     isRefreshing = true;
     try {
-      // In our current flow, Photos flow grants both Drive and Photos scopes
       await refreshTokensSilently();
     } catch (e) {
       console.error("Refresh failed", e);
@@ -110,7 +93,7 @@
   }
 
   function handleReauthorize() {
-    initiateOAuthFlow();
+    initiateOAuthFlow(true);
   }
 
   async function testDriveAccess() {
@@ -123,7 +106,6 @@
 
     try {
       // Test 1: List files in Root (or configured folder)
-      // If 403 on specific folder, it means we lack access to it.
       const folderId = CONFIG_FOLDER_ID || "root";
       const query = `'${folderId}' in parents and trashed = false`;
       const params = new URLSearchParams({
@@ -148,7 +130,6 @@
 
         if (res.status === 403 && CONFIG_FOLDER_ID) {
           testResult += `\n\nNOTE: You are using the 'drive.file' scope. Unles you created folder '${CONFIG_FOLDER_ID}' with this app, you cannot see it.`;
-          testResult += `\nTry creating a NEW folder using the app logic, or use a broader scope (not recommended).`;
         }
       }
     } catch (e: any) {
@@ -222,7 +203,7 @@
   <!-- Google Auth Section -->
   <div class="panel">
     <div class="panel-header">
-      <h2 class="section-title">Google Drive & Photos Auth</h2>
+      <h2 class="section-title">Unified Google Access</h2>
       {#if token}
         <span class="status-pill status-connected">CONNECTED</span>
       {:else}
@@ -237,10 +218,10 @@
           <div class="expiry-row">
             <span
               class="mono"
-              class:text-danger={photosExpiry?.expired ||
-                photosExpiry?.expiresInSeconds < 300}
+              class:text-danger={expiryInfo?.expired ||
+                expiryInfo?.expiresInSeconds < 300}
             >
-              {formatExpiry(photosExpiry)}
+              {formatExpiry(expiryInfo)}
             </span>
             <button
               on:click={handleRefresh}
@@ -306,12 +287,16 @@
     </p>
     <button
       on:click={async () => {
-              if (confirm("Are you sure? This will clear your local cache and reload the page. It may take a few moments to rebuild.")) {
-                  const { clearActionCache } = await import("$lib/action-cache");
-                  await clearActionCache();
-                  window.location.reload();
-              }
-          }}
+        if (
+          confirm(
+            "Are you sure? This will clear your local cache and reload the page. It may take a few moments to rebuild.",
+          )
+        ) {
+          const { clearActionCache } = await import("$lib/action-cache");
+          await clearActionCache();
+          window.location.reload();
+        }
+      }}
       class="btn btn-outline-danger"
     >
       Refresh Cached State

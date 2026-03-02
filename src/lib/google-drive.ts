@@ -1,8 +1,8 @@
 /**
  * Google Drive Integration Service
  *
- * This module provides OAuth authentication and file upload functionality
- * for Google Drive integration in the Dobutsu Admin application.
+ * This module provides file upload functionality for Google Drive integration
+ * in the Dobutsu Admin application. Authentication is handled by google-auth-unified.ts.
  */
 
 import type { drive_v3 } from "googleapis";
@@ -14,8 +14,19 @@ import {
   buildDerivationKeyQuery as sharedBuildDerivationKeyQuery,
   findFileByDerivationKey as sharedFindFileByDerivationKey,
 } from "./idempotency-utils";
+import {
+  getStoredToken as getUnifiedToken,
+  isAuthenticated as isUnifiedAuthenticated,
+  initiateOAuthFlow as initiateUnifiedOAuthFlow,
+  clearToken as clearUnifiedToken,
+  getExpiryInfo as getUnifiedExpiryInfo,
+  refreshTokensSilently as refreshUnifiedTokensSilently,
+  type GoogleAuthToken,
+} from "./google-auth-unified";
 
-// Constant for idempotency property
+// Re-export properties used by other modules
+export const JAN_CODE_FOUND_PROPERTY = "janCodeFound";
+export const MERGE_WITH_PROPERTY = "mergeWith";
 export const DERIVATION_KEY_PROPERTY = SHARED_DERIVATION_KEY_PROPERTY;
 
 /**
@@ -30,8 +41,9 @@ export function escapeDriveQueryValue(value: string): string {
  */
 export async function calculateHash(blob: Blob): Promise<string> {
   const arrayBuffer = await blob.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashArray = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", arrayBuffer)),
+  );
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -58,15 +70,51 @@ const FOLDER_ID =
     (window as any).__GOOGLE_DRIVE_FOLDER_ID__) ||
   import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID ||
   process.env.VITE_GOOGLE_DRIVE_FOLDER_ID;
-const SCOPES = (
-  (typeof window !== "undefined" && (window as any).__GOOGLE_DRIVE_SCOPES__) ||
-  import.meta.env.VITE_GOOGLE_DRIVE_SCOPES ||
-  process.env.VITE_GOOGLE_DRIVE_SCOPES ||
-  "https://www.googleapis.com/auth/drive.file"
-).split(",");
 
-// OAuth token storage key
-const TOKEN_STORAGE_KEY = "google_drive_access_token";
+/**
+ * OAuth token information
+ */
+export type GoogleDriveToken = GoogleAuthToken;
+
+/**
+ * Get stored access token from unified service
+ */
+export const getStoredToken = getUnifiedToken;
+
+/**
+ * Store access token (kept for backward compatibility)
+ */
+export function storeToken(token: GoogleDriveToken): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem("google_photos_access_token", JSON.stringify(token));
+}
+
+/**
+ * Clear stored access token
+ */
+export const clearToken = clearUnifiedToken;
+
+/**
+ * Check if user is authenticated with Google Drive
+ */
+export const isAuthenticated = isUnifiedAuthenticated;
+
+/**
+ * Get information about token expiry
+ */
+export const getExpiryInfo = getUnifiedExpiryInfo;
+
+/**
+ * Attempt to refresh tokens silently.
+ */
+export const refreshTokensSilently = refreshUnifiedTokensSilently;
+
+/**
+ * Initiate OAuth flow
+ */
+export function initiateOAuthFlow(returnUrl?: string): void {
+  initiateUnifiedOAuthFlow(false, returnUrl);
+}
 
 /**
  * Singleton promise to prevent concurrent folder structure checks
@@ -76,17 +124,6 @@ let inFlightFolderStructure: Promise<{
   originalsId: string;
   processedId: string;
 }> | null = null;
-
-/**
- * OAuth token information
- */
-export interface GoogleDriveToken {
-  access_token: string;
-  expires_in: number;
-  expires_at: number;
-  scope: string;
-  token_type: string;
-}
 
 /**
  * File upload response
@@ -333,151 +370,7 @@ export function isDriveConfigured(): boolean {
 }
 
 /**
- * Get stored access token if it exists and is not expired
- */
-export function getStoredToken(): GoogleDriveToken | null {
-  try {
-    if (typeof localStorage === "undefined") return null;
-    const tokenJson = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (!tokenJson) return null;
-
-    const parsed = JSON.parse(tokenJson);
-
-    // Validate token structure
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      typeof parsed.access_token !== "string" ||
-      typeof parsed.expires_in !== "number" ||
-      typeof parsed.expires_at !== "number"
-    ) {
-      console.error("Invalid token structure in localStorage");
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      return null;
-    }
-
-    const token = parsed as GoogleDriveToken;
-
-    // Check if token is expired
-    if (token.expires_at && Date.now() > token.expires_at) {
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      return null;
-    }
-
-    return token;
-  } catch (e) {
-    console.error("Error retrieving stored token:", e);
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-    }
-    return null;
-  }
-}
-
-/**
- * Store access token in localStorage
- */
-export function storeToken(token: GoogleDriveToken): void {
-  try {
-    if (typeof localStorage === "undefined") return;
-    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(token));
-  } catch (e) {
-    console.error("Error storing token:", e);
-  }
-}
-
-/**
- * Clear stored access token
- */
-export function clearToken(): void {
-  if (typeof localStorage === "undefined") return;
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
-}
-
-/**
- * Get information about token expiry
- */
-export function getExpiryInfo(): {
-  expired: boolean;
-  expiresInSeconds: number;
-  expiresAt: number;
-} | null {
-  const token = getStoredToken();
-  if (!token) return null;
-
-  const now = Date.now();
-  const expiresInSeconds = Math.max(
-    0,
-    Math.floor((token.expires_at - now) / 1000),
-  );
-
-  return {
-    expired: expiresInSeconds <= 0,
-    expiresInSeconds,
-    expiresAt: token.expires_at,
-  };
-}
-
-/**
- * Attempt to refresh tokens silently.
- * For now, this triggers a redirect flow if refresh is needed.
- */
-export async function refreshTokensSilently(): Promise<boolean> {
-  if (!isDriveConfigured()) return false;
-  console.log("[DriveAuth] Refreshing tokens via redirect...");
-  initiateOAuthFlow();
-  return true;
-}
-
-/**
- * Check if user is authenticated with Google Drive
- */
-export function isAuthenticated(): boolean {
-  const expiry = getExpiryInfo();
-  return !!expiry && !expiry.expired;
-}
-
-/**
- * Initiate OAuth flow to authenticate with Google Drive
- * Uses Google's OAuth 2.0 for client-side web applications
- */
-export function initiateOAuthFlow(returnUrl?: string): void {
-  if (!isDriveConfigured()) {
-    console.error(
-      "Google Drive is not configured. Please set VITE_GOOGLE_DRIVE_CLIENT_ID and VITE_GOOGLE_DRIVE_FOLDER_ID",
-    );
-    return;
-  }
-
-  // Build OAuth URL
-  const redirectUri =
-    import.meta.env.VITE_GOOGLE_DRIVE_REDIRECT_URI ||
-    `${window.location.origin}/csv`;
-
-  // Encode return URL in state if provided
-  // We encode the return URL to ensure special characters don't break the state parsing
-  const state = returnUrl
-    ? `drive_auth|${encodeURIComponent(returnUrl)}`
-    : "drive_auth";
-
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    redirect_uri: redirectUri,
-    response_type: "token",
-    scope: SCOPES.join(" "),
-    include_granted_scopes: "true",
-    state: state,
-  });
-
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-
-  // Redirect to Google OAuth
-  window.location.href = authUrl;
-}
-
-/**
  * Handle OAuth callback and extract token from URL hash
- * Call this on page load to check for OAuth redirect
  */
 export function handleOAuthCallback(): {
   token: GoogleDriveToken;
@@ -523,465 +416,46 @@ export function handleOAuthCallback(): {
 }
 
 /**
- * List files in the configured Google Drive folder
- */
-export async function listFilesInFolder(
-  accessToken: string,
-): Promise<DriveFile[]> {
-  if (!FOLDER_ID) {
-    throw new Error("Google Drive folder ID is not configured");
-  }
-
-  const params = new URLSearchParams({
-    q: `'${FOLDER_ID}' in parents and trashed=false`,
-    fields: "files(id,name,mimeType,modifiedTime,size,webViewLink)",
-    orderBy: "modifiedTime desc",
-    pageSize: "50",
-  });
-
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      console.error("Google Drive Token Expired (401). Clearing token.");
-      clearToken();
-    }
-    throw new Error(`Failed to list files: ${response.statusText}`);
-  }
-
-  const data = (await response.json()) as { files: DriveFile[] };
-  return data.files || [];
-}
-
-/**
- * List all images in the configured folder (recursive or flat depending on need, flat for now)
- * Used to discover files for Listing Creation.
- */
-export async function listAllImages(accessToken: string): Promise<DriveFile[]> {
-  if (!FOLDER_ID) {
-    throw new Error("Google Drive folder ID is not configured");
-  }
-
-  // Search for images in the folder tree?
-  // Or just strictly in the folder?
-  // The requirement implies finding images for JANs. These might be in subfolders or root.
-  // Let's search recursively in the folder ID tree?
-  // 'q' param 'ancestors' is not directly supported in 'q', uses 'parents' for direct.
-  // For deep search, we might need to rely on name convention or just search everything user has access to that looks like our data?
-  // Safer: Search for mimeType = image/ inside FOLDER_ID (direct parent) for now.
-  // If we need recursive, we need to iterate folders.
-  // Wait, the previous logic (Photos) was flattened.
-  // Let's assume a flat structure in the "Images" folder or "Processed" folder?
-  // User said "the photos are stored in google drive".
-  // Let's search in the configured root FOLDER_ID and its children?
-  // Actually, 'q': `'${FOLDER_ID}' in parents` is direct.
-
-  // Let's try to be broad: specific mimeType image/* and trashed=false.
-  // BUT we should scope it to our folder if possible.
-  // If files are in subfolders (e.g. "Images/Originals"), direct parent query won't find them.
-  // Workaround: We can search for everything and filter? No, too many files.
-
-  // Let's stick to the "Images" folder structure we defined: Root -> Images -> [Originals, Processed]
-  // So we should search in "Images" folder ID?
-  // We can use `ensureFolderStructure` to get the IDs, then search in them?
-  // That seems safer.
-
-  // Helper to search in a specific parent
-  const searchInParent = async (parentId: string): Promise<DriveFile[]> => {
-    const params = new URLSearchParams({
-      q: `'${parentId}' in parents and mimeType contains 'image/' and trashed=false`,
-      fields:
-        "files(id,name,mimeType,modifiedTime,size,webViewLink,webContentLink,thumbnailLink)",
-      pageSize: "1000", // Fetch a lot
-      orderBy: "name",
-    });
-
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
-    if (!res.ok) {
-      if (res.status === 401) {
-        console.error("Google Drive Token Expired (401). Clearing token.");
-        clearToken();
-      }
-      throw new Error(`Failed to list images in ${parentId}`);
-    }
-    const data = await res.json();
-    return data.files || [];
-  };
-
-  try {
-    // Get structure
-    // This might be slow if we call it every time.
-    // Ideally we cache these IDs or passed them.
-    // For now, let's just find "Images" folder inside ROOT.
-    // Search in Root FOLDER_ID
-    const rootImages = await searchInParent(FOLDER_ID);
-
-    // Search in "Images" folder (if exists)
-    const imagesId = await findFolder("Images", FOLDER_ID, accessToken);
-    const imagesFolderImages = imagesId ? await searchInParent(imagesId) : [];
-
-    // Search in "Seed" (fixtures) if present at root.
-    const seedId = await findFolder("Seed", FOLDER_ID, accessToken);
-    const seedImages = seedId ? await searchInParent(seedId) : [];
-
-    // Search in "Originals" (if exists, inside Images)
-    let originalsImages: DriveFile[] = [];
-    if (imagesId) {
-      const originalsId = await findFolder("Originals", imagesId, accessToken);
-      if (originalsId) originalsImages = await searchInParent(originalsId);
-    }
-
-    // Search in "Processed" (if exists, inside Images)
-    let processedImages: DriveFile[] = [];
-    if (imagesId) {
-      const processedId = await findFolder("Processed", imagesId, accessToken);
-      if (processedId) processedImages = await searchInParent(processedId);
-    }
-
-    return [
-      ...hydrateDriveFiles(rootImages),
-      ...hydrateDriveFiles(seedImages),
-      ...hydrateDriveFiles(imagesFolderImages),
-      ...hydrateDriveFiles(originalsImages),
-      ...hydrateDriveFiles(processedImages),
-    ];
-  } catch (e) {
-    console.error("Error listing all images:", e);
-    return [];
-  }
-}
-
-/**
  * Search for a file by its derivation key in properties.
  */
 export async function findFileByDerivationKey(
   accessToken: string,
   derivationKey: string,
 ): Promise<DriveFile | null> {
-  return sharedFindFileByDerivationKey(derivationKey, async (url: string) => {
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        console.error("Google Drive Token Expired (401). Clearing token.");
-        clearToken();
+  const file = await sharedFindFileByDerivationKey(
+    derivationKey,
+    async (url: string) => {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearToken();
+        }
+        throw new Error(
+          `Find by derivation key failed: ${response.statusText}`,
+        );
       }
-      throw new Error(
-        `Failed to search by derivation key: ${response.statusText}`,
-      );
-    }
+      return await response.json();
+    },
+  );
 
-    return response.json();
-  }) as Promise<DriveFile | null>;
-}
+  if (!file) return null;
 
-/**
- * Upload a CSV file to Google Drive
- */
-export async function uploadCSVToDrive(
-  filename: string,
-  csvContent: string,
-  accessToken: string,
-  derivationKey?: string,
-): Promise<DriveFileInfo> {
-  if (!FOLDER_ID) {
-    throw new Error("Google Drive folder ID is not configured");
-  }
-
-  // Create file metadata
-  const metadata: any = {
-    name: filename,
-    mimeType: "text/csv",
-    parents: [FOLDER_ID],
+  return {
+    ...file,
+    mimeType: (file as any).mimeType || "image/png",
+    modifiedTime: (file as any).modifiedTime || new Date().toISOString(),
   };
-
-  if (derivationKey) {
-    metadata.properties = { [DERIVATION_KEY_PROPERTY]: derivationKey };
-  }
-
-  // Create multipart request body with random boundary
-  const boundary = `----FormBoundary${Math.random().toString(36).substring(2)}`;
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
-
-  const body =
-    delimiter +
-    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-    JSON.stringify(metadata) +
-    delimiter +
-    "Content-Type: text/csv\r\n\r\n" +
-    csvContent +
-    closeDelimiter;
-
-  // Upload file
-  const response = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": `multipart/related; boundary=${boundary}`,
-      },
-      body: body,
-    },
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Failed to upload file: ${response.statusText} - ${errorText}`,
-    );
-  }
-
-  const fileInfo = (await response.json()) as DriveFileInfo;
-  return fileInfo;
 }
 
 /**
- * Get the configured folder ID
- */
-export function getFolderId(): string | undefined {
-  return FOLDER_ID;
-}
-
-/**
- * Get folder link to view in Google Drive
- */
-export function getFolderLink(): string | undefined {
-  if (!FOLDER_ID) return undefined;
-  return `https://drive.google.com/drive/folders/${FOLDER_ID}`;
-}
-
-/**
- * Download a file's content from Google Drive
- */
-export async function downloadFile(
-  fileId: string,
-  accessToken: string,
-): Promise<string> {
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Failed to download file: ${response.statusText} - ${errorText}`,
-    );
-  }
-
-  return await response.text();
-}
-/**
- * Find a folder by name within a parent folder
- */
-export async function findFolder(
-  name: string,
-  parentId: string,
-  accessToken: string,
-  role?: string,
-): Promise<string | null> {
-  // Try searching by role property first (most stable)
-  if (role) {
-    const roleQuery = `'${parentId}' in parents and properties has { key='folder_role' and value='${role}' } and trashed = false`;
-    const roleParams = new URLSearchParams({
-      q: roleQuery,
-      fields: "files(id, name, createdTime)",
-      pageSize: "10",
-      orderBy: "createdTime",
-      supportsAllDrives: "true",
-      includeItemsFromAllDrives: "true",
-    });
-
-    const roleRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files?${roleParams.toString()}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    );
-
-    if (roleRes.ok) {
-      const data = await roleRes.json();
-      if (data.files && data.files.length > 0) {
-        return data.files[0].id; // Pick oldest match
-      }
-    }
-  }
-
-  // Fallback to name-based search
-  const query = `'${parentId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-  const params = new URLSearchParams({
-    q: query,
-    fields: "files(id, name, createdTime)",
-    pageSize: "10",
-    orderBy: "createdTime",
-    supportsAllDrives: "true",
-    includeItemsFromAllDrives: "true",
-  });
-
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      console.error("Google Drive Token Expired (401). Clearing token.");
-      clearToken();
-    }
-    throw new Error(`Failed to find folder '${name}': ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.files && data.files.length > 0 ? data.files[0].id : null;
-}
-
-/**
- * Create a new folder
- */
-export async function createFolder(
-  name: string,
-  parentId: string,
-  accessToken: string,
-  role?: string,
-): Promise<string> {
-  const metadata: any = {
-    name,
-    mimeType: "application/vnd.google-apps.folder",
-    parents: [parentId],
-  };
-
-  if (role) {
-    metadata.properties = { folder_role: role };
-  }
-
-  const response = await fetch("https://www.googleapis.com/drive/v3/files", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(metadata),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to create folder '${name}': ${response.statusText}`,
-    );
-  }
-
-  const file = await response.json();
-  return file.id;
-}
-
-/**
- * Ensure the required folder structure exists: Root -> Images -> [Originals, Processed]
- * Returns object with folder IDs
- */
-export async function ensureFolderStructure(
-  accessToken: string,
-): Promise<{ originalsId: string; processedId: string }> {
-  if (inFlightFolderStructure) return inFlightFolderStructure;
-
-  inFlightFolderStructure = (async () => {
-    try {
-      if (!FOLDER_ID) throw new Error("Root folder ID not configured");
-
-      // 1. Find or Create "Images" folder
-      let imagesId = await findFolder(
-        "Images",
-        FOLDER_ID,
-        accessToken,
-        "root_images",
-      );
-      if (!imagesId) {
-        imagesId = await createFolder(
-          "Images",
-          FOLDER_ID,
-          accessToken,
-          "root_images",
-        );
-      }
-
-      // 2. Find or Create "Originals"
-      let originalsId = await findFolder(
-        "Originals",
-        imagesId,
-        accessToken,
-        "originals",
-      );
-      if (!originalsId) {
-        originalsId = await createFolder(
-          "Originals",
-          imagesId,
-          accessToken,
-          "originals",
-        );
-      }
-
-      // 3. Find or Create "Processed"
-      let processedId = await findFolder(
-        "Processed",
-        imagesId,
-        accessToken,
-        "processed",
-      );
-      if (!processedId) {
-        processedId = await createFolder(
-          "Processed",
-          imagesId,
-          accessToken,
-          "processed",
-        );
-      }
-
-      return { originalsId, processedId };
-    } finally {
-      // Clear the promise after a short delay to allow fresh checks later if needed,
-      // but long enough to cover the initial surge of concurrent calls.
-      setTimeout(() => {
-        inFlightFolderStructure = null;
-      }, 5000);
-    }
-  })();
-
-  return inFlightFolderStructure;
-}
-
-/**
- * Set file permissions to be readable by anyone (or specific logic)
- * For now: role=reader, type=anyone
+ * Set public view permission for a file
  */
 export async function setFilePermissions(
   fileId: string,
   accessToken: string,
 ): Promise<void> {
-  const permission = {
-    role: "reader",
-    type: "anyone",
-  };
-
   const response = await fetch(
     `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
     {
@@ -990,140 +464,62 @@ export async function setFilePermissions(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(permission),
-    },
-  );
-
-  if (!response.ok) {
-    const err = await response.text();
-    // Allow race condition where it's already public
-    console.warn(`Failed to set permissions for ${fileId}: ${err}`);
-  }
-}
-
-export const FOLDER_ROLE_PROPERTY = "folder_role";
-export const JAN_CODE_FOUND_PROPERTY = "jan_code_found";
-export const MERGE_WITH_PROPERTY = "merge_with";
-
-/**
- * Get full metadata for a file
- */
-export async function getFileMetadata(
-  fileId: string,
-  accessToken: string,
-): Promise<any> {
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=*&supportsAllDrives=true`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to get metadata for ${fileId}: ${response.statusText}`,
-    );
-  }
-
-  return await response.json();
-}
-
-/**
- * Set a property on a Drive file
- */
-export async function setFileProperty(
-  fileId: string,
-  key: string,
-  value: string,
-  accessToken: string,
-): Promise<void> {
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}`,
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
       body: JSON.stringify({
-        properties: { [key]: value },
+        role: "reader",
+        type: "anyone",
       }),
     },
   );
 
   if (!response.ok) {
-    const err = await response.text();
-    console.warn(
-      `Failed to set property ${key}=${value} for ${fileId}: ${err}`,
-    );
+    const errorText = await response.text();
+    console.error(`Failed to set file permissions: ${errorText}`);
   }
 }
 
 /**
- * Rename a file in Drive
- */
-export async function renameFile(
-  fileId: string,
-  newName: string,
-  accessToken: string,
-): Promise<void> {
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}`,
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name: newName }),
-    },
-  );
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Failed to rename file ${fileId}: ${err}`);
-  }
-}
-
-/**
- * Upload a Blob/File to Drive with progress reporting
+ * Upload a blob to Google Drive
  */
 export async function uploadImageToDrive(
   blob: Blob,
   filename: string,
   folderId: string,
   accessToken: string,
-  derivationKey: string,
+  derivationKey?: string | Record<string, string>,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<DriveFileInfo> {
+  // Handle legacy derivationKey string or new properties object
+  const properties =
+    typeof derivationKey === "string"
+      ? { [DERIVATION_KEY_PROPERTY]: derivationKey }
+      : derivationKey || {};
+
+  // 1. Initialize resumable upload
   const metadata = {
     name: filename,
     parents: [folderId],
-    properties: { [DERIVATION_KEY_PROPERTY]: derivationKey },
+    properties: properties,
   };
 
-  // 1. Initiate Resumable Session
   const initRes = await fetch(
     "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify(metadata),
     },
   );
 
   if (!initRes.ok) {
-    const errText = await initRes.text();
-    throw new Error(`Failed to initiate upload: ${initRes.status} ${errText}`);
+    const errorText = await initRes.text();
+    throw new Error(`Failed to initialize upload: ${errorText}`);
   }
 
   const uploadUrl = initRes.headers.get("Location");
-  if (!uploadUrl) throw new Error("No upload location returned");
+  if (!uploadUrl) throw new Error("No upload location received");
 
   // 2. Upload Data with Progress (using XHR if available for progress events)
   let fileData: any;
@@ -1176,22 +572,389 @@ export async function uploadImageToDrive(
   const detailsParam = new URLSearchParams({
     fields: "id,name,webViewLink,webContentLink,thumbnailLink",
   });
-
   const detailsRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileData.id}?${detailsParam}`,
+    `https://www.googleapis.com/drive/v3/files/${fileData.id}?${detailsParam.toString()}`,
     {
       headers: { Authorization: `Bearer ${accessToken}` },
     },
   );
 
-  const details = await detailsRes.json();
-  console.log("Drive Upload Details:", details);
-
-  if (fileData.id) {
-    details.thumbnailLink = `https://drive.google.com/thumbnail?id=${fileData.id}`;
-    details.publicUrl = toGoogleDrivePublicImageUrl(String(fileData.id));
-    details.apiUrl = `https://www.googleapis.com/drive/v3/files/${fileData.id}?alt=media`;
+  const details = (await detailsRes.json()) as DriveFileInfo;
+  if (details.id) {
+    details.publicUrl = `https://lh3.googleusercontent.com/d/${details.id}=s0`;
+    details.apiUrl = `https://www.googleapis.com/drive/v3/files/${details.id}?alt=media`;
   }
 
   return details;
+}
+
+/**
+ * Find a folder by name within a parent folder
+ */
+export async function findFolder(
+  name: string,
+  parentId: string,
+  accessToken: string,
+  role?: string,
+): Promise<string | null> {
+  const query = `'${parentId}' in parents and name = '${escapeDriveQueryValue(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const params = new URLSearchParams({
+    q: query,
+    fields: "files(id)",
+    pageSize: "1",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      console.error("Google Drive Token Expired (401). Clearing token.");
+      clearToken();
+    }
+    throw new Error(`Failed to find folder '${name}': ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.files && data.files.length > 0 ? data.files[0].id : null;
+}
+
+/**
+ * Create a new folder
+ */
+export async function createFolder(
+  name: string,
+  parentId: string,
+  accessToken: string,
+): Promise<string> {
+  const metadata = {
+    name,
+    mimeType: "application/vnd.google-apps.folder",
+    parents: [parentId],
+  };
+
+  const response = await fetch("https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(metadata),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to create folder '${name}': ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.id;
+}
+
+/**
+ * Ensure a complete folder structure exists
+ */
+export async function ensureFolderPath(
+  path: string,
+  accessToken: string,
+): Promise<string> {
+  const parts = path.split("/").filter(Boolean);
+  let currentParent = "root";
+
+  for (const part of parts) {
+    let folderId = await findFolder(part, currentParent, accessToken);
+    if (!folderId) {
+      folderId = await createFolder(part, currentParent, accessToken);
+      await setFilePermissions(folderId, accessToken);
+    }
+    currentParent = folderId;
+  }
+
+  return currentParent;
+}
+
+/**
+ * Ensure the primary "Images" folder structure exists.
+ * Returns both the Originals and Processed folder IDs.
+ */
+export async function ensureFolderStructure(
+  accessToken: string,
+): Promise<{ originalsId: string; processedId: string }> {
+  if (!FOLDER_ID) throw new Error("Root folder ID not configured");
+
+  if (!inFlightFolderStructure) {
+    inFlightFolderStructure = (async () => {
+      try {
+        const imagesId = await findFolder("Images", FOLDER_ID, accessToken);
+        if (!imagesId) {
+          const newImagesId = await createFolder(
+            "Images",
+            FOLDER_ID,
+            accessToken,
+          );
+          await setFilePermissions(newImagesId, accessToken);
+          const [origId, procId] = await Promise.all([
+            createFolder("Originals", newImagesId, accessToken),
+            createFolder("Processed", newImagesId, accessToken),
+          ]);
+          await Promise.all([
+            setFilePermissions(origId, accessToken),
+            setFilePermissions(procId, accessToken),
+          ]);
+          return { originalsId: origId, processedId: procId };
+        }
+
+        const [origId, procId] = await Promise.all([
+          findFolder("Originals", imagesId, accessToken),
+          findFolder("Processed", imagesId, accessToken),
+        ]);
+
+        let finalOrigId = origId;
+        let finalProcId = procId;
+
+        if (!origId) {
+          finalOrigId = await createFolder("Originals", imagesId, accessToken);
+          await setFilePermissions(finalOrigId, accessToken);
+        }
+        if (!procId) {
+          finalProcId = await createFolder("Processed", imagesId, accessToken);
+          await setFilePermissions(finalProcId, accessToken);
+        }
+
+        return {
+          originalsId: finalOrigId as string,
+          processedId: finalProcId as string,
+        };
+      } catch (e) {
+        inFlightFolderStructure = null;
+        throw e;
+      }
+    })();
+  }
+
+  return await inFlightFolderStructure;
+}
+
+/**
+ * Get the processed images folder ID
+ */
+export async function ensureProcessedFolder(
+  accessToken: string,
+): Promise<string> {
+  const { processedId } = await ensureFolderStructure(accessToken);
+  return processedId;
+}
+
+/**
+ * Get the originals images folder ID
+ */
+export async function ensureOriginalsFolder(
+  accessToken: string,
+): Promise<string> {
+  if (!FOLDER_ID) throw new Error("Root folder ID not configured");
+  const { originalsId } = await ensureFolderStructure(accessToken);
+  return originalsId;
+}
+
+/**
+ * Set a custom property on a file
+ */
+export async function setFileProperty(
+  fileId: string,
+  key: string,
+  value: string,
+  accessToken: string,
+): Promise<void> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        appProperties: {
+          [key]: value,
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Failed to set file property: ${errorText}`);
+  }
+}
+
+/**
+ * Get metadata for a file
+ */
+export async function getFileMetadata(
+  fileId: string,
+  accessToken: string,
+): Promise<drive_v3.Schema$File> {
+  const params = new URLSearchParams({
+    fields: "id,name,properties,appProperties,mimeType,webViewLink",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to get file metadata: ${errorText}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * List files in a specific folder
+ */
+export async function listFilesInFolder(
+  accessToken: string,
+  folderId?: string,
+  pageSize = 100,
+): Promise<DriveFile[]> {
+  const targetFolder = folderId || FOLDER_ID;
+  if (!targetFolder) throw new Error("No folder ID provided or configured");
+
+  const query = `'${targetFolder}' in parents and trashed = false`;
+  const params = new URLSearchParams({
+    q: query,
+    pageSize: String(pageSize),
+    fields:
+      "files(id, name, mimeType, modifiedTime, size, webViewLink, webContentLink, thumbnailLink)",
+    orderBy: "modifiedTime desc",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to list files in folder: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return hydrateDriveFiles(data.files || []);
+}
+
+/**
+ * Upload a CSV to Drive
+ */
+export async function uploadCSVToDrive(
+  csvContent: string,
+  filename: string,
+  accessToken: string,
+  folderId: string,
+): Promise<DriveFileInfo> {
+  const blob = new Blob([csvContent], { type: "text/csv" });
+  return await uploadImageToDrive(blob, filename, folderId, accessToken);
+}
+
+/**
+ * Download file content
+ */
+export async function downloadFile(
+  fileId: string,
+  accessToken: string,
+): Promise<string> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to download file: ${response.statusText}`);
+  }
+
+  return await response.text();
+}
+
+/**
+ * Get folder link
+ */
+export function getFolderLink(folderId?: string): string {
+  const target = folderId || FOLDER_ID;
+  return target ? `https://drive.google.com/drive/folders/${target}` : "";
+}
+
+/**
+ * Get folder ID from env
+ */
+export function getFolderId(): string | undefined {
+  return FOLDER_ID;
+}
+
+/**
+ * Rename a file
+ */
+export async function renameFile(
+  fileId: string,
+  newName: string,
+  accessToken: string,
+): Promise<void> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: newName }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to rename file: ${response.statusText}`);
+  }
+}
+
+/**
+ * List all images in Drive
+ */
+export async function listAllImages(
+  accessToken: string,
+  pageSize = 100,
+): Promise<DriveFile[]> {
+  const query = "mimeType contains 'image/' and trashed = false";
+  const params = new URLSearchParams({
+    q: query,
+    pageSize: String(pageSize),
+    fields:
+      "files(id, name, mimeType, modifiedTime, size, webViewLink, webContentLink, thumbnailLink)",
+    orderBy: "modifiedTime desc",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to list all images: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return hydrateDriveFiles(data.files || []);
 }
