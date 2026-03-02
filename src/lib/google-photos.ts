@@ -238,10 +238,17 @@ export async function listAlbumMediaItems(
   if (!token) throw new Error("Not authenticated");
 
   const response = await fetch(
-    `https://photospicker.googleapis.com/v1/albumMediaItems?albumId=${albumId}&pageSize=${pageSize}`,
+    `https://photoslibrary.googleapis.com/v1/mediaItems:search`,
     {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token.access_token}` },
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        albumId,
+        pageSize,
+      }),
     },
   );
 

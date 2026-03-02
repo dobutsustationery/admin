@@ -45,8 +45,8 @@
     getStoredToken as getDriveStoredToken,
     type DriveFile,
     findFileByDerivationKey,
+    setFilePermissions,
   } from "$lib/google-drive";
-  import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ProcessingConfigModal from "$lib/components/ProcessingConfigModal.svelte";
   import { store } from "$lib/store";
@@ -878,6 +878,22 @@
     maxItems = 24,
     preferredPhoto: string | null = null,
   ) {
+    const normalizePreferred = (value: string) => value.trim().toLowerCase();
+    const preferredNoExt = (value: string) =>
+      normalizePreferred(value).replace(/\.[a-z0-9]+$/i, "");
+    const matchesPreferred = (item: any, preferred: string) => {
+      const target = normalizePreferred(preferred);
+      const targetNoExt = preferredNoExt(preferred);
+      const itemId = normalizePreferred(String(item.id || ""));
+      const itemName = normalizePreferred(String(item.filename || ""));
+      const itemNameNoExt = preferredNoExt(String(item.filename || ""));
+      return (
+        itemId === target ||
+        itemName === target ||
+        (!!itemNameNoExt && itemNameNoExt === targetNoExt)
+      );
+    };
+
     const albumId = (window as any).__GOOGLE_PHOTOS_ALBUM_ID__;
     if (!albumId) {
       throw new Error("No configured Google Photos album ID for import.");
@@ -907,9 +923,8 @@
     const cappedCount = Math.max(1, maxItems);
     let orderedSourceItems = sourceItems;
     if (preferredPhoto) {
-      const preferredIndex = sourceItems.findIndex(
-        (item) =>
-          item.id === preferredPhoto || item.filename === preferredPhoto,
+      const preferredIndex = sourceItems.findIndex((item) =>
+        matchesPreferred(item, preferredPhoto),
       );
       if (preferredIndex < 0) {
         throw new Error(
@@ -1009,31 +1024,7 @@
         },
       }) as MediaItem;
 
-    const looksLikeDriveFileId = (value: string) =>
-      /^[A-Za-z0-9_-]{20,}$/.test(value.trim());
-
     let sourceItems: MediaItem[] = [];
-    if (
-      preferredPhoto &&
-      maxItems === 1 &&
-      looksLikeDriveFileId(preferredPhoto)
-    ) {
-      sourceItems = [
-        {
-          id: preferredPhoto,
-          description: "",
-          productUrl: "",
-          baseUrl: toGoogleDrivePublicImageUrl(preferredPhoto),
-          mimeType: "image/jpeg",
-          filename: preferredPhoto,
-          mediaMetadata: {
-            creationTime: "",
-            width: "0",
-            height: "0",
-          },
-        } as MediaItem,
-      ];
-    }
 
     if (preferredPhoto && sourceItems.length === 0) {
       const preferredDriveImage = await findSingleImage(
@@ -1088,6 +1079,13 @@
       throw new Error("No signed-in user to broadcast selected photos.");
     }
     const userUid = $user.uid;
+
+    // Ensure selected Drive files are publicly renderable in the UI.
+    await Promise.allSettled(
+      limitedItems.map((item) =>
+        setFilePermissions(item.id, driveToken.access_token),
+      ),
+    );
 
     const broadcastBestEffort = (
       action:

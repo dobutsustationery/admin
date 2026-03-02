@@ -3,6 +3,7 @@ import baseConfig from "./playwright.config";
 import { loadLiveEnvLocal } from "./e2e/live/load-live-env";
 
 loadLiveEnvLocal();
+const previewPort = Number(process.env.E2E_PREVIEW_PORT || "4173");
 
 /**
  * Playwright configuration for Live Integration tests
@@ -33,6 +34,8 @@ export default defineConfig({
   // Use the same webServer, but we need to inject the REAL Client ID via ENV
   webServer: {
     ...baseConfig.webServer,
+    command: `npm run build:local && vite preview --port ${previewPort}`,
+    reuseExistingServer: false,
     env: {
       ...baseConfig.webServer?.env,
       // Inject Real Google Config for the Frontend to pick up

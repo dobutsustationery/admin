@@ -78,30 +78,78 @@ const FOLDER_ID =
  */
 export type GoogleDriveToken = GoogleAuthToken;
 
-/**
- * Get stored access token from unified service
- */
-export const getStoredToken = getUnifiedToken;
+const LEGACY_DRIVE_TOKEN_STORAGE_KEY = "google_drive_access_token";
+
+function getLegacyDriveToken(): GoogleDriveToken | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(LEGACY_DRIVE_TOKEN_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed.expires_at !== "number") return null;
+    if (Date.now() > parsed.expires_at) {
+      localStorage.removeItem(LEGACY_DRIVE_TOKEN_STORAGE_KEY);
+      return null;
+    }
+    return parsed as GoogleDriveToken;
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Store access token (kept for backward compatibility)
+ * Get stored access token.
+ * Prefer dedicated Drive storage when available, fallback to unified token.
  */
-export const storeToken = storeUnifiedToken;
+export function getStoredToken(): GoogleDriveToken | null {
+  return getLegacyDriveToken() || getUnifiedToken();
+}
+
+/**
+ * Store access token in both unified and legacy Drive keys.
+ */
+export function storeToken(token: GoogleDriveToken): void {
+  storeUnifiedToken(token);
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(LEGACY_DRIVE_TOKEN_STORAGE_KEY, JSON.stringify(token));
+  }
+}
 
 /**
  * Clear stored access token
  */
-export const clearToken = clearUnifiedToken;
+export function clearToken(): void {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem(LEGACY_DRIVE_TOKEN_STORAGE_KEY);
+  }
+  clearUnifiedToken();
+}
 
 /**
  * Check if user is authenticated with Google Drive
  */
-export const isAuthenticated = isUnifiedAuthenticated;
+export function isAuthenticated(): boolean {
+  return !!getStoredToken() || isUnifiedAuthenticated();
+}
 
 /**
  * Get information about token expiry
  */
-export const getExpiryInfo = getUnifiedExpiryInfo;
+export function getExpiryInfo() {
+  const token = getStoredToken();
+  if (token?.expires_at) {
+    const expiresInSeconds = Math.max(
+      0,
+      Math.floor((token.expires_at - Date.now()) / 1000),
+    );
+    return {
+      expired: expiresInSeconds <= 0,
+      expiresInSeconds,
+      expiresAt: token.expires_at,
+    };
+  }
+  return getUnifiedExpiryInfo();
+}
 
 /**
  * Attempt to refresh tokens silently.

@@ -5,7 +5,7 @@ import * as path from "path";
 
 const PREFERRED_MEDIA_ITEM_ID =
   process.env.E2E_GOOGLE_PREFERRED_MEDIA_ITEM_ID ??
-  "1Xk0qww5eUV6OlMAg15tgKNGmLxxf168T";
+  "IMG_8103.heic";
 const LIVE_IMPORT_TIMEOUT_MS = Number(
   process.env.E2E_LIVE_IMPORT_TIMEOUT_MS ?? "30000",
 );
@@ -13,9 +13,6 @@ const LIVE_IMPORT_RETRIES = Number(process.env.E2E_LIVE_IMPORT_RETRIES ?? "1");
 const LIVE_002_TEST_TIMEOUT_MS = Number(
   process.env.E2E_LIVE_002_TEST_TIMEOUT_MS ?? "150000",
 );
-
-const looksLikeDriveFileId = (value: string | null | undefined) =>
-  typeof value === "string" && /^[A-Za-z0-9_-]{20,}$/.test(value.trim());
 
 async function waitForVisibleImagesToRender(page: any) {
   await page.evaluate(async () => {
@@ -67,50 +64,6 @@ async function importSinglePhotoFromDrive(
   page: any,
   preferredId: string | null,
 ) {
-  const injectPreferredPhoto = async (photoId: string) =>
-    await page.evaluate(
-      ({ photoId }) => {
-        const runtimeStore =
-          (window as any).__store || (window as any).testHelpers?.store;
-        const state = runtimeStore?.getState?.()?.photos || {};
-        if (!runtimeStore?.dispatch) {
-          return {
-            ok: false,
-            error: "Missing runtime store for synthetic import",
-          };
-        }
-        const item = {
-          id: photoId,
-          description: "",
-          productUrl: "",
-          baseUrl: `https://lh3.googleusercontent.com/d/${photoId}=s0`,
-          mimeType: "image/jpeg",
-          filename: photoId,
-          mediaMetadata: { creationTime: "", width: "0", height: "0" },
-        };
-        const existing = (state.registry || {})[photoId];
-        if (!existing) {
-          runtimeStore.dispatch({
-            type: "photos/register_media_items",
-            payload: { items: [item] },
-          });
-        }
-        runtimeStore.dispatch({
-          type: "photos/select_photos",
-          payload: { ids: [photoId] },
-        });
-        const next = runtimeStore.getState?.()?.photos || {};
-        return {
-          ok: true,
-          importedCount: 1,
-          importedPhotoId: photoId,
-          importSource: "synthetic-drive-id",
-          selectedCount: (next.selected || []).length,
-        };
-      },
-      { photoId },
-    );
-
   const importOnce = async () =>
     await page.evaluate(
       async ({ preferredId, timeoutMs }) => {
@@ -138,34 +91,28 @@ async function importSinglePhotoFromDrive(
           ]);
         };
 
-        const driveHook = (window as any).__E2E_IMPORT_PHOTOS_FROM_DRIVE__;
-        if (typeof driveHook !== "function") {
+        const albumHook = (window as any).__E2E_IMPORT_PHOTOS_FROM_ALBUM__;
+        if (typeof albumHook !== "function") {
           return {
             ok: false,
-            error: "Missing __E2E_IMPORT_PHOTOS_FROM_DRIVE__ hook",
+            error: "Missing __E2E_IMPORT_PHOTOS_FROM_ALBUM__ hook",
           };
         }
         try {
           let result: any = null;
+          const importSource = "photos-album";
           try {
             result =
               typeof preferredId === "string" && preferredId.trim().length > 0
                 ? await withTimeout(
-                    driveHook("replace", 1, preferredId),
-                    "Drive import (preferred)",
+                    albumHook("replace", 1, preferredId),
+                    "Album import (preferred)",
                   )
-                : await withTimeout(driveHook("replace", 1), "Drive import");
-          } catch (preferredError) {
-            const message = String(preferredError || "");
-            if (
-              !message.includes("Preferred photo") &&
-              !message.includes("timed out")
-            ) {
-              throw preferredError;
-            }
+                : await withTimeout(albumHook("replace", 1), "Album import");
+          } catch {
             result = await withTimeout(
-              driveHook("replace", 1),
-              "Drive import (fallback)",
+              albumHook("replace", 1),
+              "Album import (fallback)",
             );
           }
 
@@ -174,7 +121,7 @@ async function importSinglePhotoFromDrive(
             ok: true,
             importedCount: result?.importedItems?.length || 0,
             importedPhotoId: result?.importedItems?.[0]?.id || null,
-            importSource: "drive",
+            importSource,
             selectedCount: (state?.selected || []).length,
           };
         } catch (error) {
@@ -193,25 +140,12 @@ async function importSinglePhotoFromDrive(
     const errorText = String(lastResult?.error || "");
     const retryable =
       errorText.includes("timed out") || errorText.includes("Preferred photo");
-    if (looksLikeDriveFileId(preferredId) && errorText.includes("timed out")) {
-      break;
-    }
     if (!retryable || attempt === LIVE_IMPORT_RETRIES) break;
 
     console.warn(
-      `[live-002] Drive import attempt ${attempt + 1} failed (${errorText}). Retrying...`,
+      `[live-002] Album import attempt ${attempt + 1} failed (${errorText}). Retrying...`,
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-
-  if (
-    (!lastResult?.ok || (lastResult.importedCount || 0) === 0) &&
-    looksLikeDriveFileId(preferredId)
-  ) {
-    console.warn(
-      "[live-002] Falling back to synthetic store import for preferred Drive file ID",
-    );
-    return await injectPreferredPhoto(String(preferredId));
   }
 
   return lastResult;
@@ -261,7 +195,7 @@ test.describe("Live Journey", () => {
     expect(importResult.ok, importResult.error).toBeTruthy();
     expect(
       importResult.importedCount,
-      "Drive import returned 0 items. Run fixtures:google:sync before live E2E.",
+      "Album import returned 0 items. Run fixtures:google:sync before live E2E.",
     ).toBeGreaterThan(0);
     expect(
       importResult.importedCount,
@@ -368,12 +302,12 @@ test.describe("Live Journey", () => {
     }).toPass({ timeout: 90000 });
     await categorizeBtn.click();
 
-    await expect(page.locator("text=Categorizing...")).toBeVisible({
-      timeout: 60000,
-    });
-    await expect(page.locator("text=Categorizing...")).toHaveCount(0, {
-      timeout: 90000,
-    });
+    await expect
+      .poll(async () => await categorizeBtn.isDisabled(), { timeout: 30000 })
+      .toBe(true);
+    await expect
+      .poll(async () => await categorizeBtn.isEnabled(), { timeout: 90000 })
+      .toBe(true);
 
     const finalChecks = [
       {

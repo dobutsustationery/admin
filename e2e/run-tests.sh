@@ -11,6 +11,7 @@ FIRESTORE_PORT="${E2E_FIRESTORE_EMULATOR_PORT:-18080}"
 AUTH_PORT="${E2E_AUTH_EMULATOR_PORT:-19099}"
 PREVIEW_PORT="${E2E_PREVIEW_PORT:-14173}"
 FIREBASE_CONFIG_PATH="${E2E_FIREBASE_CONFIG_PATH:-firebase.prepush.json}"
+FIREBASE_PROJECT_ID="${E2E_FIREBASE_PROJECT_ID:-demo-test-project}"
 EMULATOR_LOG_PATH="${E2E_EMULATOR_LOG_PATH:-/tmp/dobutsu-e2e-emulators.log}"
 
 export FIRESTORE_EMULATOR_HOST="${FIRESTORE_HOST}:${FIRESTORE_PORT}"
@@ -23,6 +24,7 @@ export VITE_EMULATOR_FIRESTORE_HOST="${FIRESTORE_HOST}"
 export VITE_EMULATOR_FIRESTORE_PORT="${FIRESTORE_PORT}"
 export VITE_EMULATOR_AUTH_HOST="localhost"
 export VITE_EMULATOR_AUTH_PORT="${AUTH_PORT}"
+export E2E_FIXED_CREATED_TIME="${E2E_FIXED_CREATED_TIME:-2025-01-15T10:00:00.000Z}"
 
 # Record start time
 START_TIME=$(date +%s)
@@ -33,6 +35,7 @@ echo ""
 echo "Using emulator ports: Firestore=${FIRESTORE_PORT}, Auth=${AUTH_PORT}"
 echo "Using preview port: ${PREVIEW_PORT}"
 echo "Using Firebase config: ${FIREBASE_CONFIG_PATH}"
+echo "Using Firebase project: ${FIREBASE_PROJECT_ID}"
 echo ""
 
 print_emulator_port_diagnostics() {
@@ -97,7 +100,7 @@ if ! check_emulators; then
   print_emulator_port_diagnostics
   kill_stale_emulator_port_processes
   print_emulator_port_diagnostics
-  (npm run env:functions:local && firebase emulators:start --config "${FIREBASE_CONFIG_PATH}") > "${EMULATOR_LOG_PATH}" 2>&1 &
+  (npm run env:functions:local && firebase emulators:start --project "${FIREBASE_PROJECT_ID}" --config "${FIREBASE_CONFIG_PATH}") > "${EMULATOR_LOG_PATH}" 2>&1 &
   EMULATOR_PID=$!
   echo "   Started emulators (PID: $EMULATOR_PID)"
   
