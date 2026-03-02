@@ -12,6 +12,8 @@ import {
   clearToken as clearUnifiedToken,
   getExpiryInfo as getUnifiedExpiryInfo,
   refreshTokensSilently as refreshUnifiedTokensSilently,
+  handleOAuthCallback as handleUnifiedOAuthCallback,
+  storeToken as storeUnifiedToken,
   type GoogleAuthToken,
 } from "./google-auth-unified";
 
@@ -43,10 +45,7 @@ export function isPhotosConfigured(): boolean {
 /**
  * Store access token (kept for backward compatibility)
  */
-export function storeToken(token: GooglePhotosToken): void {
-  if (typeof localStorage === "undefined") return;
-  localStorage.setItem("google_photos_access_token", JSON.stringify(token));
-}
+export const storeToken = storeUnifiedToken;
 
 /**
  * Clear stored access token
@@ -119,46 +118,29 @@ export interface MediaItem {
  * Handle OAuth callback and extract token from URL hash
  * Note: Redirect normally goes to /photos, which should call this.
  */
-export async function handleOAuthCallback(): Promise<GooglePhotosToken | null> {
-  const hash = window.location.hash;
-  if (!hash || !hash.includes("access_token=")) return null;
+export async function handleOAuthCallback(): Promise<{
+  token: GooglePhotosToken;
+  returnUrl?: string;
+} | null> {
+  const result = handleUnifiedOAuthCallback();
+  if (!result) return null;
 
-  try {
-    const params = new URLSearchParams(hash.substring(1));
-    const accessToken = params.get("access_token");
-    const expiresIn = params.get("expires_in");
-    const scope = params.get("scope");
-    const tokenType = params.get("token_type");
-
-    if (!accessToken || !expiresIn) return null;
-
-    let userEmail: string | undefined = undefined;
+  // Optional: fetch user email if not already present
+  if (result.token.access_token && !result.token.user_email) {
     try {
       const userInfoRes = await fetch(
         "https://www.googleapis.com/oauth2/v2/userinfo",
-        { headers: { Authorization: `Bearer ${accessToken}` } },
+        { headers: { Authorization: `Bearer ${result.token.access_token}` } },
       );
       if (userInfoRes.ok) {
         const userInfo = await userInfoRes.json();
-        userEmail = userInfo.email;
+        result.token.user_email = userInfo.email;
+        storeUnifiedToken(result.token);
       }
     } catch (e) {}
-
-    const token: GooglePhotosToken = {
-      access_token: accessToken,
-      expires_in: parseInt(expiresIn, 10),
-      expires_at: Date.now() + parseInt(expiresIn, 10) * 1000,
-      scope: scope || "",
-      token_type: tokenType || "Bearer",
-      user_email: userEmail,
-    };
-
-    storeToken(token);
-    window.history.replaceState({}, document.title, window.location.pathname);
-    return token;
-  } catch (e) {
-    return null;
   }
+
+  return result;
 }
 
 /**

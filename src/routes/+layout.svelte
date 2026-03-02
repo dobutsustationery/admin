@@ -69,6 +69,7 @@
   let loadingState: "initializing" | "loading" | "ready" = "initializing";
   let navigationOpen = false;
   let isRefreshingTokens = false;
+  let refreshRequired = false;
 
   async function checkAndRefreshTokens() {
     if (!me.signedIn || isRefreshingTokens) return;
@@ -76,8 +77,9 @@
     const photosExpiry = getPhotosExpiry();
     const driveExpiry = getDriveExpiry();
 
-    // Auto-refresh if valid but expires in < 10 mins
-    const NEEDS_REFRESH_SECONDS = 600;
+    // TESTING: Set threshold to 58 minutes (3480s) so it refreshes
+    // almost immediately after 2 minutes of token life.
+    const NEEDS_REFRESH_SECONDS = 3480;
 
     const photosNeedsRefresh =
       photosExpiry &&
@@ -89,19 +91,26 @@
       driveExpiry.expiresInSeconds < NEEDS_REFRESH_SECONDS;
 
     if (photosNeedsRefresh || driveNeedsRefresh) {
-      console.log("[Layout] Tokens nearing expiry, initiating auto-refresh...");
+      console.log(
+        "[Layout] Tokens nearing expiry, initiating silent refresh...",
+      );
       isRefreshingTokens = true;
+      refreshRequired = false;
       try {
-        // Our current flow merges these, but we try both for robustness
-        if (photosNeedsRefresh) await refreshPhotosSilently();
-        else if (driveNeedsRefresh) await refreshDriveSilently();
-      } catch (e) {
-        console.error("[Layout] Auto-refresh failed", e);
-      } finally {
-        // Keep banner visible for a moment
-        setTimeout(() => {
+        const success = await refreshPhotosSilently();
+        if (success) {
+          console.log("[Layout] Silent refresh successful.");
           isRefreshingTokens = false;
-        }, 3000);
+        } else {
+          console.warn(
+            "[Layout] Silent refresh failed or requires interaction.",
+          );
+          // Don't set isRefreshingTokens false immediately, show "Required" banner
+          refreshRequired = true;
+        }
+      } catch (e) {
+        console.error("[Layout] Auto-refresh error", e);
+        refreshRequired = true;
       }
     }
   }
@@ -393,7 +402,7 @@
     </main>
 
     {#if isRefreshingTokens}
-      <AuthRefreshBanner />
+      <AuthRefreshBanner type={refreshRequired ? "required" : "refreshing"} />
     {/if}
   </div>
 

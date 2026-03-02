@@ -17,6 +17,8 @@
   let token: GooglePhotosToken | null = null;
   let expiryInfo: any = null;
   let isRefreshing = false;
+  let refreshRequired = false;
+  const TEST_THRESHOLD = 3480;
 
   let scopes: string[] = [];
   let testResult = "";
@@ -52,12 +54,13 @@
       scopes = [];
     }
 
-    // Auto-refresh logic: if token is valid but expires in less than 5 mins, refresh.
+    // Auto-refresh logic: if token is valid but expires in less than 58 mins, refresh.
+    const TEST_THRESHOLD = 3480;
     if (
       !isRefreshing &&
       expiryInfo &&
       !expiryInfo.expired &&
-      expiryInfo.expiresInSeconds < 300
+      expiryInfo.expiresInSeconds < TEST_THRESHOLD
     ) {
       handleRefresh();
     }
@@ -75,9 +78,16 @@
     if (isRefreshing) return;
     isRefreshing = true;
     try {
-      await refreshTokensSilently();
+      const success = await refreshTokensSilently();
+      if (success) {
+        console.log("[Account] Manual refresh successful.");
+      } else {
+        // Fallback to disruptive flow if silent fails
+        initiateOAuthFlow(true);
+      }
     } catch (e) {
       console.error("Refresh failed", e);
+      initiateOAuthFlow(true);
     } finally {
       // Keep banner for a moment so user sees it
       setTimeout(() => {
@@ -219,7 +229,7 @@
             <span
               class="mono"
               class:text-danger={expiryInfo?.expired ||
-                expiryInfo?.expiresInSeconds < 300}
+                expiryInfo?.expiresInSeconds < TEST_THRESHOLD}
             >
               {formatExpiry(expiryInfo)}
             </span>
@@ -305,7 +315,7 @@
 </div>
 
 {#if isRefreshing}
-  <AuthRefreshBanner />
+  <AuthRefreshBanner type={refreshRequired ? "required" : "refreshing"} />
 {/if}
 
 <style>

@@ -3,6 +3,7 @@
   import { slide, fade } from "svelte/transition";
   import { generateHandle } from "$lib/handle-utils";
   import { store } from "$lib/store";
+  import { goto } from "$app/navigation";
   import {
     isDriveConfigured,
     isAuthenticated,
@@ -525,9 +526,15 @@
   onMount(async () => {
     driveConfigured = isDriveConfigured();
     if (driveConfigured) {
-      const token = handleOAuthCallback();
-      if (token) {
+      const result = handleOAuthCallback();
+      if (result) {
         authenticated = true;
+        // Check for returnUrl from unified auth
+        if (result.returnUrl && result.returnUrl !== window.location.pathname) {
+          console.log("Redirecting to return URL:", result.returnUrl);
+          goto(result.returnUrl, { replaceState: true });
+          return;
+        }
         await loadFiles();
       } else {
         authenticated = isAuthenticated();

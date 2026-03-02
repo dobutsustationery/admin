@@ -14,6 +14,7 @@
     getFolderLink,
     type DriveFile,
   } from "$lib/google-drive";
+  import { goto } from "$app/navigation";
   import {
     start_session,
     set_header,
@@ -341,9 +342,15 @@
     driveConfigured = isDriveConfigured();
 
     if (driveConfigured) {
-      const token = handleOAuthCallback();
-      if (token) {
+      const result = handleOAuthCallback();
+      if (result) {
         authenticated = true;
+        // Check for returnUrl from unified auth
+        if (result.returnUrl && result.returnUrl !== window.location.pathname) {
+          console.log("Redirecting to return URL:", result.returnUrl);
+          goto(result.returnUrl, { replaceState: true });
+          return;
+        }
         await loadFiles();
       } else {
         authenticated = isAuthenticated();

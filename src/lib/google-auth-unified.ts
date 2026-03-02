@@ -80,14 +80,75 @@ export function isAuthenticated(): boolean {
   return !!expiry && !expiry.expired;
 }
 
+export function storeToken(token: GoogleAuthToken): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(token));
+}
+
+export function handleOAuthCallback(): {
+  token: GoogleAuthToken;
+  returnUrl?: string;
+} | null {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash;
+  if (!hash || !hash.includes("access_token=")) return null;
+
+  try {
+    const params = new URLSearchParams(hash.substring(1));
+    const accessToken = params.get("access_token");
+    const expiresIn = params.get("expires_in");
+    const scope = params.get("scope");
+    const tokenType = params.get("token_type");
+    const state = params.get("state") || "";
+
+    if (!accessToken || !expiresIn) return null;
+
+    const token: GoogleAuthToken = {
+      access_token: accessToken,
+      expires_in: parseInt(expiresIn, 10),
+      expires_at: Date.now() + parseInt(expiresIn, 10) * 1000,
+      scope: scope || "",
+      token_type: tokenType || "Bearer",
+    };
+
+    storeToken(token);
+
+    // If we are inside an iframe, notify the parent and stop
+    if (window.self !== window.top) {
+      console.log("[Auth] Iframe detected, notifying parent...");
+      window.parent.postMessage(
+        { type: "GOOGLE_AUTH_REFRESH_SUCCESS", token },
+        window.location.origin,
+      );
+      return { token };
+    }
+
+    // Clean up URL hash (only if not in iframe, to avoid jank in parent if they are looking)
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    // Parse return URL from state if present (format: "unified_auth|url")
+    let returnUrl: string | undefined = undefined;
+    if (state.includes("|")) {
+      returnUrl = decodeURIComponent(state.split("|")[1]);
+    }
+
+    return { token, returnUrl };
+  } catch (e) {
+    console.error("[Auth] Error handling callback:", e);
+    return null;
+  }
+}
+
 export function initiateOAuthFlow(
   allowSwitchAccount = false,
   returnUrl?: string,
+  silent = false,
 ): void {
+  const currentPath = window.location.pathname + window.location.search;
+  const effectiveReturnUrl = returnUrl || currentPath;
+
   const redirectUri = `${window.location.origin}/photos`;
-  const state = returnUrl
-    ? `unified_auth|${encodeURIComponent(returnUrl)}`
-    : "unified_auth";
+  const state = `unified_auth|${encodeURIComponent(effectiveReturnUrl)}`;
 
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
@@ -100,16 +161,57 @@ export function initiateOAuthFlow(
 
   if (allowSwitchAccount) {
     params.set("prompt", "select_account");
+  } else if (silent) {
+    params.set("prompt", "none");
   }
 
-  window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+
+  if (silent) {
+    // Create hidden iframe for silent refresh
+    console.log("[Auth] Creating hidden iframe for silent refresh...");
+    const iframe = document.createElement("iframe");
+    iframe.id = "google-auth-silent-refresh-iframe";
+    iframe.style.display = "none";
+    iframe.src = authUrl;
+    document.body.appendChild(iframe);
+
+    // Cleanup iframe after timeout
+    setTimeout(() => {
+      const existing = document.getElementById(
+        "google-auth-silent-refresh-iframe",
+      );
+      if (existing) document.body.removeChild(existing);
+    }, 30000);
+  } else {
+    window.location.href = authUrl;
+  }
 }
 
 export async function refreshTokensSilently(): Promise<boolean> {
-  console.log("[Auth] Initiating unified token refresh...");
-  // For now, since we're using the redirect flow, we just re-initiate
-  initiateOAuthFlow(false);
-  return true;
+  console.log("[Auth] Initiating unified token refresh via iframe...");
+
+  return new Promise((resolve) => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === "GOOGLE_AUTH_REFRESH_SUCCESS") {
+        console.log("[Auth] Silent refresh succeeded via message.");
+        window.removeEventListener("message", handleMessage);
+        resolve(true);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+
+    // Attempt silent refresh
+    initiateOAuthFlow(false, undefined, true);
+
+    // Timeout after 10s
+    setTimeout(() => {
+      window.removeEventListener("message", handleMessage);
+      resolve(false);
+    }, 10000);
+  });
 }
 
 export function clearToken(): void {

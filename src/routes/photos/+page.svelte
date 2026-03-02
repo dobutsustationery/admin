@@ -662,12 +662,14 @@
     console.log("Photos Page Mounted. Checking Auth...");
 
     // Handle OAuth Callback (hash parsing)
-    const tokenCaptured = await handleOAuthCallback();
-    if (tokenCaptured) {
-      console.log(
-        "OAuth Callback processed successfully. Token stored.",
-        tokenCaptured,
-      );
+    const result = await handleOAuthCallback();
+    if (result) {
+      console.log("[Photos] OAuth Callback processed successfully.");
+      if (result.returnUrl && result.returnUrl !== window.location.pathname) {
+        console.log(`[Photos] Returning to original page: ${result.returnUrl}`);
+        goto(result.returnUrl);
+        return;
+      }
     } else {
       console.log("No OAuth callback detected (or failed).");
     }

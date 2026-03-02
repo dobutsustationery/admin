@@ -21,6 +21,8 @@ import {
   clearToken as clearUnifiedToken,
   getExpiryInfo as getUnifiedExpiryInfo,
   refreshTokensSilently as refreshUnifiedTokensSilently,
+  handleOAuthCallback as handleUnifiedOAuthCallback,
+  storeToken as storeUnifiedToken,
   type GoogleAuthToken,
 } from "./google-auth-unified";
 
@@ -84,10 +86,7 @@ export const getStoredToken = getUnifiedToken;
 /**
  * Store access token (kept for backward compatibility)
  */
-export function storeToken(token: GoogleDriveToken): void {
-  if (typeof localStorage === "undefined") return;
-  localStorage.setItem("google_photos_access_token", JSON.stringify(token));
-}
+export const storeToken = storeUnifiedToken;
 
 /**
  * Clear stored access token
@@ -375,44 +374,15 @@ export function isDriveConfigured(): boolean {
 export function handleOAuthCallback(): {
   token: GoogleDriveToken;
   state?: string;
+  returnUrl?: string;
 } | null {
-  const hash = window.location.hash;
-  if (!hash || !hash.includes("access_token=")) {
-    return null;
-  }
+  const result = handleUnifiedOAuthCallback();
+  if (!result) return null;
 
-  try {
-    // Parse hash parameters
-    const params = new URLSearchParams(hash.substring(1));
-    const accessToken = params.get("access_token");
-    const expiresIn = params.get("expires_in");
-    const scope = params.get("scope");
-    const tokenType = params.get("token_type");
-    const state = params.get("state");
-
-    if (!accessToken || !expiresIn) {
-      return null;
-    }
-
-    const token: GoogleDriveToken = {
-      access_token: accessToken,
-      expires_in: parseInt(expiresIn, 10),
-      expires_at: Date.now() + parseInt(expiresIn, 10) * 1000,
-      scope: scope || "",
-      token_type: tokenType || "Bearer",
-    };
-
-    // Store token
-    storeToken(token);
-
-    // Clean up URL
-    window.history.replaceState({}, document.title, window.location.pathname);
-
-    return { token, state: state || undefined };
-  } catch (e) {
-    console.error("Error handling OAuth callback:", e);
-    return null;
-  }
+  return {
+    token: result.token,
+    returnUrl: result.returnUrl,
+  };
 }
 
 /**
@@ -422,6 +392,7 @@ export async function findFileByDerivationKey(
   accessToken: string,
   derivationKey: string,
 ): Promise<DriveFile | null> {
+  // Fix signature mismatch: sharedFindFileByDerivationKey expects (derivationKey, executeRequest)
   const file = await sharedFindFileByDerivationKey(
     derivationKey,
     async (url: string) => {
