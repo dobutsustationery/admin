@@ -77,9 +77,8 @@
     const photosExpiry = getPhotosExpiry();
     const driveExpiry = getDriveExpiry();
 
-    // TESTING: Set threshold to 58 minutes (3480s) so it refreshes
-    // almost immediately after 2 minutes of token life.
-    const NEEDS_REFRESH_SECONDS = 3480;
+    // Refresh when less than 15 minutes remain (about 45 minutes into a 60-minute token).
+    const NEEDS_REFRESH_SECONDS = 15 * 60;
 
     const photosNeedsRefresh =
       photosExpiry &&

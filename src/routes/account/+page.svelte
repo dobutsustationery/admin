@@ -18,7 +18,7 @@
   let expiryInfo: any = null;
   let isRefreshing = false;
   let refreshRequired = false;
-  const TEST_THRESHOLD = 3480;
+  const REFRESH_THRESHOLD_SECONDS = 15 * 60;
 
   let scopes: string[] = [];
   let testResult = "";
@@ -54,13 +54,12 @@
       scopes = [];
     }
 
-    // Auto-refresh logic: if token is valid but expires in less than 58 mins, refresh.
-    const TEST_THRESHOLD = 3480;
+    // Auto-refresh logic: refresh when less than 15 minutes remain.
     if (
       !isRefreshing &&
       expiryInfo &&
       !expiryInfo.expired &&
-      expiryInfo.expiresInSeconds < TEST_THRESHOLD
+      expiryInfo.expiresInSeconds < REFRESH_THRESHOLD_SECONDS
     ) {
       handleRefresh();
     }
@@ -229,7 +228,7 @@
             <span
               class="mono"
               class:text-danger={expiryInfo?.expired ||
-                expiryInfo?.expiresInSeconds < TEST_THRESHOLD}
+                expiryInfo?.expiresInSeconds < REFRESH_THRESHOLD_SECONDS}
             >
               {formatExpiry(expiryInfo)}
             </span>
