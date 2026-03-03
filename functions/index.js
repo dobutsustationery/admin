@@ -41,6 +41,26 @@ function logSkipped(dispatched, requestId, domain) {
   });
 }
 
+function hasBinaryPayload(payload) {
+  if (!payload || typeof payload !== "object") return false;
+
+  const MAX_STRING_LENGTH = 10 * 1024; // 10 KB
+  const checkValue = (val) => {
+    if (typeof val === "string") {
+      if (val.startsWith("data:") || val.startsWith("blob:")) return true;
+      if (val.length > MAX_STRING_LENGTH) return true;
+      return false;
+    }
+    if (Array.isArray(val)) return val.some(checkValue);
+    if (val && typeof val === "object") {
+      return Object.values(val).some(checkValue);
+    }
+    return false;
+  };
+
+  return checkValue(payload);
+}
+
 exports.shopifySyncRequest = onDocumentCreated(
   {
     document: `${SHOPIFY_REQUEST_COLLECTION}/{requestId}`,
@@ -184,6 +204,55 @@ exports.photosSecretResponse = onDocumentCreated(
         requestId,
         eventType: String(requestData.eventType || ""),
         error: message,
+      });
+    }
+  },
+);
+
+exports.syncPayloadValidation = onDocumentCreated(
+  {
+    document: `${SYNC_COLLECTION}/{requestId}`,
+    timeoutSeconds: 120,
+    memory: "512MiB",
+    concurrency: 10,
+    maxInstances: 10,
+  },
+  async (event) => {
+    const requestData = event.data?.data();
+    if (!requestData) return;
+
+    const requestEventId = String(event.params?.requestId || "");
+    const eventType = String(requestData?.eventType || "").trim();
+    if (!eventType) return;
+    if (!hasBinaryPayload(requestData?.payload)) return;
+
+    logger.error(
+      "Sync event rejected: payload contains binary data or exceeds size limits",
+      {
+        requestId: requestEventId,
+        eventType,
+      },
+    );
+
+    try {
+      await db.collection(SYNC_COLLECTION).add({
+        eventType: `${eventType.split("/")[0] || "system"}/rejected`,
+        requestEventId,
+        requestId: requestData?.requestId || requestEventId,
+        creator: "sync-validation-function",
+        processor: `function:${process.env.K_SERVICE || "syncPayloadValidation"}`,
+        createdAtMs: Date.now(),
+        payload: {
+          errorCode: "binary_payload_rejected",
+          errorMessage: "Payload contains binary data or exceeds size limits",
+          retryable: false,
+        },
+      });
+    } catch (error) {
+      logger.error("Failed to write sync rejection event", {
+        requestId: requestEventId,
+        eventType,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   },
