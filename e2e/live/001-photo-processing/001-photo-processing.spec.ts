@@ -186,6 +186,15 @@ async function waitForHistoryThumbnailsToRender(page: any) {
     .toBe(true);
 }
 
+async function ensureStableViewport(page: any) {
+  await page.evaluate(() => {
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+  });
+  // Small wait for layout to settle
+  await new Promise((resolve) => setTimeout(resolve, 500));
+}
+
 test.describe("Live Photo Processing", () => {
   test("Photo Processing Workflow", async ({ page, sandboxId }, testInfo) => {
     test.setTimeout(LIVE_001_TEST_TIMEOUT_MS);
@@ -327,6 +336,7 @@ test.describe("Live Photo Processing", () => {
       .toBe(true);
 
     docHelper.addStep("Photos View Loaded", "000-photos-view.png", step1Checks);
+    await ensureStableViewport(page);
     await screenshots.capture(page, "photos-view", {
       fullPage: true,
       programmaticCheck: async () => {
@@ -452,6 +462,7 @@ test.describe("Live Photo Processing", () => {
         progressChecks,
       );
       await waitForHistoryToSettle();
+      await ensureStableViewport(page);
       await screenshots.capture(
         page,
         progressScreenshot.replace(/^\d{3}-/, "").replace(/\.png$/, ""),
@@ -545,6 +556,7 @@ test.describe("Live Photo Processing", () => {
         completeChecks,
       );
       await waitForHistoryToSettle();
+      await ensureStableViewport(page);
       await screenshots.capture(
         page,
         completeScreenshot.replace(/^\d{3}-/, "").replace(/\.png$/, ""),
@@ -593,6 +605,7 @@ test.describe("Live Photo Processing", () => {
       finalChecks,
     );
     await waitForHistoryToSettle();
+    await ensureStableViewport(page);
     await screenshots.capture(page, "processed-history", {
       fullPage: true,
       programmaticCheck: async () => {
