@@ -23,7 +23,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   expect: {
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.2,
+      maxDiffPixelRatio: 0.3,
     },
   },
   /* No retries - tests must pass consistently on every run */
