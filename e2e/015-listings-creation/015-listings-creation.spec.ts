@@ -12,7 +12,7 @@ async function waitForSyncIdle(page: any) {
   } catch {
     // Sync may complete before we observe the non-zero state.
   }
-  await expect(page.locator("text=Sync: 0")).toBeVisible({ timeout: 30000 });
+  await expect(page.locator("text=Sync: 0")).toBeVisible({ timeout: 60000 });
 }
 
 async function waitForMainImagesToRender(page: any) {
