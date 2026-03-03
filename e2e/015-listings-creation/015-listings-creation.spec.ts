@@ -276,6 +276,11 @@ test.describe("Listings Creation Flow", () => {
       "000-initial-state.png",
       initialVerifications,
     );
+    await waitForSyncIdle(page);
+    await expect(page.locator(".sticky-banner-container")).not.toHaveClass(
+      /has-content/,
+      { timeout: 10000 },
+    );
     await screenshots.capture(page, "initial-state", {
       programmaticCheck: async () => {
         for (const v of initialVerifications) await v.check();
