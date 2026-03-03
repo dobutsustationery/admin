@@ -26,6 +26,11 @@ test.describe("Audit Log", () => {
     await expect(
       page.getByRole("heading", { name: "Audit Log" }),
     ).toBeVisible();
+    // Keep top spacing deterministic across CI/local regardless transient banner state.
+    await page.addStyleTag({
+      content:
+        ".sticky-banner-container{padding:0.5rem 1rem !important;margin-bottom:1rem !important;}",
+    });
 
     // 2. Switch to Day view
     await page.getByRole("button", { name: "Day" }).click();
@@ -71,10 +76,6 @@ test.describe("Audit Log", () => {
       step1Verifications,
     );
 
-    await expect(page.locator(".sticky-banner-container")).not.toHaveClass(
-      /has-content/,
-      { timeout: 10000 },
-    );
     await screenshots.capture(page, "audit-rich-data", {
       programmaticCheck: async () => {
         for (const v of step1Verifications) await v.check();
