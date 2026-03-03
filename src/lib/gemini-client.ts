@@ -23,6 +23,7 @@ import {
 } from "firebase/firestore";
 import {
   SYNC_COLLECTION,
+  PHOTOS_TRANSFORM_REQUEST_COLLECTION,
   PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
 } from "$lib/sync-events";
 
@@ -695,37 +696,39 @@ export async function processMediaItems(
               items.length,
             );
 
-            // We use addDoc because sync collection is append-only
-            await addDoc(collection(firestore, SYNC_COLLECTION), {
-              eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
-              requestId,
-              creator: uid,
-              requestedBy: uid,
-              requestedAt: Date.now(),
-              source: "gemini-client",
-              photoId: img.id,
-              filename: `processed_${img.id}.png`,
-              mimeType: "image/png",
-              payloadVersion: 1,
-              payload: {
+            await addDoc(
+              collection(firestore, PHOTOS_TRANSFORM_REQUEST_COLLECTION),
+              {
+                eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+                requestId,
+                creator: uid,
+                requestedBy: uid,
+                requestedAt: Date.now(),
+                source: "gemini-client",
                 photoId: img.id,
-                sourceBaseUrl: img.baseUrl || "",
                 filename: `processed_${img.id}.png`,
                 mimeType: "image/png",
-                targetFolderId: processedFolderId,
-                sourceType,
-                transform: "remove_bg",
-                derivationKey,
-                sourceRef: {
-                  mediaItemId: img.id,
-                  url: img.baseUrl || "",
-                  driveFileId: driveId,
+                payloadVersion: 1,
+                payload: {
+                  photoId: img.id,
+                  sourceBaseUrl: img.baseUrl || "",
+                  filename: `processed_${img.id}.png`,
+                  mimeType: "image/png",
+                  targetFolderId: processedFolderId,
+                  sourceType,
+                  transform: "remove_bg",
+                  derivationKey,
+                  sourceRef: {
+                    mediaItemId: img.id,
+                    url: img.baseUrl || "",
+                    driveFileId: driveId,
+                  },
                 },
+                createdAtMs: Date.now(),
+                createdAt: serverTimestamp(),
+                timestamp: serverTimestamp(),
               },
-              createdAtMs: Date.now(),
-              createdAt: serverTimestamp(),
-              timestamp: serverTimestamp(),
-            });
+            );
           }
 
           // 3. Poll for completion

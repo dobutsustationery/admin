@@ -67,6 +67,7 @@
   import { signOut } from "firebase/auth";
   import {
     SYNC_COLLECTION,
+    PHOTOS_TRANSFORM_REQUEST_COLLECTION,
     SYNC_SECRETS_COLLECTION,
     PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
   } from "$lib/sync-events";
@@ -395,22 +396,25 @@
       };
 
       // We use addDoc because sync collection is append-only
-      const docRef = await addDoc(collection(firestore, SYNC_COLLECTION), {
-        eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
-        requestId,
-        creator: $user.uid,
-        requestedBy: $user.uid,
-        requestedAt: Date.now(),
-        source: "edit-queue-runner",
-        photoId: id,
-        filename: `edited_${operation}_${id}.png`,
-        mimeType: "image/png",
-        payloadVersion: 1,
-        payload: syncPayload,
-        createdAtMs: Date.now(),
-        createdAt: serverTimestamp(),
-        timestamp: serverTimestamp(),
-      });
+      const docRef = await addDoc(
+        collection(firestore, PHOTOS_TRANSFORM_REQUEST_COLLECTION),
+        {
+          eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+          requestId,
+          creator: $user.uid,
+          requestedBy: $user.uid,
+          requestedAt: Date.now(),
+          source: "edit-queue-runner",
+          photoId: id,
+          filename: `edited_${operation}_${id}.png`,
+          mimeType: "image/png",
+          payloadVersion: 1,
+          payload: syncPayload,
+          createdAtMs: Date.now(),
+          createdAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
+        },
+      );
 
       return docRef.id; // Return document ID for tracking if needed, or truthy for success
     } catch (e: any) {

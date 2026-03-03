@@ -2,6 +2,9 @@ import type { ShopifySyncEvent } from "$lib/shopify-sync-model";
 
 export const SYNC_COLLECTION = "sync";
 export const SYNC_SECRETS_COLLECTION = "sync_secrets";
+export const SHOPIFY_REQUEST_COLLECTION = "request_shopify_sync";
+export const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
+export const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
 export const SHOPIFY_SYNC_NAMESPACE = "shopify";
 export const PHOTOS_SYNC_NAMESPACE = "photos";
 

@@ -16,6 +16,8 @@ const {
 
 const SYNC_COLLECTION = "sync";
 const SYNC_SECRETS_COLLECTION = "sync_secrets";
+const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
+const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
 const PHOTOS_NS = "photos";
 const E2E_FIXED_CREATED_TIME = normalizeString(
   process.env.E2E_FIXED_CREATED_TIME,
@@ -961,9 +963,33 @@ async function handleSecretProvided(args) {
   let original = null;
   if (targetRequestEventId) {
     original = await getSyncEventById(db, collectionName, targetRequestEventId);
+    if (!original) {
+      original =
+        (await getSyncEventById(
+          db,
+          PHOTOS_TRANSFER_REQUEST_COLLECTION,
+          targetRequestEventId,
+        )) ||
+        (await getSyncEventById(
+          db,
+          PHOTOS_TRANSFORM_REQUEST_COLLECTION,
+          targetRequestEventId,
+        ));
+    }
   }
   if (!original && requestId) {
-    original = await findRequestEventByRequestId(db, collectionName, requestId);
+    original =
+      (await findRequestEventByRequestId(
+        db,
+        PHOTOS_TRANSFER_REQUEST_COLLECTION,
+        requestId,
+      )) ||
+      (await findRequestEventByRequestId(
+        db,
+        PHOTOS_TRANSFORM_REQUEST_COLLECTION,
+        requestId,
+      )) ||
+      (await findRequestEventByRequestId(db, collectionName, requestId));
   }
   if (!original) {
     return { processed: false, reason: "original_request_not_found" };

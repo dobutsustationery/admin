@@ -26,6 +26,7 @@
   import { getUploadCandidates } from "$lib/upload-logic";
   import {
     PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
+    PHOTOS_TRANSFER_REQUEST_COLLECTION,
     SYNC_COLLECTION,
     SYNC_SECRETS_COLLECTION,
   } from "$lib/sync-events";
@@ -72,16 +73,16 @@
 
   function startTransferRequestListener() {
     if (unsubscribeTransferRequests) return;
-    const q = query(
-      collection(firestore, SYNC_COLLECTION),
-      where("eventType", "==", PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT),
-    );
+    const q = query(collection(firestore, PHOTOS_TRANSFER_REQUEST_COLLECTION));
     unsubscribeTransferRequests = onSnapshot(
       q,
       (snap) => {
         for (const change of snap.docChanges()) {
           if (change.type !== "added") continue;
           const data = change.doc.data() as any;
+          if (data?.creator && $user?.uid && data.creator !== $user.uid) {
+            continue;
+          }
           const photoId = String(
             data?.payload?.photoId || data?.photoId || "",
           ).trim();
@@ -356,7 +357,7 @@
         payload: { id: item.id, timestamp: Date.now(), requestId },
       });
 
-      await addDoc(collection(firestore, SYNC_COLLECTION), {
+      await addDoc(collection(firestore, PHOTOS_TRANSFER_REQUEST_COLLECTION), {
         eventType: PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
         requestId,
         creator: uid,

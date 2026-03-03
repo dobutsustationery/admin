@@ -45,6 +45,7 @@
   import { user } from "$lib/user-store";
   import {
     SYNC_COLLECTION,
+    PHOTOS_TRANSFORM_REQUEST_COLLECTION,
     PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
   } from "$lib/sync-events";
 
@@ -493,22 +494,25 @@
               driveFileId: driveId,
             },
           };
-          await addDoc(collection(firestore, SYNC_COLLECTION), {
-            eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
-            requestId,
-            creator: $user.uid,
-            requestedBy: $user.uid,
-            requestedAt: Date.now(),
-            source: "manual-op",
-            photoId,
-            filename: `manual_${step}_${sourceId}.png`,
-            mimeType: "image/png",
-            payloadVersion: 1,
-            payload: syncPayload,
-            createdAtMs: Date.now(),
-            createdAt: serverTimestamp(),
-            timestamp: serverTimestamp(),
-          });
+          await addDoc(
+            collection(firestore, PHOTOS_TRANSFORM_REQUEST_COLLECTION),
+            {
+              eventType: PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT,
+              requestId,
+              creator: $user.uid,
+              requestedBy: $user.uid,
+              requestedAt: Date.now(),
+              source: "manual-op",
+              photoId,
+              filename: `manual_${step}_${sourceId}.png`,
+              mimeType: "image/png",
+              payloadVersion: 1,
+              payload: syncPayload,
+              createdAtMs: Date.now(),
+              createdAt: serverTimestamp(),
+              timestamp: serverTimestamp(),
+            },
+          );
           finalUrl = await new Promise<string | null>((resolve) => {
             const q = query(
               collection(firestore, SYNC_COLLECTION),
