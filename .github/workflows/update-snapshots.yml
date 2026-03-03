@@ -11,6 +11,8 @@ jobs:
     name: Update Playwright Snapshots
     runs-on: macos-latest
     timeout-minutes: 45
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
