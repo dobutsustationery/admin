@@ -336,7 +336,6 @@ test.describe("Live Photo Processing", () => {
       .toBe(true);
 
     docHelper.addStep("Photos View Loaded", "000-photos-view.png", step1Checks);
-    await page.waitForLoadState("networkidle");
     await ensureStableViewport(page);
     await screenshots.capture(page, "photos-view", {
       fullPage: true,
@@ -463,7 +462,6 @@ test.describe("Live Photo Processing", () => {
         progressChecks,
       );
       await waitForHistoryToSettle();
-      await page.waitForLoadState("networkidle");
       await ensureStableViewport(page);
       await screenshots.capture(
         page,
@@ -558,7 +556,6 @@ test.describe("Live Photo Processing", () => {
         completeChecks,
       );
       await waitForHistoryToSettle();
-      await page.waitForLoadState("networkidle");
       await ensureStableViewport(page);
       await screenshots.capture(
         page,
@@ -608,7 +605,6 @@ test.describe("Live Photo Processing", () => {
       finalChecks,
     );
     await waitForHistoryToSettle();
-    await page.waitForLoadState("networkidle");
     await ensureStableViewport(page);
     await screenshots.capture(page, "processed-history", {
       fullPage: true,
