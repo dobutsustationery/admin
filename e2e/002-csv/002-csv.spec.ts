@@ -320,6 +320,7 @@ test.describe("CSV Export Page with Google Drive", () => {
       step2Verifications,
     );
 
+    await page.waitForLoadState("networkidle");
     await screenshots.capture(page, "signed-in-state", {
       programmaticCheck: async () => {
         for (const v of step2Verifications) await v.check();
