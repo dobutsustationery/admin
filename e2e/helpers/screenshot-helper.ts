@@ -78,7 +78,6 @@ export function createScreenshotHelper(startIndex = 0): ScreenshotHelper {
         fullPage,
         caret: "hide",
         timeout: 3000,
-        maxDiffPixelRatio: 0.3,
         ...rest,
       });
 
