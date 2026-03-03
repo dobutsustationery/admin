@@ -253,11 +253,12 @@ export async function imagePrompt(
       const url = apiKey ? `${GEMINI_API_URL}?key=${apiKey}` : GEMINI_API_URL;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "x-goog-user-project": import.meta.env.VITE_FIREBASE_PROJECT_ID || "",
       };
 
       if (!apiKey) {
         headers["Authorization"] = `Bearer ${accessToken}`;
+        headers["x-goog-user-project"] =
+          import.meta.env.VITE_FIREBASE_PROJECT_ID || "";
       }
 
       const response = await fetch(url, {
