@@ -20,8 +20,10 @@ const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
 process.env.FIRESTORE_EMULATOR_HOST = emulatorHost;
 
 // Initialize Firebase Admin for emulator
+// Use the same project ID as configured for e2e tests
+const projectId = process.env.VITE_FIREBASE_LOCAL_PROJECT_ID || "demo-test-project";
 const app = initializeApp({
-  projectId: "dobutsu-admin",
+  projectId,
 });
 
 const db = getFirestore(app);
@@ -107,20 +109,26 @@ async function loadTestData() {
   const exportData = JSON.parse(readFileSync(testDataPath, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
 
-  // Clear existing data from emulator
-  // We explicitly list and clear ALL collections to ensure a clean state
+  // Clear existing data from emulator using the REST API
+  // This is much faster and more reliable than deleting documents one by one
   console.log(`\n🧹 Clearing existing data from emulator...`);
-  const collections = await db.listCollections();
-  for (const collection of collections) {
-    const snapshot = await collection.get();
-    if (snapshot.size > 0) {
-      console.log(`   Deleting ${snapshot.size} docs from ${collection.id}...`);
-      const batch = db.batch();
-      snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-      await batch.commit();
+  try {
+    const clearUrl = `http://${emulatorHost}/emulator/v1/projects/${projectId}/databases/(default)/documents`;
+    const response = await fetch(clearUrl, { method: "DELETE" });
+
+    if (response.ok) {
+      console.log(`   ✓ Emulator data cleared via REST API`);
+    } else {
+      console.warn(
+        `   ⚠️  Failed to clear data via REST API: ${response.status} ${response.statusText}`,
+      );
+      console.warn(
+        `       Falling back to standard loading (data might persist)`,
+      );
     }
+  } catch (error) {
+    console.warn(`   ⚠️  Error calling clear endpoint: ${error.message}`);
   }
-  console.log(`   ✓ Emulator data cleared`);
 
   // Load URL mapping if available
   let urlMapping = {};

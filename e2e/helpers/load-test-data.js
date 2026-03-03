@@ -27,8 +27,9 @@ process.env.FIRESTORE_EMULATOR_HOST = emulatorHost;
 
 // Initialize Firebase Admin for emulator
 // Use the same project ID as configured for e2e tests
+const projectId = process.env.VITE_FIREBASE_LOCAL_PROJECT_ID || "demo-test-project";
 const app = initializeApp({
-  projectId: "demo-test-project",
+  projectId,
 });
 
 const db = getFirestore(app);
@@ -124,7 +125,7 @@ async function loadTestData() {
   // This is much faster and more reliable than deleting documents one by one
   console.log(`\n🧹 Clearing existing data from emulator...`);
   try {
-    const clearUrl = `http://${emulatorHost}/emulator/v1/projects/demo-test-project/databases/(default)/documents`;
+    const clearUrl = `http://${emulatorHost}/emulator/v1/projects/${projectId}/databases/(default)/documents`;
     const response = await fetch(clearUrl, { method: "DELETE" });
 
     if (response.ok) {
