@@ -33,36 +33,63 @@ const sourcePath = resolve(process.cwd(), sourceMap[env]);
 const functionsDir = resolve(process.cwd(), "functions");
 const targetPath = resolve(functionsDir, ".env");
 
+let kept = [];
+
 if (!existsSync(sourcePath)) {
-  console.error(`Missing source env file: ${sourceMap[env]}`);
-  console.error("Create it first (it is intentionally gitignored).");
-  process.exit(1);
+  if (process.env.CI) {
+    console.log(
+      `⚠️ Missing source env file ${sourceMap[env]} in CI. Falling back to environment variables.`,
+    );
+    // In CI, we extract from process.env instead of a file
+    const keepPrefixes = [
+      "SHOPIFY_",
+      "FIREBASE_",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+    ];
+    for (const key in process.env) {
+      if (keepPrefixes.some((prefix) => key.startsWith(prefix))) {
+        kept.push(`${key}=${process.env[key]}`);
+      }
+    }
+  } else {
+    console.error(`Missing source env file: ${sourceMap[env]}`);
+    console.error("Create it first (it is intentionally gitignored).");
+    process.exit(1);
+  }
+} else {
+  const source = readFileSync(sourcePath, "utf8");
+  const lines = source
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line && !line.trimStart().startsWith("#"))
+    .filter((line) => line.includes("="));
+
+  const keepPrefixes = [
+    "SHOPIFY_",
+    "FIREBASE_",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+  ];
+  kept = lines.filter((line) => {
+    const key = line.split("=")[0]?.trim() || "";
+    if (!key) return false;
+    return keepPrefixes.some((prefix) => key.startsWith(prefix));
+  });
 }
 
-const source = readFileSync(sourcePath, "utf8");
-const lines = source
-  .split(/\r?\n/)
-  .map((line) => line.trimEnd())
-  .filter((line) => line && !line.trimStart().startsWith("#"))
-  .filter((line) => line.includes("="));
-
-const keepPrefixes = [
-  "SHOPIFY_",
-  "FIREBASE_",
-  "GOOGLE_APPLICATION_CREDENTIALS",
-];
-const kept = lines.filter((line) => {
-  const key = line.split("=")[0]?.trim() || "";
-  if (!key) return false;
-  return keepPrefixes.some((prefix) => key.startsWith(prefix));
-});
-
 if (kept.length === 0) {
-  console.error(`No supported function env vars found in ${sourceMap[env]}.`);
-  console.error(
-    "Expected SHOPIFY_STORE_URL and either SHOPIFY_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET.",
-  );
-  process.exit(1);
+  if (process.env.CI) {
+    console.warn(
+      `⚠️ No supported function env vars found in environment. Sync functions might fail.`,
+    );
+    // Create an empty .env file to allow emulators to start anyway
+    kept = ["# Empty .env for CI fallback"];
+  } else {
+    console.error(`No supported function env vars found in ${sourceMap[env]}.`);
+    console.error(
+      "Expected SHOPIFY_STORE_URL and either SHOPIFY_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET.",
+    );
+    process.exit(1);
+  }
 }
 
 mkdirSync(functionsDir, { recursive: true });
