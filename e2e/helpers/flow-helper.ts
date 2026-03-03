@@ -31,7 +31,11 @@ export class FlowHelper {
     title: string,
     screenshotName: string,
     verifications: VerificationStep[],
-    screenshotOptions: { fullPage?: boolean } = {},
+    screenshotOptions: {
+      fullPage?: boolean;
+      maxDiffPixelRatio?: number;
+      mask?: any[];
+    } = {},
   ) {
     // 1. Determine the filename that ScreenshotHelper will use
     // We need to know the counter to generate the filename for documentation.
@@ -46,7 +50,7 @@ export class FlowHelper {
     // 3. Capture screenshot & Run Checks
     // We pass the verifications to the screenshot helper's 'programmaticCheck'
     await this.screenshots.capture(this.page, screenshotName, {
-      fullPage: screenshotOptions.fullPage,
+      ...screenshotOptions,
       programmaticCheck: async () => {
         for (const v of verifications) {
           console.log(`      > Verifying: ${v.description}`);

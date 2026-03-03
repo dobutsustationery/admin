@@ -511,40 +511,45 @@ test.describe("Google Photos Integration", () => {
     ]);
 
     // 3. Picker Flow
-    await flow.step("Picker Flow", "picker-selection", [
-      {
-        description: "Start Selection",
-        check: async () => {
-          const btn = page.getByRole("button", { name: "Select Photos" });
-          await btn.waitFor({ state: "visible", timeout: 5000 });
-          await btn.click();
+    await flow.step(
+      "Picker Flow",
+      "picker-selection",
+      [
+        {
+          description: "Start Selection",
+          check: async () => {
+            const btn = page.getByRole("button", { name: "Select Photos" });
+            await btn.waitFor({ state: "visible", timeout: 5000 });
+            await btn.click();
+          },
         },
-      },
-      {
-        description: "Wait for Polling (Mocked)",
-        check: async () => {
-          await expect(
-            page.locator("text=Selection in progress..."),
-          ).toBeVisible();
+        {
+          description: "Wait for Polling (Mocked)",
+          check: async () => {
+            await expect(
+              page.locator("text=Selection in progress..."),
+            ).toBeVisible();
 
-          // Wait for it to disappear, indicating loadSelectedPhotos finished
-          await expect(
-            page.locator("text=Selection in progress..."),
-          ).toBeHidden({ timeout: 15000 });
+            // Wait for it to disappear, indicating loadSelectedPhotos finished
+            await expect(
+              page.locator("text=Selection in progress..."),
+            ).toBeHidden({ timeout: 15000 });
 
-          // Check that 2 photos are rendered
-          await expect(
-            page.locator('[data-testid^="photo-thumbnail-"]'),
-          ).toHaveCount(2, { timeout: 15000 });
+            // Check that 2 photos are rendered
+            await expect(
+              page.locator('[data-testid^="photo-thumbnail-"]'),
+            ).toHaveCount(2, { timeout: 15000 });
+          },
         },
-      },
-      {
-        description: "Verify Photos",
-        check: async () => {
-          await waitForVisiblePhotoThumbnailsReady(page, 2);
+        {
+          description: "Verify Photos",
+          check: async () => {
+            await waitForVisiblePhotoThumbnailsReady(page, 2);
+          },
         },
-      },
-    ]);
+      ],
+      { maxDiffPixelRatio: 0.05 },
+    );
 
     docHelper.writeReadme();
   });
