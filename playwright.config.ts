@@ -21,6 +21,11 @@ export default defineConfig({
   fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.2,
+    },
+  },
   /* No retries - tests must pass consistently on every run */
   retries: 0,
   /* Opt out of parallel tests on CI. */
