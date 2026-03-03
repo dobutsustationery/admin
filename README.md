@@ -1,5 +1,10 @@
 # Dobutsu Stationery Admin
 
+[![Unit Tests](https://github.com/dobutsustationery/admin/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/dobutsustationery/admin/actions/workflows/unit-tests.yml)
+[![E2E Tests](https://github.com/dobutsustationery/admin/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/dobutsustationery/admin/actions/workflows/e2e-tests.yml)
+[![Live Contracts](https://github.com/dobutsustationery/admin/actions/workflows/live-contracts.yml/badge.svg)](https://github.com/dobutsustationery/admin/actions/workflows/live-contracts.yml)
+[![Live E2E](https://github.com/dobutsustationery/admin/actions/workflows/live-e2e.yml/badge.svg)](https://github.com/dobutsustationery/admin/actions/workflows/live-e2e.yml)
+
 Administration portal for managing inventory, sales, and operations for Dobutsu Stationery - an online stationery store specializing in unique items from Japan.
 
 ## Overview
