@@ -21,11 +21,6 @@ export default defineConfig({
   fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
-  expect: {
-    toHaveScreenshot: {
-      maxDiffPixelRatio: 0.3,
-    },
-  },
   /* No retries - tests must pass consistently on every run */
   retries: 0,
   /* Opt out of parallel tests on CI. */
@@ -49,10 +44,6 @@ export default defineConfig({
   /* Configure visual regression testing */
   expect: {
     toHaveScreenshot: {
-      /* Small tolerance for antialiasing flakes */
-      maxDiffPixelRatio: 0.01,
-      /* Small threshold for subtle color differences */
-      threshold: 0.1,
       /* Hide blinking caret to prevent visual regression failure */
       caret: "hide",
     },

@@ -45,7 +45,7 @@
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:headed": "npx playwright test --headed",
     "test:e2e:report": "npx playwright show-report e2e/reports/html",
-    "precommit": "node scripts/check-no-wait-for-timeout.js",
+    "precommit": "node scripts/check-e2e-standards.js",
     "format": "prettier --write \"src/**/*.{ts,js,svelte}\" \"tests/**/*.{ts,js}\"",
     "lint": "prettier --check \"src/**/*.{ts,js,svelte}\" \"tests/**/*.{ts,js}\"",
     "lint:fix": "prettier --write \"src/**/*.{ts,js,svelte}\" \"tests/**/*.{ts,js}\"",

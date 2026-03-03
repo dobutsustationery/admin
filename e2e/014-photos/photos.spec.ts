@@ -548,7 +548,6 @@ test.describe("Google Photos Integration", () => {
           },
         },
       ],
-      { maxDiffPixelRatio: 0.05 },
     );
 
     docHelper.writeReadme();

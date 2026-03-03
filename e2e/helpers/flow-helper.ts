@@ -33,7 +33,6 @@ export class FlowHelper {
     verifications: VerificationStep[],
     screenshotOptions: {
       fullPage?: boolean;
-      maxDiffPixelRatio?: number;
       mask?: any[];
     } = {},
   ) {
