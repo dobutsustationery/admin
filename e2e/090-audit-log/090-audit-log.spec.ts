@@ -71,11 +71,14 @@ test.describe("Audit Log", () => {
       step1Verifications,
     );
 
+    await expect(page.locator(".sticky-banner-container")).not.toHaveClass(
+      /has-content/,
+      { timeout: 10000 },
+    );
     await screenshots.capture(page, "audit-rich-data", {
       programmaticCheck: async () => {
         for (const v of step1Verifications) await v.check();
       },
-      mask: [page.locator('input[type="date"]')], // Mask date inputs to avoid CI/Local locale rendering differences
     });
 
     // 5. Expand Action
