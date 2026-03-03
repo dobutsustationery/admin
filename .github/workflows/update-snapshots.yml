@@ -71,6 +71,26 @@ jobs:
           VITE_GOOGLE_DRIVE_FOLDER_ID: "dummy-drive-folder-id"
           VITE_GOOGLE_PHOTOS_CLIENT_ID: "dummy-photos-client-id"
 
+      - name: Stop Simple Emulators
+        if: always()
+        run: |
+          if [ -n "$EMULATOR_PID" ]; then
+            kill $EMULATOR_PID 2>/dev/null || true
+          fi
+          lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+          lsof -ti:9099 | xargs kill -9 2>/dev/null || true
+
+      - name: Update Live E2E snapshots
+        run: npm run test:live:e2e:screenshots
+        env:
+          CI: true
+          E2E_GOOGLE_CLIENT_ID: ${{ secrets.E2E_GOOGLE_CLIENT_ID }}
+          E2E_GOOGLE_CLIENT_SECRET: ${{ secrets.E2E_GOOGLE_CLIENT_SECRET }}
+          E2E_GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.E2E_GOOGLE_DRIVE_REFRESH_TOKEN }}
+          E2E_GOOGLE_PHOTOS_REFRESH_TOKEN: ${{ secrets.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN }}
+          E2E_GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.E2E_GOOGLE_DRIVE_FOLDER_ID }}
+          E2E_GOOGLE_PHOTOS_ALBUM_ID: ${{ secrets.E2E_GOOGLE_PHOTOS_ALBUM_ID }}
+
       - name: Commit and push snapshots
         run: |
           git config --global user.name "github-actions[bot]"
