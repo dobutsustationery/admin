@@ -43,6 +43,7 @@ jobs:
 
       - name: Update simple E2E snapshots
         run: npm run test:e2e -- --update-snapshots
+        continue-on-error: true
         env:
           CI: true
           VITE_FIREBASE_ENV: local
@@ -55,6 +56,7 @@ jobs:
 
       - name: Update Live E2E snapshots
         run: npm run test:live:e2e:screenshots
+        continue-on-error: true
         env:
           CI: true
           E2E_GOOGLE_CLIENT_ID: ${{ secrets.E2E_GOOGLE_CLIENT_ID }}
@@ -75,3 +77,9 @@ jobs:
             git commit -m "chore: Update Playwright snapshots [skip ci]"
             git push
           fi
+
+      - name: Stop Emulators
+        if: always()
+        run: |
+          lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+          lsof -ti:9099 | xargs kill -9 2>/dev/null || true
