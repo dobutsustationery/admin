@@ -34,12 +34,15 @@ test.describe("Sync Payload Validation", () => {
     for (const firestoreProjectId of firestoreProjects) {
       const firestoreUrl = `http://${firestoreHost}/v1/projects/${firestoreProjectId}/databases/(default)/documents/sync`;
       const response = await page.request.post(firestoreUrl, {
+        headers: {
+          Authorization: "Bearer owner",
+        },
         data: {
           fields: {
             eventType: { stringValue: "shopify/sync_requested" },
             requestId: { stringValue: requestId },
             creator: { stringValue: "e2e-test" },
-            createdAtMs: { integerValue: Date.now() },
+            createdAtMs: { integerValue: Date.now().toString() },
             payload: {
               mapValue: {
                 fields: {
@@ -81,6 +84,11 @@ test.describe("Sync Payload Validation", () => {
             const firestoreUrl = `http://${firestoreHost}/v1/projects/${firestoreProjectId}/databases/(default)/documents/sync`;
             const queryResponse = await page.request.get(
               `${firestoreUrl}?mask.fieldPaths=eventType&mask.fieldPaths=requestId&mask.fieldPaths=requestEventId&mask.fieldPaths=payload`,
+              {
+                headers: {
+                  Authorization: "Bearer owner",
+                },
+              }
             );
             if (!queryResponse.ok()) continue;
 
@@ -116,6 +124,11 @@ test.describe("Sync Payload Validation", () => {
       const firestoreUrl = `http://${firestoreHost}/v1/projects/${firestoreProjectId}/databases/(default)/documents/sync`;
       const finalQueryResponse = await page.request.get(
         `${firestoreUrl}?mask.fieldPaths=eventType&mask.fieldPaths=requestId&mask.fieldPaths=requestEventId&mask.fieldPaths=payload`,
+        {
+          headers: {
+            Authorization: "Bearer owner",
+          },
+        }
       );
       if (!finalQueryResponse.ok()) continue;
       const body = await finalQueryResponse.json();
