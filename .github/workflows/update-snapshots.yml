@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,11 +45,9 @@ jobs:
       - name: Update Snapshots (Simple and Live)
         run: |
           # 1. Update simple E2E snapshots
-          # We use test:e2e which manages its own emulators
           npm run test:e2e -- --update-snapshots || true
           
           # 2. Update Live E2E snapshots
-          # We use test:live:e2e:screenshots which manages its own emulators
           npm run test:live:e2e:screenshots || true
         env:
           CI: true
@@ -70,10 +69,11 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add e2e/**/screenshots/*.png
+          git add .
+          git status
           if git diff --staged --quiet; then
             echo "No changes to snapshots"
           else
             git commit -m "chore: Update Playwright snapshots [skip ci]"
-            git push
+            git push origin ${{ github.head_ref || github.ref_name }}
           fi
