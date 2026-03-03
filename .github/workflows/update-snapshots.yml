@@ -41,9 +41,15 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Update simple E2E snapshots
-        run: npm run test:e2e -- --update-snapshots
-        continue-on-error: true
+      - name: Update Snapshots (Simple and Live)
+        run: |
+          # 1. Update simple E2E snapshots
+          # We use test:e2e which manages its own emulators
+          npm run test:e2e -- --update-snapshots || true
+          
+          # 2. Update Live E2E snapshots
+          # We use test:live:e2e:screenshots which manages its own emulators
+          npm run test:live:e2e:screenshots || true
         env:
           CI: true
           VITE_FIREBASE_ENV: local
@@ -53,12 +59,6 @@ jobs:
           VITE_GOOGLE_DRIVE_CLIENT_ID: "dummy-drive-client-id"
           VITE_GOOGLE_DRIVE_FOLDER_ID: "dummy-drive-folder-id"
           VITE_GOOGLE_PHOTOS_CLIENT_ID: "dummy-photos-client-id"
-
-      - name: Update Live E2E snapshots
-        run: npm run test:live:e2e:screenshots
-        continue-on-error: true
-        env:
-          CI: true
           E2E_GOOGLE_CLIENT_ID: ${{ secrets.E2E_GOOGLE_CLIENT_ID }}
           E2E_GOOGLE_CLIENT_SECRET: ${{ secrets.E2E_GOOGLE_CLIENT_SECRET }}
           E2E_GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.E2E_GOOGLE_DRIVE_REFRESH_TOKEN }}
@@ -77,9 +77,3 @@ jobs:
             git commit -m "chore: Update Playwright snapshots [skip ci]"
             git push
           fi
-
-      - name: Stop Emulators
-        if: always()
-        run: |
-          lsof -ti:8080 | xargs kill -9 2>/dev/null || true
-          lsof -ti:9099 | xargs kill -9 2>/dev/null || true
