@@ -2,19 +2,21 @@
 
 This folder contains Firebase Functions for sync queue processing (scoped by domain/action).
 
-## Function
+## Functions
 
-- `syncRequest`
+- `shopifySyncRequest`
+  - Trigger: Firestore `request_shopify_sync/{requestId}` create
+  - Processes Shopify sync requests and writes lifecycle events to `sync`
+- `photosTransferRequest`
+  - Trigger: Firestore `request_photos_transfer/{requestId}` create
+  - Processes transfer requests and writes lifecycle events to `sync`
+- `photosTransformRequest`
+  - Trigger: Firestore `request_photos_transform/{requestId}` create
+  - Processes transform requests and writes lifecycle events to `sync`
+- `photosSecretResponse`
   - Trigger: Firestore `sync/{requestId}` create
-  - Dispatches by scoped event type (currently Shopify)
-  - Processes Shopify requests where `eventType === shopify/sync_requested`
-  - Emits append-only follow-up events in `sync`:
-    - `shopify/sync_claimed`
-    - `shopify/sync_api_call`
-    - `shopify/sync_completed` / `shopify/sync_partial_failed` / `shopify/sync_failed`
-  - Upserts Shopify product by handle
-  - Syncs inventory levels for request variants
-  - Writes API logs to `broadcast` as `shopify_api_log`
+  - Handles client response event `photos/image_transfer_secret_provided`
+  - Resumes original transfer/transform workflow
 
 ## Shared Logic
 

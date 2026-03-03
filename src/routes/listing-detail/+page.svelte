@@ -55,7 +55,7 @@
   import type { ShopifySyncRequestView } from "$lib/shopify-sync-model";
   import {
     SHOPIFY_SYNC_REQUEST_EVENT,
-    SYNC_COLLECTION,
+    SHOPIFY_REQUEST_COLLECTION,
   } from "$lib/sync-events";
 
   // --- State ---
@@ -646,18 +646,24 @@
         );
       }
 
-      await addDoc(collection(firestore, SYNC_COLLECTION), syncRequestEvent);
+      await addDoc(
+        collection(firestore, SHOPIFY_REQUEST_COLLECTION),
+        syncRequestEvent,
+      );
       trackedSyncRequestId = requestId;
       syncMessage = `Sync requested for '${handle}'. Waiting for processor claim...`;
       syncMessageLevel = "info";
     } catch (error) {
-      console.error(`[Shopify Sync] addDoc(${SYNC_COLLECTION}) failed`, {
-        requestId,
-        handle,
-        error,
-        undefinedPaths: findUndefinedPaths(syncRequestEvent),
-        payload: sanitizeForDebug(syncRequestEvent),
-      });
+      console.error(
+        `[Shopify Sync] addDoc(${SHOPIFY_REQUEST_COLLECTION}) failed`,
+        {
+          requestId,
+          handle,
+          error,
+          undefinedPaths: findUndefinedPaths(syncRequestEvent),
+          payload: sanitizeForDebug(syncRequestEvent),
+        },
+      );
       trackedSyncRequestId = null;
       syncMessage =
         error instanceof Error
