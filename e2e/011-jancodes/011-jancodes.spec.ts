@@ -130,8 +130,6 @@ test.describe("JAN Codes Page", () => {
     }, authData);
 
     await page.reload({ waitUntil: "load" });
-    await waitForAppReady(page);
-
     await signInButton.waitFor({ state: "hidden", timeout: 50000 });
 
     const step2Verifications = [
@@ -168,6 +166,10 @@ test.describe("JAN Codes Page", () => {
         for (const v of step2Verifications) await v.check();
       },
     });
+
+    // Step 2 baseline captures the immediate post-auth transition state.
+    // Wait for full app readiness only before the fully-loaded step.
+    await waitForAppReady(page);
 
     // ====================================================================
     // STEP 3: JAN Codes Page Loaded

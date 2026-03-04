@@ -5,6 +5,11 @@
 
 set -e  # Exit on error
 
+# Keep app build and data loaders pinned to the same emulator project namespace.
+FIREBASE_PROJECT_ID="${E2E_FIREBASE_PROJECT_ID:-demo-test-project}"
+export E2E_FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID}"
+export VITE_FIREBASE_LOCAL_PROJECT_ID="${VITE_FIREBASE_LOCAL_PROJECT_ID:-${FIREBASE_PROJECT_ID}}"
+
 # Record start time
 START_TIME=$(date +%s)
 
