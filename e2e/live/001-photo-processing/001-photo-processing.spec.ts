@@ -198,6 +198,17 @@ async function ensureStableViewport(page: any) {
   await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
+async function prepareFullPageCapture(page: any) {
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    document.body.style.overflow = "";
+    document.documentElement.style.overflow = "";
+  });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+}
+
 async function enforceDeterministicTopSpacing(page: any) {
   await page.addStyleTag({
     content: `
@@ -482,7 +493,7 @@ test.describe("Live Photo Processing", () => {
         progressChecks,
       );
       await waitForHistoryToSettle();
-      await ensureStableViewport(page);
+      await prepareFullPageCapture(page);
       await screenshots.capture(
         page,
         progressScreenshot.replace(/^\d{3}-/, "").replace(/\.png$/, ""),
