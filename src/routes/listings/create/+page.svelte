@@ -781,6 +781,7 @@
       <BulkEditor
         data={sortedBulkRows}
         columns={columnConfig}
+        frozenColumns={2}
         keyField="rowId"
         bind:sortHistory
         on:commit={handleBulkCommit}
