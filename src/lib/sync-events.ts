@@ -5,12 +5,19 @@ export const SYNC_SECRETS_COLLECTION = "sync_secrets";
 export const SHOPIFY_REQUEST_COLLECTION = "request_shopify_sync";
 export const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
 export const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
+export const GOOGLE_AUTH_REQUEST_COLLECTION = "request_google_auth";
+export const GOOGLE_AUTH_RESULTS_COLLECTION = "google_auth_results";
 export const SHOPIFY_SYNC_NAMESPACE = "shopify";
 export const PHOTOS_SYNC_NAMESPACE = "photos";
+export const GOOGLE_SYNC_NAMESPACE = "google";
 
 export const SHOPIFY_SYNC_REQUEST_EVENT = `${SHOPIFY_SYNC_NAMESPACE}/sync_requested`;
 export const PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT = `${PHOTOS_SYNC_NAMESPACE}/image_transfer_requested`;
 export const PHOTOS_IMAGE_TRANSFORM_REQUEST_EVENT = `${PHOTOS_SYNC_NAMESPACE}/image_transform_requested`;
+export const GOOGLE_AUTH_REQUESTED_EVENT = `${GOOGLE_SYNC_NAMESPACE}/auth_requested`;
+export const GOOGLE_AUTH_STARTED_EVENT = `${GOOGLE_SYNC_NAMESPACE}/auth_started`;
+export const GOOGLE_AUTH_COMPLETED_EVENT = `${GOOGLE_SYNC_NAMESPACE}/auth_completed`;
+export const GOOGLE_AUTH_FAILED_EVENT = `${GOOGLE_SYNC_NAMESPACE}/auth_failed`;
 
 export function normalizeShopifySyncEventType(eventType: string): string {
   const value = String(eventType || "").trim();

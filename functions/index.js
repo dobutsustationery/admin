@@ -14,6 +14,10 @@ const SYNC_COLLECTION = "sync";
 const SHOPIFY_REQUEST_COLLECTION = "request_shopify_sync";
 const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
 const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
+const GOOGLE_AUTH_REQUEST_COLLECTION = "request_google_auth";
+const GOOGLE_AUTH_RESULTS_COLLECTION = "google_auth_results";
+const USER_SECRETS_COLLECTION = "user_secrets";
+const GOOGLE_OAUTH_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
 function getShopifyConfig() {
   const storeUrl = shopifyCore.normalizeStoreUrl(
@@ -59,6 +63,92 @@ function hasBinaryPayload(payload) {
   };
 
   return checkValue(payload);
+}
+
+function getGoogleOAuthConfig() {
+  return {
+    clientId:
+      process.env.GOOGLE_OAUTH_CLIENT_ID ||
+      process.env.E2E_GOOGLE_CLIENT_ID ||
+      process.env.VITE_GOOGLE_PHOTOS_CLIENT_ID ||
+      process.env.VITE_GOOGLE_DRIVE_CLIENT_ID ||
+      "",
+    clientSecret:
+      process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
+      process.env.E2E_GOOGLE_CLIENT_SECRET ||
+      "",
+  };
+}
+
+async function writeGoogleAuthSyncEvent({
+  requestId,
+  creator,
+  eventType,
+  processor,
+  payload = {},
+}) {
+  await db.collection(SYNC_COLLECTION).add({
+    eventType,
+    requestId,
+    creator,
+    processor,
+    createdAt: new Date(),
+    createdAtMs: Date.now(),
+    payload,
+  });
+}
+
+async function exchangeGoogleCode({
+  code,
+  codeVerifier,
+  redirectUri,
+  clientId,
+  clientSecret,
+}) {
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    code_verifier: codeVerifier,
+    client_id: clientId,
+    redirect_uri: redirectUri,
+  });
+  if (clientSecret) body.set("client_secret", clientSecret);
+
+  const response = await fetch(GOOGLE_OAUTH_TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      `google_exchange_failed:${response.status}:${json?.error || "unknown"}`,
+    );
+  }
+  return json;
+}
+
+async function refreshGoogleToken({ refreshToken, clientId, clientSecret }) {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_id: clientId,
+  });
+  if (clientSecret) body.set("client_secret", clientSecret);
+
+  const response = await fetch(GOOGLE_OAUTH_TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      `google_refresh_failed:${response.status}:${json?.error || "unknown"}`,
+    );
+  }
+  return json;
 }
 
 exports.shopifySyncRequest = onDocumentCreated(
@@ -254,6 +344,172 @@ exports.syncPayloadValidation = onDocumentCreated(
         eventType,
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  },
+);
+
+exports.googleAuthRequest = onDocumentCreated(
+  {
+    document: `${GOOGLE_AUTH_REQUEST_COLLECTION}/{requestId}`,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    concurrency: 10,
+    maxInstances: 20,
+  },
+  async (event) => {
+    const requestData = event.data?.data();
+    if (!requestData) return;
+    const requestRef = event.data?.ref;
+
+    const requestId = String(event.params?.requestId || "");
+    const requestType = String(requestData.type || "");
+    const creator = String(requestData.creator || "");
+    const processor = `function:${process.env.K_SERVICE || "googleAuthRequest"}`;
+
+    if (!requestId || !creator || !requestType) {
+      logger.error("Invalid google auth request shape", {
+        requestId,
+        creator,
+        requestType,
+      });
+      return;
+    }
+
+    const cfg = getGoogleOAuthConfig();
+    if (!cfg.clientId) {
+      logger.error("Missing Google OAuth client configuration", { requestId });
+      await writeGoogleAuthSyncEvent({
+        requestId,
+        creator,
+        eventType: "google/auth_failed",
+        processor,
+        payload: {
+          errorCode: "config_missing",
+          message: "Missing GOOGLE_OAUTH_CLIENT_ID",
+        },
+      });
+      return;
+    }
+
+    await writeGoogleAuthSyncEvent({
+      requestId,
+      creator,
+      eventType: "google/auth_started",
+      processor,
+      payload: { type: requestType },
+    });
+
+    try {
+      const userSecretsRef = db.collection(USER_SECRETS_COLLECTION).doc(creator);
+      const userSecretsSnap = await userSecretsRef.get();
+      const existingSecrets = userSecretsSnap.exists ? userSecretsSnap.data() : {};
+      let tokenResponse = null;
+      let refreshToken = String(existingSecrets?.google?.refreshToken || "");
+
+      if (requestType === "exchange") {
+        const code = String(requestData.code || "");
+        const codeVerifier = String(requestData.codeVerifier || "");
+        const redirectUri = String(requestData.redirectUri || "");
+        if (!code || !codeVerifier || !redirectUri) {
+          throw new Error("missing_exchange_parameters");
+        }
+        tokenResponse = await exchangeGoogleCode({
+          code,
+          codeVerifier,
+          redirectUri,
+          clientId: cfg.clientId,
+          clientSecret: cfg.clientSecret,
+        });
+        refreshToken = String(tokenResponse.refresh_token || refreshToken || "");
+        if (refreshToken) {
+          await userSecretsRef.set(
+            {
+              google: {
+                refreshToken,
+                updatedAt: new Date(),
+                updatedAtMs: Date.now(),
+              },
+            },
+            { merge: true },
+          );
+        }
+      } else if (requestType === "refresh") {
+        if (!refreshToken) {
+          throw new Error("refresh_token_missing");
+        }
+        tokenResponse = await refreshGoogleToken({
+          refreshToken,
+          clientId: cfg.clientId,
+          clientSecret: cfg.clientSecret,
+        });
+      } else {
+        throw new Error(`unsupported_request_type:${requestType}`);
+      }
+
+      const accessToken = String(tokenResponse?.access_token || "");
+      const expiresIn = Number(tokenResponse?.expires_in || 0);
+      const scope = String(tokenResponse?.scope || "");
+      const tokenType = String(tokenResponse?.token_type || "Bearer");
+
+      if (!accessToken || !expiresIn) {
+        throw new Error("token_response_invalid");
+      }
+
+      await db
+        .collection(GOOGLE_AUTH_RESULTS_COLLECTION)
+        .doc(creator)
+        .collection("requests")
+        .doc(requestId)
+        .set({
+          requestId,
+          creator,
+          accessToken,
+          expiresIn,
+          scope,
+          tokenType,
+          createdAt: new Date(),
+          createdAtMs: Date.now(),
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          expiresAtMs: Date.now() + 5 * 60 * 1000,
+        });
+
+      await writeGoogleAuthSyncEvent({
+        requestId,
+        creator,
+        eventType: "google/auth_completed",
+        processor,
+        payload: {
+          expiresIn,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Google auth request failed", {
+        requestId,
+        requestType,
+        creator,
+        error: message,
+      });
+      await writeGoogleAuthSyncEvent({
+        requestId,
+        creator,
+        eventType: "google/auth_failed",
+        processor,
+        payload: {
+          errorCode: "google_auth_failed",
+          message,
+        },
+      });
+    } finally {
+      if (requestRef) {
+        // Request documents contain OAuth code + verifier; remove them after processing.
+        await requestRef.delete().catch((error) => {
+          logger.warn("Failed to cleanup google auth request document", {
+            requestId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
     }
   },
 );

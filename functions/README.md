@@ -17,6 +17,12 @@ This folder contains Firebase Functions for sync queue processing (scoped by dom
   - Trigger: Firestore `sync/{requestId}` create
   - Handles client response event `photos/image_transfer_secret_provided`
   - Resumes original transfer/transform workflow
+- `googleAuthRequest`
+  - Trigger: Firestore `request_google_auth/{requestId}` create
+  - Performs Google code exchange / refresh token grant
+  - Writes status-only lifecycle events to `sync`
+  - Writes short-lived token result to `google_auth_results/{uid}/requests/{requestId}`
+  - Deletes the original request document after processing (it contains code/verifier)
 
 ## Shared Logic
 
@@ -32,6 +38,8 @@ Shared modules used by both cloud function and CLI worker:
   - `SHOPIFY_ACCESS_TOKEN` (`shpat_...`), or
   - `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET`
 - `SHOPIFY_API_VERSION` (default `2026-01` if omitted)
+- `GOOGLE_OAUTH_CLIENT_ID` (required for auth exchange/refresh)
+- `GOOGLE_OAUTH_CLIENT_SECRET` (required for confidential client setups)
 
 `functions/.env` is read automatically by Firebase emulators/deploy.
 In this repo, generate it from root env files via:
