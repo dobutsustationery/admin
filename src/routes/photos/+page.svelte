@@ -625,7 +625,7 @@
     const visibleItems = categorizedEntries.flatMap(([_, items]) => items);
     const state = store.getState().photos;
     console.log(
-      `[Batch] scheduleBatch(${op}) total visible categorized items: ${visibleItems.length}`,
+      `[Batch] total visible categorized items: ${visibleItems.length}`,
     );
 
     // Only queue categorized photos that are currently on their root/original image.
