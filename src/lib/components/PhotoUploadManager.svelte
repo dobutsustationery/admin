@@ -47,8 +47,6 @@
   const CHECK_INTERVAL = 2000;
   onMount(() => {
     interval = setInterval(processQueue, CHECK_INTERVAL);
-    startSecretRequestListener();
-    startTransferRequestListener();
   });
 
   onDestroy(() => {
@@ -72,8 +70,12 @@
   }
 
   function startTransferRequestListener() {
+    if (!$user?.uid) return;
     if (unsubscribeTransferRequests) return;
-    const q = query(collection(firestore, PHOTOS_TRANSFER_REQUEST_COLLECTION));
+    const q = query(
+      collection(firestore, PHOTOS_TRANSFER_REQUEST_COLLECTION),
+      where("creator", "==", $user.uid),
+    );
     unsubscribeTransferRequests = onSnapshot(
       q,
       (snap) => {
@@ -106,10 +108,12 @@
   }
 
   function startSecretRequestListener() {
+    if (!$user?.uid) return;
     if (unsubscribeSecretRequests) return;
     secretListenerStartedAtMs = Date.now();
     const q = query(
       collection(firestore, SYNC_COLLECTION),
+      where("creator", "==", $user.uid),
       where("eventType", "==", "photos/image_transfer_secret_required"),
     );
     unsubscribeSecretRequests = onSnapshot(
@@ -145,6 +149,11 @@
         );
       },
     );
+  }
+
+  $: if ($user?.uid) {
+    startSecretRequestListener();
+    startTransferRequestListener();
   }
 
   async function respondToSecretRequired(syncEventId: string, eventData: any) {

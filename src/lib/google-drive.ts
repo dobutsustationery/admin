@@ -99,10 +99,14 @@ function getLegacyDriveToken(): GoogleDriveToken | null {
 
 /**
  * Get stored access token.
- * Prefer dedicated Drive storage when available, fallback to unified token.
+ * Choose the freshest token between legacy Drive and unified storage.
  */
 export function getStoredToken(): GoogleDriveToken | null {
-  return getLegacyDriveToken() || getUnifiedToken();
+  const legacy = getLegacyDriveToken();
+  const unified = getUnifiedToken();
+  if (!legacy) return unified;
+  if (!unified) return legacy;
+  return legacy.expires_at >= unified.expires_at ? legacy : unified;
 }
 
 /**
