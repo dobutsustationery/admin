@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Safety Rule
+
+- Never use `--no-verify` when running `git commit` or `git push`.
+
 ## Project Overview
 
 SvelteKit + Firebase admin portal for managing inventory and orders for a Japanese stationery store. Key capabilities: barcode scanning, real-time multi-user sync via Firestore action broadcasting, Google Drive/Photos integration, Gemini AI for product descriptions, and Shopify product sync.
