@@ -572,13 +572,15 @@ test.describe("Listings Creation Flow", () => {
     await approveBtn.click({ force: true });
 
     // 10. Verify Completion & Navigation
-    // Expect Celebration & Return Button
-    const returnBtn = page.getByRole("button", { name: "Return to Dashboard" });
+    // Expect Celebration & Shopify Products CTA
+    const returnBtn = page.getByRole("button", {
+      name: "Go to Shopify Products",
+    });
     await expect(returnBtn).toBeVisible({ timeout: 10000 });
     await returnBtn.click();
 
-    // Should be on Dashboard
-    await expect(page).toHaveURL(/\/$/);
+    // Should be on Shopify products
+    await expect(page).toHaveURL(/\/shopify-products$/);
 
     docHelper.writeReadme();
   });
