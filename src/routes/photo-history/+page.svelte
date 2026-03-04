@@ -1,5 +1,7 @@
 <script lang="ts">
   import { page } from "$app/stores";
+  import { flip } from "svelte/animate";
+  import { cubicOut } from "svelte/easing";
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { store } from "$lib/store";
@@ -23,6 +25,7 @@
     getStoredToken as getPhotosToken,
     initiateOAuthFlow as initiatePhotosAuth,
   } from "$lib/google-photos";
+  import type { MediaItem } from "$lib/google-photos";
 
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
@@ -54,6 +57,12 @@
 
   // --- State Selectors ---
   $: photoId = $page.url.searchParams.get("id") || "";
+  $: navScope =
+    $page.url.searchParams.get("scope") === "selected"
+      ? "selected"
+      : "categorized";
+  $: showCompletedFromSource =
+    $page.url.searchParams.get("showCompleted") === "1";
   $: urlHistory = $store.photos.urlHistory?.[photoId] || [];
   $: selectedItem = $store.photos.selected?.find((p: any) => p.id === photoId);
   $: categorizedItem = findCategorizedItem(
@@ -63,6 +72,73 @@
   $: item = selectedItem || categorizedItem;
   $: effectiveHistory =
     urlHistory.length > 0 ? urlHistory : item?.baseUrl ? [item.baseUrl] : [];
+
+  $: listedJansForNav = (() => {
+    const listed = new Set<string>();
+    const idToHandle = $store.listings.idToHandle || {};
+    const idToItem = $store.inventory.idToItem || {};
+    const handleToListing = $store.listings.handleToListing || {};
+
+    for (const itemId in idToItem) {
+      const invItem = idToItem[itemId];
+      const handle = idToHandle[itemId];
+      const listing = handle ? handleToListing[handle] : null;
+      if (invItem && invItem.janCode && listing?.bodyHtml) {
+        listed.add(invItem.janCode);
+        if (invItem.subtype) {
+          listed.add(`${invItem.janCode}:${invItem.subtype}`);
+        }
+      }
+    }
+    return listed;
+  })();
+
+  $: navItemById = (() => {
+    const map = new Map<string, MediaItem>();
+    ($store.photos.selected || []).forEach((p: MediaItem) => {
+      if (!map.has(p.id)) map.set(p.id, p);
+    });
+    Object.values($store.photos.janCodeToPhotos || {}).forEach((items: any) => {
+      (items || []).forEach((p: MediaItem) => {
+        if (!map.has(p.id)) map.set(p.id, p);
+      });
+    });
+    Object.values($store.photos.registry || {}).forEach((p: any) => {
+      if (p?.id && !map.has(p.id)) map.set(p.id, p);
+    });
+    return map;
+  })();
+
+  $: orderedNavIds = (() => {
+    let ids: string[] = [];
+    if (navScope === "selected") {
+      ids = ($store.photos.selected || []).map((p: MediaItem) => p.id);
+    } else {
+      const entries = (
+        Object.entries($store.photos.janCodeToPhotos || {}) as [
+          string,
+          MediaItem[],
+        ][]
+      ).filter(
+        ([jan]) => showCompletedFromSource || !listedJansForNav.has(jan),
+      );
+      ids = entries.flatMap(([, items]) => (items || []).map((p) => p.id));
+    }
+
+    if (photoId && !ids.includes(photoId)) ids = [photoId, ...ids];
+    return Array.from(new Set(ids));
+  })();
+
+  $: currentNavIndex = orderedNavIds.findIndex((id) => id === photoId);
+  $: canJumpBack = currentNavIndex > 0;
+  $: canJumpForward =
+    currentNavIndex >= 0 && currentNavIndex < orderedNavIds.length - 1;
+  $: navStart = (() => {
+    if (currentNavIndex < 0) return 0;
+    const maxStart = Math.max(0, orderedNavIds.length - 5);
+    return Math.min(Math.max(0, currentNavIndex - 2), maxStart);
+  })();
+  $: visibleNavIds = orderedNavIds.slice(navStart, navStart + 5);
 
   // --- Metadata Correlation Logic ---
   let fileMetadatas: Record<string, any> = {};
@@ -681,6 +757,34 @@
     }
     return null;
   }
+
+  function buildHistoryHref(id: string): string {
+    const params = new URLSearchParams($page.url.searchParams);
+    params.set("id", id);
+    if (!params.get("scope")) {
+      params.set("scope", "categorized");
+    }
+    return `/photo-history?${params.toString()}`;
+  }
+
+  function jumpToPhoto(id: string) {
+    if (!id || id === photoId) return;
+    goto(buildHistoryHref(id), {
+      replaceState: true,
+      noScroll: true,
+      keepFocus: true,
+    });
+  }
+
+  function jumpBy(delta: number) {
+    if (currentNavIndex < 0 || orderedNavIds.length === 0) return;
+    const nextIndex = Math.min(
+      orderedNavIds.length - 1,
+      Math.max(0, currentNavIndex + delta),
+    );
+    if (nextIndex === currentNavIndex) return;
+    jumpToPhoto(orderedNavIds[nextIndex]);
+  }
 </script>
 
 <ManualCropModal
@@ -696,6 +800,50 @@
     >
     <h1 class="page-title">Photo History</h1>
   </div>
+
+  {#if orderedNavIds.length > 1}
+    <div class="photo-jump-nav">
+      <button
+        class="jump-arrow"
+        on:click={() => jumpBy(-4)}
+        disabled={!canJumpBack}
+        aria-label="Jump 4 photos backward"
+      >
+        ←
+      </button>
+      <div class="jump-strip">
+        {#each visibleNavIds as navId (navId)}
+          {@const navItem = navItemById.get(navId)}
+          <button
+            class="jump-thumb {navId === photoId ? 'active' : ''}"
+            on:click={() => jumpToPhoto(navId)}
+            animate:flip={{ duration: 200, easing: cubicOut }}
+            aria-label={`Jump to ${navItem?.filename || navId}`}
+          >
+            {#if navItem?.baseUrl}
+              <ImageThumbnail
+                src={navItem.baseUrl}
+                alt={navItem.filename || navId}
+                width="64px"
+                height="64px"
+                fit="cover"
+              />
+            {:else}
+              <span class="thumb-fallback">{navId.slice(0, 4)}</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+      <button
+        class="jump-arrow"
+        on:click={() => jumpBy(4)}
+        disabled={!canJumpForward}
+        aria-label="Jump 4 photos forward"
+      >
+        →
+      </button>
+    </div>
+  {/if}
 
   <main>
     {#if !photoId}
@@ -914,6 +1062,69 @@
     font-weight: 700;
     color: #111827;
     margin: 0;
+  }
+  .photo-jump-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .jump-arrow {
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid #d1d5db;
+    border-radius: 9999px;
+    background: #fff;
+    color: #111827;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .jump-arrow:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .jump-strip {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .jump-thumb {
+    width: 64px;
+    height: 64px;
+    padding: 0;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    border: 2px solid #d1d5db;
+    background: #fff;
+    cursor: pointer;
+    transition:
+      transform 150ms ease,
+      border-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+  .jump-thumb:hover {
+    transform: translateY(-1px);
+    border-color: #6b7280;
+  }
+  .jump-thumb.active {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+    transform: scale(1.06);
+  }
+  .thumb-fallback {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    color: #6b7280;
+    background: #f9fafb;
   }
   .alert {
     padding: 1rem;

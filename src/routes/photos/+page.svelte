@@ -1195,6 +1195,17 @@
   let hoveredColumn: "jan" | "photos" | null = null;
   let showCompleted = false;
 
+  function buildPhotoHistoryHref(
+    id: string,
+    scope: "selected" | "categorized",
+  ): string {
+    const params = new URLSearchParams({ id, scope });
+    if (scope === "categorized") {
+      params.set("showCompleted", showCompleted ? "1" : "0");
+    }
+    return `/photo-history?${params.toString()}`;
+  }
+
   // Compute Listed JANs
   $: listedJans = (() => {
     const listed = new Set<string>();
@@ -1455,9 +1466,11 @@
                   ? "uploading"
                   : "ready"}
                 aria-label="View photo history"
-                on:click={() => goto(`/photo-history?id=${photo.id}`)}
+                on:click={() =>
+                  goto(buildPhotoHistoryHref(photo.id, "selected"))}
                 on:keydown={(e) =>
-                  e.key === "Enter" && goto(`/photo-history?id=${photo.id}`)}
+                  e.key === "Enter" &&
+                  goto(buildPhotoHistoryHref(photo.id, "selected"))}
               >
                 <ImageThumbnail
                   src={photo.baseUrl}
@@ -1637,10 +1650,11 @@
                           ? "uploading"
                           : "ready"}
                         aria-label="View photo history"
-                        on:click={() => goto(`/photo-history?id=${item.id}`)}
+                        on:click={() =>
+                          goto(buildPhotoHistoryHref(item.id, "categorized"))}
                         on:keydown={(e) =>
                           e.key === "Enter" &&
-                          goto(`/photo-history?id=${item.id}`)}
+                          goto(buildPhotoHistoryHref(item.id, "categorized"))}
                       >
                         <ImageThumbnail
                           src={item.baseUrl}
