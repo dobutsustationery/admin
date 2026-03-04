@@ -34,6 +34,24 @@ const functionsDir = resolve(process.cwd(), "functions");
 const targetPath = resolve(functionsDir, ".env");
 
 let kept = [];
+const keepPrefixes = [
+  "SHOPIFY_",
+  "FIREBASE_",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "GOOGLE_OAUTH_",
+  "E2E_GOOGLE_",
+];
+const keepExactKeys = [
+  "VITE_GOOGLE_DRIVE_CLIENT_ID",
+  "VITE_GOOGLE_PHOTOS_CLIENT_ID",
+];
+
+function shouldKeepKey(key) {
+  return (
+    keepExactKeys.includes(key) ||
+    keepPrefixes.some((prefix) => key.startsWith(prefix))
+  );
+}
 
 if (!existsSync(sourcePath)) {
   if (process.env.CI) {
@@ -41,13 +59,8 @@ if (!existsSync(sourcePath)) {
       `⚠️ Missing source env file ${sourceMap[env]} in CI. Falling back to environment variables.`,
     );
     // In CI, we extract from process.env instead of a file
-    const keepPrefixes = [
-      "SHOPIFY_",
-      "FIREBASE_",
-      "GOOGLE_APPLICATION_CREDENTIALS",
-    ];
     for (const key in process.env) {
-      if (keepPrefixes.some((prefix) => key.startsWith(prefix))) {
+      if (shouldKeepKey(key)) {
         kept.push(`${key}=${process.env[key]}`);
       }
     }
@@ -64,15 +77,10 @@ if (!existsSync(sourcePath)) {
     .filter((line) => line && !line.trimStart().startsWith("#"))
     .filter((line) => line.includes("="));
 
-  const keepPrefixes = [
-    "SHOPIFY_",
-    "FIREBASE_",
-    "GOOGLE_APPLICATION_CREDENTIALS",
-  ];
   kept = lines.filter((line) => {
     const key = line.split("=")[0]?.trim() || "";
     if (!key) return false;
-    return keepPrefixes.some((prefix) => key.startsWith(prefix));
+    return shouldKeepKey(key);
   });
 }
 
@@ -86,7 +94,7 @@ if (kept.length === 0) {
   } else {
     console.error(`No supported function env vars found in ${sourceMap[env]}.`);
     console.error(
-      "Expected SHOPIFY_STORE_URL and either SHOPIFY_ACCESS_TOKEN or SHOPIFY_CLIENT_ID/SHOPIFY_CLIENT_SECRET.",
+      "Expected Shopify vars and Google OAuth vars (GOOGLE_OAUTH_* or VITE_GOOGLE_*_CLIENT_ID).",
     );
     process.exit(1);
   }
