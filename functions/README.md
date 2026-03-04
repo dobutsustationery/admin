@@ -39,7 +39,8 @@ Shared modules used by both cloud function and CLI worker:
   - `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET`
 - `SHOPIFY_API_VERSION` (default `2026-01` if omitted)
 - `GOOGLE_OAUTH_CLIENT_ID` (required for auth exchange/refresh)
-- `GOOGLE_OAUTH_CLIENT_SECRET` (required for confidential client setups)
+- `GOOGLE_OAUTH_CLIENT_SECRET` (required for auth exchange/refresh)
+  - alias supported in root env files: `GOOGLE_OAUTH_SECRET`
 
 `functions/.env` is read automatically by Firebase emulators/deploy.
 In this repo, generate it from root env files via:
@@ -47,6 +48,10 @@ In this repo, generate it from root env files via:
 - `npm run env:functions:local` (from `./.env.emulator`)
 - `npm run env:functions:staging` (from `./.env.staging`)
 - `npm run env:functions:production` (from `./.env.production`)
+
+OAuth env behavior:
+- Functions now fail fast if `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET` are missing.
+- For `local` and `production`, missing OAuth keys are auto-filled from `.env.staging` (same key names), then written canonically to `functions/.env`.
 
 ## Local
 

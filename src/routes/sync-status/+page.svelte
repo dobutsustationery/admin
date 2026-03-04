@@ -50,7 +50,7 @@
 
   function inferDomain(
     req: ShopifySyncRequestView | null,
-  ): "shopify" | "photos" | "unknown" {
+  ): "shopify" | "photos" | "google" | "unknown" {
     if (!req) return "unknown";
     const fromEvents = inferSyncRequestDomainFromEvents(req.timeline || []);
     if (fromEvents !== "unknown") return fromEvents;
@@ -64,6 +64,14 @@
       processor.includes("photos-sync")
     ) {
       return "photos";
+    }
+    if (
+      requestId.startsWith("google_auth_") ||
+      requestId.startsWith("google_refresh_") ||
+      source.includes("google") ||
+      processor.includes("googleauthrequest")
+    ) {
+      return "google";
     }
     if (
       source.includes("shopify") ||
@@ -233,6 +241,20 @@
     const resultError = req.result?.error;
     if (typeof resultError === "string" && resultError.trim())
       return resultError;
+
+    const timelineFailure = [...(req.timeline || [])]
+      .sort((a, b) => {
+        const aMs = Number(a.createdAtMs || toMs(a.timestamp) || 0);
+        const bMs = Number(b.createdAtMs || toMs(b.timestamp) || 0);
+        return bMs - aMs;
+      })
+      .find((ev) => String(ev.eventType || "").includes("failed"));
+    const timelineMessage = String(
+      timelineFailure?.payload?.message ||
+        timelineFailure?.payload?.error ||
+        "",
+    ).trim();
+    if (timelineMessage) return timelineMessage;
 
     const failedApi = [...req.apiCalls]
       .sort((a, b) => b.loggedAt - a.loggedAt)

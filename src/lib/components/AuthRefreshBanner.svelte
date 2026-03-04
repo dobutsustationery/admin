@@ -5,7 +5,8 @@
   export let type: "refreshing" | "required" = "refreshing";
 
   function handleReconnect() {
-    initiateOAuthFlow(true);
+    // Force consent so Google returns/refreshes a backend-usable refresh_token.
+    initiateOAuthFlow(true, undefined, true);
   }
 </script>
 

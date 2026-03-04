@@ -19,6 +19,18 @@ const GOOGLE_AUTH_RESULTS_COLLECTION = "google_auth_results";
 const USER_SECRETS_COLLECTION = "user_secrets";
 const GOOGLE_OAUTH_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
+function normalizeEnvValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (
+    (raw.startsWith('"') && raw.endsWith('"')) ||
+    (raw.startsWith("'") && raw.endsWith("'"))
+  ) {
+    return raw.slice(1, -1).trim();
+  }
+  return raw;
+}
+
 function getShopifyConfig() {
   const storeUrl = shopifyCore.normalizeStoreUrl(
     process.env.SHOPIFY_STORE_URL || "",
@@ -66,17 +78,17 @@ function hasBinaryPayload(payload) {
 }
 
 function getGoogleOAuthConfig() {
+  const clientId = normalizeEnvValue(
+    process.env.GOOGLE_OAUTH_CLIENT_ID || "",
+  );
+  const clientSecret = normalizeEnvValue(
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
+      process.env.GOOGLE_OAUTH_SECRET ||
+      "",
+  );
   return {
-    clientId:
-      process.env.GOOGLE_OAUTH_CLIENT_ID ||
-      process.env.E2E_GOOGLE_CLIENT_ID ||
-      process.env.VITE_GOOGLE_PHOTOS_CLIENT_ID ||
-      process.env.VITE_GOOGLE_DRIVE_CLIENT_ID ||
-      "",
-    clientSecret:
-      process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
-      process.env.E2E_GOOGLE_CLIENT_SECRET ||
-      "",
+    clientId,
+    clientSecret,
   };
 }
 
@@ -122,8 +134,10 @@ async function exchangeGoogleCode({
 
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const err = String(json?.error || "unknown");
+    const errDesc = String(json?.error_description || "");
     throw new Error(
-      `google_exchange_failed:${response.status}:${json?.error || "unknown"}`,
+      `google_exchange_failed:${response.status}:${err}${errDesc ? `:${errDesc}` : ""}`,
     );
   }
   return json;
@@ -144,8 +158,10 @@ async function refreshGoogleToken({ refreshToken, clientId, clientSecret }) {
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const err = String(json?.error || "unknown");
+    const errDesc = String(json?.error_description || "");
     throw new Error(
-      `google_refresh_failed:${response.status}:${json?.error || "unknown"}`,
+      `google_refresh_failed:${response.status}:${err}${errDesc ? `:${errDesc}` : ""}`,
     );
   }
   return json;
@@ -385,7 +401,25 @@ exports.googleAuthRequest = onDocumentCreated(
         processor,
         payload: {
           errorCode: "config_missing",
-          message: "Missing GOOGLE_OAUTH_CLIENT_ID",
+          message:
+            "Missing GOOGLE_OAUTH_CLIENT_ID in functions runtime env (run env:functions:* to regenerate functions/.env)",
+        },
+      });
+      return;
+    }
+    if (!cfg.clientSecret) {
+      logger.error("Missing Google OAuth client secret configuration", {
+        requestId,
+      });
+      await writeGoogleAuthSyncEvent({
+        requestId,
+        creator,
+        eventType: "google/auth_failed",
+        processor,
+        payload: {
+          errorCode: "config_missing",
+          message:
+            "Missing GOOGLE_OAUTH_CLIENT_SECRET in functions runtime env (alias: GOOGLE_OAUTH_SECRET in root env files)",
         },
       });
       return;
