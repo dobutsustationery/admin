@@ -47,6 +47,7 @@
     findFileByDerivationKey,
     setFilePermissions,
   } from "$lib/google-drive";
+  import { shouldProcessPhotoFromHistory } from "$lib/photos-processing-eligibility";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ProcessingConfigModal from "$lib/components/ProcessingConfigModal.svelte";
   import { store } from "$lib/store";
@@ -478,11 +479,15 @@
     );
 
     try {
+      // Freeze eligibility at batch start so selected photos run through
+      // the full configured pipeline, even as earlier steps update current URLs.
+      const processableIds = getProcessableCategorizedIds();
+
       // 0. Ensure backend has current tokens before starting work
       await provideSecretsToBackend();
 
       for (const step of pipelineSteps as ProcessingStepType[]) {
-        const ids = scheduleBatch(step);
+        const ids = scheduleBatch(step, processableIds);
         console.log(`[Batch] Step ${step} scheduled ${ids.length} items.`);
         if (ids.length === 0) continue;
 
@@ -614,26 +619,39 @@
     await Promise.all(promises);
   }
 
-  function scheduleBatch(op: "crop" | "color_correct" | "remove_background") {
+  function getProcessableCategorizedIds(): string[] {
     // Schedule for CATEGORIZED photos only (as per user request)
     const allIds = new Set<string>();
     const categorizedItems = Object.values(janCodeToPhotos).flat();
+    const state = store.getState().photos;
     console.log(
-      `[Batch] scheduleBatch(${op}) total categorized items: ${categorizedItems.length}`,
+      `[Batch] processable scope total categorized items: ${categorizedItems.length}`,
     );
 
-    // Optimization: We now include ALL categorized items in the batch.
-    // dispatchTransformRequest will perform a real-time idempotency check against Drive.
-    // This allows us to recover from "lying" local states where an item is marked done
-    // but the file is missing, while still efficiently skipping truly completed work.
+    // Only queue categorized photos that are currently on their root/original image.
+    // This prevents re-processing already transformed images unless the user reset
+    // the current image back to root in photo history.
     categorizedItems.forEach((p) => {
+      const currentUrl = state.registry?.[p.id]?.baseUrl || p.baseUrl;
+      const history = state.urlHistory?.[p.id] || [];
+      if (!shouldProcessPhotoFromHistory({ currentUrl, urlHistory: history })) {
+        return;
+      }
       allIds.add(p.id);
     });
-
-    console.log(
-      `[Batch] scheduleBatch(${op}) items to evaluate: ${allIds.size}`,
-    );
     const ids = Array.from(allIds);
+    console.log(`[Batch] processable scope size: ${ids.length}`);
+    return ids;
+  }
+
+  function scheduleBatch(
+    op: "crop" | "color_correct" | "remove_background",
+    baseIds?: string[],
+  ) {
+    const ids = baseIds || getProcessableCategorizedIds();
+    console.log(
+      `[Batch] scheduleBatch(${op}) items to evaluate: ${ids.length}`,
+    );
     if (ids.length === 0) return [];
 
     const action = schedule_edit_batch({ ids, operation: op });
