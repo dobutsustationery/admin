@@ -73,6 +73,18 @@ function parseEnvFileIfPresent(path) {
 }
 
 function canonicalizeGoogleKeys(envMap) {
+  if (!envMap.get("GOOGLE_OAUTH_CLIENT_ID") && envMap.get("E2E_GOOGLE_CLIENT_ID")) {
+    envMap.set("GOOGLE_OAUTH_CLIENT_ID", envMap.get("E2E_GOOGLE_CLIENT_ID"));
+  }
+  if (
+    !envMap.get("GOOGLE_OAUTH_CLIENT_SECRET") &&
+    envMap.get("E2E_GOOGLE_CLIENT_SECRET")
+  ) {
+    envMap.set(
+      "GOOGLE_OAUTH_CLIENT_SECRET",
+      envMap.get("E2E_GOOGLE_CLIENT_SECRET"),
+    );
+  }
   if (!envMap.get("GOOGLE_OAUTH_CLIENT_SECRET") && envMap.get("GOOGLE_OAUTH_SECRET")) {
     envMap.set("GOOGLE_OAUTH_CLIENT_SECRET", envMap.get("GOOGLE_OAUTH_SECRET"));
   }
@@ -91,7 +103,14 @@ if (!existsSync(sourcePath)) {
     `⚠️ Missing source env file ${sourceMap[env]} in CI. Falling back to environment variables.`,
   );
   for (const key in process.env) {
-    if (!shouldKeepKey(key) && key !== "GOOGLE_OAUTH_SECRET") continue;
+    if (
+      !shouldKeepKey(key) &&
+      key !== "GOOGLE_OAUTH_SECRET" &&
+      key !== "E2E_GOOGLE_CLIENT_ID" &&
+      key !== "E2E_GOOGLE_CLIENT_SECRET"
+    ) {
+      continue;
+    }
     envMap.set(key, process.env[key] || "");
     keyOrder.push(key);
   }
