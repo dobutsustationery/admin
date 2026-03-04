@@ -148,6 +148,7 @@
   let listingImages: ListingImage[] = [];
   let associatedItems: any[] = [];
   let siblingProposals: any[] = []; // Hoisted for shared updates
+  let syncBannerImageUrl = "";
 
   // Image Upload State
   let uploadingImageId: string | null = null;
@@ -522,6 +523,18 @@
         dismissedSuccessRequestId = requestId;
       }, 30_000);
     }
+  }
+
+  $: {
+    const firstListingImage = (listingImages || [])
+      .filter(
+        (img) => typeof img?.url === "string" && img.url.trim().length > 0,
+      )
+      .sort((a, b) => (a.position || 0) - (b.position || 0))[0];
+
+    syncBannerImageUrl = firstListingImage?.url
+      ? toGoogleDrivePublicImageUrl(String(firstListingImage.url))
+      : "";
   }
 
   function findUndefinedPaths(value: unknown, path = "root"): string[] {
@@ -2029,6 +2042,30 @@
   }
 </script>
 
+{#if syncMessage}
+  <div class={`sync-sticky-banner ${syncMessageLevel}`}>
+    {#if syncBannerImageUrl}
+      <div class="sync-sticky-thumb">
+        <ImageThumbnail
+          src={syncBannerImageUrl}
+          alt={listingData?.title || handle || janCode || "Listing image"}
+          width="56px"
+          height="56px"
+          fit="cover"
+          zoomable={false}
+        />
+      </div>
+    {/if}
+    <div class="sync-sticky-content">
+      <span class="sync-sticky-label">Shopify Sync</span>
+      <span>{syncMessage}</span>
+    </div>
+    {#if activeSyncRequestId}
+      <a class="sync-link" href={syncDetailsHref}>View details</a>
+    {/if}
+  </div>
+{/if}
+
 <div class="container">
   <!-- Header / Navigation -->
   {#if isLiveMode}
@@ -2178,15 +2215,6 @@
         </div>
       </div>
     </div>
-
-    {#if syncMessage}
-      <div class={`sync-message ${syncMessageLevel}`}>
-        <span>{syncMessage}</span>
-        {#if activeSyncRequestId}
-          <a class="sync-link" href={syncDetailsHref}>View details</a>
-        {/if}
-      </div>
-    {/if}
 
     <ListingEditor
       listing={listingData}
@@ -2501,28 +2529,52 @@
     opacity: 0.6;
     cursor: not-allowed;
   }
-  .sync-message {
-    margin-top: -0.75rem;
+  .sync-sticky-banner {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    margin: 0 auto;
     margin-bottom: 1rem;
-    font-size: 0.9rem;
-    border-radius: 6px;
-    padding: 0.55rem 0.75rem;
+    width: min(1200px, calc(100% - 2rem));
+    border-radius: 0 0 10px 10px;
+    padding: 0.6rem 0.9rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
   }
-  .sync-message.info {
+  .sync-sticky-thumb {
+    flex: 0 0 auto;
+    width: 56px;
+    height: 56px;
+  }
+  .sync-sticky-content {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.9rem;
+  }
+  .sync-sticky-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    opacity: 0.85;
+    text-transform: uppercase;
+  }
+  .sync-sticky-banner.info {
     background: #eff6ff;
     border: 1px solid #bfdbfe;
     color: #1e3a8a;
   }
-  .sync-message.success {
+  .sync-sticky-banner.success {
     background: #ecfdf5;
     border: 1px solid #a7f3d0;
     color: #065f46;
   }
-  .sync-message.error {
+  .sync-sticky-banner.error {
     background: #fef2f2;
     border: 1px solid #fecaca;
     color: #991b1b;
