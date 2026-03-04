@@ -193,10 +193,21 @@ const photosSlice = createSlice({
       action: PayloadAction<{ oldJan: string; newJan: string }>,
     ) => {
       const { oldJan, newJan } = action.payload;
-      if (state.janCodeToPhotos[oldJan]) {
-        state.janCodeToPhotos[newJan] = state.janCodeToPhotos[oldJan];
-        delete state.janCodeToPhotos[oldJan];
+      if (!state.janCodeToPhotos[oldJan] || oldJan === newJan) return;
+
+      const source = state.janCodeToPhotos[oldJan];
+      const target = state.janCodeToPhotos[newJan] || [];
+      const seen = new Set(target.map((p) => p.id));
+      const merged = [...target];
+
+      for (const photo of source) {
+        if (seen.has(photo.id)) continue;
+        seen.add(photo.id);
+        merged.push(photo);
       }
+
+      state.janCodeToPhotos[newJan] = merged;
+      delete state.janCodeToPhotos[oldJan];
     },
     merge_jan_groups: (
       state,

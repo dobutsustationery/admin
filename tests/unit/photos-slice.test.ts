@@ -5,6 +5,8 @@ import {
   register_media_items,
   complete_upload,
   set_processing_config,
+  categorize_photo,
+  rename_jan_group,
 } from "../../src/lib/photos-slice";
 
 describe("photos slice", () => {
@@ -86,5 +88,46 @@ describe("photos slice", () => {
       "drive.google.com/thumbnail",
     );
     expect(final.selected[0].baseUrl).toContain("drive.google.com/thumbnail");
+  });
+
+  it("merges JAN groups when renaming into an existing JAN key", () => {
+    const initial = photos(undefined, { type: "@@INIT" } as any);
+    const photoA = {
+      id: "photo-a",
+      baseUrl: "https://drive.google.com/thumbnail?id=a",
+      productUrl: "",
+      mimeType: "image/jpeg",
+      filename: "a.jpg",
+      mediaMetadata: { creationTime: "", width: "1", height: "1" },
+    };
+    const photoB = {
+      id: "photo-b",
+      baseUrl: "https://drive.google.com/thumbnail?id=b",
+      productUrl: "",
+      mimeType: "image/jpeg",
+      filename: "b.jpg",
+      mediaMetadata: { creationTime: "", width: "1", height: "1" },
+    };
+
+    const withGroups = photos(
+      photos(
+        initial,
+        categorize_photo({ janCode: "1111111111111", photo: photoA }),
+      ),
+      categorize_photo({ janCode: "2222222222222", photo: photoB }),
+    );
+
+    const renamed = photos(
+      withGroups,
+      rename_jan_group({
+        oldJan: "1111111111111",
+        newJan: "2222222222222",
+      }),
+    );
+
+    expect(renamed.janCodeToPhotos["1111111111111"]).toBeUndefined();
+    expect(
+      renamed.janCodeToPhotos["2222222222222"].map((p) => p.id).sort(),
+    ).toEqual(["photo-a", "photo-b"]);
   });
 });
