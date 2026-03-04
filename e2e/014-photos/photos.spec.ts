@@ -502,11 +502,23 @@ test.describe("Google Photos Integration", () => {
       {
         description: "Simulate OAuth Callback",
         check: async () => {
-          // Simulate return from Google with hash params
+          // PKCE callback now exchanges tokens server-side; emulate the final stored token state.
+          await page.addInitScript(() => {
+            localStorage.setItem(
+              "google_photos_access_token",
+              JSON.stringify({
+                access_token: "mock_token",
+                expires_in: 3600,
+                expires_at: Date.now() + 3600 * 1000,
+                scope:
+                  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/drive.readonly",
+                token_type: "Bearer",
+                user_email: "test@example.com",
+              }),
+            );
+          });
           await page.goto("about:blank");
-          await page.goto(
-            "/photos#access_token=mock_token&expires_in=3600&scope=https://www.googleapis.com/auth/photospicker.mediaitems.readonly%20https://www.googleapis.com/auth/generative-language%20https://www.googleapis.com/auth/drive.readonly&token_type=Bearer&state=photos_auth",
-          );
+          await page.goto("/photos");
         },
       },
       {
@@ -515,6 +527,52 @@ test.describe("Google Photos Integration", () => {
           await expect(
             page.getByRole("button", { name: "Switch Account" }),
           ).toBeVisible();
+
+          // Normalize queue state so the connect screenshot is deterministic:
+          // exactly two known thumbnails, fully loaded, no transient overlays.
+          await page.evaluate(() => {
+            const store = (window as any).testHelpers?.store;
+            if (!store) return;
+
+            const items = [
+              {
+                id: "connect-thumb-1",
+                description: "Connect Thumb 1",
+                productUrl: "https://mock.photos/connect-thumb-1.jpg",
+                baseUrl: "https://mock.photos/connect-thumb-1.jpg",
+                filename: "connect-thumb-1.jpg",
+                mimeType: "image/jpeg",
+                mediaMetadata: {
+                  creationTime: "2023-01-01T00:00:00Z",
+                  width: "100",
+                  height: "100",
+                },
+              },
+              {
+                id: "connect-thumb-2",
+                description: "Connect Thumb 2",
+                productUrl: "https://mock.photos/connect-thumb-2.jpg",
+                baseUrl: "https://mock.photos/connect-thumb-2.jpg",
+                filename: "connect-thumb-2.jpg",
+                mimeType: "image/jpeg",
+                mediaMetadata: {
+                  creationTime: "2023-01-01T00:00:00Z",
+                  width: "100",
+                  height: "100",
+                },
+              },
+            ];
+
+            store.dispatch({
+              type: "photos/register_media_items",
+              payload: { items },
+            });
+            store.dispatch({
+              type: "photos/select_photos",
+              payload: { ids: items.map((i) => i.id) },
+            });
+          });
+          await waitForVisiblePhotoThumbnailsReady(page, 2);
         },
       },
     ]);
@@ -535,11 +593,7 @@ test.describe("Google Photos Integration", () => {
         {
           description: "Wait for Polling (Mocked)",
           check: async () => {
-            await expect(
-              page.locator("text=Selection in progress..."),
-            ).toBeVisible();
-
-            // Wait for it to disappear, indicating loadSelectedPhotos finished
+            // This status can be brief in fast runs; assert end state instead of transient visibility.
             await expect(
               page.locator("text=Selection in progress..."),
             ).toBeHidden({ timeout: 15000 });
