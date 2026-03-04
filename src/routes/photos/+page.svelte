@@ -620,18 +620,18 @@
   }
 
   function getProcessableCategorizedIds(): string[] {
-    // Schedule for CATEGORIZED photos only (as per user request)
+    // Schedule for VISIBLE categorized photos only
     const allIds = new Set<string>();
-    const categorizedItems = Object.values(janCodeToPhotos).flat();
+    const visibleItems = categorizedEntries.flatMap(([_, items]) => items);
     const state = store.getState().photos;
     console.log(
-      `[Batch] processable scope total categorized items: ${categorizedItems.length}`,
+      `[Batch] scheduleBatch(${op}) total visible categorized items: ${visibleItems.length}`,
     );
 
     // Only queue categorized photos that are currently on their root/original image.
     // This prevents re-processing already transformed images unless the user reset
     // the current image back to root in photo history.
-    categorizedItems.forEach((p) => {
+    visibleItems.forEach((p) => {
       const currentUrl = state.registry?.[p.id]?.baseUrl || p.baseUrl;
       const history = state.urlHistory?.[p.id] || [];
       if (!shouldProcessPhotoFromHistory({ currentUrl, urlHistory: history })) {
@@ -2053,7 +2053,7 @@
   .col-jan-header {
     width: 200px;
     flex: none;
-    padding: 1rem;
+    padding: 0.5rem;
     font-weight: 700;
     text-align: center;
     text-transform: uppercase;
@@ -2062,7 +2062,7 @@
   }
   .col-photos-header {
     flex: 1;
-    padding: 1rem;
+    padding: 0.5rem;
     font-weight: 700;
     font-size: 0.875rem;
     text-transform: uppercase;
@@ -2086,7 +2086,7 @@
   .col-jan-cell {
     width: 200px;
     flex: none;
-    padding: 1rem;
+    padding: 0.5rem;
     font-family: monospace;
     font-size: 1.125rem;
     font-weight: 500;
@@ -2105,7 +2105,7 @@
   }
   .col-photos-cell {
     flex: 1;
-    padding: 1rem;
+    padding: 0.5rem;
     min-width: 0;
     position: relative;
   }
@@ -2136,9 +2136,9 @@
   .categorized-photos-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 1rem;
-    margin: 1.5rem 0;
-    padding: 1rem;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+    padding: 0.25rem;
   }
   .filename-overlay {
     position: absolute;
