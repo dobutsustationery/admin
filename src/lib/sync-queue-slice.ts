@@ -21,7 +21,7 @@ export type SyncJobStatus = "queued" | "processing" | "completed" | "failed";
 export type SyncJobSummary = {
   requestId: string;
   eventType: string;
-  domain: "shopify" | "photos" | "unknown";
+  domain: "shopify" | "photos" | "google" | "unknown";
   status: SyncJobStatus;
   creator: string;
   processor: string;

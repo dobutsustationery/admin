@@ -95,11 +95,12 @@ export function getSyncEventBaseType(eventType: string): string {
 
 export function inferSyncRequestDomainFromEvents(
   events: Pick<ShopifySyncEvent, "eventType">[],
-): "shopify" | "photos" | "unknown" {
+): "shopify" | "photos" | "google" | "unknown" {
   for (const ev of events) {
     const rawType = String(ev?.eventType || "");
     if (rawType.startsWith("photos/")) return "photos";
     if (rawType.startsWith("shopify/")) return "shopify";
+    if (rawType.startsWith("google/")) return "google";
   }
   // Fallback check
   const first = String(events?.[0]?.eventType || "");
@@ -119,6 +120,7 @@ export function classifySyncRequestStatusFromEventTypes(
       t.includes("sync_partial_failed") ||
       t.includes("image_transfer_failed") ||
       t.includes("image_transform_failed") ||
+      t.includes("auth_failed") ||
       t.includes("/rejected"),
   );
   if (hasFailed) return "failed";
@@ -127,7 +129,8 @@ export function classifySyncRequestStatusFromEventTypes(
     (t) =>
       t.includes("sync_completed") ||
       t.includes("image_transfer_completed") ||
-      t.includes("image_transform_completed"),
+      t.includes("image_transform_completed") ||
+      t.includes("auth_completed"),
   );
   if (hasCompleted) return "success";
 
@@ -136,6 +139,7 @@ export function classifySyncRequestStatusFromEventTypes(
       t.includes("sync_claimed") ||
       t.includes("image_transfer_started") ||
       t.includes("image_transform_started") ||
+      t.includes("auth_started") ||
       t.includes("_api_call") || // Any API activity means it's processing
       t.includes("secret_provided"),
   );
@@ -153,6 +157,7 @@ export function classifySyncRequestStatusFromEventTypes(
       t.includes("sync_requested") ||
       t.includes("image_transfer_requested") ||
       t.includes("image_transform_requested") ||
+      t.includes("auth_requested") ||
       t.includes("secret_required"),
   );
   if (hasRequested) return "queued";

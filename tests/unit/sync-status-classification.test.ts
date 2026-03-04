@@ -1,0 +1,32 @@
+import { describe, expect, it } from "vitest";
+import {
+  classifySyncRequestStatusFromEventTypes,
+  inferSyncRequestDomainFromEvents,
+} from "../../src/lib/shopify-sync-model";
+
+describe("sync status classification", () => {
+  it("classifies google auth failed as failed", () => {
+    const status = classifySyncRequestStatusFromEventTypes([
+      "google/auth_requested",
+      "google/auth_started",
+      "google/auth_failed",
+    ]);
+    expect(status).toBe("failed");
+  });
+
+  it("classifies google auth completed as success", () => {
+    const status = classifySyncRequestStatusFromEventTypes([
+      "google/auth_requested",
+      "google/auth_started",
+      "google/auth_completed",
+    ]);
+    expect(status).toBe("success");
+  });
+
+  it("infers google domain from google event types", () => {
+    const domain = inferSyncRequestDomainFromEvents([
+      { eventType: "google/auth_requested" },
+    ]);
+    expect(domain).toBe("google");
+  });
+});

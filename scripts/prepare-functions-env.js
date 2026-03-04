@@ -30,58 +30,123 @@ const sourceMap = {
 };
 
 const sourcePath = resolve(process.cwd(), sourceMap[env]);
+const stagingPath = resolve(process.cwd(), sourceMap.staging);
 const functionsDir = resolve(process.cwd(), "functions");
 const targetPath = resolve(functionsDir, ".env");
 
-let kept = [];
 const keepPrefixes = [
   "SHOPIFY_",
   "FIREBASE_",
   "GOOGLE_APPLICATION_CREDENTIALS",
   "GOOGLE_OAUTH_",
-  "E2E_GOOGLE_",
 ];
-const keepExactKeys = [
-  "VITE_GOOGLE_DRIVE_CLIENT_ID",
-  "VITE_GOOGLE_PHOTOS_CLIENT_ID",
+const requiredGoogleKeys = [
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
 ];
 
 function shouldKeepKey(key) {
-  return (
-    keepExactKeys.includes(key) ||
-    keepPrefixes.some((prefix) => key.startsWith(prefix))
-  );
+  return keepPrefixes.some((prefix) => key.startsWith(prefix));
 }
 
+function parseEnvText(text) {
+  const map = new Map();
+  const order = [];
+  const lines = text.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line || line.trimStart().startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (!key) continue;
+    const value = line.slice(eq + 1);
+    if (!map.has(key)) order.push(key);
+    map.set(key, value);
+  }
+  return { map, order };
+}
+
+function parseEnvFileIfPresent(path) {
+  if (!existsSync(path)) return { map: new Map(), order: [] };
+  return parseEnvText(readFileSync(path, "utf8"));
+}
+
+function canonicalizeGoogleKeys(envMap) {
+  if (!envMap.get("GOOGLE_OAUTH_CLIENT_SECRET") && envMap.get("GOOGLE_OAUTH_SECRET")) {
+    envMap.set("GOOGLE_OAUTH_CLIENT_SECRET", envMap.get("GOOGLE_OAUTH_SECRET"));
+  }
+}
+
+let envMap = new Map();
+let keyOrder = [];
+
 if (!existsSync(sourcePath)) {
-  if (process.env.CI) {
-    console.log(
-      `⚠️ Missing source env file ${sourceMap[env]} in CI. Falling back to environment variables.`,
-    );
-    // In CI, we extract from process.env instead of a file
-    for (const key in process.env) {
-      if (shouldKeepKey(key)) {
-        kept.push(`${key}=${process.env[key]}`);
-      }
-    }
-  } else {
+  if (!process.env.CI) {
     console.error(`Missing source env file: ${sourceMap[env]}`);
     console.error("Create it first (it is intentionally gitignored).");
     process.exit(1);
   }
+  console.log(
+    `⚠️ Missing source env file ${sourceMap[env]} in CI. Falling back to environment variables.`,
+  );
+  for (const key in process.env) {
+    if (!shouldKeepKey(key) && key !== "GOOGLE_OAUTH_SECRET") continue;
+    envMap.set(key, process.env[key] || "");
+    keyOrder.push(key);
+  }
 } else {
-  const source = readFileSync(sourcePath, "utf8");
-  const lines = source
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter((line) => line && !line.trimStart().startsWith("#"))
-    .filter((line) => line.includes("="));
+  const parsed = parseEnvFileIfPresent(sourcePath);
+  envMap = parsed.map;
+  keyOrder = parsed.order;
+}
 
-  kept = lines.filter((line) => {
-    const key = line.split("=")[0]?.trim() || "";
-    if (!key) return false;
-    return shouldKeepKey(key);
-  });
+canonicalizeGoogleKeys(envMap);
+
+if (env !== "staging") {
+  const stagingParsed = parseEnvFileIfPresent(stagingPath);
+  const stagingMap = stagingParsed.map;
+  canonicalizeGoogleKeys(stagingMap);
+  for (const key of requiredGoogleKeys) {
+    if (!String(envMap.get(key) || "").trim() && String(stagingMap.get(key) || "").trim()) {
+      envMap.set(key, stagingMap.get(key));
+      if (!keyOrder.includes(key)) keyOrder.push(key);
+      console.log(
+        `Using ${key} from ${sourceMap.staging} fallback for ${sourceMap[env]}.`,
+      );
+    }
+  }
+}
+
+const missingGoogleKeys = requiredGoogleKeys.filter(
+  (key) => !String(envMap.get(key) || "").trim(),
+);
+if (missingGoogleKeys.length > 0) {
+  console.error(
+    `Missing required Google OAuth function env keys in ${sourceMap[env]}: ${missingGoogleKeys.join(", ")}`,
+  );
+  if (env !== "staging") {
+    console.error(
+      `Set them in ${sourceMap[env]} or ${sourceMap.staging}.`,
+    );
+  } else {
+    console.error(`Set them in ${sourceMap.staging}.`);
+  }
+  process.exit(1);
+}
+
+for (const key of requiredGoogleKeys) {
+  if (String(envMap.get(key) || "").trim() && !keyOrder.includes(key)) {
+    keyOrder.push(key);
+  }
+}
+
+const kept = [];
+for (const key of keyOrder) {
+  if (key === "GOOGLE_OAUTH_SECRET") continue;
+  if (!shouldKeepKey(key)) continue;
+  const value = envMap.get(key);
+  kept.push(`${key}=${value}`);
 }
 
 if (kept.length === 0) {
@@ -94,7 +159,7 @@ if (kept.length === 0) {
   } else {
     console.error(`No supported function env vars found in ${sourceMap[env]}.`);
     console.error(
-      "Expected Shopify vars and Google OAuth vars (GOOGLE_OAUTH_* or VITE_GOOGLE_*_CLIENT_ID).",
+      "Expected Shopify vars and Google OAuth vars (GOOGLE_OAUTH_*).",
     );
     process.exit(1);
   }
