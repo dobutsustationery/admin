@@ -92,6 +92,7 @@ function canonicalizeGoogleKeys(envMap) {
 
 let envMap = new Map();
 let keyOrder = [];
+const missingSourceInCi = !existsSync(sourcePath) && !!process.env.CI;
 
 if (!existsSync(sourcePath)) {
   if (!process.env.CI) {
@@ -140,18 +141,29 @@ if (env !== "staging") {
 const missingGoogleKeys = requiredGoogleKeys.filter(
   (key) => !String(envMap.get(key) || "").trim(),
 );
-if (missingGoogleKeys.length > 0) {
+const hasAnyGoogleOauthInput =
+  String(process.env.E2E_GOOGLE_CLIENT_ID || "").trim() ||
+  String(process.env.E2E_GOOGLE_CLIENT_SECRET || "").trim() ||
+  String(process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim() ||
+  String(process.env.GOOGLE_OAUTH_CLIENT_SECRET || "").trim() ||
+  String(process.env.GOOGLE_OAUTH_SECRET || "").trim() ||
+  requiredGoogleKeys.some((key) => String(envMap.get(key) || "").trim());
+const shouldRequireGoogleOauthKeys = !missingSourceInCi || hasAnyGoogleOauthInput;
+if (shouldRequireGoogleOauthKeys && missingGoogleKeys.length > 0) {
   console.error(
     `Missing required Google OAuth function env keys in ${sourceMap[env]}: ${missingGoogleKeys.join(", ")}`,
   );
   if (env !== "staging") {
-    console.error(
-      `Set them in ${sourceMap[env]} or ${sourceMap.staging}.`,
-    );
+    console.error(`Set them in ${sourceMap[env]} or ${sourceMap.staging}.`);
   } else {
     console.error(`Set them in ${sourceMap.staging}.`);
   }
   process.exit(1);
+}
+if (!shouldRequireGoogleOauthKeys && missingGoogleKeys.length > 0) {
+  console.warn(
+    `⚠️ Skipping Google OAuth key requirement in CI fallback (${sourceMap[env]} not present; non-live run).`,
+  );
 }
 
 for (const key of requiredGoogleKeys) {
@@ -160,7 +172,7 @@ for (const key of requiredGoogleKeys) {
   }
 }
 
-const kept = [];
+let kept = [];
 for (const key of keyOrder) {
   if (key === "GOOGLE_OAUTH_SECRET") continue;
   if (!shouldKeepKey(key)) continue;
