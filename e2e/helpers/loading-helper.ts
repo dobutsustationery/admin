@@ -7,16 +7,20 @@ import { type Page, expect } from "@playwright/test";
  * a full data sync or loading state.
  */
 export async function waitForAppReady(page: Page) {
-  // Wait for loading overlay to disappear
-  // The overlay is removed from DOM when ready
-  const loadingOverlay = page.locator(".loading-overlay");
-
-  // First, check if it's even visible. If so, wait for it to detach.
-  // If we just ask for detached and it was never there, it returns immediately (if hidden) or waits?
-  // playright .waitFor({ state: 'detached' }) waits for it to NOT be present.
-  // If it's already not present, it resolves immediately.
   console.log("⏳ Waiting for application to be ready...");
+  const loadingOverlay = page.locator(".loading-overlay");
   await loadingOverlay.waitFor({ state: "detached", timeout: 30000 });
+
+  // Some CI runs can briefly re-attach the overlay after auth/store hydration.
+  // Require stable absence before moving on to screenshot capture.
+  for (let i = 0; i < 5; i += 1) {
+    await expect(loadingOverlay).toHaveCount(0, { timeout: 5000 });
+    await page.waitForFunction(
+      () => !document.querySelector(".loading-overlay"),
+      undefined,
+      { timeout: 1000 },
+    );
+  }
   console.log("   ✓ Application ready (loading screen removed)");
 }
 
