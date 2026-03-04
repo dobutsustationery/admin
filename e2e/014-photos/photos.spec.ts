@@ -86,6 +86,10 @@ async function waitForVisiblePhotoThumbnailsReady(
   page: Page,
   expectedCount: number,
 ) {
+  await expect(page.locator(".loading-overlay")).toHaveCount(0, {
+    timeout: 15000,
+  });
+
   const thumbnails = page.locator(THUMBNAIL_SELECTOR);
   await expect(thumbnails).toHaveCount(expectedCount);
 
@@ -152,6 +156,11 @@ async function waitForVisiblePhotoThumbnailsReady(
   );
 
   await ensureStableThumbnailCaptureStyles(page);
+
+  // Ensure no thumbnail is still showing its loading skeleton/overlay.
+  await expect(page.locator(".secure-image-loading")).toHaveCount(0, {
+    timeout: 10000,
+  });
 
   // Force a non-hover state and let the paint settle before capture.
   await page.mouse.move(8, 8);

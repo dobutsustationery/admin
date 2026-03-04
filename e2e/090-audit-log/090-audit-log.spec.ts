@@ -4,7 +4,7 @@ import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import * as path from "path";
 
 test.describe("Audit Log", () => {
-  test.use({ locale: "en-GB" }); // Try GB to force slashes (dd/mm/yyyy) which matches CI visually for 2024-10-10
+  test.use({ locale: "en-US" });
 
   test("audit log rich data verification", async ({
     authenticatedPage: page,
@@ -54,6 +54,20 @@ test.describe("Audit Log", () => {
       .locator(".action-card", { hasText: "Updated item 4542804044355" })
       .first();
     await expect(actionItem).toBeVisible({ timeout: 10000 });
+
+    // Native <input type="date"> renders differently across OS/CI environments.
+    // Normalize to deterministic text rendering for strict visual diffing.
+    await page.evaluate(() => {
+      const inputs = Array.from(
+        document.querySelectorAll('input[type="date"]'),
+      ) as HTMLInputElement[];
+      for (const input of inputs) {
+        const value = input.value;
+        input.type = "text";
+        input.value = value;
+        input.readOnly = true;
+      }
+    });
 
     const step1Verifications = [
       {

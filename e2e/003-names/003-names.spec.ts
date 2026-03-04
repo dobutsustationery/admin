@@ -134,6 +134,7 @@ test.describe("Names Page", () => {
     await waitForAppReady(page);
 
     await signInButton.waitFor({ state: "hidden", timeout: 50000 });
+    await waitForAppReady(page);
 
     const step2Verifications = [
       {
@@ -166,6 +167,7 @@ test.describe("Names Page", () => {
 
     await screenshots.capture(page, "signed-in-state", {
       programmaticCheck: async () => {
+        await waitForAppReady(page);
         for (const v of step2Verifications) await v.check();
       },
     });
@@ -226,6 +228,7 @@ test.describe("Names Page", () => {
 
     await screenshots.capture(page, "names-loaded", {
       programmaticCheck: async () => {
+        await waitForAppReady(page);
         for (const v of step3Verifications) await v.check();
       },
     });
