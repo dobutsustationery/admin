@@ -1329,9 +1329,7 @@
         {#if isPhotosAuthenticated}
           <span class="status-badge connected" title={connectedEmail}>
             <span class="status-dot green"></span>
-            Connected {connectedEmail && photos.length === 0
-              ? `as ${connectedEmail}`
-              : ""}
+            Connected {connectedEmail ? `as ${connectedEmail}` : ""}
           </span>
         {:else}
           <span class="status-badge disconnected">
