@@ -27,7 +27,10 @@ process.env.FIRESTORE_EMULATOR_HOST = emulatorHost;
 
 // Initialize Firebase Admin for emulator
 // Use the same project ID as configured for e2e tests
-const projectId = process.env.VITE_FIREBASE_LOCAL_PROJECT_ID || "demo-test-project";
+const projectId =
+  process.env.E2E_FIREBASE_PROJECT_ID ||
+  process.env.VITE_FIREBASE_LOCAL_PROJECT_ID ||
+  "demo-test-project";
 const app = initializeApp({
   projectId,
 });
