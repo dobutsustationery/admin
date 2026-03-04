@@ -871,7 +871,12 @@ export async function categorizeMediaItems(
       if (driveId && effectiveToken && !force) {
         try {
           const meta = await getFileMetadata(driveId, effectiveToken);
-          const props = meta.properties || {};
+          // Compatibility: prefer public `properties` (current writes), but also
+          // read legacy `appProperties` values written by older builds.
+          const props = {
+            ...(meta.properties || {}),
+            ...(meta.appProperties || {}),
+          };
           if (props[JAN_CODE_FOUND_PROPERTY]) {
             foundType = props[JAN_CODE_FOUND_PROPERTY] as any;
             janCode = props[MERGE_WITH_PROPERTY];
