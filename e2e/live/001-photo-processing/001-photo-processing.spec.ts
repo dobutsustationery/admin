@@ -188,6 +188,9 @@ async function waitForHistoryThumbnailsToRender(page: any) {
 
 async function ensureStableViewport(page: any) {
   await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
     document.body.style.overflow = "hidden";
     document.documentElement.style.overflow = "hidden";
   });
