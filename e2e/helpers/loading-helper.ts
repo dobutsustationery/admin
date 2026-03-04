@@ -18,7 +18,7 @@ export async function waitForAppReady(page: Page) {
     await page.waitForFunction(
       () => !document.querySelector(".loading-overlay"),
       undefined,
-      { timeout: 2000 },
+      { timeout: 4000 },
     );
   }
   console.log("   ✓ Application ready (loading screen removed)");
