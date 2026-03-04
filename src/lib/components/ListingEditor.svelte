@@ -92,6 +92,8 @@
   let draggingId: string | null = null;
   let dragOverId: string | null = null;
   let previewOrderIds: string[] | null = null;
+  let descriptionEl: HTMLElement | null = null;
+  let isEditingDescription = false;
 
   // Subtype DnD State
   let draggingSubtypeId: string | null = null;
@@ -277,10 +279,16 @@
 
   function handleDescriptionBlur(e: Event) {
     if (readOnly || isGeneratingDescription) return;
+    isEditingDescription = false;
     const newDesc = (e.target as HTMLElement).innerHTML;
     if (listing && newDesc !== listing.bodyHtml) {
       dispatch("updateDescription", newDesc);
     }
+  }
+
+  function handleDescriptionFocus() {
+    if (readOnly) return;
+    isEditingDescription = true;
   }
 
   function handlePriceChange(e: Event) {
@@ -439,6 +447,14 @@
       (item.allocatedQty !== undefined ? item.allocatedQty : item.qty || 0),
     0,
   );
+
+  // Avoid rendering {@html} inside contenteditable directly; it can duplicate
+  // browser-generated blocks when Svelte and contenteditable both mutate DOM.
+  $: if (descriptionEl && listing && !isEditingDescription) {
+    if (descriptionEl.innerHTML !== listing.bodyHtml) {
+      descriptionEl.innerHTML = listing.bodyHtml;
+    }
+  }
 </script>
 
 {#if listing}
@@ -748,12 +764,12 @@
       </div>
 
       <div
+        bind:this={descriptionEl}
         class="description-block {readOnly ? '' : 'editable'}"
         contenteditable={!readOnly}
+        on:focus={handleDescriptionFocus}
         on:blur={handleDescriptionBlur}
-      >
-        {@html listing.bodyHtml}
-      </div>
+      />
 
       <!-- Subtypes / Options -->
       {#if associatedItems.length > 1}
