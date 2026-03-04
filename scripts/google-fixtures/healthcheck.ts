@@ -12,6 +12,16 @@ const REQUIRED_ENV_VARS = [
   "E2E_GOOGLE_PHOTOS_ALBUM_ID",
 ];
 
+const REQUIRED_UNIFIED_SCOPES = [
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+  "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/userinfo.email",
+];
+const REQUIRED_PHOTOS_API_SCOPES = [
+  "https://www.googleapis.com/auth/photoslibrary.readonly",
+];
+
 const MANIFEST_PATH = path.resolve(
   process.cwd(),
   "e2e/fixtures/google-media-manifest.json",
@@ -106,6 +116,23 @@ async function listAlbumItemsViaSearch(
   return items;
 }
 
+async function getTokenScopes(accessToken: string): Promise<Set<string>> {
+  const tokenInfoResponse = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+  );
+  if (!tokenInfoResponse.ok) {
+    throw new Error(
+      `tokeninfo failed: ${tokenInfoResponse.status} ${await tokenInfoResponse.text()}`,
+    );
+  }
+  const tokenInfo = (await tokenInfoResponse.json()) as { scope?: string };
+  return new Set((tokenInfo.scope || "").split(/\s+/).filter(Boolean));
+}
+
+function missingScopes(scopeSet: Set<string>, required: string[]): string[] {
+  return required.filter((scope) => !scopeSet.has(scope));
+}
+
 async function main() {
   console.log("🏥 Starting E2E Environment Health Check...");
   loadLiveLocalEnvOverrides();
@@ -136,10 +163,26 @@ async function main() {
   const expectedFilenames = loadExpectedFixtureFilenames();
 
   console.log("Testing Drive Access...");
+  let driveScopeSet = new Set<string>();
   try {
     const driveAuth = new OAuth2Client(clientId, clientSecret);
     driveAuth.setCredentials({ refresh_token: driveRefreshToken });
-    await driveAuth.getAccessToken();
+    const driveAccessToken = (await driveAuth.getAccessToken()).token;
+    if (!driveAccessToken) {
+      throw new Error(
+        "Could not generate Drive access token from configured refresh token.",
+      );
+    }
+    driveScopeSet = await getTokenScopes(driveAccessToken);
+    const missingDriveFile = missingScopes(driveScopeSet, [
+      "https://www.googleapis.com/auth/drive.file",
+    ]);
+    if (missingDriveFile.length > 0) {
+      throw new Error(
+        `Drive token is missing required scope(s): ${missingDriveFile.join(", ")}. ` +
+          "Run: npm run setup:live:e2e",
+      );
+    }
 
     const drive = google.drive({ version: "v3", auth: driveAuth });
     const folder = await drive.files.get({
@@ -188,28 +231,23 @@ async function main() {
   }
 
   console.log("Testing Photos Access...");
+  let photosScopeSet = new Set<string>();
   try {
     const photosAuth = new OAuth2Client(clientId, clientSecret);
     photosAuth.setCredentials({ refresh_token: photosRefreshToken });
     const tokenRes = await photosAuth.getAccessToken();
     const accessToken = tokenRes.token;
     if (!accessToken) throw new Error("Could not generate Photos access token");
-
-    const tokenInfoResponse = await fetch(
-      `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+    photosScopeSet = await getTokenScopes(accessToken);
+    const missingPhotosApi = missingScopes(
+      photosScopeSet,
+      REQUIRED_PHOTOS_API_SCOPES,
     );
-    if (tokenInfoResponse.ok) {
-      const tokenInfo = (await tokenInfoResponse.json()) as { scope?: string };
-      const scopeSet = new Set(
-        (tokenInfo.scope || "").split(/\s+/).filter(Boolean),
+    if (missingPhotosApi.length > 0) {
+      throw new Error(
+        `Photos token is missing required scope(s): ${missingPhotosApi.join(", ")}. ` +
+          "Run: npm run setup:live:e2e",
       );
-      if (
-        !scopeSet.has("https://www.googleapis.com/auth/photoslibrary.readonly")
-      ) {
-        throw new Error(
-          "Photos token is missing photoslibrary.readonly scope. Run: npm run setup:live:tokens",
-        );
-      }
     }
 
     const albumResponse = await fetch(
@@ -268,6 +306,29 @@ async function main() {
     console.error("❌ Photos access failed:", error.message);
     process.exit(1);
   }
+
+  console.log("Validating unified auth scope coverage...");
+  const splitMode = driveRefreshToken !== photosRefreshToken;
+  const effectiveUnifiedScopes = splitMode
+    ? new Set([...driveScopeSet, ...photosScopeSet])
+    : photosScopeSet;
+  const missingUnified = missingScopes(
+    effectiveUnifiedScopes,
+    REQUIRED_UNIFIED_SCOPES,
+  );
+  if (missingUnified.length > 0) {
+    const modeHint = splitMode
+      ? "split Drive+Photos tokens"
+      : "single unified token";
+    console.error(
+      `❌ ${modeHint} is missing required unified scope(s): ${missingUnified.join(", ")}.`,
+    );
+    console.error("   Re-run: npm run setup:live:e2e");
+    process.exit(1);
+  }
+  console.log(
+    `✅ Unified scope coverage confirmed (${splitMode ? "split tokens" : "single token"}).`,
+  );
 
   console.log("🎉 Health check passed! E2E environment is ready.");
 }

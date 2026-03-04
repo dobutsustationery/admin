@@ -25,18 +25,6 @@ export E2E_FIXED_CREATED_TIME="${E2E_FIXED_CREATED_TIME:-2025-01-15T10:00:00.000
 PREPUSH_EMULATOR_PID=""
 PREPUSH_EMULATOR_TIMEOUT_SECONDS="${PREPUSH_EMULATOR_TIMEOUT_SECONDS:-20}"
 
-run_with_one_retry() {
-  label="$1"
-  shift
-
-  if "$@"; then
-    return 0
-  fi
-
-  echo "${label} failed. Retrying once..."
-  "$@"
-}
-
 check_prepush_emulators() {
   curl -s "http://${E2E_FIRESTORE_EMULATOR_HOST}:${E2E_FIRESTORE_EMULATOR_PORT}" >/dev/null 2>&1 \
     && curl -s "http://localhost:${E2E_AUTH_EMULATOR_PORT}" >/dev/null 2>&1
@@ -145,7 +133,7 @@ npm run test:live:vitest
 
 echo "Running pre-push live E2E suite..."
 kill_stale_preview_server
-run_with_one_retry "Pre-push live E2E suite" env CI=1 npm run test:live:e2e
+env CI=1 npm run test:live:e2e
 
 echo "Running pre-push non-live E2E suite..."
 kill_stale_preview_server
