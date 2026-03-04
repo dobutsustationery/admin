@@ -24,6 +24,7 @@
   export let columns: ColumnConfig[] = [];
   export let keyField: string = "id";
   export let sortHistory: SortRule[] = [];
+  export let frozenColumns: number = 2;
 
   const dispatch = createEventDispatcher<{
     commit: { id: string; field: string; value: any; index: number };
@@ -33,6 +34,20 @@
     editHtml: { item: any };
     resize: { field: string; width: number };
   }>();
+
+  $: frozenLefts = columns.reduce(
+    (acc, col, idx) => {
+      if (idx < frozenColumns) {
+        const prevLeft =
+          idx === 0 ? 0 : acc[idx - 1].left + columns[idx - 1].width;
+        acc.push({ isFrozen: true, left: prevLeft });
+      } else {
+        acc.push({ isFrozen: false, left: 0 });
+      }
+      return acc;
+    },
+    [] as { isFrozen: boolean; left: number }[],
+  );
 
   function handleEditHtml(e: CustomEvent<{ item: any }>) {
     dispatch("editHtml", e.detail);
@@ -270,12 +285,17 @@
   <table class="data-table">
     <thead class="table-head">
       <tr>
-        {#each columns as col}
+        {#each columns as col, i}
           <th
             class="header-cell"
             class:sorted={sortedFields.has(col.field)}
+            class:frozen={frozenLefts[i].isFrozen}
+            class:frozen-last={frozenLefts[i].isFrozen &&
+              i === frozenColumns - 1}
             aria-sort={sortAriaByField.get(col.field) || "none"}
-            style="width: {col.width}px;"
+            style="width: {col.width}px; {frozenLefts[i].isFrozen
+              ? `left: ${frozenLefts[i].left}px;`
+              : ''}"
             title={col.header}
             on:click={() => handleHeaderClick(col.field)}
           >
@@ -302,12 +322,18 @@
     <tbody class="table-body">
       {#each data as item, i (item[keyField])}
         <tr class="data-row">
-          {#each columns as col}
+          {#each columns as col, j}
             <td
               class="data-cell"
+              class:frozen={frozenLefts[j].isFrozen}
+              class:frozen-last={frozenLefts[j].isFrozen &&
+                j === frozenColumns - 1}
               class:selected={selectionColumn === col.field &&
                 i >= selectionStart &&
                 i <= selectionEnd}
+              style={frozenLefts[j].isFrozen
+                ? `left: ${frozenLefts[j].left}px;`
+                : ""}
             >
               {#if col.type === "component"}
                 <div class="cell-component-wrapper">
@@ -408,11 +434,14 @@
     color: #1f2937; /* gray-800 */
   }
 
-  /* Sticky First Column (Header) */
-  .header-cell:first-child {
-    left: 0;
+  /* Frozen Column Styling */
+  .header-cell.frozen {
+    position: sticky;
     z-index: 20; /* Above regular headers */
-    border-right: 2px solid #e5e7eb; /* Stronger border for frozen col */
+  }
+
+  .header-cell.frozen-last {
+    border-right: 2px solid #e5e7eb; /* Stronger border for the edge of frozen cols */
   }
 
   .header-cell:last-child {
@@ -473,11 +502,12 @@
     background-color: white; /* Needed for sticky */
   }
 
-  /* Sticky First Column (Body) */
-  .data-cell:first-child {
+  .data-cell.frozen {
     position: sticky;
-    left: 0;
     z-index: 5; /* Above regular cells */
+  }
+
+  .data-cell.frozen-last {
     border-right: 2px solid #e5e7eb;
   }
 

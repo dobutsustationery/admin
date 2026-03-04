@@ -597,6 +597,7 @@
     <BulkEditor
       data={visibleItems}
       columns={columnConfig}
+      frozenColumns={2}
       keyField="id"
       bind:sortHistory
       on:sort={handleSort}
