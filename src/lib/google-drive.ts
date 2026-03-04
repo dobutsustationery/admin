@@ -801,7 +801,7 @@ export async function setFileProperty(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        appProperties: {
+        properties: {
           [key]: value,
         },
       }),
