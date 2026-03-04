@@ -149,7 +149,7 @@ export async function handleOAuthCallback(): Promise<{
   token: GooglePhotosToken;
   returnUrl?: string;
 } | null> {
-  const result = handleUnifiedOAuthCallback();
+  const result = await handleUnifiedOAuthCallback();
   if (!result) return null;
 
   // Optional: fetch user email if not already present

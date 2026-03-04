@@ -81,12 +81,12 @@
       if (success) {
         console.log("[Account] Manual refresh successful.");
       } else {
-        // Fallback to disruptive flow if silent fails
-        initiateOAuthFlow(true);
+        // Fallback to disruptive flow and force consent to recover refresh token issuance.
+        initiateOAuthFlow(true, undefined, true);
       }
     } catch (e) {
       console.error("Refresh failed", e);
-      initiateOAuthFlow(true);
+      initiateOAuthFlow(true, undefined, true);
     } finally {
       // Keep banner for a moment so user sees it
       setTimeout(() => {
@@ -102,7 +102,7 @@
   }
 
   function handleReauthorize() {
-    initiateOAuthFlow(true);
+    initiateOAuthFlow(true, undefined, true);
   }
 
   async function testDriveAccess() {

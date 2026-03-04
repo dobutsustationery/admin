@@ -419,12 +419,12 @@ export function isDriveConfigured(): boolean {
 /**
  * Handle OAuth callback and extract token from URL hash
  */
-export function handleOAuthCallback(): {
+export async function handleOAuthCallback(): Promise<{
   token: GoogleDriveToken;
   state?: string;
   returnUrl?: string;
-} | null {
-  const result = handleUnifiedOAuthCallback();
+} | null> {
+  const result = await handleUnifiedOAuthCallback();
   if (!result) return null;
 
   return {

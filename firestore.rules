@@ -45,6 +45,16 @@ service cloud.firestore {
       allow read: if request.auth != null && resource.data.creator == request.auth.uid;
       allow update, delete: if false;
     }
+    match /request_google_auth/{action} {
+      allow create: if request.auth != null && request.resource.data.creator == request.auth.uid;
+      allow read: if request.auth != null && resource.data.creator == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /google_auth_results/{uid}/requests/{requestId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if false;
+    }
     match /sync_secrets/{docId} {
       // Private short-lived secret handoff docs for sync workers.
       // Clients may create/update/delete only their own docs. Backend admin bypasses rules.

@@ -62,7 +62,7 @@
 
     if (driveConfigured) {
       // Handle OAuth callback if present
-      const result = handleOAuthCallback();
+      const result = await handleOAuthCallback();
 
       if (result) {
         authenticated = true;

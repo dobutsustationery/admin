@@ -526,7 +526,7 @@
   onMount(async () => {
     driveConfigured = isDriveConfigured();
     if (driveConfigured) {
-      const result = handleOAuthCallback();
+      const result = await handleOAuthCallback();
       if (result) {
         authenticated = true;
         // Check for returnUrl from unified auth
