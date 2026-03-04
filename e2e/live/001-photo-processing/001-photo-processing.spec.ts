@@ -195,6 +195,22 @@ async function ensureStableViewport(page: any) {
   await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
+async function enforceDeterministicTopSpacing(page: any) {
+  await page.addStyleTag({
+    content: `
+      .sticky-banner-container {
+        padding: 0.5rem 1rem !important;
+        margin-bottom: 1rem !important;
+        transition: none !important;
+      }
+      .sticky-banner-container.has-content {
+        padding: 0.5rem 1rem !important;
+        margin-bottom: 1rem !important;
+      }
+    `,
+  });
+}
+
 test.describe("Live Photo Processing", () => {
   test("Photo Processing Workflow", async ({ page, sandboxId }, testInfo) => {
     test.setTimeout(LIVE_001_TEST_TIMEOUT_MS);
@@ -214,6 +230,7 @@ test.describe("Live Photo Processing", () => {
 
     await page.goto("/photos");
     await expect(page.getByTestId("selection-area")).toBeVisible();
+    await enforceDeterministicTopSpacing(page);
 
     const selectedQueue = page.getByTestId("selected-queue");
     const queueThumbs = selectedQueue.locator(
