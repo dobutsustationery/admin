@@ -46,6 +46,7 @@ const ALL_SCOPES = Array.from(
 );
 
 const TOKEN_STORAGE_KEY = "google_photos_access_token";
+const LEGACY_DRIVE_TOKEN_STORAGE_KEY = "google_drive_access_token";
 const PKCE_STORAGE_KEY = "google_auth_pkce_state";
 
 export interface GoogleAuthToken {
@@ -365,6 +366,8 @@ export function isAuthenticated(): boolean {
 export function storeToken(token: GoogleAuthToken): void {
   if (typeof localStorage === "undefined") return;
   localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(token));
+  // Keep legacy Drive key in sync so older readers don't keep stale credentials.
+  localStorage.setItem(LEGACY_DRIVE_TOKEN_STORAGE_KEY, JSON.stringify(token));
 }
 
 export async function handleOAuthCallback(): Promise<{
