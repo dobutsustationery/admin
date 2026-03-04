@@ -79,7 +79,7 @@
   let variantPromptValue = "";
 
   let showCelebration = false;
-  let showReturnToDashboard = false;
+  let showReturnToShopifyProducts = false;
 
   $: completedBatchId = listingCreation.lastCompletedBatchId;
   $: if (
@@ -89,18 +89,18 @@
     console.log("[Celebration] Triggering! Batch:", completedBatchId);
     store.dispatch(mark_celebrated()); // Record that we played it
     showCelebration = true;
-    showReturnToDashboard = false;
+    showReturnToShopifyProducts = false;
     setTimeout(() => {
-      showReturnToDashboard = true;
+      showReturnToShopifyProducts = true;
     }, 3500); // Allow animation to play out
   } else if (completedBatchId === undefined) {
     showCelebration = false;
-    showReturnToDashboard = false;
+    showReturnToShopifyProducts = false;
   }
 
-  function handleReturnToDashboard() {
+  function handleGoToShopifyProducts() {
     store.dispatch(clear_celebration());
-    goto("/");
+    goto("/shopify-products");
   }
 
   // Derived
@@ -727,14 +727,14 @@
 
   {#if showCelebration}
     <Celebration />
-    {#if showReturnToDashboard}
+    {#if showReturnToShopifyProducts}
       <div class="celebration-action-overlay">
         <div class="celebration-action-container">
           <button
-            on:click={handleReturnToDashboard}
+            on:click={handleGoToShopifyProducts}
             class="btn-return-dashboard"
           >
-            Return to Dashboard
+            Go to Shopify Products
           </button>
         </div>
       </div>
