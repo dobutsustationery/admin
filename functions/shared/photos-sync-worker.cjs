@@ -267,6 +267,7 @@ async function fetchSourceBytes({
   driveAccessToken,
   onApiCall,
 }) {
+  const fetchAttempts = [];
   const extractDriveFileId = (url) => {
     const value = normalizeString(url);
     if (!value) return "";
@@ -295,6 +296,11 @@ async function fetchSourceBytes({
       const withAuth = await fetch(candidate, {
         headers: { Authorization: `Bearer ${photosAccessToken}` },
       }).catch(() => null);
+      fetchAttempts.push({
+        phase: "photos_auth",
+        candidate,
+        status: withAuth?.status || 0,
+      });
       await onApiCall?.({
         requestType: "photos.fetch_source",
         endpoint: "googleusercontent",
@@ -310,6 +316,11 @@ async function fetchSourceBytes({
     }
 
     const unauth = await fetch(candidate).catch(() => null);
+    fetchAttempts.push({
+      phase: "unauth",
+      candidate,
+      status: unauth?.status || 0,
+    });
     await onApiCall?.({
       requestType: "http.fetch_source",
       endpoint: "source",
@@ -340,6 +351,11 @@ async function fetchSourceBytes({
       const driveAuth = await fetch(candidate, {
         headers: { Authorization: `Bearer ${driveAccessToken}` },
       }).catch(() => null);
+      fetchAttempts.push({
+        phase: "drive_auth",
+        candidate,
+        status: driveAuth?.status || 0,
+      });
       await onApiCall?.({
         requestType: "drive.fetch_source",
         endpoint: "source",
@@ -357,7 +373,9 @@ async function fetchSourceBytes({
   }
 
   if (!resp) {
-    throw new Error(`source_fetch_failed:${baseUrl}`);
+    throw new Error(
+      `source_fetch_failed:${baseUrl}:attempts=${JSON.stringify(fetchAttempts)}`,
+    );
   }
 
   const arrayBuffer = await resp.arrayBuffer();
@@ -562,6 +580,15 @@ async function emitSecretRequired({
   const requestedBy = requestingUid(requestData);
   const secretDocId = `photos-secret-${requestedBy || "shared"}`;
   const payload = requestData?.payload || {};
+  console.warn("[PhotosWorker] secret required", {
+    requestId,
+    requestEventId,
+    requestedBy,
+    creator,
+    reason: "missing_or_invalid_secret",
+    hasSecretRef: !!payload?.secretRef,
+    photoId: normalizeString(payload?.photoId || requestData?.photoId),
+  });
 
   await createIdempotentEvent(
     db,
@@ -874,6 +901,20 @@ async function executeTransfer({
     const failureEventType = eventType.includes("transform")
       ? `${PHOTOS_NS}/image_transform_failed`
       : `${PHOTOS_NS}/image_transfer_failed`;
+    console.error("[PhotosWorker] transfer/transform failed", {
+      requestId,
+      requestEventId,
+      creator,
+      requestedBy: requestingUid(requestData),
+      eventType,
+      transformName,
+      sourceType,
+      photoId,
+      hasPhotosToken: !!photosAccessToken,
+      hasDriveToken: !!driveAccessToken,
+      message,
+      stack: error?.stack || null,
+    });
 
     await createIdempotentEvent(
       db,

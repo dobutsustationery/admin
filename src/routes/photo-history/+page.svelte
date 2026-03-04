@@ -36,6 +36,7 @@
   import {
     addDoc,
     collection,
+    getDocs,
     query,
     where,
     limit,
@@ -514,6 +515,21 @@
             },
           );
           finalUrl = await new Promise<string | null>((resolve) => {
+            const seenEventTypes: string[] = [];
+            const seenEventQuery = query(
+              collection(firestore, SYNC_COLLECTION),
+              where("requestId", "==", requestId),
+              limit(30),
+            );
+            const unsubscribeSeen = onSnapshot(seenEventQuery, (snap) => {
+              for (const d of snap.docs) {
+                const evType = String(d.data()?.eventType || "").trim();
+                if (evType && !seenEventTypes.includes(evType)) {
+                  seenEventTypes.push(evType);
+                }
+              }
+            });
+
             const q = query(
               collection(firestore, SYNC_COLLECTION),
               where("requestId", "==", requestId),
@@ -531,23 +547,61 @@
                 if (snap.empty) return;
                 const data = snap.docs[0].data();
                 unsubscribe();
+                unsubscribeSeen();
+                const payload = data.payload || {};
+                console.log("[PhotoHistory] Manual op terminal sync event", {
+                  requestId,
+                  step,
+                  transform,
+                  eventType: data.eventType,
+                  payload,
+                });
                 if (data.eventType.endsWith("completed")) {
-                  const payload = data.payload || {};
                   resolve(payload.permanentUrl || payload.apiUrl || null);
-                } else resolve(null);
+                } else {
+                  const err =
+                    payload.errorMessage ||
+                    payload.errorCode ||
+                    data.eventType ||
+                    "unknown_failure";
+                  resolve(`__FAILED__:${err}`);
+                }
               },
-              () => {
+              (error) => {
                 unsubscribe();
-                resolve(null);
+                unsubscribeSeen();
+                resolve(
+                  `__FAILED__:listener_error:${String(error?.message || error)}`,
+                );
               },
             );
-            setTimeout(() => {
+            setTimeout(async () => {
               unsubscribe();
-              resolve(null);
+              unsubscribeSeen();
+              let requestDocCount = -1;
+              try {
+                const reqSnap = await getDocs(
+                  query(
+                    collection(firestore, PHOTOS_TRANSFORM_REQUEST_COLLECTION),
+                    where("requestId", "==", requestId),
+                    where("creator", "==", $user?.uid || ""),
+                    limit(1),
+                  ),
+                );
+                requestDocCount = reqSnap.size;
+              } catch {}
+              resolve(
+                `__FAILED__:timeout_waiting_for_terminal_event:seen=${seenEventTypes.join("|") || "none"}:requestDocCount=${requestDocCount}`,
+              );
             }, 60000);
           });
         }
         if (finalUrl) {
+          if (finalUrl.startsWith("__FAILED__:")) {
+            throw new Error(
+              `Step '${step}' failed: ${finalUrl.replace("__FAILED__:", "")}`,
+            );
+          }
           if (existing && $user.uid) {
             const action = complete_edit({
               id: photoId,
@@ -557,7 +611,8 @@
             await broadcast(firestore, $user.uid, action);
           }
           currentUrl = finalUrl;
-        } else throw new Error(`Step '${step}' failed.`);
+        } else
+          throw new Error(`Step '${step}' failed: no terminal success URL`);
       }
     } catch (e: any) {
       alert("Error: " + e.message);

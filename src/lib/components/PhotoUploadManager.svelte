@@ -113,7 +113,7 @@
     secretListenerStartedAtMs = Date.now();
     const q = query(
       collection(firestore, SYNC_COLLECTION),
-      where("creator", "==", $user.uid),
+      where("requestedBy", "==", $user.uid),
       where("eventType", "==", "photos/image_transfer_secret_required"),
     );
     unsubscribeSecretRequests = onSnapshot(
