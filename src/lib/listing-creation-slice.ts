@@ -796,9 +796,6 @@ const listingCreationSlice = createSlice({
       console.log("[Slice] Completing Batch. Active ID:", state.activeBatchId);
       if (state.activeBatchId) {
         state.lastCompletedBatchId = state.activeBatchId;
-        // Reset celebration gate only when a real active batch transitions to completed.
-        // This prevents duplicate/replayed complete_batch actions from retriggering confetti.
-        state.hasCelebrated = false;
       }
       state.activeBatchJans = [];
       state.currentStepIndex = 0;
