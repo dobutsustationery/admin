@@ -12,7 +12,6 @@
     set_current_step,
     recalculate_batch_navigation,
     set_proposal_handle_thunk,
-    clear_celebration,
     mark_celebrated,
     set_global_prompts,
   } from "$lib/listing-creation-slice";
@@ -87,7 +86,8 @@
     !listingCreation.hasCelebrated
   ) {
     console.log("[Celebration] Triggering! Batch:", completedBatchId);
-    store.dispatch(mark_celebrated()); // Record that we played it
+    // Persist celebration ack via broadcast so replay state knows this batch was celebrated.
+    dispatchBroadcast(mark_celebrated());
     showCelebration = true;
     showReturnToShopifyProducts = false;
     setTimeout(() => {
@@ -99,7 +99,6 @@
   }
 
   function handleGoToShopifyProducts() {
-    store.dispatch(clear_celebration());
     goto("/shopify-products");
   }
 

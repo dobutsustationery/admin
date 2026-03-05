@@ -6,7 +6,7 @@ import reducer, {
 } from "$lib/listing-creation-slice";
 
 describe("Listing Creation - Celebration Gate", () => {
-  it("does not reset hasCelebrated on duplicate complete_batch with no active batch", () => {
+  it("keeps hasCelebrated=true after completion until the next start_batch", () => {
     const started = reducer(
       undefined,
       start_batch({
@@ -28,22 +28,27 @@ describe("Listing Creation - Celebration Gate", () => {
     expect(duplicateComplete.hasCelebrated).toBe(true);
   });
 
-  it("resets celebration gate for a brand new batch completion", () => {
-    const base = reducer(undefined, { type: "@@INIT" });
-    const withPreviousCelebration = reducer(base, mark_celebrated());
+  it("resets celebration gate only on start_batch", () => {
+    const startedFirst = reducer(
+      undefined,
+      start_batch({
+        janCodes: ["JAN-1"],
+        batchId: "batch-1",
+        createdAt: 1,
+      }),
+    );
+    const completedFirst = reducer(startedFirst, complete_batch());
+    const celebratedFirst = reducer(completedFirst, mark_celebrated());
+    expect(celebratedFirst.hasCelebrated).toBe(true);
 
-    const startedNext = reducer(
-      withPreviousCelebration,
+    const startedSecond = reducer(
+      celebratedFirst,
       start_batch({
         janCodes: ["JAN-2"],
         batchId: "batch-2",
         createdAt: 2,
       }),
     );
-    expect(startedNext.hasCelebrated).toBe(false);
-
-    const completedNext = reducer(startedNext, complete_batch());
-    expect(completedNext.lastCompletedBatchId).toBe("batch-2");
-    expect(completedNext.hasCelebrated).toBe(false);
+    expect(startedSecond.hasCelebrated).toBe(false);
   });
 });
