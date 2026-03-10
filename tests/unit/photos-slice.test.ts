@@ -90,6 +90,32 @@ describe("photos slice", () => {
     expect(final.selected[0].baseUrl).toContain("drive.google.com/thumbnail");
   });
 
+  it("refreshes ephemeral registry URLs when re-registering the same photo id", () => {
+    const initial = photos(undefined, { type: "@@INIT" } as any);
+    const first = {
+      id: "photo-ephemeral",
+      baseUrl: "https://lh3.googleusercontent.com/ppa/old-token",
+      productUrl: "",
+      mimeType: "image/jpeg",
+      filename: "one.jpg",
+      mediaMetadata: { creationTime: "", width: "1", height: "1" },
+    };
+    const second = {
+      ...first,
+      baseUrl: "https://lh3.googleusercontent.com/ppa/new-token",
+    };
+
+    const withFirst = photos(initial, register_media_items({ items: [first] }));
+    const withSecond = photos(
+      withFirst,
+      register_media_items({ items: [second] }),
+    );
+
+    expect(withSecond.registry["photo-ephemeral"]?.baseUrl).toContain(
+      "new-token",
+    );
+  });
+
   it("merges JAN groups when renaming into an existing JAN key", () => {
     const initial = photos(undefined, { type: "@@INIT" } as any);
     const photoA = {

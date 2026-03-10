@@ -111,12 +111,13 @@ const photosSlice = createSlice({
       if (!state.urlHistory) state.urlHistory = {};
 
       action.payload.items.forEach((item) => {
-        // Only update if not already registered OR if registered is ephemeral and new is not
+        // Always refresh ephemeral URLs with latest picker data.
+        // Keep durable URLs unless replaced by another durable URL.
         const existing = state.registry[item.id];
         const isBetter =
           !existing ||
-          (isEphemeralPhotosUrl(existing.baseUrl) &&
-            !isEphemeralPhotosUrl(item.baseUrl));
+          isEphemeralPhotosUrl(existing.baseUrl) ||
+          !isEphemeralPhotosUrl(item.baseUrl);
 
         if (isBetter) {
           state.registry[item.id] = item;
