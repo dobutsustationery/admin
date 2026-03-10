@@ -183,6 +183,29 @@ function stripGoogleusercontentSuffix(url) {
   return String(url || "").replace(/=[a-z0-9,-]+$/i, "");
 }
 
+async function summarizeFailedFetchResponse(resp) {
+  if (!resp) {
+    return { status: 0, statusText: "no_response" };
+  }
+  const contentType = normalizeString(resp.headers?.get("content-type"));
+  const wwwAuthenticate = normalizeString(
+    resp.headers?.get("www-authenticate"),
+  );
+  let bodySnippet = "";
+  try {
+    bodySnippet = String((await resp.text()) || "").slice(0, 400);
+  } catch (_) {
+    bodySnippet = "";
+  }
+  return {
+    status: Number(resp.status || 0),
+    statusText: normalizeString(resp.statusText) || "unknown",
+    contentType: contentType || null,
+    wwwAuthenticate: wwwAuthenticate || null,
+    bodySnippet: bodySnippet || null,
+  };
+}
+
 /**
  * Search for a file by its derivation key in properties.
  */
@@ -296,10 +319,15 @@ async function fetchSourceBytes({
       const withAuth = await fetch(candidate, {
         headers: { Authorization: `Bearer ${photosAccessToken}` },
       }).catch(() => null);
+      const withAuthFailure = withAuth?.ok
+        ? null
+        : await summarizeFailedFetchResponse(withAuth);
       fetchAttempts.push({
         phase: "photos_auth",
         candidate,
         status: withAuth?.status || 0,
+        statusText: withAuthFailure?.statusText || null,
+        failure: withAuthFailure,
       });
       await onApiCall?.({
         requestType: "photos.fetch_source",
@@ -307,7 +335,7 @@ async function fetchSourceBytes({
         success: !!withAuth?.ok,
         status: withAuth?.status || 0,
         context: { candidate, auth: "photos" },
-        response: { ok: !!withAuth?.ok },
+        response: { ok: !!withAuth?.ok, failure: withAuthFailure },
       });
       if (withAuth?.ok) {
         resp = withAuth;
@@ -316,10 +344,15 @@ async function fetchSourceBytes({
     }
 
     const unauth = await fetch(candidate).catch(() => null);
+    const unauthFailure = unauth?.ok
+      ? null
+      : await summarizeFailedFetchResponse(unauth);
     fetchAttempts.push({
       phase: "unauth",
       candidate,
       status: unauth?.status || 0,
+      statusText: unauthFailure?.statusText || null,
+      failure: unauthFailure,
     });
     await onApiCall?.({
       requestType: "http.fetch_source",
@@ -327,7 +360,7 @@ async function fetchSourceBytes({
       success: !!unauth?.ok,
       status: unauth?.status || 0,
       context: { candidate, auth: "none" },
-      response: { ok: !!unauth?.ok },
+      response: { ok: !!unauth?.ok, failure: unauthFailure },
     });
     if (unauth?.ok) {
       resp = unauth;
@@ -351,10 +384,15 @@ async function fetchSourceBytes({
       const driveAuth = await fetch(candidate, {
         headers: { Authorization: `Bearer ${driveAccessToken}` },
       }).catch(() => null);
+      const driveAuthFailure = driveAuth?.ok
+        ? null
+        : await summarizeFailedFetchResponse(driveAuth);
       fetchAttempts.push({
         phase: "drive_auth",
         candidate,
         status: driveAuth?.status || 0,
+        statusText: driveAuthFailure?.statusText || null,
+        failure: driveAuthFailure,
       });
       await onApiCall?.({
         requestType: "drive.fetch_source",
@@ -362,7 +400,7 @@ async function fetchSourceBytes({
         success: !!driveAuth?.ok,
         status: driveAuth?.status || 0,
         context: { candidate, auth: "drive" },
-        response: { ok: !!driveAuth?.ok },
+        response: { ok: !!driveAuth?.ok, failure: driveAuthFailure },
       });
       if (driveAuth?.ok) {
         resp = driveAuth;
@@ -373,9 +411,15 @@ async function fetchSourceBytes({
   }
 
   if (!resp) {
-    throw new Error(
+    const err = new Error(
       `source_fetch_failed:${baseUrl}:attempts=${JSON.stringify(fetchAttempts)}`,
     );
+    err.code = "source_fetch_failed";
+    err.details = {
+      sourceBaseUrl: baseUrl,
+      attempts: fetchAttempts,
+    };
+    throw err;
   }
 
   const arrayBuffer = await resp.arrayBuffer();
@@ -892,6 +936,7 @@ async function executeTransfer({
     };
   } catch (error) {
     const message = String(error?.message || error || "unknown_error");
+    const errorDetails = error?.details || null;
     const retryable =
       message.includes("401") ||
       message.includes("403") ||
@@ -913,6 +958,7 @@ async function executeTransfer({
       hasPhotosToken: !!photosAccessToken,
       hasDriveToken: !!driveAccessToken,
       message,
+      details: errorDetails,
       stack: error?.stack || null,
     });
 
@@ -931,6 +977,7 @@ async function executeTransfer({
           photoId,
           errorCode: "transfer_failed",
           errorMessage: message,
+          errorDetails,
           retryable,
         },
       }),

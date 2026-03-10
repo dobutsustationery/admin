@@ -33,7 +33,12 @@ export function getUploadCandidates(
 
     // Case C: Failed -> RETRY if under limit
     if (status.status === "failed") {
-      return status.retryCount <= config.maxRetries;
+      const exhaustedRetries = status.retryCount > config.maxRetries;
+      if (!exhaustedRetries) return true;
+      // Re-open exhausted failures after cooldown so they can be re-requested
+      // and re-processed by the backend worker.
+      const elapsed = now - status.lastAttempt;
+      return elapsed > config.uploadTimeout;
     }
 
     // Case D: Uploading -> RETRY if timed out

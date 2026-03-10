@@ -80,7 +80,7 @@ describe("getUploadCandidates", () => {
     expect(candidates).toHaveLength(1);
   });
 
-  it("should skip failed items if retry count is above maxRetries", () => {
+  it("should skip failed items above maxRetries during cooldown", () => {
     const photos = [mockPhoto("p1", "http://temp")];
     const uploads: Record<string, UploadState> = {
       p1: { status: "failed", retryCount: 4, lastAttempt: now - 1000 },
@@ -88,6 +88,17 @@ describe("getUploadCandidates", () => {
 
     const candidates = getUploadCandidates(photos, uploads, now, config);
     expect(candidates).toHaveLength(0);
+  });
+
+  it("should re-open failed items above maxRetries after cooldown", () => {
+    const photos = [mockPhoto("p1", "http://temp")];
+    const uploads: Record<string, UploadState> = {
+      p1: { status: "failed", retryCount: 4, lastAttempt: now - 61000 },
+    };
+
+    const candidates = getUploadCandidates(photos, uploads, now, config);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].id).toBe("p1");
   });
 
   it("should skip completed items", () => {
