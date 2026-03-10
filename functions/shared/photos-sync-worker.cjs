@@ -943,6 +943,7 @@ async function executeTransfer({
         id: photoId,
         requestId,
         error: message,
+        timestamp: nowMs(),
       },
     });
 

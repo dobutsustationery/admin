@@ -70,10 +70,20 @@ describe("getUploadCandidates", () => {
     expect(candidates).toHaveLength(1);
   });
 
-  it("should skip failed items if retry count exceeded limit", () => {
+  it("should still retry failed items when retry count is exactly maxRetries", () => {
     const photos = [mockPhoto("p1", "http://temp")];
     const uploads: Record<string, UploadState> = {
       p1: { status: "failed", retryCount: 3, lastAttempt: now - 1000 },
+    };
+
+    const candidates = getUploadCandidates(photos, uploads, now, config);
+    expect(candidates).toHaveLength(1);
+  });
+
+  it("should skip failed items if retry count is above maxRetries", () => {
+    const photos = [mockPhoto("p1", "http://temp")];
+    const uploads: Record<string, UploadState> = {
+      p1: { status: "failed", retryCount: 4, lastAttempt: now - 1000 },
     };
 
     const candidates = getUploadCandidates(photos, uploads, now, config);

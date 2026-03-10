@@ -24,6 +24,7 @@
     generateDerivationKey,
   } from "$lib/google-drive";
   import { getUploadCandidates } from "$lib/upload-logic";
+  import type { UploadState } from "$lib/photos-slice";
   import {
     PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
     PHOTOS_TRANSFER_REQUEST_COLLECTION,
@@ -249,11 +250,31 @@
     const { selected, uploads } = state;
     const now = Date.now();
 
+    // Keep successful/in-flight photos deduped, but once a photo has exhausted retries
+    // stop pinning it so future manual attempts are not permanently blocked.
+    (Object.entries(uploads || {}) as [string, UploadState][]).forEach(
+      ([id, upload]) => {
+        if (
+          upload?.status === "failed" &&
+          (upload.retryCount || 0) > MAX_RETRIES
+        ) {
+          requestedPhotoIds.delete(String(id));
+        }
+      },
+    );
+
     // 1. Identify Candidates
     const candidates = getUploadCandidates(selected, uploads || {}, now, {
       maxRetries: MAX_RETRIES,
       uploadTimeout: UPLOAD_TIMEOUT,
-    }).filter((item) => !requestedPhotoIds.has(String(item.id || "")));
+    }).filter((item) => {
+      const id = String(item.id || "");
+      if (!requestedPhotoIds.has(id)) return true;
+      const upload = uploads?.[id];
+      return (
+        upload?.status === "failed" && (upload.retryCount || 0) <= MAX_RETRIES
+      );
+    });
 
     if (candidates.length > 0) {
       console.log(
@@ -411,6 +432,7 @@
           id: item.id,
           requestId,
           error: e.message || String(e),
+          timestamp: Date.now(),
         },
       });
     }

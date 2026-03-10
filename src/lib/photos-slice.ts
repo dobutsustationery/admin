@@ -230,9 +230,10 @@ const photosSlice = createSlice({
     ) => {
       const { id } = action.payload;
       if (!state.uploads) state.uploads = {};
+      const previous = state.uploads[id];
       state.uploads[id] = {
         status: "uploading",
-        retryCount: 0,
+        retryCount: previous?.retryCount || 0,
         lastAttempt: action.payload.timestamp,
       };
     },
@@ -301,18 +302,20 @@ const photosSlice = createSlice({
     },
     fail_upload: (
       state,
-      action: PayloadAction<{ id: string; error: string }>,
+      action: PayloadAction<{ id: string; error: string; timestamp: number }>,
     ) => {
-      const { id, error } = action.payload;
+      const { id, error, timestamp } = action.payload;
       if (!state.uploads) state.uploads = {};
       if (state.uploads[id]) {
         state.uploads[id].status = "failed";
         state.uploads[id].error = error;
+        state.uploads[id].retryCount = (state.uploads[id].retryCount || 0) + 1;
+        state.uploads[id].lastAttempt = timestamp;
       } else {
         state.uploads[id] = {
           status: "failed",
-          retryCount: 0,
-          lastAttempt: Date.now(),
+          retryCount: 1,
+          lastAttempt: timestamp,
           error,
         };
       }

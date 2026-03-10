@@ -33,7 +33,7 @@ export function getUploadCandidates(
 
     // Case C: Failed -> RETRY if under limit
     if (status.status === "failed") {
-      return status.retryCount < config.maxRetries;
+      return status.retryCount <= config.maxRetries;
     }
 
     // Case D: Uploading -> RETRY if timed out
