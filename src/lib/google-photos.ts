@@ -235,28 +235,41 @@ export async function listSessionMediaItems(
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");
 
-  const params = new URLSearchParams({
-    sessionId,
-    pageSize: String(pageSize),
-  });
+  const allItems: MediaItem[] = [];
+  let nextPageToken: string | undefined;
 
-  const response = await fetch(
-    `https://photospicker.googleapis.com/v1/mediaItems?${params.toString()}`,
-    {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token.access_token}` },
-    },
-  );
+  do {
+    const params = new URLSearchParams({
+      sessionId,
+      pageSize: String(pageSize),
+    });
+    if (nextPageToken) {
+      params.set("pageToken", nextPageToken);
+    }
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Failed to list media items: ${response.statusText} - ${errorText}`,
+    const response = await fetch(
+      `https://photospicker.googleapis.com/v1/mediaItems?${params.toString()}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token.access_token}` },
+      },
     );
-  }
 
-  const data = await response.json();
-  return ((data.mediaItems || []) as any[]).map(normalizeMediaItem);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Failed to list media items: ${response.statusText} - ${errorText}`,
+      );
+    }
+
+    const data = await response.json();
+    allItems.push(
+      ...((data.mediaItems || []) as any[]).map(normalizeMediaItem),
+    );
+    nextPageToken = data.nextPageToken;
+  } while (nextPageToken);
+
+  return allItems;
 }
 
 /**
