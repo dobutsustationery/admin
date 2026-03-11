@@ -14,8 +14,7 @@
     getStoredToken,
     clearToken,
     getFolderLink,
-    generateDerivationKey,
-    calculateHash,
+    getFolderId,
     type DriveFile,
   } from "$lib/google-drive";
 
@@ -152,14 +151,15 @@
     error = "";
 
     try {
-      const contentHash = await calculateHash(
-        new Blob([csv], { type: "text/csv" }),
-      );
+      const folderId = getFolderId();
+      if (!folderId) {
+        throw new Error("Google Drive folder ID is not configured");
+      }
       const fileInfo = await uploadCSVToDrive(
-        finalFilename,
         csv,
+        finalFilename,
         token.access_token,
-        generateDerivationKey("ext", contentHash, "identity"),
+        folderId,
       );
       uploadSuccess = true;
       uploadedFileLink = fileInfo.webViewLink;

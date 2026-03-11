@@ -59,6 +59,8 @@ test.describe("CSV Export Page with Google Drive", () => {
     // Initialize documentation helper
     const outputDir = path.dirname(testInfo.file);
     const docHelper = new TestDocumentationHelper(outputDir);
+    let uploadInitValidated = false;
+    let uploadBodyValidated = false;
 
     docHelper.setMetadata(
       "CSV Export Verification",
@@ -104,6 +106,28 @@ test.describe("CSV Export Page with Google Drive", () => {
 
       // Handle Drive API
       if (url.includes("/upload/drive/v3/files") && method === "POST") {
+        const metadata = route.request().postDataJSON() as
+          | { name?: string; parents?: string[] }
+          | undefined;
+        const parent = metadata?.parents?.[0] || "";
+        const looksLikeDriveId = /^[A-Za-z0-9_-]{10,}$/.test(parent);
+        const valid =
+          metadata?.name === "test-export.csv" &&
+          looksLikeDriveId &&
+          !parent.includes(":");
+        if (!valid) {
+          await route.fulfill({
+            status: 400,
+            headers: { "Access-Control-Allow-Origin": "*" },
+            body: JSON.stringify({
+              error: "invalid_upload_metadata",
+              metadata,
+            }),
+          });
+          return;
+        }
+        uploadInitValidated = true;
+
         // Initial resumable upload request
         await route.fulfill({
           status: 200,
@@ -118,6 +142,17 @@ test.describe("CSV Export Page with Google Drive", () => {
       }
 
       if (url.includes("upload_id=mock-upload-123") && method === "PUT") {
+        const body = route.request().postData() || "";
+        if (!body.includes("janCode") || !body.includes("description")) {
+          await route.fulfill({
+            status: 400,
+            headers: { "Access-Control-Allow-Origin": "*" },
+            body: JSON.stringify({ error: "invalid_csv_payload", body }),
+          });
+          return;
+        }
+        uploadBodyValidated = true;
+
         // Actual file data upload
         await route.fulfill({
           status: 200,
@@ -457,6 +492,8 @@ test.describe("CSV Export Page with Google Drive", () => {
           // For now, ensuring no error appeared is a good check
           const errorMsg = page.locator(".error-message");
           await expect(errorMsg).not.toBeVisible();
+          expect(uploadInitValidated).toBe(true);
+          expect(uploadBodyValidated).toBe(true);
         },
       },
     ];
