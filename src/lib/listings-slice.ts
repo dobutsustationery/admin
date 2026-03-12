@@ -305,15 +305,22 @@ function handleLegacyUpdate(
   }
 
   // Handle Image
-  if (itemPayload.image) {
-    const hasImage = listing.images.some(
-      (img) => img.url === itemPayload.image,
-    );
+  // Shopify import can provide both a variant-specific image and a listing gallery image.
+  // Prefer listingImage for listing gallery while preserving variant image on inventory item.
+  const hasListingImageField = Object.prototype.hasOwnProperty.call(
+    itemPayload,
+    "listingImage",
+  );
+  const listingImageUrl = hasListingImageField
+    ? itemPayload.listingImage || ""
+    : itemPayload.image || "";
+  if (listingImageUrl) {
+    const hasImage = listing.images.some((img) => img.url === listingImageUrl);
     if (!hasImage) {
       listing.images.push({
         // Deterministic ID based on URL to ensure replay stability
-        id: itemPayload.image,
-        url: itemPayload.image,
+        id: listingImageUrl,
+        url: listingImageUrl,
         position: itemPayload.imagePosition || listing.images.length + 1,
         altText: itemPayload.imageAltText || itemPayload.description || "",
       });
