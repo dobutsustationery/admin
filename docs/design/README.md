@@ -9,3 +9,4 @@ Architectural and design documents.
 - [Product Import Design](./PRODUCT_IMPORT_DESIGN.md)
 - [UI Overhaul](./UI_OVERHAUL.md)
 - [Action Audit](./ACTION_AUDIT.md)
+- [Shopify Image Migration](./SHOPIFY_IMAGE_MIGRATION_DESIGN.md)
