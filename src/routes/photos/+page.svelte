@@ -158,6 +158,32 @@
 
   import { categorizeMediaItems } from "$lib/gemini-client";
   let catProgress = { current: 0, total: 0, message: "" };
+  const clearingFailedUploadIds = new Set<string>();
+
+  async function clearFailedUploadOnSuccessfulLoad(id: string, url: string) {
+    if (!id || !url) return;
+    if (clearingFailedUploadIds.has(id)) return;
+
+    const currentUpload = store.getState().photos.uploads?.[id];
+    if (!currentUpload || currentUpload.status !== "failed") return;
+
+    clearingFailedUploadIds.add(id);
+    const action = complete_upload({ id, permanentUrl: url });
+    try {
+      if ($user?.uid) {
+        await broadcast(firestore, $user.uid, action);
+      } else {
+        store.dispatch(action);
+      }
+    } catch (error) {
+      console.warn("[Photos] Failed to clear stale upload failure", {
+        id,
+        error,
+      });
+    } finally {
+      setTimeout(() => clearingFailedUploadIds.delete(id), 1000);
+    }
+  }
 
   async function handleCategorize(force = false) {
     if (photos.length === 0) return;
@@ -1480,6 +1506,8 @@
                   isUploading={(!!uploads[photo.id] &&
                     uploads[photo.id].status === "uploading") ||
                     (!uploads[photo.id] && isEphemeral(photo.baseUrl))}
+                  on:loadsuccess={() =>
+                    clearFailedUploadOnSuccessfulLoad(photo.id, photo.baseUrl)}
                 />
 
                 <!-- Edit Status Overlay -->
@@ -1663,6 +1691,11 @@
                           height="100%"
                           isUploading={!!uploads[item.id] &&
                             uploads[item.id].status === "uploading"}
+                          on:loadsuccess={() =>
+                            clearFailedUploadOnSuccessfulLoad(
+                              item.id,
+                              item.baseUrl,
+                            )}
                         />
                         <!-- Filename Overlay -->
                         <div class="filename-overlay">

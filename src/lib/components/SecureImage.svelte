@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { createEventDispatcher } from "svelte";
   import { getStoredToken } from "$lib/google-photos";
   import { getStoredToken as getDriveToken } from "$lib/google-drive";
   import {
@@ -30,6 +31,7 @@
 
   let shouldRun = true;
   let loadSeq = 0;
+  const dispatch = createEventDispatcher<{ loadsuccess: { src: string } }>();
 
   async function fetchWithRetries(
     url: string,
@@ -296,6 +298,7 @@
     on:load={() => {
       loading = false;
       error = "";
+      dispatch("loadsuccess", { src: objectUrl });
     }}
   />
 {/if}

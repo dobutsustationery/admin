@@ -150,6 +150,7 @@
       {size}
       className="secure-image"
       style="object-fit: {fit};"
+      on:loadsuccess
     />
   </div>
 </div>
