@@ -250,6 +250,38 @@
     const { selected, uploads } = state;
     const now = Date.now();
 
+    // Recovery path: if an upload has been "uploading" for too long, force it
+    // back to failed so normal retry flow can re-enqueue it.
+    const timedOutUploadingIds = (
+      Object.entries(uploads || {}) as [string, UploadState][]
+    )
+      .filter(([_, upload]) => {
+        if (upload?.status !== "uploading") return false;
+        const elapsed = now - (upload.lastAttempt || 0);
+        return elapsed > UPLOAD_TIMEOUT;
+      })
+      .map(([id]) => String(id));
+
+    for (const id of timedOutUploadingIds) {
+      requestedPhotoIds.delete(id);
+      try {
+        await broadcast(firestore, $user.uid, {
+          type: "photos/fail_upload",
+          payload: {
+            id,
+            requestId: `timeout-recovery-${id}-${now}`,
+            error: `upload_timeout_${UPLOAD_TIMEOUT}ms`,
+            timestamp: now,
+          },
+        });
+      } catch (e) {
+        console.warn(
+          `[UploadManager] Failed to mark timed-out upload as failed for ${id}`,
+          e,
+        );
+      }
+    }
+
     // Keep successful/in-flight photos deduped, but once a photo has exhausted retries
     // stop pinning it so future manual attempts are not permanently blocked.
     (Object.entries(uploads || {}) as [string, UploadState][]).forEach(
