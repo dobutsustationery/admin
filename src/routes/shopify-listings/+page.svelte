@@ -41,6 +41,7 @@
   let lastCompletedAtLabel = "";
   let shopifyHandles: string[] = [];
   let unsubscribeAuditResult: (() => void) | null = null;
+  let auditResultTimeout: ReturnType<typeof setTimeout> | null = null;
   let hasRequestedInitial = false;
 
   function normalizeHandle(value: string): string {
@@ -163,18 +164,30 @@
 
   function watchAuditResult(requestId: string) {
     if (unsubscribeAuditResult) unsubscribeAuditResult();
+    if (auditResultTimeout) clearTimeout(auditResultTimeout);
+
     const q = query(
       collection(firestore, "sync"),
-      where("requestId", "==", requestId),
-      limit(20),
+      where("creator", "==", $user?.uid || ""),
+      limit(200),
     );
     unsubscribeAuditResult = onSnapshot(
       q,
       (snap) => {
-        for (const docChange of snap.docChanges()) {
-          if (docChange.type !== "added") continue;
-          const data = docChange.doc.data() as any;
+        const docs = snap.docs
+          .map((d) => d.data() as any)
+          .sort(
+            (a, b) =>
+              Number(b?.createdAtMs || b?.requestedAt || 0) -
+              Number(a?.createdAtMs || a?.requestedAt || 0),
+          );
+
+        for (const data of docs) {
           const eventType = String(data?.eventType || "");
+          const correlatedRequestId = String(
+            data?.requestId || data?.requestEventId || "",
+          ).trim();
+          if (correlatedRequestId !== requestId) continue;
 
           if (eventType === "shopify/listings_audit_completed") {
             const handles = Array.isArray(data?.payload?.shopifyHandles)
@@ -186,6 +199,14 @@
             lastCompletedAtLabel = new Date().toLocaleString();
             isLoading = false;
             error = "";
+            if (unsubscribeAuditResult) {
+              unsubscribeAuditResult();
+              unsubscribeAuditResult = null;
+            }
+            if (auditResultTimeout) {
+              clearTimeout(auditResultTimeout);
+              auditResultTimeout = null;
+            }
             return;
           }
 
@@ -194,6 +215,14 @@
               String(data?.payload?.errorMessage || "").trim() ||
               "Shopify listings audit failed.";
             isLoading = false;
+            if (unsubscribeAuditResult) {
+              unsubscribeAuditResult();
+              unsubscribeAuditResult = null;
+            }
+            if (auditResultTimeout) {
+              clearTimeout(auditResultTimeout);
+              auditResultTimeout = null;
+            }
             return;
           }
         }
@@ -203,6 +232,17 @@
         isLoading = false;
       },
     );
+
+    auditResultTimeout = setTimeout(() => {
+      if (!isLoading) return;
+      isLoading = false;
+      error = `Timed out waiting for Shopify listings audit result (${requestId}).`;
+      if (unsubscribeAuditResult) {
+        unsubscribeAuditResult();
+        unsubscribeAuditResult = null;
+      }
+      auditResultTimeout = null;
+    }, 120000);
   }
 
   async function runAudit() {
@@ -238,6 +278,7 @@
 
   onDestroy(() => {
     if (unsubscribeAuditResult) unsubscribeAuditResult();
+    if (auditResultTimeout) clearTimeout(auditResultTimeout);
   });
 </script>
 
