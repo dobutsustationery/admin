@@ -28,7 +28,7 @@ function toGoogleDrivePublicImageUrl(rawUrl) {
   if (!value) return "";
   const fileId = extractGoogleDriveFileId(value);
   if (!fileId) return value;
-  return `https://lh3.googleusercontent.com/d/${fileId}=s0`;
+  return `https://lh3.googleusercontent.com/d/${fileId}=s1600`;
 }
 
 const tokenCache = new Map();
