@@ -29,4 +29,20 @@ describe("sync status classification", () => {
     ]);
     expect(domain).toBe("google");
   });
+
+  it("classifies listings audit completed as success", () => {
+    const status = classifySyncRequestStatusFromEventTypes([
+      "shopify/listings_audit_requested",
+      "shopify/listings_audit_completed",
+    ]);
+    expect(status).toBe("success");
+  });
+
+  it("classifies listings audit failed as failed", () => {
+    const status = classifySyncRequestStatusFromEventTypes([
+      "shopify/listings_audit_requested",
+      "shopify/listings_audit_failed",
+    ]);
+    expect(status).toBe("failed");
+  });
 });

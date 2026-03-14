@@ -118,6 +118,7 @@ export function classifySyncRequestStatusFromEventTypes(
     (t) =>
       t.includes("sync_failed") ||
       t.includes("sync_partial_failed") ||
+      t.includes("listings_audit_failed") ||
       t.includes("image_transfer_failed") ||
       t.includes("image_transform_failed") ||
       t.includes("auth_failed") ||
@@ -128,6 +129,7 @@ export function classifySyncRequestStatusFromEventTypes(
   const hasCompleted = eventTypes.some(
     (t) =>
       t.includes("sync_completed") ||
+      t.includes("listings_audit_completed") ||
       t.includes("image_transfer_completed") ||
       t.includes("image_transform_completed") ||
       t.includes("auth_completed"),
@@ -155,6 +157,7 @@ export function classifySyncRequestStatusFromEventTypes(
   const hasRequested = eventTypes.some(
     (t) =>
       t.includes("sync_requested") ||
+      t.includes("listings_audit_requested") ||
       t.includes("image_transfer_requested") ||
       t.includes("image_transform_requested") ||
       t.includes("auth_requested") ||
