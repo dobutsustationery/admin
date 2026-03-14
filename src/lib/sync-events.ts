@@ -23,7 +23,13 @@ export function normalizeShopifySyncEventType(eventType: string): string {
   const value = String(eventType || "").trim();
   if (!value) return "";
   if (value.startsWith(`${SHOPIFY_SYNC_NAMESPACE}/`)) {
-    return value.slice(SHOPIFY_SYNC_NAMESPACE.length + 1);
+    const tail = value.slice(SHOPIFY_SYNC_NAMESPACE.length + 1);
+    // Backward-compat for listing audit events that were written with a
+    // parallel lifecycle naming scheme.
+    if (tail === "listings_audit_requested") return "sync_requested";
+    if (tail === "listings_audit_completed") return "sync_completed";
+    if (tail === "listings_audit_failed") return "sync_failed";
+    return tail;
   }
   if (value.startsWith(`${PHOTOS_SYNC_NAMESPACE}/`)) {
     const tail = value.slice(PHOTOS_SYNC_NAMESPACE.length + 1);
