@@ -12,6 +12,7 @@ setGlobalOptions({ maxInstances: 10 });
 const db = getFirestore();
 const SYNC_COLLECTION = "sync";
 const SHOPIFY_REQUEST_COLLECTION = "request_shopify_sync";
+const SHOPIFY_LISTING_AUDIT_REQUEST_COLLECTION = "request_shopify_listing_audit";
 const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
 const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
 const GOOGLE_AUTH_REQUEST_COLLECTION = "request_google_auth";
@@ -46,6 +47,42 @@ function getShopifyConfig() {
     clientSecret,
     apiVersion,
   };
+}
+
+async function fetchAllShopifyProductHandles(config) {
+  const storeUrl = shopifyCore.normalizeStoreUrl(config?.storeUrl || "");
+  const apiVersion = String(config?.apiVersion || "2026-01").trim();
+  if (!storeUrl) {
+    throw new Error("Missing SHOPIFY_STORE_URL");
+  }
+
+  const handles = new Set();
+  let sinceId = 0;
+
+  while (true) {
+    const params = new URLSearchParams({
+      limit: "250",
+      fields: "id,handle",
+      since_id: String(sinceId),
+    });
+    const endpoint = `https://${storeUrl}/admin/api/${apiVersion}/products.json?${params.toString()}`;
+    const headers = await shopifyCore.buildShopifyHeaders(config);
+    const json = await shopifyCore.fetchJson(endpoint, { headers });
+    const products = Array.isArray(json?.products) ? json.products : [];
+
+    for (const product of products) {
+      const handle = String(product?.handle || "").trim();
+      if (handle) handles.add(handle);
+    }
+
+    if (products.length === 0) break;
+    sinceId = Number(products[products.length - 1]?.id || 0);
+    if (!Number.isFinite(sinceId) || sinceId <= 0 || products.length < 250) {
+      break;
+    }
+  }
+
+  return Array.from(handles).sort((a, b) => a.localeCompare(b));
 }
 
 function logSkipped(dispatched, requestId, domain) {
@@ -202,6 +239,81 @@ exports.shopifySyncRequest = onDocumentCreated(
         requestId,
         eventType: "shopify/sync_requested",
         error: message,
+      });
+    }
+  },
+);
+
+exports.shopifyListingAuditRequest = onDocumentCreated(
+  {
+    document: `${SHOPIFY_LISTING_AUDIT_REQUEST_COLLECTION}/{requestId}`,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    concurrency: 2,
+    maxInstances: 5,
+  },
+  async (event) => {
+    const requestData = event.data?.data();
+    if (!requestData) return;
+
+    const requestId = String(event.params?.requestId || "");
+    const creator = String(requestData.creator || "").trim();
+    const processor = `function:${process.env.K_SERVICE || "shopifyListingAuditRequest"}`;
+    const eventType = String(requestData.eventType || "").trim();
+    if (
+      eventType &&
+      eventType !== "shopify/listings_audit_requested" &&
+      eventType !== "listings_audit_requested"
+    ) {
+      return;
+    }
+
+    if (!requestId || !creator) {
+      logger.error("Invalid Shopify listing audit request shape", {
+        requestId,
+        creator,
+      });
+      return;
+    }
+
+    try {
+      const shopifyConfig = getShopifyConfig();
+      const shopifyHandles = await fetchAllShopifyProductHandles(shopifyConfig);
+
+      await db.collection(SYNC_COLLECTION).add({
+        eventType: "shopify/listings_audit_completed",
+        requestId,
+        requestEventId: requestId,
+        creator,
+        requestedBy: creator,
+        processor,
+        createdAt: new Date(),
+        createdAtMs: Date.now(),
+        payload: {
+          handleCount: shopifyHandles.length,
+          shopifyHandles,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Failed processing Shopify listings audit request", {
+        requestId,
+        creator,
+        error: message,
+      });
+      await db.collection(SYNC_COLLECTION).add({
+        eventType: "shopify/listings_audit_failed",
+        requestId,
+        requestEventId: requestId,
+        creator,
+        requestedBy: creator,
+        processor,
+        createdAt: new Date(),
+        createdAtMs: Date.now(),
+        payload: {
+          errorCode: "shopify_listings_audit_failed",
+          errorMessage: message,
+        },
       });
     }
   },
