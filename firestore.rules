@@ -35,6 +35,11 @@ service cloud.firestore {
       allow read: if request.auth != null && resource.data.creator == request.auth.uid;
       allow update, delete: if false;
     }
+    match /request_shopify_listing_audit/{action} {
+      allow create: if request.auth != null && request.resource.data.creator == request.auth.uid;
+      allow read: if request.auth != null && resource.data.creator == request.auth.uid;
+      allow update, delete: if false;
+    }
     match /request_photos_transfer/{action} {
       allow create: if request.auth != null && request.resource.data.creator == request.auth.uid;
       allow read: if request.auth != null && resource.data.creator == request.auth.uid;
