@@ -50,6 +50,12 @@ import {
   key_audit_record_ghost_access,
   key_audit_register_ghost,
 } from "./key-audit-slice";
+import {
+  normalizeTimestampedAction,
+  toTimestampMs,
+  withInheritedTimestamp,
+  type TimestampedAction,
+} from "./timestamped-action";
 
 const reducerObject = {
   names,
@@ -69,51 +75,10 @@ const reducerObject = {
 };
 const combinedReducer = combineReducers(reducerObject);
 
-export const toTimestampMs = (ts: any): number | null => {
-  if (typeof ts === "number") return ts;
-  if (typeof ts?.seconds === "number") {
-    const nanos =
-      typeof ts?.nanoseconds === "number"
-        ? ts.nanoseconds
-        : typeof ts?._nanoseconds === "number"
-          ? ts._nanoseconds
-          : 0;
-    return ts.seconds * 1000 + Math.floor(nanos / 1_000_000);
-  }
-  if (typeof ts?._seconds === "number") {
-    const nanos = typeof ts?._nanoseconds === "number" ? ts._nanoseconds : 0;
-    return ts._seconds * 1000 + Math.floor(nanos / 1_000_000);
-  }
-  if (ts?.toDate) return ts.toDate().getTime();
-  return null;
-};
+export { toTimestampMs };
 
-const normalizeIncomingActionTimestamp = (action: any): any => {
-  if (!action || typeof action !== "object") return action;
-
-  const explicitTimestamp = action.timestamp;
-  const fallbackCreatedAt = action.createdAt;
-  const normalizedTimestamp = explicitTimestamp ?? fallbackCreatedAt;
-
-  let normalized = action;
-
-  if (normalizedTimestamp && explicitTimestamp === undefined) {
-    normalized = { ...normalized, timestamp: normalizedTimestamp };
-  }
-
-  if (normalized._timestamp === undefined) {
-    const tsMs = toTimestampMs(normalized.timestamp);
-    if (tsMs !== null) {
-      normalized = { ...normalized, _timestamp: tsMs };
-    }
-  }
-
-  return normalized;
-};
-
-const normalizeActionTimestampMs = (action: any): number => {
-  return typeof action?._timestamp === "number" ? action._timestamp : 0;
-};
+const normalizeActionTimestampMs = (action: TimestampedAction): number =>
+  action._timestamp;
 
 const getIncomingIdObservations = (
   action: any,
@@ -303,7 +268,10 @@ const mapShopifyToInventory = (importItem: any): Item => {
 
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
 export const rootReducer = (state: any, action: any, logger = logAction) => {
-  action = normalizeIncomingActionTimestamp(action);
+  action = normalizeTimestampedAction(action);
+  const actionTs = action as TimestampedAction;
+  const inheritTimestamp = <T extends Record<string, unknown>>(a: T) =>
+    withInheritedTimestamp(a, actionTs);
 
   if (action.type === "HYDRATE") {
     const hydratedState = { ...state, ...action.payload };
@@ -498,22 +466,24 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
               // Log synthetic action
               logger(
-                {
+                inheritTimestamp({
                   type: "photos/rename_jan_group (synthetic)",
                   payload: { oldJan: oldPhotoKey, newJan: newPhotoKey },
                   _ephemeral: true,
-                },
+                }),
                 nextState,
                 action._timestamp,
               );
             }
 
             // 2. Update the variant's photoGroupKey reference
-            const creationAction = set_variant_photo_group({
-              janCode,
-              variantId,
-              groupKey: newPhotoKey,
-            });
+            const creationAction = inheritTimestamp(
+              set_variant_photo_group({
+                janCode,
+                variantId,
+                groupKey: newPhotoKey,
+              }),
+            );
             nextState = {
               ...nextState,
               listingCreation: listingCreation(
@@ -548,11 +518,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
     }));
 
     if (bulkUpdates.length > 0) {
-      const internalAction = {
+      const internalAction = inheritTimestamp({
         ...bulk_import_items({ items: bulkUpdates }),
         _ephemeral: true,
-        timestamp: action._timestamp,
-      };
+      });
 
       nextState = {
         ...nextState,
@@ -562,7 +531,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
     }
 
     if (indices.length > 0) {
-      const markAction = markOrderDone({ indices });
+      const markAction = inheritTimestamp(markOrderDone({ indices }));
       nextState = {
         ...nextState,
         orderImport: orderImport(nextState.orderImport, markAction),
@@ -581,7 +550,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       if (listing) {
         const item = nextState.inventory.idToItem[id];
         if (item && item.description !== listing.title) {
-          const syncAction = {
+          const syncAction = inheritTimestamp({
             ...update_field({
               id,
               field: "description",
@@ -589,8 +558,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               to: listing.title,
             }),
             _ephemeral: true,
-            timestamp: action._timestamp,
-          };
+          });
           nextState = {
             ...nextState,
             inventory: inventory(nextState.inventory, syncAction),
@@ -608,11 +576,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         if (listing) {
           // 1. Sync Listing Title (if not already synced by slice reducer)
           if (listing.title !== to) {
-            const syncListingAction = {
+            const syncListingAction = inheritTimestamp({
               ...update_listing({ handle, changes: { title: to as string } }),
               _ephemeral: true,
-              timestamp: action._timestamp,
-            };
+            });
             nextState = {
               ...nextState,
               listings: listings(nextState.listings, syncListingAction),
@@ -625,7 +592,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             ([itemId, item]: any) => {
               if (itemId !== id && item.handle === handle) {
                 if (item.description !== to) {
-                  const syncItemAction = {
+                  const syncItemAction = inheritTimestamp({
                     ...update_field({
                       id: itemId,
                       field: "description",
@@ -633,8 +600,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                       to: to as string,
                     }),
                     _ephemeral: true,
-                    timestamp: action._timestamp,
-                  };
+                  });
                   nextState = {
                     ...nextState,
                     inventory: inventory(nextState.inventory, syncItemAction),
@@ -660,7 +626,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         ([id, item]: any) => {
           if (item.handle === handle) {
             if (item.description !== title) {
-              const syncAction = {
+              const syncAction = inheritTimestamp({
                 ...update_field({
                   id,
                   field: "description",
@@ -668,8 +634,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                   to: title,
                 }),
                 _ephemeral: true,
-                timestamp: action._timestamp,
-              };
+              });
               nextState = {
                 ...nextState,
                 inventory: inventory(nextState.inventory, syncAction),
@@ -695,7 +660,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       state.listings.handleToListing,
       filter,
       options,
-      action._timestamp ?? 0,
+      action._timestamp,
     );
 
     const bulkUpdates: BulkImportItem[] = updates.map((u) => ({
@@ -705,11 +670,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
     }));
 
     if (bulkUpdates.length > 0) {
-      const internalAction = {
+      const internalAction = inheritTimestamp({
         ...bulk_import_items({ items: bulkUpdates }),
         _ephemeral: true,
-        timestamp: action._timestamp,
-      };
+      });
 
       nextState = {
         ...nextState,
@@ -723,22 +687,20 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       let nextListings = nextState.listings;
       listingUpdates.forEach((u: any) => {
         if (u.type === "add_image") {
-          const internalAction = {
+          const internalAction = inheritTimestamp({
             ...add_listing_image({ handle: u.handle, image: u.image }),
             _ephemeral: true,
-            timestamp: action._timestamp,
-          };
+          });
           nextListings = listings(nextListings, internalAction);
           // We must update nextState.listings locally to pass to next iteration
           // but we also want to capture the full state for the log.
           const intermediateState = { ...nextState, listings: nextListings };
           logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
         } else if (u.type === "create_listing") {
-          const internalAction = {
+          const internalAction = inheritTimestamp({
             ...create_listing({ listing: u.listing }),
             _ephemeral: true,
-            timestamp: action._timestamp,
-          };
+          });
           nextListings = listings(nextListings, internalAction);
           const intermediateState = { ...nextState, listings: nextListings };
           logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
@@ -748,7 +710,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
     }
 
     if (indices.length > 0) {
-      const markAction = markShopifyDone({ indices });
+      const markAction = inheritTimestamp(markShopifyDone({ indices }));
       nextState = {
         ...nextState,
         shopifyImport: shopifyImport(nextState.shopifyImport, markAction),
@@ -814,11 +776,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       };
     });
 
-    const internalAction = {
+    const internalAction = inheritTimestamp({
       ...add_proposals_internal(enrichedProposals),
       _ephemeral: true,
-      timestamp: action._timestamp,
-    };
+    });
 
     nextState = {
       ...nextState,
@@ -898,11 +859,11 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
           // Log synthetic action
           logger(
-            {
+            inheritTimestamp({
               type: "photos/categorize_photo (synthetic)",
               payload: { janCode: photoKey, photo: syntheticPhoto },
               _ephemeral: true,
-            },
+            }),
             nextState,
             action._timestamp,
           );
@@ -937,11 +898,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         };
       });
 
-      const addVariantsAction = {
+      const addVariantsAction = inheritTimestamp({
         ...add_variants_internal({ janCode, variants }),
         _ephemeral: true,
-        timestamp: action._timestamp,
-      };
+      });
 
       nextState = {
         ...nextState,
@@ -970,12 +930,11 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           console.log(
             `[RootReducer] Syncing price to proposal: ${existingPrice}`,
           );
-          const syncPriceAction = {
+          const syncPriceAction = inheritTimestamp({
             type: "listingCreation/update_proposal_field",
             payload: { janCode, field: "price", value: existingPrice },
             _ephemeral: true,
-            timestamp: action._timestamp,
-          };
+          });
           nextState = {
             ...nextState,
             listingCreation: listingCreation(
@@ -1040,7 +999,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             // We need to set listingOnlyImages AND listingImageOrder
             // We can construct actions for `update_proposal_field`.
 
-            const syncImagesAction = {
+            const syncImagesAction = inheritTimestamp({
               type: "listingCreation/update_proposal_field",
               payload: {
                 janCode,
@@ -1048,8 +1007,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                 value: listingOnlyImages,
               },
               _ephemeral: true,
-              timestamp: action._timestamp,
-            };
+            });
             nextState = {
               ...nextState,
               listingCreation: listingCreation(
@@ -1059,7 +1017,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             };
             logger(syncImagesAction, nextState, action._timestamp);
 
-            const syncOrderAction = {
+            const syncOrderAction = inheritTimestamp({
               type: "listingCreation/update_proposal_field",
               payload: {
                 janCode,
@@ -1067,8 +1025,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                 value: existingListing.images.map((img: any) => img.id),
               },
               _ephemeral: true,
-              timestamp: action._timestamp,
-            };
+            });
             nextState = {
               ...nextState,
               listingCreation: listingCreation(
@@ -1121,15 +1078,14 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           `[RootReducer] Collision detected for handle '${newHandle}' (source: ${janCode}, target: ${target.janCode}). Orchestrating merge.`,
         );
 
-        const mergeAction = {
+        const mergeAction = inheritTimestamp({
           type: "listingCreation/merge_proposals",
           payload: {
             targetJan: target.janCode,
             sourceJans: [janCode],
           },
           _ephemeral: true,
-          timestamp: action._timestamp,
-        };
+        });
 
         nextState = {
           ...nextState,
@@ -1197,12 +1153,11 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
         if (itemId) {
           // 1. Apply Draft Change (Slice Reducer)
-          const sliceAction = {
+          const sliceAction = inheritTimestamp({
             type: "listingCreation/add_variant",
             payload: { targetJan, janCode, itemId, subtype, qty, variantId },
             _ephemeral: true,
-            timestamp: action._timestamp,
-          };
+          });
           nextState = {
             ...nextState,
             listingCreation: listingCreation(
@@ -1226,12 +1181,11 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         const variant = proposal.variants.find((v: any) => v.id === variantId);
         if (variant) {
           // 1. Apply Draft Change (Slice Reducer)
-          const sliceAction = {
+          const sliceAction = inheritTimestamp({
             type: "listingCreation/remove_variant",
             payload: { janCode, variantId },
             _ephemeral: true,
-            timestamp: action._timestamp,
-          };
+          });
           nextState = {
             ...nextState,
             listingCreation: listingCreation(
@@ -1304,14 +1258,13 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             };
           });
 
-          const splitAction = {
+          const splitAction = inheritTimestamp({
             ...split_inventory_item({
               sourceId: canonicalizeInventoryItemKey(sourceId),
               splits,
             }),
             _ephemeral: true,
-            timestamp: action._timestamp,
-          };
+          });
           nextState = {
             ...nextState,
             inventory: inventory(nextState.inventory, splitAction),
@@ -1327,7 +1280,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           if (nextState.inventory.idToItem[sourceId]) {
             const sourceHandle =
               nextState.inventory.idToItem[sourceId]?.handle || "";
-            const clearHandleAction = {
+            const clearHandleAction = inheritTimestamp({
               ...update_field({
                 id: sourceId,
                 field: "handle",
@@ -1335,8 +1288,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                 to: "",
               }),
               _ephemeral: true,
-              timestamp: action._timestamp,
-            };
+            });
             nextState = {
               ...nextState,
               inventory: inventory(nextState.inventory, clearHandleAction),
@@ -1388,7 +1340,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             itemBeforeUpdate?.janCode ||
             String(currentItemId).match(/^\d+/)?.[0] ||
             proposal.janCode;
-          const updateAction = {
+          const updateAction = inheritTimestamp({
             ...update_field({
               id: currentItemId,
               field: f.field,
@@ -1396,8 +1348,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               to: f.value,
             }),
             _ephemeral: true,
-            timestamp: action._timestamp,
-          };
+          });
 
           nextState = {
             ...nextState,
@@ -1503,7 +1454,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         images: mergedImages,
         productType: "",
         status: "active" as const,
-        lastUpdated: action._timestamp ?? 0,
+        lastUpdated: action._timestamp,
       };
 
       const existingListing = nextState.listings.handleToListing[finalHandle];
@@ -1512,11 +1463,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         finalListing = { ...existingListing, ...listingData };
       }
 
-      const createActionLocal = {
+      const createActionLocal = inheritTimestamp({
         ...create_listing({ listing: finalListing }),
         _ephemeral: true,
-        timestamp: action._timestamp,
-      };
+      });
       nextState = {
         ...nextState,
         listings: listings(nextState.listings, createActionLocal),
@@ -1525,11 +1475,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
       // 6. Cleanup ALL Merged Proposals
       mergedProposals.forEach((p) => {
-        const removeAction = {
+        const removeAction = inheritTimestamp({
           ...remove_proposal({ janCode: p.janCode }),
           _ephemeral: true,
-          timestamp: action._timestamp,
-        };
+        });
         nextState = {
           ...nextState,
           listingCreation: listingCreation(
@@ -1542,11 +1491,10 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
 
       // 7. Complete Batch Check
       if (nextState.listingCreation.activeBatchJans.length === 0) {
-        const completeAction = {
+        const completeAction = inheritTimestamp({
           ...complete_batch(),
           _ephemeral: true,
-          timestamp: action._timestamp,
-        };
+        });
         nextState = {
           ...nextState,
           listingCreation: listingCreation(
