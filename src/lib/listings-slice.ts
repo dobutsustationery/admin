@@ -52,6 +52,25 @@ function ensureCategory(state: ListingsState, category: string) {
   }
 }
 
+function toTimestampMs(ts: any): number {
+  if (typeof ts === "number") return ts;
+  if (typeof ts?.seconds === "number") {
+    const nanos = Number(ts?.nanoseconds || 0);
+    return ts.seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (typeof ts?._seconds === "number") {
+    const nanos = Number(ts?._nanoseconds || 0);
+    return ts._seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (typeof ts?.toDate === "function") return ts.toDate().getTime();
+  return 0;
+}
+
+function actionTimestampMs(action: any, fallback = 0): number {
+  const ts = toTimestampMs(action?.timestamp ?? action?._timestamp);
+  return ts || fallback;
+}
+
 // Actions
 export const create_listing = createAction<{ listing: Listing }>(
   "create_listing",
@@ -84,10 +103,14 @@ export const listings = createReducer(initialState, (builder) => {
       const { handle, changes } = action.payload;
       const existing = state.handleToListing[handle];
       if (existing) {
+        const lastUpdated = actionTimestampMs(
+          action,
+          existing.lastUpdated || 0,
+        );
         state.handleToListing[handle] = {
           ...existing,
           ...changes,
-          lastUpdated: Date.now(),
+          lastUpdated,
         };
         if (changes.productCategory)
           ensureCategory(state, changes.productCategory);
@@ -108,7 +131,7 @@ export const listings = createReducer(initialState, (builder) => {
         const exists = listing.images.some((img) => img.id === image.id);
         if (!exists) {
           listing.images.push(image);
-          listing.lastUpdated = Date.now();
+          listing.lastUpdated = actionTimestampMs(action, listing.lastUpdated);
         }
       }
     })
@@ -117,7 +140,7 @@ export const listings = createReducer(initialState, (builder) => {
       const listing = state.handleToListing[handle];
       if (listing) {
         listing.images = listing.images.filter((img) => img.id !== imageId);
-        listing.lastUpdated = Date.now();
+        listing.lastUpdated = actionTimestampMs(action, listing.lastUpdated);
       }
     })
     // Legacy Action Handling for Replay
@@ -150,7 +173,13 @@ export const listings = createReducer(initialState, (builder) => {
       const fieldKey = field as string;
       if (fieldKey === "handle") {
         const newHandle = String(to);
-        applyHandleUpdate(state, id, newHandle, handle);
+        applyHandleUpdate(
+          state,
+          id,
+          newHandle,
+          handle,
+          (action as any).timestamp,
+        );
         return;
       }
 
@@ -196,8 +225,9 @@ function handleLegacyUpdate(
   state: ListingsState,
   id: string,
   itemPayload: any,
-  timestamp: number | undefined,
+  timestamp: any,
 ) {
+  const timestampMs = toTimestampMs(timestamp);
   // 1. Resolve Handle
   let handle = state.idToHandle[id];
 
@@ -232,7 +262,7 @@ function handleLegacyUpdate(
       status: "active",
       option1Name: "Subtype",
       images: [],
-      lastUpdated: timestamp || Date.now(),
+      lastUpdated: timestampMs,
       // Store janCode for future re-generation/validation if needed?
       // Not strictly in Listing interface but useful.
       // We rely on idToHandle map + payload updates.
@@ -324,7 +354,7 @@ function handleLegacyUpdate(
         position: itemPayload.imagePosition || listing.images.length + 1,
         altText: itemPayload.imageAltText || itemPayload.description || "",
       });
-      listing.lastUpdated = Date.now();
+      listing.lastUpdated = timestampMs;
     }
   }
 }
@@ -334,7 +364,9 @@ function applyHandleUpdate(
   id: string,
   newHandle: string,
   previousHandle?: string,
+  timestamp?: any,
 ) {
+  const timestampMs = toTimestampMs(timestamp);
   const priorHandle = previousHandle || state.idToHandle[id];
   if (priorHandle === newHandle) return;
 
@@ -368,7 +400,7 @@ function applyHandleUpdate(
       const movedListing = {
         ...priorListing,
         handle: newHandle,
-        lastUpdated: Date.now(),
+        lastUpdated: timestampMs,
       };
       delete state.handleToListing[priorHandle];
       state.handleToListing[newHandle] = movedListing;
@@ -377,7 +409,7 @@ function applyHandleUpdate(
       const newListing = {
         ...priorListing,
         handle: newHandle,
-        lastUpdated: Date.now(),
+        lastUpdated: timestampMs,
       };
       state.handleToListing[newHandle] = newListing;
     }

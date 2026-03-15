@@ -81,8 +81,7 @@ export const toTimestampMs = (ts: any): number | null => {
     return ts.seconds * 1000 + Math.floor(nanos / 1_000_000);
   }
   if (typeof ts?._seconds === "number") {
-    const nanos =
-      typeof ts?._nanoseconds === "number" ? ts._nanoseconds : 0;
+    const nanos = typeof ts?._nanoseconds === "number" ? ts._nanoseconds : 0;
     return ts._seconds * 1000 + Math.floor(nanos / 1_000_000);
   }
   if (ts?.toDate) return ts.toDate().getTime();
@@ -697,6 +696,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       state.listings.handleToListing,
       filter,
       options,
+      toTimestampMs(action.timestamp || action._timestamp) || 0,
     );
 
     const bulkUpdates: BulkImportItem[] = updates.map((u) => ({
@@ -1504,7 +1504,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         images: mergedImages,
         productType: "",
         status: "active" as const,
-        lastUpdated: Date.now(),
+        lastUpdated: toTimestampMs(action.timestamp || action._timestamp) || 0,
       };
 
       const existingListing = nextState.listings.handleToListing[finalHandle];

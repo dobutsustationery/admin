@@ -209,6 +209,7 @@ export const computeShopifyImportBatch = (
   handleToListing: Record<string, any>,
   filter: ShopifyImportBatchFilter,
   options?: ImportBatchOptions,
+  timestampMs: number = 0,
 ): { updates: any[]; listingUpdates: any[]; indices: number[] } => {
   const updates: any[] = [];
   const listingUpdates: any[] = [];
@@ -441,7 +442,7 @@ export const computeShopifyImportBatch = (
                 status: "active",
                 option1Name: parentItem.option1Name || "Title",
                 images: [],
-                lastUpdated: Date.now(),
+                lastUpdated: timestampMs,
               },
             });
             createdHandles.add(storeHandle);
@@ -514,7 +515,7 @@ export const computeShopifyImportBatch = (
                 status: "active",
                 option1Name: parentItem.option1Name || "Title",
                 images: [],
-                lastUpdated: Date.now(),
+                lastUpdated: timestampMs,
               },
             });
             createdHandles.add(storeHandle);

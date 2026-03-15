@@ -18,31 +18,25 @@ describe("Root reducer timestamp normalization", () => {
     const createdAtFirst = { seconds: 1770000000, nanoseconds: 123_000_000 };
     const createdAtSecond = { seconds: 1770000001, nanoseconds: 456_000_000 };
 
-    state = rootReducer(
-      state,
-      {
-        ...update_field({
-          id: "123A",
-          field: "description",
-          from: "",
-          to: "x",
-        }),
-        createdAt: createdAtFirst,
-      } as any,
-    );
+    state = rootReducer(state, {
+      ...update_field({
+        id: "123A",
+        field: "description",
+        from: "",
+        to: "x",
+      }),
+      createdAt: createdAtFirst,
+    } as any);
 
-    state = rootReducer(
-      state,
-      {
-        ...update_field({
-          id: "123 A",
-          field: "description",
-          from: "",
-          to: "y",
-        }),
-        createdAt: createdAtSecond,
-      } as any,
-    );
+    state = rootReducer(state, {
+      ...update_field({
+        id: "123 A",
+        field: "description",
+        from: "",
+        to: "y",
+      }),
+      createdAt: createdAtSecond,
+    } as any);
 
     const collision = state.keyAudit.canonicalCollisions["123A"];
     expect(collision).toBeDefined();

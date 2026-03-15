@@ -120,6 +120,22 @@ export const bulk_import_items = createAction<{
   items: Array<BulkImportItem>;
 }>("bulk_import_items");
 
+function getTimestampMs(timestamp: any): number {
+  if (typeof timestamp === "number") return timestamp;
+  if (typeof timestamp?.seconds === "number") {
+    const nanos = Number(timestamp?.nanoseconds || 0);
+    return timestamp.seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (typeof timestamp?._seconds === "number") {
+    const nanos = Number(timestamp?._nanoseconds || 0);
+    return timestamp._seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (timestamp instanceof Date) return timestamp.getTime();
+  if (typeof timestamp?.toDate === "function")
+    return timestamp.toDate().getTime();
+  return 0;
+}
+
 export const split_inventory_item = createAction<{
   sourceId: InventoryItemKey;
   splits: { newId: InventoryItemKey; qty: number; subtype: string }[];
@@ -183,18 +199,7 @@ function applyInventoryUpdate(
   }
 
   // Robust Timestamp Parsing
-  let val = Date.now(); // Default to now
-  if (timestamp) {
-    if (typeof timestamp === "number") {
-      val = timestamp;
-    } else if (timestamp.seconds) {
-      val = timestamp.seconds * 1000;
-    } else if (timestamp instanceof Date) {
-      val = timestamp.getTime();
-    }
-  }
-
-  if (isNaN(val)) val = Date.now(); // Fallback if parsing failed
+  const val = getTimestampMs(timestamp);
 
   const dateObj = new Date(val);
   const globalDate = dateObj.toLocaleString("en", {
@@ -468,8 +473,7 @@ export const inventory = createReducer(initialState, (r) => {
 
         delete state.idToItem[itemKey];
 
-        const ts = (action as any).timestamp;
-        const val = ts ? new Date(ts.seconds * 1000).getTime() : Date.now();
+        const val = getTimestampMs((action as any).timestamp);
         state.idToHistory[mergeItemKey].push({
           date: new Date(val).toLocaleString("en", {
             year: "numeric",
@@ -805,8 +809,7 @@ export const inventory = createReducer(initialState, (r) => {
       // Delete the old item
       delete state.idToItem[itemKey];
 
-      const ts = (action as any).timestamp;
-      const val = ts ? new Date(ts.seconds * 1000).getTime() : Date.now();
+      const val = getTimestampMs((action as any).timestamp);
 
       state.idToHistory[mergeItemKey].push({
         date: new Date(val).toLocaleString("en", {

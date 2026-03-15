@@ -141,6 +141,21 @@ const initialState: ListingCreationState = {
 
 // --- Slice ---
 
+const actionTimestampMs = (action: any): number => {
+  const ts = action?.timestamp ?? action?._timestamp;
+  if (typeof ts === "number") return ts;
+  if (typeof ts?.seconds === "number") {
+    const nanos = Number(ts?.nanoseconds || 0);
+    return ts.seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (typeof ts?._seconds === "number") {
+    const nanos = Number(ts?._nanoseconds || 0);
+    return ts._seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (typeof ts?.toDate === "function") return ts.toDate().getTime();
+  return 0;
+};
+
 const listingCreationSlice = createSlice({
   name: "listingCreation",
   initialState,
@@ -169,7 +184,7 @@ const listingCreationSlice = createSlice({
     set_scanning: (state, action: PayloadAction<boolean>) => {
       state.isScanning = action.payload;
       if (action.payload) {
-        state.lastScanTimestamp = Date.now();
+        state.lastScanTimestamp = actionTimestampMs(action);
       } else {
         state.scanProgress = {
           current: 0,
@@ -192,9 +207,9 @@ const listingCreationSlice = createSlice({
     ) => {
       state.scanProgress = {
         ...action.payload,
-        lastUpdate: Date.now(),
+        lastUpdate: actionTimestampMs(action),
       };
-      state.lastScanTimestamp = Date.now();
+      state.lastScanTimestamp = actionTimestampMs(action);
       if (action.payload.janCode) {
         state.lastScanJan = action.payload.janCode;
       }
@@ -243,7 +258,7 @@ const listingCreationSlice = createSlice({
       state.originalBatchJans = action.payload.janCodes; // Set source
       state.currentStepIndex = -1; // -1 = Batch Overview / Bulk Edit
       state.activeBatchId = action.payload.batchId;
-      state.activeBatchCreatedAt = action.payload.createdAt ?? Date.now();
+      state.activeBatchCreatedAt = action.payload.createdAt ?? 0;
       state.lastCompletedBatchId = undefined;
       state.hasCelebrated = false;
     },
