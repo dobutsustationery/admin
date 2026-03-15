@@ -106,7 +106,8 @@ function buildQueueState(events: SyncEvent[]): Omit<
   let processingCount = 0;
   let completedRecentCount = 0;
   let failedRecentCount = 0;
-  const now = Date.now();
+  const now =
+    sortedAsc.length > 0 ? eventTimeMs(sortedAsc[sortedAsc.length - 1]) : 0;
   const recentWindowMs = 5 * 60_000;
 
   for (const [requestId, jobEvents] of grouped.entries()) {

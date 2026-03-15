@@ -68,6 +68,24 @@ const initialState: PhotosState = {
   },
 };
 
+function toTimestampMs(ts: any): number {
+  if (typeof ts === "number") return ts;
+  if (typeof ts?.seconds === "number") {
+    const nanos = Number(ts?.nanoseconds || 0);
+    return ts.seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (typeof ts?._seconds === "number") {
+    const nanos = Number(ts?._nanoseconds || 0);
+    return ts._seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (typeof ts?.toDate === "function") return ts.toDate().getTime();
+  return 0;
+}
+
+function actionTimestampMs(action: any): number {
+  return toTimestampMs(action?.timestamp ?? action?._timestamp);
+}
+
 function isEphemeralPhotosUrl(url: string | undefined): boolean {
   return !!url && url.includes("googleusercontent.com");
 }
@@ -259,7 +277,7 @@ const photosSlice = createSlice({
         state.uploads[id] = {
           status: "completed",
           retryCount: 0,
-          lastAttempt: Date.now(),
+          lastAttempt: actionTimestampMs(action),
         };
       }
 
@@ -354,7 +372,7 @@ const photosSlice = createSlice({
       const { id, operation } = action.payload;
       if (state.edits && state.edits[id]) {
         const q = state.edits[id];
-        q.active = { operation, startTime: Date.now() };
+        q.active = { operation, startTime: actionTimestampMs(action) };
         q.queue = q.queue.filter((op) => op !== operation);
       }
     },
@@ -374,7 +392,11 @@ const photosSlice = createSlice({
       if (state.edits && state.edits[id]) {
         const q = state.edits[id];
         q.active = undefined;
-        q.history.push({ operation, timestamp: Date.now(), status: "success" });
+        q.history.push({
+          operation,
+          timestamp: actionTimestampMs(action),
+          status: "success",
+        });
 
         // Mark as done
         if (!q.status)
@@ -431,11 +453,11 @@ const photosSlice = createSlice({
           last?.status === "failed" &&
           last?.error === error
         ) {
-          last.timestamp = Date.now(); // Just update timestamp
+          last.timestamp = actionTimestampMs(action); // Just update timestamp
         } else {
           q.history.push({
             operation,
-            timestamp: Date.now(),
+            timestamp: actionTimestampMs(action),
             status: "failed",
             error,
           });
