@@ -57,7 +57,7 @@ Use `listing.lastUpdated` from replayed state as local comparison timestamp.
 2. On frontend, for `both` rows:
    - use `adminTs = listing.lastUpdated`
    - use `shopifyTs = updatedAtMs`
-   - classify with skew tolerance `SKEW_MS = 60_000`:
+   - classify with skew tolerance `SKEW_MS = 5_000`:
      - both missing -> `unknown`
      - abs(adminTs - shopifyTs) <= SKEW_MS -> `in_sync`
      - adminTs > shopifyTs + SKEW_MS -> `local_ahead`
@@ -72,10 +72,11 @@ For `both` rows, add:
 - `Shopify Updated`
 - `Drift` badge: `in_sync | local_ahead | shopify_ahead | unknown`
 
-Optional filters:
+Filters:
 
 - `Both In Sync`
 - `Both Drifted`
+- `Out of Sync` includes `admin_only`, `shopify_only`, and drifted `both` rows
 
 ## 7. Complexity Estimate
 
@@ -91,6 +92,9 @@ Optional filters:
 ## 9. Acceptance Criteria (MVP)
 
 - For every `both` handle, UI shows admin + Shopify timestamp and drift badge.
+- `shopify/listings_audit_completed` payload includes:
+  - `shopifyHandles: string[]`
+  - `shopifyByHandle: Record<handle, { updatedAtIso: string; updatedAtMs: number }>`
 - Presence-only rows (`admin_only`, `shopify_only`) unchanged.
 - Timestamp comparison uses consistent UTC epoch ms normalization.
 - UI indicates that comparison is timestamp-only, not deep content sync.

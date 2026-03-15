@@ -14,19 +14,29 @@
   } from "firebase/firestore";
 
   type RowStatus = "admin_only" | "shopify_only" | "both";
+  type DriftStatus = "unknown" | "in_sync" | "local_ahead" | "shopify_ahead";
   type ViewFilter =
     | "OUT_OF_SYNC"
     | "ADMIN_ONLY"
     | "SHOPIFY_ONLY"
     | "BOTH"
+    | "BOTH_IN_SYNC"
+    | "BOTH_DRIFTED"
     | "ALL";
+  interface ShopifyAuditHandle {
+    updatedAtIso: string;
+    updatedAtMs: number;
+  }
   interface ListingPresenceRow {
     handle: string;
     status: RowStatus;
     inAdmin: boolean;
     inShopify: boolean;
     adminLastUpdatedMs: number;
+    shopifyLastUpdatedMs: number;
+    drift: DriftStatus;
   }
+  const SKEW_MS = 5000;
 
   const STATUS_PRIORITY: Record<RowStatus, number> = {
     admin_only: 0,
@@ -40,6 +50,7 @@
   let requestedAtLabel = "";
   let lastCompletedAtLabel = "";
   let shopifyHandles: string[] = [];
+  let shopifyHandleDataByNormalized: Record<string, ShopifyAuditHandle> = {};
   let unsubscribeAuditResult: (() => void) | null = null;
   let auditResultTimeout: ReturnType<typeof setTimeout> | null = null;
   let hasRequestedInitial = false;
@@ -94,6 +105,18 @@
     return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
   }
 
+  function classifyDrift(
+    status: RowStatus,
+    adminLastUpdatedMs: number,
+    shopifyLastUpdatedMs: number,
+  ): DriftStatus {
+    if (status !== "both") return "unknown";
+    if (!adminLastUpdatedMs || !shopifyLastUpdatedMs) return "unknown";
+    const delta = adminLastUpdatedMs - shopifyLastUpdatedMs;
+    if (Math.abs(delta) <= SKEW_MS) return "in_sync";
+    return delta > 0 ? "local_ahead" : "shopify_ahead";
+  }
+
   function buildRows(
     adminHandles: string[],
     remoteHandles: string[],
@@ -123,13 +146,29 @@
         const handle = adminByKey.get(key) || shopifyByKey.get(key) || key;
         const listing = inAdmin ? handleToListing[handle] : null;
         const adminLastUpdatedMs = Number(listing?.lastUpdated || 0);
+        const shopifyLastUpdatedMs = Number(
+          shopifyHandleDataByNormalized[key]?.updatedAtMs || 0,
+        );
         const status: RowStatus =
           inAdmin && inShopify
             ? "both"
             : inAdmin
               ? "admin_only"
               : "shopify_only";
-        return { handle, status, inAdmin, inShopify, adminLastUpdatedMs };
+        const drift = classifyDrift(
+          status,
+          adminLastUpdatedMs,
+          shopifyLastUpdatedMs,
+        );
+        return {
+          handle,
+          status,
+          inAdmin,
+          inShopify,
+          adminLastUpdatedMs,
+          shopifyLastUpdatedMs,
+          drift,
+        };
       })
       .sort((a, b) => {
         const statusDelta =
@@ -151,14 +190,36 @@
     adminOnly: rows.filter((r) => r.status === "admin_only").length,
     shopifyOnly: rows.filter((r) => r.status === "shopify_only").length,
     both: rows.filter((r) => r.status === "both").length,
+    bothInSync: rows.filter((r) => r.status === "both" && r.drift === "in_sync")
+      .length,
+    bothDrifted: rows.filter(
+      (r) =>
+        r.status === "both" &&
+        (r.drift === "local_ahead" || r.drift === "shopify_ahead"),
+    ).length,
   };
-  $: outOfSyncCount = summary.adminOnly + summary.shopifyOnly;
+  $: outOfSyncCount =
+    summary.adminOnly + summary.shopifyOnly + summary.bothDrifted;
   $: visibleRows = rows.filter((row) => {
     if (activeFilter === "ALL") return true;
-    if (activeFilter === "OUT_OF_SYNC") return row.status !== "both";
+    if (activeFilter === "OUT_OF_SYNC") {
+      return (
+        row.status === "admin_only" ||
+        row.status === "shopify_only" ||
+        row.drift === "local_ahead" ||
+        row.drift === "shopify_ahead"
+      );
+    }
     if (activeFilter === "ADMIN_ONLY") return row.status === "admin_only";
     if (activeFilter === "SHOPIFY_ONLY") return row.status === "shopify_only";
     if (activeFilter === "BOTH") return row.status === "both";
+    if (activeFilter === "BOTH_IN_SYNC")
+      return row.status === "both" && row.drift === "in_sync";
+    if (activeFilter === "BOTH_DRIFTED")
+      return (
+        row.status === "both" &&
+        (row.drift === "local_ahead" || row.drift === "shopify_ahead")
+      );
     return true;
   });
 
@@ -180,7 +241,23 @@
                 .map((h: any) => String(h || "").trim())
                 .filter(Boolean)
             : [];
+          const byHandleRaw =
+            data?.payload?.shopifyByHandle &&
+            typeof data.payload.shopifyByHandle === "object"
+              ? data.payload.shopifyByHandle
+              : {};
+          const normalizedByHandle: Record<string, ShopifyAuditHandle> = {};
+          for (const [rawHandle, rawValue] of Object.entries(byHandleRaw)) {
+            const key = normalizeHandle(rawHandle);
+            if (!key) continue;
+            const value = rawValue as any;
+            normalizedByHandle[key] = {
+              updatedAtIso: String(value?.updatedAtIso || "").trim(),
+              updatedAtMs: Number(value?.updatedAtMs || 0),
+            };
+          }
           shopifyHandles = handles;
+          shopifyHandleDataByNormalized = normalizedByHandle;
           lastCompletedAtLabel = new Date().toLocaleString();
           isLoading = false;
           error = "";
@@ -320,7 +397,7 @@
     <div>
       <h1>Shopify Listings</h1>
       <p class="subtext">
-        MVP presence audit by handle: admin-only, Shopify-only, or both.
+        MVP handle audit with timestamp drift comparison (SKEW_MS = {SKEW_MS}).
       </p>
     </div>
     <button
@@ -373,6 +450,22 @@
         <span class="value">{summary.both}</span>
       </button>
       <button
+        class="summary-card both-sync"
+        class:active={activeFilter === "BOTH_IN_SYNC"}
+        on:click={() => (activeFilter = "BOTH_IN_SYNC")}
+      >
+        <span class="label">Both In Sync</span>
+        <span class="value">{summary.bothInSync}</span>
+      </button>
+      <button
+        class="summary-card both-drift"
+        class:active={activeFilter === "BOTH_DRIFTED"}
+        on:click={() => (activeFilter = "BOTH_DRIFTED")}
+      >
+        <span class="label">Both Drifted</span>
+        <span class="value">{summary.bothDrifted}</span>
+      </button>
+      <button
         class="summary-card all"
         class:active={activeFilter === "ALL"}
         on:click={() => (activeFilter = "ALL")}
@@ -399,15 +492,17 @@
           <tr>
             <th>Handle</th>
             <th>Status</th>
+            <th>Drift</th>
             <th>Admin</th>
             <th>Shopify</th>
             <th>Admin Updated</th>
+            <th>Shopify Updated</th>
           </tr>
         </thead>
         <tbody>
           {#if visibleRows.length === 0}
             <tr>
-              <td colspan="5" class="empty">No rows for current filter.</td>
+              <td colspan="7" class="empty">No rows for current filter.</td>
             </tr>
           {:else}
             {#each visibleRows as row}
@@ -425,11 +520,21 @@
                     {row.status.replace("_", " ")}
                   </span>
                 </td>
+                <td>
+                  <span class="badge drift {row.drift}">
+                    {row.drift.replace("_", " ")}
+                  </span>
+                </td>
                 <td>{row.inAdmin ? "yes" : "no"}</td>
                 <td>{row.inShopify ? "yes" : "no"}</td>
                 <td>
                   {row.adminLastUpdatedMs > 0
                     ? new Date(row.adminLastUpdatedMs).toLocaleString()
+                    : "-"}
+                </td>
+                <td>
+                  {row.shopifyLastUpdatedMs > 0
+                    ? new Date(row.shopifyLastUpdatedMs).toLocaleString()
                     : "-"}
                 </td>
               </tr>
@@ -561,6 +666,16 @@
     color: #166534;
   }
 
+  .summary-card.both-sync {
+    background: #ecfdf5;
+    color: #065f46;
+  }
+
+  .summary-card.both-drift {
+    background: #fff7ed;
+    color: #9a3412;
+  }
+
   .summary-card.all {
     background: #f3f4f6;
   }
@@ -648,6 +763,30 @@
   .badge.both {
     background: #dcfce7;
     color: #166534;
+  }
+
+  .badge.drift {
+    text-transform: none;
+  }
+
+  .badge.unknown {
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  .badge.in_sync {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .badge.local_ahead {
+    background: #ffedd5;
+    color: #9a3412;
+  }
+
+  .badge.shopify_ahead {
+    background: #dbeafe;
+    color: #1d4ed8;
   }
 
   .empty {
