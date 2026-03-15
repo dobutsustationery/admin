@@ -52,24 +52,7 @@ function ensureCategory(state: ListingsState, category: string) {
   }
 }
 
-function toTimestampMs(ts: any): number {
-  if (typeof ts === "number") return ts;
-  if (typeof ts?.seconds === "number") {
-    const nanos = Number(ts?.nanoseconds || 0);
-    return ts.seconds * 1000 + Math.floor(nanos / 1_000_000);
-  }
-  if (typeof ts?._seconds === "number") {
-    const nanos = Number(ts?._nanoseconds || 0);
-    return ts._seconds * 1000 + Math.floor(nanos / 1_000_000);
-  }
-  if (typeof ts?.toDate === "function") return ts.toDate().getTime();
-  return 0;
-}
-
-function actionTimestampMs(action: any, fallback = 0): number {
-  const ts = toTimestampMs(action?.timestamp ?? action?._timestamp);
-  return ts || fallback;
-}
+type TimestampedAction = { _timestamp?: number };
 
 // Actions
 export const create_listing = createAction<{ listing: Listing }>(
@@ -103,14 +86,10 @@ export const listings = createReducer(initialState, (builder) => {
       const { handle, changes } = action.payload;
       const existing = state.handleToListing[handle];
       if (existing) {
-        const lastUpdated = actionTimestampMs(
-          action,
-          existing.lastUpdated || 0,
-        );
         state.handleToListing[handle] = {
           ...existing,
           ...changes,
-          lastUpdated,
+          lastUpdated: (action as TimestampedAction)._timestamp ?? 0,
         };
         if (changes.productCategory)
           ensureCategory(state, changes.productCategory);
@@ -131,7 +110,7 @@ export const listings = createReducer(initialState, (builder) => {
         const exists = listing.images.some((img) => img.id === image.id);
         if (!exists) {
           listing.images.push(image);
-          listing.lastUpdated = actionTimestampMs(action, listing.lastUpdated);
+          listing.lastUpdated = (action as TimestampedAction)._timestamp ?? 0;
         }
       }
     })
@@ -140,7 +119,7 @@ export const listings = createReducer(initialState, (builder) => {
       const listing = state.handleToListing[handle];
       if (listing) {
         listing.images = listing.images.filter((img) => img.id !== imageId);
-        listing.lastUpdated = actionTimestampMs(action, listing.lastUpdated);
+        listing.lastUpdated = (action as TimestampedAction)._timestamp ?? 0;
       }
     })
     // Legacy Action Handling for Replay
@@ -149,7 +128,7 @@ export const listings = createReducer(initialState, (builder) => {
         state,
         action.payload.id,
         action.payload.item,
-        (action as any).timestamp,
+        (action as TimestampedAction)._timestamp ?? 0,
       );
     })
     .addCase(bulk_import_items, (state, action) => {
@@ -161,7 +140,7 @@ export const listings = createReducer(initialState, (builder) => {
           state,
           importItem.id,
           importItem.item,
-          (action as any).timestamp,
+          (action as TimestampedAction)._timestamp ?? 0,
         );
       }
     })
@@ -178,7 +157,7 @@ export const listings = createReducer(initialState, (builder) => {
           id,
           newHandle,
           handle,
-          (action as any).timestamp,
+          (action as TimestampedAction)._timestamp ?? 0,
         );
         return;
       }
@@ -225,9 +204,8 @@ function handleLegacyUpdate(
   state: ListingsState,
   id: string,
   itemPayload: any,
-  timestamp: any,
+  timestampMs: number,
 ) {
-  const timestampMs = toTimestampMs(timestamp);
   // 1. Resolve Handle
   let handle = state.idToHandle[id];
 
@@ -313,7 +291,7 @@ function handleLegacyUpdate(
       */
 
   if (targetHandle !== handle) {
-    applyHandleUpdate(state, id, targetHandle, handle);
+    applyHandleUpdate(state, id, targetHandle, handle, timestampMs);
     const nextListing = state.handleToListing[targetHandle];
     if (nextListing) {
       listing = nextListing;
@@ -364,9 +342,8 @@ function applyHandleUpdate(
   id: string,
   newHandle: string,
   previousHandle?: string,
-  timestamp?: any,
+  timestampMs = 0,
 ) {
-  const timestampMs = toTimestampMs(timestamp);
   const priorHandle = previousHandle || state.idToHandle[id];
   if (priorHandle === newHandle) return;
 

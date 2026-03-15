@@ -30,7 +30,23 @@ function findDateNowLines(text) {
   return hits;
 }
 
+function findCreatedAtReducerLines(text) {
+  const lines = text.split("\n");
+  const hits = [];
+  lines.forEach((line, index) => {
+    if (
+      line.includes("payload.createdAt") ||
+      line.includes("createdAt?:") ||
+      line.includes("createdAt:")
+    ) {
+      hits.push(index + 1);
+    }
+  });
+  return hits;
+}
+
 const violations = [];
+const createdAtViolations = [];
 
 for (const target of targets) {
   const abs = path.resolve(root, target.file);
@@ -48,6 +64,11 @@ for (const target of targets) {
   if (lines.length > 0) {
     violations.push({ file: target.file, lines });
   }
+
+  const createdAtLines = findCreatedAtReducerLines(inspected);
+  if (createdAtLines.length > 0) {
+    createdAtViolations.push({ file: target.file, lines: createdAtLines });
+  }
 }
 
 if (violations.length > 0) {
@@ -55,6 +76,16 @@ if (violations.length > 0) {
     "[no-date-now-in-reducers] Found Date.now() usage in reducer files:",
   );
   for (const v of violations) {
+    console.error(`  - ${v.file}: ${v.lines.join(", ")}`);
+  }
+  process.exit(1);
+}
+
+if (createdAtViolations.length > 0) {
+  console.error(
+    "[no-date-now-in-reducers] Found createdAt usage in reducer files (use action._timestamp):",
+  );
+  for (const v of createdAtViolations) {
     console.error(`  - ${v.file}: ${v.lines.join(", ")}`);
   }
   process.exit(1);
