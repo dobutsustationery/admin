@@ -49,20 +49,20 @@ function getShopifyConfig() {
   };
 }
 
-async function fetchAllShopifyProductHandles(config) {
+async function fetchAllShopifyProductAuditData(config) {
   const storeUrl = shopifyCore.normalizeStoreUrl(config?.storeUrl || "");
   const apiVersion = String(config?.apiVersion || "2026-01").trim();
   if (!storeUrl) {
     throw new Error("Missing SHOPIFY_STORE_URL");
   }
 
-  const handles = new Set();
+  const handleMap = new Map();
   let sinceId = 0;
 
   while (true) {
     const params = new URLSearchParams({
       limit: "250",
-      fields: "id,handle",
+      fields: "id,handle,updated_at",
       since_id: String(sinceId),
     });
     const endpoint = `https://${storeUrl}/admin/api/${apiVersion}/products.json?${params.toString()}`;
@@ -72,7 +72,21 @@ async function fetchAllShopifyProductHandles(config) {
 
     for (const product of products) {
       const handle = String(product?.handle || "").trim();
-      if (handle) handles.add(handle);
+      if (!handle) continue;
+
+      const updatedAtIso = String(product?.updated_at || "").trim();
+      const updatedAtMs = updatedAtIso ? Date.parse(updatedAtIso) : 0;
+      const normalizedUpdatedAtMs = Number.isFinite(updatedAtMs)
+        ? updatedAtMs
+        : 0;
+
+      const existing = handleMap.get(handle);
+      if (!existing || normalizedUpdatedAtMs > existing.updatedAtMs) {
+        handleMap.set(handle, {
+          updatedAtIso,
+          updatedAtMs: normalizedUpdatedAtMs,
+        });
+      }
     }
 
     if (products.length === 0) break;
@@ -82,7 +96,11 @@ async function fetchAllShopifyProductHandles(config) {
     }
   }
 
-  return Array.from(handles).sort((a, b) => a.localeCompare(b));
+  const shopifyHandles = Array.from(handleMap.keys()).sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const shopifyByHandle = Object.fromEntries(handleMap.entries());
+  return { shopifyHandles, shopifyByHandle };
 }
 
 function logSkipped(dispatched, requestId, domain) {
@@ -278,7 +296,8 @@ exports.shopifyListingAuditRequest = onDocumentCreated(
 
     try {
       const shopifyConfig = getShopifyConfig();
-      const shopifyHandles = await fetchAllShopifyProductHandles(shopifyConfig);
+      const { shopifyHandles, shopifyByHandle } =
+        await fetchAllShopifyProductAuditData(shopifyConfig);
 
       await db.collection(SYNC_COLLECTION).add({
         eventType: "shopify/listings_audit_completed",
@@ -292,6 +311,7 @@ exports.shopifyListingAuditRequest = onDocumentCreated(
         payload: {
           handleCount: shopifyHandles.length,
           shopifyHandles,
+          shopifyByHandle,
         },
       });
     } catch (error) {
