@@ -11,6 +11,7 @@ import { getStoredToken } from "./google-photos";
 import type { ListingImage } from "./listings-slice";
 import { categorize_photo, uncategorize_photo } from "./photos-slice";
 import { toGoogleDrivePublicImageUrl } from "./drive-url";
+import type { TimestampedAction } from "./timestamped-action";
 
 // Define AppThunk locally if not exported
 export type AppThunk<ReturnType = void> = ThunkAction<
@@ -141,9 +142,8 @@ const initialState: ListingCreationState = {
 
 // --- Slice ---
 
-type TimestampedAction = { _timestamp?: number };
-const actionTimestampMs = (action: TimestampedAction): number =>
-  action._timestamp ?? 0;
+const actionTimestampMs = (action: unknown): number =>
+  (action as TimestampedAction)._timestamp;
 
 const listingCreationSlice = createSlice({
   name: "listingCreation",
@@ -173,9 +173,7 @@ const listingCreationSlice = createSlice({
     set_scanning: (state, action: PayloadAction<boolean>) => {
       state.isScanning = action.payload;
       if (action.payload) {
-        state.lastScanTimestamp = actionTimestampMs(
-          action as TimestampedAction,
-        );
+        state.lastScanTimestamp = actionTimestampMs(action);
       } else {
         state.scanProgress = {
           current: 0,
@@ -198,9 +196,9 @@ const listingCreationSlice = createSlice({
     ) => {
       state.scanProgress = {
         ...action.payload,
-        lastUpdate: actionTimestampMs(action as TimestampedAction),
+        lastUpdate: actionTimestampMs(action),
       };
-      state.lastScanTimestamp = actionTimestampMs(action as TimestampedAction);
+      state.lastScanTimestamp = actionTimestampMs(action);
       if (action.payload.janCode) {
         state.lastScanJan = action.payload.janCode;
       }
@@ -242,8 +240,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{
         janCodes: string[];
         batchId: string;
-      }> &
-        TimestampedAction,
+      }>,
     ) => {
       state.activeBatchJans = action.payload.janCodes;
       state.originalBatchJans = action.payload.janCodes; // Set source

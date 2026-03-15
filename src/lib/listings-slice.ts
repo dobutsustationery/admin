@@ -7,6 +7,7 @@ import {
   rename_subtype,
 } from "./inventory";
 import { generateHandle } from "./handle-utils";
+import type { TimestampedAction } from "./timestamped-action";
 
 export interface ListingImage {
   id: string;
@@ -52,7 +53,8 @@ function ensureCategory(state: ListingsState, category: string) {
   }
 }
 
-type TimestampedAction = { _timestamp?: number };
+const actionTimestampMs = (action: unknown): number =>
+  (action as TimestampedAction)._timestamp;
 
 // Actions
 export const create_listing = createAction<{ listing: Listing }>(
@@ -89,7 +91,7 @@ export const listings = createReducer(initialState, (builder) => {
         state.handleToListing[handle] = {
           ...existing,
           ...changes,
-          lastUpdated: (action as TimestampedAction)._timestamp ?? 0,
+          lastUpdated: actionTimestampMs(action),
         };
         if (changes.productCategory)
           ensureCategory(state, changes.productCategory);
@@ -110,7 +112,7 @@ export const listings = createReducer(initialState, (builder) => {
         const exists = listing.images.some((img) => img.id === image.id);
         if (!exists) {
           listing.images.push(image);
-          listing.lastUpdated = (action as TimestampedAction)._timestamp ?? 0;
+          listing.lastUpdated = actionTimestampMs(action);
         }
       }
     })
@@ -119,7 +121,7 @@ export const listings = createReducer(initialState, (builder) => {
       const listing = state.handleToListing[handle];
       if (listing) {
         listing.images = listing.images.filter((img) => img.id !== imageId);
-        listing.lastUpdated = (action as TimestampedAction)._timestamp ?? 0;
+        listing.lastUpdated = actionTimestampMs(action);
       }
     })
     // Legacy Action Handling for Replay
@@ -128,7 +130,7 @@ export const listings = createReducer(initialState, (builder) => {
         state,
         action.payload.id,
         action.payload.item,
-        (action as TimestampedAction)._timestamp ?? 0,
+        actionTimestampMs(action),
       );
     })
     .addCase(bulk_import_items, (state, action) => {
@@ -140,7 +142,7 @@ export const listings = createReducer(initialState, (builder) => {
           state,
           importItem.id,
           importItem.item,
-          (action as TimestampedAction)._timestamp ?? 0,
+          actionTimestampMs(action),
         );
       }
     })
@@ -157,7 +159,7 @@ export const listings = createReducer(initialState, (builder) => {
           id,
           newHandle,
           handle,
-          (action as TimestampedAction)._timestamp ?? 0,
+          actionTimestampMs(action),
         );
         return;
       }
