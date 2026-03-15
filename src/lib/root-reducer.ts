@@ -267,11 +267,14 @@ const mapShopifyToInventory = (importItem: any): Item => {
 };
 
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
-export const rootReducer = (state: any, action: any, logger = logAction) => {
-  action = normalizeTimestampedAction(action);
-  const actionTs = action as TimestampedAction;
+export const rootReducer = (
+  state: any,
+  incomingAction: any,
+  logger = logAction,
+) => {
+  const action = normalizeTimestampedAction(incomingAction);
   const inheritTimestamp = <T extends Record<string, unknown>>(a: T) =>
-    withInheritedTimestamp(a, actionTs);
+    withInheritedTimestamp(a, action);
 
   if (action.type === "HYDRATE") {
     const hydratedState = { ...state, ...action.payload };

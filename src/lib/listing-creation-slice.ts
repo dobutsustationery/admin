@@ -11,7 +11,7 @@ import { getStoredToken } from "./google-photos";
 import type { ListingImage } from "./listings-slice";
 import { categorize_photo, uncategorize_photo } from "./photos-slice";
 import { toGoogleDrivePublicImageUrl } from "./drive-url";
-import type { TimestampedAction } from "./timestamped-action";
+import { withTimestamp } from "./timestamped-case-reducer";
 
 // Define AppThunk locally if not exported
 export type AppThunk<ReturnType = void> = ThunkAction<
@@ -142,8 +142,8 @@ const initialState: ListingCreationState = {
 
 // --- Slice ---
 
-const actionTimestampMs = (action: unknown): number =>
-  (action as TimestampedAction)._timestamp;
+const actionTimestampMs = (action: { _timestamp: number }): number =>
+  action._timestamp;
 
 const listingCreationSlice = createSlice({
   name: "listingCreation",
@@ -170,7 +170,7 @@ const listingCreationSlice = createSlice({
       if (action.payload.variantPrompt)
         state.globalVariantPrompt = action.payload.variantPrompt;
     },
-    set_scanning: (state, action: PayloadAction<boolean>) => {
+    set_scanning: withTimestamp((state, action) => {
       state.isScanning = action.payload;
       if (action.payload) {
         state.lastScanTimestamp = actionTimestampMs(action);
@@ -184,16 +184,8 @@ const listingCreationSlice = createSlice({
         state.lastScanTimestamp = undefined;
         state.lastScanJan = undefined;
       }
-    },
-    set_scan_progress: (
-      state,
-      action: PayloadAction<{
-        current: number;
-        total: number;
-        message: string;
-        janCode?: string;
-      }>,
-    ) => {
+    }),
+    set_scan_progress: withTimestamp((state, action) => {
       state.scanProgress = {
         ...action.payload,
         lastUpdate: actionTimestampMs(action),
@@ -202,7 +194,7 @@ const listingCreationSlice = createSlice({
       if (action.payload.janCode) {
         state.lastScanJan = action.payload.janCode;
       }
-    },
+    }),
     // Session / Batch
     add_proposals_internal: (
       state,
@@ -235,13 +227,7 @@ const listingCreationSlice = createSlice({
         state.currentStepIndex = Math.max(0, state.activeBatchJans.length - 1);
       }
     },
-    start_batch: (
-      state,
-      action: PayloadAction<{
-        janCodes: string[];
-        batchId: string;
-      }>,
-    ) => {
+    start_batch: withTimestamp((state, action) => {
       state.activeBatchJans = action.payload.janCodes;
       state.originalBatchJans = action.payload.janCodes; // Set source
       state.currentStepIndex = -1; // -1 = Batch Overview / Bulk Edit
@@ -249,7 +235,7 @@ const listingCreationSlice = createSlice({
       state.activeBatchCreatedAt = actionTimestampMs(action);
       state.lastCompletedBatchId = undefined;
       state.hasCelebrated = false;
-    },
+    }),
     set_current_step: (state, action: PayloadAction<number>) => {
       state.currentStepIndex = action.payload;
     },

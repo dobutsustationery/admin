@@ -7,7 +7,7 @@ import {
   rename_subtype,
 } from "./inventory";
 import { generateHandle } from "./handle-utils";
-import type { TimestampedAction } from "./timestamped-action";
+import { withTimestamp } from "./timestamped-case-reducer";
 
 export interface ListingImage {
   id: string;
@@ -53,8 +53,8 @@ function ensureCategory(state: ListingsState, category: string) {
   }
 }
 
-const actionTimestampMs = (action: unknown): number =>
-  (action as TimestampedAction)._timestamp;
+const actionTimestampMs = (action: { _timestamp: number }): number =>
+  action._timestamp;
 
 // Actions
 export const create_listing = createAction<{ listing: Listing }>(
@@ -84,19 +84,22 @@ export const listings = createReducer(initialState, (builder) => {
       state.handleToListing[listing.handle] = listing;
       ensureCategory(state, listing.productCategory);
     })
-    .addCase(update_listing, (state, action) => {
-      const { handle, changes } = action.payload;
-      const existing = state.handleToListing[handle];
-      if (existing) {
-        state.handleToListing[handle] = {
-          ...existing,
-          ...changes,
-          lastUpdated: actionTimestampMs(action),
-        };
-        if (changes.productCategory)
-          ensureCategory(state, changes.productCategory);
-      }
-    })
+    .addCase(
+      update_listing,
+      withTimestamp((state, action) => {
+        const { handle, changes } = action.payload;
+        const existing = state.handleToListing[handle];
+        if (existing) {
+          state.handleToListing[handle] = {
+            ...existing,
+            ...changes,
+            lastUpdated: actionTimestampMs(action),
+          };
+          if (changes.productCategory)
+            ensureCategory(state, changes.productCategory);
+        }
+      }),
+    )
     .addCase(delete_listing, (state, action) => {
       const { handle } = action.payload;
       delete state.handleToListing[handle];
@@ -105,100 +108,115 @@ export const listings = createReducer(initialState, (builder) => {
         if (h === handle) delete state.idToHandle[id];
       }
     })
-    .addCase(add_listing_image, (state, action) => {
-      const { handle, image } = action.payload;
-      const listing = state.handleToListing[handle];
-      if (listing) {
-        const exists = listing.images.some((img) => img.id === image.id);
-        if (!exists) {
-          listing.images.push(image);
+    .addCase(
+      add_listing_image,
+      withTimestamp((state, action) => {
+        const { handle, image } = action.payload;
+        const listing = state.handleToListing[handle];
+        if (listing) {
+          const exists = listing.images.some((img) => img.id === image.id);
+          if (!exists) {
+            listing.images.push(image);
+            listing.lastUpdated = actionTimestampMs(action);
+          }
+        }
+      }),
+    )
+    .addCase(
+      remove_listing_image,
+      withTimestamp((state, action) => {
+        const { handle, imageId } = action.payload;
+        const listing = state.handleToListing[handle];
+        if (listing) {
+          listing.images = listing.images.filter((img) => img.id !== imageId);
           listing.lastUpdated = actionTimestampMs(action);
         }
-      }
-    })
-    .addCase(remove_listing_image, (state, action) => {
-      const { handle, imageId } = action.payload;
-      const listing = state.handleToListing[handle];
-      if (listing) {
-        listing.images = listing.images.filter((img) => img.id !== imageId);
-        listing.lastUpdated = actionTimestampMs(action);
-      }
-    })
+      }),
+    )
     // Legacy Action Handling for Replay
-    .addCase(update_item, (state, action) => {
-      handleLegacyUpdate(
-        state,
-        action.payload.id,
-        action.payload.item,
-        actionTimestampMs(action),
-      );
-    })
-    .addCase(bulk_import_items, (state, action) => {
-      // Iterate over all items in the bulk import and process them
-      for (const importItem of action.payload.items) {
-        // We treat 'new' and 'update' similarly for listings:
-        // ensure listing exists and update fields if present.
+    .addCase(
+      update_item,
+      withTimestamp((state, action) => {
         handleLegacyUpdate(
           state,
-          importItem.id,
-          importItem.item,
+          action.payload.id,
+          action.payload.item,
           actionTimestampMs(action),
         );
-      }
-    })
-    .addCase(update_field, (state, action) => {
-      const { id, field, to } = action.payload;
-      const handle = state.idToHandle[id];
+      }),
+    )
+    .addCase(
+      bulk_import_items,
+      withTimestamp((state, action) => {
+        // Iterate over all items in the bulk import and process them
+        for (const importItem of action.payload.items) {
+          // We treat 'new' and 'update' similarly for listings:
+          // ensure listing exists and update fields if present.
+          handleLegacyUpdate(
+            state,
+            importItem.id,
+            importItem.item,
+            actionTimestampMs(action),
+          );
+        }
+      }),
+    )
+    .addCase(
+      update_field,
+      withTimestamp((state, action) => {
+        const { id, field, to } = action.payload;
+        const handle = state.idToHandle[id];
 
-      // Map Item fields to Listing fields
-      const fieldKey = field as string;
-      if (fieldKey === "handle") {
-        const newHandle = String(to);
-        applyHandleUpdate(
-          state,
-          id,
-          newHandle,
-          handle,
-          actionTimestampMs(action),
-        );
-        return;
-      }
+        // Map Item fields to Listing fields
+        const fieldKey = field as string;
+        if (fieldKey === "handle") {
+          const newHandle = String(to);
+          applyHandleUpdate(
+            state,
+            id,
+            newHandle,
+            handle,
+            actionTimestampMs(action),
+          );
+          return;
+        }
 
-      if (!handle) return; // Can't update if we don't know the handle
+        if (!handle) return; // Can't update if we don't know the handle
 
-      const listing = state.handleToListing[handle];
-      if (!listing) return;
+        const listing = state.handleToListing[handle];
+        if (!listing) return;
 
-      if (fieldKey === "description") {
-        // Rename logic similar to above
-        const newTitle = String(to);
-        const janCode = (listing as any).janCode;
-        if (janCode) {
-          const newHandle = generateHandle(newTitle, janCode);
-          if (newHandle !== handle) {
-            const movedListing = {
-              ...listing,
-              handle: newHandle,
-              title: newTitle,
-            };
-            delete state.handleToListing[handle];
-            state.handleToListing[newHandle] = movedListing;
-            state.idToHandle[id] = newHandle;
+        if (fieldKey === "description") {
+          // Rename logic similar to above
+          const newTitle = String(to);
+          const janCode = (listing as any).janCode;
+          if (janCode) {
+            const newHandle = generateHandle(newTitle, janCode);
+            if (newHandle !== handle) {
+              const movedListing = {
+                ...listing,
+                handle: newHandle,
+                title: newTitle,
+              };
+              delete state.handleToListing[handle];
+              state.handleToListing[newHandle] = movedListing;
+              state.idToHandle[id] = newHandle;
+            } else {
+              listing.title = newTitle;
+            }
           } else {
             listing.title = newTitle;
           }
-        } else {
-          listing.title = newTitle;
+        } else if (fieldKey === "bodyHtml") {
+          // Legacy field support
+          listing.bodyHtml = String(to);
+        } else if (fieldKey === "productCategory") {
+          // Legacy
+          listing.productCategory = String(to);
+          ensureCategory(state, listing.productCategory);
         }
-      } else if (fieldKey === "bodyHtml") {
-        // Legacy field support
-        listing.bodyHtml = String(to);
-      } else if (fieldKey === "productCategory") {
-        // Legacy
-        listing.productCategory = String(to);
-        ensureCategory(state, listing.productCategory);
-      }
-    });
+      }),
+    );
 });
 
 // Helper to consolidate logic between update_item and bulk_import_items
