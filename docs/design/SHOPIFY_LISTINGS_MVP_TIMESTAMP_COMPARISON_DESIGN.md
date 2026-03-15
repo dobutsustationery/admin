@@ -16,61 +16,53 @@ This is an MVP timestamp check only (no deep content diff).
 
 ## 2. Current State
 
-- Shopify listings audit function returns handle list only.
-- UI compares presence (`admin_only`, `shopify_only`, `both`).
+- Shopify listings audit function returns handle presence data.
+- UI compares presence (`admin_only`, `shopify_only`, `both`) on `/shopify-listings`.
 - Local listing model has `listing.lastUpdated`.
+- Timestamp handling has been remediated:
+  - root reducer normalizes incoming events once into canonical `timestamp` (server shape) and `_timestamp` (ms)
+  - reducers consume normalized event time (`_timestamp`) rather than `Date.now()`
+  - internal reducer-composed actions inherit the same normalized timestamp pair
 
-## 3. Important Reliability Caveat (Current System)
+## 3. Timestamp Reliability (Current System)
 
-`listing.lastUpdated` is not consistently a true mutation timestamp in all reducer paths today:
+`listing.lastUpdated` is now event-time based (from normalized `_timestamp`) in listing mutation paths, so it is suitable for MVP drift comparison.
 
-- some reducer updates use `Date.now()` in reducer execution
-- replay/hydration can make timestamps reflect replay time instead of original mutation time
+Remaining caveat is on Shopify semantics, not local timestamp integrity:
 
-This means naive comparison against Shopify `updated_at` can be misleading.
+- Shopify `Product.updatedAt` can advance for inventory-related changes and other product mutations, not only fields we consider "listing content".
 
 ## 4. Data Needed for Timestamp MVP
 
-### Shopify side
+### Shopify side (required)
 
-From Admin REST `products.json`, include `updated_at` per handle:
+From Admin GraphQL (preferred) include `updatedAt` per handle:
 
-- request `fields=id,handle,updated_at`
+- query `products { handle updatedAt }`
 - output map:
 
 ```ts
 shopifyByHandle: Record<string, { updatedAtIso: string; updatedAtMs: number }>;
 ```
 
-### Admin side
+### Admin side (required)
 
-Preferred (accurate): derive `lastLocalMutationAtMs` from broadcast action timestamps for listing-affecting actions.
-
-Fallback (quick, lower confidence): `listing.lastUpdated`.
+Use `listing.lastUpdated` from replayed state as local comparison timestamp.
 
 ## 5. Recommended MVP Approach
 
-### Phase A (smallest lift, medium confidence)
+### Single-phase MVP (now reliable enough)
 
 1. Extend backend listings audit payload to include Shopify `updated_at`.
 2. On frontend, for `both` rows:
-   - use `adminTs = listing.lastUpdated || 0`
-   - use `shopifyTs = updatedAtMs || 0`
+   - use `adminTs = listing.lastUpdated`
+   - use `shopifyTs = updatedAtMs`
    - classify with skew tolerance `SKEW_MS = 60_000`:
      - both missing -> `unknown`
      - abs(adminTs - shopifyTs) <= SKEW_MS -> `in_sync`
      - adminTs > shopifyTs + SKEW_MS -> `local_ahead`
      - shopifyTs > adminTs + SKEW_MS -> `shopify_ahead`
-3. Label this as **timestamp heuristic** in UI.
-
-### Phase B (properly reliable)
-
-Replace `adminTs` source with event-derived mutation timestamps:
-
-- derive per-handle max timestamp from broadcast actions that affect listing sync fields
-- remove dependence on reducer `Date.now()`
-
-This aligns with `SHOPIFY_LISTING_SYNC_AUDIT_DESIGN`.
+3. Label this as **timestamp comparison** (not deep content diff) in UI.
 
 ## 6. UI Changes
 
@@ -87,18 +79,16 @@ Optional filters:
 
 ## 7. Complexity Estimate
 
-- **Phase A:** Low-to-medium (0.5-1 day)
+- **MVP:** Low-to-medium (0.5-1 day)
   - backend payload extension + frontend compare + UI columns
-- **Phase B:** Medium (1-2 days)
-  - event-derived admin mutation timestamp path + tests
 
 ## 8. Risks
 
-- False drift signals while local timestamp source remains reducer-time-based.
+- False drift signals due to Shopify `updatedAt` semantics (can include changes outside our desired sync surface).
 - Timezone/string parsing inconsistencies (must normalize to UTC ms).
 - Large payload if including unnecessary Shopify fields (keep fields minimal).
 
-## 9. Acceptance Criteria (Phase A)
+## 9. Acceptance Criteria (MVP)
 
 - For every `both` handle, UI shows admin + Shopify timestamp and drift badge.
 - Presence-only rows (`admin_only`, `shopify_only`) unchanged.
