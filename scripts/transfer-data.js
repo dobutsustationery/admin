@@ -17,9 +17,8 @@
  *   npm run data:transfer -- --from production --to staging
  *
  * Collections transferred:
- * - broadcast: Complete action history (required for state reconstruction)
- * - users: Admin user data
- * - dobutsu: Orders and payments
+ * - All top-level collections (discovered dynamically)
+ * - All nested subcollections (exported recursively)
  *
  * Note: Requires service account keys for non-emulator environments
  */
@@ -35,8 +34,13 @@ const options = {};
 for (let i = 0; i < args.length; i++) {
   if (args[i].startsWith("--")) {
     const key = args[i].substring(2);
-    options[key] = args[i + 1] || true;
-    i++;
+    const nextArg = args[i + 1];
+    if (!nextArg || nextArg.startsWith("--")) {
+      options[key] = true;
+    } else {
+      options[key] = nextArg;
+      i++;
+    }
   }
 }
 
@@ -69,6 +73,9 @@ if (!command) {
   console.log("  --skip-users         Skip the users collection");
   console.log("  --skip-orders        Skip the dobutsu (orders) collection");
   console.log(
+    "  --recursive-subcollections  Recursively export subcollections for all collections",
+  );
+  console.log(
     "  --force              Required when importing/transferring to production",
   );
   process.exit(1);
@@ -79,10 +86,194 @@ const config = {
   skipBroadcast: options["skip-broadcast"] === true,
   skipUsers: options["skip-users"] === true,
   skipOrders: options["skip-orders"] === true,
+  recursiveSubcollections: options["recursive-subcollections"] === true,
   force: options.force === true,
 };
 
 console.log("🔧 Configuration:", config);
+
+const BATCH_SIZE = 100; // Firestore batch limit
+
+function shouldSkipTopLevelCollection(collectionName) {
+  if (config.skipBroadcast && collectionName === "broadcast") {
+    return true;
+  }
+  if (config.skipUsers && collectionName === "users") {
+    return true;
+  }
+  if (config.skipOrders && collectionName === "dobutsu") {
+    return true;
+  }
+  return false;
+}
+
+function serializeFirestoreData(data) {
+  return JSON.parse(
+    JSON.stringify(data, (key, value) => {
+      if (value && typeof value === "object" && value._seconds !== undefined) {
+        return {
+          _timestamp: true,
+          _seconds: value._seconds,
+          _nanoseconds: value._nanoseconds || 0,
+        };
+      }
+      return value;
+    }),
+  );
+}
+
+function deserializeFirestoreData(data) {
+  return JSON.parse(JSON.stringify(data), (key, value) => {
+    if (
+      value &&
+      typeof value === "object" &&
+      value._timestamp === true &&
+      value._seconds !== undefined
+    ) {
+      return new Timestamp(value._seconds, value._nanoseconds || 0);
+    }
+    return value;
+  });
+}
+
+function normalizeCollectionDocuments(collectionPayload) {
+  if (Array.isArray(collectionPayload)) {
+    return collectionPayload;
+  }
+  if (
+    collectionPayload &&
+    typeof collectionPayload === "object" &&
+    Array.isArray(collectionPayload.documents)
+  ) {
+    return collectionPayload.documents;
+  }
+  return [];
+}
+
+function countExportedDocumentsInCollection(collectionPayload) {
+  const documents = normalizeCollectionDocuments(collectionPayload);
+  let total = documents.length;
+  for (const document of documents) {
+    const subcollections = document.subcollections || {};
+    for (const subcollectionPayload of Object.values(subcollections)) {
+      total += countExportedDocumentsInCollection(subcollectionPayload);
+    }
+  }
+  return total;
+}
+
+function shouldRecurseSubcollectionsForTopLevel(topLevelCollection) {
+  if (config.recursiveSubcollections) {
+    return true;
+  }
+  // Default targeted recursion for known nested structure.
+  return topLevelCollection === "google_auth_results";
+}
+
+async function exportCollectionRecursive(
+  collectionRef,
+  collectionPath,
+  recurseSubcollections,
+) {
+  console.log(`\n  Exporting ${collectionPath}...`);
+  const snapshot = await collectionRef.get();
+  const documents = [];
+
+  const docsSorted = [...snapshot.docs].sort((a, b) => a.id.localeCompare(b.id));
+  for (const [index, doc] of docsSorted.entries()) {
+    const serializedData = serializeFirestoreData(doc.data());
+    const exportedDocument = {
+      id: doc.id,
+      data: serializedData,
+    };
+
+    if (recurseSubcollections) {
+      const subcollectionRefs = await doc.ref.listCollections();
+      const sortedSubcollectionRefs = [...subcollectionRefs].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      );
+
+      if (sortedSubcollectionRefs.length > 0) {
+        exportedDocument.subcollections = {};
+        for (const subcollectionRef of sortedSubcollectionRefs) {
+          const subcollectionPath = `${collectionPath}/${doc.id}/${subcollectionRef.id}`;
+          exportedDocument.subcollections[subcollectionRef.id] =
+            await exportCollectionRecursive(
+              subcollectionRef,
+              subcollectionPath,
+              true,
+            );
+        }
+      }
+    }
+
+    documents.push(exportedDocument);
+    if ((index + 1) % 500 === 0) {
+      console.log(
+        `    ...${collectionPath}: processed ${index + 1}/${docsSorted.length} docs`,
+      );
+    }
+  }
+
+  console.log(`    ✓ Exported ${documents.length} documents from ${collectionPath}`);
+  return {
+    path: collectionPath,
+    documents,
+  };
+}
+
+async function importCollectionRecursive(db, collectionPath, collectionPayload) {
+  const documents = normalizeCollectionDocuments(collectionPayload);
+  if (documents.length === 0) {
+    console.log(`    ✓ Imported 0 documents to ${collectionPath}`);
+    return;
+  }
+
+  console.log(`\n  Importing ${collectionPath} (${documents.length} docs)...`);
+
+  let batch = db.batch();
+  let batchCount = 0;
+  const pendingNestedImports = [];
+
+  for (const document of documents) {
+    const docRef = db.doc(`${collectionPath}/${document.id}`);
+    const deserializedData = deserializeFirestoreData(document.data);
+
+    batch.set(docRef, deserializedData);
+    batchCount++;
+
+    if (document.subcollections && typeof document.subcollections === "object") {
+      pendingNestedImports.push({
+        docPath: `${collectionPath}/${document.id}`,
+        subcollections: document.subcollections,
+      });
+    }
+
+    if (batchCount >= BATCH_SIZE) {
+      await batch.commit();
+      console.log(`    Committed batch of ${batchCount} documents`);
+      batch = db.batch();
+      batchCount = 0;
+    }
+  }
+
+  if (batchCount > 0) {
+    await batch.commit();
+    console.log(`    Committed final batch of ${batchCount} documents`);
+  }
+
+  console.log(`    ✓ Imported ${documents.length} documents to ${collectionPath}`);
+
+  for (const nestedImport of pendingNestedImports) {
+    const subcollections = Object.entries(nestedImport.subcollections).sort(
+      ([a], [b]) => a.localeCompare(b),
+    );
+    for (const [subcollectionName, subcollectionPayload] of subcollections) {
+      const subcollectionPath = `${nestedImport.docPath}/${subcollectionName}`;
+      await importCollectionRecursive(db, subcollectionPath, subcollectionPayload);
+    }
+  }
+}
 
 /**
  * Check if writing to production is allowed
@@ -209,83 +400,51 @@ async function exportData(db, outputDir) {
     mkdirSync(outputDir, { recursive: true });
   }
 
-  const collections = [];
+  const topLevelCollectionRefs = await db.listCollections();
+  const topLevelCollectionNames = topLevelCollectionRefs
+    .map((ref) => ref.id)
+    .sort((a, b) => a.localeCompare(b))
+    .filter((name) => !shouldSkipTopLevelCollection(name));
 
-  if (!config.skipBroadcast) {
-    collections.push("broadcast");
+  console.log(
+    `\n  Found ${topLevelCollectionNames.length} top-level collections after filters`,
+  );
+  for (const collectionName of topLevelCollectionNames) {
+    console.log(`    - ${collectionName}`);
   }
-  if (!config.skipUsers) {
-    collections.push("users");
-  }
-  if (!config.skipOrders) {
-    collections.push("dobutsu");
-  }
-  collections.push("sync");
-  collections.push("sync_secrets");
 
   const exportData = {
     exportedAt: new Date().toISOString(),
     collections: {},
   };
 
-  for (const collectionName of collections) {
-    console.log(`\n  Exporting ${collectionName}...`);
+  for (const collectionName of topLevelCollectionNames) {
     const collectionRef = db.collection(collectionName);
-
-    let snapshot;
-    try {
-      snapshot = await collectionRef.get();
-    } catch (error) {
-      // Handle collection not found or permission errors
-      if (error.code === 5 || error.message.includes("NOT_FOUND")) {
-        console.log(
-          `    ⚠️  Collection "${collectionName}" not found or empty - skipping`,
-        );
-        exportData.collections[collectionName] = [];
-        continue;
-      }
-      // Re-throw other errors
-      throw error;
-    }
-
-    const documents = [];
-
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-
-      // Preserve Firestore Timestamps with full precision
-      // Store them as objects with _seconds and _nanoseconds
-      const serializedData = JSON.parse(
-        JSON.stringify(data, (key, value) => {
-          if (
-            value &&
-            typeof value === "object" &&
-            value._seconds !== undefined
-          ) {
-            // Firestore Timestamp - preserve exact seconds and nanoseconds
-            return {
-              _timestamp: true,
-              _seconds: value._seconds,
-              _nanoseconds: value._nanoseconds || 0,
-            };
-          }
-          return value;
-        }),
+    const recurseSubcollections =
+      shouldRecurseSubcollectionsForTopLevel(collectionName);
+    if (recurseSubcollections) {
+      console.log(
+        `    (subcollection recursion enabled for ${collectionName})`,
       );
-
-      documents.push({
-        id: doc.id,
-        data: serializedData,
-      });
-    });
-
-    exportData.collections[collectionName] = documents;
-    console.log(`    ✓ Exported ${documents.length} documents`);
+    }
+    exportData.collections[collectionName] = await exportCollectionRecursive(
+      collectionRef,
+      collectionName,
+      recurseSubcollections,
+    );
   }
 
   const outputFile = join(outputDir, "firestore-export.json");
   writeFileSync(outputFile, JSON.stringify(exportData, null, 2));
+  const totalDocuments = Object.values(exportData.collections).reduce(
+    (sum, collectionPayload) =>
+      sum + countExportedDocumentsInCollection(collectionPayload),
+    0,
+  );
   console.log(`\n✅ Export complete: ${outputFile}`);
+  console.log(
+    `   Exported ${Object.keys(exportData.collections).length} collections and ${totalDocuments} total documents (including nested subcollections)`,
+  );
 
   return exportData;
 }
@@ -306,59 +465,11 @@ async function importData(db, inputDir) {
   const exportData = JSON.parse(readFileSync(inputFile, "utf8"));
   console.log(`   Exported at: ${exportData.exportedAt}`);
 
-  for (const [collectionName, documents] of Object.entries(
-    exportData.collections,
-  )) {
-    console.log(
-      `\n  Importing ${collectionName} (${documents.length} docs)...`,
-    );
-
-    let batch = db.batch();
-    let batchCount = 0;
-    const BATCH_SIZE = 100; // Firestore batch limit
-
-    for (const { id, data } of documents) {
-      const docRef = db.collection(collectionName).doc(id);
-
-      // Restore Firestore Timestamps from stored _seconds and _nanoseconds
-      const deserializedData = JSON.parse(
-        JSON.stringify(data),
-        (key, value) => {
-          if (
-            value &&
-            typeof value === "object" &&
-            value._timestamp === true &&
-            value._seconds !== undefined
-          ) {
-            // Restore as Firestore Timestamp with exact precision
-            return new Timestamp(value._seconds, value._nanoseconds || 0);
-          }
-          return value;
-        },
-      );
-
-      batch.set(docRef, deserializedData);
-      batchCount++;
-
-      // Commit batch when it reaches the limit
-      if (batchCount >= BATCH_SIZE) {
-        await batch.commit();
-        console.log(`    Committed batch of ${batchCount} documents`);
-        // Create a new batch for the next set of documents
-        batch = db.batch();
-        batchCount = 0;
-      }
-    }
-
-    // Commit remaining documents
-    if (batchCount > 0) {
-      await batch.commit();
-      console.log(`    Committed final batch of ${batchCount} documents`);
-    }
-
-    console.log(
-      `    ✓ Imported ${documents.length} documents to ${collectionName}`,
-    );
+  const topLevelCollections = Object.entries(exportData.collections).sort(
+    ([a], [b]) => a.localeCompare(b),
+  );
+  for (const [collectionName, collectionPayload] of topLevelCollections) {
+    await importCollectionRecursive(db, collectionName, collectionPayload);
   }
 
   console.log("\n✅ Import complete");
