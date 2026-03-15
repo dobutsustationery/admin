@@ -69,10 +69,22 @@ const reducerObject = {
 };
 const combinedReducer = combineReducers(reducerObject);
 
-const toTimestampMs = (ts: any): number | null => {
+export const toTimestampMs = (ts: any): number | null => {
   if (typeof ts === "number") return ts;
-  if (ts?.seconds) return ts.seconds * 1000;
-  if (ts?._seconds) return ts._seconds * 1000;
+  if (typeof ts?.seconds === "number") {
+    const nanos =
+      typeof ts?.nanoseconds === "number"
+        ? ts.nanoseconds
+        : typeof ts?._nanoseconds === "number"
+          ? ts._nanoseconds
+          : 0;
+    return ts.seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
+  if (typeof ts?._seconds === "number") {
+    const nanos =
+      typeof ts?._nanoseconds === "number" ? ts._nanoseconds : 0;
+    return ts._seconds * 1000 + Math.floor(nanos / 1_000_000);
+  }
   if (ts?.toDate) return ts.toDate().getTime();
   return null;
 };
