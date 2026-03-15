@@ -141,20 +141,9 @@ const initialState: ListingCreationState = {
 
 // --- Slice ---
 
-const actionTimestampMs = (action: any): number => {
-  const ts = action?.timestamp ?? action?._timestamp;
-  if (typeof ts === "number") return ts;
-  if (typeof ts?.seconds === "number") {
-    const nanos = Number(ts?.nanoseconds || 0);
-    return ts.seconds * 1000 + Math.floor(nanos / 1_000_000);
-  }
-  if (typeof ts?._seconds === "number") {
-    const nanos = Number(ts?._nanoseconds || 0);
-    return ts._seconds * 1000 + Math.floor(nanos / 1_000_000);
-  }
-  if (typeof ts?.toDate === "function") return ts.toDate().getTime();
-  return 0;
-};
+type TimestampedAction = { _timestamp?: number };
+const actionTimestampMs = (action: TimestampedAction): number =>
+  action._timestamp ?? 0;
 
 const listingCreationSlice = createSlice({
   name: "listingCreation",
@@ -184,7 +173,9 @@ const listingCreationSlice = createSlice({
     set_scanning: (state, action: PayloadAction<boolean>) => {
       state.isScanning = action.payload;
       if (action.payload) {
-        state.lastScanTimestamp = actionTimestampMs(action);
+        state.lastScanTimestamp = actionTimestampMs(
+          action as TimestampedAction,
+        );
       } else {
         state.scanProgress = {
           current: 0,
@@ -207,9 +198,9 @@ const listingCreationSlice = createSlice({
     ) => {
       state.scanProgress = {
         ...action.payload,
-        lastUpdate: actionTimestampMs(action),
+        lastUpdate: actionTimestampMs(action as TimestampedAction),
       };
-      state.lastScanTimestamp = actionTimestampMs(action);
+      state.lastScanTimestamp = actionTimestampMs(action as TimestampedAction);
       if (action.payload.janCode) {
         state.lastScanJan = action.payload.janCode;
       }
@@ -251,14 +242,14 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{
         janCodes: string[];
         batchId: string;
-        createdAt?: number;
-      }>,
+      }> &
+        TimestampedAction,
     ) => {
       state.activeBatchJans = action.payload.janCodes;
       state.originalBatchJans = action.payload.janCodes; // Set source
       state.currentStepIndex = -1; // -1 = Batch Overview / Bulk Edit
       state.activeBatchId = action.payload.batchId;
-      state.activeBatchCreatedAt = action.payload.createdAt ?? 0;
+      state.activeBatchCreatedAt = actionTimestampMs(action);
       state.lastCompletedBatchId = undefined;
       state.hasCelebrated = false;
     },

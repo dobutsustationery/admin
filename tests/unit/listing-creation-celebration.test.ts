@@ -12,7 +12,6 @@ describe("Listing Creation - Celebration Gate", () => {
       start_batch({
         janCodes: ["JAN-1"],
         batchId: "batch-1",
-        createdAt: 1,
       }),
     );
 
@@ -34,7 +33,6 @@ describe("Listing Creation - Celebration Gate", () => {
       start_batch({
         janCodes: ["JAN-1"],
         batchId: "batch-1",
-        createdAt: 1,
       }),
     );
     const completedFirst = reducer(startedFirst, complete_batch());
@@ -46,7 +44,6 @@ describe("Listing Creation - Celebration Gate", () => {
       start_batch({
         janCodes: ["JAN-2"],
         batchId: "batch-2",
-        createdAt: 2,
       }),
     );
     expect(startedSecond.hasCelebrated).toBe(false);

@@ -112,8 +112,7 @@ const normalizeIncomingActionTimestamp = (action: any): any => {
 };
 
 const normalizeActionTimestampMs = (action: any): number => {
-  const ts = action?.timestamp ?? action?._timestamp;
-  return toTimestampMs(ts) ?? 0;
+  return typeof action?._timestamp === "number" ? action._timestamp : 0;
 };
 
 const getIncomingIdObservations = (
@@ -552,7 +551,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       const internalAction = {
         ...bulk_import_items({ items: bulkUpdates }),
         _ephemeral: true,
-        timestamp: action.timestamp || action._timestamp,
+        timestamp: action._timestamp,
       };
 
       nextState = {
@@ -590,7 +589,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               to: listing.title,
             }),
             _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
+            timestamp: action._timestamp,
           };
           nextState = {
             ...nextState,
@@ -612,7 +611,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             const syncListingAction = {
               ...update_listing({ handle, changes: { title: to as string } }),
               _ephemeral: true,
-              timestamp: action.timestamp || action._timestamp,
+              timestamp: action._timestamp,
             };
             nextState = {
               ...nextState,
@@ -634,7 +633,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                       to: to as string,
                     }),
                     _ephemeral: true,
-                    timestamp: action.timestamp || action._timestamp,
+                    timestamp: action._timestamp,
                   };
                   nextState = {
                     ...nextState,
@@ -669,7 +668,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                   to: title,
                 }),
                 _ephemeral: true,
-                timestamp: action.timestamp || action._timestamp,
+                timestamp: action._timestamp,
               };
               nextState = {
                 ...nextState,
@@ -696,7 +695,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       state.listings.handleToListing,
       filter,
       options,
-      toTimestampMs(action.timestamp || action._timestamp) || 0,
+      action._timestamp ?? 0,
     );
 
     const bulkUpdates: BulkImportItem[] = updates.map((u) => ({
@@ -709,7 +708,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       const internalAction = {
         ...bulk_import_items({ items: bulkUpdates }),
         _ephemeral: true,
-        timestamp: action.timestamp || action._timestamp,
+        timestamp: action._timestamp,
       };
 
       nextState = {
@@ -727,7 +726,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           const internalAction = {
             ...add_listing_image({ handle: u.handle, image: u.image }),
             _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
+            timestamp: action._timestamp,
           };
           nextListings = listings(nextListings, internalAction);
           // We must update nextState.listings locally to pass to next iteration
@@ -738,7 +737,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
           const internalAction = {
             ...create_listing({ listing: u.listing }),
             _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
+            timestamp: action._timestamp,
           };
           nextListings = listings(nextListings, internalAction);
           const intermediateState = { ...nextState, listings: nextListings };
@@ -818,7 +817,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
     const internalAction = {
       ...add_proposals_internal(enrichedProposals),
       _ephemeral: true,
-      timestamp: action.timestamp || action._timestamp,
+      timestamp: action._timestamp,
     };
 
     nextState = {
@@ -941,7 +940,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       const addVariantsAction = {
         ...add_variants_internal({ janCode, variants }),
         _ephemeral: true,
-        timestamp: action.timestamp || action._timestamp,
+        timestamp: action._timestamp,
       };
 
       nextState = {
@@ -975,7 +974,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             type: "listingCreation/update_proposal_field",
             payload: { janCode, field: "price", value: existingPrice },
             _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
+            timestamp: action._timestamp,
           };
           nextState = {
             ...nextState,
@@ -1049,7 +1048,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                 value: listingOnlyImages,
               },
               _ephemeral: true,
-              timestamp: action.timestamp || action._timestamp,
+              timestamp: action._timestamp,
             };
             nextState = {
               ...nextState,
@@ -1068,7 +1067,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                 value: existingListing.images.map((img: any) => img.id),
               },
               _ephemeral: true,
-              timestamp: action.timestamp || action._timestamp,
+              timestamp: action._timestamp,
             };
             nextState = {
               ...nextState,
@@ -1129,7 +1128,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             sourceJans: [janCode],
           },
           _ephemeral: true,
-          timestamp: action.timestamp || action._timestamp,
+          timestamp: action._timestamp,
         };
 
         nextState = {
@@ -1202,7 +1201,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             type: "listingCreation/add_variant",
             payload: { targetJan, janCode, itemId, subtype, qty, variantId },
             _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
+            timestamp: action._timestamp,
           };
           nextState = {
             ...nextState,
@@ -1231,7 +1230,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
             type: "listingCreation/remove_variant",
             payload: { janCode, variantId },
             _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
+            timestamp: action._timestamp,
           };
           nextState = {
             ...nextState,
@@ -1311,7 +1310,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               splits,
             }),
             _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
+            timestamp: action._timestamp,
           };
           nextState = {
             ...nextState,
@@ -1336,7 +1335,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
                 to: "",
               }),
               _ephemeral: true,
-              timestamp: action.timestamp || action._timestamp,
+              timestamp: action._timestamp,
             };
             nextState = {
               ...nextState,
@@ -1397,7 +1396,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
               to: f.value,
             }),
             _ephemeral: true,
-            timestamp: action.timestamp || action._timestamp,
+            timestamp: action._timestamp,
           };
 
           nextState = {
@@ -1504,7 +1503,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         images: mergedImages,
         productType: "",
         status: "active" as const,
-        lastUpdated: toTimestampMs(action.timestamp || action._timestamp) || 0,
+        lastUpdated: action._timestamp ?? 0,
       };
 
       const existingListing = nextState.listings.handleToListing[finalHandle];
@@ -1516,7 +1515,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
       const createActionLocal = {
         ...create_listing({ listing: finalListing }),
         _ephemeral: true,
-        timestamp: action.timestamp || action._timestamp,
+        timestamp: action._timestamp,
       };
       nextState = {
         ...nextState,
@@ -1529,7 +1528,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         const removeAction = {
           ...remove_proposal({ janCode: p.janCode }),
           _ephemeral: true,
-          timestamp: action.timestamp || action._timestamp,
+          timestamp: action._timestamp,
         };
         nextState = {
           ...nextState,
@@ -1546,7 +1545,7 @@ export const rootReducer = (state: any, action: any, logger = logAction) => {
         const completeAction = {
           ...complete_batch(),
           _ephemeral: true,
-          timestamp: action.timestamp || action._timestamp,
+          timestamp: action._timestamp,
         };
         nextState = {
           ...nextState,

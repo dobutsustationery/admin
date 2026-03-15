@@ -381,9 +381,7 @@
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `batch-${Date.now()}`;
-    dispatchBroadcast(
-      start_batch({ janCodes: ids, batchId, createdAt: Date.now() }),
-    );
+    dispatchBroadcast(start_batch({ janCodes: ids, batchId }));
     generate_descriptions_for_batch(ids)(
       dispatchBroadcast,
       store.getState,
