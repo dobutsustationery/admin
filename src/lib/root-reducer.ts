@@ -69,12 +69,40 @@ const reducerObject = {
 };
 const combinedReducer = combineReducers(reducerObject);
 
-const normalizeActionTimestampMs = (action: any): number => {
-  const ts = action?.timestamp || action?._timestamp;
+const toTimestampMs = (ts: any): number | null => {
   if (typeof ts === "number") return ts;
   if (ts?.seconds) return ts.seconds * 1000;
+  if (ts?._seconds) return ts._seconds * 1000;
   if (ts?.toDate) return ts.toDate().getTime();
-  return Date.now();
+  return null;
+};
+
+const normalizeIncomingActionTimestamp = (action: any): any => {
+  if (!action || typeof action !== "object") return action;
+
+  const explicitTimestamp = action.timestamp;
+  const fallbackCreatedAt = action.createdAt;
+  const normalizedTimestamp = explicitTimestamp ?? fallbackCreatedAt;
+
+  let normalized = action;
+
+  if (normalizedTimestamp && explicitTimestamp === undefined) {
+    normalized = { ...normalized, timestamp: normalizedTimestamp };
+  }
+
+  if (normalized._timestamp === undefined) {
+    const tsMs = toTimestampMs(normalized.timestamp);
+    if (tsMs !== null) {
+      normalized = { ...normalized, _timestamp: tsMs };
+    }
+  }
+
+  return normalized;
+};
+
+const normalizeActionTimestampMs = (action: any): number => {
+  const ts = action?.timestamp ?? action?._timestamp;
+  return toTimestampMs(ts) ?? 0;
 };
 
 const getIncomingIdObservations = (
@@ -265,6 +293,8 @@ const mapShopifyToInventory = (importItem: any): Item => {
 
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
 export const rootReducer = (state: any, action: any, logger = logAction) => {
+  action = normalizeIncomingActionTimestamp(action);
+
   if (action.type === "HYDRATE") {
     const hydratedState = { ...state, ...action.payload };
 
