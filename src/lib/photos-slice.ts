@@ -104,6 +104,16 @@ const photosSlice = createSlice({
         `[Reducer] Select Photos (Replace): setting ${action.payload.ids.length} items.`,
       );
 
+      // Fresh selection should clear stale non-completed upload states so
+      // reselected items can be retried immediately.
+      if (!state.uploads) state.uploads = {};
+      action.payload.ids.forEach((id) => {
+        const upload = state.uploads[id];
+        if (upload && upload.status !== "completed") {
+          delete state.uploads[id];
+        }
+      });
+
       // Hydrate from Registry
       state.selected = action.payload.ids
         .map((id) => state.registry[id])
@@ -113,6 +123,14 @@ const photosSlice = createSlice({
       if (!state.urlHistory) state.urlHistory = {};
       if (!state.janCodeToPhotos) state.janCodeToPhotos = {};
       if (!state.edits) state.edits = {};
+      if (!state.uploads) state.uploads = {};
+
+      action.payload.ids.forEach((id) => {
+        const upload = state.uploads[id];
+        if (upload && upload.status !== "completed") {
+          delete state.uploads[id];
+        }
+      });
 
       action.payload.ids.forEach((id) => {
         const item = state.registry[id];
@@ -146,12 +164,14 @@ const photosSlice = createSlice({
 
         // Fresh picker selections should clear stale failed/uploading flags so
         // the upload queue can attempt transfer again for this media ID.
-        if (
-          incomingBaseUrl &&
-          incomingBaseUrl !== priorBaseUrl &&
-          state.uploads[item.id] &&
-          state.uploads[item.id].status !== "completed"
-        ) {
+        // Do this for ephemeral picker URLs even if URL text happens to match.
+        const hasStaleUploadState =
+          !!state.uploads[item.id] &&
+          state.uploads[item.id].status !== "completed";
+        const hasFreshEphemeralUrl = isEphemeralPhotosUrl(incomingBaseUrl);
+        const hasChangedUrl =
+          incomingBaseUrl && incomingBaseUrl !== priorBaseUrl;
+        if (hasStaleUploadState && (hasFreshEphemeralUrl || hasChangedUrl)) {
           delete state.uploads[item.id];
         }
 

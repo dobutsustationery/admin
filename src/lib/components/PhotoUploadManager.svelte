@@ -46,6 +46,7 @@
   const MAX_RETRIES = 3;
   const UPLOAD_TIMEOUT = 5 * 60 * 1000; // backend sync transfers can take much longer than local uploads
   const CHECK_INTERVAL = 2000;
+
   onMount(() => {
     interval = setInterval(processQueue, CHECK_INTERVAL);
   });
@@ -89,7 +90,9 @@
           const photoId = String(
             data?.payload?.photoId || data?.photoId || "",
           ).trim();
-          if (photoId) requestedPhotoIds.add(photoId);
+          if (photoId) {
+            requestedPhotoIds.add(photoId);
+          }
         }
         transferRequestsHydrated = true;
       },
@@ -239,7 +242,9 @@
 
   async function processQueue() {
     // Requirement: user must be signed in to emit recovery actions.
-    if (!$user || !$user.uid) return;
+    if (!$user || !$user.uid) {
+      return;
+    }
 
     const state = $store.photos;
     const { selected, uploads } = state;
@@ -303,9 +308,9 @@
     // Upload dispatching requires a Drive-capable token and hydrated request state.
     const photosToken = getPhotosToken();
     const driveToken = getDriveToken() || photosToken;
-    if (!driveToken) return;
-    if (!hasDriveUploadScope(driveToken)) return;
-    if (!transferRequestsHydrated) return;
+    if (!driveToken) {
+      return;
+    }
 
     // 1. Identify Candidates
     const candidates = getUploadCandidates(selected, uploads || {}, now, {
@@ -329,7 +334,9 @@
       await refreshSecrets();
     }
 
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) {
+      return;
+    }
 
     // 2. Ensure Folder (One time setup)
     if (!cachedOriginalsId) {
@@ -362,7 +369,9 @@
     const batch = candidates.slice(0, 3);
 
     for (const item of batch) {
-      if (processing.has(item.id)) continue; // Skip if local loop already picked it up
+      if (processing.has(item.id)) {
+        continue; // Skip if local loop already picked it up
+      }
 
       processing.add(item.id);
 

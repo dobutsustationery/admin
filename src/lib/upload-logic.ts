@@ -6,6 +6,14 @@ export interface UploadLogicConfig {
   uploadTimeout: number; // ms
 }
 
+function isDurableDriveImageUrl(url: string | undefined): boolean {
+  return (
+    !!url &&
+    (url.includes("drive.google.com") ||
+      url.includes("lh3.googleusercontent.com/d/"))
+  );
+}
+
 export function getUploadCandidates(
   selectedPhotos: MediaItem[],
   uploads: Record<string, UploadState>,
@@ -14,11 +22,7 @@ export function getUploadCandidates(
 ): MediaItem[] {
   return selectedPhotos.filter((p) => {
     // 1. Skip if already permanent (drive.google.com)
-    if (
-      p.baseUrl &&
-      (p.baseUrl.includes("drive.google.com") ||
-        p.baseUrl.includes("lh3.googleusercontent.com/d/"))
-    ) {
+    if (isDurableDriveImageUrl(p.baseUrl)) {
       return false;
     }
 
@@ -28,8 +32,12 @@ export function getUploadCandidates(
     // Case A: New (No status record) -> UPLOAD
     if (!status) return true;
 
-    // Case B: Completed -> SKIP
-    if (status.status === "completed") return false;
+    // Case B: Completed -> SKIP only if URL is truly durable.
+    // Defensive: if state drift marks completed while still on ephemeral picker
+    // URL (/ppa/... or other non-durable source), allow re-queue.
+    if (status.status === "completed") {
+      return !isDurableDriveImageUrl(p.baseUrl);
+    }
 
     // Case C: Failed -> RETRY if under limit
     if (status.status === "failed") {

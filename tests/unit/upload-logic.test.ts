@@ -101,13 +101,26 @@ describe("getUploadCandidates", () => {
     expect(candidates[0].id).toBe("p1");
   });
 
-  it("should skip completed items", () => {
-    const photos = [mockPhoto("p1", "http://temp")];
+  it("should skip completed items with durable URLs", () => {
+    const photos = [
+      mockPhoto("p1", "https://lh3.googleusercontent.com/d/abc123=s200"),
+    ];
     const uploads: Record<string, UploadState> = {
       p1: { status: "completed", retryCount: 0, lastAttempt: now - 500000 },
     };
 
     const candidates = getUploadCandidates(photos, uploads, now, config);
     expect(candidates).toHaveLength(0);
+  });
+
+  it("should re-queue completed items if URL is still ephemeral", () => {
+    const photos = [mockPhoto("p1", "http://temp")];
+    const uploads: Record<string, UploadState> = {
+      p1: { status: "completed", retryCount: 0, lastAttempt: now - 500000 },
+    };
+
+    const candidates = getUploadCandidates(photos, uploads, now, config);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].id).toBe("p1");
   });
 });

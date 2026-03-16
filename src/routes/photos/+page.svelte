@@ -123,6 +123,14 @@
     );
   }
 
+  function isDurableUploadedUrl(url: string) {
+    return (
+      !!url &&
+      (url.includes("drive.google.com") ||
+        url.includes("lh3.googleusercontent.com/d/"))
+    );
+  }
+
   function cleanMediaItem(item: MediaItem): MediaItem {
     return {
       id: item.id,
@@ -140,6 +148,7 @@
   }
 
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
+  import PhotoUploadManager from "$lib/components/PhotoUploadManager.svelte";
   import BatchProgressBanner from "$lib/components/BatchProgressBanner.svelte";
   import CategorizationProgressBanner from "$lib/components/CategorizationProgressBanner.svelte";
   import { activeBanners } from "$lib/banner-store";
@@ -162,6 +171,7 @@
 
   async function clearFailedUploadOnSuccessfulLoad(id: string, url: string) {
     if (!id || !url) return;
+    if (!isDurableUploadedUrl(url)) return;
     if (clearingFailedUploadIds.has(id)) return;
 
     const currentUpload = store.getState().photos.uploads?.[id];
@@ -1374,6 +1384,7 @@
   config={$store.photos.processingConfig}
   on:save={handleSaveConfig}
 />
+<PhotoUploadManager />
 
 <div class="page-container">
   <div class="header-section">
