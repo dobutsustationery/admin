@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { firestore } from "$lib/firebase";
+  import { formatLogTimestamp } from "$lib/format-log-timestamp";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
   import {
@@ -16,13 +17,12 @@
   type RowStatus = "admin_only" | "shopify_only" | "both";
   type DriftStatus = "unknown" | "in_sync" | "local_ahead" | "shopify_ahead";
   type ViewFilter =
-    | "OUT_OF_SYNC"
+    | "ALL"
     | "ADMIN_ONLY"
     | "SHOPIFY_ONLY"
-    | "BOTH"
-    | "BOTH_IN_SYNC"
-    | "BOTH_DRIFTED"
-    | "ALL";
+    | "ADMIN_AHEAD"
+    | "SHOPIFY_AHEAD"
+    | "SYNCED";
   interface ShopifyAuditHandle {
     updatedAtIso: string;
     updatedAtMs: number;
@@ -36,6 +36,12 @@
     shopifyLastUpdatedMs: number;
     drift: DriftStatus;
   }
+  type TableStatus =
+    | "admin_only"
+    | "shopify_only"
+    | "admin_ahead"
+    | "shopify_ahead"
+    | "synced";
   const SKEW_MS = 5000;
 
   const STATUS_PRIORITY: Record<RowStatus, number> = {
@@ -46,7 +52,7 @@
 
   let isLoading = false;
   let error = "";
-  let activeFilter: ViewFilter = "OUT_OF_SYNC";
+  let activeFilter: ViewFilter = "ALL";
   let requestedAtLabel = "";
   let lastCompletedAtLabel = "";
   let shopifyHandles: string[] = [];
@@ -184,41 +190,46 @@
       });
   }
 
+  function getTableStatus(row: ListingPresenceRow): TableStatus {
+    if (row.status === "admin_only") return "admin_only";
+    if (row.status === "shopify_only") return "shopify_only";
+    if (row.drift === "local_ahead") return "admin_ahead";
+    if (row.drift === "shopify_ahead") return "shopify_ahead";
+    return "synced";
+  }
+
+  function formatTableStatus(status: TableStatus): string {
+    return status.replace("_", " ");
+  }
+
   $: adminHandles = getAdminHandles();
   $: rows = buildRows(adminHandles, shopifyHandles);
   $: summary = {
     adminOnly: rows.filter((r) => r.status === "admin_only").length,
     shopifyOnly: rows.filter((r) => r.status === "shopify_only").length,
-    both: rows.filter((r) => r.status === "both").length,
-    bothInSync: rows.filter((r) => r.status === "both" && r.drift === "in_sync")
-      .length,
-    bothDrifted: rows.filter(
+    adminAhead: rows.filter(
+      (r) => r.status === "both" && r.drift === "local_ahead",
+    ).length,
+    shopifyAhead: rows.filter(
+      (r) => r.status === "both" && r.drift === "shopify_ahead",
+    ).length,
+    synced: rows.filter(
       (r) =>
-        r.status === "both" &&
-        (r.drift === "local_ahead" || r.drift === "shopify_ahead"),
+        r.status === "both" && (r.drift === "in_sync" || r.drift === "unknown"),
     ).length,
   };
-  $: outOfSyncCount =
-    summary.adminOnly + summary.shopifyOnly + summary.bothDrifted;
   $: visibleRows = rows.filter((row) => {
     if (activeFilter === "ALL") return true;
-    if (activeFilter === "OUT_OF_SYNC") {
-      return (
-        row.status === "admin_only" ||
-        row.status === "shopify_only" ||
-        row.drift === "local_ahead" ||
-        row.drift === "shopify_ahead"
-      );
-    }
     if (activeFilter === "ADMIN_ONLY") return row.status === "admin_only";
     if (activeFilter === "SHOPIFY_ONLY") return row.status === "shopify_only";
-    if (activeFilter === "BOTH") return row.status === "both";
-    if (activeFilter === "BOTH_IN_SYNC")
-      return row.status === "both" && row.drift === "in_sync";
-    if (activeFilter === "BOTH_DRIFTED")
+    if (activeFilter === "ADMIN_AHEAD")
+      return row.status === "both" && row.drift === "local_ahead";
+    if (activeFilter === "SHOPIFY_AHEAD")
+      return row.status === "both" && row.drift === "shopify_ahead";
+    if (activeFilter === "SYNCED")
       return (
         row.status === "both" &&
-        (row.drift === "local_ahead" || row.drift === "shopify_ahead")
+        (row.drift === "in_sync" || row.drift === "unknown")
       );
     return true;
   });
@@ -258,7 +269,7 @@
           }
           shopifyHandles = handles;
           shopifyHandleDataByNormalized = normalizedByHandle;
-          lastCompletedAtLabel = new Date().toLocaleString();
+          lastCompletedAtLabel = formatLogTimestamp(Date.now());
           isLoading = false;
           error = "";
           if (unsubscribeAuditResult) {
@@ -369,7 +380,7 @@
           timestamp: serverTimestamp(),
         },
       );
-      requestedAtLabel = new Date().toLocaleString();
+      requestedAtLabel = formatLogTimestamp(Date.now());
       watchAuditResult(requestDoc.id);
     } catch (e: any) {
       error = e?.message || "Failed to request Shopify listings audit.";
@@ -418,12 +429,12 @@
   {:else}
     <div class="summary-dashboard">
       <button
-        class="summary-card total"
-        class:active={activeFilter === "OUT_OF_SYNC"}
-        on:click={() => (activeFilter = "OUT_OF_SYNC")}
+        class="summary-card all"
+        class:active={activeFilter === "ALL"}
+        on:click={() => (activeFilter = "ALL")}
       >
-        <span class="label">Out of Sync</span>
-        <span class="value">{outOfSyncCount}</span>
+        <span class="label">All</span>
+        <span class="value">{rows.length}</span>
       </button>
       <button
         class="summary-card admin"
@@ -442,36 +453,28 @@
         <span class="value">{summary.shopifyOnly}</span>
       </button>
       <button
-        class="summary-card both"
-        class:active={activeFilter === "BOTH"}
-        on:click={() => (activeFilter = "BOTH")}
+        class="summary-card admin-ahead"
+        class:active={activeFilter === "ADMIN_AHEAD"}
+        on:click={() => (activeFilter = "ADMIN_AHEAD")}
       >
-        <span class="label">Both</span>
-        <span class="value">{summary.both}</span>
+        <span class="label">Admin Ahead</span>
+        <span class="value">{summary.adminAhead}</span>
       </button>
       <button
-        class="summary-card both-sync"
-        class:active={activeFilter === "BOTH_IN_SYNC"}
-        on:click={() => (activeFilter = "BOTH_IN_SYNC")}
+        class="summary-card shopify-ahead"
+        class:active={activeFilter === "SHOPIFY_AHEAD"}
+        on:click={() => (activeFilter = "SHOPIFY_AHEAD")}
       >
-        <span class="label">Both In Sync</span>
-        <span class="value">{summary.bothInSync}</span>
+        <span class="label">Shopify Ahead</span>
+        <span class="value">{summary.shopifyAhead}</span>
       </button>
       <button
-        class="summary-card both-drift"
-        class:active={activeFilter === "BOTH_DRIFTED"}
-        on:click={() => (activeFilter = "BOTH_DRIFTED")}
+        class="summary-card synced"
+        class:active={activeFilter === "SYNCED"}
+        on:click={() => (activeFilter = "SYNCED")}
       >
-        <span class="label">Both Drifted</span>
-        <span class="value">{summary.bothDrifted}</span>
-      </button>
-      <button
-        class="summary-card all"
-        class:active={activeFilter === "ALL"}
-        on:click={() => (activeFilter = "ALL")}
-      >
-        <span class="label">All</span>
-        <span class="value">{rows.length}</span>
+        <span class="label">Synced</span>
+        <span class="value">{summary.synced}</span>
       </button>
     </div>
 
@@ -492,9 +495,6 @@
           <tr>
             <th>Handle</th>
             <th>Status</th>
-            <th>Drift</th>
-            <th>Admin</th>
-            <th>Shopify</th>
             <th>Admin Updated</th>
             <th>Shopify Updated</th>
           </tr>
@@ -502,7 +502,7 @@
         <tbody>
           {#if visibleRows.length === 0}
             <tr>
-              <td colspan="7" class="empty">No rows for current filter.</td>
+              <td colspan="4" class="empty">No rows for current filter.</td>
             </tr>
           {:else}
             {#each visibleRows as row}
@@ -516,25 +516,18 @@
                   </a>
                 </td>
                 <td>
-                  <span class="badge {row.status}">
-                    {row.status.replace("_", " ")}
+                  <span class="badge {getTableStatus(row)}">
+                    {formatTableStatus(getTableStatus(row))}
                   </span>
                 </td>
-                <td>
-                  <span class="badge drift {row.drift}">
-                    {row.drift.replace("_", " ")}
-                  </span>
-                </td>
-                <td>{row.inAdmin ? "yes" : "no"}</td>
-                <td>{row.inShopify ? "yes" : "no"}</td>
                 <td>
                   {row.adminLastUpdatedMs > 0
-                    ? new Date(row.adminLastUpdatedMs).toLocaleString()
+                    ? formatLogTimestamp(row.adminLastUpdatedMs)
                     : "-"}
                 </td>
                 <td>
                   {row.shopifyLastUpdatedMs > 0
-                    ? new Date(row.shopifyLastUpdatedMs).toLocaleString()
+                    ? formatLogTimestamp(row.shopifyLastUpdatedMs)
                     : "-"}
                 </td>
               </tr>
@@ -647,10 +640,6 @@
     box-shadow: inset 0 0 0 2px #111827;
   }
 
-  .summary-card.total {
-    background: #f3f4f6;
-  }
-
   .summary-card.admin {
     background: #fee2e2;
     color: #991b1b;
@@ -661,23 +650,24 @@
     color: #1d4ed8;
   }
 
-  .summary-card.both {
+  .summary-card.admin-ahead {
     background: #dcfce7;
     color: #166534;
   }
 
-  .summary-card.both-sync {
+  .summary-card.shopify-ahead {
     background: #ecfdf5;
     color: #065f46;
   }
 
-  .summary-card.both-drift {
+  .summary-card.synced {
     background: #fff7ed;
     color: #9a3412;
   }
 
   .summary-card.all {
     background: #f3f4f6;
+    color: #111827;
   }
 
   .meta {
@@ -760,33 +750,19 @@
     color: #1d4ed8;
   }
 
-  .badge.both {
+  .badge.admin_ahead {
     background: #dcfce7;
     color: #166534;
-  }
-
-  .badge.drift {
-    text-transform: none;
-  }
-
-  .badge.unknown {
-    background: #e5e7eb;
-    color: #374151;
-  }
-
-  .badge.in_sync {
-    background: #dcfce7;
-    color: #166534;
-  }
-
-  .badge.local_ahead {
-    background: #ffedd5;
-    color: #9a3412;
   }
 
   .badge.shopify_ahead {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: #ecfdf5;
+    color: #065f46;
+  }
+
+  .badge.synced {
+    background: #fff7ed;
+    color: #9a3412;
   }
 
   .empty {

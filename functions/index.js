@@ -228,7 +228,7 @@ exports.shopifySyncRequest = onDocumentCreated(
     timeoutSeconds: 300,
     memory: "1GiB",
     concurrency: 1,
-    maxInstances: 3,
+    maxInstances: 3
   },
   async (event) => {
     const requestData = event.data?.data();
