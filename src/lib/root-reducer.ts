@@ -56,6 +56,7 @@ import {
   withInheritedTimestamp,
   type TimestampedAction,
 } from "./timestamped-action";
+import { normalizeShopifySyncEventType } from "./sync-events";
 
 const reducerObject = {
   names,
@@ -304,6 +305,50 @@ export const rootReducer = (
   nextState = applyKeyAuditInstrumentation(state, action, nextState);
 
   // 3. Interception & Composition
+
+  if (
+    action.type === "replace_shopify_sync_events" &&
+    Array.isArray(action.payload) &&
+    action.payload.length > 0
+  ) {
+    const listingState = nextState.listings;
+    const nextHandleToListing = { ...listingState.handleToListing };
+    let changed = false;
+
+    for (const ev of action.payload) {
+      const normalizedEventType = normalizeShopifySyncEventType(
+        String(ev?.eventType || ""),
+      );
+      if (normalizedEventType !== "sync_completed") continue;
+
+      const handle = String(ev?.handle || "").trim();
+      if (!handle) continue;
+
+      const completedAtMs = toTimestampMs(ev?.timestamp);
+      if (!completedAtMs) continue;
+
+      const listing = nextHandleToListing[handle];
+      if (!listing) continue;
+
+      if (listing.lastUpdated !== completedAtMs) {
+        nextHandleToListing[handle] = {
+          ...listing,
+          lastUpdated: completedAtMs,
+        };
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      nextState = {
+        ...nextState,
+        listings: {
+          ...listingState,
+          handleToListing: nextHandleToListing,
+        },
+      };
+    }
+  }
 
   // Synchronize Listings idToHandle and Photo Groups when item keys change
   const isRetype = action.type === "retype_item";
