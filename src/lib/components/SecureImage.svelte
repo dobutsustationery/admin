@@ -89,6 +89,12 @@
         ? driveFullSizeUrl
         : applyGoogleSizeSuffix(finalSrc, targetSize);
 
+    // /ppa/ links often block JS fetch with CORS even when image rendering itself is allowed.
+    // Let the browser render these directly instead of forcing a fetch->blob path.
+    if (finalSrc.includes("/ppa/")) {
+      return requestSrc;
+    }
+
     if (isDrivePublic) {
       return requestSrc;
     }

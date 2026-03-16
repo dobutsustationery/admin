@@ -223,6 +223,50 @@ async function findFileByDerivationKey(accessToken, derivationKey, onApiCall) {
   );
 }
 
+async function resolveFreshPhotosBaseUrl(photoId, photosAccessToken, onApiCall) {
+  const id = normalizeString(photoId);
+  const token = normalizeString(photosAccessToken);
+  if (!id || !token) return "";
+
+  const endpoints = [
+    {
+      url: `https://photospicker.googleapis.com/v1/mediaItems/${encodeURIComponent(id)}`,
+      requestType: "photospicker.mediaItems.get",
+      endpoint: "photospicker.mediaItems.get",
+    },
+    {
+      url: `https://photoslibrary.googleapis.com/v1/mediaItems/${encodeURIComponent(id)}`,
+      requestType: "photoslibrary.mediaItems.get",
+      endpoint: "photoslibrary.mediaItems.get",
+    },
+  ];
+
+  for (const ep of endpoints) {
+    const resp = await fetch(ep.url, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => null);
+
+    const failure = resp?.ok ? null : await summarizeFailedFetchResponse(resp);
+    await onApiCall?.({
+      requestType: ep.requestType,
+      endpoint: ep.endpoint,
+      success: !!resp?.ok,
+      status: resp?.status || 0,
+      context: { photoId: id },
+      response: { ok: !!resp?.ok, failure },
+    });
+
+    if (!resp?.ok) continue;
+
+    const data = await resp.json().catch(() => ({}));
+    const mediaFile = data?.mediaFile || {};
+    const baseUrl = normalizeString(data?.baseUrl || mediaFile?.baseUrl);
+    if (baseUrl) return baseUrl;
+  }
+
+  return "";
+}
+
 async function emitSuccess({
   db,
   collectionName,
@@ -285,6 +329,7 @@ async function emitSuccess({
 }
 
 async function fetchSourceBytes({
+  photoId,
   sourceBaseUrl,
   photosAccessToken,
   driveAccessToken,
@@ -307,9 +352,24 @@ async function fetchSourceBytes({
   }
 
   const isGoogleusercontent = baseUrl.includes("googleusercontent.com");
-  const candidates = isGoogleusercontent
-    ? [`${stripGoogleusercontentSuffix(baseUrl)}=d`]
-    : [baseUrl];
+  const refreshedBaseUrl =
+    isGoogleusercontent && photosAccessToken
+      ? await resolveFreshPhotosBaseUrl(photoId, photosAccessToken, onApiCall)
+      : "";
+
+  const candidateSet = new Set();
+  const pushCandidate = (raw) => {
+    const value = normalizeString(raw);
+    if (!value) return;
+    candidateSet.add(value);
+    if (value.includes("googleusercontent.com")) {
+      candidateSet.add(`${stripGoogleusercontentSuffix(value)}=d`);
+    }
+  };
+
+  pushCandidate(refreshedBaseUrl);
+  pushCandidate(baseUrl);
+  const candidates = Array.from(candidateSet);
 
   let resp = null;
   let usedUrl = "";
@@ -842,6 +902,7 @@ async function executeTransfer({
       if (transformName === "remove_bg") {
         // 1. Fetch Source
         const source = await fetchSourceBytes({
+          photoId,
           sourceBaseUrl,
           photosAccessToken,
           driveAccessToken,
@@ -856,6 +917,7 @@ async function executeTransfer({
       } else if (transformName === "color_correct") {
         // 1. Fetch Source
         const source = await fetchSourceBytes({
+          photoId,
           sourceBaseUrl,
           photosAccessToken,
           driveAccessToken,
@@ -870,6 +932,7 @@ async function executeTransfer({
       } else if (transformName === "crop") {
         // 1. Fetch Source
         const source = await fetchSourceBytes({
+          photoId,
           sourceBaseUrl,
           photosAccessToken,
           driveAccessToken,
@@ -886,6 +949,7 @@ async function executeTransfer({
       }
     } else {
       const source = await fetchSourceBytes({
+        photoId,
         sourceBaseUrl,
         photosAccessToken,
         driveAccessToken,

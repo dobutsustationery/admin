@@ -238,17 +238,22 @@
   }
 
   async function processQueue() {
-    // Requirements: User signed in (Firebase) AND a Drive-capable token available
+    // Requirement: user must be signed in to emit recovery actions.
     if (!$user || !$user.uid) return;
-    const photosToken = getPhotosToken();
-    const driveToken = getDriveToken() || photosToken;
-    if (!driveToken) return;
-    if (!hasDriveUploadScope(driveToken)) return;
-    if (!transferRequestsHydrated) return;
 
     const state = $store.photos;
     const { selected, uploads } = state;
     const now = Date.now();
+
+    // Drop dedupe pins for photos that no longer have an active upload record.
+    // This lets fresh picker selections re-queue even if historical request docs
+    // were observed by the transfer request listener.
+    Array.from(requestedPhotoIds).forEach((id) => {
+      const upload = uploads?.[id];
+      if (!upload || upload.status === "completed") {
+        requestedPhotoIds.delete(id);
+      }
+    });
 
     // Recovery path: if an upload has been "uploading" for too long, force it
     // back to failed so normal retry flow can re-enqueue it.
@@ -294,6 +299,13 @@
         }
       },
     );
+
+    // Upload dispatching requires a Drive-capable token and hydrated request state.
+    const photosToken = getPhotosToken();
+    const driveToken = getDriveToken() || photosToken;
+    if (!driveToken) return;
+    if (!hasDriveUploadScope(driveToken)) return;
+    if (!transferRequestsHydrated) return;
 
     // 1. Identify Candidates
     const candidates = getUploadCandidates(selected, uploads || {}, now, {
