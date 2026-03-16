@@ -127,18 +127,32 @@ const photosSlice = createSlice({
     ) => {
       if (!state.registry) state.registry = {};
       if (!state.urlHistory) state.urlHistory = {};
+      if (!state.uploads) state.uploads = {};
 
       action.payload.items.forEach((item) => {
         // Always refresh ephemeral URLs with latest picker data.
         // Keep durable URLs unless replaced by another durable URL.
         const existing = state.registry[item.id];
+        const incomingBaseUrl = String(item.baseUrl || "");
+        const priorBaseUrl = String(existing?.baseUrl || "");
         const isBetter =
           !existing ||
           isEphemeralPhotosUrl(existing.baseUrl) ||
-          !isEphemeralPhotosUrl(item.baseUrl);
+          !isEphemeralPhotosUrl(incomingBaseUrl);
 
         if (isBetter) {
           state.registry[item.id] = item;
+        }
+
+        // Fresh picker selections should clear stale failed/uploading flags so
+        // the upload queue can attempt transfer again for this media ID.
+        if (
+          incomingBaseUrl &&
+          incomingBaseUrl !== priorBaseUrl &&
+          state.uploads[item.id] &&
+          state.uploads[item.id].status !== "completed"
+        ) {
+          delete state.uploads[item.id];
         }
 
         // Initialize history if missing
@@ -147,10 +161,10 @@ const photosSlice = createSlice({
         }
         // Don't add ephemeral baseUrls to history automatically, usually we only want durable Drive URLs
         if (
-          !isEphemeralPhotosUrl(item.baseUrl) &&
-          !state.urlHistory[item.id].includes(item.baseUrl)
+          !isEphemeralPhotosUrl(incomingBaseUrl) &&
+          !state.urlHistory[item.id].includes(incomingBaseUrl)
         ) {
-          state.urlHistory[item.id].unshift(item.baseUrl);
+          state.urlHistory[item.id].unshift(incomingBaseUrl);
         }
       });
     },
