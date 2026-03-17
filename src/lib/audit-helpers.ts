@@ -106,6 +106,8 @@ export function getAuditActionDescription(action: any): string {
       return `Retyped ${p.itemKey} to ${p.janCode} (${p.subtype})`;
     case "rename_subtype":
       return `Renamed subtype for ${p.itemKey} to ${p.subtype}`;
+    case "fix_jancode":
+      return `Fixed JAN code for ${p.itemKey} to ${p.newJanCode}${p.subtype ? ` (${p.subtype})` : ""}`;
     case "delete_empty_order":
       return `Deleted empty order ${p.orderID}`;
     case "archive_inventory":

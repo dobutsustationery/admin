@@ -7,6 +7,7 @@ import {
   type Item,
   update_field,
   split_inventory_item,
+  fix_jancode,
 } from "./inventory";
 import { names } from "./names";
 import { photos, rename_jan_group } from "./photos-slice";
@@ -103,6 +104,7 @@ const getIncomingIdObservations = (
     case "quantify_item":
     case "retype_item":
     case "rename_subtype":
+    case "fix_jancode":
       maybePush("payload.itemKey", p.itemKey);
       break;
     case "split_inventory_item":
@@ -143,12 +145,13 @@ const applyKeyAuditInstrumentation = (
   });
 
   // 2) Track would-be ghost IDs when subtype rename re-keys old -> new and old key disappears
-  const maybeSubtypeRekey =
+  const maybeItemRekey =
     action?.type === "rename_subtype" ||
+    action?.type === "fix_jancode" ||
     (action?.type === "update_field" && action?.payload?.field === "subtype");
-  if (maybeSubtypeRekey) {
+  if (maybeItemRekey) {
     const oldId =
-      action?.type === "rename_subtype"
+      action?.type === "rename_subtype" || action?.type === "fix_jancode"
         ? action?.payload?.itemKey
         : action?.payload?.id;
     const oldItem = oldId ? priorInventory[oldId] : undefined;
@@ -156,8 +159,22 @@ const applyKeyAuditInstrumentation = (
       const newSubtype =
         action?.type === "rename_subtype"
           ? (action?.payload?.subtype || "").trim()
-          : (action?.payload?.to || "").trim();
-      const canonicalId = makeInventoryItemKey(oldItem.janCode, newSubtype);
+          : action?.type === "fix_jancode"
+            ? (
+                action?.payload?.subtype ??
+                action?.payload?.newSubtype ??
+                oldItem.subtype
+              )
+                .toString()
+                .trim()
+            : (action?.payload?.to || "").trim();
+      const newJanCode =
+        action?.type === "fix_jancode"
+          ? String(action?.payload?.newJanCode || oldItem.janCode)
+              .trim()
+              .replace(/\s+/g, "")
+          : oldItem.janCode;
+      const canonicalId = makeInventoryItemKey(newJanCode, newSubtype);
       const oldMissingAfter = oldId && !nextInventory[oldId];
       const newExistsAfter = !!nextInventory[canonicalId];
       if (
@@ -353,12 +370,19 @@ export const rootReducer = (
   // Synchronize Listings idToHandle and Photo Groups when item keys change
   const isRetype = action.type === "retype_item";
   const isRename = action.type === "rename_subtype";
+  const isFixJanCode = action.type === "fix_jancode";
   const isSubtypeUpdate =
     action.type === "update_field" && action.payload.field === "subtype";
   const isVariantValueUpdate =
     action.type === "listingCreation/update_variant_value";
 
-  if (isRetype || isRename || isSubtypeUpdate || isVariantValueUpdate) {
+  if (
+    isRetype ||
+    isRename ||
+    isFixJanCode ||
+    isSubtypeUpdate ||
+    isVariantValueUpdate
+  ) {
     let oldItemId = "";
     let newItemId = "";
     let oldBaseJan = "";
@@ -397,6 +421,19 @@ export const rootReducer = (
         oldBaseJan = oldItem.janCode;
         newBaseJan = oldBaseJan;
         oldSubtype = oldItem.subtype;
+        newItemId = makeInventoryItemKey(newBaseJan, newSubtype);
+      }
+    } else if (isFixJanCode) {
+      const { itemKey, newJanCode, subtype } = action.payload;
+      oldItemId = itemKey;
+      const oldItem = state.inventory.idToItem[oldItemId];
+      if (oldItem) {
+        oldBaseJan = oldItem.janCode;
+        oldSubtype = oldItem.subtype;
+        newBaseJan = String(newJanCode || "")
+          .trim()
+          .replace(/\s+/g, "");
+        newSubtype = (subtype ?? oldSubtype ?? "").trim();
         newItemId = makeInventoryItemKey(newBaseJan, newSubtype);
       }
     }
@@ -466,6 +503,162 @@ export const rootReducer = (
           }
         }
       }
+    }
+
+    if (isFixJanCode && oldItemId && newItemId && oldItemId !== newItemId) {
+      const oldJanBaseKey = oldBaseJan;
+      const oldJanSubtypeKey = oldSubtype
+        ? `${oldBaseJan}:${oldSubtype}`
+        : oldBaseJan;
+      const newJanBaseKey = newBaseJan;
+      const newJanSubtypeKey = newSubtype
+        ? `${newBaseJan}:${newSubtype}`
+        : newBaseJan;
+
+      const remapPhotoGroupKey = (key: string): string => {
+        if (!key) return key;
+        if (key === oldJanSubtypeKey) return newJanSubtypeKey;
+        if (key === oldJanBaseKey) return newJanBaseKey;
+        return key;
+      };
+
+      // 3) Listing Creation re-key migration (itemId, proposal key, photo group refs)
+      const creationState = nextState.listingCreation;
+      const nextProposals: Record<string, any> = {};
+
+      const mergeProposals = (target: any, source: any) => {
+        const mergedInventoryIds = Array.from(
+          new Set([
+            ...(target.inventoryItemIds || []),
+            ...(source.inventoryItemIds || []),
+          ]),
+        );
+        const mergedPhotoGroupIds = Array.from(
+          new Set([
+            ...(target.photoGroupIds || []),
+            ...(source.photoGroupIds || []),
+          ]),
+        );
+        const variantById = new Map<string, any>();
+        [...(target.variants || []), ...(source.variants || [])].forEach((v) =>
+          variantById.set(v.id, v),
+        );
+        return {
+          ...target,
+          ...source,
+          inventoryItemIds: mergedInventoryIds,
+          photoGroupIds: mergedPhotoGroupIds,
+          variants: Array.from(variantById.values()),
+        };
+      };
+
+      Object.entries(creationState.proposals || {}).forEach(
+        ([key, proposalRaw]) => {
+          const proposal = proposalRaw as any;
+          let nextKey = remapPhotoGroupKey(key);
+          const nextInventoryItemIds = (proposal.inventoryItemIds || []).map(
+            (id: string) => (id === oldItemId ? newItemId : id),
+          );
+          const nextVariants = (proposal.variants || []).map((v: any) => ({
+            ...v,
+            itemId: v.itemId === oldItemId ? newItemId : v.itemId,
+            photoGroupKey: v.photoGroupKey
+              ? remapPhotoGroupKey(v.photoGroupKey)
+              : v.photoGroupKey,
+          }));
+          const nextPhotoGroupIds = (proposal.photoGroupIds || []).map(
+            (id: string) => remapPhotoGroupKey(id),
+          );
+          const nextJanCode = remapPhotoGroupKey(proposal.janCode || "");
+          const nextProposal = {
+            ...proposal,
+            janCode: nextJanCode,
+            inventoryItemIds: Array.from(new Set(nextInventoryItemIds)),
+            variants: nextVariants,
+            photoGroupIds: Array.from(new Set(nextPhotoGroupIds)),
+          };
+
+          if (nextProposals[nextKey]) {
+            nextProposals[nextKey] = mergeProposals(
+              nextProposals[nextKey],
+              nextProposal,
+            );
+          } else {
+            nextProposals[nextKey] = nextProposal;
+          }
+        },
+      );
+
+      const nextActiveBatchJans = Array.from(
+        new Set((creationState.activeBatchJans || []).map(remapPhotoGroupKey)),
+      );
+      const nextOriginalBatchJans = Array.from(
+        new Set(
+          (creationState.originalBatchJans || []).map(remapPhotoGroupKey),
+        ),
+      );
+
+      nextState = {
+        ...nextState,
+        listingCreation: {
+          ...creationState,
+          proposals: nextProposals,
+          activeBatchJans: nextActiveBatchJans,
+          originalBatchJans: nextOriginalBatchJans,
+        },
+      };
+
+      // 4) Import resolution key migration
+      const migrateOrderResolution = (resolution: any) => {
+        if (!resolution) return resolution;
+        if (resolution.type === "split" && resolution.allocations) {
+          const nextAllocations: Record<string, number> = {};
+          Object.entries(resolution.allocations).forEach(([k, qty]) => {
+            const mapped = k === oldItemId ? newItemId : k;
+            nextAllocations[mapped] =
+              (nextAllocations[mapped] || 0) + Number(qty || 0);
+          });
+          return { ...resolution, allocations: nextAllocations };
+        }
+        if (
+          resolution.type === "data_mismatch" &&
+          resolution.itemKey === oldItemId
+        ) {
+          return { ...resolution, itemKey: newItemId };
+        }
+        return resolution;
+      };
+
+      const nextOrderResolutions: Record<string, any> = {};
+      Object.entries(nextState.orderImport?.resolutions || {}).forEach(
+        ([idx, res]) => {
+          nextOrderResolutions[idx] = migrateOrderResolution(res);
+        },
+      );
+
+      const nextShopifyResolutions: Record<string, any[]> = {};
+      Object.entries(nextState.shopifyImport?.resolutions || {}).forEach(
+        ([idx, actions]) => {
+          nextShopifyResolutions[idx] = (actions as any[]).map((a) => {
+            if (a?.payload?.itemKey === oldItemId) {
+              return { ...a, payload: { ...a.payload, itemKey: newItemId } };
+            }
+            return a;
+          });
+        },
+      );
+
+      nextState = {
+        ...nextState,
+        orderImport: {
+          ...nextState.orderImport,
+          resolutions: nextOrderResolutions,
+        },
+        shopifyImport: {
+          ...nextState.shopifyImport,
+          resolutions: nextShopifyResolutions,
+        },
+      };
     }
 
     // Handle variant value update separately (Listing Creation)
