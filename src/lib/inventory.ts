@@ -97,6 +97,13 @@ export const rename_subtype = createAction<{
   itemKey: InventoryItemKey;
   subtype: string;
 }>("rename_subtype");
+export const fix_jancode = createAction<{
+  itemKey: InventoryItemKey;
+  newJanCode: string;
+  subtype?: string;
+  mergeMode?: "strict" | "merge_if_identical";
+  reason?: string;
+}>("fix_jancode");
 export const delete_empty_order = createAction<{
   orderID: string;
 }>("delete_empty_order");
@@ -827,6 +834,126 @@ export const inventory = createReducer(initialState, (r) => {
         action.payload,
       );
     }
+  });
+  r.addCase(fix_jancode, (state, action) => {
+    const oldKey = canonicalizeInventoryItemKey(action.payload.itemKey);
+    const source = state.idToItem[oldKey];
+    if (!source) {
+      console.warn(`[Inventory] fix_jancode: source item missing: ${oldKey}`);
+      return;
+    }
+
+    const normalizedJan = (action.payload.newJanCode || "")
+      .trim()
+      .replace(/\s+/g, "");
+    if (!normalizedJan) {
+      console.warn("[Inventory] fix_jancode: newJanCode is empty");
+      return;
+    }
+
+    const nextSubtype = (action.payload.subtype ?? source.subtype ?? "").trim();
+    const newKey = makeInventoryItemKey(normalizedJan, nextSubtype);
+    const mergeMode = action.payload.mergeMode || "strict";
+    const val = getTimestampMs((action as any).timestamp);
+    const date = new Date(val).toLocaleString("en", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+
+    if (!state.idToHistory[oldKey]) {
+      state.idToHistory[oldKey] = [];
+    }
+
+    if (oldKey === newKey) {
+      state.idToHistory[oldKey].push({
+        date,
+        desc: `fix_jancode ignored (same key): ${oldKey}`,
+        val,
+      });
+      return;
+    }
+
+    const target = state.idToItem[newKey];
+    if (target && mergeMode === "strict") {
+      state.idToHistory[oldKey].push({
+        date,
+        desc: `fix_jancode blocked by strict merge mode (${oldKey} -> ${newKey})`,
+        val,
+      });
+      return;
+    }
+
+    if (target && !itemsLookIdentical(source, target)) {
+      state.idToHistory[oldKey].push({
+        date,
+        desc: `fix_jancode merge conflict (${oldKey} -> ${newKey})`,
+        val,
+      });
+      return;
+    }
+
+    if (target) {
+      target.qty += source.qty;
+      target.shipped += source.shipped;
+    } else {
+      state.idToItem[newKey] = {
+        ...source,
+        janCode: normalizedJan,
+        subtype: nextSubtype,
+      };
+    }
+
+    // Rewrite order line items and consolidate duplicates.
+    Object.values(state.orderIdToOrder).forEach((order) => {
+      let movedQty = 0;
+      const nextItems: LineItem[] = [];
+      for (const line of order.items) {
+        if (line.itemKey === oldKey) {
+          movedQty += line.qty;
+        } else {
+          nextItems.push(line);
+        }
+      }
+      if (movedQty > 0) {
+        const existing = nextItems.find((line) => line.itemKey === newKey);
+        if (existing) {
+          existing.qty += movedQty;
+        } else {
+          nextItems.push({ itemKey: newKey, qty: movedQty });
+        }
+      }
+      order.items = nextItems;
+    });
+
+    if (!state.idToHistory[newKey]) {
+      state.idToHistory[newKey] = [];
+    }
+
+    const oldHistory = state.idToHistory[oldKey] || [];
+    const prefixedOldHistory = oldHistory.map((h) => ({
+      ...h,
+      desc: `[${oldKey}] ${h.desc}`,
+    }));
+    const combinedHistory = [
+      ...state.idToHistory[newKey],
+      ...prefixedOldHistory,
+    ];
+    combinedHistory.sort((a, b) => (a.val || 0) - (b.val || 0));
+    state.idToHistory[newKey] = combinedHistory;
+    state.idToHistory[newKey].push({
+      date,
+      desc: `Fixed JAN code from ${oldKey} to ${newKey}${action.payload.reason ? ` (${action.payload.reason})` : ""}`,
+      val,
+    });
+
+    if (state.hiddenExceptions?.[oldKey]) {
+      state.hiddenExceptions[newKey] = true;
+      delete state.hiddenExceptions[oldKey];
+    }
+
+    delete state.idToItem[oldKey];
+    delete state.idToHistory[oldKey];
   });
   r.addCase(delete_empty_order, (state, action) => {
     const orderID = action.payload.orderID;
