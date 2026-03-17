@@ -14,11 +14,7 @@
     getStoredToken,
     clearToken,
     getFolderLink,
-    uploadImageToDrive,
     type DriveFile,
-    ensureFolderStructure,
-    generateDerivationKey,
-    calculateHash,
   } from "$lib/google-drive";
   import type { AnyAction } from "$lib/store";
   import {
@@ -38,7 +34,11 @@
   import { user } from "$lib/user-store";
   import { firestore } from "$lib/firebase";
   import { broadcast } from "$lib/redux-firestore";
-  import { update_item, type Item } from "$lib/inventory";
+  import {
+    PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
+    PHOTOS_TRANSFER_REQUEST_COLLECTION,
+  } from "$lib/sync-events";
+  import { addDoc, collection, serverTimestamp } from "firebase/firestore";
   import Papa from "papaparse";
   import SecureImage from "$lib/components/SecureImage.svelte";
 
@@ -50,72 +50,139 @@
   let importStatus: "idle" | "success" | "error" = "idle";
 
   // --- Migration Logic ---
-  // Only migrate actual Shopify CDN links
-  $: pendingMigrations = Object.entries($store.inventory.idToItem)
-    .filter(
-      ([_, i]) =>
-        (i as Item).image && (i as Item).image.includes("cdn.shopify.com"),
-    )
-    .map(([k, i]) => ({ ...(i as Item), key: k }));
+  const SHOPIFY_MIGRATION_SOURCE = "shopify-import-migration";
+
+  const trimString = (value: unknown) =>
+    typeof value === "string" ? value.trim() : "";
+
+  const isShopifyCdnUrl = (value: unknown) =>
+    trimString(value).includes("cdn.shopify.com");
+
+  const hashString = (value: string) => {
+    let hash = 2166136261;
+    for (let i = 0; i < value.length; i += 1) {
+      hash ^= value.charCodeAt(i);
+      hash +=
+        (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    }
+    return (hash >>> 0).toString(16);
+  };
+
+  const inferMimeTypeFromUrl = (url: string): string => {
+    const clean = url.toLowerCase().split("?")[0];
+    if (clean.endsWith(".png")) return "image/png";
+    if (clean.endsWith(".webp")) return "image/webp";
+    if (clean.endsWith(".heic")) return "image/heic";
+    if (clean.endsWith(".heif")) return "image/heif";
+    if (clean.endsWith(".gif")) return "image/gif";
+    if (clean.endsWith(".avif")) return "image/avif";
+    return "image/jpeg";
+  };
+
+  const deriveFilenameFromUrl = (url: string): string => {
+    try {
+      const parsed = new URL(url);
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      const tail = segments[segments.length - 1] || "";
+      return tail || `shopify-migration-${hashString(url)}.jpg`;
+    } catch (_) {
+      return `shopify-migration-${hashString(url)}.jpg`;
+    }
+  };
+
+  const collectPendingShopifyUrls = () => {
+    const urls = new Set<string>();
+
+    Object.values($store.inventory.idToItem || {}).forEach((raw) => {
+      const image = trimString((raw as any)?.image);
+      if (isShopifyCdnUrl(image)) urls.add(image);
+    });
+
+    Object.values($store.listings.handleToListing || {}).forEach((raw) => {
+      const listing = raw as any;
+      (listing?.images || []).forEach((img: any) => {
+        const url = trimString(img?.url);
+        if (isShopifyCdnUrl(url)) urls.add(url);
+      });
+    });
+
+    return Array.from(urls);
+  };
+
+  $: pendingMigrations = collectPendingShopifyUrls();
 
   async function migrateImages() {
     if (pendingMigrations.length === 0) return;
     processing = true;
-    let migratedCount = 0;
+    let queuedCount = 0;
     const total = pendingMigrations.length;
 
-    const token = getStoredToken();
-    if (!token) {
+    if (!$user || !$user.uid) {
+      error = "Must be authenticated to queue migration requests.";
+      processing = false;
+      return;
+    }
+
+    if (!getStoredToken()) {
       error = "Not authenticated with Drive";
       processing = false;
       return;
     }
 
     try {
-      if (!cachedOriginalsId) {
-        const { originalsId } = await ensureFolderStructure(token.access_token);
-        cachedOriginalsId = originalsId;
-      }
-
-      const CHUNK_SIZE = 5; // Parallel uploads
+      const CHUNK_SIZE = 25;
       for (let i = 0; i < total; i += CHUNK_SIZE) {
         const chunk = pendingMigrations.slice(i, i + CHUNK_SIZE);
 
         await Promise.all(
-          chunk.map(async (item) => {
+          chunk.map(async (sourceUrl) => {
             try {
-              uploadStatus = `Migrating ${migratedCount + 1}/${total}...`;
-              const driveLink = await uploadImage(item.image, item.janCode);
-              if (driveLink) {
-                // Update Inventory
-                if ($user && $user.uid) {
-                  // Construct full item for update
-                  // item has 'key' mixed in, but that's fine for spread if Item allows excess props or we cast.
-                  // Ideally clean it.
-                  const { key, ...itemData } = item;
-                  const newItem = { ...itemData, image: driveLink };
+              uploadStatus = `Queueing ${queuedCount + 1}/${total}...`;
+              const sourceHash = hashString(sourceUrl);
+              const requestId = `shopify-transfer-${sourceHash}-${Date.now()}`;
 
-                  broadcast(
-                    firestore,
-                    $user.uid,
-                    update_item({
-                      id: key,
-                      item: newItem,
-                    }),
-                  );
-                }
-              }
-              migratedCount++;
+              await addDoc(
+                collection(firestore, PHOTOS_TRANSFER_REQUEST_COLLECTION),
+                {
+                  eventType: PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT,
+                  requestId,
+                  creator: $user.uid,
+                  requestedBy: $user.uid,
+                  requestedAt: Date.now(),
+                  source: SHOPIFY_MIGRATION_SOURCE,
+                  photoId: `shopify:${sourceHash}`,
+                  filename: deriveFilenameFromUrl(sourceUrl),
+                  mimeType: inferMimeTypeFromUrl(sourceUrl),
+                  payloadVersion: 1,
+                  payload: {
+                    photoId: `shopify:${sourceHash}`,
+                    sourceBaseUrl: sourceUrl,
+                    filename: deriveFilenameFromUrl(sourceUrl),
+                    mimeType: inferMimeTypeFromUrl(sourceUrl),
+                    sourceType: "shopify_cdn",
+                    sourceRef: {
+                      url: sourceUrl,
+                      source: SHOPIFY_MIGRATION_SOURCE,
+                    },
+                  },
+                  createdAtMs: Date.now(),
+                  createdAt: serverTimestamp(),
+                  timestamp: serverTimestamp(),
+                },
+              );
+
+              queuedCount++;
             } catch (e) {
-              console.error(`Failed to migrate ${item.janCode}`, e);
+              console.error(`Failed to queue migration for ${sourceUrl}`, e);
             }
           }),
         );
       }
-      successMsg = `Migrated ${migratedCount} images.`;
+      successMsg = `Queued ${queuedCount} image migration request(s).`;
     } catch (e) {
       error =
-        "Migration failed: " + (e instanceof Error ? e.message : String(e));
+        "Migration queueing failed: " +
+        (e instanceof Error ? e.message : String(e));
     } finally {
       processing = false;
       uploadStatus = "";
@@ -790,43 +857,8 @@
     closeConflictModal();
   }
 
-  // --- Image Helpers ---
+  // --- Migration Status Helpers ---
   let uploadStatus = "";
-  let cachedOriginalsId: string | null = null;
-  async function uploadImage(
-    url: string,
-    filenameBase: string,
-  ): Promise<string | null> {
-    try {
-      const token = getStoredToken();
-      if (!token) return null;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
-      const blob = await resp.blob();
-      if (!cachedOriginalsId) {
-        const { originalsId } = await ensureFolderStructure(token.access_token);
-        cachedOriginalsId = originalsId;
-      }
-      const driveFilename = `${Date.now()}_${filenameBase}.jpg`;
-      const contentHash = await calculateHash(blob);
-      const driveFile = await uploadImageToDrive(
-        blob,
-        driveFilename,
-        cachedOriginalsId,
-        token.access_token,
-        generateDerivationKey("ext", contentHash, "identity"),
-      );
-      return (
-        driveFile.publicUrl ||
-        driveFile.thumbnailLink ||
-        driveFile.webContentLink ||
-        null
-      );
-    } catch (e) {
-      console.error("Image upload failed", url, e);
-      return null;
-    }
-  }
 
   async function processBatch(targetStatus: "MATCH" | "NEW") {
     if (!analyzedPlan.length) return;
@@ -987,8 +1019,8 @@
               <div>
                 <h3 class="migration-title">Image Migration</h3>
                 <p class="migration-description">
-                  {pendingMigrations.length} products have Shopify CDN images that
-                  need to be backed up to Drive.
+                  {pendingMigrations.length} Shopify CDN image URL(s) are pending
+                  migration to Drive.
                 </p>
               </div>
               <div class="migration-actions">

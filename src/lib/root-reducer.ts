@@ -284,6 +284,12 @@ const mapShopifyToInventory = (importItem: any): Item => {
   } as Item;
 };
 
+const trimString = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
+
+const isShopifyCdnUrl = (value: string): boolean =>
+  value.includes("cdn.shopify.com");
+
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
 export const rootReducer = (
   state: any,
@@ -364,6 +370,123 @@ export const rootReducer = (
           handleToListing: nextHandleToListing,
         },
       };
+    }
+  }
+
+  if (action.type === "photos/shopify_cdn_uploaded") {
+    const sourceType = trimString(action.payload?.sourceType);
+    const permanentUrl = trimString(action.payload?.permanentUrl);
+    const sourceCandidates = Array.from(
+      new Set(
+        [
+          trimString(action.payload?.sourceBaseUrl),
+          trimString(action.payload?.sourceUrl),
+        ].filter((url) => isShopifyCdnUrl(url)),
+      ),
+    );
+
+    if (
+      sourceType === "shopify_cdn" &&
+      permanentUrl &&
+      sourceCandidates.length > 0
+    ) {
+      const sourceSet = new Set(sourceCandidates);
+      let inventoryChanged = false;
+      let mapChanged = false;
+      let listingsChanged = false;
+
+      const inventoryState = nextState.inventory;
+      const nextIdToItem: Record<string, any> = { ...inventoryState.idToItem };
+      const nextShopifyUrlToDriveUrl = {
+        ...(inventoryState.shopifyUrlToDriveUrl || {}),
+      };
+
+      Object.entries(nextIdToItem).forEach(([id, raw]) => {
+        const item = raw as any;
+        const currentImage = trimString(item?.image);
+        if (!sourceSet.has(currentImage)) return;
+        if (currentImage !== permanentUrl) {
+          nextIdToItem[id] = { ...item, image: permanentUrl };
+          inventoryChanged = true;
+        }
+      });
+
+      sourceCandidates.forEach((sourceUrl) => {
+        if (nextShopifyUrlToDriveUrl[sourceUrl] === permanentUrl) return;
+        nextShopifyUrlToDriveUrl[sourceUrl] = permanentUrl;
+        mapChanged = true;
+      });
+
+      const listingsState = nextState.listings;
+      const nextHandleToListing = { ...listingsState.handleToListing };
+
+      Object.entries(nextHandleToListing).forEach(([handle, listingRaw]) => {
+        const listing = listingRaw as any;
+        const existingImages = Array.isArray(listing?.images)
+          ? listing.images
+          : [];
+        if (existingImages.length === 0) return;
+
+        let listingChanged = false;
+        const seenUrls = new Set<string>();
+        const nextImages: any[] = [];
+
+        existingImages.forEach((img: any) => {
+          const currentUrl = trimString(img?.url);
+          const currentId = trimString(img?.id);
+          let nextUrl = currentUrl;
+          let nextId = currentId;
+
+          if (sourceSet.has(currentUrl) && currentUrl !== permanentUrl) {
+            nextUrl = permanentUrl;
+            if (currentId === currentUrl || sourceSet.has(currentId)) {
+              nextId = permanentUrl;
+            }
+            listingChanged = true;
+          }
+
+          if (!seenUrls.has(nextUrl)) {
+            seenUrls.add(nextUrl);
+            nextImages.push(
+              nextUrl === currentUrl && nextId === currentId
+                ? img
+                : { ...img, url: nextUrl, id: nextId || nextUrl },
+            );
+          } else {
+            listingChanged = true;
+          }
+        });
+
+        if (listingChanged) {
+          nextHandleToListing[handle] = {
+            ...listing,
+            images: nextImages,
+            lastUpdated: normalizeActionTimestampMs(action),
+          };
+          listingsChanged = true;
+        }
+      });
+
+      if (inventoryChanged || mapChanged) {
+        nextState = {
+          ...nextState,
+          inventory: {
+            ...inventoryState,
+            idToItem: nextIdToItem,
+            shopifyUrlToDriveUrl: nextShopifyUrlToDriveUrl,
+          },
+        };
+      }
+
+      if (listingsChanged) {
+        nextState = {
+          ...nextState,
+          listings: {
+            ...nextState.listings,
+            handleToListing: nextHandleToListing,
+          },
+        };
+      }
     }
   }
 

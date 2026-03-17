@@ -354,6 +354,20 @@ async function emitSuccess({
     `photos_complete_${requestEventId}`,
     broadcastAction,
   );
+
+  if (!isTransform && payload.sourceType === "shopify_cdn") {
+    await createIdempotentBroadcastAction(db, `shopify_cdn_${requestEventId}`, {
+      type: "photos/shopify_cdn_uploaded",
+      creator,
+      payload: {
+        requestId,
+        permanentUrl: payload.permanentUrl || "",
+        sourceBaseUrl: payload.sourceBaseUrl || "",
+        sourceUrl: payload.sourceUrl || "",
+        sourceType: "shopify_cdn",
+      },
+    });
+  }
 }
 
 async function fetchSourceBytes({
@@ -1013,6 +1027,8 @@ async function executeTransfer({
         photoId,
         filename,
         sourceUrl: usedUrl,
+        sourceBaseUrl,
+        sourceType,
         driveFileId: uploaded.id,
         permanentUrl: uploaded.publicUrl || uploaded.apiUrl,
         apiUrl: uploaded.apiUrl,
