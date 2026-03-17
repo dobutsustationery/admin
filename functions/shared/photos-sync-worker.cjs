@@ -183,6 +183,30 @@ function stripGoogleusercontentSuffix(url) {
   return String(url || "").replace(/=[a-z0-9,-]+$/i, "");
 }
 
+function toDeletedShopifyCdnUrl(rawUrl) {
+  const value = normalizeString(rawUrl);
+  if (!value) return "";
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (_) {
+    return "";
+  }
+
+  if (parsed.hostname !== "cdn.shopify.com") return "";
+
+  const nextPath = parsed.pathname.replace(
+    /^(\/s\/files\/(?:[^/]+\/){4})(?:deleted\/)?\/+files\//i,
+    "$1deleted/files/",
+  );
+
+  if (nextPath === parsed.pathname) return "";
+
+  parsed.pathname = nextPath;
+  return parsed.toString();
+}
+
 async function summarizeFailedFetchResponse(resp) {
   if (!resp) {
     return { status: 0, statusText: "no_response" };
@@ -223,7 +247,11 @@ async function findFileByDerivationKey(accessToken, derivationKey, onApiCall) {
   );
 }
 
-async function resolveFreshPhotosBaseUrl(photoId, photosAccessToken, onApiCall) {
+async function resolveFreshPhotosBaseUrl(
+  photoId,
+  photosAccessToken,
+  onApiCall,
+) {
   const id = normalizeString(photoId);
   const token = normalizeString(photosAccessToken);
   if (!id || !token) return "";
@@ -369,6 +397,7 @@ async function fetchSourceBytes({
 
   pushCandidate(refreshedBaseUrl);
   pushCandidate(baseUrl);
+  pushCandidate(toDeletedShopifyCdnUrl(baseUrl));
   const candidates = Array.from(candidateSet);
 
   let resp = null;
@@ -1215,4 +1244,5 @@ async function processRequestEvent({
 
 module.exports = {
   processRequestEvent,
+  toDeletedShopifyCdnUrl,
 };
