@@ -290,6 +290,61 @@ const trimString = (value: unknown): string =>
 const isShopifyCdnUrl = (value: string): boolean =>
   value.includes("cdn.shopify.com");
 
+const canonicalizeShopifyCdnUrl = (raw: string): string => {
+  const value = trimString(raw);
+  if (!value) return "";
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch (_) {
+    return value;
+  }
+  if (!parsed.hostname.toLowerCase().includes("cdn.shopify.com")) return value;
+
+  // Normalize repeated slashes in path and preserve search params order as-is.
+  parsed.pathname = parsed.pathname.replace(/\/{2,}/g, "/");
+  return parsed.toString();
+};
+
+const toDeletedShopifyPathVariant = (rawUrl: string): string => {
+  const value = trimString(rawUrl);
+  if (!value) return "";
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch (_) {
+    return "";
+  }
+  if (!parsed.hostname.toLowerCase().includes("cdn.shopify.com")) return "";
+  const normalizedPath = parsed.pathname.replace(/\/{2,}/g, "/");
+  const nextPath = normalizedPath.replace(
+    /^(\/s\/files\/(?:[^/]+\/){4})(?:deleted\/)?files\//i,
+    "$1deleted/files/",
+  );
+  if (nextPath === normalizedPath) return "";
+  parsed.pathname = nextPath.replace(/\/{2,}/g, "/");
+  return parsed.toString();
+};
+
+const toNonDeletedShopifyPathVariant = (rawUrl: string): string => {
+  const value = trimString(rawUrl);
+  if (!value) return "";
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch (_) {
+    return "";
+  }
+  if (!parsed.hostname.toLowerCase().includes("cdn.shopify.com")) return "";
+  const nextPath = parsed.pathname.replace(
+    /^(\/s\/files\/(?:[^/]+\/){4})deleted\/files\//i,
+    "$1files/",
+  );
+  if (nextPath === parsed.pathname) return "";
+  parsed.pathname = nextPath.replace(/\/{2,}/g, "/");
+  return parsed.toString();
+};
+
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
 export const rootReducer = (
   state: any,
@@ -374,23 +429,27 @@ export const rootReducer = (
   }
 
   if (action.type === "photos/shopify_cdn_uploaded") {
-    const sourceType = trimString(action.payload?.sourceType);
     const permanentUrl = trimString(action.payload?.permanentUrl);
+    const rawCandidates = [
+      trimString(action.payload?.sourceBaseUrl),
+      trimString(action.payload?.sourceUrl),
+    ].filter((url) => isShopifyCdnUrl(url));
+
     const sourceCandidates = Array.from(
       new Set(
-        [
-          trimString(action.payload?.sourceBaseUrl),
-          trimString(action.payload?.sourceUrl),
-        ].filter((url) => isShopifyCdnUrl(url)),
+        rawCandidates.flatMap((url) => [
+          url,
+          canonicalizeShopifyCdnUrl(url),
+          toDeletedShopifyPathVariant(url),
+          toNonDeletedShopifyPathVariant(url),
+        ]),
       ),
-    );
+    ).filter(Boolean);
 
-    if (
-      sourceType === "shopify_cdn" &&
-      permanentUrl &&
-      sourceCandidates.length > 0
-    ) {
-      const sourceSet = new Set(sourceCandidates);
+    if (permanentUrl && sourceCandidates.length > 0) {
+      const sourceSet = new Set(
+        sourceCandidates.map((url) => canonicalizeShopifyCdnUrl(url)),
+      );
       let inventoryChanged = false;
       let mapChanged = false;
       let listingsChanged = false;
@@ -404,7 +463,7 @@ export const rootReducer = (
       Object.entries(nextIdToItem).forEach(([id, raw]) => {
         const item = raw as any;
         const currentImage = trimString(item?.image);
-        if (!sourceSet.has(currentImage)) return;
+        if (!sourceSet.has(canonicalizeShopifyCdnUrl(currentImage))) return;
         if (currentImage !== permanentUrl) {
           nextIdToItem[id] = { ...item, image: permanentUrl };
           inventoryChanged = true;
@@ -437,9 +496,15 @@ export const rootReducer = (
           let nextUrl = currentUrl;
           let nextId = currentId;
 
-          if (sourceSet.has(currentUrl) && currentUrl !== permanentUrl) {
+          if (
+            sourceSet.has(canonicalizeShopifyCdnUrl(currentUrl)) &&
+            currentUrl !== permanentUrl
+          ) {
             nextUrl = permanentUrl;
-            if (currentId === currentUrl || sourceSet.has(currentId)) {
+            if (
+              currentId === currentUrl ||
+              sourceSet.has(canonicalizeShopifyCdnUrl(currentId))
+            ) {
               nextId = permanentUrl;
             }
             listingChanged = true;
