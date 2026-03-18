@@ -196,12 +196,13 @@ function toDeletedShopifyCdnUrl(rawUrl) {
 
   if (parsed.hostname !== "cdn.shopify.com") return "";
 
-  const nextPath = parsed.pathname.replace(
-    /^(\/s\/files\/(?:[^/]+\/){4})(?:deleted\/)?\/+files\//i,
+  const normalizedPath = parsed.pathname.replace(/\/{2,}/g, "/");
+  const nextPath = normalizedPath.replace(
+    /^(\/s\/files\/(?:[^/]+\/){4})(?:deleted\/)?files\//i,
     "$1deleted/files/",
   );
 
-  if (nextPath === parsed.pathname) return "";
+  if (nextPath === normalizedPath) return "";
 
   parsed.pathname = nextPath;
   return parsed.toString();
@@ -878,6 +879,9 @@ async function executeTransfer({
           payload: {
             photoId,
             filename: existingFile.name,
+            sourceUrl: sourceBaseUrl,
+            sourceBaseUrl,
+            sourceType,
             driveFileId: existingFile.id,
             permanentUrl: existingFile.publicUrl || existingFile.apiUrl,
             apiUrl: existingFile.apiUrl,
