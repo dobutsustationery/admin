@@ -54,6 +54,7 @@ const result = spawnSync(
     "--skip-gcloud",
     "--skip-api-enablement",
     "--skip-adc-login",
+    "--auto-open-auth-url",
   ],
   {
     stdio: "inherit",

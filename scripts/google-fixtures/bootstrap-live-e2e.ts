@@ -2,7 +2,7 @@ import { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import http from "http";
 import readline from "readline/promises";
 import { stdin as input, stdout as output } from "process";
@@ -37,6 +37,7 @@ type Args = {
   skipAdcLogin: boolean;
   driveFolderName: string;
   photosAlbumTitle: string;
+  autoOpenAuthUrl: boolean;
 };
 
 type AdcCreds = {
@@ -108,6 +109,7 @@ function parseArgs(): Args {
     skipAdcLogin: args.includes("--skip-adc-login"),
     driveFolderName: get("--drive-folder-name") || "DobutsuE2E",
     photosAlbumTitle: get("--photos-album-title") || "DobutsuE2EFixtures",
+    autoOpenAuthUrl: args.includes("--auto-open-auth-url"),
   };
 }
 
@@ -273,6 +275,7 @@ async function getRefreshToken(
   clientSecret: string,
   scopes: string[],
   label: string,
+  autoOpenAuthUrl: boolean,
 ): Promise<string> {
   const oauth2Client = new OAuth2Client(clientId, clientSecret, REDIRECT_URI);
   const authUrl = oauth2Client.generateAuthUrl({
@@ -282,6 +285,16 @@ async function getRefreshToken(
   });
 
   console.log(`\n[${label}] Open this URL and complete consent:\n${authUrl}\n`);
+  if (autoOpenAuthUrl && process.platform === "darwin") {
+    const openResult = spawnSync("open", [authUrl], { stdio: "ignore" });
+    if (openResult.status === 0) {
+      console.log(`[${label}] Opened auth URL in default browser.`);
+    } else {
+      console.warn(
+        `[${label}] Failed to auto-open auth URL via 'open'. Please open manually.`,
+      );
+    }
+  }
 
   const code = await new Promise<string>((resolve, reject) => {
     const server = http.createServer((req, res) => {
@@ -697,18 +710,20 @@ async function main() {
       }
     }
 
-    const driveRefreshToken = await getRefreshToken(
-      clientId,
-      clientSecret,
-      DRIVE_SCOPES,
-      "Drive",
-    );
-    const photosRefreshToken = await getRefreshToken(
-      clientId,
-      clientSecret,
-      PHOTOS_SCOPES,
-      "Photos",
-    );
+  const driveRefreshToken = await getRefreshToken(
+    clientId,
+    clientSecret,
+    DRIVE_SCOPES,
+    "Drive",
+    args.autoOpenAuthUrl,
+  );
+  const photosRefreshToken = await getRefreshToken(
+    clientId,
+    clientSecret,
+    PHOTOS_SCOPES,
+    "Photos",
+    args.autoOpenAuthUrl,
+  );
 
     const driveFolderId = await createOrFindDriveFolder(
       clientId,
