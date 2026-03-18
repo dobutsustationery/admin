@@ -16,6 +16,7 @@
     getFolderLink,
     type DriveFile,
   } from "$lib/google-drive";
+  import { getAllCachedActions } from "$lib/action-cache";
   import type { AnyAction } from "$lib/store";
   import {
     start_session,
@@ -48,6 +49,8 @@
   $: step = $store.shopifyImport.step;
   $: resolutions = $store.shopifyImport.resolutions || {};
   let importStatus: "idle" | "success" | "error" = "idle";
+  let historicalShopifyUploadActionsCount = 0;
+  let historicalFailedShopifySourceUrls: string[] = [];
 
   // --- Migration Logic ---
   const SHOPIFY_MIGRATION_SOURCE = "shopify-import-migration";
@@ -57,6 +60,39 @@
 
   const isShopifyCdnUrl = (value: unknown) =>
     trimString(value).includes("cdn.shopify.com");
+
+  const toShopifyIdentity = (raw: string): string => {
+    const value = trimString(raw);
+    if (!value) return "";
+    try {
+      const u = new URL(value);
+      if (!u.hostname.toLowerCase().includes("cdn.shopify.com")) return value;
+      u.pathname = u.pathname.replace(/\/{2,}/g, "/");
+      u.pathname = u.pathname.replace(
+        /^(\/s\/files\/(?:[^/]+\/){4})deleted\/files\//i,
+        "$1files/",
+      );
+      return u.toString();
+    } catch {
+      return value;
+    }
+  };
+
+  const extractShopifyFailSourceUrl = (errorValue: unknown): string => {
+    const errorText = trimString(errorValue);
+    if (!errorText) return "";
+
+    const marker = "source_fetch_failed:";
+    const markerIndex = errorText.indexOf(marker);
+    if (markerIndex < 0) return "";
+
+    const rest = errorText.slice(markerIndex + marker.length);
+    const attemptsIndex = rest.indexOf(":attempts=");
+    const candidate =
+      attemptsIndex >= 0 ? rest.slice(0, attemptsIndex) : rest.split(/\s+/)[0];
+    const normalized = trimString(candidate);
+    return isShopifyCdnUrl(normalized) ? normalized : "";
+  };
 
   const hashString = (value: string) => {
     let hash = 2166136261;
@@ -110,12 +146,96 @@
   };
 
   $: pendingMigrations = collectPendingShopifyUrls();
+  const isShopifyMigrationRequest = (req: any): boolean =>
+    trimString(req?.source) === SHOPIFY_MIGRATION_SOURCE ||
+    trimString(req?.requestId).startsWith("shopify-transfer-");
 
-  async function migrateImages() {
-    if (pendingMigrations.length === 0) return;
+  const getRequestedSourceUrl = (req: any): string => {
+    const timeline = Array.isArray(req?.timeline) ? req.timeline : [];
+    for (const ev of timeline) {
+      const eventType = trimString(ev?.eventType);
+      if (eventType !== "photos/image_transfer_requested") continue;
+      const payloadUrl = trimString(ev?.payload?.sourceBaseUrl);
+      if (payloadUrl) return payloadUrl;
+    }
+    return "";
+  };
+
+  $: migrationRequests = Object.values($store.shopifySync?.requestsById || {})
+    .filter((req: any) => isShopifyMigrationRequest(req))
+    .map((req: any) => ({
+      requestId: trimString(req?.requestId),
+      status: trimString(req?.status),
+      sourceUrl: getRequestedSourceUrl(req),
+    }));
+
+  $: successfulMigrationUrls = Array.from(
+    new Set(
+      migrationRequests
+        .filter((req: any) => req.status === "success" && req.sourceUrl)
+        .map((req: any) => req.sourceUrl),
+    ),
+  );
+  $: unresolvedFailedMigrationUrls = Array.from(
+    new Set(
+      migrationRequests
+        .filter((req: any) => req.status === "failed" && req.sourceUrl)
+        .map((req: any) => req.sourceUrl)
+        .filter(
+          (url: string) =>
+            !successfulMigrationUrls.some(
+              (ok) => toShopifyIdentity(ok) === toShopifyIdentity(url),
+            ),
+        ),
+    ),
+  );
+  // State-driven unresolved URLs (not necessarily failed transfers).
+  $: migratedSourceUrlsFromMap = Array.from(
+    new Set(
+      Object.keys($store.inventory?.shopifyUrlToDriveUrl || {})
+        .map((u) => trimString(u))
+        .filter((u) => isShopifyCdnUrl(u)),
+    ),
+  );
+  $: migratedSourceUrls = Array.from(
+    new Set([...migratedSourceUrlsFromMap, ...successfulMigrationUrls]),
+  );
+  $: migratedSourceIdentities = new Set(
+    migratedSourceUrls.map((u) => toShopifyIdentity(u)),
+  );
+  $: unresolvedStateUrls = pendingMigrations.filter((url) => {
+    const identity = toShopifyIdentity(url);
+    return identity && !migratedSourceIdentities.has(identity);
+  });
+  $: unresolvedFailedMigrationUrlsFromHistory = unresolvedStateUrls.filter(
+    (url) =>
+      historicalFailedShopifySourceUrls.some(
+        (failedUrl) => toShopifyIdentity(failedUrl) === toShopifyIdentity(url),
+      ),
+  );
+  $: retryableFailedMigrationUrls = Array.from(
+    new Set([
+      ...unresolvedFailedMigrationUrls,
+      ...unresolvedFailedMigrationUrlsFromHistory,
+    ]),
+  );
+
+  // Failed count includes request-view failures and explicit fail_upload actions.
+  $: failedMigrationsCount = retryableFailedMigrationUrls.length;
+  $: unresolvedMigrationsCount = unresolvedStateUrls.length;
+  $: migratedPendingMigrationsCount =
+    pendingMigrations.length - unresolvedMigrationsCount;
+  $: knownMigratedUrlsCount = migratedSourceIdentities.size;
+
+  async function queueMigrationRequests(urls: string[], modeLabel: string) {
+    const queueUrls = Array.from(
+      new Set(urls.map((u) => trimString(u)).filter((u) => isShopifyCdnUrl(u))),
+    );
+    if (queueUrls.length === 0) return;
+
     processing = true;
     let queuedCount = 0;
-    const total = pendingMigrations.length;
+    const total = queueUrls.length;
 
     if (!$user || !$user.uid) {
       error = "Must be authenticated to queue migration requests.";
@@ -132,7 +252,7 @@
     try {
       const CHUNK_SIZE = 25;
       for (let i = 0; i < total; i += CHUNK_SIZE) {
-        const chunk = pendingMigrations.slice(i, i + CHUNK_SIZE);
+        const chunk = queueUrls.slice(i, i + CHUNK_SIZE);
 
         await Promise.all(
           chunk.map(async (sourceUrl) => {
@@ -178,7 +298,7 @@
           }),
         );
       }
-      successMsg = `Queued ${queuedCount} image migration request(s).`;
+      successMsg = `${modeLabel}: queued ${queuedCount} image migration request(s).`;
     } catch (e) {
       error =
         "Migration queueing failed: " +
@@ -186,6 +306,60 @@
     } finally {
       processing = false;
       uploadStatus = "";
+    }
+  }
+
+  async function migrateImages() {
+    await queueMigrationRequests(pendingMigrations, "Migration");
+  }
+
+  async function retryFailedMigrations() {
+    await queueMigrationRequests(retryableFailedMigrationUrls, "Retry");
+    await refreshHistoricalMigrationCounts();
+  }
+
+  async function refreshHistoricalMigrationCounts() {
+    try {
+      const actions = await getAllCachedActions();
+      historicalShopifyUploadActionsCount = actions.filter(
+        (a: any) => a?.type === "photos/shopify_cdn_uploaded",
+      ).length;
+
+      const successfulSourceIdentities = new Set(
+        actions
+          .filter((a: any) => a?.type === "photos/shopify_cdn_uploaded")
+          .map((a: any) =>
+            toShopifyIdentity(
+              trimString(a?.payload?.sourceBaseUrl) ||
+                trimString(a?.payload?.sourceUrl),
+            ),
+          )
+          .filter(Boolean),
+      );
+
+      const failedIdentityToUrl = new Map<string, string>();
+      actions
+        .filter((a: any) => a?.type === "photos/fail_upload")
+        .forEach((a: any) => {
+          const failedUrl = extractShopifyFailSourceUrl(a?.payload?.error);
+          const identity = toShopifyIdentity(failedUrl);
+          if (!identity) return;
+          if (successfulSourceIdentities.has(identity)) return;
+          if (!failedIdentityToUrl.has(identity)) {
+            failedIdentityToUrl.set(identity, failedUrl);
+          }
+        });
+
+      historicalFailedShopifySourceUrls = Array.from(
+        failedIdentityToUrl.values(),
+      );
+    } catch (e) {
+      console.warn(
+        "[shopify-import] failed to read cached migration actions",
+        e,
+      );
+      historicalShopifyUploadActionsCount = 0;
+      historicalFailedShopifySourceUrls = [];
     }
   }
   interface AnalyzedItem extends ShopifyImportItem {
@@ -591,6 +765,7 @@
   // Helper to compute default handle
 
   onMount(async () => {
+    await refreshHistoricalMigrationCounts();
     driveConfigured = isDriveConfigured();
     if (driveConfigured) {
       const result = await handleOAuthCallback();
@@ -1013,7 +1188,7 @@
         {#if successMsg}<div class="message success">{successMsg}</div>{/if}
 
         <!-- Migration Panel -->
-        {#if pendingMigrations.length > 0}
+        {#if pendingMigrations.length > 0 || failedMigrationsCount > 0}
           <div class="migration-panel">
             <div class="migration-header">
               <div>
@@ -1022,6 +1197,25 @@
                   {pendingMigrations.length} Shopify CDN image URL(s) are pending
                   migration to Drive.
                 </p>
+                <p class="migration-description">
+                  Known migrated source URLs: {knownMigratedUrlsCount}
+                </p>
+                <p class="migration-description">
+                  Successful migration actions in log: {historicalShopifyUploadActionsCount}
+                </p>
+                <p class="migration-description">
+                  Migrated within pending set: {migratedPendingMigrationsCount}
+                </p>
+                {#if failedMigrationsCount > 0}
+                  <p class="migration-description">
+                    Failed migrations: {failedMigrationsCount}
+                  </p>
+                {/if}
+                {#if unresolvedMigrationsCount > 0}
+                  <p class="migration-description">
+                    Unresolved Shopify URLs: {unresolvedMigrationsCount}
+                  </p>
+                {/if}
               </div>
               <div class="migration-actions">
                 {#if processing && uploadStatus}
@@ -1030,15 +1224,22 @@
                 <button
                   class="btn-primary"
                   on:click={migrateImages}
-                  disabled={processing}
+                  disabled={processing || pendingMigrations.length === 0}
                 >
                   Migrate Images
+                </button>
+                <button
+                  class="btn-secondary"
+                  on:click={retryFailedMigrations}
+                  disabled={processing || failedMigrationsCount === 0}
+                >
+                  Retry Failed
                 </button>
               </div>
             </div>
             <div class="migration-progress-track">
               <!-- Simple visual feedback if migrating -->
-              {#if processing && uploadStatus.includes("Migrating")}
+              {#if processing && uploadStatus.includes("Queueing")}
                 <div class="migration-progress-fill"></div>
               {/if}
             </div>
