@@ -42,7 +42,7 @@
     | "admin_ahead"
     | "shopify_ahead"
     | "synced";
-  const SKEW_MS = 5000;
+  const SKEW_MS = 3 * 60_000;
 
   const STATUS_PRIORITY: Record<RowStatus, number> = {
     admin_only: 0,
