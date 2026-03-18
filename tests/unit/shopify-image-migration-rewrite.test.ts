@@ -6,6 +6,8 @@ import { create_listing } from "../../src/lib/listings-slice";
 describe("shopify image migration rewrite", () => {
   it("rewrites Shopify CDN URLs in inventory and listings on shopify_cdn completion", () => {
     const sourceUrl =
+      "https://cdn.shopify.com/s/files/1/0914/2937/2286/files/IMG_5787.heic?v=1759222350";
+    const sourceUrlWithDoubleSlash =
       "https://cdn.shopify.com/s/files/1/0914/2937/2286//files/IMG_5787.heic?v=1759222350";
     const deletedSourceUrl =
       "https://cdn.shopify.com/s/files/1/0914/2937/2286/deleted/files/IMG_5787.heic?v=1759222350";
@@ -69,7 +71,7 @@ describe("shopify image migration rewrite", () => {
       payload: {
         permanentUrl: driveUrl,
         sourceType: "shopify_cdn",
-        sourceBaseUrl: sourceUrl,
+        sourceBaseUrl: sourceUrlWithDoubleSlash,
         sourceUrl: deletedSourceUrl,
       },
       _timestamp: 1760000000000,

@@ -14,6 +14,15 @@ describe("shopify image migration deleted fallback URL", () => {
     );
   });
 
+  it("handles single-slash /files/ paths (no double slash) used in listings", () => {
+    const source =
+      "https://cdn.shopify.com/s/files/1/0914/2937/2286/files/IMG_5789.heic?v=1759222350";
+
+    expect(toDeletedShopifyCdnUrl(source)).toBe(
+      "https://cdn.shopify.com/s/files/1/0914/2937/2286/deleted/files/IMG_5789.heic?v=1759222350",
+    );
+  });
+
   it("returns empty string when URL is already deleted variant", () => {
     const source =
       "https://cdn.shopify.com/s/files/1/0914/2937/2286/deleted/files/IMG_5787.heic?v=1759222350";
