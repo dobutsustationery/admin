@@ -56,6 +56,12 @@ function ensureCategory(state: ListingsState, category: string) {
 const actionTimestampMs = (action: { _timestamp: number }): number =>
   action._timestamp;
 
+const keepLatestTimestamp = (
+  currentTimestampMs: number,
+  nextTimestampMs: number,
+): number =>
+  Math.max(Number(currentTimestampMs || 0), Number(nextTimestampMs || 0));
+
 // Actions
 export const create_listing = createAction<{ listing: Listing }>(
   "create_listing",
@@ -93,7 +99,10 @@ export const listings = createReducer(initialState, (builder) => {
           state.handleToListing[handle] = {
             ...existing,
             ...changes,
-            lastUpdated: actionTimestampMs(action),
+            lastUpdated: keepLatestTimestamp(
+              existing.lastUpdated,
+              actionTimestampMs(action),
+            ),
           };
           if (changes.productCategory)
             ensureCategory(state, changes.productCategory);
@@ -117,7 +126,10 @@ export const listings = createReducer(initialState, (builder) => {
           const exists = listing.images.some((img) => img.id === image.id);
           if (!exists) {
             listing.images.push(image);
-            listing.lastUpdated = actionTimestampMs(action);
+            listing.lastUpdated = keepLatestTimestamp(
+              listing.lastUpdated,
+              actionTimestampMs(action),
+            );
           }
         }
       }),
@@ -129,7 +141,10 @@ export const listings = createReducer(initialState, (builder) => {
         const listing = state.handleToListing[handle];
         if (listing) {
           listing.images = listing.images.filter((img) => img.id !== imageId);
-          listing.lastUpdated = actionTimestampMs(action);
+          listing.lastUpdated = keepLatestTimestamp(
+            listing.lastUpdated,
+            actionTimestampMs(action),
+          );
         }
       }),
     )
@@ -352,7 +367,10 @@ function handleLegacyUpdate(
         position: itemPayload.imagePosition || listing.images.length + 1,
         altText: itemPayload.imageAltText || itemPayload.description || "",
       });
-      listing.lastUpdated = timestampMs;
+      listing.lastUpdated = keepLatestTimestamp(
+        listing.lastUpdated,
+        timestampMs,
+      );
     }
   }
 }
@@ -397,7 +415,7 @@ function applyHandleUpdate(
       const movedListing = {
         ...priorListing,
         handle: newHandle,
-        lastUpdated: timestampMs,
+        lastUpdated: keepLatestTimestamp(priorListing.lastUpdated, timestampMs),
       };
       delete state.handleToListing[priorHandle];
       state.handleToListing[newHandle] = movedListing;
@@ -406,7 +424,7 @@ function applyHandleUpdate(
       const newListing = {
         ...priorListing,
         handle: newHandle,
-        lastUpdated: timestampMs,
+        lastUpdated: keepLatestTimestamp(priorListing.lastUpdated, timestampMs),
       };
       state.handleToListing[newHandle] = newListing;
     }
