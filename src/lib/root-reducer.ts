@@ -27,7 +27,10 @@ import {
   create_listing,
   update_listing,
 } from "./listings-slice";
-import { shopifySync } from "./shopify-sync-slice";
+import {
+  shopifySync,
+  replace_shopify_sync_events as replaceShopifySyncEvents,
+} from "./shopify-sync-slice";
 import { syncQueue } from "./sync-queue-slice";
 import listingCreation, {
   add_variants_internal,
@@ -81,6 +84,12 @@ export { toTimestampMs };
 
 const normalizeActionTimestampMs = (action: TimestampedAction): number =>
   action._timestamp;
+
+const keepLatestTimestamp = (
+  currentTimestampMs: number,
+  nextTimestampMs: number,
+): number =>
+  Math.max(Number(currentTimestampMs || 0), Number(nextTimestampMs || 0));
 
 const getIncomingIdObservations = (
   action: any,
@@ -385,7 +394,7 @@ export const rootReducer = (
   // 3. Interception & Composition
 
   if (
-    action.type === "replace_shopify_sync_events" &&
+    action.type === replaceShopifySyncEvents.type &&
     Array.isArray(action.payload) &&
     action.payload.length > 0
   ) {
@@ -408,7 +417,7 @@ export const rootReducer = (
       const listing = nextHandleToListing[handle];
       if (!listing) continue;
 
-      if (listing.lastUpdated !== completedAtMs) {
+      if (completedAtMs > Number(listing.lastUpdated || 0)) {
         nextHandleToListing[handle] = {
           ...listing,
           lastUpdated: completedAtMs,
@@ -526,7 +535,10 @@ export const rootReducer = (
           nextHandleToListing[handle] = {
             ...listing,
             images: nextImages,
-            lastUpdated: normalizeActionTimestampMs(action),
+            lastUpdated: keepLatestTimestamp(
+              listing.lastUpdated,
+              normalizeActionTimestampMs(action),
+            ),
           };
           listingsChanged = true;
         }
@@ -1883,7 +1895,10 @@ export const rootReducer = (
         images: mergedImages,
         productType: "",
         status: "active" as const,
-        lastUpdated: action._timestamp,
+        lastUpdated: keepLatestTimestamp(
+          nextState.listings.handleToListing[finalHandle]?.lastUpdated,
+          action._timestamp,
+        ),
       };
 
       const existingListing = nextState.listings.handleToListing[finalHandle];

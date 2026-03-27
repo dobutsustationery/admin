@@ -34,6 +34,7 @@
     inShopify: boolean;
     adminLastUpdatedMs: number;
     shopifyLastUpdatedMs: number;
+    shopifyUpdatedAtIso: string;
     drift: DriftStatus;
   }
   type TableStatus =
@@ -43,6 +44,7 @@
     | "shopify_ahead"
     | "synced";
   const SKEW_MS = 3 * 60_000;
+  let lastDecisionFingerprint = "";
 
   const STATUS_PRIORITY: Record<RowStatus, number> = {
     admin_only: 0,
@@ -123,6 +125,68 @@
     return delta > 0 ? "local_ahead" : "shopify_ahead";
   }
 
+  function toDebugDate(ms: number): string {
+    if (!Number.isFinite(ms) || ms <= 0) return "";
+    return new Date(ms).toISOString();
+  }
+
+  function shouldLogDriftDecisions(): boolean {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).has(
+      "debugShopifyListings",
+    );
+  }
+
+  function logDriftDecisions(rows: ListingPresenceRow[]): void {
+    if (!shouldLogDriftDecisions()) return;
+    if (!rows.length) return;
+
+    const fingerprint = rows
+      .map(
+        (row) =>
+          `${row.handle}|${row.status}|${row.adminLastUpdatedMs}|${row.shopifyLastUpdatedMs}|${row.shopifyUpdatedAtIso}|${row.drift}`,
+      )
+      .join(";");
+    if (fingerprint === lastDecisionFingerprint) return;
+    lastDecisionFingerprint = fingerprint;
+
+    console.groupCollapsed(
+      `[ShopifyListingsDebug] Drift decisions (${rows.length} handles, skew=${SKEW_MS}ms)`,
+    );
+    rows.forEach((row) => {
+      const parsedShopifyMs = row.shopifyUpdatedAtIso
+        ? Date.parse(row.shopifyUpdatedAtIso)
+        : NaN;
+      const deltaMs = row.adminLastUpdatedMs - row.shopifyLastUpdatedMs;
+      console.log({
+        handle: row.handle,
+        status: row.status,
+        drift: row.drift,
+        skewMs: SKEW_MS,
+        deltaMs,
+        deltaMinutes:
+          Number.isFinite(deltaMs) && row.shopifyLastUpdatedMs > 0
+            ? Math.round((deltaMs / 60_000) * 100) / 100
+            : null,
+        adminLastUpdatedMs: row.adminLastUpdatedMs,
+        adminUpdatedAtIsoUtc: toDebugDate(row.adminLastUpdatedMs),
+        shopifyUpdatedAtIsoRaw: row.shopifyUpdatedAtIso,
+        shopifyLastUpdatedMs: row.shopifyLastUpdatedMs,
+        shopifyUpdatedAtIsoUtc: toDebugDate(row.shopifyLastUpdatedMs),
+        parsedShopifyMsFromIso: Number.isFinite(parsedShopifyMs)
+          ? parsedShopifyMs
+          : null,
+        parsedShopifyIsoUtc: Number.isFinite(parsedShopifyMs)
+          ? toDebugDate(parsedShopifyMs)
+          : null,
+        parseMatchesStoredMs: Number.isFinite(parsedShopifyMs)
+          ? parsedShopifyMs === row.shopifyLastUpdatedMs
+          : null,
+      });
+    });
+    console.groupEnd();
+  }
+
   function buildRows(
     adminHandles: string[],
     remoteHandles: string[],
@@ -155,6 +219,9 @@
         const shopifyLastUpdatedMs = Number(
           shopifyHandleDataByNormalized[key]?.updatedAtMs || 0,
         );
+        const shopifyUpdatedAtIso = String(
+          shopifyHandleDataByNormalized[key]?.updatedAtIso || "",
+        ).trim();
         const status: RowStatus =
           inAdmin && inShopify
             ? "both"
@@ -173,6 +240,7 @@
           inShopify,
           adminLastUpdatedMs,
           shopifyLastUpdatedMs,
+          shopifyUpdatedAtIso,
           drift,
         };
       })
@@ -204,6 +272,7 @@
 
   $: adminHandles = getAdminHandles();
   $: rows = buildRows(adminHandles, shopifyHandles);
+  $: logDriftDecisions(rows);
   $: summary = {
     adminOnly: rows.filter((r) => r.status === "admin_only").length,
     shopifyOnly: rows.filter((r) => r.status === "shopify_only").length,
