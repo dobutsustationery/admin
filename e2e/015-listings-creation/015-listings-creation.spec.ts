@@ -155,13 +155,6 @@ test.describe("Listings Creation Flow", () => {
       localStorage.setItem("google_photos_access_token", token);
     });
 
-    // Setup Broadcast Listener EARLY
-    console.log("Setting up Broadcast listener...");
-    const broadcastPromise = page.waitForEvent("console", {
-      predicate: (msg) => msg.text().includes("[Broadcast] Stats"),
-      timeout: 60000,
-    });
-
     await page.goto("/listings/create");
     await waitForAppReady(page);
     // Keep top spacing deterministic across CI/local regardless transient banner state.
@@ -169,14 +162,9 @@ test.describe("Listings Creation Flow", () => {
       content:
         ".sticky-banner-container{padding:0.5rem 1rem !important;margin-bottom:1rem !important;}",
     });
-
-    // Wait for Broadcast to settle BEFORE resetting logic
-    console.log("Waiting for Broadcast to settle...");
-    await broadcastPromise;
-
-    // Wait for store to be available instead of fixed timeout
+    await waitForSyncIdle(page);
     await page.waitForFunction(() => (window as any).testHelpers?.store);
-    console.log("Broadcast settled and store available. Cleaning up...");
+    console.log("App ready, sync idle, and store available. Cleaning up...");
 
     // Reset Logic - Aggressive Loop
     await page.evaluate(async () => {
