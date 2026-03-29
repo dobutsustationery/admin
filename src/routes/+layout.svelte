@@ -23,10 +23,14 @@
     inventory_synced,
     snapshotMetadata,
     hydrate,
+    setSnapshotPersistencePaused,
   } from "$lib/store";
   import { user } from "$lib/user-store";
   import type { AnyAction } from "$lib/store";
-  import { watchBroadcastActions } from "$lib/redux-firestore";
+  import {
+    watchBroadcastActions,
+    type BroadcastProgress,
+  } from "$lib/redux-firestore";
   import {
     replace_shopify_sync_events,
     reset_shopify_sync_state,
@@ -67,6 +71,9 @@
 
   let me: User = { signedIn: false };
   let loadingState: "initializing" | "loading" | "ready" = "initializing";
+  let loadingProgress = 0;
+  let loadingMessage = "Starting up...";
+  let loadingDetail = "";
   let navigationOpen = false;
   let isRefreshingTokens = false;
   let refreshRequired = false;
@@ -193,6 +200,10 @@
 
             $user = me;
             loadingState = "loading";
+            loadingProgress = 0;
+            loadingMessage = "Counting actions...";
+            loadingDetail = "";
+            setSnapshotPersistencePaused(true);
 
             if (uid) {
               // Only write if we have a UID (always true here)
@@ -218,6 +229,7 @@
     } else {
       me = { signedIn: false };
       loadingState = "ready";
+      setSnapshotPersistencePaused(false);
       if (unsubscribeBroadcast) {
         unsubscribeBroadcast();
         unsubscribeBroadcast = undefined;
@@ -240,80 +252,103 @@
   let unsubscribeShopifySync: Unsubscribe | undefined;
 
   function startBroadcastListener() {
-    // Note: watchBroadcastActions is now async
-    watchBroadcastActions(firestore, (actions) => {
-      let filteredActions = actions;
+    watchBroadcastActions(
+      firestore,
+      (actions) => {
+        let filteredActions = actions;
 
-      // Filter out actions already covered by the snapshot (if any)
-      if (snapshotMetadata) {
-        const snapSeconds = snapshotMetadata.timestamp?.seconds || 0;
-        const snapNanos = snapshotMetadata.timestamp?.nanoseconds || 0;
+        if (snapshotMetadata) {
+          const snapSeconds = snapshotMetadata.timestamp?.seconds || 0;
+          const snapNanos = snapshotMetadata.timestamp?.nanoseconds || 0;
 
-        filteredActions = actions.filter((action) => {
-          const thisTs = (action as any).timestamp;
-          if (!thisTs) return true; // Keep if no timestamp? Or unsafe? Usually broadcast actions have ts.
-          const thisSeconds = thisTs.seconds || 0;
-          const thisNanos = thisTs.nanoseconds || 0;
+          filteredActions = actions.filter((action) => {
+            const thisTs = (action as any).timestamp;
+            if (!thisTs) return true;
+            const thisSeconds = thisTs.seconds || 0;
+            const thisNanos = thisTs.nanoseconds || 0;
 
-          const isBefore =
-            thisSeconds < snapSeconds ||
-            (thisSeconds === snapSeconds && thisNanos < snapNanos);
-          const isSameId = action.id === snapshotMetadata?.id;
+            const isBefore =
+              thisSeconds < snapSeconds ||
+              (thisSeconds === snapSeconds && thisNanos < snapNanos);
+            const isSameId = action.id === snapshotMetadata?.id;
 
-          if (isBefore) return false;
-          if (isSameId) return false;
+            if (isBefore) return false;
+            if (isSameId) return false;
 
-          return true;
-        });
+            return true;
+          });
 
-        if (actions.length !== filteredActions.length) {
-          console.log(
-            `[Snapshot] Skipped ${actions.length - filteredActions.length} actions already in snapshot.`,
-          );
-        }
-      }
-
-      loadedActionCount += filteredActions.length;
-      filteredActions.forEach((actionItem) => {
-        // The actionItem is already expanded: { id, ...data }
-        const action = actionItem as unknown as AnyAction;
-        const id = actionItem.id;
-
-        // Check if locally executed OR already in Redux history (hydration)
-        const isAlreadyExecuted =
-          executedActions[id] !== undefined ||
-          store.getState().history.executedActions?.[id];
-
-        if (!isAlreadyExecuted) {
-          executedActions[id] = action;
-          if (action.type === "retype_item") {
-            // payload typing might be loose here, check properties safely
-            const payload = (action as any).payload || {};
-            const itemKey = payload.itemKey;
-            const newItemKey = payload.janCode + payload.subtype;
-            if (itemKey == newItemKey) {
-              console.error("bad retype item detected", id);
-              // Broadcast is an immutable event log; record and ignore the bad event.
-            }
+          if (actions.length !== filteredActions.length) {
+            console.log(
+              `[Snapshot] Skipped ${actions.length - filteredActions.length} actions already in snapshot.`,
+            );
           }
-          store.dispatch(action);
         }
-        if ((action as any).timestamp !== null) {
-          confirmedActions[id] = action;
-        }
-        unsyncedActions =
-          Object.keys(executedActions).length -
-          Object.keys(confirmedActions).length;
-      });
-      store.dispatch(inventory_synced());
 
-      // If we are signed in and receiving actions, we are ready
-      if (me.signedIn) {
-        loadingState = "ready";
-      }
-    }).then((unsub) => {
-      unsubscribeBroadcast = unsub;
-    });
+        loadedActionCount += filteredActions.length;
+        filteredActions.forEach((actionItem) => {
+          const action = actionItem as unknown as AnyAction;
+          const id = actionItem.id;
+
+          const isAlreadyExecuted =
+            executedActions[id] !== undefined ||
+            store.getState().history.executedActions?.[id];
+
+          if (!isAlreadyExecuted) {
+            executedActions[id] = action;
+            if (action.type === "retype_item") {
+              const payload = (action as any).payload || {};
+              const itemKey = payload.itemKey;
+              const newItemKey = payload.janCode + payload.subtype;
+              if (itemKey == newItemKey) {
+                console.error("bad retype item detected", id);
+              }
+            }
+            store.dispatch(action);
+          }
+          if ((action as any).timestamp !== null) {
+            confirmedActions[id] = action;
+          }
+          unsyncedActions =
+            Object.keys(executedActions).length -
+            Object.keys(confirmedActions).length;
+        });
+        store.dispatch(inventory_synced());
+      },
+      {
+        onProgress: (progress: BroadcastProgress) => {
+          loadingState = "loading";
+          loadingProgress = progress.percent;
+          loadingMessage = progress.message;
+          if (progress.total > 0) {
+            loadingDetail = `${progress.loaded.toLocaleString()} / ${progress.total.toLocaleString()} actions`;
+          } else if (progress.loaded > 0) {
+            loadingDetail = `${progress.loaded.toLocaleString()} actions`;
+          } else {
+            loadingDetail = "";
+          }
+        },
+        onReady: () => {
+          loadingProgress = 100;
+          loadingMessage = "Live sync connected.";
+          setSnapshotPersistencePaused(false, { flush: true });
+          if (me.signedIn) {
+            loadingState = "ready";
+          }
+        },
+        errorCallback: (error) => {
+          console.error("[Broadcast] Bootstrap failed", error);
+          loadingMessage = "Failed to load action history.";
+        },
+      },
+    )
+      .then((unsub) => {
+        unsubscribeBroadcast = unsub;
+      })
+      .catch((error) => {
+        console.error("[Broadcast] Listener startup failed", error);
+        loadingMessage = "Failed to load action history.";
+      });
 
     // Return typed undefined initially since we await the promise
     return undefined;
@@ -366,7 +401,6 @@
     // Fallback sync
     setTimeout(() => {
       store.dispatch(inventory_synced());
-      if (me.signedIn) loadingState = "ready";
     }, 10000);
 
     // Auto-refresh timer (every 60s)
@@ -395,7 +429,9 @@
 {#if me.signedIn}
   <div class="app-shell">
     <Navigation {unsyncedActions} bind:isOpen={navigationOpen} />
-    <PhotoUploadManager />
+    {#if loadingState === "ready"}
+      <PhotoUploadManager />
+    {/if}
 
     <main class="main-content" class:nav-open={navigationOpen}>
       <StickyBannerContainer />
@@ -410,13 +446,15 @@
   {#if loadingState !== "ready"}
     <LoadingScreen
       status={loadingState}
-      progress={0}
-      message="Syncing data..."
+      progress={loadingProgress}
+      message={loadingMessage}
+      detail={loadingDetail}
     />
   {/if}
 {:else if loadingState === "initializing"}
   <LoadingScreen
     status="initializing"
+    progress={loadingProgress}
     message="Initializing authentication..."
   />
 {:else}

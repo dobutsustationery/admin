@@ -2,22 +2,21 @@ import type { AnyAction } from "@reduxjs/toolkit";
 import {
   addDoc,
   collection,
-  type DocumentChange,
-  type DocumentData,
+  documentId,
   type Firestore,
   type FirestoreError,
+  getCountFromServer,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  startAt,
+  startAfter,
   Timestamp,
-  getCountFromServer,
 } from "firebase/firestore";
 import {
-  getAllCachedActions,
   cacheActions,
-  getLatestTimestamp,
   clearActionCache,
   type ActionWithId,
 } from "$lib/action-cache";
@@ -27,8 +26,6 @@ function stripUndefined(obj: any): any {
   if (Array.isArray(obj)) {
     return obj.map(stripUndefined);
   } else if (obj !== null && typeof obj === "object") {
-    // Check for Firestore types or specific classes we want to preserve?
-    // For now, assume plain objects. Redux actions should be plain.
     return Object.entries(obj).reduce((acc, [key, value]) => {
       if (value !== undefined) {
         acc[key] = stripUndefined(value);
@@ -157,21 +154,16 @@ export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
   const broadcasts = collection(fs, "broadcast");
   const cleanAction = stripUndefined(action);
 
-  // Size Check
   const payloadSize = new TextEncoder().encode(
     JSON.stringify(cleanAction),
   ).length;
   if (payloadSize > 900 * 1024) {
-    // 900KB limit (safety buffer for Firestore 1MB)
     console.error(
       `[Broadcast] Action ${action.type} is TOO LARGE (${(payloadSize / 1024).toFixed(2)} KB). Dropping.`,
     );
-    // We return a rejected promise so the caller knows it failed,
-    // but we don't crash the app or get the SDK stuck in a retry loop.
     return Promise.reject(new Error(`Action too large: ${payloadSize} bytes`));
   }
 
-  // Debug Log
   console.log(
     `[Broadcast] Sending action ${action.type} (${payloadSize} bytes)`,
     cleanAction,
@@ -191,173 +183,216 @@ export async function broadcast(fs: Firestore, uid: string, action: AnyAction) {
   }
 }
 
-// Modified callback signature to accept ActionWithId[] directly to simplify usage
-// But verifying +layout.svelte usage: it expects "changes: DocumentChange[]"
-// I must adapt the cached items to look like DocumentChange or update +layout.svelte.
-// Updating +layout.svelte is cleaner. Let's change the callback type here.
 export type ActionsCallback = (actions: ActionWithId[]) => void;
-export type ErrorCallback = (e: FirestoreError) => void;
+export type ErrorCallback = (e: FirestoreError | Error) => void;
 
-interface BroadcastStats {
-  fromCache: number;
-  fromServer: number;
-  duplicates: number;
+export interface BroadcastProgress {
+  loaded: number;
+  total: number;
+  percent: number;
+  phase: "counting" | "loading" | "syncing";
+  message: string;
 }
-const stats: BroadcastStats = { fromCache: 0, fromServer: 0, duplicates: 0 };
+
+export interface WatchBroadcastOptions {
+  errorCallback?: ErrorCallback;
+  onProgress?: (progress: BroadcastProgress) => void;
+  onReady?: () => void;
+  pageSize?: number;
+}
+
+interface BroadcastCursor {
+  id: string;
+  timestamp: Timestamp;
+}
+
+const DEFAULT_PAGE_SIZE = 500;
+
+function emitProgress(
+  options: WatchBroadcastOptions | undefined,
+  progress: BroadcastProgress,
+) {
+  options?.onProgress?.(progress);
+}
+
+function progressPercent(loaded: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((loaded / total) * 1000) / 10);
+}
+
+function toActionWithId(doc: { id: string; data(): Record<string, any> }) {
+  return {
+    id: doc.id,
+    ...doc.data(),
+  } as ActionWithId;
+}
+
+function getCursorFromAction(
+  action: ActionWithId | undefined,
+): BroadcastCursor | null {
+  if (!action?.timestamp) return null;
+  const ts = action.timestamp;
+  return {
+    id: action.id,
+    timestamp: new Timestamp(ts.seconds, ts.nanoseconds),
+  };
+}
+
+async function pauseForPaint() {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
 
 export async function watchBroadcastActions(
   fs: Firestore,
   callback: ActionsCallback,
-  errorCallback?: ErrorCallback,
+  options?: WatchBroadcastOptions,
 ): Promise<() => void> {
   const broadcasts = collection(fs, "broadcast");
+  const pageSize = Math.max(100, options?.pageSize ?? DEFAULT_PAGE_SIZE);
+  const knownActionIds = new Set<string>();
 
-  // 1. Load from Cache
-  let cachedActions: ActionWithId[] = await getAllCachedActions();
-
-  // Sort by timestamp (memory sort for robustness)
-  cachedActions.sort((a, b) => {
-    const tA = a.timestamp?.seconds || 0;
-    const tB = b.timestamp?.seconds || 0;
-    if (tA === tB) {
-      return (a.timestamp?.nanoseconds || 0) - (b.timestamp?.nanoseconds || 0);
-    }
-    return tA - tB;
+  emitProgress(options, {
+    loaded: 0,
+    total: 0,
+    percent: 0,
+    phase: "counting",
+    message: "Counting actions...",
   });
 
-  if (cachedActions.length > 0) {
-    stats.fromCache = cachedActions.length;
-    callback(cachedActions);
-  }
-
-  // 2. Determine Start Point
-  const latestTimestamp = getLatestTimestamp(cachedActions);
-
-  let q;
-  if (latestTimestamp) {
-    // Reconstruct Timestamp for FS query to ensure correct type comparison
-    const ts = new Timestamp(
-      latestTimestamp.seconds,
-      latestTimestamp.nanoseconds,
-    );
-    // Use startAt to handle potential duplicates/edge cases
-    q = query(broadcasts, orderBy("timestamp"), startAt(ts));
-  } else {
-    q = query(broadcasts, orderBy("timestamp"));
-  }
-
-  // 3. Initial Safety Check
+  let totalActions = 0;
   try {
     const countSnapshot = await getCountFromServer(broadcasts);
-    const serverCount = countSnapshot.data().count;
-    const clientCount = cachedActions.length;
-
-    if (serverCount < clientCount) {
-      console.warn(
-        `[Sync] Server count (${serverCount}) < Client count (${clientCount}). Server reset detected. Invalidating cache.`,
-      );
-      await clearActionCache();
-      window.location.reload();
-      // Stop here to prevent subscribing with invalid state
-      return () => {};
-    }
-  } catch (e) {
-    console.warn("Failed to check server count on startup", e);
+    totalActions = countSnapshot.data().count;
+  } catch (error) {
+    console.warn("Failed to count broadcast actions on startup", error);
   }
 
-  // 4. Listen to Firestore
+  emitProgress(options, {
+    loaded: 0,
+    total: totalActions,
+    percent: 0,
+    phase: "loading",
+    message:
+      totalActions > 0
+        ? `Loading 0 of ${totalActions.toLocaleString()} actions...`
+        : "Loading actions...",
+  });
+
+  await clearActionCache();
+
+  let loadedActions = 0;
+  let lastCursor: BroadcastCursor | null = null;
+
+  while (true) {
+    const pageQuery = lastCursor
+      ? query(
+          broadcasts,
+          orderBy("timestamp"),
+          orderBy(documentId()),
+          startAfter(lastCursor.timestamp, lastCursor.id),
+          limit(pageSize),
+        )
+      : query(
+          broadcasts,
+          orderBy("timestamp"),
+          orderBy(documentId()),
+          limit(pageSize),
+        );
+
+    const pageSnapshot = await getDocs(pageQuery);
+    if (pageSnapshot.empty) {
+      break;
+    }
+
+    const pageActions = pageSnapshot.docs.map(toActionWithId);
+    pageActions.forEach((action) => knownActionIds.add(action.id));
+    callback(pageActions);
+    await cacheActions(pageActions);
+
+    loadedActions += pageActions.length;
+    lastCursor = getCursorFromAction(pageActions[pageActions.length - 1]);
+
+    emitProgress(options, {
+      loaded: loadedActions,
+      total: totalActions,
+      percent: progressPercent(loadedActions, totalActions),
+      phase: "loading",
+      message:
+        totalActions > 0
+          ? `Loading ${loadedActions.toLocaleString()} of ${totalActions.toLocaleString()} actions...`
+          : `Loading ${loadedActions.toLocaleString()} actions...`,
+    });
+
+    await pauseForPaint();
+  }
+
+  emitProgress(options, {
+    loaded: loadedActions,
+    total: totalActions,
+    percent: totalActions > 0 ? 100 : 0,
+    phase: "syncing",
+    message: "Starting live sync...",
+  });
+
+  const liveQuery = lastCursor
+    ? query(
+        broadcasts,
+        orderBy("timestamp"),
+        orderBy(documentId()),
+        startAfter(lastCursor.timestamp, lastCursor.id),
+      )
+    : query(broadcasts, orderBy("timestamp"), orderBy(documentId()));
+
   const unsubscribe = onSnapshot(
-    q,
+    liveQuery,
     async (querySnapshot) => {
-      const changes = querySnapshot.docChanges();
       const newActions: ActionWithId[] = [];
       const actionsToCache: ActionWithId[] = [];
 
-      // Create a set of known IDs from the current batch/cache to dedupe
-      // Note: For a robust system we check against what we've already emitted.
-      // But purely for this simplified version, let's check against cachedActions IDs
-      // and also maintain a local set of "seen this session".
+      for (const change of querySnapshot.docChanges()) {
+        const action = toActionWithId(change.doc);
 
-      // Actually, +layout.svelte maintains `executedActions` map to dedupe.
-      // So passing duplicates is SAFE but wasteful.
-      // We essentially want to filter out what we ALREADY sent from cache.
-
-      changes.forEach((change) => {
         if (change.type === "added") {
-          // Check if it's a pending write (local optimistic update)
           const isPending = change.doc.metadata.hasPendingWrites;
-
-          const data = change.doc.data();
-          const action = {
-            id: change.doc.id,
-            ...data,
-          } as ActionWithId;
-
-          // Dedupe against cache (simple ID check)
-          // CRITICAL: If it's pending, we ALWAYS emit it (so UI updates), but we NEVER cache it.
-          // If it's confirmed (server), we check if we already cached it.
-
           if (isPending) {
-            // Optimistic: Emit immediately, don't cache, don't mark as cached.
             newActions.push(action);
-          } else {
-            // Confirmed: Check cache
-            const isCached = cachedActions.some((c) => c.id === action.id);
-            if (isCached) {
-              stats.duplicates++;
-            } else {
-              stats.fromServer++;
-              newActions.push(action);
-              actionsToCache.push(action);
-            }
+            continue;
           }
-        } else if (change.type === "modified") {
-          const data = change.doc.data();
-          const action = {
-            id: change.doc.id,
-            ...data,
-          } as ActionWithId;
-
-          // This typically happens when a Pending write becomes Confirmed (server timestamp added).
-          // We DO want to cache this confirmed version.
-          // We DO want to include it in newActions so the safety check counts it.
-          // Layout.svelte will dedup execution, so it's safe to emit.
-
-          // Check if we already have this EXACT version in cache?
-          // The cached version has no timestamp or different timestamp?
-          // Actually, we just blindly update cache with the latest confirmed version.
-
-          stats.fromServer++;
+          if (knownActionIds.has(action.id)) {
+            continue;
+          }
+          knownActionIds.add(action.id);
           newActions.push(action);
           actionsToCache.push(action);
-        }
-      });
-
-      if (newActions.length > 0) {
-        // Only cache confirmed actions
-        if (actionsToCache.length > 0) {
-          await cacheActions(actionsToCache);
-          // Update local memory cache with legitimate confirmed actions
-          cachedActions = [...cachedActions, ...actionsToCache];
+          continue;
         }
 
-        // Emit all (Pending + New Confirmed)
-        // Note: Layout.svelte handles deduplication of execution, so emitting same ID twice (pending then confirmed) is safe/good.
-        callback(newActions);
+        if (change.type === "modified") {
+          knownActionIds.add(action.id);
+          newActions.push(action);
+          if (!change.doc.metadata.hasPendingWrites) {
+            actionsToCache.push(action);
+          }
+        }
       }
 
-      console.log(
-        `[Broadcast] Stats: Cache=${stats.fromCache}, Server=${stats.fromServer}, Dupes=${stats.duplicates}`,
-      );
+      if (actionsToCache.length > 0) {
+        await cacheActions(actionsToCache);
+      }
+
+      if (newActions.length > 0) {
+        callback(newActions);
+      }
     },
     (error) => {
       console.log("broadcasts query failing: ");
       console.error(error);
-      if (errorCallback) {
-        errorCallback(error);
-      }
+      options?.errorCallback?.(error);
     },
   );
 
+  options?.onReady?.();
   return unsubscribe;
 }

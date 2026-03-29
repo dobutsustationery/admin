@@ -28,6 +28,7 @@ export interface SnapshotMetadata {
 
 export let snapshotMetadata: SnapshotMetadata | null = null;
 let saveTimeout: any = null;
+let snapshotPersistencePaused = false;
 
 export async function hydrate() {
   if (typeof window === "undefined") return;
@@ -75,12 +76,18 @@ const persistenceMiddleware =
 
     if (action && action.id && action.timestamp) {
       snapshotMetadata = { id: action.id, timestamp: action.timestamp };
+      if (snapshotPersistencePaused) {
+        return result;
+      }
 
       if (saveTimeout) clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => {
         triggerSave(storeAPI.getState(), snapshotMetadata);
       }, 100);
     } else if (action.type.startsWith("photos/")) {
+      if (snapshotPersistencePaused) {
+        return result;
+      }
       if (saveTimeout) clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => {
         triggerSave(storeAPI.getState(), snapshotMetadata);
@@ -149,6 +156,24 @@ const svelteStore = {
 };
 
 export const store = svelteStore as ReduxStore & SvelteStore;
+
+export function setSnapshotPersistencePaused(
+  paused: boolean,
+  options: { flush?: boolean } = {},
+) {
+  snapshotPersistencePaused = paused;
+
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+
+  if (!paused && options.flush) {
+    saveTimeout = setTimeout(() => {
+      triggerSave(reduxStore.getState(), snapshotMetadata);
+    }, 0);
+  }
+}
 
 if (typeof window !== "undefined") {
   if (
