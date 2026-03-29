@@ -291,14 +291,15 @@ export const computeOrderImportBatch = (
             if (qty > 0) {
               const invItem = inventoryIdToItem[itemKey];
               if (invItem) {
+                const { shipped: _shipped, ...baseItem } = invItem;
                 updates.push({
                   type: "update",
                   id: itemKey,
                   item: {
-                    ...invItem,
+                    ...baseItem,
                     qty: qty,
                     // Propagate incoming data (Cost, etc.) to the split items?
-                    cost: item.cost !== undefined ? item.cost : invItem.cost,
+                    cost: item.cost !== undefined ? item.cost : baseItem.cost,
                   },
                 });
               }
@@ -309,7 +310,8 @@ export const computeOrderImportBatch = (
           const { itemKey, fieldResolutions } = resolution;
           const invItem = inventoryIdToItem[itemKey];
           if (invItem) {
-            const newItem = { ...invItem, qty: item.qty };
+            const { shipped: _shipped, ...baseItem } = invItem;
+            const newItem = { ...baseItem, qty: item.qty };
 
             // Apply field resolutions
             if (fieldResolutions["HS Code"]) {
@@ -395,11 +397,12 @@ export const computeOrderImportBatch = (
       if (item.qty === 0 && matches.length > 1) {
         // Zero Qty Multi-Match: Update ALL matches
         matches.forEach(({ id, item: existingItem }) => {
+          const { shipped: _shipped, ...baseItem } = existingItem;
           updates.push({
             type: "update",
             id: id,
             item: {
-              ...existingItem,
+              ...baseItem,
               janCode: item.janCode,
               qty: 0, // No stock change
               cost: item.cost,
@@ -414,11 +417,12 @@ export const computeOrderImportBatch = (
       } else {
         // Standard Single Match
         const { id, item: existingItem } = matches[0];
+        const { shipped: _shipped, ...baseItem } = existingItem;
         updates.push({
           type: "update",
           id: id,
           item: {
-            ...existingItem,
+            ...baseItem,
             janCode: item.janCode,
             qty: item.qty, // Add stock
             cost: item.cost,
