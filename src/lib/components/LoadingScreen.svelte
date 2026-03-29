@@ -1,19 +1,29 @@
 <script lang="ts">
   export let status: "initializing" | "loading" | "ready" = "initializing";
-  export let progress = 0; // 0-100 placeholder if we track counts
+  export let progress = 0;
   export let message = "Starting up...";
+  export let detail = "";
 </script>
 
 {#if status !== "ready"}
   <div class="loading-overlay">
     <div class="content">
       <div class="logo">Dobutsu Admin</div>
-      <div class="spinner"></div>
+      <div
+        class="progress-track"
+        class:indeterminate={status === "initializing" && progress <= 0}
+      >
+        <div
+          class="progress-fill"
+          style="width: {Math.max(progress, 2)}%"
+        ></div>
+      </div>
+      {#if status === "loading"}
+        <div class="progress-label">{progress.toFixed(1)}%</div>
+      {/if}
       <div class="message">{message}</div>
-      {#if progress > 0}
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {progress}%"></div>
-        </div>
+      {#if detail}
+        <div class="detail">{detail}</div>
       {/if}
     </div>
   </div>
@@ -36,7 +46,7 @@
 
   .content {
     text-align: center;
-    width: 300px;
+    width: 320px;
   }
 
   .logo {
@@ -52,36 +62,46 @@
     font-size: 0.9rem;
   }
 
-  .spinner {
-    width: 40px;
-    height: 40px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #0056b3;
-    border-radius: 50%;
-    margin: 0 auto;
-    animation: spin 1s linear infinite;
+  .detail {
+    margin-top: 0.5rem;
+    color: #888;
+    font-size: 0.8rem;
   }
 
-  .progress-bar {
-    height: 4px;
-    background-color: #eee;
-    margin-top: 1rem;
-    border-radius: 2px;
+  .progress-track {
+    position: relative;
+    height: 12px;
+    background-color: #e9eef5;
+    border-radius: 999px;
+    margin: 0 auto;
     overflow: hidden;
+  }
+
+  .progress-label {
+    margin-top: 0.75rem;
+    color: #333;
+    font-size: 1.2rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .progress-track.indeterminate .progress-fill {
+    width: 35% !important;
+    animation: indeterminate-slide 1.2s ease-in-out infinite;
   }
 
   .progress-fill {
     height: 100%;
-    background-color: #0056b3;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #0056b3 0%, #2b8cff 100%);
     transition: width 0.3s ease;
   }
 
-  @keyframes spin {
+  @keyframes indeterminate-slide {
     0% {
-      transform: rotate(0deg);
+      transform: translateX(-120%);
     }
     100% {
-      transform: rotate(360deg);
+      transform: translateX(320%);
     }
   }
 </style>
