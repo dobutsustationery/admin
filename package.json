@@ -23,6 +23,7 @@
     "emulators": "npm run functions:install && npm run env:functions:local && firebase emulators:start",
     "emulators:export": "firebase emulators:export ./emulator-data",
     "emulators:import": "firebase emulators:start --import=./emulator-data",
+    "emulators:restore-backup": "node scripts/restore-emulator-backup.js",
     "build": "vite build",
     "build:local": "vite build --mode emulator",
     "build:staging": "vite build --mode staging",
