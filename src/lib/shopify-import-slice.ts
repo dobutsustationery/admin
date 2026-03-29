@@ -286,12 +286,14 @@ export const computeShopifyImportBatch = (
         resolutions.forEach((res) => {
           // Assume standard resolution payload
           if (res.payload.itemKey) {
-            const invItem = inventoryIdToItem[res.payload.itemKey];
+            const { itemKey, ...payload } = res.payload;
+            const invItem = inventoryIdToItem[itemKey];
             if (invItem) {
+              const { shipped: _shipped, ...baseItem } = invItem;
               updates.push({
                 type: "update",
-                id: res.payload.itemKey,
-                item: { ...invItem, ...res.payload },
+                id: itemKey,
+                item: { ...baseItem, ...payload },
               });
             }
           }
@@ -395,8 +397,9 @@ export const computeShopifyImportBatch = (
           delta = targetTotal - currentTotal;
         }
 
+        const { shipped: _shipped, ...baseItem } = currentItem;
         const newItem = {
-          ...currentItem,
+          ...baseItem,
           price: item.price,
           weight: item.weight,
           ...(useHandles ? { handle: item.handle } : {}),
@@ -407,7 +410,7 @@ export const computeShopifyImportBatch = (
             : {}),
           bodyHtml: item.bodyHtml,
           productCategory: item.productCategory,
-          subtype: item.option1Value || currentItem.subtype, // Update Subtype
+          subtype: item.option1Value || baseItem.subtype, // Update Subtype
         };
 
         updates.push({
