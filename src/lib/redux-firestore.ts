@@ -15,11 +15,7 @@ import {
   startAfter,
   Timestamp,
 } from "firebase/firestore";
-import {
-  cacheActions,
-  clearActionCache,
-  type ActionWithId,
-} from "$lib/action-cache";
+import { cacheActions, type ActionWithId } from "$lib/action-cache";
 
 // Helper to recursively remove undefined values
 function stripUndefined(obj: any): any {
@@ -199,6 +195,10 @@ export interface WatchBroadcastOptions {
   onProgress?: (progress: BroadcastProgress) => void;
   onReady?: () => void;
   pageSize?: number;
+  resumeCursor?: {
+    id: string;
+    timestamp: any;
+  } | null;
 }
 
 interface BroadcastCursor {
@@ -238,6 +238,29 @@ function getCursorFromAction(
   };
 }
 
+function normalizeCursor(
+  cursor: WatchBroadcastOptions["resumeCursor"],
+): BroadcastCursor | null {
+  if (!cursor?.id || !cursor.timestamp) return null;
+
+  const ts = cursor.timestamp;
+  if (ts instanceof Timestamp) {
+    return {
+      id: cursor.id,
+      timestamp: ts,
+    };
+  }
+
+  if (typeof ts.seconds === "number" && typeof ts.nanoseconds === "number") {
+    return {
+      id: cursor.id,
+      timestamp: new Timestamp(ts.seconds, ts.nanoseconds),
+    };
+  }
+
+  return null;
+}
+
 async function pauseForPaint() {
   await new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
@@ -252,21 +275,24 @@ export async function watchBroadcastActions(
   const broadcasts = collection(fs, "broadcast");
   const pageSize = Math.max(100, options?.pageSize ?? DEFAULT_PAGE_SIZE);
   const knownActionIds = new Set<string>();
-
-  emitProgress(options, {
-    loaded: 0,
-    total: 0,
-    percent: 0,
-    phase: "counting",
-    message: "Counting actions...",
-  });
+  const resumeCursor = normalizeCursor(options?.resumeCursor);
 
   let totalActions = 0;
-  try {
-    const countSnapshot = await getCountFromServer(broadcasts);
-    totalActions = countSnapshot.data().count;
-  } catch (error) {
-    console.warn("Failed to count broadcast actions on startup", error);
+  if (!resumeCursor) {
+    emitProgress(options, {
+      loaded: 0,
+      total: 0,
+      percent: 0,
+      phase: "counting",
+      message: "Counting actions...",
+    });
+
+    try {
+      const countSnapshot = await getCountFromServer(broadcasts);
+      totalActions = countSnapshot.data().count;
+    } catch (error) {
+      console.warn("Failed to count broadcast actions on startup", error);
+    }
   }
 
   emitProgress(options, {
@@ -274,16 +300,15 @@ export async function watchBroadcastActions(
     total: totalActions,
     percent: 0,
     phase: "loading",
-    message:
-      totalActions > 0
+    message: resumeCursor
+      ? "Checking for new actions..."
+      : totalActions > 0
         ? `Loading 0 of ${totalActions.toLocaleString()} actions...`
         : "Loading actions...",
   });
 
-  await clearActionCache();
-
   let loadedActions = 0;
-  let lastCursor: BroadcastCursor | null = null;
+  let lastCursor: BroadcastCursor | null = resumeCursor;
 
   while (true) {
     const pageQuery = lastCursor
@@ -317,10 +342,11 @@ export async function watchBroadcastActions(
     emitProgress(options, {
       loaded: loadedActions,
       total: totalActions,
-      percent: progressPercent(loadedActions, totalActions),
+      percent: resumeCursor ? 0 : progressPercent(loadedActions, totalActions),
       phase: "loading",
-      message:
-        totalActions > 0
+      message: resumeCursor
+        ? `Loading ${loadedActions.toLocaleString()} new actions...`
+        : totalActions > 0
           ? `Loading ${loadedActions.toLocaleString()} of ${totalActions.toLocaleString()} actions...`
           : `Loading ${loadedActions.toLocaleString()} actions...`,
     });

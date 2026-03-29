@@ -201,7 +201,9 @@
             $user = me;
             loadingState = "loading";
             loadingProgress = 0;
-            loadingMessage = "Counting actions...";
+            loadingMessage = snapshotMetadata
+              ? "Checking for new actions..."
+              : "Counting actions...";
             loadingDetail = "";
             setSnapshotPersistencePaused(true);
 
@@ -255,38 +257,8 @@
     watchBroadcastActions(
       firestore,
       (actions) => {
-        let filteredActions = actions;
-
-        if (snapshotMetadata) {
-          const snapSeconds = snapshotMetadata.timestamp?.seconds || 0;
-          const snapNanos = snapshotMetadata.timestamp?.nanoseconds || 0;
-
-          filteredActions = actions.filter((action) => {
-            const thisTs = (action as any).timestamp;
-            if (!thisTs) return true;
-            const thisSeconds = thisTs.seconds || 0;
-            const thisNanos = thisTs.nanoseconds || 0;
-
-            const isBefore =
-              thisSeconds < snapSeconds ||
-              (thisSeconds === snapSeconds && thisNanos < snapNanos);
-            const isSameId = action.id === snapshotMetadata?.id;
-
-            if (isBefore) return false;
-            if (isSameId) return false;
-
-            return true;
-          });
-
-          if (actions.length !== filteredActions.length) {
-            console.log(
-              `[Snapshot] Skipped ${actions.length - filteredActions.length} actions already in snapshot.`,
-            );
-          }
-        }
-
-        loadedActionCount += filteredActions.length;
-        filteredActions.forEach((actionItem) => {
+        loadedActionCount += actions.length;
+        actions.forEach((actionItem) => {
           const action = actionItem as unknown as AnyAction;
           const id = actionItem.id;
 
@@ -316,6 +288,7 @@
         store.dispatch(inventory_synced());
       },
       {
+        resumeCursor: snapshotMetadata,
         onProgress: (progress: BroadcastProgress) => {
           loadingState = "loading";
           loadingProgress = progress.percent;

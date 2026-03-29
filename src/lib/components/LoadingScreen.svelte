@@ -9,16 +9,13 @@
   <div class="loading-overlay">
     <div class="content">
       <div class="logo">Dobutsu Admin</div>
-      <div
-        class="progress-track"
-        class:indeterminate={status === "initializing" && progress <= 0}
-      >
+      <div class="progress-track" class:indeterminate={progress <= 0}>
         <div
           class="progress-fill"
           style="width: {Math.max(progress, 2)}%"
         ></div>
       </div>
-      {#if status === "loading"}
+      {#if status === "loading" && progress > 0}
         <div class="progress-label">{progress.toFixed(1)}%</div>
       {/if}
       <div class="message">{message}</div>
