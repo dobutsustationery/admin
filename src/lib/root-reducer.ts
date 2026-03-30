@@ -31,6 +31,7 @@ import {
   shopifySync,
   replace_shopify_sync_events as replaceShopifySyncEvents,
 } from "./shopify-sync-slice";
+import { shopifyCatalog } from "./shopify-catalog-slice";
 import { syncQueue } from "./sync-queue-slice";
 import listingCreation, {
   add_variants_internal,
@@ -71,6 +72,7 @@ const reducerObject = {
   shopifyImport,
   listings,
   shopifySync,
+  shopifyCatalog,
   syncQueue,
   listingCreation,
   ui,
