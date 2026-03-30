@@ -16,7 +16,7 @@
     {style}
     transition:fade={{ duration: 150 }}
   >
-    <SecureImage {src} {alt} size="preview" className="zoomed-image" />
+    <SecureImage {src} {alt} size="full" className="zoomed-image" />
     {#if alt}
       <div class="alt-text">
         {alt}
