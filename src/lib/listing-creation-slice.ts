@@ -1144,7 +1144,6 @@ export const generate_proposals =
 
               // Generate Title
               const titlePrompt = `Generate a concise, catchy product title for this product. 
-                        Vendor: Dobutsu
                         Product Category: Stationery
                         Return ONLY the title text. No quotes.`;
               const genTitle = await imagePrompt(
@@ -1237,8 +1236,8 @@ export const generate_proposals =
             title: title,
             bodyHtml: bodyHtml,
             productCategory: "Stationery",
-            vendor: "Dobutsu",
-            tags: ["New Arrival"],
+            vendor: "SPNSS Ltd.",
+            tags: [],
             option1Name: "Subtype", // Default option name
             variants: variants as any, // Cast to match CleanListingVariant
             status: "draft",
