@@ -1,18 +1,12 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
   import { firestore } from "$lib/firebase";
   import { formatLogTimestamp } from "$lib/format-log-timestamp";
+  import { diffLocalListingAgainstShopifyCatalog } from "$lib/shopify-deep-diff";
+  import type { ShopifyCatalogListing } from "$lib/shopify-catalog-slice";
   import { store } from "$lib/store";
+  import { SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION } from "$lib/sync-events";
   import { user } from "$lib/user-store";
-  import {
-    addDoc,
-    collection,
-    limit,
-    onSnapshot,
-    query,
-    serverTimestamp,
-    where,
-  } from "firebase/firestore";
+  import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
   type RowStatus = "admin_only" | "shopify_only" | "both";
   type DriftStatus = "unknown" | "in_sync" | "local_ahead" | "shopify_ahead";
@@ -22,11 +16,8 @@
     | "SHOPIFY_ONLY"
     | "ADMIN_AHEAD"
     | "SHOPIFY_AHEAD"
+    | "DEEP_DIFF"
     | "SYNCED";
-  interface ShopifyAuditHandle {
-    updatedAtIso: string;
-    updatedAtMs: number;
-  }
   interface ListingPresenceRow {
     handle: string;
     status: RowStatus;
@@ -36,6 +27,8 @@
     shopifyLastUpdatedMs: number;
     shopifyUpdatedAtIso: string;
     drift: DriftStatus;
+    deepDiff: boolean;
+    mismatchKeys: string[];
   }
   type TableStatus =
     | "admin_only"
@@ -43,6 +36,7 @@
     | "admin_ahead"
     | "shopify_ahead"
     | "synced";
+
   const SKEW_MS = 3 * 60_000;
   let lastDecisionFingerprint = "";
 
@@ -56,11 +50,7 @@
   let error = "";
   let activeFilter: ViewFilter = "ALL";
   let requestedAtLabel = "";
-  let lastCompletedAtLabel = "";
-  let shopifyHandles: string[] = [];
-  let shopifyHandleDataByNormalized: Record<string, ShopifyAuditHandle> = {};
-  let unsubscribeAuditResult: (() => void) | null = null;
-  let auditResultTimeout: ReturnType<typeof setTimeout> | null = null;
+  let activeRequestId = "";
   let hasRequestedInitial = false;
 
   function normalizeHandle(value: string): string {
@@ -69,8 +59,7 @@
       .toLowerCase();
   }
 
-  function isLocallyValidListing(handle: string): boolean {
-    const state = store.getState();
+  function isLocallyValidListing(state: any, handle: string): boolean {
     const listingsState = state.listings || {};
     const inventoryState = state.inventory || {};
 
@@ -101,13 +90,24 @@
     return hasDescription && hasValidCategory && hasValidPrice;
   }
 
-  function getAdminHandles(): string[] {
-    const handleToListing = store.getState().listings?.handleToListing || {};
+  function getAdminHandles(state: any): string[] {
+    const handleToListing = state.listings?.handleToListing || {};
     const unique = new Map<string, string>();
     Object.keys(handleToListing).forEach((raw) => {
       const normalized = normalizeHandle(raw);
       if (!normalized) return;
-      if (!isLocallyValidListing(raw)) return;
+      if (!isLocallyValidListing(state, raw)) return;
+      if (!unique.has(normalized)) unique.set(normalized, String(raw).trim());
+    });
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+  }
+
+  function getRemoteHandles(state: any): string[] {
+    const handleToListing = state.shopifyCatalog?.handleToListing || {};
+    const unique = new Map<string, string>();
+    Object.keys(handleToListing).forEach((raw) => {
+      const normalized = normalizeHandle(raw);
+      if (!normalized) return;
       if (!unique.has(normalized)) unique.set(normalized, String(raw).trim());
     });
     return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
@@ -144,7 +144,7 @@
     const fingerprint = rows
       .map(
         (row) =>
-          `${row.handle}|${row.status}|${row.adminLastUpdatedMs}|${row.shopifyLastUpdatedMs}|${row.shopifyUpdatedAtIso}|${row.drift}`,
+          `${row.handle}|${row.status}|${row.adminLastUpdatedMs}|${row.shopifyLastUpdatedMs}|${row.shopifyUpdatedAtIso}|${row.drift}|${row.deepDiff}|${row.mismatchKeys.join(",")}`,
       )
       .join(";");
     if (fingerprint === lastDecisionFingerprint) return;
@@ -162,6 +162,8 @@
         handle: row.handle,
         status: row.status,
         drift: row.drift,
+        deepDiff: row.deepDiff,
+        mismatchKeys: row.mismatchKeys,
         skewMs: SKEW_MS,
         deltaMs,
         deltaMinutes:
@@ -187,11 +189,24 @@
     console.groupEnd();
   }
 
+  function getItemsForHandle(state: any, handle: string) {
+    const idToHandle = state.listings?.idToHandle || {};
+    const idToItem = state.inventory?.idToItem || {};
+    return Object.entries(idToHandle)
+      .filter(
+        ([_, listingHandle]) => String(listingHandle || "").trim() === handle,
+      )
+      .map(([id]) => idToItem[id])
+      .filter(Boolean);
+  }
+
   function buildRows(
+    state: any,
     adminHandles: string[],
     remoteHandles: string[],
   ): ListingPresenceRow[] {
-    const handleToListing = store.getState().listings?.handleToListing || {};
+    const handleToListing = state.listings?.handleToListing || {};
+    const shopifyHandleToListing = state.shopifyCatalog?.handleToListing || {};
     const adminByKey = new Map<string, string>();
     const shopifyByKey = new Map<string, string>();
 
@@ -215,12 +230,14 @@
         const inShopify = shopifyByKey.has(key);
         const handle = adminByKey.get(key) || shopifyByKey.get(key) || key;
         const listing = inAdmin ? handleToListing[handle] : null;
+        const remoteHandle = shopifyByKey.get(key) || "";
+        const remoteListing: ShopifyCatalogListing | null = remoteHandle
+          ? shopifyHandleToListing[remoteHandle]
+          : null;
         const adminLastUpdatedMs = Number(listing?.lastUpdated || 0);
-        const shopifyLastUpdatedMs = Number(
-          shopifyHandleDataByNormalized[key]?.updatedAtMs || 0,
-        );
+        const shopifyLastUpdatedMs = Number(remoteListing?.updatedAtMs || 0);
         const shopifyUpdatedAtIso = String(
-          shopifyHandleDataByNormalized[key]?.updatedAtIso || "",
+          remoteListing?.updatedAtIso || "",
         ).trim();
         const status: RowStatus =
           inAdmin && inShopify
@@ -233,6 +250,20 @@
           adminLastUpdatedMs,
           shopifyLastUpdatedMs,
         );
+
+        let deepDiff = false;
+        let mismatchKeys: string[] = [];
+        if (status === "both" && listing && remoteListing) {
+          const result = diffLocalListingAgainstShopifyCatalog({
+            handle,
+            listing,
+            items: getItemsForHandle(state, handle),
+            remoteListing,
+          });
+          deepDiff = !result.matches;
+          mismatchKeys = result.mismatchKeys;
+        }
+
         return {
           handle,
           status,
@@ -242,6 +273,8 @@
           shopifyLastUpdatedMs,
           shopifyUpdatedAtIso,
           drift,
+          deepDiff,
+          mismatchKeys,
         };
       })
       .sort((a, b) => {
@@ -270,8 +303,42 @@
     return status.replace("_", " ");
   }
 
-  $: adminHandles = getAdminHandles();
-  $: rows = buildRows(adminHandles, shopifyHandles);
+  async function requestCatalogSync(forceFull = false) {
+    if (!$user?.uid || isLoading) return;
+    isLoading = true;
+    error = "";
+
+    try {
+      const catalogState = store.getState().shopifyCatalog || {};
+      const requestDoc = await addDoc(
+        collection(firestore, SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION),
+        {
+          eventType: "shopify/catalog_sync_requested",
+          creator: $user.uid,
+          requestedBy: $user.uid,
+          source: "shopify-listings-page",
+          forceFull,
+          sinceUpdatedAtMs: forceFull
+            ? 0
+            : Number(catalogState.maxUpdatedAtMs || 0),
+          createdAtMs: Date.now(),
+          createdAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
+        },
+      );
+      requestedAtLabel = formatLogTimestamp(Date.now());
+      activeRequestId = requestDoc.id;
+    } catch (e: any) {
+      error = e?.message || "Failed to request Shopify catalog sync.";
+      isLoading = false;
+    }
+  }
+
+  $: currentState = $store;
+  $: catalogState = currentState.shopifyCatalog || {};
+  $: adminHandles = getAdminHandles(currentState);
+  $: remoteHandles = getRemoteHandles(currentState);
+  $: rows = buildRows(currentState, adminHandles, remoteHandles);
   $: logDriftDecisions(rows);
   $: summary = {
     adminOnly: rows.filter((r) => r.status === "admin_only").length,
@@ -282,9 +349,12 @@
     shopifyAhead: rows.filter(
       (r) => r.status === "both" && r.drift === "shopify_ahead",
     ).length,
+    deepDiff: rows.filter((r) => r.deepDiff).length,
     synced: rows.filter(
       (r) =>
-        r.status === "both" && (r.drift === "in_sync" || r.drift === "unknown"),
+        r.status === "both" &&
+        !r.deepDiff &&
+        (r.drift === "in_sync" || r.drift === "unknown"),
     ).length,
   };
   $: visibleRows = rows.filter((row) => {
@@ -295,177 +365,49 @@
       return row.status === "both" && row.drift === "local_ahead";
     if (activeFilter === "SHOPIFY_AHEAD")
       return row.status === "both" && row.drift === "shopify_ahead";
+    if (activeFilter === "DEEP_DIFF") return row.deepDiff;
     if (activeFilter === "SYNCED")
       return (
         row.status === "both" &&
+        !row.deepDiff &&
         (row.drift === "in_sync" || row.drift === "unknown")
       );
     return true;
   });
+  $: lastCompletedAtLabel =
+    catalogState.lastSyncCompletedAtMs > 0
+      ? formatLogTimestamp(catalogState.lastSyncCompletedAtMs)
+      : "";
+  $: lastCursorLabel =
+    catalogState.maxUpdatedAtMs > 0
+      ? formatLogTimestamp(catalogState.maxUpdatedAtMs)
+      : "";
+  $: staleError =
+    !activeRequestId &&
+    Number(catalogState.lastSyncFailedAtMs || 0) >
+      Number(catalogState.lastSyncCompletedAtMs || 0)
+      ? String(catalogState.lastSyncError || "").trim()
+      : "";
+  $: effectiveError = error || staleError;
 
-  function watchAuditResult(requestId: string) {
-    if (unsubscribeAuditResult) unsubscribeAuditResult();
-    if (auditResultTimeout) clearTimeout(auditResultTimeout);
-
-    const settleFromDocs = (docs: any[]) => {
-      const sorted = docs.sort(
-        (a, b) =>
-          Number(b?.createdAtMs || b?.requestedAt || 0) -
-          Number(a?.createdAtMs || a?.requestedAt || 0),
-      );
-      for (const data of sorted) {
-        const eventType = String(data?.eventType || "");
-        if (eventType === "shopify/listings_audit_completed") {
-          const handles = Array.isArray(data?.payload?.shopifyHandles)
-            ? data.payload.shopifyHandles
-                .map((h: any) => String(h || "").trim())
-                .filter(Boolean)
-            : [];
-          const byHandleRaw =
-            data?.payload?.shopifyByHandle &&
-            typeof data.payload.shopifyByHandle === "object"
-              ? data.payload.shopifyByHandle
-              : {};
-          const normalizedByHandle: Record<string, ShopifyAuditHandle> = {};
-          for (const [rawHandle, rawValue] of Object.entries(byHandleRaw)) {
-            const key = normalizeHandle(rawHandle);
-            if (!key) continue;
-            const value = rawValue as any;
-            normalizedByHandle[key] = {
-              updatedAtIso: String(value?.updatedAtIso || "").trim(),
-              updatedAtMs: Number(value?.updatedAtMs || 0),
-            };
-          }
-          shopifyHandles = handles;
-          shopifyHandleDataByNormalized = normalizedByHandle;
-          lastCompletedAtLabel = formatLogTimestamp(Date.now());
-          isLoading = false;
-          error = "";
-          if (unsubscribeAuditResult) {
-            unsubscribeAuditResult();
-            unsubscribeAuditResult = null;
-          }
-          if (auditResultTimeout) {
-            clearTimeout(auditResultTimeout);
-            auditResultTimeout = null;
-          }
-          return true;
-        }
-        if (eventType === "shopify/listings_audit_failed") {
-          error =
-            String(data?.payload?.errorMessage || "").trim() ||
-            "Shopify listings audit failed.";
-          isLoading = false;
-          if (unsubscribeAuditResult) {
-            unsubscribeAuditResult();
-            unsubscribeAuditResult = null;
-          }
-          if (auditResultTimeout) {
-            clearTimeout(auditResultTimeout);
-            auditResultTimeout = null;
-          }
-          return true;
-        }
-      }
-      return false;
-    };
-
-    const unsubs: Array<() => void> = [];
-    const stopAll = () => {
-      while (unsubs.length) {
-        const u = unsubs.pop();
-        if (u) u();
-      }
-    };
-    unsubscribeAuditResult = stopAll;
-
-    const byRequestId = query(
-      collection(firestore, "sync"),
-      where("requestId", "==", requestId),
-      limit(20),
-    );
-    const byRequestEventId = query(
-      collection(firestore, "sync"),
-      where("requestEventId", "==", requestId),
-      limit(20),
-    );
-
-    unsubs.push(
-      onSnapshot(
-        byRequestId,
-        (snap) => {
-          const docs = snap.docs.map((d) => d.data() as any);
-          settleFromDocs(docs);
-        },
-        (err) => {
-          error = err?.message || "Failed to listen for audit results.";
-          isLoading = false;
-          stopAll();
-          unsubscribeAuditResult = null;
-        },
-      ),
-    );
-    unsubs.push(
-      onSnapshot(
-        byRequestEventId,
-        (snap) => {
-          const docs = snap.docs.map((d) => d.data() as any);
-          settleFromDocs(docs);
-        },
-        (err) => {
-          error = err?.message || "Failed to listen for audit results.";
-          isLoading = false;
-          stopAll();
-          unsubscribeAuditResult = null;
-        },
-      ),
-    );
-
-    auditResultTimeout = setTimeout(() => {
-      if (!isLoading) return;
+  $: if (activeRequestId) {
+    if (catalogState.lastAppliedRequestId === activeRequestId) {
       isLoading = false;
-      error = `Timed out waiting for Shopify listings audit result (${requestId}).`;
-      stopAll();
-      unsubscribeAuditResult = null;
-      auditResultTimeout = null;
-    }, 120000);
-  }
-
-  async function runAudit() {
-    if (!$user?.uid || isLoading) return;
-    isLoading = true;
-    error = "";
-
-    try {
-      const requestDoc = await addDoc(
-        collection(firestore, "request_shopify_listing_audit"),
-        {
-          eventType: "shopify/listings_audit_requested",
-          creator: $user.uid,
-          requestedBy: $user.uid,
-          source: "shopify-listings-page",
-          createdAtMs: Date.now(),
-          createdAt: serverTimestamp(),
-          timestamp: serverTimestamp(),
-        },
-      );
-      requestedAtLabel = formatLogTimestamp(Date.now());
-      watchAuditResult(requestDoc.id);
-    } catch (e: any) {
-      error = e?.message || "Failed to request Shopify listings audit.";
+      error = "";
+      activeRequestId = "";
+    } else if (catalogState.lastFailedRequestId === activeRequestId) {
       isLoading = false;
+      error =
+        String(catalogState.lastSyncError || "").trim() ||
+        "Shopify catalog sync failed.";
+      activeRequestId = "";
     }
   }
 
   $: if ($user?.uid && !hasRequestedInitial) {
     hasRequestedInitial = true;
-    runAudit();
+    requestCatalogSync(!catalogState.hasCompletedFullSync);
   }
-
-  onDestroy(() => {
-    if (unsubscribeAuditResult) unsubscribeAuditResult();
-    if (auditResultTimeout) clearTimeout(auditResultTimeout);
-  });
 </script>
 
 <svelte:head>
@@ -477,24 +419,34 @@
     <div>
       <h1>Shopify Listings</h1>
       <p class="subtext">
-        MVP handle audit with timestamp drift comparison (SKEW_MS = {SKEW_MS}).
+        Replay-backed Shopify shadow catalog with incremental sync and deep diff
+        badges. Full refresh is still needed to reconcile deletions.
       </p>
     </div>
-    <button
-      class="btn-refresh"
-      on:click={runAudit}
-      disabled={!$user || isLoading}
-    >
-      {#if isLoading}
-        Checking…
-      {:else}
-        Refresh Audit
-      {/if}
-    </button>
+    <div class="actions">
+      <button
+        class="btn-refresh secondary"
+        on:click={() => requestCatalogSync(true)}
+        disabled={!$user || isLoading}
+      >
+        Full Refresh
+      </button>
+      <button
+        class="btn-refresh"
+        on:click={() => requestCatalogSync(false)}
+        disabled={!$user || isLoading}
+      >
+        {#if isLoading}
+          Syncing…
+        {:else}
+          Refresh Sync
+        {/if}
+      </button>
+    </div>
   </div>
 
   {#if !$user}
-    <div class="alert">Sign in to run Shopify listings audit.</div>
+    <div class="alert">Sign in to sync Shopify catalog state.</div>
   {:else}
     <div class="summary-dashboard">
       <button
@@ -538,6 +490,14 @@
         <span class="value">{summary.shopifyAhead}</span>
       </button>
       <button
+        class="summary-card deep-diff"
+        class:active={activeFilter === "DEEP_DIFF"}
+        on:click={() => (activeFilter = "DEEP_DIFF")}
+      >
+        <span class="label">Deep Diff</span>
+        <span class="value">{summary.deepDiff}</span>
+      </button>
+      <button
         class="summary-card synced"
         class:active={activeFilter === "SYNCED"}
         on:click={() => (activeFilter = "SYNCED")}
@@ -549,13 +509,15 @@
 
     <div class="meta">
       {#if requestedAtLabel}<span>Last requested: {requestedAtLabel}</span>{/if}
-      {#if lastCompletedAtLabel}
-        <span>Last completed: {lastCompletedAtLabel}</span>
-      {/if}
+      {#if lastCompletedAtLabel}<span
+          >Last completed: {lastCompletedAtLabel}</span
+        >{/if}
+      {#if lastCursorLabel}<span>Catalog cursor: {lastCursorLabel}</span>{/if}
+      <span>Mode: {catalogState.lastSyncMode || "not synced yet"}</span>
     </div>
 
-    {#if error}
-      <div class="error">{error}</div>
+    {#if effectiveError}
+      <div class="error">{effectiveError}</div>
     {/if}
 
     <div class="table-wrap">
@@ -564,6 +526,7 @@
           <tr>
             <th>Handle</th>
             <th>Status</th>
+            <th>Deep Diff</th>
             <th>Admin Updated</th>
             <th>Shopify Updated</th>
           </tr>
@@ -571,7 +534,7 @@
         <tbody>
           {#if visibleRows.length === 0}
             <tr>
-              <td colspan="4" class="empty">No rows for current filter.</td>
+              <td colspan="5" class="empty">No rows for current filter.</td>
             </tr>
           {:else}
             {#each visibleRows as row}
@@ -588,6 +551,24 @@
                   <span class="badge {getTableStatus(row)}">
                     {formatTableStatus(getTableStatus(row))}
                   </span>
+                </td>
+                <td>
+                  {#if row.deepDiff}
+                    <a
+                      class="badge deep_diff diff-link"
+                      href={`/shopify-listings/diff?handle=${encodeURIComponent(row.handle)}`}
+                      title={row.mismatchKeys.join(", ")}
+                    >
+                      {row.mismatchKeys.length} mismatch{row.mismatchKeys
+                        .length === 1
+                        ? ""
+                        : "es"}
+                    </a>
+                  {:else if row.status === "both"}
+                    <span class="badge match">match</span>
+                  {:else}
+                    -
+                  {/if}
                 </td>
                 <td>
                   {row.adminLastUpdatedMs > 0
@@ -634,6 +615,11 @@
     font-size: 0.95rem;
   }
 
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
   .btn-refresh {
     background: #0b57d0;
     color: white;
@@ -642,6 +628,11 @@
     padding: 0.55rem 0.9rem;
     font-weight: 600;
     cursor: pointer;
+  }
+
+  .btn-refresh.secondary {
+    background: #e5e7eb;
+    color: #111827;
   }
 
   .btn-refresh:disabled {
@@ -655,13 +646,6 @@
     color: #92400e;
     padding: 0.75rem;
     border-radius: 8px;
-  }
-
-  .summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
   }
 
   .summary-dashboard {
@@ -729,6 +713,11 @@
     color: #065f46;
   }
 
+  .summary-card.deep-diff {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
   .summary-card.synced {
     background: #fff7ed;
     color: #9a3412;
@@ -767,7 +756,7 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 640px;
+    min-width: 760px;
   }
 
   th,
@@ -832,6 +821,24 @@
   .badge.synced {
     background: #fff7ed;
     color: #9a3412;
+  }
+
+  .badge.deep_diff {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .badge.match {
+    background: #e0f2fe;
+    color: #075985;
+  }
+
+  .diff-link {
+    text-decoration: none;
+  }
+
+  .diff-link:hover {
+    filter: brightness(0.97);
   }
 
   .empty {

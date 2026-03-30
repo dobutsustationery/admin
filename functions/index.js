@@ -10,9 +10,12 @@ initializeApp();
 setGlobalOptions({ maxInstances: 10 });
 
 const db = getFirestore();
+const BROADCAST_COLLECTION = "broadcast";
 const SYNC_COLLECTION = "sync";
 const SHOPIFY_REQUEST_COLLECTION = "request_shopify_sync";
-const SHOPIFY_LISTING_AUDIT_REQUEST_COLLECTION = "request_shopify_listing_audit";
+const SHOPIFY_LISTING_AUDIT_REQUEST_COLLECTION =
+  "request_shopify_listing_audit";
+const SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION = "request_shopify_catalog_sync";
 const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
 const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
 const GOOGLE_AUTH_REQUEST_COLLECTION = "request_google_auth";
@@ -103,6 +106,250 @@ async function fetchAllShopifyProductAuditData(config) {
   return { shopifyHandles, shopifyByHandle };
 }
 
+function trimString(value) {
+  return String(value || "").trim();
+}
+
+function toCatalogStatus(value) {
+  const normalized = trimString(value).toLowerCase();
+  if (normalized === "archived") return "archived";
+  if (normalized === "draft") return "draft";
+  return "active";
+}
+
+function extractNumericId(value) {
+  const raw = trimString(value);
+  if (!raw) return "";
+  if (/^\d+$/.test(raw)) return raw;
+  const gidMatch = /\/(\d+)$/.exec(raw);
+  return gidMatch?.[1] || "";
+}
+
+function toWeightGrams(rawWeight) {
+  const unit = trimString(rawWeight?.unit).toUpperCase();
+  const value = Number(rawWeight?.value || 0);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (unit === "KILOGRAMS" || unit === "KILOGRAM") return value * 1000;
+  if (unit === "POUNDS" || unit === "POUND") return value * 453.59237;
+  if (unit === "OUNCES" || unit === "OUNCE") return value * 28.349523125;
+  return value;
+}
+
+function buildCatalogQueryString(sinceUpdatedAtMs) {
+  const normalizedSince = Number(sinceUpdatedAtMs || 0);
+  if (!Number.isFinite(normalizedSince) || normalizedSince <= 0) return "";
+  const overlapIso = new Date(
+    Math.max(0, normalizedSince - 1000),
+  ).toISOString();
+  return `updated_at:>='${overlapIso}'`;
+}
+
+function getOptionNodes(options) {
+  if (Array.isArray(options)) return options;
+  if (Array.isArray(options?.nodes)) return options.nodes;
+  return [];
+}
+
+function normalizeCatalogProductNode(product) {
+  const imageNodes = Array.isArray(product?.images?.nodes)
+    ? product.images.nodes
+    : [];
+  const variantNodes = Array.isArray(product?.variants?.nodes)
+    ? product.variants.nodes
+    : [];
+  const optionNodes = getOptionNodes(product?.options);
+  const updatedAtIso = trimString(product?.updatedAt);
+  const updatedAtMs = updatedAtIso ? Date.parse(updatedAtIso) : 0;
+
+  return {
+    productId: extractNumericId(product?.id),
+    handle: trimString(product?.handle),
+    title: trimString(product?.title),
+    bodyHtml: trimString(product?.descriptionHtml),
+    vendor: trimString(product?.vendor),
+    productType: trimString(product?.productType),
+    productCategory: trimString(product?.category?.fullName),
+    tags: Array.isArray(product?.tags)
+      ? product.tags.map((tag) => trimString(tag)).filter(Boolean)
+      : [],
+    status: toCatalogStatus(product?.status),
+    option1Name: trimString(optionNodes[0]?.name),
+    updatedAtIso,
+    updatedAtMs: Number.isFinite(updatedAtMs) ? updatedAtMs : 0,
+    images: imageNodes.map((image, index) => ({
+      id: extractNumericId(image?.id) || trimString(image?.url),
+      url: trimString(image?.url),
+      position: index + 1,
+      altText: trimString(image?.altText),
+    })),
+    variants: variantNodes
+      .map((variant) => {
+        const selectedOptions = Array.isArray(variant?.selectedOptions)
+          ? variant.selectedOptions
+          : [];
+        const selectedValue = trimString(selectedOptions[0]?.value);
+        return {
+          id: extractNumericId(variant?.id),
+          sku: trimString(variant?.sku),
+          subtype: selectedValue || trimString(variant?.title),
+          price: Number(variant?.price || 0),
+          janCode: trimString(variant?.barcode),
+          weight:
+            Math.round(
+              toWeightGrams(variant?.inventoryItem?.measurement?.weight) * 1000,
+            ) / 1000,
+          inventoryQuantity: Number(variant?.inventoryQuantity || 0),
+          image: trimString(variant?.image?.url),
+        };
+      })
+      .filter((variant) => variant.sku),
+  };
+}
+
+async function fetchShopifyCatalogSyncData(
+  config,
+  { sinceUpdatedAtMs = 0 } = {},
+) {
+  const queryString = buildCatalogQueryString(sinceUpdatedAtMs);
+  const listings = [];
+  let maxUpdatedAtMs = Number(sinceUpdatedAtMs || 0);
+  let after = null;
+
+  while (true) {
+    const data = await shopifyCore.fetchJson(
+      `https://${config.storeUrl}/admin/api/${config.apiVersion}/graphql.json`,
+      {
+        method: "POST",
+        headers: await shopifyCore.buildShopifyHeaders(config),
+        body: JSON.stringify({
+          query: `
+            query FetchShopifyCatalogPage($first: Int!, $after: String, $query: String!) {
+              products(first: $first, after: $after, sortKey: UPDATED_AT, query: $query) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+                nodes {
+                  id
+                  handle
+                  title
+                  descriptionHtml
+                  productType
+                  vendor
+                  tags
+                  status
+                  updatedAt
+                  category {
+                    fullName
+                  }
+                  options {
+                    name
+                    position
+                  }
+                  images(first: 100) {
+                    nodes {
+                      id
+                      url
+                      altText
+                    }
+                  }
+                  variants(first: 100) {
+                    nodes {
+                      id
+                      sku
+                      title
+                      barcode
+                      price
+                      inventoryQuantity
+                      selectedOptions {
+                        name
+                        value
+                      }
+                      image {
+                        id
+                        url
+                        altText
+                      }
+                      inventoryItem {
+                        measurement {
+                          weight {
+                            unit
+                            value
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          `,
+          variables: {
+            first: 100,
+            after,
+            query: queryString,
+          },
+        }),
+      },
+    );
+
+    if (Array.isArray(data?.errors) && data.errors.length > 0) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
+    }
+
+    const payload = data?.data?.products;
+    const nodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
+
+    nodes.forEach((node) => {
+      const listing = normalizeCatalogProductNode(node);
+      if (!listing.handle) return;
+      maxUpdatedAtMs = Math.max(
+        maxUpdatedAtMs,
+        Number(listing.updatedAtMs || 0),
+      );
+      listings.push(listing);
+    });
+
+    if (!payload?.pageInfo?.hasNextPage || !payload?.pageInfo?.endCursor) {
+      break;
+    }
+    after = payload.pageInfo.endCursor;
+  }
+
+  return { listings, maxUpdatedAtMs };
+}
+
+function chunkShopifyCatalogListings(listings, maxBytes = 450 * 1024) {
+  const chunks = [];
+  let currentChunk = [];
+  let currentBytes = 0;
+
+  for (const listing of listings) {
+    const nextBytes = Buffer.byteLength(JSON.stringify(listing), "utf8");
+    if (currentChunk.length > 0 && currentBytes + nextBytes > maxBytes) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentBytes = 0;
+    }
+    currentChunk.push(listing);
+    currentBytes += nextBytes;
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+async function writeBroadcastAction({ action, creator, atMs }) {
+  await db.collection(BROADCAST_COLLECTION).add({
+    ...action,
+    timestamp: new Date(atMs),
+    creator,
+  });
+}
+
 function logSkipped(dispatched, requestId, domain) {
   if (dispatched?.processed) return;
   logger.info("Sync event not processed", {
@@ -133,9 +380,7 @@ function hasBinaryPayload(payload) {
 }
 
 function getGoogleOAuthConfig() {
-  const clientId = normalizeEnvValue(
-    process.env.GOOGLE_OAUTH_CLIENT_ID || "",
-  );
+  const clientId = normalizeEnvValue(process.env.GOOGLE_OAUTH_CLIENT_ID || "");
   const clientSecret = normalizeEnvValue(
     process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
       process.env.GOOGLE_OAUTH_SECRET ||
@@ -228,7 +473,7 @@ exports.shopifySyncRequest = onDocumentCreated(
     timeoutSeconds: 300,
     memory: "1GiB",
     concurrency: 1,
-    maxInstances: 3
+    maxInstances: 3,
   },
   async (event) => {
     const requestData = event.data?.data();
@@ -339,6 +584,125 @@ exports.shopifyListingAuditRequest = onDocumentCreated(
   },
 );
 
+exports.shopifyCatalogSyncRequest = onDocumentCreated(
+  {
+    document: `${SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION}/{requestId}`,
+    timeoutSeconds: 300,
+    memory: "1GiB",
+    concurrency: 1,
+    maxInstances: 3,
+  },
+  async (event) => {
+    const requestData = event.data?.data();
+    if (!requestData) return;
+
+    const requestId = trimString(event.params?.requestId);
+    const creator = trimString(requestData.creator);
+    const processor = `function:${process.env.K_SERVICE || "shopifyCatalogSyncRequest"}`;
+    const eventType = trimString(requestData.eventType);
+    if (
+      eventType &&
+      eventType !== "shopify/catalog_sync_requested" &&
+      eventType !== "catalog_sync_requested"
+    ) {
+      return;
+    }
+
+    if (!requestId || !creator) {
+      logger.error("Invalid Shopify catalog sync request shape", {
+        requestId,
+        creator,
+      });
+      return;
+    }
+
+    const forceFull = !!requestData.forceFull;
+    const sinceUpdatedAtMs = forceFull
+      ? 0
+      : Number(requestData.sinceUpdatedAtMs || 0);
+    const mode =
+      forceFull || !Number.isFinite(sinceUpdatedAtMs) || sinceUpdatedAtMs <= 0
+        ? "full"
+        : "incremental";
+    const broadcastCreator = "shopify-catalog-sync-function";
+    const startMs = Date.now();
+
+    await writeBroadcastAction({
+      action: {
+        type: "shopifyCatalog/begin_sync",
+        payload: {
+          requestId,
+          mode,
+          requestedAtMs: startMs,
+        },
+      },
+      creator: broadcastCreator,
+      atMs: startMs,
+    });
+
+    try {
+      const shopifyConfig = getShopifyConfig();
+      const { listings, maxUpdatedAtMs } = await fetchShopifyCatalogSyncData(
+        shopifyConfig,
+        { sinceUpdatedAtMs: mode === "incremental" ? sinceUpdatedAtMs : 0 },
+      );
+
+      const chunks = chunkShopifyCatalogListings(listings);
+      let nextAtMs = startMs + 1;
+
+      for (const chunk of chunks) {
+        await writeBroadcastAction({
+          action: {
+            type: "shopifyCatalog/apply_sync_chunk",
+            payload: {
+              requestId,
+              mode,
+              listings: chunk,
+            },
+          },
+          creator: broadcastCreator,
+          atMs: nextAtMs,
+        });
+        nextAtMs += 1;
+      }
+
+      await writeBroadcastAction({
+        action: {
+          type: "shopifyCatalog/complete_sync",
+          payload: {
+            requestId,
+            mode,
+            syncedAtMs: Date.now(),
+            maxUpdatedAtMs,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: nextAtMs,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Failed processing Shopify catalog sync request", {
+        requestId,
+        creator,
+        error: message,
+      });
+      await writeBroadcastAction({
+        action: {
+          type: "shopifyCatalog/fail_sync",
+          payload: {
+            requestId,
+            mode,
+            failedAtMs: Date.now(),
+            errorMessage: message,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: Date.now(),
+      });
+    }
+  },
+);
+
 exports.photosTransferRequest = onDocumentCreated(
   {
     document: `${PHOTOS_TRANSFER_REQUEST_COLLECTION}/{requestId}`,
@@ -420,7 +784,10 @@ exports.photosSecretResponse = onDocumentCreated(
   async (event) => {
     const requestData = event.data?.data();
     if (!requestData) return;
-    if (String(requestData?.eventType || "") !== "photos/image_transfer_secret_provided") {
+    if (
+      String(requestData?.eventType || "") !==
+      "photos/image_transfer_secret_provided"
+    ) {
       return;
     }
 
@@ -566,9 +933,13 @@ exports.googleAuthRequest = onDocumentCreated(
     });
 
     try {
-      const userSecretsRef = db.collection(USER_SECRETS_COLLECTION).doc(creator);
+      const userSecretsRef = db
+        .collection(USER_SECRETS_COLLECTION)
+        .doc(creator);
       const userSecretsSnap = await userSecretsRef.get();
-      const existingSecrets = userSecretsSnap.exists ? userSecretsSnap.data() : {};
+      const existingSecrets = userSecretsSnap.exists
+        ? userSecretsSnap.data()
+        : {};
       let tokenResponse = null;
       let refreshToken = String(existingSecrets?.google?.refreshToken || "");
 
@@ -586,7 +957,9 @@ exports.googleAuthRequest = onDocumentCreated(
           clientId: cfg.clientId,
           clientSecret: cfg.clientSecret,
         });
-        refreshToken = String(tokenResponse.refresh_token || refreshToken || "");
+        refreshToken = String(
+          tokenResponse.refresh_token || refreshToken || "",
+        );
         if (refreshToken) {
           await userSecretsRef.set(
             {
