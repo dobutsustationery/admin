@@ -11,6 +11,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 /coverage
 emulator-data
+emulator-restores
 
 # Service account keys (security sensitive)
 service-account-*.json
