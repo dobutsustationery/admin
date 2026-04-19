@@ -1,6 +1,7 @@
 # Shopify Order Sync Design
 
-> **Status: Proposed** - Ingest Shopify orders into our event-sourced system and update inventory as orders arrive.
+> **Status: Active** - Ingest Shopify orders into our event-sourced system and update inventory as orders arrive.
+> **Implementation Plan:** [SHOPIFY_ORDER_SYNC_IMPLEMENTATION_PLAN.md](SHOPIFY_ORDER_SYNC_IMPLEMENTATION_PLAN.md)
 
 ## 1. Problem
 
@@ -13,7 +14,18 @@ We need:
 - Safe replay/idempotency.
 - Recovery when webhooks are missed.
 
-## 2. Existing Local Model (important constraint)
+## 2. "Facts vs. Intent" Philosophy
+
+This design strictly follows the "Facts vs. Intent" philosophy of the `admin2` architecture.
+
+- **Green Actions (Facts):** We only persist raw facts from Shopify into the `broadcast` collection.
+- **Actions:**
+  - `new_order`: Records the fact that a new order exists with specific metadata.
+  - `quantify_item`: Records the fact that a specific order line has a target quantity.
+
+By using `quantify_item` (target state) instead of incremental deltas, we ensure idempotency and allow for safe replay of the action log.
+
+## 3. Existing Local Model (important constraint)
 
 Current inventory/order flow uses:
 
