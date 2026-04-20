@@ -18,23 +18,29 @@ We need:
 
 This design strictly follows the "Facts vs. Intent" philosophy of the `admin2` architecture.
 
-- **Green Actions (Facts):** We only persist raw facts from Shopify into the `broadcast` collection.
+- **Green Actions (Facts):** We only persist raw facts from Shopify into the `broadcast` collection. These actions represent things that *happened* in Shopify, not the resulting state we want to reach.
 - **Actions:**
-  - `new_order`: Records the fact that a new order exists with specific metadata.
-  - `quantify_item`: Records the fact that a specific order line has a target quantity.
+  - `shopify_order_placed`: Records the fact that a new order was created with specific line items and quantities.
+  - `shopify_order_cancelled`: Records the fact that specific line items in an order were cancelled.
+  - `shopify_order_refunded`: Records the fact that specific line items in an order were refunded.
+  - `shopify_order_reconciled`: Records the current "ground truth" state of an order as reported by Shopify at a specific timestamp.
 
-By using `quantify_item` (target state) instead of incremental deltas, we ensure idempotency and allow for safe replay of the action log.
+By recording these raw facts, we ensure that if our business logic for calculating inventory impact (e.g., how to handle partial refunds) changes, we can simply replay the actions to reach the new correct state.
 
-## 3. Existing Local Model (important constraint)
+## 3. Reducer Responsibility
 
-Current inventory/order flow uses:
+The `Inventory` and `Orders` reducers are responsible for deriving the current state from these facts:
 
-- `new_order` to create/update `orderIdToOrder`.
-- `package_item` / `quantify_item` to update order line quantities and `item.shipped`.
+- **Inventory Reducer:** Calculates `committedQty` for an item by summing quantities from `shopify_order_placed` and subtracting quantities from `shopify_order_cancelled` and `shopify_order_refunded`.
+- **Orders Reducer:** Maintains the current state of an order by applying the sequence of Shopify events.
 
-`quantify_item` is useful for idempotent sync because it sets target quantity per order line (instead of always incrementing).
+The ingestion logic **must not** perform this calculation; it only maps the raw Shopify payload to these "Green" actions.
 
-## 3. Goals
+## 4. Existing Local Model (important constraint)
+
+Current inventory/order flow uses `new_order` and `package_item` / `quantify_item`. While `quantify_item` sets a target state, for the Shopify sync, we prefer the more granular "Green" actions described above to maintain a pure event log of external facts. The local reducers may internally use the same logic as `quantify_item` when processing a `shopify_order_reconciled` action.
+
+## 5. Goals
 
 - Sync Shopify orders into local orders.
 - Update inventory shipped quantities as orders come in.
@@ -65,60 +71,45 @@ Webhook receiver (Firebase Function):
 
 1. Verify Shopify HMAC signature.
 2. Deduplicate by webhook/event id.
-3. Parse order payload into canonical internal model.
-4. Dispatch broadcast actions:
-   - `new_order({ orderID, date, email, product })`
-   - per mapped line: `quantify_item({ orderID, itemKey, qty })`
-5. Record processing event/log.
+3. Parse order payload into "Green" actions:
+   - `shopify_order_placed({ orderID, date, email, lines: [{ itemKey, qty }] })`
+   - `shopify_order_cancelled({ orderID, lines: [{ itemKey, qty }] })`
+   - `shopify_order_refunded({ orderID, lines: [{ itemKey, qty }] })`
+4. Dispatch actions to the broadcast collection.
 
 Suggested initial topics:
 
-- `orders/create`
-- `orders/updated`
-- `orders/cancelled`
-- `refunds/create` (or equivalent order update handling with refunded quantities)
-
-References:
-
-- https://shopify.dev/docs/apps/build/webhooks/subscribe
-- https://shopify.dev/docs/api/admin-rest/2025-07/resources/webhook#event-topics-orders-create
+- `orders/create` -> `shopify_order_placed`
+- `orders/updated` -> logic to determine if it's a placement, cancellation, or refund
+- `orders/cancelled` -> `shopify_order_cancelled`
+- `refunds/create` -> `shopify_order_refunded`
 
 ### 6.2 Secondary path: Backfill/Reconciliation Poller
 
 Scheduled job (e.g. every 10-30 minutes):
 
 - Query Shopify orders by `updatedAt` cursor/window.
-- Recompute canonical desired order line quantities.
-- Re-apply `quantify_item` target state for each order.
+- For each order, fetch the full current state.
+- Dispatch `shopify_order_reconciled({ orderID, timestamp, lines: [{ itemKey, currentQty }] })`.
 
-This heals missed webhooks and guarantees eventual consistency.
+This action acts as a "ground truth" fact. When the reducer sees a reconciliation action with a later timestamp than the last event it processed for that order, it can use the `currentQty` to reset the order's state, effectively healing any missed webhooks.
 
 ## 7. Idempotency Strategy
 
 ### 7.1 Event-level dedupe
 
-Persist webhook/event ids in `shopify_order_events/{eventId}` with TTL retention.
+Persist webhook/event ids in `shopify_order_events/{eventId}` with TTL retention. If already processed, skip.
 
-If already processed, skip.
+### 7.2 Log-level idempotency
 
-### 7.2 State-level idempotency
-
-Always use `quantify_item` with target quantity per order line (not incremental deltas).
-
-This makes replays safe:
-
-- duplicate event -> no net change
-- out-of-order update -> later reconciliation corrects state
+By recording facts with Shopify-provided IDs (Order ID, Line Item ID, Refund ID), we ensure that re-processing the same fact log always produces the same result. The reducer uses these IDs to avoid double-counting.
 
 ## 8. Quantity Semantics
 
-Define one clear quantity policy in v1:
+The inventory impact is derived:
+`inventoryImpact = total_placed - total_cancelled - total_refunded`
 
-- `committedQty = paid/authorized quantity - cancelled - refunded`
-
-`committedQty` is what we mirror into local order lines and thus into `item.shipped` via `quantify_item`.
-
-If fulfillment-based semantics are preferred later, introduce policy versioning.
+The logic for this derivation lives in the `Inventory` reducer, not in the sync layer. This allows us to adjust how "refunded" items affect inventory (e.g., do they return to stock?) by changing the reducer logic and replaying the actions.
 
 ## 9. Data Model Additions
 
