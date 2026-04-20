@@ -1,9 +1,12 @@
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onRequest } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { setGlobalOptions, logger } = require("firebase-functions/v2");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const shopifyCore = require("./shared/shopify-sync-core.cjs");
 const shopifyWorker = require("./shared/shopify-sync-worker.cjs");
+const shopifyOrderLogic = require("./shared/shopify-order-logic.cjs");
 const photosWorker = require("./shared/photos-sync-worker.cjs");
 
 initializeApp();
@@ -1049,6 +1052,138 @@ exports.googleAuthRequest = onDocumentCreated(
           });
         });
       }
+    }
+  },
+);
+
+exports.shopifyOrderWebhook = onRequest(
+  {
+    timeoutSeconds: 30,
+    memory: "512MiB",
+    concurrency: 10,
+  },
+  async (req, res) => {
+    const topic = req.headers["x-shopify-topic"];
+    const hmac = req.headers["x-shopify-hmac-sha256"];
+    const webhookId = req.headers["x-shopify-webhook-id"];
+
+    // 1. HMAC Verification
+    const config = getShopifyConfig();
+    // Use rawBody if available for HMAC verification
+    const bodyToVerify = req.rawBody || JSON.stringify(req.body);
+    if (
+      !shopifyOrderLogic.verifyShopifyHmac(
+        bodyToVerify,
+        hmac,
+        config.clientSecret,
+      )
+    ) {
+      logger.error("HMAC verification failed", { topic, webhookId });
+      return res.status(401).send("Unauthorized");
+    }
+
+    if (!webhookId) {
+      return res.status(400).send("Missing webhook ID");
+    }
+
+    try {
+      // 2. Raw Persistence
+      await db.collection("shopify_order_webhooks").doc(webhookId).set({
+        topic,
+        payload: req.body,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      // 3. Deduplication
+      const eventRef = db.collection("shopify_order_events").doc(webhookId);
+      const eventSnap = await eventRef.get();
+      if (eventSnap.exists) {
+        return res.status(200).send("Duplicate");
+      }
+      await eventRef.set({ processedAt: FieldValue.serverTimestamp() });
+
+      // 4. Mapping
+      let action = null;
+      if (topic === "orders/create") {
+        action = shopifyOrderLogic.mapShopifyOrderToPlacedAction(req.body);
+      } else if (topic === "orders/cancelled") {
+        action = shopifyOrderLogic.mapShopifyOrderToCancelledAction(req.body);
+      } else if (topic === "refunds/create") {
+        action = shopifyOrderLogic.mapShopifyRefundToRefundedAction(req.body);
+      } else if (topic === "orders/updated") {
+        action = shopifyOrderLogic.mapShopifyOrderToReconciledAction(req.body);
+      }
+
+      // 5. Dispatch
+      if (action) {
+        await writeBroadcastAction({
+          action,
+          creator: "shopify-webhook",
+          atMs: Date.now(),
+        });
+      }
+
+      res.status(200).send("OK");
+    } catch (error) {
+      logger.error("Webhook processing failed", error);
+      res.status(500).send("Internal Error");
+    }
+  },
+);
+
+exports.shopifyOrderReconcile = onSchedule(
+  {
+    schedule: "every 15 minutes",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+  },
+  async (event) => {
+    const config = getShopifyConfig();
+    const stateRef = db.collection("shopify_order_sync_state").doc("default");
+    const stateSnap = await stateRef.get();
+    const state = stateSnap.exists ? stateSnap.data() : {};
+
+    let lastCursor = state.lastOrderUpdatedAtCursor || "1970-01-01T00:00:00Z";
+
+    const storeUrl = config.storeUrl;
+    const apiVersion = config.apiVersion;
+
+    try {
+      const params = new URLSearchParams({
+        updated_at_min: lastCursor,
+        status: "any",
+        limit: "50",
+      });
+
+      const endpoint = `https://${storeUrl}/admin/api/${apiVersion}/orders.json?${params.toString()}`;
+      const headers = await shopifyCore.buildShopifyHeaders(config);
+      const json = await shopifyCore.fetchJson(endpoint, { headers });
+
+      const orders = Array.isArray(json?.orders) ? json.orders : [];
+
+      for (const order of orders) {
+        const action =
+          shopifyOrderLogic.mapShopifyOrderToReconciledAction(order);
+        await writeBroadcastAction({
+          action,
+          creator: "shopify-reconcile-poller",
+          atMs: Date.now(),
+        });
+
+        if (order.updated_at > lastCursor) {
+          lastCursor = order.updated_at;
+        }
+      }
+
+      await stateRef.set(
+        {
+          lastOrderUpdatedAtCursor: lastCursor,
+          lastRunAt: Date.now(),
+        },
+        { merge: true },
+      );
+    } catch (error) {
+      logger.error("Shopify order reconciliation failed", error);
     }
   },
 );

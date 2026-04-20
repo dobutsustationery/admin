@@ -32,12 +32,23 @@ export interface LineItem {
   itemKey: InventoryItemKey;
   qty: number;
 }
+export interface ShopifyLineFact {
+  itemKey: InventoryItemKey;
+  placed: number;
+  cancelled: number;
+  refunded: number;
+}
 export interface OrderInfo {
   date: Date;
   email?: string;
   product?: string;
   id: string;
   items: LineItem[];
+  shopifyFacts?: {
+    lines: Record<string, ShopifyLineFact>; // lineItemID -> counts
+    refunds: Record<string, boolean>; // refundID -> processed
+    reconciledTimestamp?: number;
+  };
 }
 export interface InventoryState {
   idToItem: { [key: string]: Item };
@@ -126,6 +137,34 @@ export interface BulkImportItem {
 export const bulk_import_items = createAction<{
   items: Array<BulkImportItem>;
 }>("bulk_import_items");
+
+export const shopify_order_placed = createAction<{
+  orderID: string;
+  date: Date;
+  email: string;
+  lines: Array<{ itemKey: InventoryItemKey; qty: number; lineItemID: string }>;
+}>("shopify_order_placed");
+
+export const shopify_order_cancelled = createAction<{
+  orderID: string;
+  lines: Array<{ itemKey: InventoryItemKey; qty: number; lineItemID: string }>;
+}>("shopify_order_cancelled");
+
+export const shopify_order_refunded = createAction<{
+  orderID: string;
+  refundID: string;
+  lines: Array<{
+    itemKey: InventoryItemKey;
+    qty: number;
+    lineItemID: string;
+  }>;
+}>("shopify_order_refunded");
+
+export const shopify_order_reconciled = createAction<{
+  orderID: string;
+  timestamp: number;
+  lines: Array<{ itemKey: InventoryItemKey; currentQty: number }>;
+}>("shopify_order_reconciled");
 
 function getTimestampMs(timestamp: any): number {
   if (typeof timestamp === "number") return timestamp;
@@ -393,9 +432,246 @@ export const initialState: InventoryState = {
   initialized: false,
 };
 
+function syncOrderItemsFromFacts(order: OrderInfo) {
+  if (!order.shopifyFacts) return;
+  const itemKeyToQty: Record<string, number> = {};
+  for (const lineItemID in order.shopifyFacts.lines) {
+    const fact = order.shopifyFacts.lines[lineItemID];
+    const currentQty = fact.placed - fact.cancelled - fact.refunded;
+    if (currentQty > 0) {
+      itemKeyToQty[fact.itemKey] =
+        (itemKeyToQty[fact.itemKey] || 0) + currentQty;
+    }
+  }
+  order.items = Object.entries(itemKeyToQty).map(([itemKey, qty]) => ({
+    itemKey: itemKey as InventoryItemKey,
+    qty,
+  }));
+}
+
 export const inventory = createReducer(initialState, (r) => {
   r.addCase(inventory_synced, (state) => {
     state.initialized = true;
+  });
+  r.addCase(shopify_order_placed, (state, action) => {
+    const { orderID, date, email, lines } = action.payload;
+    const actionTimestamp = getTimestampMs((action as any).timestamp);
+
+    if (!state.orderIdToOrder[orderID]) {
+      state.orderIdToOrder[orderID] = {
+        id: orderID,
+        date: new Date(date),
+        email,
+        items: [],
+        shopifyFacts: { lines: {}, refunds: {} },
+      };
+    }
+    const order = state.orderIdToOrder[orderID];
+    if (!order.shopifyFacts) {
+      order.shopifyFacts = { lines: {}, refunds: {} };
+    }
+
+    const isReconciledLater =
+      order.shopifyFacts.reconciledTimestamp &&
+      order.shopifyFacts.reconciledTimestamp > actionTimestamp;
+
+    for (const line of lines) {
+      const itemKey = canonicalizeInventoryItemKey(line.itemKey);
+      const { qty, lineItemID } = line;
+      if (!order.shopifyFacts.lines[lineItemID]) {
+        order.shopifyFacts.lines[lineItemID] = {
+          itemKey,
+          placed: 0,
+          cancelled: 0,
+          refunded: 0,
+        };
+      }
+      const fact = order.shopifyFacts.lines[lineItemID];
+      const delta = qty - fact.placed;
+      if (delta > 0) {
+        fact.placed = qty;
+        if (!isReconciledLater && state.idToItem[itemKey]) {
+          state.idToItem[itemKey].shipped += delta;
+          const historyVal = getTimestampMs((action as any).timestamp);
+          if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+          state.idToHistory[itemKey].push({
+            date: new Date(historyVal).toLocaleString("en", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            }),
+            desc: `Shopify Order Placed: ${qty} for ${orderID}`,
+            val: historyVal,
+          });
+        }
+      }
+    }
+    if (!isReconciledLater) {
+      syncOrderItemsFromFacts(order);
+    }
+  });
+  r.addCase(shopify_order_cancelled, (state, action) => {
+    const { orderID, lines } = action.payload;
+    const actionTimestamp = getTimestampMs((action as any).timestamp);
+    const order = state.orderIdToOrder[orderID];
+    if (!order || !order.shopifyFacts) return;
+
+    const isReconciledLater =
+      order.shopifyFacts.reconciledTimestamp &&
+      order.shopifyFacts.reconciledTimestamp > actionTimestamp;
+
+    for (const line of lines) {
+      const { lineItemID, qty } = line;
+      const fact = order.shopifyFacts.lines[lineItemID];
+      if (!fact) continue;
+
+      const itemKey = canonicalizeInventoryItemKey(fact.itemKey);
+      const delta = qty - fact.cancelled;
+      if (delta > 0) {
+        fact.cancelled = qty;
+        if (!isReconciledLater && state.idToItem[itemKey]) {
+          state.idToItem[itemKey].shipped -= delta;
+          const historyVal = getTimestampMs((action as any).timestamp);
+          if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+          state.idToHistory[itemKey].push({
+            date: new Date(historyVal).toLocaleString("en", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            }),
+            desc: `Shopify Order Cancelled: ${qty} for ${orderID}`,
+            val: historyVal,
+          });
+        }
+      }
+    }
+    if (!isReconciledLater) {
+      syncOrderItemsFromFacts(order);
+    }
+  });
+
+  r.addCase(shopify_order_refunded, (state, action) => {
+    const { orderID, lines, refundID } = action.payload;
+    const actionTimestamp = getTimestampMs((action as any).timestamp);
+    const order = state.orderIdToOrder[orderID];
+    if (!order || !order.shopifyFacts) return;
+
+    if (order.shopifyFacts.refunds[refundID]) return; // Already processed
+
+    const isReconciledLater =
+      order.shopifyFacts.reconciledTimestamp &&
+      order.shopifyFacts.reconciledTimestamp > actionTimestamp;
+
+    for (const line of lines) {
+      const { lineItemID, qty } = line;
+      const fact = order.shopifyFacts.lines[lineItemID];
+      if (!fact) continue;
+
+      const itemKey = canonicalizeInventoryItemKey(fact.itemKey);
+      fact.refunded += qty;
+      if (!isReconciledLater && state.idToItem[itemKey]) {
+        state.idToItem[itemKey].shipped -= qty;
+        const historyVal = getTimestampMs((action as any).timestamp);
+        if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+        state.idToHistory[itemKey].push({
+          date: new Date(historyVal).toLocaleString("en", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          }),
+          desc: `Shopify Order Refunded: ${qty} for ${orderID} (Refund: ${refundID})`,
+          val: historyVal,
+        });
+      }
+    }
+    order.shopifyFacts.refunds[refundID] = true;
+    if (!isReconciledLater) {
+      syncOrderItemsFromFacts(order);
+    }
+  });
+
+  r.addCase(shopify_order_reconciled, (state, action) => {
+    const { orderID, timestamp, lines } = action.payload;
+    if (!state.orderIdToOrder[orderID]) {
+      state.orderIdToOrder[orderID] = {
+        id: orderID,
+        date: new Date(timestamp),
+        items: [],
+        shopifyFacts: { lines: {}, refunds: {} },
+      };
+    }
+    const order = state.orderIdToOrder[orderID];
+    if (!order.shopifyFacts) {
+      order.shopifyFacts = { lines: {}, refunds: {} };
+    }
+
+    if (
+      order.shopifyFacts.reconciledTimestamp &&
+      order.shopifyFacts.reconciledTimestamp >= timestamp
+    ) {
+      return;
+    }
+
+    const currentInventoryImpact: Record<string, number> = {};
+    for (const item of order.items) {
+      const itemKey = canonicalizeInventoryItemKey(item.itemKey);
+      currentInventoryImpact[itemKey] =
+        (currentInventoryImpact[itemKey] || 0) + item.qty;
+    }
+
+    const reconciledLines: Array<{
+      itemKey: InventoryItemKey;
+      currentQty: number;
+    }> = [];
+
+    for (const line of lines) {
+      const itemKey = canonicalizeInventoryItemKey(line.itemKey);
+      const { currentQty } = line;
+      reconciledLines.push({ itemKey, currentQty });
+
+      const diff = currentQty - (currentInventoryImpact[itemKey] || 0);
+      if (diff !== 0) {
+        if (state.idToItem[itemKey]) {
+          state.idToItem[itemKey].shipped += diff;
+          const historyVal = getTimestampMs((action as any).timestamp);
+          if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+          state.idToHistory[itemKey].push({
+            date: new Date(historyVal).toLocaleString("en", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            }),
+            desc: `Shopify Order Reconciled: ${currentQty} (diff ${diff}) for ${orderID}`,
+            val: historyVal,
+          });
+        }
+      }
+      delete currentInventoryImpact[itemKey];
+    }
+
+    for (const [key, qty] of Object.entries(currentInventoryImpact)) {
+      const itemKey = key as InventoryItemKey;
+      if (qty !== 0 && state.idToItem[itemKey]) {
+        state.idToItem[itemKey].shipped -= qty;
+        const historyVal = getTimestampMs((action as any).timestamp);
+        if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+        state.idToHistory[itemKey].push({
+          date: new Date(historyVal).toLocaleString("en", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          }),
+          desc: `Shopify Order Reconciled (Missing item reset): 0 (diff -${qty}) for ${orderID}`,
+          val: historyVal,
+        });
+      }
+    }
+
+    order.items = reconciledLines.map((l) => ({
+      itemKey: l.itemKey,
+      qty: l.currentQty,
+    }));
+    order.shopifyFacts.reconciledTimestamp = timestamp;
   });
   r.addCase(hide_exception, (state, action) => {
     if (!state.hiddenExceptions) state.hiddenExceptions = {};
