@@ -3,9 +3,10 @@ import { makeInventoryItemKey } from "$lib/sku";
 import {
   initialState,
   inventory,
-  shopify_order_placed,
+  shopify_order_created,
+  shopify_order_updated,
   shopify_order_cancelled,
-  shopify_order_refunded,
+  shopify_refund_created,
   shopify_order_reconciled,
   update_item,
   type Item,
@@ -26,18 +27,20 @@ describe("Shopify Sync Reducer", () => {
   };
   const itemKey = makeInventoryItemKey(testItem.janCode, testItem.subtype);
 
-  it("handles shopify_order_placed and updates shipped quantity", () => {
+  it("handles shopify_order_created and updates shipped quantity", () => {
     let state = inventory(
       initialState,
       update_item({ id: itemKey, item: testItem }),
     );
 
     const orderID = "shopify:123";
-    const action = shopify_order_placed({
-      orderID,
-      date: new Date("2024-01-01T12:00:00Z"),
-      email: "customer@example.com",
-      lines: [{ itemKey, qty: 2, lineItemID: "li1" }],
+    const action = shopify_order_created({
+      raw: {
+        id: "123",
+        created_at: "2024-01-01T12:00:00Z",
+        email: "customer@example.com",
+        line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
+      },
     });
 
     state = inventory(state, action);
@@ -49,18 +52,20 @@ describe("Shopify Sync Reducer", () => {
     ).toBe(2);
   });
 
-  it("handles shopify_order_placed idempotently", () => {
+  it("handles shopify_order_created idempotently", () => {
     let state = inventory(
       initialState,
       update_item({ id: itemKey, item: testItem }),
     );
 
     const orderID = "shopify:123";
-    const action = shopify_order_placed({
-      orderID,
-      date: new Date("2024-01-01T12:00:00Z"),
-      email: "customer@example.com",
-      lines: [{ itemKey, qty: 2, lineItemID: "li1" }],
+    const action = shopify_order_created({
+      raw: {
+        id: "123",
+        created_at: "2024-01-01T12:00:00Z",
+        email: "customer@example.com",
+        line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
+      },
     });
 
     state = inventory(state, action);
@@ -79,19 +84,23 @@ describe("Shopify Sync Reducer", () => {
     const orderID = "shopify:123";
     state = inventory(
       state,
-      shopify_order_placed({
-        orderID,
-        date: new Date("2024-01-01T12:00:00Z"),
-        email: "customer@example.com",
-        lines: [{ itemKey, qty: 2, lineItemID: "li1" }],
+      shopify_order_created({
+        raw: {
+          id: "123",
+          created_at: "2024-01-01T12:00:00Z",
+          email: "customer@example.com",
+          line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
+        },
       }),
     );
 
     state = inventory(
       state,
       shopify_order_cancelled({
-        orderID,
-        lines: [{ itemKey, qty: 2, lineItemID: "li1" }],
+        raw: {
+          id: "123",
+          line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
+        },
       }),
     );
 
@@ -102,7 +111,7 @@ describe("Shopify Sync Reducer", () => {
     ).toBe(2);
   });
 
-  it("handles shopify_order_refunded", () => {
+  it("handles shopify_refund_created", () => {
     let state = inventory(
       initialState,
       update_item({ id: itemKey, item: testItem }),
@@ -111,20 +120,24 @@ describe("Shopify Sync Reducer", () => {
     const orderID = "shopify:123";
     state = inventory(
       state,
-      shopify_order_placed({
-        orderID,
-        date: new Date("2024-01-01T12:00:00Z"),
-        email: "customer@example.com",
-        lines: [{ itemKey, qty: 5, lineItemID: "li1" }],
+      shopify_order_created({
+        raw: {
+          id: "123",
+          created_at: "2024-01-01T12:00:00Z",
+          email: "customer@example.com",
+          line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
+        },
       }),
     );
 
     state = inventory(
       state,
-      shopify_order_refunded({
-        orderID,
-        refundID: "ref1",
-        lines: [{ itemKey, qty: 2, lineItemID: "li1" }],
+      shopify_refund_created({
+        raw: {
+          id: "ref1",
+          order_id: "123",
+          refund_line_items: [{ line_item_id: "li1", quantity: 2 }],
+        },
       }),
     );
 
@@ -135,7 +148,7 @@ describe("Shopify Sync Reducer", () => {
     ).toBe(2);
   });
 
-  it("handles shopify_order_refunded idempotently using refundID", () => {
+  it("handles shopify_refund_created idempotently using refundID", () => {
     let state = inventory(
       initialState,
       update_item({ id: itemKey, item: testItem }),
@@ -144,18 +157,22 @@ describe("Shopify Sync Reducer", () => {
     const orderID = "shopify:123";
     state = inventory(
       state,
-      shopify_order_placed({
-        orderID,
-        date: new Date("2024-01-01T12:00:00Z"),
-        email: "customer@example.com",
-        lines: [{ itemKey, qty: 5, lineItemID: "li1" }],
+      shopify_order_created({
+        raw: {
+          id: "123",
+          created_at: "2024-01-01T12:00:00Z",
+          email: "customer@example.com",
+          line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
+        },
       }),
     );
 
-    const action = shopify_order_refunded({
-      orderID,
-      refundID: "ref1",
-      lines: [{ itemKey, qty: 2, lineItemID: "li1" }],
+    const action = shopify_refund_created({
+      raw: {
+        id: "ref1",
+        order_id: "123",
+        refund_line_items: [{ line_item_id: "li1", quantity: 2 }],
+      },
     });
 
     state = inventory(state, action);
@@ -174,11 +191,13 @@ describe("Shopify Sync Reducer", () => {
     // Initially placed 5
     state = inventory(
       state,
-      shopify_order_placed({
-        orderID,
-        date: new Date("2024-01-01T12:00:00Z"),
-        email: "customer@example.com",
-        lines: [{ itemKey, qty: 5, lineItemID: "li1" }],
+      shopify_order_created({
+        raw: {
+          id: "123",
+          created_at: "2024-01-01T12:00:00Z",
+          email: "customer@example.com",
+          line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
+        },
       }),
     );
 
@@ -186,9 +205,51 @@ describe("Shopify Sync Reducer", () => {
     state = inventory(
       state,
       shopify_order_reconciled({
-        orderID,
-        timestamp: Date.now(),
-        lines: [{ itemKey, currentQty: 3 }],
+        raw: {
+          id: "123",
+          updated_at: new Date().toISOString(),
+          line_items: [
+            { id: "li1", sku: itemKey, quantity: 5, refund_quantity: 2 },
+          ],
+        },
+      }),
+    );
+
+    expect(state.idToItem[itemKey].shipped).toBe(3);
+    expect(state.orderIdToOrder[orderID].items).toEqual([{ itemKey, qty: 3 }]);
+  });
+
+  it("handles shopify_order_updated as reconciliation", () => {
+    let state = inventory(
+      initialState,
+      update_item({ id: itemKey, item: testItem }),
+    );
+
+    const orderID = "shopify:123";
+    // Initially placed 5
+    state = inventory(
+      state,
+      shopify_order_created({
+        raw: {
+          id: "123",
+          created_at: "2024-01-01T12:00:00Z",
+          email: "customer@example.com",
+          line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
+        },
+      }),
+    );
+
+    // Update says only 3 items now
+    state = inventory(
+      state,
+      shopify_order_updated({
+        raw: {
+          id: "123",
+          updated_at: new Date().toISOString(),
+          line_items: [
+            { id: "li1", sku: itemKey, quantity: 5, refund_quantity: 2 },
+          ],
+        },
       }),
     );
 
@@ -204,23 +265,27 @@ describe("Shopify Sync Reducer", () => {
 
     const orderID = "shopify:123";
     const now = Date.now();
+    const nowIso = new Date(now).toISOString();
 
     // Reconcile with current time
     state = inventory(
       state,
       shopify_order_reconciled({
-        orderID,
-        timestamp: now,
-        lines: [{ itemKey, currentQty: 3 }],
+        raw: {
+          id: "123",
+          updated_at: nowIso,
+          line_items: [{ id: "li1", sku: itemKey, quantity: 3 }],
+        },
       }),
     );
 
-    // Try to apply an older "placed" fact (e.g. delayed webhook)
-    const oldAction = shopify_order_placed({
-      orderID,
-      date: new Date(now - 10000),
-      email: "customer@example.com",
-      lines: [{ itemKey, qty: 5, lineItemID: "li1" }],
+    // Try to apply an older "created" fact (e.g. delayed webhook)
+    const oldAction = shopify_order_created({
+      raw: {
+        id: "123",
+        created_at: new Date(now - 10000).toISOString(),
+        line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
+      },
     });
     // Attach older timestamp to the action as middleware would
     (oldAction as any).timestamp = { seconds: Math.floor((now - 5000) / 1000) };

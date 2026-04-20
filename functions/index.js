@@ -1102,22 +1102,25 @@ exports.shopifyOrderWebhook = onRequest(
       }
       await eventRef.set({ processedAt: FieldValue.serverTimestamp() });
 
-      // 4. Mapping
-      let action = null;
+      // 4. Identify Action Type
+      let type = null;
       if (topic === "orders/create") {
-        action = shopifyOrderLogic.mapShopifyOrderToPlacedAction(req.body);
+        type = "shopify_order_created";
       } else if (topic === "orders/cancelled") {
-        action = shopifyOrderLogic.mapShopifyOrderToCancelledAction(req.body);
+        type = "shopify_order_cancelled";
       } else if (topic === "refunds/create") {
-        action = shopifyOrderLogic.mapShopifyRefundToRefundedAction(req.body);
+        type = "shopify_refund_created";
       } else if (topic === "orders/updated") {
-        action = shopifyOrderLogic.mapShopifyOrderToReconciledAction(req.body);
+        type = "shopify_order_updated";
       }
 
       // 5. Dispatch
-      if (action) {
+      if (type) {
         await writeBroadcastAction({
-          action,
+          action: {
+            type,
+            payload: { raw: req.body },
+          },
           creator: "shopify-webhook",
           atMs: Date.now(),
         });
@@ -1162,10 +1165,11 @@ exports.shopifyOrderReconcile = onSchedule(
       const orders = Array.isArray(json?.orders) ? json.orders : [];
 
       for (const order of orders) {
-        const action =
-          shopifyOrderLogic.mapShopifyOrderToReconciledAction(order);
         await writeBroadcastAction({
-          action,
+          action: {
+            type: "shopify_order_reconciled",
+            payload: { raw: order },
+          },
           creator: "shopify-reconcile-poller",
           atMs: Date.now(),
         });
