@@ -7,7 +7,7 @@ This document outlines the detailed implementation and testing plan for the Shop
 
 ## Goal
 
-Implement a robust, idempotent ingestion pipeline for Shopify orders that updates local inventory state using "Green" actions (`new_order`, `quantify_item`).
+Implement a robust, idempotent ingestion pipeline for Shopify orders that updates local inventory state using "Green" actions (`shopify_order_placed`, `shopify_order_cancelled`, and `shopify_order_refunded`).
 
 ## Phase 1: Environment Setup
 
