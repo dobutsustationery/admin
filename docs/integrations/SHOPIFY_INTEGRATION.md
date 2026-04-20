@@ -162,13 +162,13 @@ _Goal: Keep Shopify inventory correct._
 
 _Goal: Record orders as actions using "Facts vs. Intent" philosophy._
 
-1.  **Webhook**: Receive `orders/create`, `orders/updated`, `orders/cancelled`.
+1.  **Webhook**: Receive `orders/create`, `orders/updated`, `orders/cancelled`, `refunds/create`.
 2.  **Translate**: Convert Shopify Line Items -> Internal Item Keys.
 3.  **Dispatch**:
-    - Dispatch `new_order` action with order metadata.
-    - Dispatch `quantify_item` for each line item to set the target committed quantity.
+    - Dispatch `shopify_order_placed` action with order metadata and raw quantities.
+    - Dispatch `shopify_order_cancelled` / `shopify_order_refunded` as events occur.
     - Dispatch `shopify_api_log` recording the webhook receipt.
-4.  **Inventory Impact**: `quantify_item` updates the order line state, which is factored into the `Total Shipped` calculation, automatically reducing `Available Stock` and triggering Workflow B (Inventory Sync) to update Shopify.
+4.  **Inventory Impact**: The `Inventory` reducer processes these facts to derive the `Total Shipped` calculation, which automatically updates `Available Stock` and triggers Workflow B (Inventory Sync) to update Shopify.
 
 See [SHOPIFY_ORDER_SYNC_DESIGN.md](../design/SHOPIFY_ORDER_SYNC_DESIGN.md) for details.
 

@@ -46,30 +46,22 @@ Implement a robust, idempotent ingestion pipeline for Shopify orders that update
 - If SKU is missing or invalid, attempt fallback to JAN code in product properties or title.
 
 ### 3.2 Dispatching "Green" Actions
-- Construct and dispatch `new_order` action:
+- Construct and dispatch raw fact actions:
     ```json
     {
-      "type": "new_order",
+      "type": "shopify_order_placed",
       "payload": {
         "orderID": "shopify:<order_id>",
         "date": "2023-10-27T...",
         "email": "customer@example.com",
-        "product": "Shopify Order #1001"
+        "lines": [
+          { "itemKey": "<inventory_item_key>", "qty": 1, "lineItemID": "<shopify_line_id>" }
+        ]
       }
     }
     ```
-- For each mapped line item, dispatch `quantify_item`:
-    ```json
-    {
-      "type": "quantify_item",
-      "payload": {
-        "orderID": "shopify:<order_id>",
-        "itemKey": "<inventory_item_key>",
-        "qty": <committed_quantity>
-      }
-    }
-    ```
-- **Idempotency:** Use Shopify's internal `id` (stringified) for the local `orderID` key to ensure that re-processing the same order always updates the same local record.
+- Similarly for cancellations and refunds, dispatch `shopify_order_cancelled` or `shopify_order_refunded` with raw quantities and IDs.
+- **Idempotency:** The reducer uses the Shopify `orderID`, `lineItemID`, and `refundID` to ensure that it only counts each fact once, even if the action is replayed.
 
 ## Phase 4: Reconciliation Poller
 
@@ -79,8 +71,20 @@ Implement a robust, idempotent ingestion pipeline for Shopify orders that update
 - Use the `updated_at_min` filter based on a stored `lastOrderUpdatedAtCursor`.
 
 ### 4.2 Healing Logic
-- The poller should re-calculate the `committed_quantity` for all lines and re-dispatch `quantify_item`.
-- Since `quantify_item` is state-based (target quantity), it will automatically correct any discrepancies caused by missed webhooks without introducing duplicates.
+- The poller dispatches a `shopify_order_reconciled` action:
+    ```json
+    {
+      "type": "shopify_order_reconciled",
+      "payload": {
+        "orderID": "shopify:<order_id>",
+        "timestamp": 1700000000000,
+        "lines": [
+          { "itemKey": "<item_key>", "currentQty": 2 }
+        ]
+      }
+    }
+    ```
+- **Ground Truth:** The `Inventory` reducer treats this as the definitive state of the order at that timestamp. If the reducer's last processed event for this order is older than the reconciliation timestamp, it overrides its internal counters with these values.
 
 ## Phase 5: Testing & Verification
 
@@ -89,12 +93,13 @@ Implement a robust, idempotent ingestion pipeline for Shopify orders that update
 2. **Order Placement:** Place a test order in the dev store.
     - Verify `shopifyOrderWebhook` is triggered.
     - Verify raw payload is written to Firestore.
-    - Verify `new_order` and `quantify_item` actions appear in the `broadcast` log.
-    - Verify local Redux state (`inventory` and `listings` slices) reflects the new `shipped` quantities.
-3. **Updates & Cancellations:** Modify a test order (e.g., change quantity, cancel it).
-    - Verify local state updates correctly via `quantify_item` (e.g., quantity drops to 0 on cancellation).
+    - Verify `shopify_order_placed` action appears in the `broadcast` log.
+    - Verify local Redux state reflects the new inventory impact (derived by the reducer).
+3. **Updates & Cancellations:** Modify a test order (e.g., cancel it).
+    - Verify `shopify_order_cancelled` is broadcasted.
+    - Verify local state updates correctly as the reducer processes the cancellation fact.
 4. **Refunds:** Issue a partial refund.
-    - Verify `committed_quantity` logic correctly subtracts refunded items.
+    - Verify `shopify_order_refunded` is broadcasted and inventory impact is adjusted by the reducer.
 
 ### 5.2 Automated E2E Test (Mocked)
 - Create a new Playwright test in `e2e/016-shopify-sync/`.
