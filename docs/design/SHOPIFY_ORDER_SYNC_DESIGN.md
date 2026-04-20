@@ -148,7 +148,7 @@ shopify_orders_mirror/{shopifyOrderId} {
 
 1. Implement webhook receiver + HMAC validation + dedupe store.
 2. Implement mapping layer from Shopify line items -> local item keys.
-3. Dispatch `new_order` + `quantify_item` actions via broadcast.
+3. Dispatch `shopify_order_*` actions via broadcast.
 4. Add reconciliation poller using `updatedAt` cursor.
 5. Add UI visibility for sync exceptions and last order sync health.
 
