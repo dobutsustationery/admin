@@ -41,6 +41,7 @@ describe("Shopify Sync Reducer", () => {
         email: "customer@example.com",
         line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
       },
+      topic: "orders/create",
     });
 
     state = inventory(state, action);
@@ -66,6 +67,7 @@ describe("Shopify Sync Reducer", () => {
         email: "customer@example.com",
         line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
       },
+      topic: "orders/create",
     });
 
     state = inventory(state, action);
@@ -91,6 +93,7 @@ describe("Shopify Sync Reducer", () => {
           email: "customer@example.com",
           line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
         },
+        topic: "orders/create",
       }),
     );
 
@@ -101,6 +104,7 @@ describe("Shopify Sync Reducer", () => {
           id: "123",
           line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
         },
+        topic: "orders/cancelled",
       }),
     );
 
@@ -127,6 +131,7 @@ describe("Shopify Sync Reducer", () => {
           email: "customer@example.com",
           line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
         },
+        topic: "orders/create",
       }),
     );
 
@@ -138,6 +143,7 @@ describe("Shopify Sync Reducer", () => {
           order_id: "123",
           refund_line_items: [{ line_item_id: "li1", quantity: 2 }],
         },
+        topic: "refunds/create",
       }),
     );
 
@@ -164,6 +170,7 @@ describe("Shopify Sync Reducer", () => {
           email: "customer@example.com",
           line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
         },
+        topic: "orders/create",
       }),
     );
 
@@ -173,6 +180,7 @@ describe("Shopify Sync Reducer", () => {
         order_id: "123",
         refund_line_items: [{ line_item_id: "li1", quantity: 2 }],
       },
+      topic: "refunds/create",
     });
 
     state = inventory(state, action);
@@ -198,6 +206,7 @@ describe("Shopify Sync Reducer", () => {
           email: "customer@example.com",
           line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
         },
+        topic: "orders/create",
       }),
     );
 
@@ -212,6 +221,7 @@ describe("Shopify Sync Reducer", () => {
             { id: "li1", sku: itemKey, quantity: 5, refund_quantity: 2 },
           ],
         },
+        topic: "reconcile",
       }),
     );
 
@@ -236,6 +246,7 @@ describe("Shopify Sync Reducer", () => {
           email: "customer@example.com",
           line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
         },
+        topic: "orders/create",
       }),
     );
 
@@ -250,6 +261,7 @@ describe("Shopify Sync Reducer", () => {
             { id: "li1", sku: itemKey, quantity: 5, refund_quantity: 2 },
           ],
         },
+        topic: "orders/updated",
       }),
     );
 
@@ -276,6 +288,7 @@ describe("Shopify Sync Reducer", () => {
           updated_at: nowIso,
           line_items: [{ id: "li1", sku: itemKey, quantity: 3 }],
         },
+        topic: "reconcile",
       }),
     );
 
@@ -286,6 +299,7 @@ describe("Shopify Sync Reducer", () => {
         created_at: new Date(now - 10000).toISOString(),
         line_items: [{ id: "li1", sku: itemKey, quantity: 5 }],
       },
+      topic: "orders/create",
     });
     // Attach older timestamp to the action as middleware would
     (oldAction as any).timestamp = { seconds: Math.floor((now - 5000) / 1000) };
