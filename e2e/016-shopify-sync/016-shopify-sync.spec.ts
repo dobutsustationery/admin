@@ -53,7 +53,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const hmac = computeHmac(body, SHOPIFY_SECRET);
 
   console.log("Sending orders/create webhook...");
-  const response = await request.post("http://localhost:5001/demo-test-project/us-central1/shopifyOrderWebhook", {
+  const response = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
     data: orderPayload,
     headers: {
       "x-shopify-topic": "orders/create",
@@ -62,6 +62,9 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
     }
   });
 
+  if (!response.ok()) {
+    console.log(`Webhook failed with status ${response.status()}: ${await response.text()}`);
+  }
   expect(response.ok()).toBe(true);
   
   // Step 3: Verify UI update
@@ -85,7 +88,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const refundHmac = computeHmac(refundBody, SHOPIFY_SECRET);
 
   console.log("Sending refunds/create webhook...");
-  const refundResponse = await request.post("http://localhost:5001/demo-test-project/us-central1/shopifyOrderWebhook", {
+  const refundResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
     data: refundPayload,
     headers: {
       "x-shopify-topic": "refunds/create",
@@ -108,7 +111,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
     line_items: [
       {
         ...orderPayload.line_items[0],
-        quantity: 10,
+        quantity: 9,
         refund_quantity: 0
       }
     ]
@@ -117,7 +120,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const updatedHmac = computeHmac(updatedBody, SHOPIFY_SECRET);
   
   console.log("Sending orders/updated webhook (reconcile)...");
-  const updatedResponse = await request.post("http://localhost:5001/demo-test-project/us-central1/shopifyOrderWebhook", {
+  const updatedResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
     data: updatedPayload,
     headers: {
       "x-shopify-topic": "orders/updated",
@@ -128,7 +131,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   
   expect(updatedResponse.ok()).toBe(true);
   
-  await expect(getShippedCell()).toHaveText(String(initialShipped + 10), { timeout: 30000 });
+  await expect(getShippedCell()).toHaveText(String(initialShipped + 9), { timeout: 30000 });
   
   await screenshots.capture(page, "after-shopify-reconcile");
 });
