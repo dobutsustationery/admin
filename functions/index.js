@@ -1103,7 +1103,7 @@ exports.shopifyOrderWebhook = onRequest(
       await eventRef.set({ processedAt: FieldValue.serverTimestamp() });
 
       // 4. Identify Action Type
-      let type = null;
+      let type = "shopify_unrecognized_topic";
       if (topic === "orders/create") {
         type = "shopify_order_created";
       } else if (topic === "orders/cancelled") {
@@ -1115,26 +1115,14 @@ exports.shopifyOrderWebhook = onRequest(
       }
 
       // 5. Dispatch
-      if (type) {
-        await writeBroadcastAction({
-          action: {
-            type,
-            payload: { raw: req.body, topic },
-          },
-          creator: "shopify-webhook",
-          atMs: Date.now(),
-        });
-      } else {
-        // Dispatch unrecognized topic action
-        await writeBroadcastAction({
-          action: {
-            type: "shopify_unrecognized_topic",
-            payload: { raw: req.body, topic },
-          },
-          creator: "shopify-webhook",
-          atMs: Date.now(),
-        });
-      }
+      await writeBroadcastAction({
+        action: {
+          type,
+          payload: { raw: req.body, topic },
+        },
+        creator: "shopify-webhook",
+        atMs: Date.now(),
+      });
 
       res.status(200).send("OK");
     } catch (error) {
