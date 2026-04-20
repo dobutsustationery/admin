@@ -38,53 +38,42 @@ Implement a robust, idempotent ingestion pipeline for Shopify orders that update
 ### 2.2 Error Handling
 - Capture mapping failures (e.g., unknown SKU) in a `shopify_sync_errors` collection for visibility in the admin UI.
 
-## Phase 3: Event Mapping & Broadcasting
+## Phase 3: Raw Event Broadcasting
 
-### 3.1 Mapping Shopify to Local Model
-- Extract `line_items` from the Shopify payload.
-- Map `line_item.sku` to local `InventoryItemKey`.
-- If SKU is missing or invalid, attempt fallback to JAN code in product properties or title.
-
-### 3.2 Dispatching "Green" Actions
-- Construct and dispatch raw fact actions:
+### 3.1 Simple Webhook Handler
+- Modify `shopifyOrderWebhook` to NOT map the payload.
+- Simply identify the event type and dispatch the corresponding raw action:
+    - `orders/create` -> `shopify_order_created`
+    - `orders/updated` -> `shopify_order_updated`
+    - `orders/cancelled` -> `shopify_order_cancelled`
+    - `refunds/create` -> `shopify_refund_created`
+- Action payload format:
     ```json
     {
-      "type": "shopify_order_placed",
+      "type": "shopify_order_created",
       "payload": {
-        "orderID": "shopify:<order_id>",
-        "date": "2023-10-27T...",
-        "email": "customer@example.com",
-        "lines": [
-          { "itemKey": "<inventory_item_key>", "qty": 1, "lineItemID": "<shopify_line_id>" }
-        ]
+        "raw": { ... entire shopify object ... }
       }
     }
     ```
-- Similarly for cancellations and refunds, dispatch `shopify_order_cancelled` or `shopify_order_refunded` with raw quantities and IDs.
-- **Idempotency:** The reducer uses the Shopify `orderID`, `lineItemID`, and `refundID` to ensure that it only counts each fact once, even if the action is replayed.
 
-## Phase 4: Reconciliation Poller
+### 3.2 Dispatching via Broadcast
+- Use the existing broadcast middleware to ensure all clients receive the raw events.
+- **Idempotency:** The reducer uses the Shopify `id`, `updated_at`, and `admin_graphql_api_id` to ensure idempotent processing.
 
-### 4.1 Scheduled Function: `shopifyOrderReconcile`
-- Implement a `pubsub` scheduled function (e.g., every 15 minutes).
-- Fetch recent orders via the Shopify Admin REST or GraphQL API.
-- Use the `updated_at_min` filter based on a stored `lastOrderUpdatedAtCursor`.
+## Phase 4: Reducer-Side Logic (The "Brain")
 
-### 4.2 Healing Logic
-- The poller dispatches a `shopify_order_reconciled` action:
-    ```json
-    {
-      "type": "shopify_order_reconciled",
-      "payload": {
-        "orderID": "shopify:<order_id>",
-        "timestamp": 1700000000000,
-        "lines": [
-          { "itemKey": "<item_key>", "currentQty": 2 }
-        ]
-      }
-    }
-    ```
-- **Ground Truth:** The `Inventory` reducer treats this as the definitive state of the order at that timestamp. If the reducer's last processed event for this order is older than the reconciliation timestamp, it overrides its internal counters with these values.
+### 4.1 Moving Mapping to `inventory.ts`
+- Move `mapSkuToItemKey` and related parsing logic into `src/lib/inventory.ts`.
+- The reducer must handle:
+    - Extracting line items and mapping to local `InventoryItemKey`.
+    - Calculating `placed`, `cancelled`, and `refunded` quantities from the raw payload.
+    - Maintaining `shipped` quantity adjustments on the `Item` objects.
+    - Storing `shopifyFacts` in the `OrderInfo` object for consistent state derivation.
+
+### 4.2 Reconciliation Logic
+- The `shopifyOrderReconcile` poller also broadcasts raw payloads using the `shopify_order_reconciled` action.
+- The reducer treats the raw order object in `shopify_order_reconciled` as the definitive state at that moment.
 
 ## Phase 5: Testing & Verification
 
@@ -92,19 +81,13 @@ Implement a robust, idempotent ingestion pipeline for Shopify orders that update
 1. **Initial Sync:** Run the reconciliation poller and verify existing dev store orders appear in local state.
 2. **Order Placement:** Place a test order in the dev store.
     - Verify `shopifyOrderWebhook` is triggered.
-    - Verify raw payload is written to Firestore.
-    - Verify `shopify_order_placed` action appears in the `broadcast` log.
-    - Verify local Redux state reflects the new inventory impact (derived by the reducer).
-3. **Updates & Cancellations:** Modify a test order (e.g., cancel it).
-    - Verify `shopify_order_cancelled` is broadcasted.
-    - Verify local state updates correctly as the reducer processes the cancellation fact.
-4. **Refunds:** Issue a partial refund.
-    - Verify `shopify_order_refunded` is broadcasted and inventory impact is adjusted by the reducer.
+    - Verify raw payload is written to Firestore and broadcasted.
+    - Verify local Redux state reflects the new inventory impact (calculated by the reducer from raw data).
+3. **Refunds & Cancellations:** Verify that complex Shopify payloads (like partial refunds) are correctly interpreted by the reducer.
 
 ### 5.2 Automated E2E Test (Mocked)
-- Create a new Playwright test in `e2e/016-shopify-sync/`.
-- Mock the Shopify webhook payload.
-- Verify the UI reflects the inventory changes without a full page reload (testing the real-time broadcast).
+- Update `e2e/016-shopify-sync/` to use raw Shopify JSON payloads in the test fixtures.
+- Verify the UI reflects the inventory changes calculated from these raw payloads.
 
 ### 5.3 Rollout Verification
 - Before deploying to production, run a "Dry Run" sync where actions are calculated but not broadcasted, logging the expected changes to `stdout` for manual review.
