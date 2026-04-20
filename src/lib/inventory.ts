@@ -140,23 +140,33 @@ export const bulk_import_items = createAction<{
 
 export const shopify_order_created = createAction<{
   raw: any;
+  topic: string;
 }>("shopify_order_created");
 
 export const shopify_order_updated = createAction<{
   raw: any;
+  topic: string;
 }>("shopify_order_updated");
 
 export const shopify_order_cancelled = createAction<{
   raw: any;
+  topic: string;
 }>("shopify_order_cancelled");
 
 export const shopify_refund_created = createAction<{
   raw: any;
+  topic: string;
 }>("shopify_refund_created");
 
 export const shopify_order_reconciled = createAction<{
   raw: any;
+  topic: string;
 }>("shopify_order_reconciled");
+
+export const shopify_unrecognized_topic = createAction<{
+  raw: any;
+  topic: string;
+}>("shopify_unrecognized_topic");
 
 function getTimestampMs(timestamp: any): number {
   if (typeof timestamp === "number") return timestamp;

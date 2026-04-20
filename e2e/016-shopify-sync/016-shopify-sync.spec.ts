@@ -134,4 +134,23 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   await expect(getShippedCell()).toHaveText(String(initialShipped + 9), { timeout: 30000 });
   
   await screenshots.capture(page, "after-shopify-reconcile");
+
+  // Step 7: Trigger unrecognized topic
+  const unknownPayload = { foo: "bar" };
+  const unknownBody = JSON.stringify(unknownPayload);
+  const unknownHmac = computeHmac(unknownBody, SHOPIFY_SECRET);
+
+  console.log("Sending unrecognized webhook...");
+  const unknownResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
+    data: unknownPayload,
+    headers: {
+      "x-shopify-topic": "orders/unknown",
+      "x-shopify-hmac-sha256": unknownHmac,
+      "x-shopify-webhook-id": `web-unknown-${runId}`
+    }
+  });
+
+  expect(unknownResponse.ok()).toBe(true);
+  const unknownText = await unknownResponse.text();
+  expect(unknownText).toBe("OK");
 });

@@ -1119,7 +1119,17 @@ exports.shopifyOrderWebhook = onRequest(
         await writeBroadcastAction({
           action: {
             type,
-            payload: { raw: req.body },
+            payload: { raw: req.body, topic },
+          },
+          creator: "shopify-webhook",
+          atMs: Date.now(),
+        });
+      } else {
+        // Dispatch unrecognized topic action
+        await writeBroadcastAction({
+          action: {
+            type: "shopify_unrecognized_topic",
+            payload: { raw: req.body, topic },
           },
           creator: "shopify-webhook",
           atMs: Date.now(),
@@ -1168,7 +1178,7 @@ exports.shopifyOrderReconcile = onSchedule(
         await writeBroadcastAction({
           action: {
             type: "shopify_order_reconciled",
-            payload: { raw: order },
+            payload: { raw: order, topic: "reconcile" },
           },
           creator: "shopify-reconcile-poller",
           atMs: Date.now(),
