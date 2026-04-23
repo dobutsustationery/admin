@@ -60,6 +60,7 @@ export interface InventoryState {
   orderIdToOrder: { [key: string]: OrderInfo };
   shopifyUrlToDriveUrl: { [key: string]: string }; // [shopifyUrl] -> driveUrl
   hiddenExceptions?: { [key: string]: boolean };
+  shopifyExceptions?: { [key: string]: string[] };
   initialized: boolean;
 }
 
@@ -71,6 +72,11 @@ export const hide_exception = createAction<{
 export const show_exception = createAction<{
   itemKey: InventoryItemKey;
 }>("show_exception");
+
+export const hide_shopify_exception = createAction<{
+  orderID: string;
+}>("hide_shopify_exception");
+export const clear_shopify_exceptions = createAction("clear_shopify_exceptions");
 
 export const update_item = createAction<{ id: string; item: Item }>(
   "update_item",
@@ -431,6 +437,7 @@ export const initialState: InventoryState = {
   hiddenInventoryState: {},
   salesEvents: {},
   shopifyUrlToDriveUrl: {},
+  shopifyExceptions: {},
   initialized: false,
 };
 
@@ -504,6 +511,11 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(shopify_order_created, (state, action) => {
     const rawOrder = action.payload.raw;
     const orderID = `shopify:${rawOrder.id}`;
+
+    if (state.shopifyExceptions) {
+      delete state.shopifyExceptions[orderID];
+    }
+
     const actionTimestamp = getTimestampMs((action as any).timestamp);
     const order = getOrCreateOrder(state, orderID, rawOrder, actionTimestamp);
 
@@ -514,7 +526,15 @@ export const inventory = createReducer(initialState, (r) => {
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
       const itemKey = mapSkuToItemKey(li.sku, li);
-      if (!itemKey) continue;
+      if (!itemKey) {
+        if (!state.shopifyExceptions) state.shopifyExceptions = {};
+        if (!state.shopifyExceptions[orderID])
+          state.shopifyExceptions[orderID] = [];
+        state.shopifyExceptions[orderID].push(
+          `Unknown SKU: ${li.sku} (Line Item: ${li.id})`,
+        );
+        continue;
+      }
       const canonicalKey = canonicalizeInventoryItemKey(itemKey);
       const qty = li.quantity;
       const lineItemID = String(li.id);
@@ -648,6 +668,11 @@ export const inventory = createReducer(initialState, (r) => {
     actionTimestamp: number,
   ) {
     const orderID = `shopify:${rawOrder.id}`;
+
+    if (state.shopifyExceptions) {
+      delete state.shopifyExceptions[orderID];
+    }
+
     const order = getOrCreateOrder(state, orderID, rawOrder, actionTimestamp);
 
     const timestamp = Date.parse(rawOrder.updated_at || rawOrder.created_at);
@@ -693,8 +718,16 @@ export const inventory = createReducer(initialState, (r) => {
           }
           fact.refunded = Math.max(fact.refunded, li.refund_quantity || 0);
         }
+      } else {
+        if (!state.shopifyExceptions) state.shopifyExceptions = {};
+        if (!state.shopifyExceptions[orderID])
+          state.shopifyExceptions[orderID] = [];
+        state.shopifyExceptions[orderID].push(
+          `Unknown SKU: ${li.sku} (Line Item: ${li.id})`,
+        );
       }
     }
+
 
     for (const [canonicalKey, currentQty] of Object.entries(itemQtyMap)) {
       const diff = currentQty - (currentInventoryImpact[canonicalKey] || 0);
@@ -756,6 +789,16 @@ export const inventory = createReducer(initialState, (r) => {
       getTimestampMs((action as any).timestamp),
     );
   });
+  r.addCase(hide_shopify_exception, (state, action) => {
+    if (state.shopifyExceptions) {
+      delete state.shopifyExceptions[action.payload.orderID];
+    }
+  });
+
+  r.addCase(clear_shopify_exceptions, (state) => {
+    state.shopifyExceptions = {};
+  });
+
   r.addCase(hide_exception, (state, action) => {
     if (!state.hiddenExceptions) state.hiddenExceptions = {};
     state.hiddenExceptions[action.payload.itemKey] = true;
