@@ -31,6 +31,9 @@ data-export
 /e2e/*-diff.png
 
 
+# Shopify CLI temporary files
+shopify.app.toml
+
 # Firebase cache
 .firebase/
 

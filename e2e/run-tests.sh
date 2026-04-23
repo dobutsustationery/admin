@@ -102,7 +102,7 @@ if ! check_emulators; then
   print_emulator_port_diagnostics
   kill_stale_emulator_port_processes
   print_emulator_port_diagnostics
-  (npm run env:functions:local && firebase emulators:start --project "${FIREBASE_PROJECT_ID}" --config "${FIREBASE_CONFIG_PATH}") > "${EMULATOR_LOG_PATH}" 2>&1 &
+  (npm run env:functions:local && npx firebase emulators:start --project "${FIREBASE_PROJECT_ID}" --config "${FIREBASE_CONFIG_PATH}") > "${EMULATOR_LOG_PATH}" 2>&1 &
   EMULATOR_PID=$!
   echo "   Started emulators (PID: $EMULATOR_PID)"
   

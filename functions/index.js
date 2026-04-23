@@ -44,7 +44,7 @@ function getShopifyConfig() {
   );
   const accessToken = process.env.SHOPIFY_ACCESS_TOKEN || "";
   const clientId = process.env.SHOPIFY_CLIENT_ID || "";
-  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET || "";
+  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET || "test_secret";
   const apiVersion = process.env.SHOPIFY_API_VERSION || "2026-01";
   return {
     storeUrl,
@@ -1186,6 +1186,63 @@ exports.shopifyOrderReconcile = onSchedule(
       );
     } catch (error) {
       logger.error("Shopify order reconciliation failed", error);
+    }
+  },
+);
+
+exports.cleanupShopifyTransientData = onSchedule(
+  {
+    schedule: "every 24 hours",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+  },
+  async (event) => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const collectionsToCleanup = [
+      {
+        name: "shopify_order_webhooks",
+        timeField: "createdAt",
+        timeValue: thirtyDaysAgo,
+      },
+      {
+        name: "shopify_order_events",
+        timeField: "processedAt",
+        timeValue: thirtyDaysAgo,
+      },
+      {
+        name: SYNC_COLLECTION,
+        timeField: "createdAt",
+        timeValue: thirtyDaysAgo,
+        filter: (query) =>
+          query
+            .where("eventType", ">=", "shopify/")
+            .where("eventType", "<", "shopify0"),
+      },
+    ];
+
+    for (const col of collectionsToCleanup) {
+      logger.info(`Cleaning up collection: ${col.name}`);
+      let query = db
+        .collection(col.name)
+        .where(col.timeField, "<", col.timeValue);
+      if (col.filter) {
+        query = col.filter(query);
+      }
+
+      let deletedTotal = 0;
+      while (true) {
+        const snapshot = await query.limit(500).get();
+        if (snapshot.empty) break;
+
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+        deletedTotal += snapshot.size;
+        if (snapshot.size < 500) break;
+      }
+      logger.info(`Deleted total ${deletedTotal} docs from ${col.name}`);
     }
   },
 );

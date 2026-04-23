@@ -76,7 +76,9 @@ export const show_exception = createAction<{
 export const hide_shopify_exception = createAction<{
   orderID: string;
 }>("hide_shopify_exception");
-export const clear_shopify_exceptions = createAction("clear_shopify_exceptions");
+export const clear_shopify_exceptions = createAction(
+  "clear_shopify_exceptions",
+);
 
 export const update_item = createAction<{ id: string; item: Item }>(
   "update_item",
@@ -727,7 +729,6 @@ export const inventory = createReducer(initialState, (r) => {
         );
       }
     }
-
 
     for (const [canonicalKey, currentQty] of Object.entries(itemQtyMap)) {
       const diff = currentQty - (currentInventoryImpact[canonicalKey] || 0);

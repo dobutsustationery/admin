@@ -40,7 +40,10 @@
 
   $: state = $store;
   $: shopifyExceptions = state?.inventory?.shopifyExceptions || {};
-  $: shopifyExceptionEntries = Object.entries(shopifyExceptions);
+  $: shopifyExceptionEntries = Object.entries(shopifyExceptions) as [
+    string,
+    string[],
+  ][];
 
   const statusColor: Record<string, string> = {
     queued: "#6b7280",
@@ -356,9 +359,14 @@
   <h1>Sync Status</h1>
 
   {#if shopifyExceptionEntries.length > 0}
-    <section class="list exceptions-section" style="margin-bottom: 1rem; border-color: #fecaca; background: #fef2f2;">
+    <section
+      class="list exceptions-section"
+      style="margin-bottom: 1rem; border-color: #fecaca; background: #fef2f2;"
+    >
       <div class="row" style="margin-bottom: 1rem;">
-        <h2 style="margin: 0; color: #991b1b;">Shopify Order Sync Exceptions</h2>
+        <h2 style="margin: 0; color: #991b1b;">
+          Shopify Order Sync Exceptions
+        </h2>
         <button
           class="btn-clear"
           on:click={() => store.dispatch(clear_shopify_exceptions())}
@@ -372,7 +380,8 @@
             <strong style="color: #991b1b;">{orderID}</strong>
             <button
               class="btn-hide"
-              on:click={() => store.dispatch(hide_shopify_exception({ orderID }))}
+              on:click={() =>
+                store.dispatch(hide_shopify_exception({ orderID }))}
             >
               Hide
             </button>
