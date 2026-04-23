@@ -1,5 +1,6 @@
 import { test, expect } from "../fixtures/auth";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
+import { waitForAppReady, waitForImages } from "../helpers/loading-helper";
 import crypto from "crypto";
 
 const SHOPIFY_SECRET = "test_secret";
@@ -18,6 +19,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   // Step 1: Check initial state
   page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
   await page.goto("/inventory");
+  await waitForAppReady(page);
   await page.waitForLoadState('networkidle');
   
   console.log("Waiting for inventory to initialize...");
@@ -32,6 +34,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const initialShipped = parseInt(initialShippedText) || 0;
   console.log(`Initial shipped value: ${initialShipped}`);
   
+  await waitForImages(page);
   await screenshots.capture(page, "initial-inventory");
 
   // Step 2: Trigger shopify/orders/create webhook
@@ -70,6 +73,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   // Step 3: Verify UI update
   await expect(getShippedCell()).toHaveText(String(initialShipped + 5), { timeout: 30000 });
   
+  await waitForImages(page);
   await screenshots.capture(page, "after-shopify-order");
 
   // Step 4: Trigger refund
@@ -102,6 +106,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   // Step 5: Verify UI update
   await expect(getShippedCell()).toHaveText(String(initialShipped + 3), { timeout: 30000 });
   
+  await waitForImages(page);
   await screenshots.capture(page, "after-shopify-refund");
 
   // Step 6: Trigger reconciliation via orders/updated
@@ -133,6 +138,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   
   await expect(getShippedCell()).toHaveText(String(initialShipped + 9), { timeout: 30000 });
   
+  await waitForImages(page);
   await screenshots.capture(page, "after-shopify-reconcile");
 
   // Step 7: Trigger unrecognized topic

@@ -59,7 +59,7 @@
     "shopify:sync:request": "bun scripts/shopify-sync-request.ts",
     "shopify:sync:worker": "bun scripts/shopify-sync-worker.ts",
     "deploy": "npm run deploy:production",
-    "functions:install": "npm --prefix functions install",
+    "functions:install": "npm --prefix functions install --engine-strict=false",
     "deploy:functions": "npm run deploy:functions:production",
     "deploy:functions:staging": "npm run env:functions:staging && firebase deploy --only functions --project staging",
     "deploy:functions:production": "npm run env:functions:production && firebase deploy --only functions --project production",
