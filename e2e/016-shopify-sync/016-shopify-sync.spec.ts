@@ -20,7 +20,6 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
   await page.goto("/inventory");
   await waitForAppReady(page);
-  await page.waitForLoadState('networkidle');
   
   console.log("Waiting for inventory to initialize...");
   // Wait for the item to be visible
@@ -34,6 +33,8 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const initialShipped = parseInt(initialShippedText) || 0;
   console.log(`Initial shipped value: ${initialShipped}`);
   
+  await page.waitForLoadState('networkidle');
+  await waitForAppReady(page);
   await waitForImages(page);
   await screenshots.capture(page, "initial-inventory");
 
@@ -57,8 +58,9 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
 
   console.log("Sending orders/create webhook...");
   const response = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
-    data: orderPayload,
+    data: body,
     headers: {
+      "Content-Type": "application/json",
       "x-shopify-topic": "orders/create",
       "x-shopify-hmac-sha256": hmac,
       "x-shopify-webhook-id": `web-create-${runId}`
@@ -73,6 +75,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   // Step 3: Verify UI update
   await expect(getShippedCell()).toHaveText(String(initialShipped + 5), { timeout: 30000 });
   
+  await waitForAppReady(page);
   await waitForImages(page);
   await screenshots.capture(page, "after-shopify-order");
 
@@ -93,8 +96,9 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
 
   console.log("Sending refunds/create webhook...");
   const refundResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
-    data: refundPayload,
+    data: refundBody,
     headers: {
+      "Content-Type": "application/json",
       "x-shopify-topic": "refunds/create",
       "x-shopify-hmac-sha256": refundHmac,
       "x-shopify-webhook-id": `web-refund-${runId}`
@@ -106,6 +110,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   // Step 5: Verify UI update
   await expect(getShippedCell()).toHaveText(String(initialShipped + 3), { timeout: 30000 });
   
+  await waitForAppReady(page);
   await waitForImages(page);
   await screenshots.capture(page, "after-shopify-refund");
 
@@ -126,8 +131,9 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   
   console.log("Sending orders/updated webhook (reconcile)...");
   const updatedResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
-    data: updatedPayload,
+    data: updatedBody,
     headers: {
+      "Content-Type": "application/json",
       "x-shopify-topic": "orders/updated",
       "x-shopify-hmac-sha256": updatedHmac,
       "x-shopify-webhook-id": `web-update-${runId}`
@@ -138,6 +144,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   
   await expect(getShippedCell()).toHaveText(String(initialShipped + 9), { timeout: 30000 });
   
+  await waitForAppReady(page);
   await waitForImages(page);
   await screenshots.capture(page, "after-shopify-reconcile");
 
@@ -148,13 +155,16 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
 
   console.log("Sending unrecognized webhook...");
   const unknownResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
-    data: unknownPayload,
+    data: unknownBody,
     headers: {
+      "Content-Type": "application/json",
       "x-shopify-topic": "orders/unknown",
       "x-shopify-hmac-sha256": unknownHmac,
       "x-shopify-webhook-id": `web-unknown-${runId}`
     }
   });
+
+
 
   expect(unknownResponse.ok()).toBe(true);
   const unknownText = await unknownResponse.text();
