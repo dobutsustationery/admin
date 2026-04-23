@@ -12,7 +12,7 @@ AUTH_PORT="${E2E_AUTH_EMULATOR_PORT:-19099}"
 PREVIEW_PORT="${E2E_PREVIEW_PORT:-14173}"
 FIREBASE_CONFIG_PATH="${E2E_FIREBASE_CONFIG_PATH:-firebase.prepush.json}"
 FIREBASE_PROJECT_ID="${E2E_FIREBASE_PROJECT_ID:-demo-test-project}"
-EMULATOR_LOG_PATH="${E2E_EMULATOR_LOG_PATH:-dobutsu-e2e-emulators.log}"
+EMULATOR_LOG_PATH="${E2E_EMULATOR_LOG_PATH:-/tmp/dobutsu-e2e-emulators.log}"
 
 export FIRESTORE_EMULATOR_HOST="${FIRESTORE_HOST}:${FIRESTORE_PORT}"
 export E2E_FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID}"
@@ -102,11 +102,15 @@ check_emulators() {
 # Start emulators if not running
 if ! check_emulators; then
   echo ""
+  echo "📦 Installing functions dependencies..."
+  npm run functions:install
+
+  echo ""
   echo "🔥 Starting Firebase emulators..."
   print_emulator_port_diagnostics
   kill_stale_emulator_port_processes
   print_emulator_port_diagnostics
-  (npm run functions:install && npm run env:functions:local && npx firebase emulators:start --project "${FIREBASE_PROJECT_ID}" --config "${FIREBASE_CONFIG_PATH}") > "${EMULATOR_LOG_PATH}" 2>&1 &
+  (npm run env:functions:local && npx firebase emulators:start --project "${FIREBASE_PROJECT_ID}" --config "${FIREBASE_CONFIG_PATH}") > "${EMULATOR_LOG_PATH}" 2>&1 &
   EMULATOR_PID=$!
   echo "   Started emulators (PID: $EMULATOR_PID)"
   
