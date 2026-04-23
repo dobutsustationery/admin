@@ -219,7 +219,7 @@
             }
 
             if (!unsubscribeBroadcast) {
-              unsubscribeBroadcast = startBroadcastListener();
+              startBroadcastListener();
             }
             if (!unsubscribeShopifySync) {
               unsubscribeShopifySync = startShopifySyncListener();
@@ -254,7 +254,7 @@
   let unsubscribeShopifySync: Unsubscribe | undefined;
 
   function startBroadcastListener() {
-    watchBroadcastActions(
+    return watchBroadcastActions(
       firestore,
       (actions) => {
         loadedActionCount += actions.length;

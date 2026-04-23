@@ -1098,6 +1098,7 @@ exports.shopifyOrderWebhook = onRequest(
       const eventRef = db.collection("shopify_order_events").doc(webhookId);
       const eventSnap = await eventRef.get();
       if (eventSnap.exists) {
+        logger.info("Duplicate webhook received", { webhookId });
         return res.status(200).send("Duplicate");
       }
       await eventRef.set({ processedAt: FieldValue.serverTimestamp() });
@@ -1126,7 +1127,11 @@ exports.shopifyOrderWebhook = onRequest(
 
       res.status(200).send("OK");
     } catch (error) {
-      logger.error("Webhook processing failed", error);
+      logger.error("Webhook processing failed", {
+        webhookId,
+        topic,
+        error: error instanceof Error ? error.message : String(error),
+      });
       res.status(500).send("Internal Error");
     }
   },

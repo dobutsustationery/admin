@@ -580,7 +580,15 @@ export const inventory = createReducer(initialState, (r) => {
     const orderID = `shopify:${rawOrder.id}`;
     const actionTimestamp = getTimestampMs((action as any).timestamp);
     const order = state.orderIdToOrder[orderID];
-    if (!order || !order.shopifyFacts) return;
+    if (!order || !order.shopifyFacts) {
+      if (!state.shopifyExceptions) state.shopifyExceptions = {};
+      if (!state.shopifyExceptions[orderID])
+        state.shopifyExceptions[orderID] = [];
+      state.shopifyExceptions[orderID].push(
+        `Cancelled event for unknown order: ${orderID}`,
+      );
+      return;
+    }
 
     const isReconciledLater =
       order.shopifyFacts.reconciledTimestamp &&
@@ -624,7 +632,15 @@ export const inventory = createReducer(initialState, (r) => {
     const orderID = `shopify:${rawRefund.order_id}`;
     const actionTimestamp = getTimestampMs((action as any).timestamp);
     const order = state.orderIdToOrder[orderID];
-    if (!order || !order.shopifyFacts) return;
+    if (!order || !order.shopifyFacts) {
+      if (!state.shopifyExceptions) state.shopifyExceptions = {};
+      if (!state.shopifyExceptions[orderID])
+        state.shopifyExceptions[orderID] = [];
+      state.shopifyExceptions[orderID].push(
+        `Refund event for unknown order: ${orderID}`,
+      );
+      return;
+    }
 
     const refundID = String(rawRefund.id);
     if (order.shopifyFacts.refunds[refundID]) return; // Already processed
