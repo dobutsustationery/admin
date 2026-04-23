@@ -1069,11 +1069,18 @@ exports.shopifyOrderWebhook = onRequest(
 
     // 1. HMAC Verification
     const config = getShopifyConfig();
-    // Use rawBody if available for HMAC verification
-    const bodyToVerify = req.rawBody || JSON.stringify(req.body);
+    
+    // Shopify webhooks always provide a raw body. In Firebase Functions, 
+    // it's available as req.rawBody. We must use it for HMAC verification
+    // to avoid issues with JSON re-serialization.
+    if (!req.rawBody) {
+      logger.error("Missing rawBody for HMAC verification", { topic, webhookId });
+      return res.status(400).send("Bad Request: Missing Raw Body");
+    }
+
     if (
       !shopifyOrderLogic.verifyShopifyHmac(
-        bodyToVerify,
+        req.rawBody,
         hmac,
         config.clientSecret,
       )

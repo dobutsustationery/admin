@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { waitForAppReady } from "../helpers/loading-helper";
 import crypto from "crypto";
 
 // Increase timeout for this specific test
@@ -104,6 +105,7 @@ test("Shopify CLI Webhook Flow", async ({ page }) => {
   // 3. Navigate to Sync Status page
   console.log("Navigating to Sync Status page...");
   await page.goto("/sync-status");
+  await waitForAppReady(page);
   await page.waitForLoadState('networkidle');
 
   const topics = ["orders/create", "orders/updated", "orders/cancelled", "refunds/create"];
