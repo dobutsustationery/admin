@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { store } from "$lib/store";
+  import {
+    clear_shopify_exceptions,
+    hide_shopify_exception,
+  } from "$lib/inventory";
   import { page } from "$app/stores";
   import { onDestroy, onMount } from "svelte";
   import {
@@ -32,6 +37,10 @@
   let selectedRequestId = "";
 
   let unsubscribe: (() => void) | null = null;
+
+  $: state = $store;
+  $: shopifyExceptions = state?.inventory?.shopifyExceptions || {};
+  $: shopifyExceptionEntries = Object.entries(shopifyExceptions);
 
   const statusColor: Record<string, string> = {
     queued: "#6b7280",
@@ -345,6 +354,38 @@
 
 <div class="page">
   <h1>Sync Status</h1>
+
+  {#if shopifyExceptionEntries.length > 0}
+    <section class="list exceptions-section" style="margin-bottom: 1rem; border-color: #fecaca; background: #fef2f2;">
+      <div class="row" style="margin-bottom: 1rem;">
+        <h2 style="margin: 0; color: #991b1b;">Shopify Order Sync Exceptions</h2>
+        <button
+          class="btn-clear"
+          on:click={() => store.dispatch(clear_shopify_exceptions())}
+        >
+          Clear All Exceptions
+        </button>
+      </div>
+      {#each shopifyExceptionEntries as [orderID, msgs]}
+        <div class="card" style="background: #fff; border-color: #fca5a5;">
+          <div class="row">
+            <strong style="color: #991b1b;">{orderID}</strong>
+            <button
+              class="btn-hide"
+              on:click={() => store.dispatch(hide_shopify_exception({ orderID }))}
+            >
+              Hide
+            </button>
+          </div>
+          <ul class="exception-list">
+            {#each msgs as msg}
+              <li>{msg}</li>
+            {/each}
+          </ul>
+        </div>
+      {/each}
+    </section>
+  {/if}
 
   {#if loading}
     <p>Loading sync event log...</p>

@@ -157,6 +157,10 @@ const svelteStore = {
 
 export const store = svelteStore as ReduxStore & SvelteStore;
 
+if (typeof window !== "undefined") {
+  (window as any).store = store;
+}
+
 export function setSnapshotPersistencePaused(
   paused: boolean,
   options: { flush?: boolean } = {},
