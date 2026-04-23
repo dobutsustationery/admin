@@ -35,6 +35,8 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   
   await page.waitForLoadState('networkidle');
   await waitForAppReady(page);
+  // Ensure we are at the top of the page for consistent screenshots
+  await page.evaluate(() => window.scrollTo(0, 0));
   await waitForImages(page);
   await screenshots.capture(page, "initial-inventory");
 
