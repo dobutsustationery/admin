@@ -37,6 +37,8 @@ const targetPath = resolve(functionsDir, ".env");
 const keepPrefixes = [
   "SHOPIFY_",
   "FIREBASE_",
+  "FIRESTORE_",
+  "AUTH_",
   "GOOGLE_APPLICATION_CREDENTIALS",
   "GOOGLE_OAUTH_",
 ];
