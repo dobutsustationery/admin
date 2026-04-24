@@ -3,7 +3,7 @@ import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { waitForAppReady, waitForImages } from "../helpers/loading-helper";
 import crypto from "crypto";
 
-const SHOPIFY_SECRET = "test_secret";
+const SHOPIFY_SECRET = process.env.SHOPIFY_CLIENT_SECRET || "test_secret";
 
 function computeHmac(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("base64");

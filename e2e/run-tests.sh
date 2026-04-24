@@ -27,6 +27,16 @@ export VITE_EMULATOR_FIRESTORE_PORT="${FIRESTORE_PORT}"
 export VITE_EMULATOR_AUTH_HOST="localhost"
 export VITE_EMULATOR_AUTH_PORT="${AUTH_PORT}"
 export E2E_FIXED_CREATED_TIME="${E2E_FIXED_CREATED_TIME:-2025-01-15T10:00:00.000Z}"
+
+# Try to load SHOPIFY_CLIENT_SECRET from .env.emulator if not set
+if [ -z "$SHOPIFY_CLIENT_SECRET" ] && [ -f ".env.emulator" ]; then
+  SECRET_FROM_ENV=$(grep "^SHOPIFY_CLIENT_SECRET=" .env.emulator | cut -d'=' -f2)
+  if [ ! -z "$SECRET_FROM_ENV" ]; then
+    export SHOPIFY_CLIENT_SECRET="$SECRET_FROM_ENV"
+    echo "🔐 Loaded SHOPIFY_CLIENT_SECRET from .env.emulator"
+  fi
+fi
+
 export SHOPIFY_CLIENT_SECRET="${SHOPIFY_CLIENT_SECRET:-test_secret}"
 
 # Record start time
