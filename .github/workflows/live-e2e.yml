@@ -11,7 +11,7 @@ name: Live E2E
 jobs:
   live-e2e:
     name: Playwright Live E2E
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 30
 
     steps:

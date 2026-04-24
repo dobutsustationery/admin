@@ -349,7 +349,7 @@ function initializeFirebaseForEnv(env, appName = undefined, isWrite = false) {
     const db = getFirestore(app);
 
     // Connect to emulator
-    const host = process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8080";
+    const host = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
     db.settings({
       host: host,
       ssl: false,

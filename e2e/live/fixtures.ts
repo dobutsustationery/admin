@@ -198,7 +198,7 @@ async function getStaticFixtureConfig(): Promise<StaticFixtureConfig> {
 }
 
 async function resetFirestoreEmulator() {
-  const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:18080";
+  const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
   const projectCandidates = [
     process.env.VITE_FIREBASE_LOCAL_PROJECT_ID,
     process.env.VITE_FIREBASE_PROJECT_ID,
