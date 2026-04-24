@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 const previewPort = Number(process.env.E2E_PREVIEW_PORT || "4173");
 const firestoreEmulatorPort = process.env.E2E_FIRESTORE_EMULATOR_PORT || "8080";
 const authEmulatorPort = process.env.E2E_AUTH_EMULATOR_PORT || "9099";
-const baseUrl = `http://localhost:${previewPort}`;
+const baseUrl = `http://127.0.0.1:${previewPort}`;
 
 /**
  * Playwright configuration for E2E tests
@@ -79,16 +79,16 @@ export default defineConfig({
 
   /* Run preview server with built application */
   webServer: {
-    command: `vite preview --port ${previewPort}`,
+    command: `vite preview --port ${previewPort} --host 127.0.0.1`,
     url: baseUrl,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
       VITE_FIREBASE_ENV: "local",
       VITE_FIREBASE_LOCAL_PROJECT_ID: "demo-test-project",
-      VITE_EMULATOR_FIRESTORE_HOST: "localhost",
+      VITE_EMULATOR_FIRESTORE_HOST: "127.0.0.1",
       VITE_EMULATOR_FIRESTORE_PORT: firestoreEmulatorPort,
-      VITE_EMULATOR_AUTH_HOST: "localhost",
+      VITE_EMULATOR_AUTH_HOST: "127.0.0.1",
       VITE_EMULATOR_AUTH_PORT: authEmulatorPort,
       // Mock Google Drive credentials for E2E testing
       // These show the Drive UI in "configured but not authenticated" state
