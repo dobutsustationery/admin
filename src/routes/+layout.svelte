@@ -123,6 +123,10 @@
 
   function handleUserChange(firebaseUser: any) {
     if (firebaseUser && firebaseUser.email) {
+      // Guard against redundant changes if UID is already the same
+      if (me.signedIn && me.uid === firebaseUser.uid) {
+        return;
+      }
       if (typeof window !== "undefined") {
         const checkScopes = async () => {
           let attempts = 0;
