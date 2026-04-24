@@ -6,7 +6,7 @@ test.describe("Sync Payload Validation", () => {
   }) => {
     test.setTimeout(45000);
 
-    const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:18080";
+    const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
     const projectCandidates = Array.from(
       new Set(
         [

@@ -6,7 +6,7 @@
 set -e  # Exit on error
 
 # Isolated ports to avoid disturbing developer's environment
-FIRESTORE_HOST="${E2E_FIRESTORE_EMULATOR_HOST:-127.0.0.1}"
+FIRESTORE_HOST="${E2E_FIRESTORE_EMULATOR_HOST:-localhost}"
 FIRESTORE_PORT="${E2E_FIRESTORE_EMULATOR_PORT:-18080}"
 AUTH_PORT="${E2E_AUTH_EMULATOR_PORT:-19099}"
 PREVIEW_PORT="${E2E_PREVIEW_PORT:-14173}"
@@ -18,14 +18,13 @@ export FIRESTORE_EMULATOR_HOST="${FIRESTORE_HOST}:${FIRESTORE_PORT}"
 export E2E_FIRESTORE_EMULATOR_PORT="${FIRESTORE_PORT}"
 export E2E_AUTH_EMULATOR_PORT="${AUTH_PORT}"
 export E2E_PREVIEW_PORT="${PREVIEW_PORT}"
-export E2E_AUTH_EMULATOR_URL="${E2E_AUTH_EMULATOR_URL:-http://127.0.0.1:${AUTH_PORT}}"
-export E2E_PREVIEW_BASE_URL="${E2E_PREVIEW_BASE_URL:-http://127.0.0.1:${PREVIEW_PORT}}"
+export E2E_AUTH_EMULATOR_URL="${E2E_AUTH_EMULATOR_URL:-http://localhost:${AUTH_PORT}}"
+export E2E_PREVIEW_BASE_URL="${E2E_PREVIEW_BASE_URL:-http://localhost:${PREVIEW_PORT}}"
 export VITE_EMULATOR_FIRESTORE_HOST="${FIRESTORE_HOST}"
 export VITE_EMULATOR_FIRESTORE_PORT="${FIRESTORE_PORT}"
-export VITE_EMULATOR_AUTH_HOST="127.0.0.1"
+export VITE_EMULATOR_AUTH_HOST="localhost"
 export VITE_EMULATOR_AUTH_PORT="${AUTH_PORT}"
 export E2E_FIXED_CREATED_TIME="${E2E_FIXED_CREATED_TIME:-2025-01-15T10:00:00.000Z}"
-
 
 # Record start time
 START_TIME=$(date +%s)
@@ -85,7 +84,7 @@ check_emulators() {
     ok=1
   fi
 
-  if curl -s "http://127.0.0.1:${AUTH_PORT}" > /dev/null 2>&1; then
+  if curl -s "http://localhost:${AUTH_PORT}" > /dev/null 2>&1; then
     echo "✓ Auth emulator is responding on port ${AUTH_PORT}"
   else
     echo "✗ Auth emulator is not responding on port ${AUTH_PORT}"

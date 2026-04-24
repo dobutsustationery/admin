@@ -51,7 +51,7 @@ setup("authenticate", async ({ page, context }) => {
 
   // Create a real Firebase emulator user and inject auth persistence.
   const authEmulatorUrl =
-    process.env.E2E_AUTH_EMULATOR_URL || "http://127.0.0.1:9099";
+    process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
   const testEmail = "live-e2e@example.com";
   const testPassword = "testpassword123";
 

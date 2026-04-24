@@ -79,7 +79,7 @@ test.describe("Item History Page", () => {
     // STEP 2: Sign In
     // ====================================================================
     const authEmulatorUrl =
-      process.env.E2E_AUTH_EMULATOR_URL || "http://127.0.0.1:9099";
+      process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
     const testEmail = `test-${Date.now()}@example.com`;
     const testPassword = "testpassword123";
 
