@@ -63,7 +63,7 @@ const SHOPIFY_ACTION_TYPES = [
 ];
 
 async function main() {
-  const host = process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080";
+  const host = process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8080";
   console.log(`Connecting to Firestore emulator at ${host}...`);
 
   const app = initializeApp({ projectId: "dobutsu-admin" });

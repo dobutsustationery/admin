@@ -11,15 +11,15 @@
   "emulators": {
     "firestore": {
       "port": 18080,
-      "host": "localhost"
+      "host": "127.0.0.1"
     },
     "auth": {
       "port": 19099,
-      "host": "localhost"
+      "host": "127.0.0.1"
     },
     "functions": {
       "port": 15001,
-      "host": "localhost"
+      "host": "127.0.0.1"
     },
     "ui": {
       "enabled": true,

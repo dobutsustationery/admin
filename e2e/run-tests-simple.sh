@@ -28,7 +28,7 @@ echo ""
 
 # Check if emulators are running
 check_emulators() {
-  if curl -s http://localhost:8080 > /dev/null 2>&1; then
+  if curl -s http://127.0.0.1:8080 > /dev/null 2>&1; then
     echo "✓ Firestore emulator is running on port 8080"
     return 0
   else

@@ -21,7 +21,7 @@ test("Shopify CLI Webhook Flow", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState('networkidle');
 
-  const authEmulatorUrl = process.env.E2E_AUTH_EMULATOR_URL || "http://localhost:9099";
+  const authEmulatorUrl = process.env.E2E_AUTH_EMULATOR_URL || "http://127.0.0.1:9099";
   const testEmail = `test-${Date.now()}@example.com`;
   const testPassword = "testpassword123";
 
@@ -109,7 +109,7 @@ test("Shopify CLI Webhook Flow", async ({ page }) => {
   await page.waitForLoadState('networkidle');
 
   const topics = ["orders/create", "orders/updated", "orders/cancelled", "refunds/create"];
-  const webhookUrl = "http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook";
+  const webhookUrl = "http://127.0.0.1:15001/demo-test-project/us-central1/shopifyOrderWebhook";
   const clientSecret = "test_secret"; // Default from functions/index.js
   const orderID = `mock-order-${Date.now()}`;
 
