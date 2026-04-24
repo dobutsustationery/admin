@@ -219,7 +219,7 @@
             }
 
             if (!unsubscribeBroadcast) {
-              startBroadcastListener();
+              unsubscribeBroadcast = startBroadcastListener();
             }
             if (!unsubscribeShopifySync) {
               unsubscribeShopifySync = startShopifySyncListener();
@@ -254,7 +254,8 @@
   let unsubscribeShopifySync: Unsubscribe | undefined;
 
   function startBroadcastListener() {
-    return watchBroadcastActions(
+    let innerUnsub: Unsubscribe | undefined;
+    const p = watchBroadcastActions(
       firestore,
       (actions) => {
         loadedActionCount += actions.length;
@@ -316,15 +317,24 @@
       },
     )
       .then((unsub) => {
-        unsubscribeBroadcast = unsub;
+        innerUnsub = unsub;
+        return unsub;
       })
       .catch((error) => {
         console.error("[Broadcast] Listener startup failed", error);
         loadingMessage = "Failed to load action history.";
+        return undefined;
       });
 
-    // Return typed undefined initially since we await the promise
-    return undefined;
+    return () => {
+      if (innerUnsub) {
+        innerUnsub();
+      } else {
+        p.then((unsub) => {
+          if (unsub) unsub();
+        });
+      }
+    };
   }
 
   function startShopifySyncListener() {

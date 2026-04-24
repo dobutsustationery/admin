@@ -2,6 +2,7 @@ import { test, expect, type Page } from "../fixtures/auth";
 import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { TestDocumentationHelper } from "../helpers/test-documentation-helper";
 import { FlowHelper } from "../helpers/flow-helper";
+import { waitForAppReady, waitForImages } from "../helpers/loading-helper";
 import * as path from "path";
 
 const MOCK_IMAGE_SVG = `
@@ -487,6 +488,7 @@ test.describe("Google Photos Integration", () => {
         description: "Navigate to Photos page",
         check: async () => {
           await page.goto("/photos");
+          await waitForAppReady(page);
           await expect(page.locator("h1")).toContainText(
             "Google Photos Import",
           );
@@ -494,10 +496,12 @@ test.describe("Google Photos Integration", () => {
       },
       {
         description: "Verify Connect Button",
-        check: async () =>
+        check: async () => {
+          await waitForImages(page);
           await expect(
             page.locator("button", { hasText: "Connect Account" }),
-          ).toBeVisible(),
+          ).toBeVisible();
+        },
       },
       {
         description: "Simulate OAuth Callback",
@@ -519,6 +523,7 @@ test.describe("Google Photos Integration", () => {
           });
           await page.goto("about:blank");
           await page.goto("/photos");
+          await waitForAppReady(page);
         },
       },
       {
@@ -573,6 +578,7 @@ test.describe("Google Photos Integration", () => {
             });
           });
           await waitForVisiblePhotoThumbnailsReady(page, 2);
+          await waitForImages(page);
         },
       },
     ]);
@@ -608,6 +614,7 @@ test.describe("Google Photos Integration", () => {
           description: "Verify Photos",
           check: async () => {
             await waitForVisiblePhotoThumbnailsReady(page, 2);
+            await waitForImages(page);
           },
         },
       ],
