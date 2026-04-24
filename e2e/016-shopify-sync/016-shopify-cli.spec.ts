@@ -1,11 +1,11 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/auth";
 import { waitForAppReady } from "../helpers/loading-helper";
 import crypto from "crypto";
 
 // Increase timeout for this specific test
 test.setTimeout(120000);
 
-test("Shopify CLI Webhook Flow", async ({ page }) => {
+test("Shopify CLI Webhook Flow", async ({ authenticatedPage: page, request }) => {
   // Capture console logs for debugging
   let listenerStarted = false;
   page.on('console', msg => {
@@ -16,81 +16,11 @@ test("Shopify CLI Webhook Flow", async ({ page }) => {
     }
   });
 
-  // 1. Sign in using emulator REST API + localStorage injection
-  console.log("Navigating to home to sign in...");
-  await page.goto("/");
-  await page.waitForLoadState('networkidle');
-
-  const authEmulatorUrl = process.env.E2E_AUTH_EMULATOR_URL || "http://127.0.0.1:9099";
-  const testEmail = `test-${Date.now()}@example.com`;
-  const testPassword = "testpassword123";
-
-  console.log("Creating test user in auth emulator...");
-  const authResponse = await page.request.post(
-    `${authEmulatorUrl}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
-    {
-      data: {
-        email: testEmail,
-        password: testPassword,
-        displayName: "Test User",
-        returnSecureToken: true,
-      },
-    },
-  );
-
-  if (!authResponse.ok()) {
-    throw new Error(`Failed to create test user: ${authResponse.status()}`);
-  }
-
-  const authData = await authResponse.json();
-
-  console.log("Injecting auth token into localStorage...");
-  await page.evaluate((authInfo) => {
-    const authKey = "firebase:authUser:demo-api-key:[DEFAULT]";
-    localStorage.setItem(
-      authKey,
-      JSON.stringify({
-        uid: authInfo.localId,
-        email: authInfo.email,
-        emailVerified: false,
-        displayName: "Test User",
-        isAnonymous: false,
-        photoURL: null,
-        providerData: [
-          {
-            providerId: "password",
-            uid: authInfo.localId,
-            displayName: "Test User",
-            email: authInfo.email,
-            phoneNumber: null,
-            photoURL: null,
-          },
-        ],
-        stsTokenManager: {
-          refreshToken: authInfo.refreshToken,
-          accessToken: authInfo.idToken,
-          expirationTime: Date.now() + 3600000,
-        },
-        createdAt: String(Date.now()),
-        lastLoginAt: String(Date.now()),
-        apiKey: "demo-api-key",
-        appName: "[DEFAULT]",
-      }),
-    );
-  }, authData);
-
-  console.log("Reloading page to apply auth...");
-  await page.reload({ waitUntil: "load" });
-  await page.waitForLoadState('networkidle');
-
-  // Wait for the Sign In button to disappear as a sign of successful login
-  const signInButton = page.locator("button:has-text('Sign In')");
-  await signInButton.waitFor({ state: "hidden", timeout: 20000 }).catch(() => {
-    console.log("Sign-in button still visible after reload");
-  });
-
-  // 2. Wait for broadcast listener to start
+  // 1. Wait for broadcast listener to start
   console.log("Waiting for broadcast listener to start...");
+  await page.goto("/");
+  await waitForAppReady(page);
+
   const startTime = Date.now();
   while (!listenerStarted && Date.now() - startTime < 30000) {
     await page.waitForTimeout(1000);
@@ -102,14 +32,14 @@ test("Shopify CLI Webhook Flow", async ({ page }) => {
     console.log("✓ Broadcast listener started");
   }
 
-  // 3. Navigate to Sync Status page
+  // 2. Navigate to Sync Status page
   console.log("Navigating to Sync Status page...");
   await page.goto("/sync-status");
   await waitForAppReady(page);
   await page.waitForLoadState('networkidle');
 
   const topics = ["orders/create", "orders/updated", "orders/cancelled", "refunds/create"];
-  const webhookUrl = "http://127.0.0.1:15001/demo-test-project/us-central1/shopifyOrderWebhook";
+  const webhookUrl = "http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook";
   const clientSecret = "test_secret"; // Default from functions/index.js
   const orderID = `mock-order-${Date.now()}`;
 
@@ -130,7 +60,7 @@ test("Shopify CLI Webhook Flow", async ({ page }) => {
       .update(payloadStr)
       .digest("base64");
 
-    const response = await page.request.post(webhookUrl, {
+    const response = await request.post(webhookUrl, {
       data: payloadStr,
       headers: {
         "X-Shopify-Topic": topic,
@@ -143,8 +73,9 @@ test("Shopify CLI Webhook Flow", async ({ page }) => {
     if (response.ok()) {
       console.log(`✓ Triggered ${topic} successfully`);
     } else {
-      console.error(`✗ Failed to trigger ${topic}: ${response.status()} ${await response.text()}`);
+      console.log(`✗ Failed to trigger ${topic}: ${response.status()} ${await response.text()}`);
     }
+    expect(response.ok()).toBe(true);
   }
 
   // 4. Wait for exceptions to appear on the page
