@@ -59,7 +59,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const hmac = computeHmac(body, SHOPIFY_SECRET);
 
   console.log("Sending orders/create webhook...");
-  const response = await request.post("http://127.0.0.1:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
+  const response = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
     data: body,
     headers: {
       "Content-Type": "application/json",
@@ -97,7 +97,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const refundHmac = computeHmac(refundBody, SHOPIFY_SECRET);
 
   console.log("Sending refunds/create webhook...");
-  const refundResponse = await request.post("http://127.0.0.1:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
+  const refundResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
     data: refundBody,
     headers: {
       "Content-Type": "application/json",
@@ -132,7 +132,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const updatedHmac = computeHmac(updatedBody, SHOPIFY_SECRET);
   
   console.log("Sending orders/updated webhook (reconcile)...");
-  const updatedResponse = await request.post("http://127.0.0.1:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
+  const updatedResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
     data: updatedBody,
     headers: {
       "Content-Type": "application/json",
@@ -156,7 +156,7 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const unknownHmac = computeHmac(unknownBody, SHOPIFY_SECRET);
 
   console.log("Sending unrecognized webhook...");
-  const unknownResponse = await request.post("http://127.0.0.1:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
+  const unknownResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
     data: unknownBody,
     headers: {
       "Content-Type": "application/json",
