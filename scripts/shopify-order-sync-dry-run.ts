@@ -58,6 +58,7 @@ function diff<T extends Value | object>(a: T, b: T): Patch {
 const SHOPIFY_ACTION_TYPES = [
   "shopify_order_created",
   "shopify_order_updated",
+  "shopify_order_cancelled",
   "shopify_refund_created",
   "shopify_order_reconciled",
 ];

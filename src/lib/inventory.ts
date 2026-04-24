@@ -476,7 +476,8 @@ function mapSkuToItemKey(
   );
   if (janProp && janProp.value) {
     const jan = String(janProp.value).trim().replace(/\s+/g, "");
-    const variantTitle = String(lineItem.variant_title || "").trim();
+    let variantTitle = String(lineItem.variant_title || "").trim();
+    if (variantTitle === "Default Title") variantTitle = "";
     return (jan + variantTitle) as InventoryItemKey;
   }
 
@@ -576,55 +577,11 @@ export const inventory = createReducer(initialState, (r) => {
   });
 
   r.addCase(shopify_order_cancelled, (state, action) => {
-    const rawOrder = action.payload.raw;
-    const orderID = `shopify:${rawOrder.id}`;
-    const actionTimestamp = getTimestampMs((action as any).timestamp);
-    const order = state.orderIdToOrder[orderID];
-    if (!order || !order.shopifyFacts) {
-      if (!state.shopifyExceptions) state.shopifyExceptions = {};
-      if (!state.shopifyExceptions[orderID])
-        state.shopifyExceptions[orderID] = [];
-      state.shopifyExceptions[orderID].push(
-        `Cancelled event for unknown order: ${orderID}`,
-      );
-      return;
-    }
-
-    const isReconciledLater =
-      order.shopifyFacts.reconciledTimestamp &&
-      order.shopifyFacts.reconciledTimestamp > actionTimestamp;
-
-    const lineItems = rawOrder.line_items || [];
-    for (const li of lineItems) {
-      const lineItemID = String(li.id);
-      const qty = li.quantity;
-      const fact = order.shopifyFacts.lines[lineItemID];
-      if (!fact) continue;
-
-      const canonicalKey = canonicalizeInventoryItemKey(fact.itemKey);
-      const delta = qty - fact.cancelled;
-      if (delta > 0) {
-        fact.cancelled = qty;
-        if (!isReconciledLater && state.idToItem[canonicalKey]) {
-          state.idToItem[canonicalKey].shipped -= delta;
-          const historyVal = actionTimestamp;
-          if (!state.idToHistory[canonicalKey])
-            state.idToHistory[canonicalKey] = [];
-          state.idToHistory[canonicalKey].push({
-            date: new Date(historyVal).toLocaleString("en", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-            }),
-            desc: `Shopify Order Cancelled: ${qty} for ${orderID}`,
-            val: historyVal,
-          });
-        }
-      }
-    }
-    if (!isReconciledLater) {
-      syncOrderItemsFromFacts(order);
-    }
+    applyOrderReconciliation(
+      state,
+      action.payload.raw,
+      getTimestampMs((action as any).timestamp),
+    );
   });
 
   r.addCase(shopify_refund_created, (state, action) => {
@@ -657,9 +614,16 @@ export const inventory = createReducer(initialState, (r) => {
       if (!fact) continue;
 
       const canonicalKey = canonicalizeInventoryItemKey(fact.itemKey);
+      const currentNet = fact.placed - fact.cancelled - fact.refunded;
+      const amountToSubtract = Math.max(0, Math.min(qty, currentNet));
+
       fact.refunded += qty;
-      if (!isReconciledLater && state.idToItem[canonicalKey]) {
-        state.idToItem[canonicalKey].shipped -= qty;
+      if (
+        !isReconciledLater &&
+        state.idToItem[canonicalKey] &&
+        amountToSubtract > 0
+      ) {
+        state.idToItem[canonicalKey].shipped -= amountToSubtract;
         const historyVal = actionTimestamp;
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
@@ -669,7 +633,7 @@ export const inventory = createReducer(initialState, (r) => {
             month: "short",
             day: "numeric",
           }),
-          desc: `Shopify Order Refunded: ${qty} for ${orderID} (Refund: ${refundID})`,
+          desc: `Shopify Order Refunded: ${qty} (impact -${amountToSubtract}) for ${orderID} (Refund: ${refundID})`,
           val: historyVal,
         });
       }
