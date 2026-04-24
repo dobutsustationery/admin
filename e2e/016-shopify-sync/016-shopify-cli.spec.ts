@@ -40,7 +40,7 @@ test("Shopify CLI Webhook Flow", async ({ authenticatedPage: page, request }) =>
 
   const topics = ["orders/create", "orders/updated", "orders/cancelled", "refunds/create"];
   const webhookUrl = "http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook";
-  const clientSecret = "test_secret"; // Default from functions/index.js
+  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET || "test_secret";
   const orderID = `mock-order-${Date.now()}`;
 
   for (const topic of topics) {
