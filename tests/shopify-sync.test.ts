@@ -102,6 +102,7 @@ describe("Shopify Sync Reducer", () => {
       shopify_order_cancelled({
         raw: {
           id: "123",
+          cancelled_at: "2024-01-01T13:00:00Z",
           line_items: [{ id: "li1", sku: itemKey, quantity: 2 }],
         },
         topic: "orders/cancelled",
