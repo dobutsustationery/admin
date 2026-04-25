@@ -8,6 +8,15 @@ function normalizeString(value) {
   return String(value || "").trim();
 }
 
+function normalizeDefaultSku(rawSku) {
+  const value = normalizeString(rawSku);
+  const match = /^(\d+)(.*)$/.exec(value);
+  if (!match) return value;
+  const suffix = normalizeString(match[2]).toLowerCase();
+  if (suffix === "default" || suffix === "default title") return match[1];
+  return value;
+}
+
 function extractGoogleDriveFileId(rawUrl) {
   const value = normalizeString(rawUrl);
   if (!value) return "";
@@ -505,7 +514,7 @@ async function findProductByHandle(config, handle) {
 async function findProductByVariantSku(config, skus) {
   const wanted = new Set(
     (Array.isArray(skus) ? skus : [])
-      .map((sku) => String(sku || "").trim())
+      .map((sku) => normalizeDefaultSku(sku))
       .filter(Boolean),
   );
   if (wanted.size === 0) return null;
@@ -536,7 +545,7 @@ async function findProductByVariantSku(config, skus) {
     for (const product of products) {
       const variants = Array.isArray(product?.variants) ? product.variants : [];
       const hasMatch = variants.some((v) =>
-        wanted.has(String(v?.sku || "").trim()),
+        wanted.has(normalizeDefaultSku(v?.sku)),
       );
       if (hasMatch) return product;
     }
@@ -582,7 +591,10 @@ function buildProductPayload(requestPayload, existingProduct) {
     existingProduct.variants.forEach((v) => {
       const sku = String(v?.sku || "").trim();
       const id = toNumberOrNull(v?.id);
-      if (sku && id) existingVariantIdBySku.set(sku, id);
+      if (sku && id) {
+        existingVariantIdBySku.set(sku, id);
+        existingVariantIdBySku.set(normalizeDefaultSku(sku), id);
+      }
     });
   }
 

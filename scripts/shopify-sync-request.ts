@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { initializeApp, cert } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { rootReducer } from "../src/lib/root-reducer";
-import { generateSku } from "../src/lib/handle-utils";
+import { generateSku } from "../src/lib/sku";
 
 const SYNC_COLLECTION = "sync";
 const SHOPIFY_SYNC_REQUEST_EVENT = "shopify/sync_requested";

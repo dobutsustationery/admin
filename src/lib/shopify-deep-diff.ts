@@ -1,4 +1,4 @@
-import { generateSku } from "$lib/handle-utils";
+import { generateSku } from "$lib/sku";
 import type { Item } from "$lib/inventory";
 import type { Listing } from "$lib/listings-slice";
 import type {
