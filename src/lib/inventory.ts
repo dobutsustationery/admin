@@ -527,11 +527,14 @@ export const inventory = createReducer(initialState, (r) => {
     }
 
     const actionTimestamp = getTimestampMs((action as any).timestamp);
+    const shopifyTimestamp = Date.parse(
+      rawOrder.created_at || rawOrder.updated_at,
+    );
     const order = getOrCreateOrder(state, orderID, rawOrder, actionTimestamp);
 
     const isReconciledLater =
       order.shopifyFacts!.reconciledTimestamp &&
-      order.shopifyFacts!.reconciledTimestamp > actionTimestamp;
+      order.shopifyFacts!.reconciledTimestamp > shopifyTimestamp;
 
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
@@ -559,13 +562,31 @@ export const inventory = createReducer(initialState, (r) => {
       }
       const fact = order.shopifyFacts!.lines[lineItemID];
       const delta = qty - fact.placed;
-      if (delta > 0) {
-        fact.placed = qty;
-        if (!isReconciledLater && state.idToItem[canonicalKey]) {
+
+      // Always update facts so they reflect the latest known state from this action
+      fact.placed = Math.max(fact.placed, qty);
+
+      if (state.idToItem[canonicalKey]) {
+        if (!isReconciledLater && delta > 0) {
           state.idToItem[canonicalKey].shipped += delta;
-          const historyVal = actionTimestamp;
-          if (!state.idToHistory[canonicalKey])
-            state.idToHistory[canonicalKey] = [];
+        }
+
+        // Always log created event if it's the first time we see this line in THIS action
+        // or if it actually changed something. But to avoid double logging if we re-run,
+        // we check if we already have a "Created" entry for this order in history?
+        // Actually, Redux actions are unique, so we can just log it.
+        // To be safe and "all steps", we log it if it's the created action.
+        const historyVal = actionTimestamp;
+        if (!state.idToHistory[canonicalKey])
+          state.idToHistory[canonicalKey] = [];
+
+        const alreadyLogged = state.idToHistory[canonicalKey].some(
+          (h) =>
+            h.desc.includes("Shopify Order Created") &&
+            h.desc.includes(orderID),
+        );
+
+        if (!alreadyLogged) {
           state.idToHistory[canonicalKey].push({
             date: new Date(historyVal).toLocaleString("en", {
               year: "numeric",
@@ -575,6 +596,8 @@ export const inventory = createReducer(initialState, (r) => {
             desc: `Shopify Order Created: ${qty} for ${orderID}`,
             val: historyVal,
           });
+          // Sort history to ensure it stays in chronological order
+          state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
         }
       }
     }
@@ -588,6 +611,7 @@ export const inventory = createReducer(initialState, (r) => {
       state,
       action.payload.raw,
       getTimestampMs((action as any).timestamp),
+      "Shopify Order Cancelled",
     );
   });
 
@@ -609,9 +633,10 @@ export const inventory = createReducer(initialState, (r) => {
     const refundID = String(rawRefund.id);
     if (order.shopifyFacts.refunds[refundID]) return; // Already processed
 
+    const shopifyTimestamp = Date.parse(rawRefund.created_at);
     const isReconciledLater =
       order.shopifyFacts.reconciledTimestamp &&
-      order.shopifyFacts.reconciledTimestamp > actionTimestamp;
+      order.shopifyFacts.reconciledTimestamp > shopifyTimestamp;
 
     const refundLines = rawRefund.refund_line_items || [];
     for (const rli of refundLines) {
@@ -625,15 +650,15 @@ export const inventory = createReducer(initialState, (r) => {
       const amountToSubtract = Math.max(0, Math.min(qty, currentNet));
 
       fact.refunded += qty;
-      if (
-        !isReconciledLater &&
-        state.idToItem[canonicalKey] &&
-        amountToSubtract > 0
-      ) {
-        state.idToItem[canonicalKey].shipped -= amountToSubtract;
+      if (state.idToItem[canonicalKey]) {
+        if (!isReconciledLater && amountToSubtract > 0) {
+          state.idToItem[canonicalKey].shipped -= amountToSubtract;
+        }
+
         const historyVal = actionTimestamp;
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
+
         state.idToHistory[canonicalKey].push({
           date: new Date(historyVal).toLocaleString("en", {
             year: "numeric",
@@ -643,6 +668,7 @@ export const inventory = createReducer(initialState, (r) => {
           desc: `Shopify Order Refunded: ${qty} (impact -${amountToSubtract}) for ${orderID} (Refund: ${refundID})`,
           val: historyVal,
         });
+        state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
       }
     }
     order.shopifyFacts.refunds[refundID] = true;
@@ -655,6 +681,7 @@ export const inventory = createReducer(initialState, (r) => {
     state: InventoryState,
     rawOrder: any,
     actionTimestamp: number,
+    labelPrefix: string = "Shopify Order Reconciled",
   ) {
     const orderID = `shopify:${rawOrder.id}`;
 
@@ -731,9 +758,10 @@ export const inventory = createReducer(initialState, (r) => {
               month: "short",
               day: "numeric",
             }),
-            desc: `Shopify Order Reconciled: ${currentQty} (diff ${diff}) for ${orderID}`,
+            desc: `${labelPrefix}: ${currentQty} (diff ${diff}) for ${orderID}`,
             val: historyVal,
           });
+          state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
         }
       }
       delete currentInventoryImpact[canonicalKey];
@@ -752,9 +780,10 @@ export const inventory = createReducer(initialState, (r) => {
             month: "short",
             day: "numeric",
           }),
-          desc: `Shopify Order Reconciled (Missing item reset): 0 (diff -${qty}) for ${orderID}`,
+          desc: `${labelPrefix} (Missing item reset): 0 (diff -${qty}) for ${orderID}`,
           val: historyVal,
         });
+        state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
       }
     }
 
@@ -767,6 +796,7 @@ export const inventory = createReducer(initialState, (r) => {
       state,
       action.payload.raw,
       getTimestampMs((action as any).timestamp),
+      "Shopify Order Updated",
     );
   });
 
