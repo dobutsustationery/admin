@@ -51,6 +51,7 @@ jobs:
           E2E_GOOGLE_PHOTOS_REFRESH_TOKEN: ${{ secrets.E2E_GOOGLE_PHOTOS_REFRESH_TOKEN }}
           E2E_GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.E2E_GOOGLE_DRIVE_FOLDER_ID }}
           E2E_GOOGLE_PHOTOS_ALBUM_ID: ${{ secrets.E2E_GOOGLE_PHOTOS_ALBUM_ID }}
+          SHOPIFY_CLIENT_SECRET: "test_secret"
         id: live_tests
 
       - name: Upload Playwright report

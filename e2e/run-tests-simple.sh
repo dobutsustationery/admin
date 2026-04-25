@@ -13,6 +13,17 @@ export VITE_FIREBASE_LOCAL_PROJECT_ID="${VITE_FIREBASE_LOCAL_PROJECT_ID:-${FIREB
 # Record start time
 START_TIME=$(date +%s)
 
+# Try to load SHOPIFY_CLIENT_SECRET from .env.emulator if not set
+if [ -z "$SHOPIFY_CLIENT_SECRET" ] && [ -f ".env.emulator" ]; then
+  SECRET_FROM_ENV=$(grep "^SHOPIFY_CLIENT_SECRET=" .env.emulator | cut -d'=' -f2)
+  if [ ! -z "$SECRET_FROM_ENV" ]; then
+    export SHOPIFY_CLIENT_SECRET="$SECRET_FROM_ENV"
+    echo "🔐 Loaded SHOPIFY_CLIENT_SECRET from .env.emulator"
+  fi
+fi
+
+export SHOPIFY_CLIENT_SECRET="${SHOPIFY_CLIENT_SECRET:-test_secret}"
+
 echo "🧪 Simple E2E Test Runner (for CI)"
 echo "===================================="
 echo ""
