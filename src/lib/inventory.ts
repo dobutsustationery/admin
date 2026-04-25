@@ -3,6 +3,7 @@ import { formatYen } from "./formatters";
 import {
   type InventoryItemKey,
   canonicalizeInventoryItemKey,
+  canonicalizeSubtype,
   makeInventoryItemKey,
 } from "./sku";
 
@@ -247,6 +248,12 @@ function applyInventoryUpdate(
   // derived from its janCode + subtype. If not, log an error.
   if (item.janCode) {
     const canonicalId = makeInventoryItemKey(item.janCode, item.subtype || "");
+    if (
+      id !== canonicalId &&
+      canonicalizeInventoryItemKey(id) === canonicalId
+    ) {
+      id = canonicalId;
+    }
     if (id !== canonicalId) {
       console.error(
         `[InventoryValidation] Item update ID mismatch! Passed ID: "${id}", Expected Canonical ID: "${canonicalId}" (JAN: "${item.janCode}", Subtype: "${item.subtype || ""}")`,
@@ -394,7 +401,7 @@ function applyInventoryUpdate(
     ...state.idToItem[id], // Preserve existing fields (e.g. price, handle)
     ...inventoryItem,
     janCode: item.janCode?.trim(),
-    subtype: item.subtype?.trim() || "",
+    subtype: canonicalizeSubtype(item.subtype),
     hsCode: item.hsCode
       ? String(item.hsCode).replace(/\s+/g, "")
       : state.idToItem[id]?.hsCode || "",

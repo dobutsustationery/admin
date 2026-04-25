@@ -5,14 +5,23 @@ export type InventoryItemKey = string & {
 export const canonicalizeJanCode = (janCode: string): string =>
   (janCode || "").trim().replace(/\s+/g, "");
 
+export const isDefaultSubtype = (subtype?: string): boolean => {
+  const normalized = (subtype || "").trim().toLowerCase();
+  return normalized === "default" || normalized === "default title";
+};
+
 export const canonicalizeSubtype = (subtype?: string): string =>
-  (subtype || "").trim();
+  isDefaultSubtype(subtype) ? "" : (subtype || "").trim();
 
 export const makeInventoryItemKey = (
   janCode: string,
   subtype?: string,
 ): InventoryItemKey =>
   `${canonicalizeJanCode(janCode)}${canonicalizeSubtype(subtype)}` as InventoryItemKey;
+
+// Shopify SKU format intentionally matches our inventory item key format.
+export const generateSku = (janCode: string, subtype?: string): string =>
+  makeInventoryItemKey(janCode, subtype);
 
 export const canonicalizeInventoryItemKey = (
   rawKey: string,

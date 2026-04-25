@@ -103,6 +103,62 @@ describe("shopify-sync-core buildProductPayload", () => {
     expect(payload.options).toBeUndefined();
   });
 
+  it("matches existing Default-suffixed Shopify variants by canonical SKU", () => {
+    const payload = buildProductPayload(
+      {
+        handle: "test-handle",
+        listing: {
+          handle: "test-handle",
+          title: "Test Product",
+        },
+        variants: [
+          {
+            sku: "123",
+            subtype: "",
+            janCode: "123",
+          },
+        ],
+      },
+      {
+        id: 1,
+        handle: "test-handle",
+        status: "active",
+        variants: [{ id: 456, sku: "123Default" }],
+      },
+    );
+
+    expect(payload.variants[0].id).toBe(456);
+    expect(payload.variants[0].sku).toBe("123");
+  });
+
+  it("matches existing Default Title-suffixed Shopify variants by canonical SKU", () => {
+    const payload = buildProductPayload(
+      {
+        handle: "test-handle",
+        listing: {
+          handle: "test-handle",
+          title: "Test Product",
+        },
+        variants: [
+          {
+            sku: "123",
+            subtype: "",
+            janCode: "123",
+          },
+        ],
+      },
+      {
+        id: 1,
+        handle: "test-handle",
+        status: "active",
+        variants: [{ id: 789, sku: "123Default Title" }],
+      },
+    );
+
+    expect(payload.variants[0].id).toBe(789);
+    expect(payload.variants[0].sku).toBe("123");
+  });
+
   it("includes options for products with multiple variants even if some are 'Default'", () => {
     const payload = buildProductPayload(
       {

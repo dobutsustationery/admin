@@ -29,6 +29,7 @@
     type ColumnConfig,
   } from "$lib/components/BulkEditor.svelte";
   import { generateHandle } from "$lib/handle-utils";
+  import { generateSku } from "$lib/sku";
   import ViewCell from "$lib/components/cell-renderers/ViewCell.svelte";
   import BodyHtmlCell from "$lib/components/cell-renderers/BodyHtmlCell.svelte";
   import ImageCell from "$lib/components/cell-renderers/ImageCell.svelte";
@@ -185,7 +186,7 @@
       const variantThumb = v.image || inventoryItem?.image || null;
 
       // Construct Display SKU
-      const variantSku = p.janCode + (v.option1Value || "").replace(/\s+/g, "");
+      const variantSku = generateSku(p.janCode, v.option1Value);
 
       return {
         ...p, // Spread Shared Listing Props (Title, Handle, Price, Body, etc.)

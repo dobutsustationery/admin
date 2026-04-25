@@ -1,6 +1,6 @@
 import type { Item } from "$lib/inventory";
 import Papa from "papaparse";
-import { generateSku } from "./handle-utils";
+import { generateSku } from "./sku";
 
 export interface ShopifyProduct {
   Handle: string;

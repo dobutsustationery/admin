@@ -13,8 +13,4 @@ export function generateHandle(title: string, jan: string): string {
   return `${slug}-${jan}`;
 }
 
-// JAN code is preserved as-is (e.g. 4542804108606)
-export function generateSku(janCode: string, subtype?: string): string {
-  if (!subtype) return janCode;
-  return `${janCode}${subtype}`;
-}
+export { generateSku } from "./sku";

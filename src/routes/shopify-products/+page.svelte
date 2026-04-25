@@ -3,7 +3,8 @@
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
   import { slide } from "svelte/transition";
-  import { generateHandle, generateSku } from "$lib/handle-utils";
+  import { generateHandle } from "$lib/handle-utils";
+  import { generateSku } from "$lib/sku";
   import { store } from "$lib/store";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";

@@ -53,6 +53,60 @@ describe("Shopify Sync Reducer", () => {
     ).toBe(2);
   });
 
+  it("maps Shopify Default-suffixed SKUs to the base JAN item", () => {
+    const baseItem: Item = {
+      ...testItem,
+      janCode: "4542804154658",
+      subtype: "",
+    };
+    const baseItemKey = makeInventoryItemKey(
+      baseItem.janCode,
+      baseItem.subtype,
+    );
+    let state = inventory(
+      initialState,
+      update_item({ id: baseItemKey, item: baseItem }),
+    );
+
+    const action = shopify_order_created({
+      raw: {
+        id: "default-sku-order",
+        created_at: "2024-01-01T12:00:00Z",
+        email: "customer@example.com",
+        line_items: [
+          { id: "li-default", sku: "4542804154658Default", quantity: 1 },
+        ],
+      },
+      topic: "orders/create",
+    });
+
+    state = inventory(state, action);
+
+    expect(state.idToItem[baseItemKey].shipped).toBe(1);
+    expect(state.orderIdToOrder["shopify:default-sku-order"].items).toEqual([
+      { itemKey: baseItemKey, qty: 1 },
+    ]);
+  });
+
+  it("normalizes historical Default-suffixed update_item ids on replay", () => {
+    const janCode = "4542804154658";
+    const state = inventory(
+      initialState,
+      update_item({
+        id: `${janCode}Default`,
+        item: {
+          ...testItem,
+          janCode,
+          subtype: "Default",
+        },
+      }),
+    );
+
+    expect(state.idToItem[janCode]).toBeDefined();
+    expect(state.idToItem[janCode].subtype).toBe("");
+    expect(state.idToItem[`${janCode}Default`]).toBeUndefined();
+  });
+
   it("handles shopify_order_created idempotently", () => {
     let state = inventory(
       initialState,

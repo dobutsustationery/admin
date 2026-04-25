@@ -45,6 +45,7 @@
     SYNC_COLLECTION,
     toShopifySyncListenerEvent,
   } from "$lib/sync-events";
+  import { makeInventoryItemKey } from "$lib/sku";
   import {
     getExpiryInfo as getPhotosExpiry,
     refreshTokensSilently as refreshPhotosSilently,
@@ -276,7 +277,10 @@
             if (action.type === "retype_item") {
               const payload = (action as any).payload || {};
               const itemKey = payload.itemKey;
-              const newItemKey = payload.janCode + payload.subtype;
+              const newItemKey = makeInventoryItemKey(
+                payload.janCode,
+                payload.subtype,
+              );
               if (itemKey == newItemKey) {
                 console.error("bad retype item detected", id);
               }

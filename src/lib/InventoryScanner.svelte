@@ -8,6 +8,7 @@
   import { update_item } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
   import Signin from "$lib/Signin.svelte";
+  import { makeInventoryItemKey } from "$lib/sku";
   import { store } from "$lib/store";
 
   let janCode = "No scan yet";
@@ -115,7 +116,7 @@
 
   function save() {
     dirty = false;
-    const id = janCode + subtype;
+    const id = makeInventoryItemKey(janCode, subtype);
     const image = dataURL || imageItems[selectedPic]?.link;
     const item = {
       janCode,

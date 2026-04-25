@@ -30,13 +30,13 @@
     remove_variant_requested,
   } from "$lib/listing-creation-slice";
   import { update_field, split_inventory_item } from "$lib/inventory";
-  import { makeInventoryItemKey } from "$lib/sku";
+  import { generateSku, makeInventoryItemKey } from "$lib/sku";
   import { uncategorize_photo } from "$lib/photos-slice";
   import { goto } from "$app/navigation";
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
-  import { generateHandle, generateSku } from "$lib/handle-utils";
+  import { generateHandle } from "$lib/handle-utils";
   import {
     ensureFolderStructure,
     uploadImageToDrive,
