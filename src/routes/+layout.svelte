@@ -123,10 +123,6 @@
 
   function handleUserChange(firebaseUser: any) {
     if (firebaseUser && firebaseUser.email) {
-      // Guard against redundant changes if UID is already the same
-      if (me.signedIn && me.uid === firebaseUser.uid) {
-        return;
-      }
       if (typeof window !== "undefined") {
         const checkScopes = async () => {
           let attempts = 0;
@@ -203,13 +199,17 @@
             await hydrationPromise;
 
             $user = me;
-            loadingState = "loading";
-            loadingProgress = 0;
-            loadingMessage = snapshotMetadata
-              ? "Checking for new actions..."
-              : "Counting actions...";
-            loadingDetail = "";
-            setSnapshotPersistencePaused(true);
+
+            // Only transition to loading if we aren't already listening
+            if (!unsubscribeBroadcast) {
+              loadingState = "loading";
+              loadingProgress = 0;
+              loadingMessage = snapshotMetadata
+                ? "Checking for new actions..."
+                : "Counting actions...";
+              loadingDetail = "";
+              setSnapshotPersistencePaused(true);
+            }
 
             if (uid) {
               // Only write if we have a UID (always true here)
