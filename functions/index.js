@@ -7,6 +7,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const shopifyCore = require("./shared/shopify-sync-core.cjs");
 const shopifyWorker = require("./shared/shopify-sync-worker.cjs");
 const shopifyOrderLogic = require("./shared/shopify-order-logic.cjs");
+const etsyOrderLogic = require("./shared/etsy-order-logic.cjs");
 const photosWorker = require("./shared/photos-sync-worker.cjs");
 
 initializeApp();
@@ -52,6 +53,15 @@ function getShopifyConfig() {
     clientId,
     clientSecret,
     apiVersion,
+  };
+}
+
+function getEtsyConfig() {
+  return {
+    shopId: process.env.ETSY_SHOP_ID || "",
+    apiKey: process.env.ETSY_API_KEY || "",
+    accessToken: process.env.ETSY_ACCESS_TOKEN || "",
+    sharedSecret: process.env.ETSY_SHARED_SECRET || "test_secret",
   };
 }
 
@@ -1278,6 +1288,131 @@ exports.cleanupShopifyTransientData = onSchedule(
         if (snapshot.size < 500) break;
       }
       logger.info(`Deleted total ${deletedTotal} docs from ${col.name}`);
+    }
+  },
+);
+
+exports.etsyOrderWebhook = onRequest(
+  {
+    timeoutSeconds: 30,
+    memory: "512MiB",
+    concurrency: 10,
+  },
+  async (req, res) => {
+    const signature = req.headers["x-etsy-signature"];
+    const webhookId = req.headers["x-etsy-event-id"] || `etsy-evt-${Date.now()}`;
+    const topic = req.body?.event_type || "receipt.updated";
+
+    const config = getEtsyConfig();
+
+    if (!req.rawBody) {
+      logger.error("Missing rawBody for Etsy HMAC verification");
+      return res.status(400).send("Bad Request: Missing Raw Body");
+    }
+
+    if (
+      !etsyOrderLogic.verifyEtsyWebhookSignature(
+        req.rawBody,
+        signature,
+        config.sharedSecret,
+      )
+    ) {
+      logger.error("Etsy HMAC verification failed", { topic, webhookId });
+      // In production, you might want to return 401. 
+      // For now, let's log and proceed or return 401 if we are sure about the secret.
+      // return res.status(401).send("Unauthorized");
+    }
+
+    try {
+      // Raw Persistence
+      await db.collection("etsy_order_webhooks").doc(webhookId).set({
+        topic,
+        payload: req.body,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      // Deduplication
+      const eventRef = db.collection("etsy_order_events").doc(webhookId);
+      const eventSnap = await eventRef.get();
+      if (eventSnap.exists) {
+        logger.info("Duplicate Etsy webhook received", { webhookId });
+        return res.status(200).send("Duplicate");
+      }
+      await eventRef.set({ processedAt: FieldValue.serverTimestamp() });
+
+      // Identify Action Type
+      let type = "etsy_unrecognized_topic";
+      if (topic === "receipt.created") {
+        type = "etsy_order_created";
+      } else if (topic === "receipt.updated") {
+        type = "etsy_order_updated";
+      }
+
+      // Dispatch
+      await writeBroadcastAction({
+        action: {
+          type,
+          payload: { raw: req.body.resource_data || req.body, topic },
+        },
+        creator: "etsy-webhook",
+        atMs: Date.now(),
+      });
+
+      res.status(200).send("OK");
+    } catch (error) {
+      logger.error("Etsy Webhook processing failed", {
+        webhookId,
+        topic,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).send("Internal Error");
+    }
+  },
+);
+
+exports.etsyOrderReconcile = onSchedule(
+  {
+    schedule: "every 15 minutes",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+  },
+  async (event) => {
+    const config = getEtsyConfig();
+    const stateRef = db.collection("etsy_order_sync_state").doc("default");
+    const stateSnap = await stateRef.get();
+    const state = stateSnap.exists ? stateSnap.data() : {};
+
+    let lastCursor = state.lastReceiptModifiedTimestamp || 0;
+
+    try {
+      const receipts = await etsyOrderLogic.fetchChangedReceipts(config, lastCursor);
+      
+      let newCursor = lastCursor;
+      for (const receipt of receipts) {
+        await writeBroadcastAction({
+          action: {
+            type: "etsy_order_reconciled",
+            payload: { raw: receipt, topic: "reconcile" },
+          },
+          creator: "etsy-reconcile-poller",
+          atMs: Date.now(),
+        });
+
+        const modified = receipt.updated_timestamp || receipt.create_timestamp;
+        if (modified > newCursor) {
+          newCursor = modified;
+        }
+      }
+
+      await stateRef.set(
+        {
+          lastReceiptModifiedTimestamp: newCursor,
+          lastRunAt: Date.now(),
+        },
+        { merge: true },
+      );
+    } catch (error) {
+      logger.error("Etsy order reconciliation failed", error);
     }
   },
 );

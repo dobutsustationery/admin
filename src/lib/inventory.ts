@@ -58,10 +58,16 @@ export interface OrderInfo {
     refunds: Record<string, boolean>; // refundID -> processed
     reconciledTimestamp?: number;
   };
+  etsyFacts?: {
+    lines: Record<string, ShopifyLineFact>; // transaction_id -> counts (reusing ShopifyLineFact shape)
+    reconciledTimestamp?: number;
+  };
 }
 export interface InventoryState {
   idToItem: { [key: string]: Item };
-  idToHistory: { [key: string]: { date: string; desc: string; val: number }[] };
+  idToHistory: {
+    [key: string]: { date: string; desc: string; val: number }[];
+  };
   keyIdentity?: InventoryKeyIdentityState;
   archivedInventoryState: { [key: string]: InventoryState };
   archivedInventoryDate: { [key: string]: string };
@@ -71,6 +77,7 @@ export interface InventoryState {
   shopifyUrlToDriveUrl: { [key: string]: string }; // [shopifyUrl] -> driveUrl
   hiddenExceptions?: { [key: string]: boolean };
   shopifyExceptions?: { [key: string]: string[] };
+  etsyExceptions?: { [key: string]: string[] };
   initialized: boolean;
 }
 
@@ -103,9 +110,13 @@ export const show_exception = createAction<{
 export const hide_shopify_exception = createAction<{
   orderID: string;
 }>("hide_shopify_exception");
+export const hide_etsy_exception = createAction<{
+  orderID: string;
+}>("hide_etsy_exception");
 export const clear_shopify_exceptions = createAction(
   "clear_shopify_exceptions",
 );
+export const clear_etsy_exceptions = createAction("clear_etsy_exceptions");
 
 export const update_item = createAction<{ id: string; item: Item }>(
   "update_item",
@@ -203,6 +214,21 @@ export const shopify_unrecognized_topic = createAction<{
   raw: any;
   topic: string;
 }>("shopify_unrecognized_topic");
+
+export const etsy_order_created = createAction<{
+  raw: any;
+  topic: string;
+}>("etsy_order_created");
+
+export const etsy_order_updated = createAction<{
+  raw: any;
+  topic: string;
+}>("etsy_order_updated");
+
+export const etsy_order_reconciled = createAction<{
+  raw: any;
+  topic: string;
+}>("etsy_order_reconciled");
 
 function getTimestampMs(timestamp: any): number {
   const ms = toTimestampMs(timestamp as FirestoreTimestampLike);
@@ -762,20 +788,35 @@ export const initialState: InventoryState = {
   salesEvents: {},
   shopifyUrlToDriveUrl: {},
   shopifyExceptions: {},
+  etsyExceptions: {},
   initialized: false,
 };
 
 function syncOrderItemsFromFacts(order: OrderInfo) {
-  if (!order.shopifyFacts) return;
   const itemKeyToQty: Record<string, number> = {};
-  for (const lineItemID in order.shopifyFacts.lines) {
-    const fact = order.shopifyFacts.lines[lineItemID];
-    const currentQty = fact.placed - fact.cancelled - fact.refunded;
-    if (currentQty > 0) {
-      itemKeyToQty[fact.itemKey] =
-        (itemKeyToQty[fact.itemKey] || 0) + currentQty;
+
+  if (order.shopifyFacts) {
+    for (const lineItemID in order.shopifyFacts.lines) {
+      const fact = order.shopifyFacts.lines[lineItemID];
+      const currentQty = fact.placed - fact.cancelled - fact.refunded;
+      if (currentQty > 0) {
+        itemKeyToQty[fact.itemKey] =
+          (itemKeyToQty[fact.itemKey] || 0) + currentQty;
+      }
     }
   }
+
+  if (order.etsyFacts) {
+    for (const lineItemID in order.etsyFacts.lines) {
+      const fact = order.etsyFacts.lines[lineItemID];
+      const currentQty = fact.placed - fact.cancelled - fact.refunded;
+      if (currentQty > 0) {
+        itemKeyToQty[fact.itemKey] =
+          (itemKeyToQty[fact.itemKey] || 0) + currentQty;
+      }
+    }
+  }
+
   order.items = Object.entries(itemKeyToQty).map(([itemKey, qty]) => ({
     itemKey: itemKey as InventoryItemKey,
     qty,
@@ -791,7 +832,7 @@ function mapSkuToItemKey(
     return normalizedSku as InventoryItemKey;
   }
 
-  // Fallback: search in properties
+  // Fallback: search in properties (Shopify)
   const properties = lineItem.properties || [];
   const janProp = properties.find(
     (p: any) => /jan/i.test(p.name) || /barcode/i.test(p.name),
@@ -881,17 +922,26 @@ function getOrCreateOrder(
   rawOrder: any,
   actionTimestamp: number,
 ): OrderInfo {
+  const isEtsy = orderID.startsWith("etsy:");
   if (!state.orderIdToOrder[orderID]) {
     state.orderIdToOrder[orderID] = {
       id: orderID,
-      date: new Date(rawOrder.created_at || actionTimestamp),
-      email: rawOrder.email || rawOrder.contact_email || "",
+      date: new Date(
+        rawOrder.created_at ||
+          (rawOrder.create_timestamp ? rawOrder.create_timestamp * 1000 : 0) ||
+          actionTimestamp,
+      ),
+      email:
+        rawOrder.email || rawOrder.contact_email || rawOrder.buyer_email || "",
       items: [],
-      shopifyFacts: { lines: {}, refunds: {} },
+      shopifyFacts: isEtsy ? undefined : { lines: {}, refunds: {} },
+      etsyFacts: isEtsy ? { lines: {} } : undefined,
     };
   }
   const order = state.orderIdToOrder[orderID];
-  if (!order.shopifyFacts) {
+  if (isEtsy && !order.etsyFacts) {
+    order.etsyFacts = { lines: {} };
+  } else if (!isEtsy && !order.shopifyFacts) {
     order.shopifyFacts = { lines: {}, refunds: {} };
   }
   return order;
@@ -1263,14 +1313,163 @@ export const inventory = createReducer(initialState, (r) => {
       getTimestampMs((action as any).timestamp),
     );
   });
+  r.addCase(etsy_order_created, (state, action) => {
+    applyEtsyOrderReconciliation(
+      state,
+      action.payload.raw,
+      getTimestampMs((action as any).timestamp),
+      "Etsy Order Created",
+    );
+  });
+
+  r.addCase(etsy_order_updated, (state, action) => {
+    applyEtsyOrderReconciliation(
+      state,
+      action.payload.raw,
+      getTimestampMs((action as any).timestamp),
+      "Etsy Order Updated",
+    );
+  });
+
+  r.addCase(etsy_order_reconciled, (state, action) => {
+    applyEtsyOrderReconciliation(
+      state,
+      action.payload.raw,
+      getTimestampMs((action as any).timestamp),
+    );
+  });
+
+  function applyEtsyOrderReconciliation(
+    state: InventoryState,
+    rawReceipt: any,
+    actionTimestamp: number,
+    labelPrefix: string = "Etsy Order Reconciled",
+  ) {
+    const orderID = `etsy:${rawReceipt.receipt_id}`;
+    if (state.etsyExceptions) {
+      delete state.etsyExceptions[orderID];
+    }
+
+    const order = getOrCreateOrder(state, orderID, rawReceipt, actionTimestamp);
+    const timestamp =
+      (rawReceipt.updated_timestamp || rawReceipt.create_timestamp) * 1000;
+
+    if (
+      order.etsyFacts!.reconciledTimestamp &&
+      order.etsyFacts!.reconciledTimestamp >= timestamp
+    ) {
+      return;
+    }
+
+    const currentInventoryImpact: Record<string, number> = {};
+    for (const item of order.items) {
+      const itemKey = canonicalizeInventoryItemKey(item.itemKey);
+      currentInventoryImpact[itemKey] =
+        (currentInventoryImpact[itemKey] || 0) + item.qty;
+    }
+
+    const itemQtyMap: Record<string, number> = {};
+    const transactions = rawReceipt.transactions || [];
+    for (const tx of transactions) {
+      const key = mapSkuToItemKey(tx.sku, tx);
+      if (key) {
+        const canonicalKey = canonicalizeInventoryItemKey(key);
+        // Etsy status logic: if receipt is cancelled, qty is 0.
+        // Also check if transaction itself has some cancellation status if Etsy v3 provides it per line.
+        // For now, if the whole receipt is cancelled, impact is 0.
+        const isCancelled =
+          rawReceipt.status === "canceled" || rawReceipt.status === "cancelled";
+        const currentQty = isCancelled ? 0 : tx.quantity;
+        itemQtyMap[canonicalKey] = (itemQtyMap[canonicalKey] || 0) + currentQty;
+
+        if (!order.etsyFacts!.lines[tx.transaction_id]) {
+          order.etsyFacts!.lines[tx.transaction_id] = {
+            itemKey: canonicalKey,
+            placed: tx.quantity,
+            cancelled: isCancelled ? tx.quantity : 0,
+            refunded: 0, // Etsy v3 might need separate check for refunds
+          };
+        } else {
+          const fact = order.etsyFacts!.lines[tx.transaction_id];
+          fact.placed = Math.max(fact.placed, tx.quantity);
+          if (isCancelled) {
+            fact.cancelled = Math.max(fact.cancelled, tx.quantity);
+          }
+        }
+      } else {
+        if (!state.etsyExceptions) state.etsyExceptions = {};
+        if (!state.etsyExceptions[orderID]) state.etsyExceptions[orderID] = [];
+        state.etsyExceptions[orderID].push(
+          `Unknown SKU: ${tx.sku} (Transaction: ${tx.transaction_id})`,
+        );
+      }
+    }
+
+    for (const [canonicalKey, currentQty] of Object.entries(itemQtyMap)) {
+      const diff = currentQty - (currentInventoryImpact[canonicalKey] || 0);
+      if (diff !== 0) {
+        if (state.idToItem[canonicalKey]) {
+          state.idToItem[canonicalKey].shipped += diff;
+          const historyVal = actionTimestamp;
+          if (!state.idToHistory[canonicalKey])
+            state.idToHistory[canonicalKey] = [];
+          state.idToHistory[canonicalKey].push({
+            date: new Date(historyVal).toLocaleString("en", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            }),
+            desc: `${labelPrefix}: ${currentQty} (diff ${diff}) for ${orderID}`,
+            val: historyVal,
+          });
+          state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
+        }
+      }
+      delete currentInventoryImpact[canonicalKey];
+    }
+
+    for (const [key, qty] of Object.entries(currentInventoryImpact)) {
+      const canonicalKey = key as InventoryItemKey;
+      if (qty !== 0 && state.idToItem[canonicalKey]) {
+        state.idToItem[canonicalKey].shipped -= qty;
+        const historyVal = actionTimestamp;
+        if (!state.idToHistory[canonicalKey])
+          state.idToHistory[canonicalKey] = [];
+        state.idToHistory[canonicalKey].push({
+          date: new Date(historyVal).toLocaleString("en", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          }),
+          desc: `${labelPrefix} (Missing item reset): 0 (diff -${qty}) for ${orderID}`,
+          val: historyVal,
+        });
+        state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
+      }
+    }
+
+    order.etsyFacts!.reconciledTimestamp = timestamp;
+    syncOrderItemsFromFacts(order);
+  }
+
   r.addCase(hide_shopify_exception, (state, action) => {
     if (state.shopifyExceptions) {
       delete state.shopifyExceptions[action.payload.orderID];
     }
   });
 
+  r.addCase(hide_etsy_exception, (state, action) => {
+    if (state.etsyExceptions) {
+      delete state.etsyExceptions[action.payload.orderID];
+    }
+  });
+
   r.addCase(clear_shopify_exceptions, (state) => {
     state.shopifyExceptions = {};
+  });
+
+  r.addCase(clear_etsy_exceptions, (state) => {
+    state.etsyExceptions = {};
   });
 
   r.addCase(hide_exception, (state, action) => {
