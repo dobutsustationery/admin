@@ -120,11 +120,20 @@ If `validToMs` is absent, the binding is active until further notice.
 An entity ID is a stable identity for "the same inventory item across key
 renames." It should be deterministic under replay.
 
-Recommended entity ID generation:
+Broadcast actions already have unique, stable document IDs. Use the document ID
+of the action that first creates the independent inventory entity, plus the
+entity's original inventory key, as the entity ID:
 
 ```ts
-entityId = `inv:${firstKnownActionId || firstKnownKey}:${firstKnownAtMs}`;
+entityId = `${creatingActionDocId}:${originalInventoryKey}`;
 ```
+
+`originalInventoryKey` is the key at creation time, meaning JAN code plus subtype
+when subtype exists, or just the JAN code when it does not.
+
+The action document ID makes the entity unique and replay-stable. Appending the
+original inventory key makes the ID human readable and also distinguishes
+multiple entities created by the same broadcast action, such as a bulk import.
 
 Requirements:
 
@@ -132,9 +141,8 @@ Requirements:
 - It must not change when the item key changes.
 - It must be created when the system first sees a new independent inventory
   item.
-
-If an old action lacks a durable action id, use the first known key plus the
-action timestamp, and include a collision fallback if needed.
+- It should be treated as an opaque ID after creation. Reducer logic should not
+  parse meaning back out of the string.
 
 ## Binding Operations
 
@@ -145,12 +153,12 @@ The reducer should maintain the index through small helper operations.
 Used when a key first appears as a new independent item:
 
 ```ts
-bindNewEntity(key, atMs, actionType, actionId);
+bindNewEntity(key, atMs, actionType, creatingActionDocId);
 ```
 
 Effects:
 
-- Create an entity id.
+- Create `entityId` from the creating broadcast action document ID and `key`.
 - Open interval `key -> entityId` at `atMs`.
 - Set `currentKeyByEntityId[entityId] = key`.
 - Set `entityIdByCurrentKey[key] = entityId`.
@@ -178,7 +186,7 @@ Used when a key that previously appeared in history becomes a new independent
 item again:
 
 ```ts
-bindNewEntity(reusedKey, atMs, actionType, actionId);
+bindNewEntity(reusedKey, atMs, actionType, creatingActionDocId);
 ```
 
 This is not special if intervals are modeled explicitly. The old interval for
@@ -448,8 +456,8 @@ Add focused reducer tests for:
 
 ## Open Questions
 
-- Which action fields are reliable enough to derive stable entity IDs for the
-  oldest legacy actions?
+- What is the cleanest reducer API for passing the creating broadcast action
+  document ID into every binding update helper?
 - Should listing creation express "this variant is a rename of the base item"
   explicitly instead of inferring it?
 - How should ambiguous historical bindings be displayed to the user?
