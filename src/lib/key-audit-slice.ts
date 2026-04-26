@@ -40,7 +40,7 @@ export interface KeyAuditState {
   canonicalCollisions: { [canonicalId: string]: CanonicalCollisionReport };
 }
 
-const initialState: KeyAuditState = {
+export const initialState: KeyAuditState = {
   ghostMap: {},
   ghostAccessEvents: [],
   canonicalIncomingIndex: {},

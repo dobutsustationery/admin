@@ -120,6 +120,7 @@ export const quantify_item = createAction<{
 export const retype_item = createAction<{
   orderID: string;
   itemKey: InventoryItemKey;
+  newItemKey?: InventoryItemKey;
   janCode: string;
   subtype: string;
   qty: number;
@@ -1292,12 +1293,11 @@ export const inventory = createReducer(initialState, (r) => {
     }
   });
   r.addCase(retype_item, (state, action) => {
-    const { itemKey, orderID, qty } = action.payload;
-    const janCode = action.payload.janCode?.trim();
-    const subtype = action.payload.subtype?.trim() || "";
+    const { itemKey, janCode, subtype, qty, orderID } = action.payload;
+    const timestamp = getTimestampMs((action as any).timestamp);
 
     if (state.orderIdToOrder[orderID] === undefined) {
-      const date = new Date(0);
+      const date = new Date(timestamp);
       state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
     }
     const newItemKey = makeInventoryItemKey(janCode, subtype);
@@ -1305,58 +1305,81 @@ export const inventory = createReducer(initialState, (r) => {
       state.orderIdToOrder[orderID].items = state.orderIdToOrder[
         orderID
       ].items.filter((i) => i.itemKey !== itemKey);
-      const existingItem = state.orderIdToOrder[orderID].items.filter(
+      const existingItem = state.orderIdToOrder[orderID].items.find(
         (i) => i.itemKey === newItemKey,
       );
-      if (existingItem.length > 0) {
-        existingItem[0].qty += qty;
+      if (existingItem) {
+        existingItem.qty += qty;
       } else {
         state.orderIdToOrder[orderID].items.push({ itemKey: newItemKey, qty });
+      }
+
+      if (
+        state.idToItem[itemKey] !== undefined &&
+        state.idToItem[newItemKey] !== undefined
+      ) {
+        state.idToItem[itemKey].shipped -= qty;
+        state.idToItem[newItemKey].shipped += qty;
+
+        // If the old item is now truly empty (no qty and no shipped), delete it
+        if (
+          state.idToItem[itemKey].qty === 0 &&
+          state.idToItem[itemKey].shipped === 0
+        ) {
+          delete state.idToItem[itemKey];
+          delete state.idToHistory[itemKey];
+        } else {
+          // Log history on old item too
+          if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+          state.idToHistory[itemKey].push({
+            date: new Date(timestamp).toLocaleString("en", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            }),
+            desc: `Retyped to ${newItemKey} for ${orderID} (qty: -${qty})`,
+            val: timestamp,
+          });
+        }
+      } else if (
+        state.idToItem[itemKey] !== undefined &&
+        state.idToItem[newItemKey] === undefined
+      ) {
+        // Full Migration Case (e.g. base JAN item -> first variant ID)
+        // We move the entire item state and history to the new key.
+        state.idToItem[newItemKey] = {
+          ...state.idToItem[itemKey],
+          subtype,
+          timestamp,
+        };
+
+        // Move history
+        const oldHistory = state.idToHistory[itemKey] || [];
+        if (!state.idToHistory[newItemKey]) state.idToHistory[newItemKey] = [];
+        state.idToHistory[newItemKey] = [
+          ...state.idToHistory[newItemKey],
+          ...oldHistory,
+        ].sort((a, b) => (a.val || 0) - (b.val || 0));
+
+        delete state.idToItem[itemKey];
+        delete state.idToHistory[itemKey];
       }
     } else {
       console.error(`${itemKey} vs ${newItemKey}`);
     }
-    if (
-      state.idToItem[itemKey] !== undefined &&
-      state.idToItem[newItemKey] !== undefined
-    ) {
-      state.idToItem[itemKey].shipped -= qty;
-      state.idToItem[newItemKey].shipped += qty;
-    } else {
-      console.warn(
-        `Skipping retype_item shipped update for missing item(s): ${itemKey} or ${newItemKey}`,
-        action.payload,
-      );
-    }
-    if (!state.idToHistory[itemKey]) {
-      console.warn(
-        `[InventoryDebug] retype_item (old key): idToHistory missing for ${itemKey}. Initializing empty.`,
-      );
-      state.idToHistory[itemKey] = [];
-    }
-    state.idToHistory[itemKey].push({
-      date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
+
+    const targetHistoryKey = state.idToItem[newItemKey] ? newItemKey : itemKey;
+    if (!state.idToHistory[targetHistoryKey])
+      state.idToHistory[targetHistoryKey] = [];
+
+    state.idToHistory[targetHistoryKey].push({
+      date: new Date(timestamp).toLocaleString("en", {
         year: "numeric",
         month: "short",
         day: "numeric",
       }),
       desc: `Retyped from ${itemKey} to ${newItemKey} for ${orderID} (qty: ${state.idToItem[newItemKey]?.qty || "?"})`,
-      val: state.orderIdToOrder[orderID].date.getTime(),
-    });
-    if (!state.idToHistory[newItemKey]) {
-      console.warn(
-        `[InventoryDebug] retype_item (new key): idToHistory missing for ${newItemKey}. Initializing empty.`,
-      );
-      state.idToHistory[newItemKey] = [];
-    }
-    state.idToHistory[newItemKey].push({
-      date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }),
-      desc: `Retyped from ${itemKey} to ${newItemKey} for ${orderID} (qty: ${state.idToItem[newItemKey]?.qty || "?"})`,
-      val: state.orderIdToOrder[orderID].date.getTime(),
+      val: timestamp,
     });
   });
   r.addCase(rename_subtype, (state, action) => {

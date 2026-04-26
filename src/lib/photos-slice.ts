@@ -50,7 +50,7 @@ export interface PhotosState {
   processingConfig: ProcessingConfig;
 }
 
-const initialState: PhotosState = {
+export const initialState: PhotosState = {
   selected: [],
   uploads: {},
   urlHistory: {},

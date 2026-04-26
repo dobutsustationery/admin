@@ -12,7 +12,7 @@ export type ShopifySyncState = {
   handleToLatestRequestId: Record<string, string>;
 };
 
-const initialState: ShopifySyncState = {
+export const initialState: ShopifySyncState = {
   eventsById: {},
   requestsById: {},
   requestIds: [],

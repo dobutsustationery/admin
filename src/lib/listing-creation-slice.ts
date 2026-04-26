@@ -100,7 +100,7 @@ export interface ListingCreationState {
   globalVariantPrompt?: string;
 }
 
-const initialState: ListingCreationState = {
+export const initialState: ListingCreationState = {
   proposals: {},
   activeBatchJans: [],
   originalBatchJans: [],
@@ -200,6 +200,7 @@ const listingCreationSlice = createSlice({
       state,
       action: PayloadAction<ListingProposal[]>,
     ) => {
+      if (!state.proposals) state.proposals = {};
       action.payload.forEach((p) => {
         state.proposals[p.janCode] = p;
       });
@@ -210,13 +211,9 @@ const listingCreationSlice = createSlice({
     },
     remove_proposal: (state, action: PayloadAction<{ janCode: string }>) => {
       const { janCode } = action.payload;
-      console.log(
-        "[Slice] Removing proposal:",
-        janCode,
-        "Exists:",
-        !!state.proposals[janCode],
-      );
-      delete state.proposals[janCode];
+      if (state.proposals) {
+        delete state.proposals[janCode];
+      }
       state.activeBatchJans = state.activeBatchJans.filter(
         (jan) => jan !== janCode,
       );
@@ -235,19 +232,17 @@ const listingCreationSlice = createSlice({
       state.activeBatchCreatedAt = actionTimestampMs(action);
       state.lastCompletedBatchId = undefined;
       state.hasCelebrated = false;
+      if (!state.proposals) state.proposals = {};
     }),
     set_current_step: (state, action: PayloadAction<number>) => {
       state.currentStepIndex = action.payload;
     },
     recalculate_batch_navigation: (state) => {
-      // Re-evaluate activeBatchJans to group by Handle.
-      // We use originalBatchJans as the immutable source of truth to ensure we can Restore items
-      // if they were previously merged (hidden) and then unmerged.
-
+      if (!state.proposals) return;
       const sourceJans =
         state.originalBatchJans && state.originalBatchJans.length > 0
           ? state.originalBatchJans
-          : state.activeBatchJans; // Fallback for migration if state persisted without original
+          : state.activeBatchJans;
 
       const seenHandles = new Set<string>();
       const newBatchOrder: string[] = [];
@@ -255,16 +250,12 @@ const listingCreationSlice = createSlice({
       sourceJans.forEach((jan) => {
         const p = state.proposals[jan];
         if (!p) return;
-
-        // If handle is unset, fallback to JAN (unique)
         const key = p.handle || p.janCode;
-
         if (!seenHandles.has(key)) {
           seenHandles.add(key);
           newBatchOrder.push(jan);
         }
       });
-
       state.activeBatchJans = newBatchOrder;
     },
 
@@ -273,6 +264,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ janCode: string; newVariantOrder: string[] }>,
     ) => {
       const { janCode, newVariantOrder } = action.payload;
+      if (!state.proposals) return;
       const proposal = state.proposals[janCode];
       if (!proposal || !proposal.variants) return;
 
@@ -280,16 +272,27 @@ const listingCreationSlice = createSlice({
       const newVariants: ListingVariant[] = [];
 
       newVariantOrder.forEach((id) => {
-        const v = byId.get(id);
-        if (v) {
-          newVariants.push(v);
+        let v = byId.get(id);
+        if (!v) {
+          // Robust matching for replay: try to find a variant with same JAN:Subtype prefix
+          const prefix = id.split(":").slice(0, 2).join(":");
+          const match = Array.from(byId.values()).find((existing) =>
+            existing.id.startsWith(prefix),
+          );
+          if (match) {
+            v = match;
+            byId.delete(match.id);
+          }
+        } else {
           byId.delete(id);
         }
+
+        if (v) {
+          newVariants.push(v);
+        }
       });
-
-      // Append any remaining variants not in the order (safety)
+      // Append any remaining variants that weren't in the new order
       Array.from(byId.values()).forEach((v) => newVariants.push(v));
-
       proposal.variants = newVariants;
     },
 
@@ -324,7 +327,7 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       const { janCode, field, value } = action.payload;
-      if (state.proposals[janCode]) {
+      if (state.proposals && state.proposals[janCode]) {
         // @ts-ignore - dynamic field access
         state.proposals[janCode][field] = value;
       }
@@ -334,6 +337,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ janCode: string; image: ListingImage }>,
     ) => {
       const { janCode, image } = action.payload;
+      if (!state.proposals) return;
       const proposal = state.proposals[janCode];
       if (!proposal) return;
       if (!proposal.listingOnlyImages) proposal.listingOnlyImages = [];
@@ -347,6 +351,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ janCode: string; imageId: string }>,
     ) => {
       const { janCode, imageId } = action.payload;
+      if (!state.proposals) return;
       const proposal = state.proposals[janCode];
       if (!proposal?.listingOnlyImages) return;
       proposal.listingOnlyImages = proposal.listingOnlyImages.filter(
@@ -363,6 +368,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ janCode: string; photoId: string }>,
     ) => {
       const { janCode, photoId } = action.payload;
+      if (!state.proposals) return;
       const p = state.proposals[janCode];
       if (p) {
         if (!p.excludedPhotoIds) p.excludedPhotoIds = [];
@@ -375,6 +381,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ janCode: string; photoId: string }>,
     ) => {
       const { janCode, photoId } = action.payload;
+      if (!state.proposals) return;
       const p = state.proposals[janCode];
       if (p && p.excludedPhotoIds) {
         p.excludedPhotoIds = p.excludedPhotoIds.filter((id) => id !== photoId);
@@ -385,7 +392,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ janCode: string; name: string }>,
     ) => {
       const { janCode, name } = action.payload;
-      if (state.proposals[janCode]) {
+      if (state.proposals && state.proposals[janCode]) {
         state.proposals[janCode].option1Name = name;
       }
     },
@@ -398,9 +405,9 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       const { janCode, variantId, value } = action.payload;
+      if (!state.proposals) return;
       const proposal = state.proposals[janCode];
       if (proposal) {
-        // Try finding by ID first, then itemId
         const variant = proposal.variants.find(
           (v) => v.id === variantId || v.itemId === variantId,
         );
@@ -418,6 +425,7 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       const { janCode, variantId, qty } = action.payload;
+      if (!state.proposals) return;
       const proposal = state.proposals[janCode];
       if (proposal) {
         const variant = proposal.variants.find(
@@ -437,6 +445,7 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       const { janCode, variantId, image } = action.payload;
+      if (!state.proposals) return;
       const proposal = state.proposals[janCode];
       if (proposal) {
         const variant = proposal.variants.find(
@@ -456,6 +465,7 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       const { janCode, variantId, groupKey } = action.payload;
+      if (!state.proposals) return;
       const proposal = state.proposals[janCode];
       if (proposal) {
         const variant = proposal.variants.find(
@@ -483,6 +493,7 @@ const listingCreationSlice = createSlice({
     ) => {
       const { targetJan, janCode, itemId, subtype, qty, variantId } =
         action.payload;
+      if (!state.proposals) state.proposals = {};
       const proposal = state.proposals[targetJan];
       if (!proposal) return;
 
@@ -506,6 +517,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ janCode: string; variantId: string }>,
     ) => {
       const { janCode, variantId } = action.payload;
+      if (!state.proposals) return;
       const proposal = state.proposals[janCode];
       if (!proposal) return;
 
@@ -515,7 +527,6 @@ const listingCreationSlice = createSlice({
       const itemId = proposal.variants[vIdx].itemId;
       proposal.variants.splice(vIdx, 1);
 
-      // Only remove itemId if no other variant uses it
       const stillUsesItem = proposal.variants.some((v) => v.itemId === itemId);
       if (!stillUsesItem) {
         proposal.inventoryItemIds = proposal.inventoryItemIds.filter(
@@ -523,7 +534,6 @@ const listingCreationSlice = createSlice({
         );
       }
 
-      // If no variants left, remove proposal
       if (proposal.variants.length === 0) {
         delete state.proposals[janCode];
         state.activeBatchJans = state.activeBatchJans.filter(
@@ -543,6 +553,7 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       const { janCode, variantId, newHandle } = action.payload;
+      if (!state.proposals) return;
       const source = state.proposals[janCode];
       if (!source) return;
       const sourceHandle =
@@ -551,7 +562,6 @@ const listingCreationSlice = createSlice({
         return;
       }
 
-      // If it's the only variant, just update the handle (standard update)
       if (source.variants.length <= 1) {
         source.handle = newHandle;
         return;
@@ -567,7 +577,6 @@ const listingCreationSlice = createSlice({
 
       const newProposal: ListingProposal = {
         ...source,
-        // We preserve the source JAN semantics for photo lookup
         janCode: source.janCode,
         handle: newHandle,
         inventoryItemIds: [targetItemId],
@@ -582,7 +591,6 @@ const listingCreationSlice = createSlice({
         (id) => id !== targetItemId,
       );
 
-      // Key must be unique, so we use variantId. janCode property handles the logic.
       state.proposals[newProposalId] = newProposal;
       state.activeBatchJans.push(newProposalId);
       state.originalBatchJans.push(newProposalId);
@@ -596,6 +604,7 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       const { sourceJan, targetJan, variantId } = action.payload;
+      if (!state.proposals) return;
       const source = state.proposals[sourceJan];
       const target = state.proposals[targetJan];
       if (!source || !target || sourceJan === targetJan) return;
@@ -605,13 +614,11 @@ const listingCreationSlice = createSlice({
       const variant = source.variants[variantIndex];
       const targetItemId = variant.itemId;
 
-      // Move Variant
       target.variants.push(variant);
       if (!target.inventoryItemIds.includes(targetItemId)) {
         target.inventoryItemIds.push(targetItemId);
       }
 
-      // Cleanup Source
       source.variants.splice(variantIndex, 1);
       source.inventoryItemIds = source.inventoryItemIds.filter(
         (id) => id !== targetItemId,
@@ -632,19 +639,19 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ sourceJan: string; targetJan: string }>,
     ) => {
       const { sourceJan, targetJan } = action.payload;
+      if (!state.proposals) return;
       const source = state.proposals[sourceJan];
       const target = state.proposals[targetJan];
 
       if (!source || !target || sourceJan === targetJan) return;
 
-      // Merge Arrays
       target.inventoryItemIds = [
         ...new Set([...target.inventoryItemIds, ...source.inventoryItemIds]),
       ];
       target.photoGroupIds = [
         ...new Set([...target.photoGroupIds, ...source.photoGroupIds]),
       ];
-      target.variants = [...target.variants, ...source.variants]; // Keep duplicates? Should be unique items.
+      target.variants = [...target.variants, ...source.variants];
 
       if (source.listingOnlyImages) {
         target.listingOnlyImages = [
@@ -667,7 +674,6 @@ const listingCreationSlice = createSlice({
         ];
       }
 
-      // Cleanup Source
       delete state.proposals[sourceJan];
       state.activeBatchJans = state.activeBatchJans.filter(
         (j) => j !== sourceJan,
@@ -681,6 +687,7 @@ const listingCreationSlice = createSlice({
       action: PayloadAction<{ targetJan: string; sourceJans: string[] }>,
     ) => {
       const { targetJan, sourceJans } = action.payload;
+      if (!state.proposals) return;
       const target = state.proposals[targetJan];
       if (!target) return;
 
@@ -690,10 +697,9 @@ const listingCreationSlice = createSlice({
       if (uniqueSources.length === 0) return;
 
       uniqueSources.forEach((sourceJan) => {
-        const source = state.proposals[sourceJan];
+        const source = state.proposals![sourceJan];
         if (!source) return;
 
-        // Merge arrays with dedupe
         target.inventoryItemIds = Array.from(
           new Set([...target.inventoryItemIds, ...source.inventoryItemIds]),
         );
@@ -736,7 +742,7 @@ const listingCreationSlice = createSlice({
           );
         }
 
-        delete state.proposals[sourceJan];
+        delete state.proposals![sourceJan];
         state.activeBatchJans = state.activeBatchJans.filter(
           (j) => j !== sourceJan,
         );
@@ -749,18 +755,17 @@ const listingCreationSlice = createSlice({
       state,
       action: PayloadAction<{ janCode: string; handle: string }>,
     ) => {
-      // Represents the user intent to import existing variants for this handle.
-      // The logic to find and add the items is handled by the root reducer / middleware.
+      // Handled by RootReducer
     },
     add_variants_internal: (
       state,
       action: PayloadAction<{ janCode: string; variants: ListingVariant[] }>,
     ) => {
       const { janCode, variants } = action.payload;
+      if (!state.proposals) state.proposals = {};
       const proposal = state.proposals[janCode];
       if (!proposal) return;
 
-      // Add them to proposal
       variants.forEach((variant) => {
         if (!proposal.inventoryItemIds.includes(variant.itemId)) {
           proposal.inventoryItemIds.push(variant.itemId);
@@ -772,7 +777,7 @@ const listingCreationSlice = createSlice({
     // Review
     approve_proposal: (state, action: PayloadAction<{ janCode: string }>) => {
       const { janCode } = action.payload;
-      if (state.proposals[janCode]) {
+      if (state.proposals && state.proposals[janCode]) {
         state.proposals[janCode].status = "approved";
       }
     },
@@ -782,7 +787,6 @@ const listingCreationSlice = createSlice({
       state.currentStepIndex++;
     },
     complete_batch: (state) => {
-      console.log("[Slice] Completing Batch. Active ID:", state.activeBatchId);
       if (state.activeBatchId) {
         state.lastCompletedBatchId = state.activeBatchId;
       }
@@ -844,454 +848,15 @@ export default listingCreationSlice.reducer;
 
 // --- Thunks ---
 
-export const generate_proposals =
-  (): AppThunk => async (dispatch, getState) => {
-    const currentState = getState().listingCreation;
-    const now = Date.now();
-
-    // Stall detection: If scanning and no update for > 30 seconds, it's likely stuck.
-    // If lastUpdate is missing (undefined/0), we treat it as stalled if isScanning is true.
-    const lastUpdate = currentState.scanProgress?.lastUpdate || 0;
-    const isStalled = currentState.isScanning && now - lastUpdate > 30000;
-
-    if (currentState.isScanning && !isStalled) {
-      console.log(
-        "[Generate] Scan already in flight and active. Skipping new trigger.",
-      );
-      return;
-    }
-
-    if (isStalled) {
-      console.warn(
-        `[Generate] Detected stalled scan (last update ${Math.round((now - currentState.scanProgress!.lastUpdate) / 1000)}s ago). Resuming/Restarting.`,
-      );
-    }
-
-    dispatch(set_scanning(true));
-    dispatch(
-      set_scan_progress({
-        current: 0,
-        total: 100,
-        message: "Initializing...",
-        lastUpdate: Date.now(),
-      } as any),
-    );
-
-    try {
-      let { inventory, photos, listingCreation } = getState();
-
-      // 1. Get Access Token
-      const tokenData = getStoredToken();
-
-      // Local copy of photos map to track splits synchronously
-      const localJanCodeToPhotos = { ...(photos.janCodeToPhotos || {}) };
-
-      if (tokenData) {
-        dispatch(set_drive_connection_status("connected"));
-        const accessToken = tokenData.access_token;
-        const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
-
-        // 1.5 Variant Detection (Auto-Split)
-        // Find candidates: Groups with > 1 image that are NOT already split (no colon)
-        // And check if they match an inventory item that needs splitting (single item)?
-        // For now, just analyze photo groups.
-
-        const candidates = Object.entries(localJanCodeToPhotos).filter(
-          (entry): entry is [string, any[]] => {
-            const [key, images] = entry as [string, any[]];
-
-            // 1. Check Group Size (> 2)
-            if (key.includes(":") || images.length <= 2) return false;
-
-            // 2. Check Inventory Existence
-            // We need to find at least one item with this JAN in inventory (and valid qty)
-            const inInventory = Object.values(inventory.idToItem).some(
-              (item: any) =>
-                item.janCode === key && !item.handle && item.qty > 0,
-            );
-
-            return inInventory;
-          },
-        );
-
-        console.log(
-          `[Generate] Candidates for variant detection (Group size > 1, no colon):`,
-          candidates.map((c) => c[0]),
-        );
-
-        if (candidates.length > 0) {
-          console.log(
-            `[Generate] Analyzing ${candidates.length} photo groups for variants...`,
-          );
-          console.log(
-            `[Generate] Keys BEFORE split:`,
-            Object.keys(localJanCodeToPhotos),
-          );
-
-          let processedCount = 0;
-          const totalCandidates = candidates.length;
-
-          for (const [janCode, groupImages] of candidates) {
-            processedCount++;
-            dispatch(
-              set_scan_progress({
-                current: processedCount,
-                total: totalCandidates,
-                message: `Analyzing variants for ${janCode}...`,
-                janCode,
-              }),
-            );
-            try {
-              // Optimization: Only scan if we haven't already? (How to track?)
-              // For now, scan every time. This is slow but correct.
-
-              // Fetch images data
-              // Limit to first 12 images to save tokens/time
-              const imagesToScan = (groupImages as any[]).slice(0, 12);
-              console.log(
-                `[Generate] Scanning ${janCode}: ${imagesToScan.length} images.`,
-              );
-
-              const imagePromises = imagesToScan.map((img: any) => {
-                const url = img.baseUrl || img.productUrl;
-                return fetchImage(url, accessToken);
-              });
-
-              const imagesData = await Promise.all(imagePromises);
-              const prompt = listingCreation.globalVariantPrompt;
-              const variants = await detectVariants(
-                imagesData,
-                accessToken,
-                apiKey,
-                prompt,
-              );
-
-              console.log(
-                `[Generate] Result for ${janCode}: ${variants.length} variants found.`,
-              );
-
-              if (variants.length > 1) {
-                console.log(
-                  `[Generate] Splitting ${janCode} into ${variants.length} variants:`,
-                  variants,
-                );
-
-                // Apply Split
-                for (const v of variants) {
-                  const safeName = (v.name || "Variant").trim();
-                  const newJan = `${janCode}:${safeName}`;
-                  const indices = v.indices;
-
-                  // Initialize new group in local map
-                  if (!localJanCodeToPhotos[newJan]) {
-                    localJanCodeToPhotos[newJan] = [];
-                  }
-
-                  for (const idx of indices) {
-                    if (idx < imagesToScan.length) {
-                      const img = imagesToScan[idx]; // The specific media item
-
-                      // Add to new group (Local & Redux)
-                      localJanCodeToPhotos[newJan].push(img);
-                      dispatch(
-                        categorize_photo({
-                          janCode: newJan,
-                          photo: img,
-                        }),
-                      );
-
-                      // Remove from original group (Redux only - we delete the whole key locally later)
-                      dispatch(
-                        uncategorize_photo({
-                          janCode: janCode,
-                          photoId: img.id,
-                        }),
-                      );
-                    }
-                  }
-                }
-
-                // Remove the original group from local map as it's now split
-                delete localJanCodeToPhotos[janCode];
-              }
-            } catch (e) {
-              console.error(
-                `[Generate] Failed variant analysis for ${janCode}`,
-                e,
-              );
-            }
-          }
-
-          console.log(
-            `[Generate] Keys AFTER split (Local):`,
-            Object.keys(localJanCodeToPhotos),
-          );
-        }
-      } else {
-        dispatch(set_drive_connection_status("disconnected"));
-      }
-
-      // 2. Group Photo Keys by Base JAN
-      const organizedJans = Object.keys(localJanCodeToPhotos);
-      const baseJanMap: Record<
-        string,
-        { key: string; subtype: string | null }[]
-      > = {};
-
-      organizedJans.forEach((key) => {
-        const [base, subtype] = key.includes(":")
-          ? key.split(":")
-          : [key, null];
-        if (!baseJanMap[base]) baseJanMap[base] = [];
-        baseJanMap[base].push({ key, subtype });
-      });
-
-      console.log(
-        `[Generate] Base JAN Map constructed:`,
-        JSON.stringify(baseJanMap, null, 2),
-      );
-
-      const candidates: CleanListingProposal[] = [];
-      const baseJanKeys = Object.entries(baseJanMap).filter(([baseJan]) => {
-        // 1. Skip if proposal already exists in drafts
-        if (listingCreation.proposals[baseJan]) return false;
-
-        // 2. Skip if no unlisted inventory items with qty > 0 exist for this JAN
-        const hasUnlistedInventory = Object.values(inventory.idToItem).some(
-          (item: any) =>
-            item.janCode === baseJan && !item.handle && item.qty > 0,
-        );
-
-        return hasUnlistedInventory;
-      });
-      const totalBaseJans = baseJanKeys.length;
-      let processedBase = 0;
-
-      if (totalBaseJans === 0) {
-        console.log(
-          "[Generate] All organized photo groups already have associated proposals. Nothing to generate.",
-        );
-      }
-
-      // 3. Iterate Base JANs
-      for (const [baseJan, photoGroups] of baseJanKeys) {
-        processedBase++;
-        dispatch(
-          set_scan_progress({
-            current: processedBase,
-            total: totalBaseJans,
-            message: `Generating proposal for ${baseJan}...`,
-            janCode: baseJan,
-          }),
-        );
-
-        // Find matching inventory items for BASE JAN
-        const inventoryItems: { id: string; item: Item }[] = [];
-
-        for (const [id, val] of Object.entries(inventory.idToItem)) {
-          const item = val as Item;
-          if (item.janCode === baseJan && !item.handle && item.qty > 0) {
-            inventoryItems.push({ id, item });
-          }
-        }
-        if (inventoryItems.length > 0) {
-          const firstItem = inventoryItems[0].item;
-          const inventoryIds = inventoryItems.map((x) => x.id); // All available items for this JAN
-
-          // Initial Title
-          let title = `[DRAFT] ${firstItem.description || "New Product"}`;
-          let bodyHtml = "<p><i>Generating description...</i></p>";
-
-          // --- Generate Description & Title ---
-          // We use photos from the FIRST group (or all groups?)
-          // Use the first 6 images from the combined set for description generation
-          try {
-            const tokenData = getStoredToken();
-            const accessToken = tokenData?.access_token || "";
-
-            const allImages = photoGroups.flatMap(
-              (pg) => localJanCodeToPhotos[pg.key] || [],
-            );
-            const imagesToUse = allImages.slice(0, 6);
-
-            if (imagesToUse.length > 0) {
-              console.log(
-                `[Generate] Generating description for ${baseJan} using ${imagesToUse.length} images...`,
-              );
-              const imagePromises = imagesToUse.map((img: any) => {
-                const url = img.baseUrl || img.productUrl;
-                return fetchImage(url, accessToken);
-              });
-              const imagesData = await Promise.all(imagePromises);
-
-              // Generate Description
-              const descPrompt =
-                getState().listingCreation.globalDescriptionPrompt ||
-                "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML.";
-              const genDesc = await imagePrompt(
-                descPrompt,
-                imagesData,
-                accessToken,
-              );
-              if (genDesc) {
-                bodyHtml = genDesc
-                  .replace(/```html/g, "")
-                  .replace(/```/g, "")
-                  .trim();
-                if (bodyHtml.indexOf("<") > -1)
-                  bodyHtml = bodyHtml.substring(bodyHtml.indexOf("<"));
-              }
-
-              // Generate Title
-              const titlePrompt = `Generate a concise, catchy product title for this product. 
-                        Product Category: Stationery
-                        Return ONLY the title text. No quotes.`;
-              const genTitle = await imagePrompt(
-                titlePrompt,
-                imagesData,
-                accessToken,
-              );
-              if (genTitle) {
-                title = genTitle.trim().replace(/^"|"$/g, "");
-              }
-            }
-          } catch (e) {
-            console.error(
-              `[Generate] Failed to generate description for ${baseJan}`,
-              e,
-            );
-            bodyHtml = `<p>Failed to generate description. ${e}</p>`;
-          }
-
-          // Construct Variants
-          // If we have multiple photo groups (subtypes), we create a variant for EACH.
-          // If we have single photo group (no subtype), we create one variant.
-
-          const variants: CleanListingVariant[] = [];
-          const allPhotoGroupIds: string[] = [];
-
-          // Sort groups to ensure deterministic order (e.g. "Blue", "Red")
-          photoGroups.sort((a, b) =>
-            (a.subtype || "").localeCompare(b.subtype || ""),
-          );
-
-          console.log(
-            `[Generate] Processing ${baseJan}. Photo Groups: ${photoGroups.length}. Subtypes: ${photoGroups.map((g) => g.subtype).join(", ")}`,
-          );
-
-          // Calculate Allocation (Removed: Computed in UI/Selectors)
-          // const totalQty = firstItem.qty || 0;
-          // ...
-
-          photoGroups.forEach((pg, idx) => {
-            allPhotoGroupIds.push(pg.key);
-
-            // Strategy:
-            // If we have explicit subtypes from photos, use them.
-            // If inventory has subtype, use it?
-            // Usually inventory is generic if we are splitting.
-
-            const optionValue = pg.subtype || firstItem.subtype || "Default";
-
-            // Allocation logic moved to UI derivation
-
-            // Determine Variant Image
-            // Prefer the SECOND image (index 1) as it is often the "Front" or "Detail"
-            // while index 0 might be a barcode or group shot.
-            const groupImages = localJanCodeToPhotos[pg.key] || [];
-            let selectedImage: string | undefined = undefined;
-
-            if (groupImages.length > 1) {
-              const img = groupImages[1];
-              selectedImage = img.baseUrl || img.productUrl;
-            } else if (groupImages.length === 1) {
-              const img = groupImages[0];
-              selectedImage = img.baseUrl || img.productUrl;
-            }
-
-            // Assign Inventory Items
-            // If we have multiple inventory items, we could distribute them?
-            // For now, assign ALL inventory items to the Proposal,
-            // and point the variants to the first available item ID (shared).
-            // The user must split them later if they are physically different items.
-
-            variants.push({
-              id: `${baseJan}:${optionValue}:${crypto.randomUUID().slice(0, 8)}`,
-              // itemId: inventoryIds[0], // Enriched by RootReducer
-              option1Value: optionValue,
-              photoGroupKey: pg.key,
-              // qty: undefined, // Calculated in UI
-              image: selectedImage,
-            });
-          });
-
-          // If we have inventory items BUT no photo groups (shouldn't happen if we iterate baseJanMap), skip.
-          // But baseJanMap comes from photos.
-
-          // Create Proposal
-          candidates.push({
-            janCode: baseJan, // Use Base JAN (Correct Semantics)
-            // inventoryItemIds: inventoryIds, // Enriched by RootReducer
-            photoGroupIds: allPhotoGroupIds,
-            title: title,
-            bodyHtml: bodyHtml,
-            productCategory: "Stationery",
-            vendor: "SPNSS Ltd.",
-            tags: [],
-            option1Name: "Subtype", // Default option name
-            variants: variants as any, // Cast to match CleanListingVariant
-            status: "draft",
-            listingOnlyImages: [],
-          });
-        } else {
-          console.log(
-            `[Generate] No inventory items found for Base JAN ${baseJan}. Skipping.`,
-          );
-        }
-
-        // Limit
-        if (candidates.length >= 1000) break;
-      }
-
-      // Dispatch
-      if (candidates.length > 0) {
-        dispatch(add_proposals(candidates));
-      } else {
-        console.log(
-          "No candidates found. Ensure photos are organized in the Photos tab and Inventory items exist.",
-        );
-      }
-    } catch (e) {
-      console.error("Generate proposals failed", e);
-    } finally {
-      dispatch(set_scanning(false));
-    }
-  };
-
 import { generateHandle } from "./handle-utils";
 
 export const approve_proposal_thunk =
   (janCode: string): AppThunk =>
   (dispatch, getState) => {
-    // 1. Mark as Approved (This triggers the rootReducer interceptor for logic)
     dispatch(approve_proposal({ janCode }));
-
-    // 2. Advance UI
-    // The interceptor handles removing the proposal and updating activeBatchJans.
-    // We just need to check the updated state to decide where to go.
-    // Note: Reactivity in Svelte components often handles navigation (as seen in ListingDetail),
-    // but explicit step advancement is good.
-
     const state = getState();
     const currentActive = state.listingCreation.activeBatchJans;
-
-    if (currentActive.length === 0) {
-      // Batch Complete
-      // Interceptor already dispatched complete_batch?
-      // Let's rely on component reactivity to detect empty batch.
-      return;
-    }
-
+    if (currentActive.length === 0) return;
     let nextIndex = state.listingCreation.currentStepIndex;
     if (nextIndex < 0) nextIndex = 0;
     if (nextIndex >= currentActive.length) nextIndex = 0;
@@ -1302,43 +867,27 @@ export const generate_descriptions_for_batch =
   (janCodes: string[]): AppThunk =>
   async (dispatch, getState) => {
     const state = getState();
-    // Use In-Memory Photos for generation
     const janToPhotos = state.photos?.janCodeToPhotos || {};
-
     let accessToken = "";
     try {
       const tokenData = getStoredToken();
-      if (tokenData) {
-        accessToken = tokenData.access_token;
-      }
+      if (tokenData) accessToken = tokenData.access_token;
     } catch (e) {
       console.error("Error reading access token", e);
-    }
-
-    if (!accessToken) {
-      console.warn(
-        "No Google Drive access token found. Attempting unauthenticated image fetch (requires public URLs).",
-      );
     }
 
     for (const janCode of janCodes) {
       const proposal = state.listingCreation.proposals[janCode];
       if (!proposal) continue;
-
-      // Skip if we already have a real description
       if (
         proposal.bodyHtml &&
         !proposal.bodyHtml.includes("Generated description from AI") &&
         proposal.bodyHtml.length > 50
-      ) {
+      )
         continue;
-      }
-
       const driveGroup = janToPhotos[janCode] || [];
       if (driveGroup.length === 0) continue;
-
       try {
-        // Notify UI
         dispatch(
           update_proposal_field({
             janCode,
@@ -1353,15 +902,8 @@ export const generate_descriptions_for_batch =
             value: "<p><i>Generating description with AI...</i></p>",
           }),
         );
-
-        // Take top 5 images
         const imagesToUse = driveGroup.slice(0, 5);
-
-        // Fetch images via API URL (best) or fallback
-        // fetchImage supports Drive URLs if token is present.
         const imagePromises = imagesToUse.map((f: any) => {
-          // MediaItem from photos-slice uses baseUrl. DriveFile uses apiUrl/thumbnailLink.
-          // We prioritize baseUrl as per MediaItem interface.
           const url = toGoogleDrivePublicImageUrl(
             f.baseUrl ||
               f.productUrl ||
@@ -1370,28 +912,19 @@ export const generate_descriptions_for_batch =
               f.thumbnailLink ||
               "",
           );
-          // Ensure we have a valid string. If no direct link, construct API link?
-          // google-drive.ts list function asks for these fields.
           return fetchImage(url, accessToken);
         });
-
         const imagesData = await Promise.all(imagePromises);
-
-        // Generate
         const defaultPrompt =
           state.listingCreation.globalDescriptionPrompt ||
           "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.";
         const prompt = proposal.descriptionPrompt || defaultPrompt;
-
         let description = await imagePrompt(prompt, imagesData, accessToken);
-
         if (description) {
-          // Clean up
           description = description.replace(/```html/g, "").replace(/```/g, "");
           const htmlStart = description.indexOf("<");
           if (htmlStart > -1) description = description.substring(htmlStart);
           description = description.trim();
-
           dispatch(
             update_proposal_field({
               janCode,
@@ -1427,8 +960,6 @@ export const regenerate_title =
     const state = getState();
     const proposal = state.listingCreation.proposals[janCode];
     if (!proposal) return;
-
-    // Persist prompt if provided (Both Local and Global)
     if (customPrompt) {
       dispatch(
         update_proposal_field({
@@ -1439,7 +970,6 @@ export const regenerate_title =
       );
       dispatch(set_global_prompts({ titlePrompt: customPrompt }));
     }
-
     dispatch(
       update_proposal_field({
         janCode,
@@ -1447,16 +977,10 @@ export const regenerate_title =
         value: true,
       }),
     );
-
     try {
       const defaultPrompt =
         state.listingCreation.globalTitlePrompt ||
-        `Generate a concise, catchy product title for this product. 
-        Current Title: ${proposal.title}
-        Vendor: ${proposal.vendor}
-        Product Category: ${proposal.productCategory}
-        Return ONLY the title text. No quotes.`;
-
+        `Generate a concise, catchy product title for this product. Return ONLY the title text. No quotes.`;
       dispatch(
         update_proposal_field({
           janCode,
@@ -1470,17 +994,13 @@ export const regenerate_title =
           field: "title",
           value: "Regenerating...",
         }),
-      ); // Visual Feedback
-
+      );
       const prompt = customPrompt || proposal.titlePrompt || defaultPrompt;
-
       const janToPhotos = state.photos?.janCodeToPhotos || {};
       const driveGroup = janToPhotos[janCode] || [];
       const token = getStoredToken();
       const accessToken = token?.access_token || "";
-
       let description = "";
-
       if (driveGroup.length > 0) {
         const imagesToUse = driveGroup.slice(0, 3);
         const imagePromises = imagesToUse.map((f: any) => {
@@ -1501,8 +1021,7 @@ export const regenerate_title =
         description =
           (await imagePrompt(prompt, [], accessToken, undefined)) || "";
       }
-
-      if (description) {
+      if (description)
         dispatch(
           update_proposal_field({
             janCode,
@@ -1510,10 +1029,8 @@ export const regenerate_title =
             value: description.trim().replace(/^"|"$/g, ""),
           }),
         );
-      }
     } catch (e: any) {
       console.error("Title generation failed", e);
-      alert(`Failed to regenerate title: ${e.message}`);
     } finally {
       dispatch(
         update_proposal_field({
@@ -1531,50 +1048,28 @@ export const regenerate_description =
     const state = getState();
     const proposal = state.listingCreation.proposals[janCode];
     if (!proposal) return;
-
-    // Persist prompt if provided (Global Only)
-    if (customPrompt) {
+    if (customPrompt)
       dispatch(set_global_prompts({ descriptionPrompt: customPrompt }));
-    }
-
     const janToPhotos = state.photos?.janCodeToPhotos || {};
     let allPhotos: any[] = [];
-
-    // Collect photos from all variants (including the primary JAN)
-    // The proposal itself has 'janCode', which corresponds to one variant/group usually.
-    // And 'variants' list contains ALL variants (including primary usually, or we ensure it).
-
-    // Iterate variants to find their JANs
     proposal.variants.forEach((v: ListingVariant) => {
-      // 1. Explicit Photo Group
-      if (v.photoGroupKey && janToPhotos[v.photoGroupKey]) {
+      if (v.photoGroupKey && janToPhotos[v.photoGroupKey])
         allPhotos.push(...janToPhotos[v.photoGroupKey]);
-      }
-
-      // 2. Inventory Item JAN
       const item = state.inventory.idToItem[v.itemId];
       if (item && item.janCode) {
         const photos = janToPhotos[item.janCode] || [];
         allPhotos = [...allPhotos, ...photos];
       }
     });
-
-    // 3. Proposal Photo Groups (e.g. Merged leftovers)
     if (proposal.photoGroupIds) {
       proposal.photoGroupIds.forEach((gid: string) => {
-        if (janToPhotos[gid]) {
-          allPhotos.push(...janToPhotos[gid]);
-        }
+        if (janToPhotos[gid]) allPhotos.push(...janToPhotos[gid]);
       });
     }
-
-    // Fallback: Check the proposal's own janCode just in case
     if (allPhotos.length === 0) {
       const photos = janToPhotos[proposal.janCode] || [];
       allPhotos = [...allPhotos, ...photos];
     }
-
-    // Deduplicate photos by ID or URL
     const seenUrls = new Set();
     allPhotos = allPhotos.filter((p) => {
       const url = p.baseUrl || p.thumbnailLink || p.productUrl;
@@ -1582,12 +1077,7 @@ export const regenerate_description =
       seenUrls.add(url);
       return true;
     });
-
-    if (allPhotos.length === 0) {
-      alert("No photos found for these items to generate description from.");
-      return;
-    }
-
+    if (allPhotos.length === 0) return;
     dispatch(
       update_proposal_field({
         janCode,
@@ -1602,11 +1092,9 @@ export const regenerate_description =
         value: "<p><i>Regenerating description...</i></p>",
       }),
     );
-
     try {
       const token = getStoredToken();
       const accessToken = token?.access_token || "";
-
       const imagesToUse = allPhotos.slice(0, 5);
       const imagePromises = imagesToUse.map((f: any) => {
         const url = toGoogleDrivePublicImageUrl(
@@ -1619,27 +1107,22 @@ export const regenerate_description =
         );
         return fetchImage(url, accessToken);
       });
-
       const imagesData = await Promise.all(imagePromises);
-
       const defaultPrompt =
         state.listingCreation.globalDescriptionPrompt ||
         "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML. Do not include markdown code blocks or conversational text.";
       const prompt = customPrompt || defaultPrompt;
-
       let description = await imagePrompt(
         prompt,
         imagesData,
         accessToken,
         undefined,
       );
-
       if (description) {
         description = description.replace(/```html/g, "").replace(/```/g, "");
         const htmlStart = description.indexOf("<");
         if (htmlStart > -1) description = description.substring(htmlStart);
         description = description.trim();
-
         dispatch(
           update_proposal_field({
             janCode,
@@ -1650,13 +1133,6 @@ export const regenerate_description =
       }
     } catch (e: any) {
       console.error(`Failed to regenerate description for ${janCode}`, e);
-      dispatch(
-        update_proposal_field({
-          janCode,
-          field: "bodyHtml",
-          value: `<p>Failed to generate description. Error: ${e.message}</p>`,
-        }),
-      );
     } finally {
       dispatch(
         update_proposal_field({
@@ -1684,28 +1160,17 @@ export const set_proposal_handle_thunk =
     const currentHandle =
       sourceProposal.handle ||
       generateHandle(sourceProposal.title || "", sourceProposal.janCode);
-
-    // No-op guard: avoid creating synthetic split proposals when the handle is unchanged.
-    // This can otherwise create hidden batch entries (same handle) and corrupt progress math.
-    if (currentHandle === newHandle) {
-      return;
-    }
-
-    // 1. Check for Merge Target (Active Proposal)
+    if (currentHandle === newHandle) return;
     const targetGroup = proposals.filter((p: ListingProposal) => {
       if (p.janCode === janCode) return false;
       const h = p.handle || generateHandle(p.title || "", p.janCode);
       return h === newHandle;
     });
-
     if (targetGroup.length > 0) {
-      // SCENARIO A: Target Exists (Draft Merge)
       const target = targetGroup[0] as ListingProposal;
       const isMultiVariant =
         sourceProposal.variants && sourceProposal.variants.length > 1;
-
       if (isMultiVariant && variantId) {
-        // Move just this variant.
         dispatch(
           move_variant({
             sourceJan: janCode,
@@ -1714,22 +1179,13 @@ export const set_proposal_handle_thunk =
           }),
         );
       } else {
-        // Update handle first. RootReducer will orchestrate the merge when it sees the collision.
         dispatch(
-          update_proposal_field({
-            janCode,
-            field: "handle",
-            value: newHandle,
-          }),
+          update_proposal_field({ janCode, field: "handle", value: newHandle }),
         );
       }
     } else {
-      // SCENARIO B: Check for Existing Listing (Store Persisted State)
       const existingListing = state.listings.handleToListing[newHandle];
-
       if (existingListing) {
-        // Merge with Existing Listing
-        // 1. Import Context (Title, Body, etc.) - Update Proposal to match existing "Truth"
         dispatch(
           update_proposal_field({
             janCode,
@@ -1772,13 +1228,10 @@ export const set_proposal_handle_thunk =
             value: existingListing.option1Name || "Option",
           }),
         );
-
-        // 2. Set Handle (This links them)
         const isMultiVariant =
           sourceProposal.variants && sourceProposal.variants.length > 1;
         if (isMultiVariant && variantId) {
           dispatch(split_variant({ janCode, variantId, newHandle }));
-          // Follow up synchronously
           dispatch(set_proposal_handle_thunk(variantId, undefined, newHandle));
           return;
         } else {
@@ -1790,19 +1243,13 @@ export const set_proposal_handle_thunk =
             }),
           );
         }
-
-        // 3. Import Existing Variants
-        // Dispatch the intent to import existing variants for this handle.
-        // The root reducer will intercept this, look up the items in inventory, and apply them.
         dispatch(import_existing_variants({ janCode, handle: newHandle }));
       } else {
-        // SCENARIO C: New Handle (Update or Split)
         const isMultiVariant =
           sourceProposal.variants && sourceProposal.variants.length > 1;
-
-        if (isMultiVariant && variantId) {
+        if (isMultiVariant && variantId)
           dispatch(split_variant({ janCode, variantId, newHandle }));
-        } else {
+        else
           dispatch(
             update_proposal_field({
               janCode,
@@ -1810,7 +1257,232 @@ export const set_proposal_handle_thunk =
               value: newHandle,
             }),
           );
-        }
       }
+    }
+  };
+
+export const generate_proposals =
+  (): AppThunk => async (dispatch, getState) => {
+    const currentState = getState().listingCreation;
+    const now = Date.now();
+    const lastUpdate = currentState.scanProgress?.lastUpdate || 0;
+    const isStalled = currentState.isScanning && now - lastUpdate > 30000;
+    if (currentState.isScanning && !isStalled) return;
+    dispatch(set_scanning(true));
+    dispatch(
+      set_scan_progress({
+        current: 0,
+        total: 100,
+        message: "Initializing...",
+        lastUpdate: Date.now(),
+      } as any),
+    );
+    try {
+      let { inventory, photos, listingCreation } = getState();
+      const tokenData = getStoredToken();
+      const localJanCodeToPhotos = { ...(photos.janCodeToPhotos || {}) };
+      if (tokenData) {
+        dispatch(set_drive_connection_status("connected"));
+        const accessToken = tokenData.access_token;
+        const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
+        const candidates = Object.entries(localJanCodeToPhotos).filter(
+          (entry): entry is [string, any[]] => {
+            const [key, images] = entry as [string, any[]];
+            if (key.includes(":") || images.length <= 2) return false;
+            return Object.values(inventory.idToItem).some(
+              (item: any) =>
+                item.janCode === key && !item.handle && item.qty > 0,
+            );
+          },
+        );
+        if (candidates.length > 0) {
+          let processedCount = 0;
+          const totalCandidates = candidates.length;
+          for (const [janCode, groupImages] of candidates) {
+            processedCount++;
+            dispatch(
+              set_scan_progress({
+                current: processedCount,
+                total: totalCandidates,
+                message: `Analyzing variants for ${janCode}...`,
+                janCode,
+              }),
+            );
+            try {
+              const imagesToScan = (groupImages as any[]).slice(0, 12);
+              const imagePromises = imagesToScan.map((img: any) =>
+                fetchImage(img.baseUrl || img.productUrl, accessToken),
+              );
+              const imagesData = await Promise.all(imagePromises);
+              const prompt = listingCreation.globalVariantPrompt;
+              const variants = await detectVariants(
+                imagesData,
+                accessToken,
+                apiKey,
+                prompt,
+              );
+              if (variants.length > 1) {
+                for (const v of variants) {
+                  const safeName = (v.name || "Variant").trim();
+                  const newJan = `${janCode}:${safeName}`;
+                  if (!localJanCodeToPhotos[newJan])
+                    localJanCodeToPhotos[newJan] = [];
+                  for (const idx of v.indices) {
+                    if (idx < imagesToScan.length) {
+                      const img = imagesToScan[idx];
+                      localJanCodeToPhotos[newJan].push(img);
+                      dispatch(
+                        categorize_photo({ janCode: newJan, photo: img }),
+                      );
+                      dispatch(
+                        uncategorize_photo({
+                          janCode: janCode,
+                          photoId: img.id,
+                        }),
+                      );
+                    }
+                  }
+                }
+                delete localJanCodeToPhotos[janCode];
+              }
+            } catch (e) {
+              console.error(
+                `[Generate] Failed variant analysis for ${janCode}`,
+                e,
+              );
+            }
+          }
+        }
+      } else {
+        dispatch(set_drive_connection_status("disconnected"));
+      }
+      const organizedJans = Object.keys(localJanCodeToPhotos);
+      const baseJanMap: Record<
+        string,
+        { key: string; subtype: string | null }[]
+      > = {};
+      organizedJans.forEach((key) => {
+        const [base, subtype] = key.includes(":")
+          ? key.split(":")
+          : [key, null];
+        if (!baseJanMap[base]) baseJanMap[base] = [];
+        baseJanMap[base].push({ key, subtype });
+      });
+      const candidateBaseJans = Object.entries(baseJanMap).filter(
+        ([baseJan]) => {
+          if (listingCreation.proposals[baseJan]) return false;
+          return Object.values(inventory.idToItem).some(
+            (item: any) =>
+              item.janCode === baseJan && !item.handle && item.qty > 0,
+          );
+        },
+      );
+      const totalBaseJans = candidateBaseJans.length;
+      let processedBase = 0;
+      const candidates: CleanListingProposal[] = [];
+      for (const [baseJan, photoGroups] of candidateBaseJans) {
+        processedBase++;
+        dispatch(
+          set_scan_progress({
+            current: processedBase,
+            total: totalBaseJans,
+            message: `Generating proposal for ${baseJan}...`,
+            janCode: baseJan,
+          }),
+        );
+        const inventoryItems: { id: string; item: Item }[] = [];
+        for (const [id, val] of Object.entries(inventory.idToItem)) {
+          const item = val as Item;
+          if (item.janCode === baseJan && !item.handle && item.qty > 0)
+            inventoryItems.push({ id, item });
+        }
+        if (inventoryItems.length > 0) {
+          const firstItem = inventoryItems[0].item;
+          let title = `[DRAFT] ${firstItem.description || "New Product"}`;
+          let bodyHtml = "<p><i>Generating description...</i></p>";
+          try {
+            const tokenData = getStoredToken();
+            const accessToken = tokenData?.access_token || "";
+            const allImages = photoGroups.flatMap(
+              (pg) => localJanCodeToPhotos[pg.key] || [],
+            );
+            const imagesToUse = allImages.slice(0, 6);
+            if (imagesToUse.length > 0) {
+              const imagePromises = imagesToUse.map((img: any) =>
+                fetchImage(img.baseUrl || img.productUrl, accessToken),
+              );
+              const imagesData = await Promise.all(imagePromises);
+              const descPrompt =
+                getState().listingCreation.globalDescriptionPrompt ||
+                "Write a playful product description for this product, formatted with HTML tags. Return ONLY the HTML.";
+              const genDesc = await imagePrompt(
+                descPrompt,
+                imagesData,
+                accessToken,
+              );
+              if (genDesc) {
+                bodyHtml = genDesc
+                  .replace(/```html/g, "")
+                  .replace(/```/g, "")
+                  .trim();
+                if (bodyHtml.indexOf("<") > -1)
+                  bodyHtml = bodyHtml.substring(bodyHtml.indexOf("<"));
+              }
+              const titlePrompt = `Generate a concise, catchy product title for this product. Product Category: Stationery. Return ONLY the title text. No quotes.`;
+              const genTitle = await imagePrompt(
+                titlePrompt,
+                imagesData,
+                accessToken,
+              );
+              if (genTitle) title = genTitle.trim().replace(/^"|"$/g, "");
+            }
+          } catch (e) {
+            console.error(`[Generate] Failed generation for ${baseJan}`, e);
+            bodyHtml = `<p>Failed to generate description. ${e}</p>`;
+          }
+          const variants: CleanListingVariant[] = [];
+          const allPhotoGroupIds: string[] = [];
+          photoGroups.sort((a, b) =>
+            (a.subtype || "").localeCompare(b.subtype || ""),
+          );
+          photoGroups.forEach((pg) => {
+            allPhotoGroupIds.push(pg.key);
+            const optionValue = pg.subtype || firstItem.subtype || "Default";
+            const groupImages = localJanCodeToPhotos[pg.key] || [];
+            let selectedImage: string | undefined = undefined;
+            if (groupImages.length > 1)
+              selectedImage =
+                groupImages[1].baseUrl || groupImages[1].productUrl;
+            else if (groupImages.length === 1)
+              selectedImage =
+                groupImages[0].baseUrl || groupImages[0].productUrl;
+            variants.push({
+              id: `${baseJan}:${optionValue}:${crypto.randomUUID().slice(0, 8)}`,
+              option1Value: optionValue,
+              photoGroupKey: pg.key,
+              image: selectedImage,
+            });
+          });
+          candidates.push({
+            janCode: baseJan,
+            photoGroupIds: allPhotoGroupIds,
+            title,
+            bodyHtml,
+            productCategory: "Stationery",
+            vendor: "SPNSS Ltd.",
+            tags: [],
+            option1Name: "Subtype",
+            variants: variants as any,
+            status: "draft",
+            listingOnlyImages: [],
+          });
+        }
+        if (candidates.length >= 1000) break;
+      }
+      if (candidates.length > 0) dispatch(add_proposals(candidates));
+    } catch (e) {
+      console.error("Generate proposals failed", e);
+    } finally {
+      dispatch(set_scanning(false));
     }
   };

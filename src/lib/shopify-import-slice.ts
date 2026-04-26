@@ -55,7 +55,7 @@ export interface ShopifyImportState {
   lastSeenProduct: LastSeenProduct | null;
 }
 
-const initialState: ShopifyImportState = {
+export const initialState: ShopifyImportState = {
   activeFile: null,
   step: "idle",
   headerRow: null,

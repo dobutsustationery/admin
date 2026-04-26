@@ -43,7 +43,7 @@ export type SyncQueueState = {
   lastUpdatedAtMs: number;
 };
 
-const initialState: SyncQueueState = {
+export const initialState: SyncQueueState = {
   eventsById: {},
   queuedCount: 0,
   processingCount: 0,
