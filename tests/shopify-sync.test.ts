@@ -8,11 +8,29 @@ import {
   shopify_order_cancelled,
   shopify_refund_created,
   shopify_order_reconciled,
+  rename_subtype,
   update_item,
   type Item,
 } from "$lib/inventory";
 
 describe("Shopify Sync Reducer", () => {
+  const withBroadcastMeta = <T extends { type: string }>(
+    action: T,
+    id: string,
+    ms: number,
+  ): T & { id: string; timestamp: { seconds: number; nanoseconds: number } } =>
+    ({
+      ...action,
+      id,
+      timestamp: {
+        seconds: Math.floor(ms / 1000),
+        nanoseconds: (ms % 1000) * 1_000_000,
+      },
+    }) as T & {
+      id: string;
+      timestamp: { seconds: number; nanoseconds: number };
+    };
+
   const testItem: Item = {
     janCode: "4542804115635",
     subtype: "Silver",
@@ -322,6 +340,177 @@ describe("Shopify Sync Reducer", () => {
 
     expect(state.idToItem[itemKey].shipped).toBe(3);
     expect(state.orderIdToOrder[orderID].items).toEqual([{ itemKey, qty: 3 }]);
+  });
+
+  it("reconciles an old Shopify SKU to the current inventory key after subtype retyping", () => {
+    const janCode = "4901681382316";
+    const originalKey = makeInventoryItemKey(janCode, "");
+    const currentKey = makeInventoryItemKey(janCode, "Standard");
+    const t0 = Date.parse("2024-01-01T00:00:00Z");
+    const t10 = Date.parse("2024-01-01T00:00:10Z");
+    const t30 = Date.parse("2024-01-01T00:00:30Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: originalKey,
+          item: {
+            ...testItem,
+            janCode,
+            subtype: "",
+            shipped: 0,
+          },
+        }),
+        "create-original",
+        t0,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        rename_subtype({ itemKey: originalKey, subtype: "Standard" }),
+        "rename-standard",
+        t10,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_reconciled({
+          raw: {
+            id: "late-reconcile",
+            created_at: "2024-01-01T00:00:05Z",
+            updated_at: "2024-01-01T00:00:30Z",
+            line_items: [{ id: "li-old", sku: originalKey, quantity: 2 }],
+          },
+          topic: "reconcile",
+        }),
+        "reconcile-old-order",
+        t30,
+      ),
+    );
+
+    expect(state.idToItem[originalKey]).toBeUndefined();
+    expect(state.idToItem[currentKey].shipped).toBe(2);
+    expect(
+      state.keyIdentity?.currentKeyByEntityId[`create-original:${originalKey}`],
+    ).toBe(currentKey);
+    expect(state.orderIdToOrder["shopify:late-reconcile"].items).toEqual([
+      { itemKey: currentKey, qty: 2 },
+    ]);
+    expect(
+      state.orderIdToOrder["shopify:late-reconcile"].shopifyFacts?.lines[
+        "li-old"
+      ].itemKey,
+    ).toBe(currentKey);
+    expect(
+      state.orderIdToOrder["shopify:late-reconcile"].shopifyFacts?.lines[
+        "li-old"
+      ].entityId,
+    ).toBe(`create-original:${originalKey}`);
+    expect(state.shopifyExceptions?.["shopify:late-reconcile"]).toBeUndefined();
+  });
+
+  it("resolves chained renames and key reuse using the order's historical time", () => {
+    const janCode = "CHAINED-RENAME";
+    const keyA = makeInventoryItemKey(janCode, "");
+    const keyB = makeInventoryItemKey(janCode, "B");
+    const keyC = makeInventoryItemKey(janCode, "C");
+    const t0 = Date.parse("2024-02-01T00:00:00Z");
+    const t10 = Date.parse("2024-02-01T00:00:10Z");
+    const t20 = Date.parse("2024-02-01T00:00:20Z");
+    const t30 = Date.parse("2024-02-01T00:00:30Z");
+    const t40 = Date.parse("2024-02-01T00:00:40Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: keyA,
+          item: { ...testItem, janCode, subtype: "", shipped: 0 },
+        }),
+        "create-a",
+        t0,
+      ),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        rename_subtype({ itemKey: keyA, subtype: "B" }),
+        "a-b",
+        t10,
+      ),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        rename_subtype({ itemKey: keyB, subtype: "C" }),
+        "b-c",
+        t20,
+      ),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        update_item({
+          id: keyA,
+          item: {
+            ...testItem,
+            janCode,
+            subtype: "",
+            description: "Reused A",
+            shipped: 0,
+          },
+        }),
+        "reuse-a",
+        t30,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_reconciled({
+          raw: {
+            id: "before-rename",
+            created_at: "2024-02-01T00:00:05Z",
+            updated_at: "2024-02-01T00:00:40Z",
+            line_items: [{ id: "li-before", sku: keyA, quantity: 1 }],
+          },
+          topic: "reconcile",
+        }),
+        "reconcile-before",
+        t40,
+      ),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_reconciled({
+          raw: {
+            id: "after-reuse",
+            created_at: "2024-02-01T00:00:35Z",
+            updated_at: "2024-02-01T00:00:41Z",
+            line_items: [{ id: "li-after", sku: keyA, quantity: 3 }],
+          },
+          topic: "reconcile",
+        }),
+        "reconcile-after",
+        t40 + 1000,
+      ),
+    );
+
+    expect(state.idToItem[keyC].shipped).toBe(1);
+    expect(state.idToItem[keyA].shipped).toBe(3);
+    expect(state.orderIdToOrder["shopify:before-rename"].items).toEqual([
+      { itemKey: keyC, qty: 1 },
+    ]);
+    expect(state.orderIdToOrder["shopify:after-reuse"].items).toEqual([
+      { itemKey: keyA, qty: 3 },
+    ]);
   });
 
   it("ignores actions older than reconciliation", () => {

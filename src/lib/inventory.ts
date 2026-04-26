@@ -38,6 +38,8 @@ export interface ShopifyLineFact {
   placed: number;
   cancelled: number;
   refunded: number;
+  rawSku?: string;
+  entityId?: InventoryEntityId;
 }
 export interface OrderInfo {
   date: Date;
@@ -54,6 +56,7 @@ export interface OrderInfo {
 export interface InventoryState {
   idToItem: { [key: string]: Item };
   idToHistory: { [key: string]: { date: string; desc: string; val: number }[] };
+  keyIdentity?: InventoryKeyIdentityState;
   archivedInventoryState: { [key: string]: InventoryState };
   archivedInventoryDate: { [key: string]: string };
   hiddenInventoryState: { [key: string]: InventoryState };
@@ -63,6 +66,23 @@ export interface InventoryState {
   hiddenExceptions?: { [key: string]: boolean };
   shopifyExceptions?: { [key: string]: string[] };
   initialized: boolean;
+}
+
+export type InventoryEntityId = string;
+
+export interface KeyBindingInterval {
+  key: InventoryItemKey;
+  entityId: InventoryEntityId;
+  validFromMs: number;
+  validToMs?: number;
+  openedByActionType: string;
+  closedByActionType?: string;
+}
+
+export interface InventoryKeyIdentityState {
+  intervalsByKey: Record<InventoryItemKey, KeyBindingInterval[]>;
+  currentKeyByEntityId: Record<InventoryEntityId, InventoryItemKey>;
+  entityIdByCurrentKey: Record<InventoryItemKey, InventoryEntityId>;
 }
 
 export const inventory_synced = createAction("inventory_synced");
@@ -193,6 +213,247 @@ function getTimestampMs(timestamp: any): number {
   return 0;
 }
 
+const createEmptyKeyIdentityState = (): InventoryKeyIdentityState => ({
+  intervalsByKey: {},
+  currentKeyByEntityId: {},
+  entityIdByCurrentKey: {},
+});
+
+const ensureKeyIdentityState = (
+  state: InventoryState,
+): InventoryKeyIdentityState => {
+  if (!state.keyIdentity) {
+    state.keyIdentity = createEmptyKeyIdentityState();
+  }
+  state.keyIdentity.intervalsByKey ||= {};
+  state.keyIdentity.currentKeyByEntityId ||= {};
+  state.keyIdentity.entityIdByCurrentKey ||= {};
+  return state.keyIdentity;
+};
+
+const cloneKeyIdentityState = (
+  state: InventoryKeyIdentityState | undefined,
+): InventoryKeyIdentityState => ({
+  intervalsByKey: Object.fromEntries(
+    Object.entries(state?.intervalsByKey || {}).map(([key, intervals]) => [
+      key,
+      intervals.map((interval) => ({ ...interval })),
+    ]),
+  ) as Record<InventoryItemKey, KeyBindingInterval[]>,
+  currentKeyByEntityId: { ...(state?.currentKeyByEntityId || {}) },
+  entityIdByCurrentKey: { ...(state?.entityIdByCurrentKey || {}) },
+});
+
+const actionDocIdForEntity = (
+  actionType: string,
+  actionDocId: string | undefined,
+  atMs: number,
+  key: InventoryItemKey,
+): string => actionDocId || `local:${actionType}:${atMs}:${key}`;
+
+const makeInventoryEntityId = (
+  creatingActionDocId: string,
+  originalInventoryKey: InventoryItemKey,
+): InventoryEntityId => `${creatingActionDocId}:${originalInventoryKey}`;
+
+const findBindingIntervalAt = (
+  intervals: KeyBindingInterval[] | undefined,
+  atMs: number,
+): KeyBindingInterval | undefined => {
+  if (!intervals?.length) return undefined;
+  let low = 0;
+  let high = intervals.length - 1;
+  let candidate: KeyBindingInterval | undefined;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const interval = intervals[mid];
+    if (interval.validFromMs <= atMs) {
+      candidate = interval;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  if (
+    candidate &&
+    candidate.validFromMs <= atMs &&
+    (candidate.validToMs === undefined || atMs < candidate.validToMs)
+  ) {
+    return candidate;
+  }
+
+  return undefined;
+};
+
+const findActiveBindingInterval = (
+  intervals: KeyBindingInterval[] | undefined,
+  entityId?: InventoryEntityId,
+): KeyBindingInterval | undefined => {
+  if (!intervals?.length) return undefined;
+  for (let i = intervals.length - 1; i >= 0; i -= 1) {
+    const interval = intervals[i];
+    if (
+      interval.validToMs === undefined &&
+      (!entityId || interval.entityId === entityId)
+    ) {
+      return interval;
+    }
+  }
+  return undefined;
+};
+
+const bindNewInventoryEntity = (
+  state: InventoryState,
+  rawKey: string,
+  atMs: number,
+  actionType: string,
+  actionDocId?: string,
+): InventoryEntityId => {
+  const identity = ensureKeyIdentityState(state);
+  const key = canonicalizeInventoryItemKey(rawKey);
+  const existingEntityId = identity.entityIdByCurrentKey[key];
+  if (existingEntityId) return existingEntityId;
+
+  const creatingActionDocId = actionDocIdForEntity(
+    actionType,
+    actionDocId,
+    atMs,
+    key,
+  );
+  const entityId = makeInventoryEntityId(creatingActionDocId, key);
+  if (!identity.intervalsByKey[key]) identity.intervalsByKey[key] = [];
+  identity.intervalsByKey[key].push({
+    key,
+    entityId,
+    validFromMs: atMs,
+    openedByActionType: actionType,
+  });
+  identity.currentKeyByEntityId[entityId] = key;
+  identity.entityIdByCurrentKey[key] = entityId;
+  return entityId;
+};
+
+const currentEntityIdsForKey = (
+  identity: InventoryKeyIdentityState,
+  key: InventoryItemKey,
+): InventoryEntityId[] => {
+  const ids = new Set<InventoryEntityId>();
+  const direct = identity.entityIdByCurrentKey[key];
+  if (direct) ids.add(direct);
+  for (const [entityId, currentKey] of Object.entries(
+    identity.currentKeyByEntityId,
+  )) {
+    if (currentKey === key) ids.add(entityId);
+  }
+  return [...ids];
+};
+
+const renameInventoryEntityKey = (
+  state: InventoryState,
+  rawOldKey: string,
+  rawNewKey: string,
+  atMs: number,
+  actionType: string,
+): void => {
+  const oldKey = canonicalizeInventoryItemKey(rawOldKey);
+  const newKey = canonicalizeInventoryItemKey(rawNewKey);
+  if (oldKey === newKey) return;
+
+  const identity = ensureKeyIdentityState(state);
+  let entityIds = currentEntityIdsForKey(identity, oldKey);
+  if (entityIds.length === 0) {
+    const historicalInterval = findBindingIntervalAt(
+      identity.intervalsByKey[oldKey],
+      atMs,
+    );
+    if (historicalInterval) {
+      entityIds = [historicalInterval.entityId];
+    }
+  }
+  if (entityIds.length === 0) {
+    entityIds = [
+      bindNewInventoryEntity(state, oldKey, 0, `${actionType}:backfill`),
+    ];
+  }
+
+  for (const entityId of entityIds) {
+    const activeOldInterval = findActiveBindingInterval(
+      identity.intervalsByKey[oldKey],
+      entityId,
+    );
+    if (activeOldInterval) {
+      activeOldInterval.validToMs = atMs;
+      activeOldInterval.closedByActionType = actionType;
+    }
+  }
+
+  const newKeyHasActiveOwner = !!findActiveBindingInterval(
+    identity.intervalsByKey[newKey],
+  );
+  if (!newKeyHasActiveOwner) {
+    if (!identity.intervalsByKey[newKey]) identity.intervalsByKey[newKey] = [];
+    for (const entityId of entityIds) {
+      identity.intervalsByKey[newKey].push({
+        key: newKey,
+        entityId,
+        validFromMs: atMs,
+        openedByActionType: actionType,
+      });
+    }
+    identity.entityIdByCurrentKey[newKey] = entityIds[0];
+  }
+
+  for (const entityId of entityIds) {
+    identity.currentKeyByEntityId[entityId] = newKey;
+  }
+  delete identity.entityIdByCurrentKey[oldKey];
+};
+
+const closeInventoryEntityKey = (
+  state: InventoryState,
+  rawKey: string,
+  atMs: number,
+  actionType: string,
+): void => {
+  const key = canonicalizeInventoryItemKey(rawKey);
+  const identity = ensureKeyIdentityState(state);
+  const entityIds = currentEntityIdsForKey(identity, key);
+  for (const entityId of entityIds) {
+    const activeInterval = findActiveBindingInterval(
+      identity.intervalsByKey[key],
+      entityId,
+    );
+    if (activeInterval) {
+      activeInterval.validToMs = atMs;
+      activeInterval.closedByActionType = actionType;
+    }
+    delete identity.currentKeyByEntityId[entityId];
+  }
+  delete identity.entityIdByCurrentKey[key];
+};
+
+export const resolveHistoricalInventoryKey = (
+  state: InventoryState,
+  rawKey: string,
+  effectiveAtMs: number,
+): { itemKey: InventoryItemKey; entityId?: InventoryEntityId } => {
+  const key = canonicalizeInventoryItemKey(rawKey);
+  const identity = ensureKeyIdentityState(state);
+  const interval = findBindingIntervalAt(
+    identity.intervalsByKey[key],
+    effectiveAtMs,
+  );
+  if (!interval) return { itemKey: key };
+
+  const currentKey = identity.currentKeyByEntityId[interval.entityId];
+  return {
+    itemKey: currentKey ? canonicalizeInventoryItemKey(currentKey) : key,
+    entityId: interval.entityId,
+  };
+};
+
 export const split_inventory_item = createAction<{
   sourceId: InventoryItemKey;
   splits: { newId: InventoryItemKey; qty: number; subtype: string }[];
@@ -228,6 +489,8 @@ function applyInventoryUpdate(
   id: string,
   item: Partial<Item>,
   timestamp: any,
+  actionType = "update_item",
+  actionDocId?: string,
 ) {
   if (!id) {
     console.error(
@@ -297,6 +560,7 @@ function applyInventoryUpdate(
   }
 
   const existingItem = state.idToItem[id];
+  const isNewItem = !existingItem;
   const historyEntries: { date: string; desc: string; val: number }[] = [];
 
   // 1. Detect Changes
@@ -417,6 +681,10 @@ function applyInventoryUpdate(
     state.idToItem[id].shipped = 0;
   }
 
+  if (isNewItem) {
+    bindNewInventoryEntity(state, id, val, actionType, actionDocId);
+  }
+
   // 3. Push History
   // Final check before push
   if (!state.idToHistory[id]) {
@@ -440,6 +708,7 @@ function applyInventoryUpdate(
 export const initialState: InventoryState = {
   idToItem: {},
   idToHistory: {},
+  keyIdentity: createEmptyKeyIdentityState(),
   orderIdToOrder: {},
   archivedInventoryState: {},
   archivedInventoryDate: {},
@@ -491,6 +760,73 @@ function mapSkuToItemKey(
   return (normalizedSku as InventoryItemKey) || null;
 }
 
+function getOrderFactEffectiveAtMs(rawOrder: any, actionTimestamp: number) {
+  const parsed = Date.parse(
+    rawOrder.processed_at || rawOrder.created_at || rawOrder.updated_at || "",
+  );
+  return Number.isFinite(parsed) ? parsed : actionTimestamp;
+}
+
+function resolveLineItemInventoryKey(
+  state: InventoryState,
+  lineItem: any,
+  effectiveAtMs: number,
+): {
+  itemKey: InventoryItemKey | null;
+  rawSku: string;
+  entityId?: InventoryEntityId;
+} {
+  const rawItemKey = mapSkuToItemKey(lineItem.sku, lineItem);
+  if (!rawItemKey) {
+    return { itemKey: null, rawSku: String(lineItem.sku || "") };
+  }
+  const resolved = resolveHistoricalInventoryKey(
+    state,
+    rawItemKey,
+    effectiveAtMs,
+  );
+  return {
+    itemKey: resolved.itemKey,
+    rawSku: String(lineItem.sku || rawItemKey),
+    entityId: resolved.entityId,
+  };
+}
+
+function rewriteOrderItemKeyReferences(
+  state: InventoryState,
+  oldKey: InventoryItemKey,
+  newKey: InventoryItemKey,
+) {
+  Object.values(state.orderIdToOrder).forEach((order) => {
+    let movedQty = 0;
+    const nextItems: LineItem[] = [];
+    for (const line of order.items) {
+      if (line.itemKey === oldKey) {
+        movedQty += line.qty;
+      } else {
+        nextItems.push(line);
+      }
+    }
+    if (movedQty > 0) {
+      const existing = nextItems.find((line) => line.itemKey === newKey);
+      if (existing) {
+        existing.qty += movedQty;
+      } else {
+        nextItems.push({ itemKey: newKey, qty: movedQty });
+      }
+    }
+    order.items = nextItems;
+
+    if (order.shopifyFacts?.lines) {
+      for (const fact of Object.values(order.shopifyFacts.lines)) {
+        if (fact.itemKey === oldKey) {
+          fact.itemKey = newKey;
+        }
+      }
+    }
+  });
+}
+
 function getOrCreateOrder(
   state: InventoryState,
   orderID: string,
@@ -530,6 +866,7 @@ export const inventory = createReducer(initialState, (r) => {
     const shopifyTimestamp = Date.parse(
       rawOrder.created_at || rawOrder.updated_at,
     );
+    const effectiveAtMs = getOrderFactEffectiveAtMs(rawOrder, actionTimestamp);
     const order = getOrCreateOrder(state, orderID, rawOrder, actionTimestamp);
 
     const isReconciledLater =
@@ -538,7 +875,11 @@ export const inventory = createReducer(initialState, (r) => {
 
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
-      const itemKey = mapSkuToItemKey(li.sku, li);
+      const { itemKey, rawSku, entityId } = resolveLineItemInventoryKey(
+        state,
+        li,
+        effectiveAtMs,
+      );
       if (!itemKey) {
         if (!state.shopifyExceptions) state.shopifyExceptions = {};
         if (!state.shopifyExceptions[orderID])
@@ -558,9 +899,14 @@ export const inventory = createReducer(initialState, (r) => {
           placed: 0,
           cancelled: 0,
           refunded: 0,
+          rawSku,
+          entityId,
         };
       }
       const fact = order.shopifyFacts!.lines[lineItemID];
+      fact.itemKey = canonicalKey;
+      fact.rawSku ||= rawSku;
+      fact.entityId ||= entityId;
       const delta = qty - fact.placed;
 
       // Always update facts so they reflect the latest known state from this action
@@ -692,6 +1038,7 @@ export const inventory = createReducer(initialState, (r) => {
     const order = getOrCreateOrder(state, orderID, rawOrder, actionTimestamp);
 
     const timestamp = Date.parse(rawOrder.updated_at || rawOrder.created_at);
+    const effectiveAtMs = getOrderFactEffectiveAtMs(rawOrder, actionTimestamp);
 
     if (
       order.shopifyFacts!.reconciledTimestamp &&
@@ -710,9 +1057,13 @@ export const inventory = createReducer(initialState, (r) => {
     const itemQtyMap: Record<string, number> = {};
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
-      const key = mapSkuToItemKey(li.sku, li);
-      if (key) {
-        const canonicalKey = canonicalizeInventoryItemKey(key);
+      const { itemKey, rawSku, entityId } = resolveLineItemInventoryKey(
+        state,
+        li,
+        effectiveAtMs,
+      );
+      if (itemKey) {
+        const canonicalKey = canonicalizeInventoryItemKey(itemKey);
         const currentQty = rawOrder.cancelled_at
           ? 0
           : li.quantity - (li.refund_quantity || 0);
@@ -725,9 +1076,14 @@ export const inventory = createReducer(initialState, (r) => {
             placed: li.quantity,
             cancelled: rawOrder.cancelled_at ? li.quantity : 0,
             refunded: li.refund_quantity || 0,
+            rawSku,
+            entityId,
           };
         } else {
           const fact = order.shopifyFacts!.lines[li.id];
+          fact.itemKey = canonicalKey;
+          fact.rawSku ||= rawSku;
+          fact.entityId ||= entityId;
           fact.placed = Math.max(fact.placed, li.quantity);
           if (rawOrder.cancelled_at) {
             fact.cancelled = Math.max(fact.cancelled, li.quantity);
@@ -832,6 +1188,8 @@ export const inventory = createReducer(initialState, (r) => {
       action.payload.id,
       action.payload.item,
       (action as any).timestamp,
+      action.type,
+      (action as any).id,
     );
   });
   r.addCase(update_field, (state, action) => {
@@ -877,15 +1235,19 @@ export const inventory = createReducer(initialState, (r) => {
           };
         }
 
-        // Update orders
-        for (const orderID in state.orderIdToOrder) {
-          const existingItems = state.orderIdToOrder[orderID].items.filter(
-            (i) => i.itemKey === itemKey,
-          );
-          for (const item of existingItems) {
-            item.itemKey = mergeItemKey;
-          }
-        }
+        // Update order references and temporal key identity.
+        rewriteOrderItemKeyReferences(
+          state,
+          itemKey as InventoryItemKey,
+          mergeItemKey,
+        );
+        renameInventoryEntityKey(
+          state,
+          itemKey,
+          mergeItemKey,
+          getTimestampMs((action as any).timestamp),
+          action.type,
+        );
 
         // Merge history
         const oldHistory = state.idToHistory[itemKey] || [];
@@ -1200,15 +1562,19 @@ export const inventory = createReducer(initialState, (r) => {
           subtype,
         };
       }
-      // find all orders which refer to the itemKey and point at the new itemKey
-      for (const orderID in state.orderIdToOrder) {
-        const existingItem = state.orderIdToOrder[orderID].items.filter(
-          (i) => i.itemKey === itemKey,
-        );
-        for (let i = 0; i < existingItem.length; i++) {
-          existingItem[i].itemKey = mergeItemKey;
-        }
-      }
+      // Find all order references to the itemKey and point them at the new key.
+      rewriteOrderItemKeyReferences(
+        state,
+        itemKey as InventoryItemKey,
+        mergeItemKey,
+      );
+      renameInventoryEntityKey(
+        state,
+        itemKey,
+        mergeItemKey,
+        getTimestampMs((action as any).timestamp),
+        action.type,
+      );
 
       // Merge history: Copy old history to new key
       const oldHistory = state.idToHistory[itemKey] || [];
@@ -1325,26 +1691,8 @@ export const inventory = createReducer(initialState, (r) => {
     }
 
     // Rewrite order line items and consolidate duplicates.
-    Object.values(state.orderIdToOrder).forEach((order) => {
-      let movedQty = 0;
-      const nextItems: LineItem[] = [];
-      for (const line of order.items) {
-        if (line.itemKey === oldKey) {
-          movedQty += line.qty;
-        } else {
-          nextItems.push(line);
-        }
-      }
-      if (movedQty > 0) {
-        const existing = nextItems.find((line) => line.itemKey === newKey);
-        if (existing) {
-          existing.qty += movedQty;
-        } else {
-          nextItems.push({ itemKey: newKey, qty: movedQty });
-        }
-      }
-      order.items = nextItems;
-    });
+    rewriteOrderItemKeyReferences(state, oldKey, newKey);
+    renameInventoryEntityKey(state, oldKey, newKey, val, action.type);
 
     if (!state.idToHistory[newKey]) {
       state.idToHistory[newKey] = [];
@@ -1389,6 +1737,7 @@ export const inventory = createReducer(initialState, (r) => {
     const archive = (state.archivedInventoryState[archiveName] = {
       idToItem: { ...state.idToItem },
       idToHistory: { ...state.idToHistory },
+      keyIdentity: cloneKeyIdentityState(state.keyIdentity),
       orderIdToOrder: { ...state.orderIdToOrder },
       salesEvents: { ...state.salesEvents },
       archivedInventoryDate: { ...state.archivedInventoryDate },
@@ -1568,10 +1917,18 @@ export const inventory = createReducer(initialState, (r) => {
         desc: `Split from ${sourceId} (${split.qty})`,
         val,
       });
+      bindNewInventoryEntity(
+        state,
+        split.newId,
+        val,
+        action.type,
+        (action as any).id,
+      );
     });
 
     // 3. Cleanup Source Item if empty
     if (sourceItem.qty <= 0) {
+      closeInventoryEntityKey(state, sourceId, val, action.type);
       delete state.idToItem[sourceId];
     }
   });
@@ -1581,7 +1938,14 @@ export const inventory = createReducer(initialState, (r) => {
     const timestamp = (action as any).timestamp;
 
     updates.forEach((update) => {
-      applyInventoryUpdate(state, update.id, update.item, timestamp);
+      applyInventoryUpdate(
+        state,
+        update.id,
+        update.item,
+        timestamp,
+        action.type,
+        (action as any).id,
+      );
     });
   });
 });
