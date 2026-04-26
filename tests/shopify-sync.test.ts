@@ -9,6 +9,7 @@ import {
   shopify_refund_created,
   shopify_order_reconciled,
   rename_subtype,
+  retype_item,
   update_item,
   type Item,
 } from "$lib/inventory";
@@ -552,5 +553,215 @@ describe("Shopify Sync Reducer", () => {
 
     expect(state.idToItem[itemKey].shipped).toBe(3); // Should NOT change to 5 or anything else
     expect(state.orderIdToOrder[orderID].items[0].qty).toBe(3);
+  });
+
+  it("preserves retype_item correction across later shopify reconciliation", () => {
+    const keyA = makeInventoryItemKey("JAN1", "");
+    const keyB = makeInventoryItemKey("JAN2", "");
+    const t0 = Date.parse("2024-03-01T00:00:00Z");
+    const t10 = Date.parse("2024-03-01T00:00:10Z");
+    const t20 = Date.parse("2024-03-01T00:00:20Z");
+    const t30 = Date.parse("2024-03-01T00:00:30Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: keyA,
+          item: { ...testItem, janCode: "JAN1", subtype: "" },
+        }),
+        "create-a",
+        t0,
+      ),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        update_item({
+          id: keyB,
+          item: { ...testItem, janCode: "JAN2", subtype: "" },
+        }),
+        "create-b",
+        t0,
+      ),
+    );
+
+    const orderID = "shopify:order1";
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_created({
+          raw: {
+            id: "order1",
+            created_at: "2024-03-01T00:00:05Z",
+            line_items: [{ id: "li1", sku: "JAN1", quantity: 1 }],
+          },
+          topic: "orders/create",
+        }),
+        "shopify-create",
+        t10,
+      ),
+    );
+
+    expect(state.idToItem[keyA].shipped).toBe(1);
+    expect(state.idToItem[keyB].shipped).toBe(0);
+
+    // Now retype the order to JAN2
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        retype_item({
+          orderID,
+          itemKey: keyA,
+          janCode: "JAN2",
+          subtype: "",
+          qty: 1,
+        }),
+        "retype-to-b",
+        t20,
+      ),
+    );
+
+    expect(state.idToItem[keyA].shipped).toBe(0);
+    expect(state.idToItem[keyB].shipped).toBe(1);
+    expect(state.orderIdToOrder[orderID].items).toEqual([
+      { itemKey: keyB, qty: 1 },
+    ]);
+
+    // Now reconcile with Shopify payload which STILL says JAN1
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_reconciled({
+          raw: {
+            id: "order1",
+            created_at: "2024-03-01T00:00:05Z",
+            updated_at: "2024-03-01T00:00:25Z",
+            line_items: [{ id: "li1", sku: "JAN1", quantity: 1 }],
+          },
+          topic: "reconcile",
+        }),
+        "shopify-reconcile",
+        t30,
+      ),
+    );
+
+    expect(state.idToItem[keyA].shipped).toBe(0);
+    expect(state.idToItem[keyB].shipped).toBe(1);
+    expect(state.orderIdToOrder[orderID].items).toEqual([
+      { itemKey: keyB, qty: 1 },
+    ]);
+  });
+
+  it("falls back to exact current key lookup if no historical binding interval exists", () => {
+    const keyA = makeInventoryItemKey("JAN-FALLBACK", "");
+    const t10 = Date.parse("2024-04-01T00:00:10Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: keyA,
+          item: { ...testItem, janCode: "JAN-FALLBACK", subtype: "" },
+        }),
+        "create-a",
+        t10, // Created at t10
+      ),
+    );
+
+    // Order created at t0 (BEFORE item was created in system)
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_created({
+          raw: {
+            id: "order-early",
+            created_at: "2024-04-01T00:00:00Z",
+            line_items: [{ id: "li1", sku: "JAN-FALLBACK", quantity: 1 }],
+          },
+          topic: "orders/create",
+        }),
+        "shopify-create",
+        t10 + 1000,
+      ),
+    );
+
+    // Should still resolve to keyA because it exists NOW and has no conflicting history
+    expect(state.idToItem[keyA].shipped).toBe(1);
+    expect(state.shopifyExceptions?.["shopify:order-early"]).toBeUndefined();
+  });
+
+  it("applies refund to the correct current key after a rename", () => {
+    const keyA = makeInventoryItemKey("JAN-REFUND", "");
+    const keyB = makeInventoryItemKey("JAN-REFUND", "Renamed");
+    const t0 = Date.parse("2024-05-01T00:00:00Z");
+    const t10 = Date.parse("2024-05-01T00:00:10Z");
+    const t20 = Date.parse("2024-05-01T00:00:20Z");
+    const t30 = Date.parse("2024-05-01T00:00:30Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: keyA,
+          item: { ...testItem, janCode: "JAN-REFUND", subtype: "" },
+        }),
+        "create-a",
+        t0,
+      ),
+    );
+
+    const orderID = "shopify:order-refund";
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_created({
+          raw: {
+            id: "order-refund",
+            created_at: "2024-05-01T00:00:05Z",
+            line_items: [{ id: "li1", sku: "JAN-REFUND", quantity: 5 }],
+          },
+          topic: "orders/create",
+        }),
+        "shopify-create",
+        t10,
+      ),
+    );
+
+    expect(state.idToItem[keyA].shipped).toBe(5);
+
+    // Rename A -> B
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        rename_subtype({ itemKey: keyA, subtype: "Renamed" }),
+        "rename-a-b",
+        t20,
+      ),
+    );
+
+    expect(state.idToItem[keyA]).toBeUndefined();
+    expect(state.idToItem[keyB].shipped).toBe(5);
+
+    // Refund 2 items
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_refund_created({
+          raw: {
+            id: "refund1",
+            order_id: "order-refund",
+            created_at: "2024-05-01T00:00:25Z",
+            refund_line_items: [{ line_item_id: "li1", quantity: 2 }],
+          },
+          topic: "refunds/create",
+        }),
+        "shopify-refund",
+        t30,
+      ),
+    );
+
+    // Net shipped should be 5 - 2 = 3 on keyB
+    expect(state.idToItem[keyB].shipped).toBe(3);
   });
 });
