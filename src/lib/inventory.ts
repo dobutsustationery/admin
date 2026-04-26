@@ -6,6 +6,10 @@ import {
   canonicalizeSubtype,
   makeInventoryItemKey,
 } from "./sku";
+import {
+  type FirestoreTimestampLike,
+  toTimestampMs,
+} from "./timestamped-action";
 
 // TODO hceck item history for 4542804115635Silver
 export interface Item {
@@ -40,6 +44,7 @@ export interface ShopifyLineFact {
   refunded: number;
   rawSku?: string;
   entityId?: InventoryEntityId;
+  manualEntityId?: InventoryEntityId;
 }
 export interface OrderInfo {
   date: Date;
@@ -198,19 +203,8 @@ export const shopify_unrecognized_topic = createAction<{
 }>("shopify_unrecognized_topic");
 
 function getTimestampMs(timestamp: any): number {
-  if (typeof timestamp === "number") return timestamp;
-  if (typeof timestamp?.seconds === "number") {
-    const nanos = Number(timestamp?.nanoseconds || 0);
-    return timestamp.seconds * 1000 + Math.floor(nanos / 1_000_000);
-  }
-  if (typeof timestamp?._seconds === "number") {
-    const nanos = Number(timestamp?._nanoseconds || 0);
-    return timestamp._seconds * 1000 + Math.floor(nanos / 1_000_000);
-  }
-  if (timestamp instanceof Date) return timestamp.getTime();
-  if (typeof timestamp?.toDate === "function")
-    return timestamp.toDate().getTime();
-  return 0;
+  const ms = toTimestampMs(timestamp as FirestoreTimestampLike);
+  return ms ?? 0;
 }
 
 const createEmptyKeyIdentityState = (): InventoryKeyIdentityState => ({
@@ -310,11 +304,14 @@ const bindNewInventoryEntity = (
   atMs: number,
   actionType: string,
   actionDocId?: string,
-): InventoryEntityId => {
+): InventoryEntityId | undefined => {
   const identity = ensureKeyIdentityState(state);
   const key = canonicalizeInventoryItemKey(rawKey);
   const existingEntityId = identity.entityIdByCurrentKey[key];
   if (existingEntityId) return existingEntityId;
+
+  // Guard against pending writes with no server timestamp yet
+  if (atMs <= 0 && !actionType.includes(":backfill")) return undefined;
 
   const creatingActionDocId = actionDocIdForEntity(
     actionType,
@@ -361,6 +358,9 @@ const renameInventoryEntityKey = (
   const newKey = canonicalizeInventoryItemKey(rawNewKey);
   if (oldKey === newKey) return;
 
+  // Guard against pending writes
+  if (atMs <= 0 && !actionType.includes(":backfill")) return;
+
   const identity = ensureKeyIdentityState(state);
   let entityIds = currentEntityIdsForKey(identity, oldKey);
   if (entityIds.length === 0) {
@@ -373,9 +373,13 @@ const renameInventoryEntityKey = (
     }
   }
   if (entityIds.length === 0) {
-    entityIds = [
-      bindNewInventoryEntity(state, oldKey, 0, `${actionType}:backfill`),
-    ];
+    const backfillId = bindNewInventoryEntity(
+      state,
+      oldKey,
+      0,
+      `${actionType}:backfill`,
+    );
+    entityIds = backfillId ? [backfillId] : [];
   }
 
   for (const entityId of entityIds) {
@@ -418,6 +422,10 @@ const closeInventoryEntityKey = (
   actionType: string,
 ): void => {
   const key = canonicalizeInventoryItemKey(rawKey);
+
+  // Guard against pending writes
+  if (atMs <= 0 && !actionType.includes(":backfill")) return;
+
   const identity = ensureKeyIdentityState(state);
   const entityIds = currentEntityIdsForKey(identity, key);
   for (const entityId of entityIds) {
@@ -434,23 +442,49 @@ const closeInventoryEntityKey = (
   delete identity.entityIdByCurrentKey[key];
 };
 
+export type HistoricalSkuResolutionOutcome =
+  | "resolved"
+  | "missing_historical_binding"
+  | "ambiguous_historical_binding"
+  | "missing_current_key";
+
+export interface HistoricalSkuResolution {
+  itemKey: InventoryItemKey;
+  entityId?: InventoryEntityId;
+  outcome: HistoricalSkuResolutionOutcome;
+}
+
 export const resolveHistoricalInventoryKey = (
   state: InventoryState,
   rawKey: string,
   effectiveAtMs: number,
-): { itemKey: InventoryItemKey; entityId?: InventoryEntityId } => {
+): HistoricalSkuResolution => {
   const key = canonicalizeInventoryItemKey(rawKey);
   const identity = ensureKeyIdentityState(state);
   const interval = findBindingIntervalAt(
     identity.intervalsByKey[key],
     effectiveAtMs,
   );
-  if (!interval) return { itemKey: key };
+  if (!interval) {
+    return {
+      itemKey: key,
+      outcome: "missing_historical_binding",
+    };
+  }
 
   const currentKey = identity.currentKeyByEntityId[interval.entityId];
+  if (!currentKey) {
+    return {
+      itemKey: key,
+      entityId: interval.entityId,
+      outcome: "missing_current_key",
+    };
+  }
+
   return {
-    itemKey: currentKey ? canonicalizeInventoryItemKey(currentKey) : key,
+    itemKey: canonicalizeInventoryItemKey(currentKey),
     entityId: interval.entityId,
+    outcome: "resolved",
   };
 };
 
@@ -681,9 +715,8 @@ function applyInventoryUpdate(
     state.idToItem[id].shipped = 0;
   }
 
-  if (isNewItem) {
-    bindNewInventoryEntity(state, id, val, actionType, actionDocId);
-  }
+  // Always try to bind, it handles its own idempotency
+  bindNewInventoryEntity(state, id, val, actionType, actionDocId);
 
   // 3. Push History
   // Final check before push
@@ -775,6 +808,7 @@ function resolveLineItemInventoryKey(
   itemKey: InventoryItemKey | null;
   rawSku: string;
   entityId?: InventoryEntityId;
+  outcome?: HistoricalSkuResolutionOutcome;
 } {
   const rawItemKey = mapSkuToItemKey(lineItem.sku, lineItem);
   if (!rawItemKey) {
@@ -789,6 +823,7 @@ function resolveLineItemInventoryKey(
     itemKey: resolved.itemKey,
     rawSku: String(lineItem.sku || rawItemKey),
     entityId: resolved.entityId,
+    outcome: resolved.outcome,
   };
 }
 
@@ -875,18 +910,21 @@ export const inventory = createReducer(initialState, (r) => {
 
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
-      const { itemKey, rawSku, entityId } = resolveLineItemInventoryKey(
-        state,
-        li,
-        effectiveAtMs,
-      );
-      if (!itemKey) {
+      const { itemKey, rawSku, entityId, outcome } =
+        resolveLineItemInventoryKey(state, li, effectiveAtMs);
+      if (!itemKey || outcome === "missing_historical_binding") {
         if (!state.shopifyExceptions) state.shopifyExceptions = {};
         if (!state.shopifyExceptions[orderID])
           state.shopifyExceptions[orderID] = [];
-        state.shopifyExceptions[orderID].push(
-          `Unknown SKU: ${li.sku} (Line Item: ${li.id})`,
-        );
+        if (!itemKey) {
+          state.shopifyExceptions[orderID].push(
+            `Unknown SKU: ${li.sku} (Line Item: ${li.id})`,
+          );
+        } else {
+          state.shopifyExceptions[orderID].push(
+            `Missing historical binding for SKU: ${li.sku} (Line Item: ${li.id})`,
+          );
+        }
         continue;
       }
       const canonicalKey = canonicalizeInventoryItemKey(itemKey);
@@ -904,36 +942,42 @@ export const inventory = createReducer(initialState, (r) => {
         };
       }
       const fact = order.shopifyFacts!.lines[lineItemID];
-      fact.itemKey = canonicalKey;
-      fact.rawSku ||= rawSku;
-      fact.entityId ||= entityId;
+      if (fact.manualEntityId) {
+        const currentKey =
+          state.keyIdentity?.currentKeyByEntityId[fact.manualEntityId];
+        if (currentKey) {
+          fact.itemKey = currentKey;
+          fact.entityId = fact.manualEntityId;
+        }
+      } else {
+        fact.itemKey = canonicalKey;
+        fact.entityId ??= entityId;
+      }
+      fact.rawSku ??= rawSku;
+
       const delta = qty - fact.placed;
 
       // Always update facts so they reflect the latest known state from this action
       fact.placed = Math.max(fact.placed, qty);
+      const effectiveKey = fact.itemKey;
 
-      if (state.idToItem[canonicalKey]) {
+      if (state.idToItem[effectiveKey]) {
         if (!isReconciledLater && delta > 0) {
-          state.idToItem[canonicalKey].shipped += delta;
+          state.idToItem[effectiveKey].shipped += delta;
         }
 
-        // Always log created event if it's the first time we see this line in THIS action
-        // or if it actually changed something. But to avoid double logging if we re-run,
-        // we check if we already have a "Created" entry for this order in history?
-        // Actually, Redux actions are unique, so we can just log it.
-        // To be safe and "all steps", we log it if it's the created action.
         const historyVal = actionTimestamp;
-        if (!state.idToHistory[canonicalKey])
-          state.idToHistory[canonicalKey] = [];
+        if (!state.idToHistory[effectiveKey])
+          state.idToHistory[effectiveKey] = [];
 
-        const alreadyLogged = state.idToHistory[canonicalKey].some(
+        const alreadyLogged = state.idToHistory[effectiveKey].some(
           (h) =>
             h.desc.includes("Shopify Order Created") &&
             h.desc.includes(orderID),
         );
 
         if (!alreadyLogged) {
-          state.idToHistory[canonicalKey].push({
+          state.idToHistory[effectiveKey].push({
             date: new Date(historyVal).toLocaleString("en", {
               year: "numeric",
               month: "short",
@@ -942,8 +986,7 @@ export const inventory = createReducer(initialState, (r) => {
             desc: `Shopify Order Created: ${qty} for ${orderID}`,
             val: historyVal,
           });
-          // Sort history to ensure it stays in chronological order
-          state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
+          state.idToHistory[effectiveKey].sort((a, b) => a.val - b.val);
         }
       }
     }
@@ -1061,16 +1104,28 @@ export const inventory = createReducer(initialState, (r) => {
         itemKey: resolvedKey,
         rawSku,
         entityId,
+        outcome,
       } = resolveLineItemInventoryKey(state, li, effectiveAtMs);
-      if (resolvedKey) {
+      if (resolvedKey && outcome !== "missing_historical_binding") {
         const lineItemID = String(li.id);
         const fact = order.shopifyFacts!.lines[lineItemID];
         const isManualRetype =
-          fact && fact.itemKey !== resolvedKey && fact.rawSku === rawSku;
+          fact &&
+          (fact.manualEntityId ||
+            (fact.itemKey !== resolvedKey && fact.rawSku === rawSku));
 
-        const canonicalKey = canonicalizeInventoryItemKey(
-          isManualRetype ? fact.itemKey : resolvedKey,
-        );
+        let canonicalKey: InventoryItemKey;
+        if (fact?.manualEntityId) {
+          const currentKey =
+            state.keyIdentity?.currentKeyByEntityId[fact.manualEntityId];
+          canonicalKey = currentKey
+            ? canonicalizeInventoryItemKey(currentKey)
+            : canonicalizeInventoryItemKey(fact.itemKey);
+        } else {
+          canonicalKey = canonicalizeInventoryItemKey(
+            isManualRetype ? fact!.itemKey : resolvedKey,
+          );
+        }
         const currentQty = rawOrder.cancelled_at
           ? 0
           : li.quantity - (li.refund_quantity || 0);
@@ -1090,8 +1145,8 @@ export const inventory = createReducer(initialState, (r) => {
           if (!isManualRetype) {
             fact.itemKey = canonicalKey;
           }
-          fact.rawSku ||= rawSku;
-          fact.entityId ||= entityId;
+          fact.rawSku ??= rawSku;
+          fact.entityId ??= entityId;
           fact.placed = Math.max(fact.placed, li.quantity);
           if (rawOrder.cancelled_at) {
             fact.cancelled = Math.max(fact.cancelled, li.quantity);
@@ -1102,9 +1157,15 @@ export const inventory = createReducer(initialState, (r) => {
         if (!state.shopifyExceptions) state.shopifyExceptions = {};
         if (!state.shopifyExceptions[orderID])
           state.shopifyExceptions[orderID] = [];
-        state.shopifyExceptions[orderID].push(
-          `Unknown SKU: ${li.sku} (Line Item: ${li.id})`,
-        );
+        if (!resolvedKey) {
+          state.shopifyExceptions[orderID].push(
+            `Unknown SKU: ${li.sku} (Line Item: ${li.id})`,
+          );
+        } else {
+          state.shopifyExceptions[orderID].push(
+            `Missing historical binding for SKU: ${li.sku} (Line Item: ${li.id})`,
+          );
+        }
       }
     }
 
@@ -1488,21 +1549,24 @@ export const inventory = createReducer(initialState, (r) => {
       // If this is a Shopify order, we MUST update the shopifyFacts.lines
       // otherwise a later reconciliation will undo this retype.
       const order = state.orderIdToOrder[orderID];
-      if (order.shopifyFacts?.lines) {
-        for (const fact of Object.values(order.shopifyFacts.lines)) {
-          if (fact.itemKey === itemKey) {
-            fact.itemKey = newItemKey;
-          }
-        }
-      }
-
-      bindNewInventoryEntity(
+      const newEntityId = bindNewInventoryEntity(
         state,
         newItemKey,
         getTimestampMs((action as any).timestamp),
         action.type,
         (action as any).id,
       );
+
+      if (order.shopifyFacts?.lines) {
+        for (const fact of Object.values(order.shopifyFacts.lines)) {
+          if (fact.itemKey === itemKey) {
+            fact.itemKey = newItemKey;
+            if (newEntityId) {
+              fact.manualEntityId = newEntityId;
+            }
+          }
+        }
+      }
     } else {
       console.error(`${itemKey} vs ${newItemKey}`);
     }
