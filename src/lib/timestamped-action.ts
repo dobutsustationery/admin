@@ -17,6 +17,7 @@ export type FirestoreTimestampLike =
   | undefined;
 
 export interface TimestampedAction {
+  id?: string;
   timestamp: FirestoreTimestamp;
   _timestamp: number;
 }
@@ -128,6 +129,7 @@ export const withInheritedTimestamp = <T extends Record<string, unknown>>(
   source: TimestampedAction,
 ): T & TimestampedAction => ({
   ...action,
+  id: source.id ?? (action.id as string | undefined),
   timestamp: source.timestamp,
   _timestamp: source._timestamp,
 });
