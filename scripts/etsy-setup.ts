@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { Buffer } from "node:buffer";
+import * as crypto from "node:crypto";
 
 type Args = Record<string, string | boolean | string[]>;
 
@@ -12,51 +14,21 @@ type EtsyConfig = {
   sharedSecret: string;
 };
 
-const DEFAULT_TOPICS = [
-  "receipt.created",
-  "receipt.updated",
+const DEFAULT_TOPICS = ["receipt.created", "receipt.updated"];
+
+const ETSY_SCOPES = [
+  "transactions_r", // Read receipts/transactions
+  "transactions_w", // Update receipts (e.g. mark as shipped)
+  "listings_r",     // Read listings for mapping
 ];
 
-function parseArgs(argv: string[]): Args {
-  const args: Args = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg.startsWith("--")) continue;
-    const [rawKey, inlineValue] = arg.slice(2).split(/=(.*)/s, 2);
-    const key = rawKey.trim();
-    const next = argv[i + 1];
-    const value = inlineValue !== undefined ? inlineValue : !next || next.startsWith("--") ? true : next;
-    if (inlineValue === undefined && typeof value === "string") i++;
-    args[key] = value;
-  }
-  return args;
+function generateRandomString(length: number): string {
+  return crypto.randomBytes(length).toString("base64url");
 }
 
-function getStringArg(args: Args, key: string, fallback = ""): string {
-  const value = args[key];
-  if (Array.isArray(value)) return value[value.length - 1] || fallback;
-  if (typeof value === "string") return value;
-  return fallback;
-}
-
-function getBooleanArg(args: Args, key: string, fallback = false): boolean {
-  const value = args[key];
-  if (typeof value === "boolean") return value;
-  return fallback;
-}
-
-function loadEnvFile(path: string) {
-  if (!existsSync(path)) return {};
-  const content = readFileSync(path, "utf-8");
-  const env: Record<string, string> = {};
-  for (const line of content.split("\n")) {
-    const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?$/);
-    if (!match) continue;
-    let value = match[2] || "";
-    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-    env[match[1]] = value;
-  }
-  return env;
+function generateCodeChallenge(verifier: string): string {
+  const hash = crypto.createHash("sha256").update(verifier).digest();
+  return hash.toString("base64url");
 }
 
 async function main() {
@@ -72,10 +44,85 @@ async function main() {
     sharedSecret: getStringArg(args, "shared-secret", env.ETSY_SHARED_SECRET),
   };
 
-  const webhookUrl = getStringArg(args, "webhook-url", env.ETSY_ORDER_WEBHOOK_URL);
+  const webhookUrl = getStringArg(
+    args,
+    "webhook-url",
+    env.ETSY_ORDER_WEBHOOK_URL,
+  );
   const apply = getBooleanArg(args, "apply", false);
+  const isTokenRequest = getBooleanArg(args, "token", false);
+  const exchangeCode = getStringArg(args, "exchange", "");
 
   console.log(`Etsy Setup Tool (${envName})`);
+
+  if (isTokenRequest) {
+    if (!config.apiKey) {
+      console.error("Error: Missing ETSY_API_KEY (Keystring)");
+      process.exit(1);
+    }
+    const verifier = generateRandomString(32);
+    const challenge = generateCodeChallenge(verifier);
+    const state = generateRandomString(16);
+    const redirectUri = getStringArg(args, "redirect-uri", "https://localhost");
+
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: config.apiKey,
+      redirect_uri: redirectUri,
+      scope: ETSY_SCOPES.join(" "),
+      state: state,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    });
+
+    console.log("\n--- ETSY OAUTH SETUP ---");
+    console.log("1. Save this CODE VERIFIER (you will need it for --exchange):");
+    console.log(`   ${verifier}`);
+    console.log("\n2. Open this URL in your browser and authorize the app:");
+    console.log(`   https://www.etsy.com/oauth/connect?${params.toString()}`);
+    console.log("\n3. After authorizing, you will be redirected to your redirect URI.");
+    console.log("   Copy the 'code' parameter from the URL.");
+    console.log("\n4. Run this script again with:");
+    console.log(`   bun scripts/etsy-setup.ts --env ${envName} --exchange <code> --verifier ${verifier}`);
+    return;
+  }
+
+  if (exchangeCode) {
+    const verifier = getStringArg(args, "verifier", "");
+    if (!verifier) {
+      console.error("Error: Missing --verifier (saved from step 1)");
+      process.exit(1);
+    }
+    const redirectUri = getStringArg(args, "redirect-uri", "https://localhost");
+
+    console.log("Exchanging code for access token...");
+    const response = await fetch("https://api.etsy.com/v3/public/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: config.apiKey,
+        redirect_uri: redirectUri,
+        code: exchangeCode,
+        code_verifier: verifier,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`Exchange failed: ${err}`);
+      process.exit(1);
+    }
+
+    const data = await response.json();
+    console.log("\n--- SUCCESS ---");
+    console.log("Access Token:", data.access_token);
+    console.log("Refresh Token:", data.refresh_token);
+    console.log("\nUpdate your .env file with:");
+    console.log(`ETSY_ACCESS_TOKEN=${data.access_token}`);
+    return;
+  }
+
   console.log(`Shop ID: ${config.shopId}`);
   console.log(`Webhook URL: ${webhookUrl}`);
 
