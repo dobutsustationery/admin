@@ -1057,21 +1057,28 @@ export const inventory = createReducer(initialState, (r) => {
     const itemQtyMap: Record<string, number> = {};
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
-      const { itemKey, rawSku, entityId } = resolveLineItemInventoryKey(
-        state,
-        li,
-        effectiveAtMs,
-      );
-      if (itemKey) {
-        const canonicalKey = canonicalizeInventoryItemKey(itemKey);
+      const {
+        itemKey: resolvedKey,
+        rawSku,
+        entityId,
+      } = resolveLineItemInventoryKey(state, li, effectiveAtMs);
+      if (resolvedKey) {
+        const lineItemID = String(li.id);
+        const fact = order.shopifyFacts!.lines[lineItemID];
+        const isManualRetype =
+          fact && fact.itemKey !== resolvedKey && fact.rawSku === rawSku;
+
+        const canonicalKey = canonicalizeInventoryItemKey(
+          isManualRetype ? fact.itemKey : resolvedKey,
+        );
         const currentQty = rawOrder.cancelled_at
           ? 0
           : li.quantity - (li.refund_quantity || 0);
         itemQtyMap[canonicalKey] = (itemQtyMap[canonicalKey] || 0) + currentQty;
 
         // Also update shopifyFacts so incremental actions work correctly
-        if (!order.shopifyFacts!.lines[li.id]) {
-          order.shopifyFacts!.lines[li.id] = {
+        if (!fact) {
+          order.shopifyFacts!.lines[lineItemID] = {
             itemKey: canonicalKey,
             placed: li.quantity,
             cancelled: rawOrder.cancelled_at ? li.quantity : 0,
@@ -1080,8 +1087,9 @@ export const inventory = createReducer(initialState, (r) => {
             entityId,
           };
         } else {
-          const fact = order.shopifyFacts!.lines[li.id];
-          fact.itemKey = canonicalKey;
+          if (!isManualRetype) {
+            fact.itemKey = canonicalKey;
+          }
           fact.rawSku ||= rawSku;
           fact.entityId ||= entityId;
           fact.placed = Math.max(fact.placed, li.quantity);
@@ -1476,6 +1484,25 @@ export const inventory = createReducer(initialState, (r) => {
       } else {
         state.orderIdToOrder[orderID].items.push({ itemKey: newItemKey, qty });
       }
+
+      // If this is a Shopify order, we MUST update the shopifyFacts.lines
+      // otherwise a later reconciliation will undo this retype.
+      const order = state.orderIdToOrder[orderID];
+      if (order.shopifyFacts?.lines) {
+        for (const fact of Object.values(order.shopifyFacts.lines)) {
+          if (fact.itemKey === itemKey) {
+            fact.itemKey = newItemKey;
+          }
+        }
+      }
+
+      bindNewInventoryEntity(
+        state,
+        newItemKey,
+        getTimestampMs((action as any).timestamp),
+        action.type,
+        (action as any).id,
+      );
     } else {
       console.error(`${itemKey} vs ${newItemKey}`);
     }
