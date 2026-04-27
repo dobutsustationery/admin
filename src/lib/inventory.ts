@@ -310,6 +310,17 @@ const bindNewInventoryEntity = (
   const existingEntityId = identity.entityIdByCurrentKey[key];
   if (existingEntityId) return existingEntityId;
 
+  // Check if we already have an active binding for this key in the intervals list
+  // that somehow got out of sync with entityIdByCurrentKey
+  const activeInterval = findActiveBindingInterval(
+    identity.intervalsByKey[key],
+  );
+  if (activeInterval) {
+    identity.entityIdByCurrentKey[key] = activeInterval.entityId;
+    identity.currentKeyByEntityId[activeInterval.entityId] = key;
+    return activeInterval.entityId;
+  }
+
   // Guard against pending writes with no server timestamp yet
   if (atMs <= 0 && !actionType.includes(":backfill")) return undefined;
 
@@ -1106,9 +1117,11 @@ export const inventory = createReducer(initialState, (r) => {
         entityId,
         outcome,
       } = resolveLineItemInventoryKey(state, li, effectiveAtMs);
+
+      const lineItemID = String(li.id);
+      const fact = order.shopifyFacts!.lines[lineItemID];
+
       if (resolvedKey && outcome !== "missing_historical_binding") {
-        const lineItemID = String(li.id);
-        const fact = order.shopifyFacts!.lines[lineItemID];
         const isManualRetype =
           fact &&
           (fact.manualEntityId ||
@@ -1154,6 +1167,18 @@ export const inventory = createReducer(initialState, (r) => {
           fact.refunded = Math.max(fact.refunded, li.refund_quantity || 0);
         }
       } else {
+        // resolution failed
+        if (fact) {
+          // If we already have impact for this line, carry it forward
+          // so we don't accidentally subtract it in the diff loop below.
+          const canonicalKey = canonicalizeInventoryItemKey(fact.itemKey);
+          const currentQty = rawOrder.cancelled_at
+            ? 0
+            : li.quantity - (li.refund_quantity || 0);
+          itemQtyMap[canonicalKey] =
+            (itemQtyMap[canonicalKey] || 0) + currentQty;
+        }
+
         if (!state.shopifyExceptions) state.shopifyExceptions = {};
         if (!state.shopifyExceptions[orderID])
           state.shopifyExceptions[orderID] = [];
@@ -1559,7 +1584,10 @@ export const inventory = createReducer(initialState, (r) => {
 
       if (order.shopifyFacts?.lines) {
         for (const fact of Object.values(order.shopifyFacts.lines)) {
-          if (fact.itemKey === itemKey) {
+          if (
+            fact.itemKey === itemKey ||
+            (fact.itemKey === newItemKey && !fact.manualEntityId)
+          ) {
             fact.itemKey = newItemKey;
             if (newEntityId) {
               fact.manualEntityId = newEntityId;
