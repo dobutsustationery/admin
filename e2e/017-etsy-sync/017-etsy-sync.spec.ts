@@ -12,13 +12,11 @@ function computeHmac(payload: string, secret: string) {
 test("Etsy Order Sync - Exception UI", async ({ authenticatedPage: page, request }) => {
   test.setTimeout(120000);
   
-  const screenshots = createScreenshotHelper();
   const runId = Math.floor(Date.now() / 1000);
 
   // Step 1: Navigate to sync-status
   await page.goto("/sync-status");
   await waitForAppReady(page);
-  await screenshots.capture(page, "000-initial-sync-status");
 
   // Step 2: Trigger an order with unknown SKU to cause exception
   const exceptionReceiptId = `etsy-exc-${runId}`;
@@ -62,12 +60,8 @@ test("Etsy Order Sync - Exception UI", async ({ authenticatedPage: page, request
   await expect(exceptionSection).toContainText(`etsy:${exceptionReceiptId}`);
   await expect(exceptionSection).toContainText('Unknown SKU: UNKNOWN-SKU');
   
-  await screenshots.capture(page, "001-etsy-exceptions-shown");
-
   // Step 4: Hide exception
   console.log("Hiding exception...");
   await page.locator('button', { hasText: 'Hide' }).first().click();
   await expect(exceptionSection).not.toBeVisible({ timeout: 10000 });
-  
-  await screenshots.capture(page, "002-etsy-exceptions-hidden");
 });
