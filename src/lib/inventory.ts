@@ -1108,7 +1108,10 @@ export const inventory = createReducer(initialState, (r) => {
         (currentInventoryImpact[itemKey] || 0) + item.qty;
     }
 
+    const oldFacts = order.shopifyFacts!.lines;
+    const newFacts: Record<string, ShopifyLineFact> = {};
     const itemQtyMap: Record<string, number> = {};
+
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
       const {
@@ -1119,64 +1122,55 @@ export const inventory = createReducer(initialState, (r) => {
       } = resolveLineItemInventoryKey(state, li, effectiveAtMs);
 
       const lineItemID = String(li.id);
-      const fact = order.shopifyFacts!.lines[lineItemID];
+      const oldFact = oldFacts[lineItemID];
 
       if (resolvedKey && outcome !== "missing_historical_binding") {
         const isManualRetype =
-          fact &&
-          (fact.manualEntityId ||
-            (fact.itemKey !== resolvedKey && fact.rawSku === rawSku));
+          oldFact &&
+          (oldFact.manualEntityId ||
+            (oldFact.itemKey !== resolvedKey && oldFact.rawSku === rawSku));
 
         let canonicalKey: InventoryItemKey;
-        if (fact?.manualEntityId) {
+        if (oldFact?.manualEntityId) {
           const currentKey =
-            state.keyIdentity?.currentKeyByEntityId[fact.manualEntityId];
+            state.keyIdentity?.currentKeyByEntityId[oldFact.manualEntityId];
           canonicalKey = currentKey
             ? canonicalizeInventoryItemKey(currentKey)
-            : canonicalizeInventoryItemKey(fact.itemKey);
+            : canonicalizeInventoryItemKey(oldFact.itemKey);
         } else {
           canonicalKey = canonicalizeInventoryItemKey(
-            isManualRetype ? fact!.itemKey : resolvedKey,
+            isManualRetype ? oldFact!.itemKey : resolvedKey,
           );
         }
+
         const currentQty = rawOrder.cancelled_at
           ? 0
           : li.quantity - (li.refund_quantity || 0);
         itemQtyMap[canonicalKey] = (itemQtyMap[canonicalKey] || 0) + currentQty;
 
-        // Also update shopifyFacts so incremental actions work correctly
-        if (!fact) {
-          order.shopifyFacts!.lines[lineItemID] = {
-            itemKey: canonicalKey,
-            placed: li.quantity,
-            cancelled: rawOrder.cancelled_at ? li.quantity : 0,
-            refunded: li.refund_quantity || 0,
-            rawSku,
-            entityId,
-          };
-        } else {
-          if (!isManualRetype) {
-            fact.itemKey = canonicalKey;
-          }
-          fact.rawSku ??= rawSku;
-          fact.entityId ??= entityId;
-          fact.placed = Math.max(fact.placed, li.quantity);
-          if (rawOrder.cancelled_at) {
-            fact.cancelled = Math.max(fact.cancelled, li.quantity);
-          }
-          fact.refunded = Math.max(fact.refunded, li.refund_quantity || 0);
-        }
+        // Authoritative Fact Update (Finding 1)
+        newFacts[lineItemID] = {
+          itemKey: canonicalKey,
+          placed: li.quantity,
+          cancelled: rawOrder.cancelled_at ? li.quantity : 0,
+          refunded: li.refund_quantity || 0,
+          rawSku,
+          entityId,
+          manualEntityId: oldFact?.manualEntityId,
+        };
       } else {
         // resolution failed
-        if (fact) {
+        if (oldFact) {
+          // §3.1 carry forward
+          newFacts[lineItemID] = oldFact;
+
           // If we already have impact for this line, carry it forward
-          // so we don't accidentally subtract it in the diff loop below.
-          const canonicalKey = canonicalizeInventoryItemKey(fact.itemKey);
-          const currentQty = rawOrder.cancelled_at
-            ? 0
-            : li.quantity - (li.refund_quantity || 0);
+          // so we don't accidentally subtract it in the diff loop below (§3.1).
+          const canonicalKey = canonicalizeInventoryItemKey(oldFact.itemKey);
+          const previousImpact =
+            oldFact.placed - oldFact.cancelled - oldFact.refunded;
           itemQtyMap[canonicalKey] =
-            (itemQtyMap[canonicalKey] || 0) + currentQty;
+            (itemQtyMap[canonicalKey] || 0) + previousImpact;
         }
 
         if (!state.shopifyExceptions) state.shopifyExceptions = {};
@@ -1192,6 +1186,16 @@ export const inventory = createReducer(initialState, (r) => {
           );
         }
       }
+    }
+
+    // Replace facts map authoritatively (Finding 1)
+    order.shopifyFacts!.lines = newFacts;
+
+    // Address Finding 3: authorize refund IDs from payload
+    if (rawOrder.refunds) {
+      rawOrder.refunds.forEach((r: any) => {
+        order.shopifyFacts!.refunds[String(r.id)] = true;
+      });
     }
 
     for (const [canonicalKey, currentQty] of Object.entries(itemQtyMap)) {
@@ -1559,21 +1563,42 @@ export const inventory = createReducer(initialState, (r) => {
     }
     const newItemKey = makeInventoryItemKey(janCode, subtype);
     if (newItemKey !== itemKey) {
-      state.orderIdToOrder[orderID].items = state.orderIdToOrder[
-        orderID
-      ].items.filter((i) => i.itemKey !== itemKey);
-      const existingItem = state.orderIdToOrder[orderID].items.filter(
-        (i) => i.itemKey === newItemKey,
-      );
-      if (existingItem.length > 0) {
-        existingItem[0].qty += qty;
-      } else {
-        state.orderIdToOrder[orderID].items.push({ itemKey: newItemKey, qty });
+      const order = state.orderIdToOrder[orderID];
+
+      // Surgical move for idempotency and correctness (§3.2)
+      const oldItemIdx = order.items.findIndex((i) => i.itemKey === itemKey);
+      if (oldItemIdx !== -1) {
+        const moveQty = Math.min(order.items[oldItemIdx].qty, qty);
+        order.items[oldItemIdx].qty -= moveQty;
+        if (order.items[oldItemIdx].qty === 0) {
+          order.items.splice(oldItemIdx, 1);
+        }
+        const newItemIdx = order.items.findIndex(
+          (i) => i.itemKey === newItemKey,
+        );
+        if (newItemIdx !== -1) {
+          order.items[newItemIdx].qty += moveQty;
+        } else {
+          order.items.push({ itemKey: newItemKey, qty: moveQty });
+        }
+
+        // Now update shipped (also surgical/idempotent based on moveQty)
+        if (
+          state.idToItem[itemKey] !== undefined &&
+          state.idToItem[newItemKey] !== undefined
+        ) {
+          state.idToItem[itemKey].shipped -= moveQty;
+          state.idToItem[newItemKey].shipped += moveQty;
+        } else {
+          console.warn(
+            `Skipping retype_item shipped update for missing item(s): ${itemKey} or ${newItemKey}`,
+            action.payload,
+          );
+        }
       }
 
       // If this is a Shopify order, we MUST update the shopifyFacts.lines
       // otherwise a later reconciliation will undo this retype.
-      const order = state.orderIdToOrder[orderID];
       const newEntityId = bindNewInventoryEntity(
         state,
         newItemKey,
@@ -1598,18 +1623,8 @@ export const inventory = createReducer(initialState, (r) => {
     } else {
       console.error(`${itemKey} vs ${newItemKey}`);
     }
-    if (
-      state.idToItem[itemKey] !== undefined &&
-      state.idToItem[newItemKey] !== undefined
-    ) {
-      state.idToItem[itemKey].shipped -= qty;
-      state.idToItem[newItemKey].shipped += qty;
-    } else {
-      console.warn(
-        `Skipping retype_item shipped update for missing item(s): ${itemKey} or ${newItemKey}`,
-        action.payload,
-      );
-    }
+
+    // history logic follows...
     if (!state.idToHistory[itemKey]) {
       console.warn(
         `[InventoryDebug] retype_item (old key): idToHistory missing for ${itemKey}. Initializing empty.`,

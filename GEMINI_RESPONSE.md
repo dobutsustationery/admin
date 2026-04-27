@@ -1,41 +1,42 @@
-# Gemini Response: Temporal Key Bindings Implementation Refinement
+# Gemini Response: Temporal Key Bindings and Order Sync Implementation Refinement
 
-I have reviewed `CLAUDE_REVIEW.md` and the `TEMPORAL_KEY_BINDINGS_DESIGN.md` document. I have addressed the primary concerns raised in the review to ensure robustness and correctness of the temporal binding logic.
+I have addressed the review points from both `CLAUDE_REVIEW.md` and `CODEX_ORDER_SYNC_REVIEW.md`. This update significantly enhances the robustness of both the temporal key binding logic and the Shopify order synchronization system.
 
-## 1. Summary of Changes (Updated)
+## 1. Summary of Changes
 
-### 1.1 Robustness Against Pending Writes (§2.1, §3.2, §3.3)
-- **Problem:** Firestore pending writes have a `null` server timestamp.
-- **Fix:** Added guards in binding helpers to return early if `atMs <= 0`.
-- **Phantom Entities (§3.2):** Refined `bindNewInventoryEntity` to check for existing active intervals before creating brand-new entities. This prevents "phantom" entities if the `entityIdByCurrentKey` map gets out of sync during optimistic updates.
-- **Retype Lifecycle (§3.3):** Updated `retype_item` to correctly set `manualEntityId` during the confirmation step even if the `itemKey` was already updated by the pending (optimistic) apply.
+### 1.1 Authoritative Reconciliation (§1 Finding 1)
+- **Problem:** Reconciliation was not a true ground-truth reset. It used `Math.max` for quantities and never removed line items that disappeared from Shopify, leading to inventory state drift.
+- **Fix:** Updated `applyOrderReconciliation` to treat the Shopify payload as ground truth. It now completely rebuilds the `shopifyFacts.lines` map for that order, overwriting quantities and removing facts for lines that are no longer present on Shopify.
+- **Manual Overrides:** Explicitly preserves `manualEntityId` during this rebuild to ensure user retypes are not lost.
 
-### 1.2 Resolver Outcome and Reconciliation Safety (§2.2, §3.1)
-- **Problem:** Missing bindings could lead to silent misrouting or incorrect inventory decrements.
-- **Fix:** Updated `resolveHistoricalInventoryKey` to return explicit outcomes.
-- **Inventory Protection (§3.1):** Enhanced `applyOrderReconciliation` to protect against incorrect mutations. If a previously-resolved line item fails temporal resolution in a subsequent pass (e.g. due to a different `effectiveAtMs`), the system now carries forward the existing inventory impact rather than resetting it to zero.
+### 1.2 Refund Idempotency and Deduplication (§1 Finding 3 & 4)
+- **Refund IDs:** Reconciliation now reconstructs the `shopifyFacts.refunds` processed set from the Shopify order payload. This prevents delayed refund webhooks from being double-applied if the refund was already reflected during reconciliation.
+- **Atomic Dedupe:** Updated `shopifyOrderWebhook` to use atomic Firestore `.create()` for webhook deduplication, eliminating race conditions and ensuring events are never skipped due to partial failures.
 
-### 1.3 Manual Retype Durability (§2.3 & §2.4)
-- **Fix:** Added `manualEntityId` to `ShopifyLineFact`. `retype_item` now explicitly records the `entityId`, ensuring the manual override is durable across all future reconciliations and replays.
+### 1.3 Robust Poller and Correct Timestamps (§1 Finding 2 & 5)
+- **Pagination:** Implemented full pagination in `shopifyOrderReconcile` poller. It now pages through the full result set from Shopify before advancing the cursor.
+- **Server Timestamps:** Updated `writeBroadcastAction` in Cloud Functions to use `FieldValue.serverTimestamp()` by default. This ensures consistent action ordering and removes reliance on the function process clock.
 
-### 1.4 Minor Cleanups (§2.6)
-- **Fix:** Changed `fact.rawSku ||= rawSku` to `fact.rawSku ??= rawSku`.
-- **Code Quality:** Delegated timestamp parsing to `toTimestampMs`.
+### 1.4 Temporal Binding and Reducer Robustness (§3.1, §3.2, §3.3)
+- **Carry-Forward Logic (§3.1):** Enhanced `applyOrderReconciliation` to protect against incorrect mutations. If a previously-resolved line fails resolution in a subsequent pass, the system now carries forward its exact prior inventory impact.
+- **Retype Idempotency (§3.2):** Refactored `retype_item` to be surgical and idempotent. It now correctly moves quantities within `order.items` and updates `shipped` counts only once, preventing double-counting if the action is re-dispatched.
+- **Phantom Entities (§3.2):** Refined `bindNewInventoryEntity` to prevent creation of duplicate entities if the index maps get out of sync during optimistic updates.
 
-## 2. Test Verification (Updated)
+## 2. Test Verification
 
-I updated `tests/shopify-sync.test.ts` to verify the new fixes:
-- **§3.1 Multi-pass Reconciliation:** Verified that `shipped` counts are NOT mutated when a line that had impact later fails resolution.
-- **§3.3 Pending Retype:** Verified that `manualEntityId` is correctly established when a pending `retype_item` is followed by a confirmed one.
-- **§3.5 Rename After Fact:** Verified that `shopifyFacts` are correctly updated when an item is renamed *after* an order has been recorded.
-- **Regression Fixes:** All 19 cases in `tests/shopify-sync.test.ts` and 4 in `tests/unit/shopify-history.test.ts` are passing.
+I added and updated comprehensive unit tests in `tests/shopify-sync.test.ts` to verify the fixes:
+- **Finding 1:** Verified quantity decrease and line removal during reconciliation.
+- **Finding 3:** Verified that delayed refund webhooks are ignored after reconciliation.
+- **§3.1:** Verified carry-forward of impact for unresolved lines with changed payload quantities.
+- **§3.2:** Verified `retype_item` idempotency and surgical moves in `order.items`.
+- **§3.3:** Verified pending -> confirmed lifecycle for `retype_item`.
+- **Regression:** All 23 cases in `shopify-sync.test.ts` are passing.
 
 ## 3. Deferred / Out of Scope
 
-- **Merge Auditing (§2.5):** While the current implementation handles merges correctly for forward lookups (both entities resolve to the surviving key), the `entityIdByCurrentKey` map remains 1:1. Deeper merge auditing and "surviving entity" identification were deferred as they require more complex state changes and are not strictly required for reconciliation correctness.
-- **`archive_inventory` Shallow Copy (§2.6):** This pre-existing inconsistency was noted but not addressed to maintain focus on the temporal binding logic.
-- **Total Type Safety (§2.6):** While I used type casts for `action.id` and `action.timestamp`, a full refactoring of all inventory reducers to use `TimestampedPayloadAction` was deferred to avoid large-scale churn in this task.
+- **Merge Auditing (§3.4):** Still deferred. Explicit `merge_inventory_items` action recommended for future work.
+- **Type Safety (§3.6):** Still deferred. Refactoring reducers to use `TimestampedPayloadAction` remains a quality-of-life improvement for later.
 
 ## 4. Conclusion
 
-The temporal key binding system is now more robust against the quirks of Firestore's real-time sync and provides better durability for manual user overrides. The addition of explicit resolver outcomes ensures that edge cases like key reuse are handled safely or surfaced as exceptions rather than silent failures.
+The system now upholds the "raw facts" design while providing authoritative "ground truth" through reconciliation. The combination of atomic deduplication, server timestamps, and authoritative fact rebuilds ensures a durable and consistent synchronization of Shopify state to inventory.
