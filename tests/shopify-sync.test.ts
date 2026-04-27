@@ -896,4 +896,244 @@ describe("Shopify Sync Reducer", () => {
     expect(state.keyIdentity?.intervalsByKey[keyA]).toBeDefined();
     expect(state.keyIdentity?.intervalsByKey[keyA]![0].validFromMs).toBe(t10);
   });
+
+  it("does not mutate shipped count for previously resolved lines if they later fail resolution (§3.1)", () => {
+    const keyA = makeInventoryItemKey("JAN-A", "");
+    const keyB = makeInventoryItemKey("JAN-B", "");
+    const t10 = Date.parse("2024-01-01T00:00:10Z");
+    const t20 = Date.parse("2024-01-01T00:00:20Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: keyA,
+          item: { ...testItem, janCode: "JAN-A", subtype: "" },
+        }),
+        "create-a",
+        t10,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        update_item({
+          id: keyB,
+          item: { ...testItem, janCode: "JAN-B", subtype: "" },
+        }),
+        "create-b",
+        t20,
+      ),
+    );
+
+    const orderID = "shopify:123";
+    // 1. Initial reconciliation at t30 (both items exist)
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_reconciled({
+          raw: {
+            id: "123",
+            updated_at: "2024-01-01T00:00:30Z",
+            line_items: [
+              { id: "li1", sku: "JAN-A", quantity: 1 },
+              { id: "li2", sku: "JAN-B", quantity: 1 },
+            ],
+          },
+          topic: "reconcile",
+        }),
+        "reconcile-1",
+        t20 + 10000,
+      ),
+    );
+
+    expect(state.idToItem[keyA].shipped).toBe(1);
+    expect(state.idToItem[keyB].shipped).toBe(1);
+
+    // 2. Second reconciliation but with a very early effectiveAtMs (t0)
+    // At t0, NEITHER JAN-A nor JAN-B had bindings.
+    // The design says missing bindings should NOT mutate shipped counts.
+    // If we have a bug, the "impact reset" logic will see 1 item for keyA and 1 for keyB
+    // in order.items, and subtract them because they aren't in the new payload's itemQtyMap.
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_reconciled({
+          raw: {
+            id: "123",
+            // Simulating an action that forces an early effectiveAtMs (e.g. by using an old created_at)
+            created_at: "2024-01-01T00:00:00Z",
+            updated_at: "2024-01-01T00:00:40Z",
+            line_items: [
+              { id: "li1", sku: "JAN-A", quantity: 1 },
+              { id: "li2", sku: "JAN-B", quantity: 1 },
+            ],
+          },
+          topic: "reconcile",
+        }),
+        "reconcile-2",
+        t20 + 20000,
+      ),
+    );
+
+    // If bug 3.1 exists, these will be 0
+    expect(state.idToItem[keyA].shipped).toBe(1);
+    expect(state.idToItem[keyB].shipped).toBe(1);
+    expect(state.shopifyExceptions?.[orderID]).toHaveLength(2);
+  });
+
+  it("handles retype_item pending -> confirmed lifecycle (§3.3)", () => {
+    const keyA = makeInventoryItemKey("JAN-A", "");
+    const keyB = makeInventoryItemKey("JAN-B", ""); // Already created
+    const keyC = makeInventoryItemKey("JAN-C", ""); // BRAND NEW
+    const t10 = Date.parse("2024-01-01T00:00:10Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: keyA,
+          item: { ...testItem, janCode: "JAN-A", subtype: "" },
+        }),
+        "create-a",
+        t10,
+      ),
+    );
+
+    const orderID = "shopify:123";
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_created({
+          raw: {
+            id: "123",
+            created_at: "2024-01-01T00:00:15Z",
+            line_items: [{ id: "li1", sku: "JAN-A", quantity: 1 }],
+          },
+          topic: "orders/create",
+        }),
+        "order-1",
+        t10 + 2000,
+      ),
+    );
+
+    expect(state.idToItem[keyA].shipped).toBe(1);
+
+    // 1. Pending retype to JAN-C (timestamp null -> atMs=0)
+    state = inventory(state, {
+      ...retype_item({
+        orderID,
+        itemKey: keyA,
+        janCode: "JAN-C",
+        subtype: "",
+        qty: 1,
+      }),
+      id: "retype-1",
+      timestamp: null,
+    } as any);
+
+    // Identity for JAN-C won't be created at atMs=0
+    expect(state.keyIdentity?.intervalsByKey[keyC]).toBeUndefined();
+    // manualEntityId will NOT be set on the fact because bind returned undefined
+    expect(
+      state.orderIdToOrder[orderID].shopifyFacts?.lines["li1"].manualEntityId,
+    ).toBeUndefined();
+
+    // 2. Confirmed retype
+    // We must ensure JAN-C exists now for retype to work
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        update_item({
+          id: keyC,
+          item: { ...testItem, janCode: "JAN-C", subtype: "" },
+        }),
+        "create-c",
+        t10 + 2500,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        retype_item({
+          orderID,
+          itemKey: keyA,
+          janCode: "JAN-C",
+          subtype: "",
+          qty: 1,
+        }),
+        "retype-1",
+        t10 + 3000,
+      ),
+    );
+
+    // Now entity ID should be there
+    expect(
+      state.orderIdToOrder[orderID].shopifyFacts?.lines["li1"].manualEntityId,
+    ).toBeDefined();
+    expect(state.idToItem[keyC].shipped).toBe(1);
+    expect(state.idToItem[keyA].shipped).toBe(0);
+  });
+
+  it("updates stored line facts when an item is renamed (§3.5)", () => {
+    const janA = "1111111111111";
+    const keyA = makeInventoryItemKey(janA, "");
+    const t10 = Date.parse("2024-01-01T00:00:10Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: keyA,
+          item: { ...testItem, janCode: janA, subtype: "" },
+        }),
+        "create-a",
+        t10,
+      ),
+    );
+
+    const orderID = "shopify:123";
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_created({
+          raw: {
+            id: "123",
+            created_at: "2024-01-01T00:00:15Z",
+            line_items: [{ id: "li1", sku: janA, quantity: 1 }],
+          },
+          topic: "orders/create",
+        }),
+        "order-1",
+        t10 + 2000,
+      ),
+    );
+
+    expect(
+      state.orderIdToOrder[orderID].shopifyFacts?.lines["li1"].itemKey,
+    ).toBe(keyA);
+    expect(state.idToItem[keyA].shipped).toBe(1);
+
+    // Now rename janA (Default) to janA (Renamed)
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        rename_subtype({
+          itemKey: keyA,
+          subtype: "Renamed",
+        }),
+        "rename-a-to-b",
+        t10 + 3000,
+      ),
+    );
+
+    const keyARenamed = makeInventoryItemKey(janA, "Renamed");
+    expect(
+      state.orderIdToOrder[orderID].shopifyFacts?.lines["li1"].itemKey,
+    ).toBe(keyARenamed);
+    expect(state.idToItem[keyARenamed].shipped).toBe(1);
+    expect(state.idToItem[keyA]).toBeUndefined();
+  });
 });
