@@ -118,8 +118,16 @@ async function main() {
     console.log("\n--- SUCCESS ---");
     console.log("Access Token:", data.access_token);
     console.log("Refresh Token:", data.refresh_token);
-    console.log("\nUpdate your .env file with:");
-    console.log(`ETSY_ACCESS_TOKEN=${data.access_token}`);
+    
+    if (envName === "local") {
+      updateEnvFile(resolve(process.cwd(), ".env"), {
+        ETSY_ACCESS_TOKEN: data.access_token,
+      });
+      console.log("\nUpdated .env with new access token.");
+    } else {
+      console.log(`\nPlease update ${envFile} with:`);
+      console.log(`ETSY_ACCESS_TOKEN=${data.access_token}`);
+    }
     return;
   }
 
@@ -136,20 +144,52 @@ async function main() {
     process.exit(1);
   }
 
-  // NOTE: Etsy v3 Webhook API is restricted to specific partners or requires manual setup in some cases.
-  // This script assumes the /v3/application/webhooks endpoint is available.
-  
   try {
     // 1. Check existing webhooks
     console.log("\nChecking existing Etsy webhooks...");
-    // GET /v3/application/webhooks
-    // (This is a simplified placeholder for the actual Etsy v3 Webhook API)
+    const listResponse = await fetch(`https://openapi.etsy.com/v3/application/shops/${config.shopId}/webhooks`, {
+      headers: {
+        "x-api-key": config.apiKey,
+        "Authorization": `Bearer ${config.accessToken}`,
+      }
+    });
+
+    if (listResponse.ok) {
+      const listData = await listResponse.json();
+      console.log(`Found ${listData.count || 0} existing webhooks.`);
+    } else {
+      console.log("Could not list webhooks (endpoint might be restricted).");
+    }
     
     if (apply) {
       console.log("\nRegistering webhooks...");
       for (const topic of DEFAULT_TOPICS) {
         console.log(`Registering ${topic}...`);
-        // POST /v3/application/webhooks
+        const regResponse = await fetch(`https://openapi.etsy.com/v3/application/shops/${config.shopId}/webhooks`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "x-api-key": config.apiKey,
+            "Authorization": `Bearer ${config.accessToken}`,
+          },
+          body: new URLSearchParams({
+            topic,
+            url: webhookUrl,
+          })
+        });
+
+        if (regResponse.ok) {
+          const regData = await regResponse.json();
+          console.log(`Successfully registered ${topic}. Shared Secret: ${regData.shared_secret}`);
+          if (envName === "local") {
+             updateEnvFile(resolve(process.cwd(), ".env"), {
+               ETSY_SHARED_SECRET: regData.shared_secret
+             });
+          }
+        } else {
+          const err = await regResponse.text();
+          console.error(`Failed to register ${topic}: ${err}`);
+        }
       }
       console.log("\nRegistration complete.");
     } else {
@@ -159,6 +199,24 @@ async function main() {
     console.error("Setup failed:", error);
     process.exit(1);
   }
+}
+
+function updateEnvFile(path: string, updates: Record<string, string>) {
+  let content = "";
+  if (existsSync(path)) {
+    content = readFileSync(path, "utf-8");
+  }
+  
+  for (const [key, value] of Object.entries(updates)) {
+    const regex = new RegExp(`^${key}=.*$`, "m");
+    if (regex.test(content)) {
+      content = content.replace(regex, `${key}=${value}`);
+    } else {
+      content += `\n${key}=${value}\n`;
+    }
+  }
+  
+  writeFileSync(path, content.trim() + "\n");
 }
 
 main();

@@ -3,10 +3,13 @@ import { createScreenshotHelper } from "../helpers/screenshot-helper";
 import { waitForAppReady, waitForImages } from "../helpers/loading-helper";
 import crypto from "crypto";
 
-const ETSY_SECRET = "test_secret";
+const ETSY_SECRET = "whsec_dGVzdF9zZWNyZXQ="; // "test_secret" in base64 is dGVzdF9zZWNyZXQ=
 
-function computeHmac(payload: string, secret: string) {
-  return crypto.createHmac("sha256", secret).update(payload).digest("base64");
+function computeHmac(webhookId: string, timestamp: string, payload: string, secret: string) {
+  const secretKey = secret.replace("whsec_", "");
+  const secretBytes = Buffer.from(secretKey, "base64");
+  const signedContent = `${webhookId}.${timestamp}.${payload}`;
+  return crypto.createHmac("sha256", secretBytes).update(signedContent).digest("base64");
 }
 
 test("Etsy Order Sync - Exception UI", async ({ authenticatedPage: page, request }) => {
@@ -36,7 +39,9 @@ test("Etsy Order Sync - Exception UI", async ({ authenticatedPage: page, request
     }
   };
   const exceptionBody = JSON.stringify(exceptionPayload);
-  const exceptionSignature = computeHmac(exceptionBody, ETSY_SECRET);
+  const webhookId = `evt-exc-${runId}`;
+  const timestamp = String(runId);
+  const exceptionSignature = computeHmac(webhookId, timestamp, exceptionBody, ETSY_SECRET);
 
   console.log("Sending Etsy webhook with unknown SKU...");
   const response = await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
@@ -44,7 +49,8 @@ test("Etsy Order Sync - Exception UI", async ({ authenticatedPage: page, request
     headers: {
       "Content-Type": "application/json",
       "x-etsy-signature": exceptionSignature,
-      "x-etsy-event-id": `evt-exc-${runId}`
+      "x-etsy-event-id": webhookId,
+      "x-etsy-timestamp": timestamp
     }
   });
   expect(response.ok()).toBe(true);

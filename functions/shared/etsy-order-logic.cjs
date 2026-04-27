@@ -4,28 +4,42 @@ const crypto = require("crypto");
  * Verifies the Etsy webhook signature.
  * Etsy v3 webhooks include an x-etsy-signature header.
  * The signature is a HMAC-SHA256 hash of:
- *   shared_secret + webhook_url + request_body
- * or similar depending on the exact v3 spec version.
- * NOTE: This is a placeholder for the exact Etsy v3 signature verification logic.
+ *   webhook_id + "." + webhook_timestamp + "." + raw_body
+ *
  * @param {string|Buffer} rawBody
  * @param {string} signatureHeader
  * @param {string} secret
- * @param {string} webhookUrl
+ * @param {string} webhookId
+ * @param {string} webhookTimestamp
  * @returns {boolean}
  */
-function verifyEtsyWebhookSignature(rawBody, signatureHeader, secret, webhookUrl) {
-  if (!signatureHeader || !secret) return false;
-  
-  // Etsy v3 standard: HMAC-SHA256(secret, body)
-  const hash = crypto
-    .createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("base64");
-  
+function verifyEtsyWebhookSignature(
+  rawBody,
+  signatureHeader,
+  secret,
+  webhookId,
+  webhookTimestamp,
+) {
+  if (!signatureHeader || !secret || !webhookId || !webhookTimestamp) {
+    return false;
+  }
+
+  // 1. Prepare the secret (remove prefix and decode)
+  const secretKey = secret.replace("whsec_", "");
+  const secretBytes = Buffer.from(secretKey, "base64");
+
+  // 2. Construct the signed content string
+  const signedContent = `${webhookId}.${webhookTimestamp}.${rawBody}`;
+
+  // 3. Compute HMAC-SHA256
+  const hmac = crypto.createHmac("sha256", secretBytes);
+  hmac.update(signedContent);
+  const expectedSignature = hmac.digest("base64");
+
   try {
     return crypto.timingSafeEqual(
-      Buffer.from(hash, "base64"),
-      Buffer.from(signatureHeader, "base64")
+      Buffer.from(expectedSignature, "base64"),
+      Buffer.from(signatureHeader, "base64"),
     );
   } catch (e) {
     return false;
@@ -34,6 +48,7 @@ function verifyEtsyWebhookSignature(rawBody, signatureHeader, secret, webhookUrl
 
 /**
  * Fetches receipts that have been modified since the given timestamp.
+ * Supports pagination.
  * @param {Object} config Etsy configuration
  * @param {number} lastModifiedTimestamp Cursor in seconds
  * @returns {Promise<Array>} List of raw Etsy receipts
@@ -44,41 +59,65 @@ async function fetchChangedReceipts(config, lastModifiedTimestamp) {
     throw new Error("Missing Etsy shopId or accessToken");
   }
 
-  // Etsy v3: GET /v3/application/shops/{shop_id}/receipts
-  // Query params: min_last_modified_timestamp
-  const params = new URLSearchParams({
-    min_last_modified_timestamp: String(lastModifiedTimestamp),
-    limit: "50",
-  });
+  let allReceipts = [];
+  let offset = 0;
+  const limit = 50;
 
-  const url = `https://openapi.etsy.com/v3/application/shops/${shopId}/receipts?${params.toString()}`;
-  
-  const response = await fetch(url, {
-    headers: {
-      "x-api-key": apiKey,
-      "Authorization": `Bearer ${accessToken}`,
-    }
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Etsy API error (${response.status}): ${errorText}`);
-  }
-
-  const data = await response.json();
-  const receipts = data.results || [];
-
-  // Each receipt needs its transactions for inventory mapping
-  const fullReceipts = [];
-  for (const receipt of receipts) {
-    const transactions = await fetchReceiptTransactions(config, receipt.receipt_id);
-    fullReceipts.push({
-      ...receipt,
-      transactions,
+  while (true) {
+    // Etsy v3: GET /v3/application/shops/{shop_id}/receipts
+    // Query params: min_last_modified_timestamp
+    const params = new URLSearchParams({
+      min_last_modified_timestamp: String(lastModifiedTimestamp),
+      limit: String(limit),
+      offset: String(offset),
     });
+
+    const url = `https://openapi.etsy.com/v3/application/shops/${shopId}/receipts?${params.toString()}`;
+
+    const response = await fetch(url, {
+      headers: {
+        "x-api-key": apiKey,
+        "Authorization": `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Etsy API error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    const receipts = data.results || [];
+    allReceipts = allReceipts.concat(receipts);
+
+    if (receipts.length < limit) {
+      break;
+    }
+    offset += limit;
   }
 
-  return fullReceipts;
+  // Each receipt needs its transactions for inventory mapping.
+  // Using a small concurrency limit to avoid hitting Etsy rate limits too hard.
+  const CONCURRENCY = 5;
+  const results = [];
+  for (let i = 0; i < allReceipts.length; i += CONCURRENCY) {
+    const chunk = allReceipts.slice(i, i + CONCURRENCY);
+    const fullChunk = await Promise.all(
+      chunk.map(async (receipt) => {
+        const transactions = await fetchReceiptTransactions(
+          config,
+          receipt.receipt_id,
+        );
+        return {
+          ...receipt,
+          transactions,
+        };
+      }),
+    );
+    results.push(...fullChunk);
+  }
+
+  return results;
 }
 
 async function fetchReceiptTransactions(config, receiptId) {
