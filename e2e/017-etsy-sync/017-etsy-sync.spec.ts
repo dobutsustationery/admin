@@ -22,10 +22,7 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
   
   console.log("Waiting for inventory to initialize...");
   await page.waitForSelector('table');
-  const rowLocator = page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first();
-  await expect(rowLocator).toBeVisible({ timeout: 60000 });
-  
-  const getShippedCell = () => rowLocator.locator('td').nth(7);
+  const getShippedCell = () => page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first().locator('td').nth(7);
   
   await expect(async () => {
     const text = await getShippedCell().innerText();
