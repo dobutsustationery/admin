@@ -14,6 +14,7 @@ import {
   new_order,
   package_item,
   type Item,
+  type InventoryItemKey,
 } from "$lib/inventory";
 
 describe("Shopify Sync Reducer", () => {
@@ -1451,5 +1452,43 @@ describe("Shopify Sync Reducer", () => {
 
     // Shipped count should NOT change further!
     expect(state.idToItem[keyA].shipped).toBe(3);
+  });
+
+  it("regression: resolves non-numeric SKUs correctly for Shopify", () => {
+    const key = "JAN123Letters" as InventoryItemKey;
+    const item = {
+      janCode: "JAN123Letters",
+      subtype: "",
+      qty: 10,
+      shipped: 0,
+      description: "Non-numeric SKU item",
+      hsCode: "1234.56",
+      image: "",
+      pieces: 1,
+      creationDate: "2024-01-01",
+      timestamp: 1000,
+    };
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(update_item({ id: key, item }), "setup", 1000),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_created({
+          raw: {
+            id: "123",
+            created_at: "2024-01-01T00:00:20Z",
+            line_items: [{ id: "li1", sku: "JAN123Letters", quantity: 1 }],
+          },
+          topic: "orders/create",
+        }),
+        "order-1",
+        2000,
+      ),
+    );
+
+    expect(state.idToItem[key].shipped).toBe(1);
   });
 });

@@ -6,6 +6,7 @@ import {
   canonicalizeSubtype,
   makeInventoryItemKey,
 } from "./sku";
+export type { InventoryItemKey };
 import {
   type FirestoreTimestampLike,
   toTimestampMs,
@@ -224,7 +225,10 @@ export const etsy_order_updated = createAction<{
   raw: any;
   topic: string;
 }>("etsy_order_updated");
-
+export const etsy_unrecognized_topic = createAction<{
+  raw: any;
+  topic: string;
+}>("etsy_unrecognized_topic");
 export const etsy_order_reconciled = createAction<{
   raw: any;
   topic: string;
@@ -828,8 +832,7 @@ function mapSkuToItemKey(
   lineItem: any,
 ): InventoryItemKey | null {
   let normalizedSku = String(sku || "").trim();
-  // Most SKUs are JAN codes (13 digits) or similar numeric identifiers
-  if (normalizedSku && /^\d+$/.test(normalizedSku)) {
+  if (normalizedSku && /^\d+/.test(normalizedSku)) {
     return normalizedSku as InventoryItemKey;
   }
 
@@ -843,6 +846,28 @@ function mapSkuToItemKey(
     let variantTitle = String(lineItem.variant_title || "").trim();
     if (variantTitle === "Default Title") variantTitle = "";
     return (jan + variantTitle) as InventoryItemKey;
+  }
+
+  // Fallback for Etsy: search in variations or title
+  if (lineItem.listing_id || lineItem.variations) {
+    // If we have a non-numeric SKU, it might be JAN+Subtype already
+    if (normalizedSku) {
+      return normalizedSku as InventoryItemKey;
+    }
+
+    // Try to find JAN in title or variations
+    const title = String(lineItem.title || "").trim();
+    const janMatch = title.match(/\b\d{13}\b/);
+    if (janMatch) {
+      const jan = janMatch[0];
+      let subtype = "";
+      if (lineItem.variations) {
+        subtype = lineItem.variations
+          .map((v: any) => v.formatted_value)
+          .join(" / ");
+      }
+      return makeInventoryItemKey(jan, subtype);
+    }
   }
 
   return (normalizedSku as InventoryItemKey) || null;
@@ -909,6 +934,13 @@ function rewriteOrderItemKeyReferences(
 
     if (order.shopifyFacts?.lines) {
       for (const fact of Object.values(order.shopifyFacts.lines)) {
+        if (fact.itemKey === oldKey) {
+          fact.itemKey = newKey;
+        }
+      }
+    }
+    if (order.etsyFacts?.lines) {
+      for (const fact of Object.values(order.etsyFacts.lines)) {
         if (fact.itemKey === oldKey) {
           fact.itemKey = newKey;
         }
@@ -1354,6 +1386,7 @@ export const inventory = createReducer(initialState, (r) => {
     const order = getOrCreateOrder(state, orderID, rawReceipt, actionTimestamp);
     const timestamp =
       (rawReceipt.updated_timestamp || rawReceipt.create_timestamp) * 1000;
+    const effectiveAtMs = timestamp;
 
     if (
       order.etsyFacts!.reconciledTimestamp &&
@@ -1362,48 +1395,65 @@ export const inventory = createReducer(initialState, (r) => {
       return;
     }
 
-    const currentInventoryImpact: Record<string, number> = {};
-    for (const item of order.items) {
-      const itemKey = canonicalizeInventoryItemKey(item.itemKey);
-      currentInventoryImpact[itemKey] =
-        (currentInventoryImpact[itemKey] || 0) + item.qty;
-    }
+    const oldFacts = order.etsyFacts!.lines;
+    const newFacts: Record<string, ShopifyLineFact> = {};
 
-    const itemQtyMap: Record<string, number> = {};
     const transactions = rawReceipt.transactions || [];
-    const effectiveAtMs = timestamp;
     for (const tx of transactions) {
       const {
         itemKey: resolvedKey,
         rawSku,
+        entityId,
         outcome,
       } = resolveLineItemInventoryKey(state, tx, effectiveAtMs);
 
-      if (resolvedKey && outcome !== "missing_historical_binding") {
-        const canonicalKey = canonicalizeInventoryItemKey(resolvedKey);
-        // Etsy status logic: if receipt is cancelled, qty is 0.
-        // Also check if transaction itself has some cancellation status if Etsy v3 provides it per line.
-        // For now, if the whole receipt is cancelled, impact is 0.
-        const isCancelled =
-          rawReceipt.status === "canceled" || rawReceipt.status === "cancelled";
-        const currentQty = isCancelled ? 0 : tx.quantity;
-        itemQtyMap[canonicalKey] = (itemQtyMap[canonicalKey] || 0) + currentQty;
+      const lineItemID = String(tx.transaction_id);
+      const oldFact = oldFacts[lineItemID];
 
-        if (!order.etsyFacts!.lines[tx.transaction_id]) {
-          order.etsyFacts!.lines[tx.transaction_id] = {
-            itemKey: canonicalKey,
-            placed: tx.quantity,
-            cancelled: isCancelled ? tx.quantity : 0,
-            refunded: 0, // Etsy v3 might need separate check for refunds
-          };
+      if (resolvedKey && outcome !== "missing_historical_binding") {
+        const isManualRetype =
+          oldFact &&
+          (oldFact.manualEntityId ||
+            (oldFact.itemKey !== resolvedKey && oldFact.rawSku === rawSku));
+
+        let canonicalKey: InventoryItemKey;
+        if (oldFact?.manualEntityId) {
+          const currentKey =
+            state.keyIdentity?.currentKeyByEntityId[oldFact.manualEntityId];
+          canonicalKey = currentKey
+            ? canonicalizeInventoryItemKey(currentKey)
+            : canonicalizeInventoryItemKey(oldFact.itemKey);
         } else {
-          const fact = order.etsyFacts!.lines[tx.transaction_id];
-          fact.placed = Math.max(fact.placed, tx.quantity);
-          if (isCancelled) {
-            fact.cancelled = Math.max(fact.cancelled, tx.quantity);
-          }
+          canonicalKey = canonicalizeInventoryItemKey(
+            isManualRetype ? oldFact!.itemKey : resolvedKey,
+          );
         }
+
+        const isCancelled =
+          rawReceipt.status === "canceled" ||
+          rawReceipt.status === "cancelled" ||
+          rawReceipt.status === "refunded";
+        const isUnpaid =
+          rawReceipt.is_paid === false || rawReceipt.status === "unpaid";
+
+        newFacts[lineItemID] = {
+          itemKey: canonicalKey,
+          placed: tx.quantity,
+          cancelled: isCancelled || isUnpaid ? tx.quantity : 0,
+          refunded:
+            rawReceipt.status === "refunded" ||
+            rawReceipt.status === "partially_refunded"
+              ? tx.quantity
+              : 0,
+          rawSku,
+          entityId,
+          manualEntityId: oldFact?.manualEntityId,
+        };
       } else {
+        if (oldFact) {
+          newFacts[lineItemID] = oldFact;
+        }
+
         if (!state.etsyExceptions) state.etsyExceptions = {};
         if (!state.etsyExceptions[orderID]) state.etsyExceptions[orderID] = [];
         state.etsyExceptions[orderID].push(
@@ -1412,49 +1462,45 @@ export const inventory = createReducer(initialState, (r) => {
       }
     }
 
-    for (const [canonicalKey, currentQty] of Object.entries(itemQtyMap)) {
-      const diff = currentQty - (currentInventoryImpact[canonicalKey] || 0);
-      if (diff !== 0) {
-        if (state.idToItem[canonicalKey]) {
-          state.idToItem[canonicalKey].shipped += diff;
-          const historyVal = actionTimestamp;
-          if (!state.idToHistory[canonicalKey])
-            state.idToHistory[canonicalKey] = [];
-          state.idToHistory[canonicalKey].push({
-            date: new Date(historyVal).toLocaleString("en", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-            }),
-            desc: `${labelPrefix}: ${currentQty} (diff ${diff}) for ${orderID}`,
-            val: historyVal,
-          });
-          state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
-        }
-      }
-      delete currentInventoryImpact[canonicalKey];
+    // Authoritative diff loop for idToItem.shipped
+    const netDiffMap: Record<string, number> = {};
+
+    // 1. Accumulate new impact (positives)
+    for (const f of Object.values(newFacts)) {
+      const k = canonicalizeInventoryItemKey(f.itemKey);
+      const impact = f.placed - f.cancelled - f.refunded;
+      netDiffMap[k] = (netDiffMap[k] || 0) + impact;
+    }
+    // 2. Subtract old impact (negatives)
+    for (const f of Object.values(oldFacts)) {
+      const k = canonicalizeInventoryItemKey(f.itemKey);
+      const impact = f.placed - f.cancelled - f.refunded;
+      netDiffMap[k] = (netDiffMap[k] || 0) - impact;
     }
 
-    for (const [key, qty] of Object.entries(currentInventoryImpact)) {
-      const canonicalKey = key as InventoryItemKey;
-      if (qty !== 0 && state.idToItem[canonicalKey]) {
-        state.idToItem[canonicalKey].shipped -= qty;
-        const historyVal = actionTimestamp;
+    // Commit diffs to idToItem
+    for (const [canonicalKey, diff] of Object.entries(netDiffMap)) {
+      if (diff !== 0 && state.idToItem[canonicalKey] !== undefined) {
+        state.idToItem[canonicalKey].shipped += diff;
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
         state.idToHistory[canonicalKey].push({
-          date: new Date(historyVal).toLocaleString("en", {
+          date: new Date(actionTimestamp).toLocaleString("en", {
             year: "numeric",
             month: "short",
             day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
           }),
-          desc: `${labelPrefix} (Missing item reset): 0 (diff -${qty}) for ${orderID}`,
-          val: historyVal,
+          desc: `${labelPrefix} (Order ${orderID}): diff ${diff}`,
+          val: actionTimestamp,
         });
         state.idToHistory[canonicalKey].sort((a, b) => a.val - b.val);
       }
     }
 
+    // Authoritative commit
+    order.etsyFacts!.lines = newFacts;
     order.etsyFacts!.reconciledTimestamp = timestamp;
     syncOrderItemsFromFacts(order);
   }
@@ -1820,6 +1866,19 @@ export const inventory = createReducer(initialState, (r) => {
 
       if (order.shopifyFacts?.lines) {
         for (const fact of Object.values(order.shopifyFacts.lines)) {
+          if (
+            fact.itemKey === itemKey ||
+            (fact.itemKey === newItemKey && !fact.manualEntityId)
+          ) {
+            fact.itemKey = newItemKey;
+            if (newEntityId) {
+              fact.manualEntityId = newEntityId;
+            }
+          }
+        }
+      }
+      if (order.etsyFacts?.lines) {
+        for (const fact of Object.values(order.etsyFacts.lines)) {
           if (
             fact.itemKey === itemKey ||
             (fact.itemKey === newItemKey && !fact.manualEntityId)

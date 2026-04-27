@@ -61,7 +61,7 @@ function getEtsyConfig() {
     shopId: process.env.ETSY_SHOP_ID || "",
     apiKey: process.env.ETSY_API_KEY || "",
     accessToken: process.env.ETSY_ACCESS_TOKEN || "",
-    sharedSecret: process.env.ETSY_SHARED_SECRET || "test_secret",
+    sharedSecret: process.env.ETSY_SHARED_SECRET || "whsec_dGVzdF9zZWNyZXQ=",
   };
 }
 
@@ -1300,7 +1300,8 @@ exports.etsyOrderWebhook = onRequest(
   },
   async (req, res) => {
     const signature = req.headers["x-etsy-signature"];
-    const webhookId = req.headers["x-etsy-event-id"] || `etsy-evt-${Date.now()}`;
+    const webhookId = req.headers["x-etsy-event-id"];
+    const webhookTimestamp = req.headers["x-etsy-timestamp"];
     const topic = req.body?.event_type || "receipt.updated";
 
     const config = getEtsyConfig();
@@ -1310,17 +1311,25 @@ exports.etsyOrderWebhook = onRequest(
       return res.status(400).send("Bad Request: Missing Raw Body");
     }
 
+    if (!webhookId || !webhookTimestamp) {
+      logger.error("Missing headers for Etsy HMAC verification", {
+        webhookId,
+        webhookTimestamp,
+      });
+      return res.status(400).send("Bad Request: Missing required headers");
+    }
+
     if (
       !etsyOrderLogic.verifyEtsyWebhookSignature(
         req.rawBody,
         signature,
         config.sharedSecret,
+        webhookId,
+        webhookTimestamp,
       )
     ) {
       logger.error("Etsy HMAC verification failed", { topic, webhookId });
-      // In production, you might want to return 401. 
-      // For now, let's log and proceed or return 401 if we are sure about the secret.
-      // return res.status(401).send("Unauthorized");
+      return res.status(401).send("Unauthorized");
     }
 
     try {
@@ -1331,14 +1340,18 @@ exports.etsyOrderWebhook = onRequest(
         createdAt: FieldValue.serverTimestamp(),
       });
 
-      // Deduplication
+      // Atomically Deduplication (Finding 4)
       const eventRef = db.collection("etsy_order_events").doc(webhookId);
-      const eventSnap = await eventRef.get();
-      if (eventSnap.exists) {
-        logger.info("Duplicate Etsy webhook received", { webhookId });
-        return res.status(200).send("Duplicate");
+      try {
+        await eventRef.create({ processedAt: FieldValue.serverTimestamp() });
+      } catch (e) {
+        if (e.code === 6) {
+          // ALREADY_EXISTS
+          logger.info("Duplicate Etsy webhook received", { webhookId });
+          return res.status(200).send("Duplicate");
+        }
+        throw e;
       }
-      await eventRef.set({ processedAt: FieldValue.serverTimestamp() });
 
       // Identify Action Type
       let type = "etsy_unrecognized_topic";
@@ -1355,7 +1368,6 @@ exports.etsyOrderWebhook = onRequest(
           payload: { raw: req.body.resource_data || req.body, topic },
         },
         creator: "etsy-webhook",
-        atMs: Date.now(),
       });
 
       res.status(200).send("OK");
@@ -1387,7 +1399,7 @@ exports.etsyOrderReconcile = onSchedule(
     try {
       const receipts = await etsyOrderLogic.fetchChangedReceipts(config, lastCursor);
       
-      let newCursor = lastCursor;
+      let newCursorMs = lastCursor * 1000;
       for (const receipt of receipts) {
         await writeBroadcastAction({
           action: {
@@ -1395,18 +1407,17 @@ exports.etsyOrderReconcile = onSchedule(
             payload: { raw: receipt, topic: "reconcile" },
           },
           creator: "etsy-reconcile-poller",
-          atMs: Date.now(),
         });
 
         const modified = receipt.updated_timestamp || receipt.create_timestamp;
-        if (modified > newCursor) {
-          newCursor = modified;
+        if (modified * 1000 > newCursorMs) {
+          newCursorMs = modified * 1000;
         }
       }
 
       await stateRef.set(
         {
-          lastReceiptModifiedTimestamp: newCursor,
+          lastReceiptModifiedTimestamp: Math.floor(newCursorMs / 1000),
           lastRunAt: Date.now(),
         },
         { merge: true },
