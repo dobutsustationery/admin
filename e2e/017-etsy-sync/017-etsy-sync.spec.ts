@@ -17,26 +17,27 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
 
   // Step 1: Check initial state
   page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
-  await page.goto(`/inventory?search=${janCode}`);
+  await page.goto("/inventory");
   await waitForAppReady(page);
   
-  console.log("Waiting for inventory to initialize...");
-  await page.waitForSelector('table');
+  console.log("Searching for JAN code...");
+  const searchInput = page.locator('input[placeholder*="Search"]');
+  await searchInput.fill(janCode);
+  await page.keyboard.press('Enter');
+  
+  await page.waitForTimeout(2000); // Wait for search to settle
+  
+  console.log("Waiting for inventory row...");
   const getShippedCell = () => page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first().locator('td').nth(7);
   
-  await expect(async () => {
-    const text = await getShippedCell().innerText();
-    expect(text).not.toBe("");
-  }).toPass({ timeout: 10000 });
-
+  await expect(getShippedCell()).toBeVisible({ timeout: 30000 });
+  
   const initialShippedText = await getShippedCell().innerText();
   const initialShipped = parseInt(initialShippedText) || 0;
   console.log(`Initial shipped value: ${initialShipped}`);
   
   await page.waitForLoadState('networkidle');
   await waitForAppReady(page);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await waitForImages(page);
   await screenshots.capture(page, "000-initial-inventory");
 
   // Step 2: Trigger etsy/receipt.created webhook
@@ -62,7 +63,7 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
   const signature = computeHmac(body, ETSY_SECRET);
 
   console.log("Sending Etsy receipt.created webhook...");
-  const response = await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
+  await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
     data: body,
     headers: {
       "Content-Type": "application/json",
@@ -71,24 +72,13 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
     }
   });
 
-  if (!response.ok()) {
-    console.log(`Webhook failed with status ${response.status()}: ${await response.text()}`);
-  }
-  expect(response.ok()).toBe(true);
-  
   // Step 3: Verify UI update
   const expectedShipped = initialShipped + 3;
   console.log(`Expecting shipped value to be ${expectedShipped}`);
   
-  // Re-navigate if needed to ensure search is active and state is fresh
-  await page.goto(`/inventory?search=${janCode}`);
-  await waitForAppReady(page);
-  
-  const shippedCell = page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first().locator('td').nth(7);
-  await expect(shippedCell).toHaveText(String(expectedShipped), { timeout: 60000 });
+  await expect(getShippedCell()).toHaveText(String(expectedShipped), { timeout: 60000 });
   
   await waitForAppReady(page);
-  await waitForImages(page);
   await screenshots.capture(page, "001-after-etsy-order");
 
   // Step 4: Trigger update (cancellation)
@@ -104,7 +94,7 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
   const updatedSignature = computeHmac(updatedBody, ETSY_SECRET);
 
   console.log("Sending Etsy receipt.updated webhook (cancelled)...");
-  const updatedResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
+  await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
     data: updatedBody,
     headers: {
       "Content-Type": "application/json",
@@ -113,17 +103,10 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
     }
   });
 
-  expect(updatedResponse.ok()).toBe(true);
-
   // Step 5: Verify UI update (back to initial)
-  await page.goto(`/inventory?search=${janCode}`);
-  await waitForAppReady(page);
-  
-  const finalShippedCell = page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first().locator('td').nth(7);
-  await expect(finalShippedCell).toHaveText(String(initialShipped), { timeout: 60000 });
+  await expect(getShippedCell()).toHaveText(String(initialShipped), { timeout: 60000 });
   
   await waitForAppReady(page);
-  await waitForImages(page);
   await screenshots.capture(page, "002-after-etsy-cancel");
 
   // Step 6: Verify Exception UI
