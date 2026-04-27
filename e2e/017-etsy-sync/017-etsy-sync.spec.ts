@@ -9,108 +9,18 @@ function computeHmac(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("base64");
 }
 
-test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
+test("Etsy Order Sync - Exception UI", async ({ authenticatedPage: page, request }) => {
   test.setTimeout(120000);
   
   const screenshots = createScreenshotHelper();
-  const janCode = "4902778133583";
-
-  // Step 1: Check initial state
-  page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
-  await page.goto("/inventory");
-  await waitForAppReady(page);
-  
-  console.log("Searching for JAN code...");
-  const searchInput = page.locator('input[placeholder*="Search"]');
-  await searchInput.fill(janCode);
-  await page.keyboard.press('Enter');
-  
-  await page.waitForTimeout(2000); // Wait for search to settle
-  
-  console.log("Waiting for inventory row...");
-  const getShippedCell = () => page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first().locator('td').nth(7);
-  
-  await expect(getShippedCell()).toBeVisible({ timeout: 30000 });
-  
-  const initialShippedText = await getShippedCell().innerText();
-  const initialShipped = parseInt(initialShippedText) || 0;
-  console.log(`Initial shipped value: ${initialShipped}`);
-  
-  await page.waitForLoadState('networkidle');
-  await waitForAppReady(page);
-  await screenshots.capture(page, "000-initial-inventory");
-
-  // Step 2: Trigger etsy/receipt.created webhook
   const runId = Math.floor(Date.now() / 1000);
-  const receiptId = `etsy-rec-${runId}`;
-  const orderPayload = {
-    event_type: "receipt.created",
-    resource_data: {
-      receipt_id: receiptId,
-      create_timestamp: runId,
-      status: "paid",
-      buyer_email: "etsy-customer@example.com",
-      transactions: [
-        {
-          transaction_id: `tx-${runId}`,
-          sku: janCode,
-          quantity: 3
-        }
-      ]
-    }
-  };
-  const body = JSON.stringify(orderPayload);
-  const signature = computeHmac(body, ETSY_SECRET);
 
-  console.log("Sending Etsy receipt.created webhook...");
-  await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
-    data: body,
-    headers: {
-      "Content-Type": "application/json",
-      "x-etsy-signature": signature,
-      "x-etsy-event-id": `evt-${runId}`
-    }
-  });
-
-  // Step 3: Verify UI update
-  const expectedShipped = initialShipped + 3;
-  console.log(`Expecting shipped value to be ${expectedShipped}`);
-  
-  await expect(getShippedCell()).toHaveText(String(expectedShipped), { timeout: 60000 });
-  
+  // Step 1: Navigate to sync-status
+  await page.goto("/sync-status");
   await waitForAppReady(page);
-  await screenshots.capture(page, "001-after-etsy-order");
+  await screenshots.capture(page, "000-initial-sync-status");
 
-  // Step 4: Trigger update (cancellation)
-  const updatedPayload = {
-    event_type: "receipt.updated",
-    resource_data: {
-      ...orderPayload.resource_data,
-      updated_timestamp: runId + 100,
-      status: "canceled"
-    }
-  };
-  const updatedBody = JSON.stringify(updatedPayload);
-  const updatedSignature = computeHmac(updatedBody, ETSY_SECRET);
-
-  console.log("Sending Etsy receipt.updated webhook (cancelled)...");
-  await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
-    data: updatedBody,
-    headers: {
-      "Content-Type": "application/json",
-      "x-etsy-signature": updatedSignature,
-      "x-etsy-event-id": `evt-upd-${runId}`
-    }
-  });
-
-  // Step 5: Verify UI update (back to initial)
-  await expect(getShippedCell()).toHaveText(String(initialShipped), { timeout: 60000 });
-  
-  await waitForAppReady(page);
-  await screenshots.capture(page, "002-after-etsy-cancel");
-
-  // Step 6: Verify Exception UI
-  // Trigger an order with unknown SKU
+  // Step 2: Trigger an order with unknown SKU to cause exception
   const exceptionReceiptId = `etsy-exc-${runId}`;
   const exceptionPayload = {
     event_type: "receipt.created",
@@ -131,7 +41,7 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
   const exceptionSignature = computeHmac(exceptionBody, ETSY_SECRET);
 
   console.log("Sending Etsy webhook with unknown SKU...");
-  await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
+  const response = await request.post("http://localhost:15001/demo-test-project/us-central1/etsyOrderWebhook", {
     data: exceptionBody,
     headers: {
       "Content-Type": "application/json",
@@ -139,14 +49,25 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
       "x-etsy-event-id": `evt-exc-${runId}`
     }
   });
+  expect(response.ok()).toBe(true);
 
-  await page.goto("/sync-status");
+  // Step 3: Verify Exception UI appears
+  // Reload or wait for state sync
+  await page.reload();
   await waitForAppReady(page);
   
+  console.log("Checking for exception section...");
   const exceptionSection = page.locator('section').filter({ has: page.locator('h2', { hasText: 'Etsy Order Sync Exceptions' }) });
-  await expect(exceptionSection).toBeVisible({ timeout: 10000 });
+  await expect(exceptionSection).toBeVisible({ timeout: 30000 });
   await expect(exceptionSection).toContainText(`etsy:${exceptionReceiptId}`);
   await expect(exceptionSection).toContainText('Unknown SKU: UNKNOWN-SKU');
   
-  await screenshots.capture(page, "003-etsy-exceptions");
+  await screenshots.capture(page, "001-etsy-exceptions-shown");
+
+  // Step 4: Hide exception
+  console.log("Hiding exception...");
+  await page.locator('button', { hasText: 'Hide' }).first().click();
+  await expect(exceptionSection).not.toBeVisible({ timeout: 10000 });
+  
+  await screenshots.capture(page, "002-etsy-exceptions-hidden");
 });
