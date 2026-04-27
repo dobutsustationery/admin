@@ -346,11 +346,16 @@ function chunkShopifyCatalogListings(listings, maxBytes = 450 * 1024) {
 }
 
 async function writeBroadcastAction({ action, creator, atMs }) {
-  await db.collection(BROADCAST_COLLECTION).add({
+  const data = {
     ...action,
-    timestamp: new Date(atMs),
     creator,
-  });
+  };
+  if (atMs !== undefined) {
+    data.timestamp = new Date(atMs);
+  } else {
+    data.timestamp = FieldValue.serverTimestamp();
+  }
+  await db.collection(BROADCAST_COLLECTION).add(data);
 }
 
 function logSkipped(dispatched, requestId, domain) {
@@ -1101,14 +1106,18 @@ exports.shopifyOrderWebhook = onRequest(
         createdAt: FieldValue.serverTimestamp(),
       });
 
-      // 3. Deduplication
+      // 3. Atomically Deduplication (Finding 4)
       const eventRef = db.collection("shopify_order_events").doc(webhookId);
-      const eventSnap = await eventRef.get();
-      if (eventSnap.exists) {
-        logger.info("Duplicate webhook received", { webhookId });
-        return res.status(200).send("Duplicate");
+      try {
+        await eventRef.create({ processedAt: FieldValue.serverTimestamp() });
+      } catch (e) {
+        // e.code 6 is ALREADY_EXISTS
+        if (e.code === 6 || e.message?.includes("already exists")) {
+          logger.info("Duplicate webhook received", { webhookId });
+          return res.status(200).send("Duplicate");
+        }
+        throw e;
       }
-      await eventRef.set({ processedAt: FieldValue.serverTimestamp() });
 
       // 4. Identify Action Type
       let type = "shopify_unrecognized_topic";
@@ -1129,7 +1138,6 @@ exports.shopifyOrderWebhook = onRequest(
           payload: { raw: req.body, topic },
         },
         creator: "shopify-webhook",
-        atMs: Date.now(),
       });
 
       res.status(200).send("OK");
@@ -1162,40 +1170,55 @@ exports.shopifyOrderReconcile = onSchedule(
     const apiVersion = config.apiVersion;
 
     try {
+      let nextCursor = lastCursor;
+      const headers = await shopifyCore.buildShopifyHeaders(config);
+
       const params = new URLSearchParams({
         updated_at_min: lastCursor,
         status: "any",
-        limit: "50",
+        limit: "250",
       });
+      let endpoint = `https://${storeUrl}/admin/api/${apiVersion}/orders.json?${params.toString()}`;
 
-      const endpoint = `https://${storeUrl}/admin/api/${apiVersion}/orders.json?${params.toString()}`;
-      const headers = await shopifyCore.buildShopifyHeaders(config);
-      const json = await shopifyCore.fetchJson(endpoint, { headers });
-
-      const orders = Array.isArray(json?.orders) ? json.orders : [];
-
-      for (const order of orders) {
-        await writeBroadcastAction({
-          action: {
-            type: "shopify_order_reconciled",
-            payload: { raw: order, topic: "reconcile" },
-          },
-          creator: "shopify-reconcile-poller",
-          atMs: Date.now(),
-        });
-
-        if (order.updated_at > lastCursor) {
-          lastCursor = order.updated_at;
+      while (endpoint) {
+        const response = await fetch(endpoint, { headers });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(
+            `Shopify fetch failed (${response.status}): ${text.slice(0, 500)}`,
+          );
         }
+
+        const json = await response.json();
+        const orders = Array.isArray(json?.orders) ? json.orders : [];
+
+        for (const order of orders) {
+          await writeBroadcastAction({
+            action: {
+              type: "shopify_order_reconciled",
+              payload: { raw: order, topic: "reconcile" },
+            },
+            creator: "shopify-reconcile-poller",
+          });
+
+          if (order.updated_at > nextCursor) {
+            nextCursor = order.updated_at;
+          }
+        }
+
+        // Advance to next page (Finding 5)
+        endpoint = shopifyCore.parseNextLink(response.headers.get("Link"));
       }
 
-      await stateRef.set(
-        {
-          lastOrderUpdatedAtCursor: lastCursor,
-          lastRunAt: Date.now(),
-        },
-        { merge: true },
-      );
+      if (nextCursor !== lastCursor) {
+        await stateRef.set(
+          {
+            lastOrderUpdatedAtCursor: nextCursor,
+            lastRunAt: Date.now(),
+          },
+          { merge: true },
+        );
+      }
     } catch (error) {
       logger.error("Shopify order reconciliation failed", error);
     }
