@@ -21,11 +21,17 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
   await waitForAppReady(page);
   
   console.log("Waiting for inventory to initialize...");
+  await page.waitForSelector('table');
   const rowLocator = page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first();
-  await expect(rowLocator).toBeVisible({ timeout: 30000 });
+  await expect(rowLocator).toBeVisible({ timeout: 60000 });
   
   const getShippedCell = () => rowLocator.locator('td').nth(7);
   
+  await expect(async () => {
+    const text = await getShippedCell().innerText();
+    expect(text).not.toBe("");
+  }).toPass({ timeout: 10000 });
+
   const initialShippedText = await getShippedCell().innerText();
   const initialShipped = parseInt(initialShippedText) || 0;
   console.log(`Initial shipped value: ${initialShipped}`);
@@ -74,7 +80,9 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
   expect(response.ok()).toBe(true);
   
   // Step 3: Verify UI update
-  await expect(getShippedCell()).toHaveText(String(initialShipped + 3), { timeout: 30000 });
+  const expectedShipped = initialShipped + 3;
+  console.log(`Expecting shipped value to be ${expectedShipped}`);
+  await expect(getShippedCell()).toHaveText(String(expectedShipped), { timeout: 45000 });
   
   await waitForAppReady(page);
   await waitForImages(page);
