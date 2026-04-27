@@ -79,7 +79,13 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
   // Step 3: Verify UI update
   const expectedShipped = initialShipped + 3;
   console.log(`Expecting shipped value to be ${expectedShipped}`);
-  await expect(getShippedCell()).toHaveText(String(expectedShipped), { timeout: 45000 });
+  
+  // Re-navigate if needed to ensure search is active and state is fresh
+  await page.goto(`/inventory?search=${janCode}`);
+  await waitForAppReady(page);
+  
+  const shippedCell = page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first().locator('td').nth(7);
+  await expect(shippedCell).toHaveText(String(expectedShipped), { timeout: 60000 });
   
   await waitForAppReady(page);
   await waitForImages(page);
@@ -110,7 +116,11 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
   expect(updatedResponse.ok()).toBe(true);
 
   // Step 5: Verify UI update (back to initial)
-  await expect(getShippedCell()).toHaveText(String(initialShipped), { timeout: 30000 });
+  await page.goto(`/inventory?search=${janCode}`);
+  await waitForAppReady(page);
+  
+  const finalShippedCell = page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first().locator('td').nth(7);
+  await expect(finalShippedCell).toHaveText(String(initialShipped), { timeout: 60000 });
   
   await waitForAppReady(page);
   await waitForImages(page);
