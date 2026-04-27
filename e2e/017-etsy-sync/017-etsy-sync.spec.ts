@@ -17,7 +17,7 @@ test("Etsy Order Sync Flow", async ({ authenticatedPage: page, request }) => {
 
   // Step 1: Check initial state
   page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
-  await page.goto("/inventory");
+  await page.goto(`/inventory?search=${janCode}`);
   await waitForAppReady(page);
   
   console.log("Waiting for inventory to initialize...");
