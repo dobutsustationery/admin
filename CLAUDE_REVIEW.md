@@ -1,241 +1,262 @@
 # Review: Temporal Key Bindings Implementation
 
-Reviewing `codex/temporal-key-bindings-design` (commits `abbe968`..`f534d1f`)
-against `docs/design/TEMPORAL_KEY_BINDINGS_DESIGN.md`.
+Reviewing `codex/temporal-key-bindings-design` against
+`docs/design/TEMPORAL_KEY_BINDINGS_DESIGN.md`.
 
-Files touched:
+Two review passes:
+
+- **Pass 1** — initial implementation through commit `f534d1f`.
+- **Pass 2** — Gemini's refinements in `3cb2703`
+  ("Refine temporal key bindings: address pending writes and manual retype
+  durability"), summarised in `GEMINI_RESPONSE.md`.
+
+Files touched in this branch:
 
 - `docs/design/TEMPORAL_KEY_BINDINGS_DESIGN.md` (new)
 - `docs/design/README.md`
 - `src/lib/inventory.ts`
 - `src/lib/timestamped-action.ts`
 - `tests/shopify-sync.test.ts`
+- `tests/unit/shopify-history.test.ts` (added in pass 2)
 
-## 1. Summary
+Test status after pass 2: **`bun run test` → 265 passed, 1 skipped**, including
+the 16 cases in `tests/shopify-sync.test.ts`.
 
-The implementation captures the heart of the design:
+## 1. Original implementation (pass 1)
 
-- A `keyIdentity` substructure on `InventoryState` with the three maps the
-  design specifies (`intervalsByKey`, `currentKeyByEntityId`,
-  `entityIdByCurrentKey`).
+The original commits captured the heart of the design:
+
+- `keyIdentity` substructure on `InventoryState` with the three maps the
+  design specifies.
 - `bindNewInventoryEntity`, `renameInventoryEntityKey`,
-  `closeInventoryEntityKey`, and `resolveHistoricalInventoryKey` helpers
-  matching the design's binding operations.
-- Entity IDs of the form `${creatingActionDocId}:${originalInventoryKey}`,
-  exactly as the design proposes.
-- `id` is now propagated alongside `timestamp` through `withInheritedTimestamp`
-  so reducers can read the creating broadcast doc id.
-- Hooks into `update_item`, `bulk_import_items`, `update_field` (subtype),
-  `rename_subtype`, `retype_item`, `fix_jancode`, and `split_inventory_item` —
-  the exact list the design names.
-- Shopify reducers (`shopify_order_created`, `applyOrderReconciliation`) call
-  the resolver against an `effectiveAtMs` derived from
-  `processed_at / created_at / updated_at`, matching the design's
-  "received vs effective time" distinction.
-- `ShopifyLineFact` gained `rawSku` and `entityId`, satisfying the design's
-  "preserve both raw and resolved" recommendation.
+  `closeInventoryEntityKey`, and `resolveHistoricalInventoryKey` helpers.
+- Entity ids of the form `${creatingActionDocId}:${originalInventoryKey}`.
+- `id` propagated alongside `timestamp` through `withInheritedTimestamp`.
+- Hooks into the full list of binding-affecting actions
+  (`update_item`, `bulk_import_items`, `update_field` (subtype),
+  `rename_subtype`, `retype_item`, `fix_jancode`, `split_inventory_item`).
+- Shopify reducers using `effectiveAtMs` from order business time.
+- `ShopifyLineFact` carrying `rawSku` and `entityId`.
 
-The four happy-path scenarios in the design's testing strategy
-(retype regression, multi-hop rename + reuse, manual retype preserved across
-reconciliation, refund after rename) are exercised by new tests in
-`tests/shopify-sync.test.ts`.
+Pass 1 raised three correctness blockers:
 
-## 2. Concerns
+1. **§2.1 Pending writes** — `null` server timestamp produced
+   `validFromMs = 0`, corrupting the dispatcher's intervals.
+2. **§2.2 Resolver outcome** — silently fell back to the raw key when no
+   interval covered the effective time, so reused keys could misroute
+   reconciliation with no exception.
+3. **§2.3 Manual retype durability** — `isManualRetype` heuristic depended
+   on `fact.rawSku`, missing on legacy facts; `shopify_order_created` did
+   not check it at all.
 
-### 2.1 Pending Firestore writes write `validFromMs = 0`
+…plus smaller observations on merge auditing, `||=` vs `??=` on `rawSku`,
+type-safety, and missing tests for the design's testing-strategy items 4
+and 5.
 
-`getTimestampMs(timestamp)` returns `0` when `timestamp` is `null`. In
-`src/routes/+layout.svelte:288` actions are dispatched on the *first* snapshot
-event for a given doc id, including pending writes whose
-`serverTimestamp()` is still `null`. The reducer is not re-run when the
-"modified" event fires with the real timestamp.
+## 2. What pass 2 fixed
 
-Concrete consequences for the dispatching client:
+Read against the pass-1 list:
 
-- Every binding interval the local user creates during a session has
-  `validFromMs = 0` (e.g. `inventory.ts:307` → `bindNewInventoryEntity`).
-- A subsequent rename of that key calls `renameInventoryEntityKey` with
-  `atMs = 0` (when the rename is also pending), producing the empty interval
-  `[0, 0)`. The `findActiveBindingInterval` later falls back to
-  `bindNewInventoryEntity(..., 0, "...:backfill")`, materialising a phantom
-  entity (`inventory.ts:375-378`).
-- Reuse of the same key by the same client then opens a second `[0, inf)`
-  interval, so `findBindingIntervalAt` (`inventory.ts:259`) can resolve any
-  historical query to the *reused* entity instead of the original.
+### 2.1 Pending writes — addressed
 
-Other clients see real server timestamps and behave correctly, so the bug is
-session-local for the actor. It is masked on cold reload because
-`action-cache.ts` only stores actions whose `change.type === "added"` and
-`!hasPendingWrites` (`redux-firestore.ts:401-403`). The new tests use
-`withBroadcastMeta` which always supplies a non-null timestamp, so they do
-not catch this.
+`bindNewInventoryEntity`, `renameInventoryEntityKey`, and
+`closeInventoryEntityKey` now early-return when
+`atMs <= 0 && !actionType.includes(":backfill")`
+(`inventory.ts:307-336`, `inventory.ts:353-412`, `inventory.ts:414-441`).
 
-Suggested fixes:
+`applyInventoryUpdate` was also changed to call `bindNewInventoryEntity`
+unconditionally (`inventory.ts:715-718`), with the comment
+"it handles its own idempotency." This is the catch-up path: if a pending
+update_item sets `idToItem[key]` but the binding is guarded out,
+a later replay (cold reload, or a subsequent update_item against the same
+key with a real timestamp) will create the binding. Verified by the new
+test `guards against pending writes with atMs=0`.
 
-- In `bindNewInventoryEntity` and `renameInventoryEntityKey`, refuse to write
-  intervals when `atMs <= 0`; or buffer such actions until the modified event
-  with a real timestamp.
-- Re-applying the action on the modified event would also work, but requires a
-  way to make the binding helpers idempotent on the second apply.
+The verdict: pending dispatches no longer leave `validFromMs=0` intervals
+in the index. Bindings come into existence only when a real timestamp is
+available. Acceptable, though there is a small new wrinkle worth flagging
+in §3.2.
 
-### 2.2 Resolver does not flag "missing historical binding"
+### 2.2 Resolver outcome — addressed
 
-The design specifies four `outcome` codes
-(`resolved`, `missing_historical_binding`, `ambiguous_historical_binding`,
-`missing_current_key`) and explicitly calls for the
-`missing_historical_binding` test to "record an exception and not mutate
-shipped counts" (design §Testing Strategy item 4).
+`HistoricalSkuResolution` now carries an explicit
+`outcome: "resolved" | "missing_historical_binding" |
+"ambiguous_historical_binding" | "missing_current_key"`
+field (`inventory.ts:445-487`).
 
-`resolveHistoricalInventoryKey` (`inventory.ts:437-455`) returns only
-`{ itemKey, entityId? }`. When no interval covers `effectiveAtMs` it silently
-falls back to the canonicalised raw key. Callers
-(`resolveLineItemInventoryKey` at `inventory.ts:773-792`) cannot distinguish
-"there was no binding" from "I resolved it"; if the key has been *reused*
-since the order was placed, the reconciliation will be applied to the wrong
-current entity (the new owner), with no exception logged.
+Both `shopify_order_created` (`inventory.ts:912-928`) and
+`applyOrderReconciliation` (`inventory.ts:1098-1167`) read the outcome and
+record `"Missing historical binding for SKU: ..."` Shopify exceptions when
+a line cannot be temporally resolved. The previous fall-back-to-raw-key
+behaviour is gone.
 
-The design's testing strategy item 4 has no corresponding test in
-`tests/shopify-sync.test.ts`.
+The new test `records an exception and does not mutate shipped counts if no
+historical binding interval exists` covers the design's testing-strategy
+item 4.
 
-Suggested fix: extend the resolver return type with an explicit `outcome`
-field as designed, and either log a `shopifyExceptions[orderID]` entry or
-stop the inventory mutation when the outcome is
-`missing_historical_binding`.
+### 2.3 Manual retype durability — addressed
 
-### 2.3 `isManualRetype` heuristic is fragile
+`ShopifyLineFact` gains `manualEntityId?` (`inventory.ts:46`).
 
-`applyOrderReconciliation` (`inventory.ts:1068-1100`) uses
-`fact && fact.itemKey !== resolvedKey && fact.rawSku === rawSku` to decide
-whether to keep a manually retyped line through reconciliation. Two problems:
+`retype_item` records the new entity id on the order line when it rewrites
+`shopifyFacts` (`inventory.ts:1551-1568`). Both Shopify reducers now look
+up the current key for the manual entity *first*; if it resolves, the line
+uses that key regardless of what `rawSku` says
+(`inventory.ts:944-955`, `inventory.ts:1109-1124`). The fragile
+`fact.rawSku === rawSku` heuristic is preserved as a fallback for legacy
+facts that pre-date `manualEntityId`.
 
-1. `fact.rawSku` is not populated on legacy facts persisted before this
-   branch, so the comparison `undefined === rawSku` is always false and the
-   manual retype is silently overwritten on re-reconciliation.
-2. `shopify_order_created` (`inventory.ts:906-909`) does not perform the same
-   check — it always overwrites `fact.itemKey` with `canonicalKey`. A
-   duplicate / replayed `orders/create` event after a manual retype reverts
-   the retype.
+The existing test `preserves retype_item correction across later shopify
+reconciliation` continues to pass; a future test exercising
+`shopify_order_created` re-fire after a manual retype would harden this
+further.
 
-Both gaps come back to the same root cause: `retype_item` does not record any
-identity-level fact saying "this order line should resolve to entity X
-regardless of raw SKU." A more durable fix is to write a per-line override
-into `shopifyFacts.lines[id]` (e.g. `manualEntityId`) and have both reducers
-respect it.
+### 2.4 Smaller items
 
-### 2.4 `retype_item` semantics vs the binding model
+- `fact.rawSku ||= rawSku` → `fact.rawSku ??= rawSku`
+  (`inventory.ts:956`, `inventory.ts:1147-1148`). Empty-string raw SKUs
+  are no longer silently re-overwritten.
+- `getTimestampMs` is now a thin wrapper over the shared `toTimestampMs`
+  helper (`inventory.ts:205-208`), eliminating duplicated parsing logic.
 
-`retype_item` calls `bindNewInventoryEntity(newItemKey, ...)`
-(`inventory.ts:1499-1505`). For an already-existing key this is a no-op (the
-helper returns the existing entityId without touching intervals), so the call
-is mostly cosmetic. But the action's effect — moving an *order line* from
-keyA to keyB while both items continue to exist — is not really an entity
-event at all. The current code never updates the source entity's intervals
-and never updates `idToHistory` on the source-side via the binding index;
-all of that is handled inline in the reducer.
+## 3. Remaining concerns after pass 2
 
-The design (§Actions That Must Update Bindings) lists `retype_item` among
-the binding-updating actions, but it is silent on what the update should
-*do*. Worth either:
+### 3.1 Reconciliation still mutates shipped on `missing_historical_binding` if order.items already had impact
 
-- Documenting in the design that `retype_item` is a per-order override and
-  *not* an entity rename, and dropping the cosmetic
-  `bindNewInventoryEntity` call; or
-- Promoting it to a real "manual override" stored on the order line so
-  reconciliation can look it up (see 2.3).
+`applyOrderReconciliation` builds `currentInventoryImpact` from
+`order.items` *before* the line loop (`inventory.ts:1086-1091`). If a
+prior successful reconciliation populated `order.items` with `qty 3` on
+keyA, and a subsequent reconciliation now resolves the same line as
+`missing_historical_binding`:
 
-### 2.5 Merge case leaves multiple entities pointing at one current key
+- The line is skipped → `itemQtyMap[keyA]` stays at 0.
+- The "leftover currentInventoryImpact" loop
+  (`inventory.ts:1175-1192`) reads `keyA → 3` and decrements
+  `idToItem[keyA].shipped` by 3 with a "Missing item reset" history entry.
 
-`renameInventoryEntityKey` (`inventory.ts:353-412`) handles the "merge into
-existing key" path correctly enough for forward lookups: closing source
-intervals, leaving the target's active interval alone, and updating
-`currentKeyByEntityId` for both entities. But:
+So an exception is recorded but the inventory *is* mutated, contradicting
+the design's "records an exception and does not mutate shipped counts."
+The new test does not cover this multi-pass case (it tests an order whose
+binding was missing from the start; `order.items` was empty).
 
-- `entityIdByCurrentKey[newKey]` is overwritten only when the new key has no
-  active owner. After a merge, only the *target* entity is reachable via
-  the reverse map (`inventory.ts:392-406`), although both entities are now
-  bound to that key.
-- The design (§Merge Items) calls for "explicit merge actions that identify
-  the surviving entity" and for an exception when intent is ambiguous. The
-  current `update_field`/`rename_subtype` path silently merges with no
-  audit trail in `keyIdentity`.
+Suggested fix: when at least one line in a reconciliation payload returns
+`missing_historical_binding`, either (a) abort the reconciliation entirely
+for that order, or (b) carry the previous `order.items` impact for the
+unresolved line forward into `itemQtyMap` so the subtraction is a no-op.
 
-For the immediate goal (reconciliation correctness) this is acceptable, but
-it should be flagged as deferred work, not "merge handled."
+### 3.2 `applyInventoryUpdate` "always try to bind" can mint phantom entities for orphaned keys
 
-### 2.6 Other smaller issues
+The new unconditional `bindNewInventoryEntity` call works fine when
+`entityIdByCurrentKey[key]` is set (early return). But if state ever has
+`idToItem[key]` populated without a matching binding entry — for example a
+pending rename that left `idToItem[oldKey]` deleted but the dispatcher
+later re-issues `update_item({id: oldKey, ...})` — the helper will create
+a brand-new entity at the *current* timestamp, despite the item not really
+being new. In practice `rename_subtype`/`update_field` delete the source
+`idToItem` entry, so this is hard to hit, but the comment "it handles its
+own idempotency" overstates the guarantee. Worth a follow-up assertion or
+a more careful check (e.g. only bind when no closed interval exists for
+the key in the current half-open window).
 
-- **`fact.rawSku ||= rawSku`** (`inventory.ts:908, 1093`): empty-string
-  `rawSku` is falsy and will be re-written every replay. Probably harmless,
-  but `fact.rawSku ??= rawSku` is the intended semantics.
-- **Backfill at atMs=0** in `renameInventoryEntityKey`
-  (`inventory.ts:375-378`) interacts badly with 2.1; consider using `atMs`
-  itself or refusing to backfill.
-- **`cloneKeyIdentityState` deep-clones intervals** but `archive_inventory`
-  (`inventory.ts:1764-1773`) still shallow-copies `idToItem` and
-  `idToHistory`. Pre-existing inconsistency, but worth noting that the new
-  state is *more* defensive than its neighbours.
-- **Type safety**: passing the broadcast id requires `(action as any).id`
-  casts at every call site. The reducer-action type
-  (`timestamped-case-reducer.ts`) inherits `TimestampedAction` which now has
-  optional `id`; the reducers could read `action.id` typed and avoid the
-  casts.
-- **`update_field` non-subtype path** correctly skips the binding update.
+### 3.3 `manualEntityId` may not be set during pending dispatch
 
-## 3. Test coverage
+`retype_item` only writes `fact.manualEntityId` when
+`bindNewInventoryEntity` returns truthy. With the pass-1 fix in place, a
+pending retype (`atMs <= 0`) returns `undefined`, so `manualEntityId` is
+*not* recorded for the optimistic apply. Within the session, a later
+reconciliation could still revert the retype via the legacy
+`isManualRetype` heuristic — which is fine *if* `fact.rawSku` is set (the
+new fact was created above with `rawSku` populated), but the user-visible
+window is back to the same fragility pass-1 worried about, just narrower
+in time. Cold reload restores correctness because the action replays with
+its real timestamp. Acceptable, but worth a test that exercises the
+pending → confirmed lifecycle for `retype_item`.
 
-Present:
+### 3.4 Merge case still under-modelled
+
+Pass 1's §2.5 stands: `update_field`/`rename_subtype` silently merge into
+existing keys without an explicit merge action, and only the surviving
+target's entity is reachable via `entityIdByCurrentKey`. The merged
+entity stays mapped via `currentKeyByEntityId` only. `GEMINI_RESPONSE.md`
+explicitly defers this. Forward lookups continue to work; a follow-up
+should add the explicit merge action the design recommends.
+
+### 3.5 Missing test for design strategy item 5
+
+"Stored order line fact follows a later replayed rename." The refund test
+exercises this for `idToItem`, but no test asserts that
+`shopifyFacts.lines[*].itemKey` is updated when a rename happens *after*
+the fact was recorded. `rewriteOrderItemKeyReferences` does the work, so
+the test is straightforward to add.
+
+### 3.6 Type-safety polish (deferred)
+
+`(action as any).id` and `(action as any).timestamp` casts remain at every
+binding call site. `TimestampedPayloadAction` already exists in
+`timestamped-case-reducer.ts`; threading it through the relevant reducers
+would make `id` and `timestamp` first-class without the casts. Gemini
+explicitly deferred this, and the call sites are localised, so it is
+quality-of-life rather than correctness.
+
+## 4. Design adherence at a glance (post pass 2)
+
+| Design item | Status |
+| --- | --- |
+| `KeyBindingInterval` shape, three-map index | Implemented |
+| `entityId = "${docId}:${originalKey}"` | Implemented |
+| Bind / rename / close helpers | Implemented, with pending-write guards |
+| `resolveHistoricalInventoryKey` returning `outcome` | Implemented (new in pass 2) |
+| `effectiveAtMs` from order business time | Implemented |
+| Binding updates on listed key-changing actions | Implemented |
+| `OrderLineFact` carries raw, resolved, manual override | `rawSku`, `entityId`, `manualEntityId` |
+| Rename rewrites order facts and inventory references | Implemented via `rewriteOrderItemKeyReferences` |
+| Missing-binding exceptions on Shopify lines | Implemented (new in pass 2) |
+| Manual retype durable across reconciliation | Implemented via `manualEntityId` (pass 2) |
+| Pending-write / replay determinism | Guarded by `atMs <= 0` early-return (pass 2) |
+| Merge actions explicit, surviving entity recorded | Still deferred (§3.4) |
+
+## 5. Tests
+
+Existing (carried through pass 2):
 
 - Retype regression for `4901681382316` → `4901681382316Standard`.
 - Chained rename `A→B→C` with key reuse for `A`.
 - Manual `retype_item` preserved across `shopify_order_reconciled`.
-- Fallback to current key when no historical interval exists.
 - Refund applied to renamed current key.
 
-Missing relative to the design's testing strategy:
+New in pass 2:
 
-- §Testing item 4 — "raw SKU has no interval at effective time, exception
-  recorded, shipped untouched." The implementation does not yet record the
-  exception (see 2.2), so the test cannot pass without code changes.
-- §Testing item 5 — order fact created before a later replayed rename,
-  verifying the stored fact follows the rename. The refund test partially
-  covers this for `idToItem`, but does not assert on
-  `shopifyFacts.lines[*].itemKey` after a rename that happens *after* the
-  fact is recorded.
-- A pending-write scenario (§2.1) — would need a test harness that simulates
-  a Firestore pending write with `timestamp: null` followed by a confirmed
-  modification.
+- `records an exception and does not mutate shipped counts if no historical
+  binding interval exists` — covers design strategy item 4.
+- `guards against pending writes with atMs=0` — covers the §2.1 fix.
+- `tests/unit/shopify-history.test.ts` updated to seed items via
+  `update_item` so they have real bindings.
 
-## 4. Design adherence at a glance
+Still missing:
 
-| Design item | Status |
-| --- | --- |
-| `KeyBindingInterval` shape, three-map index | Implemented (`inventory.ts:71-101`) |
-| `entityId = "${docId}:${originalKey}"` | Implemented (`inventory.ts:254-257`) |
-| `bindNewEntity` / `renameEntity` / `closeEntity` helpers | Implemented |
-| `resolveHistoricalInventoryKey` | Implemented, but no `outcome` field (2.2) |
-| `effectiveAtMs` from order business time | Implemented (`inventory.ts:763-768`) |
-| Binding updates on listed key-changing actions | All call sites present |
-| `OrderLineFact` carries raw and resolved | `ShopifyLineFact.rawSku/entityId` added |
-| Rename rewrites order facts and inventory references | Implemented via `rewriteOrderItemKeyReferences` |
-| Merge actions explicit | Not implemented; silent merges still allowed (2.5) |
-| Split: close source interval, new entity per output | Implemented (`inventory.ts:1947-1959`) |
-| Pending-write / replay determinism | Not yet correct for the dispatching client (2.1) |
+- Multi-pass reconciliation where a previously-resolved line later resolves
+  as `missing_historical_binding` (§3.1).
+- Pending → confirmed lifecycle for `retype_item` (§3.3).
+- Stored fact follows a later replayed rename (§3.5).
 
-## 5. Recommendation
+## 6. Recommendation
 
-Land the work as a strong first step but, before relying on the binding index
-for reconciliation in production, address:
+Pass 2 closed the three correctness blockers identified in pass 1, and the
+existing test suite (266 cases) is green. The work is in a good state to
+merge as a foundational layer for temporal binding correctness.
 
-1. **§2.1 Pending writes** — most likely to silently corrupt the dispatcher's
-   intervals. Either guard against `atMs <= 0` or re-run the binding update
-   on the modified snapshot.
-2. **§2.2 Resolver outcome** — add the explicit outcome and surface
-   `missing_historical_binding` as a Shopify exception, then add the
-   matching test.
-3. **§2.3 Manual retype durability** — write the override onto the order
-   line so both `shopify_order_created` and reconciliation respect it
-   independently of `rawSku` presence.
+Before relying on the index for production reconciliation in edge cases,
+file follow-ups for:
 
-The remaining items (merge audit, dead `bindNewInventoryEntity` call in
-`retype_item`, type-safety cleanups) are quality improvements rather than
-correctness blockers.
+1. **§3.1 Reconciliation + missing binding** — the design's "do not
+   mutate" contract is not yet honoured when prior `order.items` already
+   carry impact for the unresolved key. Likely the highest-value
+   remaining fix.
+2. **§3.4 Explicit merge action** — the design specifically calls for
+   one; until it lands, `update_field`/`rename_subtype` merges leak only
+   one survivor entity into `entityIdByCurrentKey`.
+3. **§3.5** and **§3.3** test coverage so future regressions in the
+   rename-after-fact and pending-retype flows surface in CI.
+
+The smaller cleanups (§3.2 phantom-entity guard, §3.6 type-safety) are
+quality-of-life and can ride along when next touched.
