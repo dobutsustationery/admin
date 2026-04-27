@@ -1,7 +1,9 @@
 <script lang="ts">
   import { store } from "$lib/store";
   import {
+    clear_etsy_exceptions,
     clear_shopify_exceptions,
+    hide_etsy_exception,
     hide_shopify_exception,
   } from "$lib/inventory";
   import { page } from "$app/stores";
@@ -45,6 +47,12 @@
     string[],
   ][];
 
+  $: etsyExceptions = state?.inventory?.etsyExceptions || {};
+  $: etsyExceptionEntries = Object.entries(etsyExceptions) as [
+    string,
+    string[],
+  ][];
+
   const statusColor: Record<string, string> = {
     queued: "#6b7280",
     processing: "#2563eb",
@@ -62,7 +70,7 @@
 
   function inferDomain(
     req: ShopifySyncRequestView | null,
-  ): "shopify" | "photos" | "google" | "unknown" {
+  ): "shopify" | "photos" | "google" | "etsy" | "unknown" {
     if (!req) return "unknown";
     const fromEvents = inferSyncRequestDomainFromEvents(req.timeline || []);
     if (fromEvents !== "unknown") return fromEvents;
@@ -91,6 +99,9 @@
       !!req.handle
     ) {
       return "shopify";
+    }
+    if (source.includes("etsy") || processor.includes("etsy")) {
+      return "etsy";
     }
     return "unknown";
   }
@@ -382,6 +393,41 @@
               class="btn-hide"
               on:click={() =>
                 store.dispatch(hide_shopify_exception({ orderID }))}
+            >
+              Hide
+            </button>
+          </div>
+          <ul class="exception-list">
+            {#each msgs as msg}
+              <li>{msg}</li>
+            {/each}
+          </ul>
+        </div>
+      {/each}
+    </section>
+  {/if}
+
+  {#if etsyExceptionEntries.length > 0}
+    <section
+      class="list exceptions-section"
+      style="margin-bottom: 1rem; border-color: #fef08a; background: #fefce8;"
+    >
+      <div class="row" style="margin-bottom: 1rem;">
+        <h2 style="margin: 0; color: #854d0e;">Etsy Order Sync Exceptions</h2>
+        <button
+          class="btn-clear"
+          on:click={() => store.dispatch(clear_etsy_exceptions())}
+        >
+          Clear All Exceptions
+        </button>
+      </div>
+      {#each etsyExceptionEntries as [orderID, msgs]}
+        <div class="card" style="background: #fff; border-color: #fde047;">
+          <div class="row">
+            <strong style="color: #854d0e;">{orderID}</strong>
+            <button
+              class="btn-hide"
+              on:click={() => store.dispatch(hide_etsy_exception({ orderID }))}
             >
               Hide
             </button>
