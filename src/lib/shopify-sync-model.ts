@@ -95,12 +95,13 @@ export function getSyncEventBaseType(eventType: string): string {
 
 export function inferSyncRequestDomainFromEvents(
   events: Pick<ShopifySyncEvent, "eventType">[],
-): "shopify" | "photos" | "google" | "unknown" {
+): "shopify" | "photos" | "google" | "etsy" | "unknown" {
   for (const ev of events) {
     const rawType = String(ev?.eventType || "");
     if (rawType.startsWith("photos/")) return "photos";
     if (rawType.startsWith("shopify/")) return "shopify";
     if (rawType.startsWith("google/")) return "google";
+    if (rawType.startsWith("etsy/")) return "etsy";
   }
   // Fallback check
   const first = String(events?.[0]?.eventType || "");

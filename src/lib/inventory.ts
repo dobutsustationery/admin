@@ -828,7 +828,8 @@ function mapSkuToItemKey(
   lineItem: any,
 ): InventoryItemKey | null {
   let normalizedSku = String(sku || "").trim();
-  if (normalizedSku && /^\d+/.test(normalizedSku)) {
+  // Most SKUs are JAN codes (13 digits) or similar numeric identifiers
+  if (normalizedSku && /^\d+$/.test(normalizedSku)) {
     return normalizedSku as InventoryItemKey;
   }
 
@@ -1370,10 +1371,16 @@ export const inventory = createReducer(initialState, (r) => {
 
     const itemQtyMap: Record<string, number> = {};
     const transactions = rawReceipt.transactions || [];
+    const effectiveAtMs = timestamp;
     for (const tx of transactions) {
-      const key = mapSkuToItemKey(tx.sku, tx);
-      if (key) {
-        const canonicalKey = canonicalizeInventoryItemKey(key);
+      const {
+        itemKey: resolvedKey,
+        rawSku,
+        outcome,
+      } = resolveLineItemInventoryKey(state, tx, effectiveAtMs);
+
+      if (resolvedKey && outcome !== "missing_historical_binding") {
+        const canonicalKey = canonicalizeInventoryItemKey(resolvedKey);
         // Etsy status logic: if receipt is cancelled, qty is 0.
         // Also check if transaction itself has some cancellation status if Etsy v3 provides it per line.
         // For now, if the whole receipt is cancelled, impact is 0.
@@ -1400,7 +1407,7 @@ export const inventory = createReducer(initialState, (r) => {
         if (!state.etsyExceptions) state.etsyExceptions = {};
         if (!state.etsyExceptions[orderID]) state.etsyExceptions[orderID] = [];
         state.etsyExceptions[orderID].push(
-          `Unknown SKU: ${tx.sku} (Transaction: ${tx.transaction_id})`,
+          `Unknown SKU: ${rawSku} (Transaction: ${tx.transaction_id})`,
         );
       }
     }
