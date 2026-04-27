@@ -62,6 +62,6 @@ test("Etsy Order Sync - Exception UI", async ({ authenticatedPage: page, request
   
   // Step 4: Hide exception
   console.log("Hiding exception...");
-  await page.locator('button', { hasText: 'Hide' }).first().click();
+  await exceptionSection.locator('button', { hasText: 'Hide' }).first().click();
   await expect(exceptionSection).not.toBeVisible({ timeout: 10000 });
 });
