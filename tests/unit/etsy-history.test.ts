@@ -273,7 +273,10 @@ describe("Etsy Order History logging", () => {
               transaction_id: "tx1",
               sku: "", // Missing SKU
               title: `Some item with JAN ${itemKey} in title`,
-              variations: [{ formatted_value: "Blue" }],
+              variations: [
+                { formatted_value: "Blue" },
+                { formatted_value: "Small" },
+              ],
               quantity: 1,
             },
           ],
@@ -283,8 +286,8 @@ describe("Etsy Order History logging", () => {
       timestamp: { seconds: 1200, nanoseconds: 0 },
     } as any);
 
-    // Should resolve to itemKey + "Blue"
-    const expectedKey = `${itemKey}Blue`;
+    // Should resolve to itemKey + "Blue Small"
+    const expectedKey = `${itemKey}Blue Small`;
     // We didn't setup this item, so it should be an exception
     const state = store.getState().inventory;
     expect(state.etsyExceptions![`etsy:${receiptId}`][0]).toContain(
@@ -317,5 +320,239 @@ describe("Etsy Order History logging", () => {
     );
     // Impact should be 0 because resolution failed
     expect(state.idToItem[itemKey].shipped).toBe(0);
+  });
+
+  it("handles full refunds correctly (authoritative fix)", () => {
+    const store = setupStore();
+    const receiptId = "refund-123";
+
+    // 1. Paid
+    store.dispatch({
+      ...etsy_order_created({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          status: "paid",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 5 }],
+        },
+        topic: "receipt.created",
+      }),
+      timestamp: { seconds: 1200, nanoseconds: 0 },
+    } as any);
+
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(5);
+
+    // 2. Refunded
+    store.dispatch({
+      ...etsy_order_updated({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          updated_timestamp: 1500,
+          status: "refunded",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 5 }],
+        },
+        topic: "receipt.updated",
+      }),
+      timestamp: { seconds: 1500, nanoseconds: 0 },
+    } as any);
+
+    // Total shipped should be 0, not -5 (double deduction fix)
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(0);
+  });
+
+  it("handles partial refunds conservatively (no impact change yet)", () => {
+    const store = setupStore();
+    const receiptId = "partial-refund-123";
+
+    // 1. Paid
+    store.dispatch({
+      ...etsy_order_created({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          status: "paid",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 5 }],
+        },
+        topic: "receipt.created",
+      }),
+      timestamp: { seconds: 1200, nanoseconds: 0 },
+    } as any);
+
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(5);
+
+    // 2. Partially Refunded
+    store.dispatch({
+      ...etsy_order_updated({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          updated_timestamp: 1500,
+          status: "partially_refunded",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 5 }],
+        },
+        topic: "receipt.updated",
+      }),
+      timestamp: { seconds: 1500, nanoseconds: 0 },
+    } as any);
+
+    // Should stay at 5 because we don't handle partial amounts yet (conservative)
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(5);
+  });
+
+  it("preserves manual retypes through authoritative reconciliation", () => {
+    const store = setupStore();
+    const receiptId = "manual-retype-123";
+    const manualKey = "4900000000000" as any;
+
+    // Create manual target item
+    store.dispatch({
+      ...update_item({
+        id: manualKey,
+        item: { ...testItem, janCode: "4900000000000" } as any,
+      }),
+      timestamp: { seconds: 600, nanoseconds: 0 },
+      id: "manual-setup",
+    } as any);
+
+    // 1. Order arrives for itemKey
+    store.dispatch({
+      ...etsy_order_created({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          status: "paid",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 1 }],
+        },
+        topic: "receipt.created",
+      }),
+      timestamp: { seconds: 1200, nanoseconds: 0 },
+    } as any);
+
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(1);
+
+    // 2. Manual Retype itemKey -> manualKey for this order
+    store.dispatch({
+      type: "retype_item",
+      payload: {
+        itemKey: itemKey,
+        janCode: "4900000000000",
+        subtype: "",
+        qty: 1,
+        orderID: `etsy:${receiptId}`,
+      },
+      timestamp: { seconds: 1300, nanoseconds: 0 },
+      id: "retype-action",
+    } as any);
+
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(0);
+    expect(store.getState().inventory.idToItem[manualKey].shipped).toBe(1);
+
+    // 3. Reconcile with same ground truth
+    store.dispatch({
+      ...etsy_order_reconciled({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          updated_timestamp: 2000,
+          status: "paid",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 1 }],
+        },
+        topic: "reconcile",
+      }),
+      timestamp: { seconds: 2000, nanoseconds: 0 },
+    } as any);
+
+    // Should STILL be manualKey
+    expect(store.getState().inventory.idToItem[manualKey].shipped).toBe(1);
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(0);
+    const order =
+      store.getState().inventory.orderIdToOrder[`etsy:${receiptId}`];
+    expect(order.items[0].itemKey).toBe(manualKey);
+  });
+
+  it("ignores out-of-order updates (older than reconciledTimestamp)", () => {
+    const store = setupStore();
+    const receiptId = "ooo-123";
+
+    // 1. Reconciled at T=2000
+    store.dispatch({
+      ...etsy_order_reconciled({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          updated_timestamp: 2000,
+          status: "paid",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 2 }],
+        },
+        topic: "reconcile",
+      }),
+      timestamp: { seconds: 2000, nanoseconds: 0 },
+    } as any);
+
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(2);
+
+    // 2. Delayed webhook arrives with T=1500 (older than 2000)
+    store.dispatch({
+      ...etsy_order_updated({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          updated_timestamp: 1500,
+          status: "canceled", // Would normally zero it out
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 2 }],
+        },
+        topic: "receipt.updated",
+      }),
+      timestamp: { seconds: 2500, nanoseconds: 0 },
+    } as any);
+
+    // Should STILL be 2
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(2);
+  });
+
+  it("resolves items using fallback mapper - happy path", () => {
+    const store = setupStore();
+    const receiptId = "fallback-happy-123";
+    const blueLargeKey = `${itemKey}Blue Large`;
+
+    // Setup the item with both variations
+    store.dispatch({
+      ...update_item({
+        id: blueLargeKey,
+        item: { ...testItem, subtype: "Blue Large" } as any,
+      }),
+      timestamp: { seconds: 600, nanoseconds: 0 },
+      id: "blue-large-setup",
+    } as any);
+
+    store.dispatch({
+      ...etsy_order_created({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          status: "paid",
+          transactions: [
+            {
+              transaction_id: "tx1",
+              sku: "",
+              title: `JAN ${itemKey} is here`,
+              variations: [
+                { formatted_value: "Blue" },
+                { formatted_value: "Large" },
+              ],
+              quantity: 3,
+            },
+          ],
+        },
+        topic: "receipt.created",
+      }),
+      timestamp: { seconds: 1200, nanoseconds: 0 },
+    } as any);
+
+    expect(store.getState().inventory.idToItem[blueLargeKey].shipped).toBe(3);
+    expect(
+      store.getState().inventory.etsyExceptions?.[`etsy:${receiptId}`],
+    ).toBeUndefined();
   });
 });
