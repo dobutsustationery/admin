@@ -3,394 +3,290 @@
 Reviewing branch `design/etsy-order-sync` against
 `docs/design/ETSY_ORDER_SYNC_DESIGN.md`.
 
-Branch range: `main..HEAD` (commits `905442e` through `39b2881`).
+Two passes:
 
-Files touched:
+- **Pass 1** — initial implementation (`905442e`..`39b2881`).
+- **Pass 2** — Gemini's response in `b17c625`
+  ("Address Etsy Order Sync review findings: security, authoritative
+  reconciliation, and temporal bindings"), summarised in
+  `GEMINI_ETSY_RESPONSE.md`.
 
-- `docs/design/ETSY_ORDER_SYNC_DESIGN.md` (new design doc)
-- `ETSY_SETUP.md` (new, user-facing setup guide)
-- `scripts/etsy-setup.ts` (OAuth + webhook setup tool)
-- `functions/index.js` (webhook + reconcile poller)
-- `functions/shared/etsy-order-logic.cjs` (HMAC + receipt fetch)
-- `src/lib/inventory.ts` (actions, reducer, exceptions)
-- `src/lib/shopify-sync-model.ts`, `src/lib/sync-queue-slice.ts`
-  (extend domain enum)
-- `src/routes/sync-status/+page.svelte` (Etsy exceptions UI)
-- `tests/unit/etsy-history.test.ts` (new, 2 cases)
-- `e2e/017-etsy-sync/017-etsy-sync.spec.ts` (new, 1 case)
+Test status after pass 2: **`bun run test` → 280 passed, 1 skipped**, with
+7 cases in `tests/unit/etsy-history.test.ts` and one new regression test
+in `tests/shopify-sync.test.ts`.
 
-Test status: **`bun run test` → 274 passed, 1 skipped**, including the 2 new
-Etsy unit tests.
+## 1. Pass-1 findings, status after pass 2
 
-## 1. Summary
+| # | Finding | Status |
+| --- | --- | --- |
+| §2.1 | HMAC fails open + placeholder algorithm | **fixed** |
+| §2.2 | `etsy-setup.ts --apply` is a no-op + OAuth doesn't persist | **fixed** |
+| §2.3 | No authoritative reconciliation (Codex F1) | **fixed** |
+| §2.4 | Non-atomic webhook dedupe (Codex F4) | **fixed** (race only; durability still open per Shopify F4 follow-up) |
+| §2.5 | `Date.now()` instead of server timestamps (Codex F2) | **fixed** |
+| §2.6 | Reconcile poller doesn't paginate (Codex F5) | **fixed** (offset-based) |
+| §2.7 | `rewriteOrderItemKeyReferences` / `retype_item` ignore `etsyFacts` | **fixed** |
+| §2.8 | Etsy variation/title fallback mapper unimplemented | partial — see §2.1 below |
+| §2.9 | Refund handling absent | **partial + new bug** — see §2.2 below |
+| §2.10 | `etsy_unrecognized_topic` dispatched but not defined | **fixed** |
+| §2.11 | `mapSkuToItemKey` regex shipped a Shopify behavior change | **reverted** + regression test added |
+| §2.12 | Test coverage shallow | **partially expanded** (4 new unit cases) |
 
-The branch lays in the obvious scaffolding — actions, reducer, HMAC helper,
-webhook function, schedule poller, exceptions UI, an OAuth helper, and a
-short design doc. The happy path works: a webhook payload with a numeric
-SKU on a known item produces an `etsy_order_created` broadcast that the
-reducer applies to `idToItem.shipped`. Cancellation via `receipt.updated`
-with status `"canceled"` correctly drives `shipped` back to zero.
+### 1.1 What pass 2 actually did
 
-That said, the implementation is essentially a **shallow port of the
-pre-pass-4 Shopify reducer**. Every correctness fix that landed in
-`codex/temporal-key-bindings-design` (Codex Findings 1–5 plus the
-temporal-binding integration) is **absent here**. In a few places it also
-violates the design doc itself, and one place (HMAC verification) is a
-straight security hole.
+**HMAC verification (§2.1)** — `verifyEtsyWebhookSignature`
+(`functions/shared/etsy-order-logic.cjs:16-47`) now follows Etsy v3's
+`webhookId.webhookTimestamp.rawBody` canonical string, decodes the
+`whsec_<base64>` secret, and uses `timingSafeEqual`. The webhook handler
+(`functions/index.js:1314-1333`) returns `400` if either header is
+missing and `401` if the HMAC fails — the commented-out 401 from pass 1
+is now uncommented and live. The default `ETSY_SHARED_SECRET` was
+updated to `whsec_dGVzdF9zZWNyZXQ=` so the e2e harness still works.
+The e2e test (`017-etsy-sync.spec.ts`) was updated to match.
 
-## 2. Findings
+**Authoritative reconciliation (§2.3)** —
+`applyEtsyOrderReconciliation` (`inventory.ts:1389-1495`) is rewritten
+in the same shape as Shopify's pass-4 fix:
 
-### 2.1 HMAC verification fails open  ⚠️ security
+- Builds `newFacts: Record<string, ShopifyLineFact>` from the payload.
+- Replaces `order.etsyFacts!.lines = newFacts;` so removed transactions
+  drop out.
+- Carries forward `oldFact` verbatim into `newFacts` when resolution
+  fails (the `missing_historical_binding` carry-forward from Shopify
+  §3.1).
+- Computes `shipped` adjustments from a `netDiffMap` (new impact minus
+  old impact per key) — algebraically equivalent to Shopify's diff loop
+  but cleaner. Removed transactions decrement `shipped` correctly via
+  the "subtract old" pass.
 
-`functions/index.js:1313-1324`:
+`ShopifyLineFact` fields `rawSku`, `entityId`, and `manualEntityId` are
+now populated on Etsy facts too. Verified by the new test
+"handles authoritative reconciliation: removes deleted transactions".
+
+**Atomic dedupe (§2.4) + server timestamps (§2.5)** —
+`functions/index.js:1343-1354` switches to `eventRef.create()` and
+catches `code === 6` (ALREADY_EXISTS). Both webhook and reconcile poller
+drop the `atMs` argument, so `writeBroadcastAction` falls into its
+serverTimestamp default. Mirrors the Shopify pass-4 fix exactly.
+
+**Pagination (§2.6)** — `fetchChangedReceipts`
+(`etsy-order-logic.cjs:56-121`) loops with `offset += limit` until the
+last page returns fewer than `limit` results. Etsy v3 does not use
+`Link` headers, so offset-based pagination is the correct shape. A
+small concurrency-5 chunk is added for the per-receipt
+`/transactions` fan-out.
+
+**Temporal bindings (§2.7)** — `rewriteOrderItemKeyReferences`
+(`inventory.ts:937-952`) now iterates `etsyFacts.lines` as well. The
+`retype_item` reducer (`inventory.ts:1867-1885`) gets the same
+`etsyFacts` loop with the same `manualEntityId` back-fill condition
+(`fact.itemKey === itemKey || (fact.itemKey === newItemKey &&
+!fact.manualEntityId)`) used for Shopify in pass 3. New test
+"integrates with temporal bindings: renames follow Etsy facts" exercises
+the rename + reconciliation flow.
+
+**`etsy_unrecognized_topic` action (§2.10)** —
+`inventory.ts:225-228` now exports the action so dispatched broadcasts
+match a defined type. There is no reducer `addCase` (same as
+`shopify_unrecognized_topic`), which is fine — both are diagnostic.
+
+**Mapper regex revert (§2.11)** — `inventory.ts:830` is back to
+`/^\d+/` and an explicit Shopify regression test
+"regression: resolves non-numeric SKUs correctly for Shopify" was
+added in `tests/shopify-sync.test.ts`.
+
+**Setup tool (§2.2)** — `scripts/etsy-setup.ts:140-200` actually calls
+`POST /v3/application/shops/{shop_id}/webhooks` per topic and persists
+the returned `shared_secret`. The OAuth exchange flow now writes
+`ETSY_ACCESS_TOKEN` to `.env` for the `local` env via a new
+`updateEnvFile` helper. Non-local envs still print the value for the
+operator to paste — reasonable.
+
+## 2. Concerns remaining after pass 2
+
+### 2.1 Etsy fallback mapper resolves but the happy path is untested
+
+`mapSkuToItemKey` (`inventory.ts:849-868`) gained an Etsy branch:
 
 ```ts
-if (!etsyOrderLogic.verifyEtsyWebhookSignature(req.rawBody, signature, config.sharedSecret)) {
-  logger.error("Etsy HMAC verification failed", { topic, webhookId });
-  // In production, you might want to return 401.
-  // For now, let's log and proceed or return 401 if we are sure about the secret.
-  // return res.status(401).send("Unauthorized");
-}
-```
-
-The 401 return is commented out. Any caller who knows the webhook URL can
-forge an Etsy payload and have it dispatched into the broadcast log — no
-signature required. The design doc explicitly requires "Verify Etsy
-webhook signature (using the shared secret)" as step 1.
-
-The E2E test `017-etsy-sync.spec.ts` does compute a real HMAC, so the
-security gap isn't exercised, but uncomment-or-not is a one-line
-production blocker.
-
-Additional concern: `verifyEtsyWebhookSignature` only uses
-`HMAC-SHA256(secret, body)` (`etsy-order-logic.cjs:19-23`). A comment in
-the same file admits the function is "a placeholder for the exact Etsy v3
-signature verification logic." Etsy v3 typically signs with a webhook
-*secret* per webhook (not the app shared secret) and may include the URL
-or timestamp in the canonical string. Worth confirming against current
-Etsy docs before relying on it.
-
-### 2.2 `scripts/etsy-setup.ts --apply` is a no-op
-
-`scripts/etsy-setup.ts:142-157`:
-
-```ts
-console.log("\nChecking existing Etsy webhooks...");
-// GET /v3/application/webhooks
-// (This is a simplified placeholder for the actual Etsy v3 Webhook API)
-
-if (apply) {
-  console.log("\nRegistering webhooks...");
-  for (const topic of DEFAULT_TOPICS) {
-    console.log(`Registering ${topic}...`);
-    // POST /v3/application/webhooks
+if (lineItem.listing_id || lineItem.variations) {
+  if (normalizedSku) return normalizedSku as InventoryItemKey;
+  const title = String(lineItem.title || "").trim();
+  const janMatch = title.match(/\b\d{13}\b/);
+  if (janMatch) {
+    const jan = janMatch[0];
+    let subtype = "";
+    if (lineItem.variations) {
+      subtype = lineItem.variations.map((v: any) => v.formatted_value).join(" / ");
+    }
+    return makeInventoryItemKey(jan, subtype);
   }
-  console.log("\nRegistration complete.");
 }
 ```
 
-There is no `fetch()` call. The "Registration complete." line will print
-even though nothing is registered. `ETSY_SETUP.md` step 4 instructs users
-to run this command and treats the output as success.
+Two limitations to flag:
 
-OAuth exchange in the same file (lines 117-123) only `console.log`s the
-token; it doesn't write to the `.env` file. Both gaps mean the
-documented setup flow does not actually configure a working integration.
+- **`\b\d{13}\b` only matches 13-digit JANs.** Shorter EAN-8 / UPC-12
+  codes won't match. Etsy listings titled with a 12- or 14-digit JAN
+  fall through to "return null" → exception. Not necessarily a bug, but
+  worth a comment if 13 is the project standard.
+- **Subtype concatenation uses `" / "` literally.** Inventory items
+  whose subtype was created via the admin UI typically use a single
+  string ("Blue", "L"). A two-variation Etsy listing produces
+  "Blue / L" as the subtype, which won't match unless someone
+  pre-creates the inventory item with that exact subtype. The new test
+  "resolves items using fallback mapper (title/variations)" only
+  asserts that the *exception* mentions the expected key
+  (`1234567890123Blue`); there is no test where the fallback
+  successfully resolves to an existing inventory item. The mechanism
+  is "reachable" but the format question (single vs multi-variation,
+  separator) is not pinned down.
 
-### 2.3 Etsy reducer does not adopt authoritative reconciliation
-(Codex Finding 1 regression)
+This is the gap Etsy's design doc §10 flagged as the open question;
+fixing the mapper to match the convention used by inventory creation
+should be a follow-up.
 
-`applyEtsyOrderReconciliation` (`inventory.ts:1389-1403`) uses the
-**old** Shopify pattern — incremental `Math.max` for `placed` and
-`cancelled`, and never removes transactions that disappear from the
-payload:
+### 2.2 New refund-status bug double-deducts shipped (regression)
 
-```ts
-if (!order.etsyFacts!.lines[tx.transaction_id]) {
-  order.etsyFacts!.lines[tx.transaction_id] = { … };
-} else {
-  const fact = order.etsyFacts!.lines[tx.transaction_id];
-  fact.placed = Math.max(fact.placed, tx.quantity);
-  if (isCancelled) fact.cancelled = Math.max(fact.cancelled, tx.quantity);
-}
-```
-
-This is exactly the bug Codex Finding 1 reproduced for Shopify and
-Gemini fixed in pass 4 of the temporal-bindings work
-(`applyOrderReconciliation` rebuilds `lines` from the payload as ground
-truth). For Etsy:
-
-- A receipt that goes from qty `5` to qty `3` will *not* drop `placed`
-  back to 3.
-- A receipt whose transaction list shrinks (Etsy lets sellers split or
-  cancel transactions in some cases) will keep the removed transaction
-  in `etsyFacts.lines` forever.
-
-Since the diff loop relies on `currentInventoryImpact` derived from
-`order.items` (which is rebuilt from facts), the resulting state drifts
-in the same way Codex described for Shopify before the fix.
-
-### 2.4 Webhook dedupe is non-atomic (Codex Finding 4 regression)
-
-`functions/index.js:1335-1341`:
+`applyEtsyOrderReconciliation` now sets both `cancelled` and `refunded`
+to `tx.quantity` when `rawReceipt.status === "refunded"`
+(`inventory.ts:1441-1453`):
 
 ```ts
-const eventRef = db.collection("etsy_order_events").doc(webhookId);
-const eventSnap = await eventRef.get();
-if (eventSnap.exists) { … return res.status(200).send("Duplicate"); }
-await eventRef.set({ processedAt: FieldValue.serverTimestamp() });
-```
-
-Two concurrent deliveries can both observe "not exists" and both
-proceed. The Shopify webhook was switched to atomic `eventRef.create()`
-in pass 4. Etsy still uses `get()` + `set()`.
-
-(Same caveat as Shopify: even atomic dedupe doesn't solve the
-"broadcast write fails after dedupe commit → permanent skip" problem.
-That follow-up applies here too, but it's a known Codex F4 follow-up,
-not a regression.)
-
-### 2.5 Function-side broadcasts use `Date.now()` instead of server time
-(Codex Finding 2 regression)
-
-`functions/index.js:1352-1359` (webhook):
-
-```ts
-await writeBroadcastAction({
-  action: { type, payload: { raw: req.body.resource_data || req.body, topic } },
-  creator: "etsy-webhook",
-  atMs: Date.now(),
-});
-```
-
-`functions/index.js:1392-1399` (poller): same pattern.
-
-Pass 4 dropped `atMs` from the Shopify webhook + reconcile call sites so
-that `writeBroadcastAction` defaults to `FieldValue.serverTimestamp()`.
-The Etsy paths were added concurrently and still pass `Date.now()`,
-re-introducing process-clock contamination of the broadcast log for the
-Etsy domain.
-
-### 2.6 Reconcile poller does not paginate (Codex Finding 5 regression)
-
-`functions/shared/etsy-order-logic.cjs:49-52`:
-
-```ts
-const params = new URLSearchParams({
-  min_last_modified_timestamp: String(lastModifiedTimestamp),
-  limit: "50",
-});
-```
-
-There is no Link/`next_offset` follow, and `etsyOrderReconcile`
-unconditionally advances `lastReceiptModifiedTimestamp` to the highest
-timestamp seen on this single page. If more than 50 receipts changed
-since the last run, the remainder are silently skipped — same shape as
-the Shopify F5 pre-fix bug. The Shopify poller now follows the
-`Link` header; Etsy doesn't.
-
-The poller also does an N+1 fetch (one extra `GET .../transactions` per
-receipt, `etsy-order-logic.cjs:73-79`). Combined with no pagination and
-no concurrency limit, a backlog of 50 receipts is 51 sequential HTTPS
-calls. Acceptable, but inefficient.
-
-### 2.7 Etsy facts are not integrated with temporal key bindings
-
-The Shopify reducer carries `rawSku`, `entityId`, and `manualEntityId`
-on each `ShopifyLineFact`. Etsy reuses the `ShopifyLineFact` type
-(`inventory.ts:60-63`) but the Etsy reducer never sets any of those
-fields:
-
-```ts
-order.etsyFacts!.lines[tx.transaction_id] = {
-  itemKey: canonicalKey,
-  placed: tx.quantity,
-  cancelled: isCancelled ? tx.quantity : 0,
-  refunded: 0,
+const isCancelled =
+  rawReceipt.status === "canceled" ||
+  rawReceipt.status === "cancelled" ||
+  rawReceipt.status === "refunded";              // <-- triggers cancelled
+…
+newFacts[lineItemID] = {
+  …
+  cancelled: isCancelled || isUnpaid ? tx.quantity : 0,
+  refunded:
+    rawReceipt.status === "refunded" ||           // <-- also triggers refunded
+    rawReceipt.status === "partially_refunded"
+      ? tx.quantity : 0,
 };
 ```
 
-Consequences:
+`syncOrderItemsFromFacts` and the `netDiffMap` loop both compute
+`impact = placed - cancelled - refunded`. For a "refunded" receipt
+`impact = qty - qty - qty = -qty`. Probed with the existing reducer
+on a paid → refunded transition for `quantity = 5`:
 
-- **`rewriteOrderItemKeyReferences` ignores etsyFacts**
-  (`inventory.ts:908-914`). Only `order.shopifyFacts.lines` is rewritten
-  on rename. After `rename_subtype` / `update_field` / `fix_jancode`,
-  `etsyFacts.lines[*].itemKey` keeps the old key. A subsequent Etsy
-  reconciliation will then redirect the order line back to the (now
-  empty) old key, undoing the rename's effect on Etsy-derived
-  `order.items`.
-- **`retype_item` ignores etsyFacts** (`inventory.ts:1816-1825` only
-  iterates `order.shopifyFacts.lines`). A user-applied retype on an
-  Etsy order line will not be propagated, and the next reconciliation
-  reverts it.
-- **No `manualEntityId` semantics for Etsy retypes**, so even if the
-  shopifyFacts logic were extended, there's no override field to lean
-  on.
-
-This is a real correctness gap, not a stylistic one — every binding-aware
-guarantee the Shopify side now has is missing from the Etsy side.
-
-### 2.8 Subtype/variation extraction for Etsy is unimplemented
-
-The design doc, §4 "Source of Truth and Keys":
-
-> Remote Line Key Preference:
->   1. `sku` on the transaction object.
->   2. Fallback to JAN/subtype extraction from the listing title or
->      variation properties (performed by the reducer).
-
-`mapSkuToItemKey` (`inventory.ts:824-847`) implements step 1 but its
-"fallback" only looks for Shopify-style `properties` array entries
-named `JAN`/`barcode`. Etsy transactions don't carry that shape — they
-have `variations`, `product_data`, and the listing title. The reducer
-therefore returns `null` for any Etsy transaction whose `sku` field is
-empty or non-numeric, and records "Unknown SKU: " (often with an empty
-string in the message — `inventory.ts:1407-1409`) as an exception.
-
-For shops that rely on Etsy variations to encode subtype, this means
-the integration silently sends every transaction to the exception list.
-
-### 2.9 Etsy reducer has no refund handling, even at the receipt level
-
-The design's §7 "Quantity Semantics" says:
-
-> `inventoryImpact = sum(transaction.quantity)` for all non-cancelled
-> transactions in a valid receipt.
-> Cancelled receipts (e.g., status "cancelled" or refunded transactions)
-> will result in a zero or reduced inventory impact.
-
-The reducer only checks `rawReceipt.status` for `"canceled"` /
-`"cancelled"` (`inventory.ts:1385-1386`). Other Etsy status values that
-should reduce impact — `"refunded"`, `"partially_refunded"`, transaction
-`is_overdue` / `is_paid` flags, or per-transaction refund records — are
-not handled. There is no equivalent of `shopify_refund_created` for
-Etsy.
-
-The fact carries a `refunded` field that is hard-coded to `0`. The
-poller fetches `transactions` but not `refunds`.
-
-Combined with §2.3, this means an Etsy receipt that gets refunded
-(without being fully cancelled) will keep its inventory impact applied.
-
-### 2.10 `etsy_unrecognized_topic` is dispatched but not defined
-
-`functions/index.js:1344`:
-
-```ts
-let type = "etsy_unrecognized_topic";
-if (topic === "receipt.created") type = "etsy_order_created";
-else if (topic === "receipt.updated") type = "etsy_order_updated";
+```
+[after paid]              shipped = 5
+[after refunded]          shipped = -5     ← should be 0
+[after partially_refunded] shipped = 0     ← should be partial, not 0
 ```
 
-But there's no `createAction("etsy_unrecognized_topic")` in
-`inventory.ts` (Shopify has the equivalent at line 211). Any non-receipt
-event type therefore writes a broadcast action that no reducer handles.
-It won't crash — it will just sit in the log with no effect — but the
-diagnostics-style action that Shopify defined explicitly is missing.
+The `cancelled` clause should not include `"refunded"` — refunded
+status should be expressed via `refunded: tx.quantity` only. As the
+probe also shows, `"partially_refunded"` is handled as a full refund
+because Etsy doesn't expose per-transaction refund amounts in the
+fields the code reads — strictly worse than the pass-1 behaviour
+(impact frozen at the placed value), and still nowhere near correct
+without the actual refund total. The new unit-test set covers
+"canceled" but not either refund status, which is why this snuck
+through.
 
-### 2.11 `mapSkuToItemKey` regex change is a Shopify behavior change too
+This is the highest-priority residual issue.
 
-Commit `aad939d` tightens
-`/^\d+/.test(sku)` → `/^\d+$/.test(sku)`
-(`inventory.ts:830`). The intent (per the new comment) is "Most SKUs are
-JAN codes (13 digits)." This is more correct on its own, but it changes
-precedence on the **Shopify** side: a Shopify line with SKU
-`"4901681382316Standard"` *and* a `JAN` property used to return the SKU
-verbatim; it now falls through to the property fallback and returns
-`<JAN-property> + variantTitle`.
+### 2.3 `partially_refunded` math is impossible without per-transaction refund data
 
-The existing Shopify tests still pass (none of them stack SKU + JAN
-property simultaneously), but in production this could re-route an
-order line to a different inventory key. A regression test for the
-mixed case would document the intended behaviour. At minimum the diff
-deserves a callout in the commit message — right now it ships under a
-"Complete Etsy Order Sync" subject line.
+Even after fixing §2.2, `partially_refunded` as currently coded would
+zero out the line. Etsy v3 does provide refund objects on the receipt
+(`receipt.refunds` per-transaction), but the reducer never reads them.
+A genuine fix would either:
 
-### 2.12 Test coverage is shallow
+- Sum each transaction's refund amount from `receipt.refunds[].amount`
+  (or whatever the v3 schema names it) and convert to a unit count, or
+- Treat `partially_refunded` as "no impact change" until proper data
+  is wired in (closer to today's pre-pass-1 behaviour).
 
-`tests/unit/etsy-history.test.ts` has two cases: created+reconciled
-happy path, and full-receipt cancellation. Missing:
+The design doc's §7 "refunded transactions reduce impact" is still
+not fully satisfiable without that data path.
 
-- Unknown SKU → exception recorded, shipped untouched.
-- `missing_historical_binding` (Etsy line resolved at a time before its
-  binding existed).
-- Key reuse and chained renames on Etsy orders.
-- `retype_item` of an Etsy line — would surface §2.7.
-- Removed transaction in a later reconciliation — would surface §2.3.
-- Per-transaction refund → would surface §2.9.
-- Idempotent re-dispatch of `etsy_order_created` (Shopify has this
-  test; Etsy doesn't).
+### 2.4 Webhook dedupe is atomic but still not safely retryable
 
-The single E2E in `017-etsy-sync.spec.ts` only tests the unknown-SKU
-exception path.
+Same caveat that already applies on the Shopify side: if
+`writeBroadcastAction()` throws after `eventRef.create()` succeeds
+(`functions/index.js:1346-1371`), the webhook is permanently marked
+processed without ever broadcasting. Codex F4's "outbox / retry-safe"
+recommendation is open for both Shopify and Etsy.
 
-### 2.13 Smaller items
+### 2.5 Test coverage is better but still has gaps
 
-- `OrderInfo.etsyFacts.refunds` is omitted from the type compared to
-  `shopifyFacts` (`inventory.ts:60-63`). If/when refund support lands,
-  the type must change.
-- `getOrCreateOrder` (`inventory.ts:919-947`) decides Etsy vs Shopify
-  by the `etsy:` prefix on the order id. Works, but it's a
-  string-shape contract that's now load-bearing in the reducer.
-- The exception message
-  ``Unknown SKU: ${rawSku} (Transaction: ${tx.transaction_id})``
-  often interpolates an empty string for `rawSku` because Etsy
-  transactions frequently lack a `sku` field. Showing the
-  `listing_id` and/or variation title would be more actionable.
-- `ETSY_SETUP.md` step 5 says
-  `npm test tests/unit/etsy-history.test.ts` — the project uses Bun
-  (`bun run test`) per CLAUDE.md.
+Added in pass 2: removes deleted transactions; rename follows facts;
+duplicate-create idempotency; fallback mapper exception path;
+missing-historical-binding exception. Still missing:
 
-## 3. Design adherence at a glance
+- Happy-path test where the **fallback mapper resolves to a known
+  inventory item** (would pin §2.1's variation-format question).
+- Test for `status === "refunded"` (would catch §2.2).
+- Test for `status === "partially_refunded"` (would catch §2.3).
+- Test that `manualEntityId` survives an authoritative Etsy
+  reconciliation (mirrors Shopify F1+F3).
+- Test that a delayed `etsy_order_updated` with an *older*
+  `updated_timestamp` than the current `reconciledTimestamp` is
+  ignored (Shopify has the equivalent test).
+
+### 2.6 Smaller residuals (carried over from pass 1)
+
+- `OrderInfo.etsyFacts` still has no `refunds` map. Etsy doesn't have
+  a per-refund webhook in this implementation, so today there is
+  nothing to dedupe against. If/when refund webhooks are added the
+  type must change.
+- `getOrCreateOrder` still routes by `orderID.startsWith("etsy:")` —
+  load-bearing string contract. Works; worth a constant.
+- Pagination loop in `fetchChangedReceipts` has no upper bound; a
+  pathological API response could spin forever. Defensive cap (or
+  trust Etsy) — minor.
+- Default secret `whsec_dGVzdF9zZWNyZXQ=` is hard-coded in
+  `getEtsyConfig` for the emulator. Useful for tests, but worth a
+  comment that it must be overridden in production.
+
+## 3. Design adherence at a glance (post pass 2)
 
 | Design item | Status |
 | --- | --- |
 | Raw payload broadcast actions (`etsy_order_*`) | Implemented |
-| Webhook signature verification | Implemented but **fails open** (§2.1) |
-| Event-level dedupe (`etsy_order_events/{eventId}`) | Implemented but **non-atomic** (§2.4) |
-| Reconciliation poller with persistent cursor | Implemented but **single-page** (§2.6) |
+| Webhook signature verification | Implemented + enforced |
+| Event-level dedupe (`etsy_order_events/{eventId}`) | Atomic via `.create()` |
+| Reconciliation poller with persistent cursor | Implemented + paginated |
 | Per-receipt `reconciledTimestamp` ordering | Implemented |
-| Mapping by SKU first, fallback to subtype/variation | **Fallback unimplemented for Etsy** (§2.8) |
-| Cancelled receipts produce zero impact | Implemented (receipt-level only) |
-| Refunded transactions reduce impact | **Not implemented** (§2.9) |
-| Webhook setup tool registers webhooks | **Placeholder only** (§2.2) |
-| OAuth setup tool persists tokens | Prints to stdout only (§2.2) |
-| Temporal binding integration (rename/retype follows) | **Not implemented** (§2.7) |
-| Authoritative ground-truth reconciliation | **Not adopted** (§2.3) |
-| Server-side broadcast timestamps | **Not adopted** (§2.5) |
+| Mapping by SKU first, fallback to subtype/variation | Reachable, format-ambiguous (§2.1) |
+| Cancelled receipts produce zero impact | Implemented |
+| Refunded transactions reduce impact | **Partial + new bug** (§2.2, §2.3) |
+| Webhook setup tool registers webhooks | Implemented |
+| OAuth setup tool persists tokens | Implemented (local), prints (other envs) |
+| Temporal binding integration (rename/retype follows) | Implemented |
+| Authoritative ground-truth reconciliation | Implemented |
+| Server-side broadcast timestamps | Implemented |
 
 ## 4. Recommendation
 
-The branch ships the *shape* of an Etsy integration but it does not yet
-meet the design's own contract or the production correctness bar that
-the Shopify side recently reached. Suggested order of operations:
+Pass 2 closed everything that was a security or correctness blocker in
+pass 1 — HMAC, atomic dedupe, server timestamps, authoritative
+rebuild, temporal-binding integration, and the spurious Shopify regex
+change. The integration is no longer a "shallow port"; it now matches
+the Shopify side everywhere except refunds.
 
-1. **Enable HMAC enforcement** (uncomment the 401 return) and confirm
-   the v3 signature canonical string against current Etsy docs (§2.1).
-2. **Adopt authoritative reconciliation** for `applyEtsyOrderReconciliation`
-   the same way `applyOrderReconciliation` was rewritten in Codex F1
-   pass — rebuild `etsyFacts.lines`, drop missing transactions, preserve
-   any future `manualEntityId` (§2.3).
-3. **Atomic dedupe + server timestamps** in `etsyOrderWebhook` and
-   `etsyOrderReconcile` (mirror the Shopify fixes for Codex F2 + F4)
-   (§2.4, §2.5).
-4. **Pagination** in the poller (§2.6).
-5. **Implement the Etsy fallback mapper** so transactions without a
-   numeric SKU can resolve via variation/listing data (§2.8). Without
-   this, a user shop relying on variations sees every transaction in
-   the exception list.
-6. **Wire `rewriteOrderItemKeyReferences` and `retype_item` to update
-   `etsyFacts.lines`**, and decide whether `manualEntityId` should be
-   tracked on Etsy facts too (§2.7).
-7. **Refund/refunded-status handling** end-to-end (§2.9). At minimum,
-   treat `status === "refunded"` and per-transaction
-   `is_overdue / is_paid` consistently with the Shopify pattern.
-8. **Make `--apply` and the OAuth flow actually configure the
-   integration** rather than printing TODO comments (§2.2).
-9. **Expand unit test coverage** to the missing cases in §2.12, and add
-   at least one regression test for the mapper precedence change in
-   §2.11.
+Suggested follow-ups, in priority order:
 
-Items 1, 2, 4, 5 are correctness blockers for any production rollout.
-The rest are feature-completeness work that the design doc already
-calls out, just not yet implemented.
+1. **§2.2 — fix the `"refunded"` double-deduct.** Drop `"refunded"`
+   from the `isCancelled` clause; keep it only on the `refunded` field.
+   Add a regression test for paid → refunded.
+2. **§2.3 — `partially_refunded`.** Either wire in real per-transaction
+   refund amounts from `receipt.refunds`, or revert
+   `partially_refunded` to no-op until data is available.
+3. **§2.1 — fallback mapper format.** Decide whether multi-variation
+   subtypes are joined with `" / "` or some other separator, ensure
+   inventory creation uses the same convention, and add a happy-path
+   test.
+4. **Codex F4 durability** — make webhook dedupe + broadcast
+   retry-safe (shared follow-up with Shopify, not Etsy-specific).
+5. **Test gaps from §2.5** so future regressions in refund handling,
+   ordering, and manualEntityId-through-reconciliation surface in CI.
+
+Items 1 and 2 are the only correctness blockers remaining; the rest
+are completeness / robustness work.

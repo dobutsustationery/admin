@@ -864,7 +864,7 @@ function mapSkuToItemKey(
       if (lineItem.variations) {
         subtype = lineItem.variations
           .map((v: any) => v.formatted_value)
-          .join(" / ");
+          .join(" ");
       }
       return makeInventoryItemKey(jan, subtype);
     }
@@ -1430,9 +1430,7 @@ export const inventory = createReducer(initialState, (r) => {
         }
 
         const isCancelled =
-          rawReceipt.status === "canceled" ||
-          rawReceipt.status === "cancelled" ||
-          rawReceipt.status === "refunded";
+          rawReceipt.status === "canceled" || rawReceipt.status === "cancelled";
         const isUnpaid =
           rawReceipt.is_paid === false || rawReceipt.status === "unpaid";
 
@@ -1440,11 +1438,7 @@ export const inventory = createReducer(initialState, (r) => {
           itemKey: canonicalKey,
           placed: tx.quantity,
           cancelled: isCancelled || isUnpaid ? tx.quantity : 0,
-          refunded:
-            rawReceipt.status === "refunded" ||
-            rawReceipt.status === "partially_refunded"
-              ? tx.quantity
-              : 0,
+          refunded: rawReceipt.status === "refunded" ? tx.quantity : 0,
           rawSku,
           entityId,
           manualEntityId: oldFact?.manualEntityId,
