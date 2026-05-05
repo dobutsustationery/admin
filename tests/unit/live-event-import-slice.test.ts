@@ -100,6 +100,65 @@ describe("live event import", () => {
     expect(result.indices).toEqual([0]);
   });
 
+  it("does not fall back to a different subtype for the same JAN", () => {
+    const greenKey = makeInventoryItemKey("4510085335639", "Green");
+    const parsed = parseLiveEventPaste(
+      [
+        "janCode,subtype,description,Sold",
+        "4510085335639,Yellow,Notebook,6",
+      ].join("\n"),
+    );
+
+    const result = computeLiveEventImportCommit(
+      {
+        rawPaste: "",
+        delimiter: "csv",
+        eventName: "market",
+        step: "review",
+        rows: parsed.rows,
+      },
+      {
+        [greenKey]: {
+          janCode: "4510085335639",
+          subtype: "Green",
+          qty: 10,
+          shipped: 0,
+        },
+      },
+    );
+
+    expect(result.lines).toEqual([]);
+    expect(result.indices).toEqual([]);
+  });
+
+  it("does not infer a non-default subtype when the paste has no subtype", () => {
+    const yellowKey = makeInventoryItemKey("4510085335639", "Yellow");
+    const parsed = parseLiveEventPaste(
+      ["janCode,description,Sold", "4510085335639,Notebook,6"].join("\n"),
+    );
+
+    const result = computeLiveEventImportCommit(
+      {
+        rawPaste: "",
+        delimiter: "csv",
+        eventName: "market",
+        step: "review",
+        rows: parsed.rows,
+      },
+      {
+        [yellowKey]: {
+          janCode: "4510085335639",
+          subtype: "Yellow",
+          qty: 10,
+          shipped: 0,
+        },
+      },
+    );
+
+    expect(result.lines).toEqual([]);
+    expect(result.indices).toEqual([]);
+  });
+
   it("commits approved sales through package_item synthesis", () => {
     const key = makeInventoryItemKey("4510085335639", "Yellow");
     const paste = [
