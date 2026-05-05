@@ -45,6 +45,7 @@
     { href: "/itemhistory", label: "Item History", icon: History },
     { href: "/jancodes", label: "Jan Codes", icon: Barcode },
     { href: "/order-import", label: "Order Import", icon: Import },
+    { href: "/live-event-import", label: "Live Event Import", icon: Import },
     { href: "/photo-history", label: "Photo History", icon: Image },
     { href: "/photos", label: "Photos", icon: Camera },
     { href: "/shopify-import", label: "Shopify Import", icon: Import },

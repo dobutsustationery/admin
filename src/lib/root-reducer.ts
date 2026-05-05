@@ -6,6 +6,8 @@ import {
   type BulkImportItem,
   type Item,
   update_field,
+  new_order,
+  package_item,
   split_inventory_item,
   fix_jancode,
 } from "./inventory";
@@ -21,6 +23,11 @@ import {
   computeShopifyImportBatch,
   mark_items_done as markShopifyDone,
 } from "./shopify-import-slice";
+import {
+  liveEventImport,
+  computeLiveEventImportCommit,
+  mark_rows_done as markLiveEventRowsDone,
+} from "./live-event-import-slice";
 import {
   listings,
   add_listing_image,
@@ -70,6 +77,7 @@ const reducerObject = {
   photos,
   orderImport,
   shopifyImport,
+  liveEventImport,
   listings,
   shopifySync,
   shopifyCatalog,
@@ -1159,6 +1167,69 @@ export const rootReducer = (
         shopifyImport: shopifyImport(nextState.shopifyImport, markAction),
       };
       logger(markAction, nextState, action._timestamp); // LOG SUB-ACTION
+    }
+  }
+
+  // Live Event Sales Import
+  if (
+    action.type === "liveEventImport/commit_import" &&
+    nextState.liveEventImport
+  ) {
+    const { lines, indices } = computeLiveEventImportCommit(
+      nextState.liveEventImport,
+      nextState.inventory.idToItem,
+    );
+
+    if (lines.length > 0) {
+      const eventName =
+        String(nextState.liveEventImport.eventName || "").trim() ||
+        "Live Event";
+      const eventSlug = eventName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      const orderID = `live-event:${eventSlug || "manual"}:${action.id || action._timestamp}`;
+      const orderDate = new Date(action._timestamp || 0);
+
+      const orderAction = inheritTimestamp({
+        ...new_order({
+          orderID,
+          email: "live-event",
+          product: eventName,
+          date: orderDate,
+        }),
+        _ephemeral: true,
+      });
+      nextState = {
+        ...nextState,
+        inventory: inventory(nextState.inventory, orderAction),
+      };
+      logger(orderAction, nextState, action._timestamp);
+
+      lines.forEach((line) => {
+        const packageAction = inheritTimestamp({
+          ...package_item({
+            orderID,
+            itemKey: line.itemKey as any,
+            qty: line.qty,
+          }),
+          _ephemeral: true,
+        });
+        nextState = {
+          ...nextState,
+          inventory: inventory(nextState.inventory, packageAction),
+        };
+        logger(packageAction, nextState, action._timestamp);
+      });
+    }
+
+    if (indices.length > 0) {
+      const markAction = inheritTimestamp(markLiveEventRowsDone({ indices }));
+      nextState = {
+        ...nextState,
+        liveEventImport: liveEventImport(nextState.liveEventImport, markAction),
+      };
+      logger(markAction, nextState, action._timestamp);
     }
   }
 
