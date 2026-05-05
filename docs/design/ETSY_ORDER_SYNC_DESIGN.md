@@ -74,7 +74,15 @@ The reducer uses Etsy's internal timestamps and status fields to ensure out-of-o
 Inventory impact is derived from the receipt and its transactions:
 `inventoryImpact = sum(transaction.quantity)` for all non-cancelled transactions in a valid receipt.
 
-Cancelled receipts (e.g., status "cancelled" or refunded transactions) will result in a zero or reduced inventory impact.
+- **Cancelled receipts** (status `canceled` or `cancelled`) and **Full refunds** (status `refunded`) result in zero inventory impact for all lines.
+- **Partial refunds** (status `partially_refunded`) are currently handled conservatively: they result in full inventory impact (placed quantity) until per-transaction refund data is integrated into the reducer.
+- **Unpaid receipts** (status `unpaid` or `is_paid: false`) result in zero inventory impact.
+
+### 7.1 Fallback Mapping Convention
+
+When SKU is missing, the system attempts to match by JAN in title + Subtype from Variations.
+- **Subtype Format:** Multiple variations are joined by a single space (e.g., "Blue Large") in the order declared by Etsy.
+- **Pre-requisite:** Inventory items must be created with matching subtype strings for fallback resolution to succeed.
 
 ## 8. Data Model Additions
 

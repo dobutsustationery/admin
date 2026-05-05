@@ -61,6 +61,8 @@ function getEtsyConfig() {
     shopId: process.env.ETSY_SHOP_ID || "",
     apiKey: process.env.ETSY_API_KEY || "",
     accessToken: process.env.ETSY_ACCESS_TOKEN || "",
+    // NOTE: Default secret is for emulator use only. 
+    // MUST be overridden via ETSY_SHARED_SECRET env var in production.
     sharedSecret: process.env.ETSY_SHARED_SECRET || "whsec_dGVzdF9zZWNyZXQ=",
   };
 }

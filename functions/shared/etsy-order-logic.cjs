@@ -62,8 +62,11 @@ async function fetchChangedReceipts(config, lastModifiedTimestamp) {
   let allReceipts = [];
   let offset = 0;
   const limit = 50;
+  let pageCount = 0;
+  const MAX_PAGES = 100; // Safety cap
 
-  while (true) {
+  while (pageCount < MAX_PAGES) {
+    pageCount++;
     // Etsy v3: GET /v3/application/shops/{shop_id}/receipts
     // Query params: min_last_modified_timestamp
     const params = new URLSearchParams({
