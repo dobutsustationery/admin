@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import Papa from "papaparse";
-import { makeInventoryItemKey } from "./sku";
+import { canonicalizeSubtype, makeInventoryItemKey } from "./sku";
 
 export interface LiveEventImportItem {
   janCode: string;
@@ -39,6 +39,12 @@ export interface LiveEventCommitLine {
   index: number;
   itemKey: string;
   qty: number;
+}
+
+export interface LiveEventInventoryMatch {
+  key: string;
+  item: any;
+  matchType: "exact" | "jan";
 }
 
 export const initialState: LiveEventImportState = {
@@ -276,20 +282,33 @@ export const parseLiveEventPaste = (
   return { delimiter, eventName, rows };
 };
 
-const findInventoryMatch = (
+const hasBlankOrDefaultSubtype = (subtype?: string): boolean =>
+  canonicalizeSubtype(subtype) === "";
+
+export const findLiveEventInventoryMatch = (
   item: LiveEventImportItem,
   inventoryIdToItem: Record<string, any>,
-): string | null => {
+): LiveEventInventoryMatch | null => {
   const exactKey = makeInventoryItemKey(item.janCode, item.subtype);
-  if (inventoryIdToItem[exactKey]) return exactKey;
+  const exact = inventoryIdToItem[exactKey];
+  if (exact) return { key: exactKey, item: exact, matchType: "exact" };
+
+  if (!hasBlankOrDefaultSubtype(item.subtype)) return null;
 
   const janMatches = Object.entries(inventoryIdToItem)
     .filter(([, inventoryItem]: [string, any]) => {
-      return String(inventoryItem?.janCode || "").trim() === item.janCode;
+      return (
+        String(inventoryItem?.janCode || "").trim() === item.janCode &&
+        hasBlankOrDefaultSubtype(inventoryItem?.subtype)
+      );
     })
-    .map(([key]) => key);
+    .map(([key, inventoryItem]) => ({ key, item: inventoryItem }));
 
-  return janMatches.length === 1 ? janMatches[0] : null;
+  if (janMatches.length === 1) {
+    return { ...janMatches[0], matchType: "jan" };
+  }
+
+  return null;
 };
 
 export const computeLiveEventImportCommit = (
@@ -304,11 +323,11 @@ export const computeLiveEventImportCommit = (
     const sold = Number(row.parsed.sold || 0);
     if (!Number.isInteger(sold) || sold < 0) return;
 
-    const itemKey = findInventoryMatch(row.parsed, inventoryIdToItem);
-    if (!itemKey) return;
+    const match = findLiveEventInventoryMatch(row.parsed, inventoryIdToItem);
+    if (!match) return;
 
     if (sold > 0) {
-      lines.push({ index, itemKey, qty: sold });
+      lines.push({ index, itemKey: match.key, qty: sold });
     }
     indices.push(index);
   });

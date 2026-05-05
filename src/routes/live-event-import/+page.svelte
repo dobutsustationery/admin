@@ -10,10 +10,9 @@
     set_all_approvals,
     clear_import,
     commit_import,
+    findLiveEventInventoryMatch,
     type LiveEventRawRow,
-    type LiveEventImportItem,
   } from "$lib/live-event-import-slice";
-  import { makeInventoryItemKey } from "$lib/sku";
 
   let localPaste = "";
   let statusMessage = "";
@@ -22,31 +21,6 @@
   $: importState = $store.liveEventImport;
   $: rows = (importState.rows || []) as LiveEventRawRow[];
   $: localPaste = importState.rawPaste || localPaste;
-
-  const trim = (value: unknown) =>
-    typeof value === "string" ? value.trim() : "";
-
-  function findInventoryMatch(item: LiveEventImportItem): {
-    key: string;
-    item: any;
-    matchType: "exact" | "jan";
-  } | null {
-    const exactKey = makeInventoryItemKey(item.janCode, item.subtype);
-    const exact = $store.inventory.idToItem[exactKey];
-    if (exact) return { key: exactKey, item: exact, matchType: "exact" };
-
-    const janMatches = Object.entries($store.inventory.idToItem)
-      .filter(([, inventoryItem]: [string, any]) => {
-        return trim(inventoryItem?.janCode) === item.janCode;
-      })
-      .map(([key, inventoryItem]) => ({ key, item: inventoryItem }));
-
-    if (janMatches.length === 1) {
-      return { ...janMatches[0], matchType: "jan" };
-    }
-
-    return null;
-  }
 
   function available(item: any): number {
     return Number(item?.qty || 0) - Number(item?.shipped || 0);
@@ -58,7 +32,10 @@
       return { status: row.error || "Skipped", className: "error" };
     }
 
-    const match = findInventoryMatch(row.parsed);
+    const match = findLiveEventInventoryMatch(
+      row.parsed,
+      $store.inventory.idToItem,
+    );
     if (!match) return { status: "Missing item", className: "error" };
 
     const currentAvailable = available(match.item);
@@ -85,7 +62,7 @@
   $: readyRows = rows.filter((row: LiveEventRawRow) => {
     if (!row.approved || row.processed || row.error || !row.parsed)
       return false;
-    return !!findInventoryMatch(row.parsed);
+    return !!findLiveEventInventoryMatch(row.parsed, $store.inventory.idToItem);
   });
   $: approvedSoldCount = readyRows.reduce(
     (sum: number, row: LiveEventRawRow) => sum + Number(row.parsed?.sold || 0),
