@@ -1189,7 +1189,9 @@ export const rootReducer = (
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
       const orderID = `live-event:${eventSlug || "manual"}:${action.id || action._timestamp}`;
-      const enteredDate = new Date(action._timestamp || 0);
+      const enteredMs =
+        action._timestamp || nextState.liveEventImport.pasteTimestampMs || 0;
+      const enteredDate = new Date(enteredMs);
       const eventDate = nextState.liveEventImport.eventDate
         ? new Date(`${nextState.liveEventImport.eventDate}T00:00:00`)
         : undefined;
