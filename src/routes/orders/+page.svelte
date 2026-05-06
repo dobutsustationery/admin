@@ -10,6 +10,7 @@
     email: string;
     item: string;
     date: Date;
+    eventDate?: Date;
   }
 
   function updateOrderInfo() {
@@ -17,13 +18,17 @@
     const orderIds = Object.keys(state.inventory.orderIdToOrder);
     orderInfo = [];
     for (const id of orderIds) {
-      const email = state.inventory.orderIdToOrder[id].email || "";
-      const item = state.inventory.orderIdToOrder[id].product || "";
-      const date = state.inventory.orderIdToOrder[id].date;
-      orderInfo.push({ id, email, item, date });
+      const order = state.inventory.orderIdToOrder[id];
+      const email = order.email || "";
+      const item = order.product || "";
+      const date = order.date;
+      const eventDate = order.eventDate;
+      orderInfo.push({ id, email, item, date, eventDate });
     }
     orderInfo.sort((a, b) => {
-      return a.date.getTime() - b.date.getTime();
+      const aPrimary = (a.eventDate ?? a.date).getTime();
+      const bPrimary = (b.eventDate ?? b.date).getTime();
+      return bPrimary - aPrimary;
     });
   }
 
@@ -78,10 +83,14 @@
 
 <h1>Orders</h1>
 <table>
-  <tr><th>Date</th><th>ID</th><th>Email</th><th>Product</th></tr>
+  <tr
+    ><th>Order Date</th><th>Entered</th><th>ID</th><th>Email</th><th>Product</th
+    ></tr
+  >
   {#each orderInfo as order}
     <tr on:click={packOrder(order.id, order.email, order.item)}>
-      <td>{formatDate(order.date)}</td>
+      <td>{formatDate(order.eventDate ?? order.date)}</td>
+      <td class="entered">{formatDate(order.date)}</td>
       <td>{order.id}</td><td>{order.email}</td><td>{order.item}</td></tr
     >
   {/each}
@@ -98,5 +107,10 @@
 
   td {
     padding: 0.2em;
+  }
+
+  td.entered {
+    color: #58606f;
+    font-size: 0.9em;
   }
 </style>

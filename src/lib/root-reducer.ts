@@ -1189,16 +1189,18 @@ export const rootReducer = (
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
       const orderID = `live-event:${eventSlug || "manual"}:${action.id || action._timestamp}`;
-      const orderDate = nextState.liveEventImport.eventDate
-        ? new Date(nextState.liveEventImport.eventDate)
-        : new Date(action._timestamp || 0);
+      const enteredDate = new Date(action._timestamp || 0);
+      const eventDate = nextState.liveEventImport.eventDate
+        ? new Date(`${nextState.liveEventImport.eventDate}T00:00:00`)
+        : undefined;
 
       const orderAction = inheritTimestamp({
         ...new_order({
           orderID,
           email: "live-event",
           product: eventName,
-          date: orderDate,
+          date: enteredDate,
+          eventDate,
         }),
         _ephemeral: true,
       });

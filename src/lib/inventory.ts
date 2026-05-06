@@ -48,6 +48,7 @@ export interface ShopifyLineFact {
 }
 export interface OrderInfo {
   date: Date;
+  eventDate?: Date;
   email?: string;
   product?: string;
   id: string;
@@ -120,6 +121,7 @@ export const new_order = createAction<{
   date: Date;
   email: string;
   product: string;
+  eventDate?: Date;
 }>("new_order");
 export const package_item = createAction<{
   orderID: string;
@@ -1428,6 +1430,7 @@ export const inventory = createReducer(initialState, (r) => {
     const email = action.payload.email;
     const date = action.payload.date;
     const product = action.payload.product;
+    const eventDate = action.payload.eventDate;
     let items: LineItem[] = [];
     if (state.orderIdToOrder[orderID]) {
       items = [...state.orderIdToOrder[orderID].items];
@@ -1438,6 +1441,7 @@ export const inventory = createReducer(initialState, (r) => {
       email,
       product,
       date,
+      eventDate,
     };
   });
   r.addCase(package_item, (state, action) => {
