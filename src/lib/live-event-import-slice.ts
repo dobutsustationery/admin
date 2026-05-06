@@ -34,6 +34,7 @@ export interface LiveEventImportState {
   eventDate?: string;
   step: "idle" | "review";
   rows: LiveEventRawRow[];
+  pasteTimestampMs?: number;
 }
 
 export interface LiveEventCommitLine {
@@ -55,6 +56,7 @@ export const initialState: LiveEventImportState = {
   eventDate: "",
   step: "idle",
   rows: [],
+  pasteTimestampMs: 0,
 };
 
 const normalizeHeaderKey = (key: string): string =>
@@ -345,6 +347,10 @@ const liveEventImportSlice = createSlice({
       state.eventName = parsed.eventName;
       state.rows = parsed.rows;
       state.step = parsed.rows.length > 0 ? "review" : "idle";
+      const ts = (action as any)._timestamp;
+      if (typeof ts === "number" && ts > 0) {
+        state.pasteTimestampMs = ts;
+      }
     },
     toggle_row_approval: (
       state,
@@ -382,6 +388,7 @@ const liveEventImportSlice = createSlice({
       state.eventDate = "";
       state.step = "idle";
       state.rows = [];
+      state.pasteTimestampMs = 0;
     },
     commit_import: (state) => {
       // Root reducer derives inventory/order effects from the pasted fact.

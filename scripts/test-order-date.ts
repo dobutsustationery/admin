@@ -36,19 +36,20 @@ state = rootReducer(
 
 state = rootReducer(
   state,
-  { ...set_paste({ rawPaste: paste }), id: "paste", _timestamp: 1000 },
+  { ...set_paste({ rawPaste: paste }), id: "paste", _timestamp: 1700000000000 },
   logger,
 );
 
 state = rootReducer(
   state,
-  { ...set_event_date({ eventDate: "2024-05-01" }), id: "date", _timestamp: 2000 },
+  { ...set_event_date({ eventDate: "2024-05-01" }), id: "date", _timestamp: 1700000001000 },
   logger,
 );
 
+// Simulate the pending-write race: commit_import dispatched with _timestamp=0
 state = rootReducer(
   state,
-  { ...commit_import(), id: "commit", _timestamp: 3000 },
+  { ...commit_import(), id: "commit", _timestamp: 0 },
   logger,
 );
 
