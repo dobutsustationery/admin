@@ -33,6 +33,9 @@
   // Search State
   let searchTerm = "";
   let allSearchCandidates: any[] = []; // Cache for client-side filtering
+  let replayProgress = 0;
+  let replayTotal = 0;
+  const REPLAY_YIELD_EVERY = 500;
 
   // Date range state
   $: dateRange = getDateRange(viewMode, currentDate);
@@ -48,6 +51,8 @@
 
   async function fetchActions() {
     loading = true;
+    replayProgress = 0;
+    replayTotal = 0;
     try {
       if (viewMode === "search") {
         // Use local IndexedDB cache for search
@@ -67,8 +72,12 @@
 
         let state = rootReducer(undefined, { type: "@@INIT" });
         const parentToChildren = new Map<string, any[]>();
+        replayTotal = cached.length;
+        replayProgress = 0;
+        await tick();
 
-        cached.forEach((action) => {
+        for (let i = 0; i < cached.length; i++) {
+          const action = cached[i];
           const children: any[] = [];
           // Logger signature: (action, state, timestamp)
           const captureLogger = (childAction: any, _s: any, _t: any) => {
@@ -84,7 +93,16 @@
           if (children.length > 0) {
             parentToChildren.set(action.id, children);
           }
-        });
+
+          if ((i + 1) % REPLAY_YIELD_EVERY === 0 || i === cached.length - 1) {
+            replayProgress = i + 1;
+            // Yield to the browser so the UI can paint progress.
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          }
+        }
+
+        // Capture key audit from the same replay we just ran.
+        keyAuditSnapshot = state?.keyAudit || null;
 
         // Sort by timestamp desc for display
         allSearchCandidates = cached
@@ -114,7 +132,6 @@
           });
 
         applySearchFilter();
-        recomputeKeyAuditSnapshot(cached);
       } else {
         const broadcasts = collection(firestore, "broadcast");
         const q = query(
@@ -337,7 +354,14 @@
   </header>
 
   {#if loading}
-    <div class="loading">Loading audit logs...</div>
+    <div class="loading">
+      {#if viewMode === "search" && replayTotal > 0}
+        Replaying {replayProgress.toLocaleString()} of {replayTotal.toLocaleString()}
+        actions...
+      {:else}
+        Loading audit logs...
+      {/if}
+    </div>
   {:else if actions.length === 0}
     <div class="empty">No actions found.</div>
   {:else}
