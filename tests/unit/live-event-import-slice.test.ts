@@ -287,7 +287,7 @@ describe("live event import", () => {
     ).toEqual([{ itemKey: key, qty: 6 }]);
     expect(
       state.inventory.orderIdToOrder["live-event:christmas-market:commit-1"]
-        .date,
-    ).toEqual(new Date("2023-12-25"));
+        .eventDate,
+    ).toEqual(new Date("2023-12-25T00:00:00"));
   });
 });
