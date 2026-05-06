@@ -14,6 +14,18 @@ describe("SKU helpers", () => {
     );
   });
 
+  it("preserves spaces in subtype portions of canonical SKUs", () => {
+    expect(generateSku("4952270291472", "Deco Seals")).toBe(
+      "4952270291472Deco Seals",
+    );
+    expect(makeInventoryItemKey("4952270291472", " Deco Seals ")).toBe(
+      "4952270291472Deco Seals",
+    );
+    expect(canonicalizeInventoryItemKey("4952270291472Deco Seals")).toBe(
+      "4952270291472Deco Seals",
+    );
+  });
+
   it("strips Shopify default subtype labels from canonical SKUs", () => {
     expect(generateSku("4542804154658", "Default")).toBe("4542804154658");
     expect(generateSku("4542804154658", "Default Title")).toBe("4542804154658");

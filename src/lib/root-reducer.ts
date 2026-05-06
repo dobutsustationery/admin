@@ -1755,15 +1755,13 @@ export const rootReducer = (
       itemsToSplit.forEach((variants, sourceId) => {
         if (variants.length > 1) {
           const splits = variants.map((v: any) => {
-            const cleanOption = (v.option1Value || "Default").replace(
-              /[^a-zA-Z0-9-_]/g,
-              "",
-            );
             // Use Source Item's JAN for SKU generation (safe even if sourceId is item-1)
             const sourceItem = nextState.inventory.idToItem[sourceId];
             const baseJan = sourceItem ? sourceItem.janCode : proposal.janCode;
-            // JAN + Option (No colon)
-            let uniqueId = makeInventoryItemKey(baseJan, cleanOption);
+            const uniqueId = makeInventoryItemKey(
+              baseJan,
+              v.option1Value || "Default",
+            );
 
             return {
               newId: uniqueId,
