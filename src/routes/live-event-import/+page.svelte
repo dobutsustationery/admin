@@ -8,6 +8,7 @@
     set_paste,
     toggle_row_approval,
     set_all_approvals,
+    set_event_date,
     clear_import,
     commit_import,
     findLiveEventInventoryMatch,
@@ -17,10 +18,19 @@
   let localPaste = "";
   let statusMessage = "";
   let rows: LiveEventRawRow[] = [];
+  let localEventDate = "";
 
   $: importState = $store.liveEventImport;
   $: rows = (importState.rows || []) as LiveEventRawRow[];
   $: localPaste = importState.rawPaste || localPaste;
+  $: localEventDate = importState.eventDate || localEventDate;
+
+  function handleDateChange(event: Event) {
+    const target = event.target as HTMLInputElement;
+    if (!target) return;
+    localEventDate = target.value;
+    broadcastAction(set_event_date({ eventDate: target.value }));
+  }
 
   function available(item: any): number {
     return Number(item?.qty || 0) - Number(item?.shipped || 0);
@@ -136,6 +146,15 @@
           Manual event
         {/if}
         · {rows.length} rows · {totalSoldCount} sold
+        <div class="date-picker">
+          <label for="event-date">Event Date:</label>
+          <input
+            type="date"
+            id="event-date"
+            value={localEventDate}
+            on:change={handleDateChange}
+          />
+        </div>
       </div>
     </div>
 
@@ -286,6 +305,34 @@
   .meta {
     color: #58606f;
     margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .date-picker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #f7f9fb;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid #d8dee8;
+  }
+
+  .date-picker label {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .date-picker input {
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 0.85rem;
+    outline: none;
+    cursor: pointer;
   }
 
   .actions {

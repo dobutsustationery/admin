@@ -4,6 +4,7 @@ import {
   computeLiveEventImportCommit,
   parseLiveEventPaste,
   set_paste,
+  set_event_date,
 } from "../../src/lib/live-event-import-slice";
 import { bulk_import_items } from "../../src/lib/inventory";
 import { rootReducer } from "../../src/lib/root-reducer";
@@ -269,6 +270,11 @@ describe("live event import", () => {
     );
     state = rootReducer(
       state,
+      { ...set_event_date({ eventDate: "2023-12-25" }), id: "date", timestamp },
+      logger,
+    );
+    state = rootReducer(
+      state,
       { ...commit_import(), id: "commit-1", timestamp },
       logger,
     );
@@ -279,5 +285,9 @@ describe("live event import", () => {
       state.inventory.orderIdToOrder["live-event:christmas-market:commit-1"]
         .items,
     ).toEqual([{ itemKey: key, qty: 6 }]);
+    expect(
+      state.inventory.orderIdToOrder["live-event:christmas-market:commit-1"]
+        .date,
+    ).toEqual(new Date("2023-12-25"));
   });
 });
