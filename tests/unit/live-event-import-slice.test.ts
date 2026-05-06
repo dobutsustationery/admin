@@ -100,6 +100,39 @@ describe("live event import", () => {
     expect(result.indices).toEqual([0]);
   });
 
+  it("matches exact inventory keys while preserving subtype spaces", () => {
+    const key = makeInventoryItemKey("4952270291472", "Deco Seals");
+    const parsed = parseLiveEventPaste(
+      [
+        "janCode,subtype,description,Sold",
+        "4952270291472,Deco Seals,Sticker sheet,2",
+      ].join("\n"),
+    );
+
+    expect(key).toBe("4952270291472Deco Seals");
+
+    const result = computeLiveEventImportCommit(
+      {
+        rawPaste: "",
+        delimiter: "csv",
+        eventName: "market",
+        step: "review",
+        rows: parsed.rows,
+      },
+      {
+        [key]: {
+          janCode: "4952270291472",
+          subtype: "Deco Seals",
+          qty: 10,
+          shipped: 0,
+        },
+      },
+    );
+
+    expect(result.lines).toEqual([{ index: 0, itemKey: key, qty: 2 }]);
+    expect(result.indices).toEqual([0]);
+  });
+
   it("does not fall back to a different subtype for the same JAN", () => {
     const greenKey = makeInventoryItemKey("4510085335639", "Green");
     const parsed = parseLiveEventPaste(
