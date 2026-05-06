@@ -282,9 +282,6 @@ export const parseLiveEventPaste = (
   return { delimiter, eventName, rows };
 };
 
-const hasBlankOrDefaultSubtype = (subtype?: string): boolean =>
-  canonicalizeSubtype(subtype) === "";
-
 export const findLiveEventInventoryMatch = (
   item: LiveEventImportItem,
   inventoryIdToItem: Record<string, any>,
@@ -293,13 +290,13 @@ export const findLiveEventInventoryMatch = (
   const exact = inventoryIdToItem[exactKey];
   if (exact) return { key: exactKey, item: exact, matchType: "exact" };
 
-  if (!hasBlankOrDefaultSubtype(item.subtype)) return null;
+  const incomingSubtypeCanon = canonicalizeSubtype(item.subtype);
 
   const janMatches = Object.entries(inventoryIdToItem)
     .filter(([, inventoryItem]: [string, any]) => {
       return (
         String(inventoryItem?.janCode || "").trim() === item.janCode &&
-        hasBlankOrDefaultSubtype(inventoryItem?.subtype)
+        canonicalizeSubtype(inventoryItem?.subtype) === incomingSubtypeCanon
       );
     })
     .map(([key, inventoryItem]) => ({ key, item: inventoryItem }));
