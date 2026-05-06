@@ -31,6 +31,7 @@ export interface LiveEventImportState {
   rawPaste: string;
   delimiter: "csv" | "tsv" | "unknown";
   eventName: string;
+  eventDate?: string;
   step: "idle" | "review";
   rows: LiveEventRawRow[];
 }
@@ -51,6 +52,7 @@ export const initialState: LiveEventImportState = {
   rawPaste: "",
   delimiter: "unknown",
   eventName: "",
+  eventDate: "",
   step: "idle",
   rows: [],
 };
@@ -362,6 +364,9 @@ const liveEventImportSlice = createSlice({
         }
       });
     },
+    set_event_date: (state, action: PayloadAction<{ eventDate: string }>) => {
+      state.eventDate = action.payload.eventDate;
+    },
     mark_rows_done: (state, action: PayloadAction<{ indices: number[] }>) => {
       action.payload.indices.forEach((index) => {
         if (state.rows[index]) {
@@ -374,6 +379,7 @@ const liveEventImportSlice = createSlice({
       state.rawPaste = "";
       state.delimiter = "unknown";
       state.eventName = "";
+      state.eventDate = "";
       state.step = "idle";
       state.rows = [];
     },
@@ -387,6 +393,7 @@ export const {
   set_paste,
   toggle_row_approval,
   set_all_approvals,
+  set_event_date,
   mark_rows_done,
   clear_import,
   commit_import,

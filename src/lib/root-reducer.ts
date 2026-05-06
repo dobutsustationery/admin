@@ -1189,7 +1189,9 @@ export const rootReducer = (
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
       const orderID = `live-event:${eventSlug || "manual"}:${action.id || action._timestamp}`;
-      const orderDate = new Date(action._timestamp || 0);
+      const orderDate = nextState.liveEventImport.eventDate
+        ? new Date(nextState.liveEventImport.eventDate)
+        : new Date(action._timestamp || 0);
 
       const orderAction = inheritTimestamp({
         ...new_order({
