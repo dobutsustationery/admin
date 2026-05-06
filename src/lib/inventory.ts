@@ -1293,7 +1293,8 @@ export const inventory = createReducer(initialState, (r) => {
     );
   });
   r.addCase(update_field, (state, action) => {
-    const { id: itemKey, field, to: incomingValue, from } = action.payload;
+    const { field, to: incomingValue, from } = action.payload;
+    const itemKey = canonicalizeInventoryItemKey(action.payload.id);
     if (state.idToItem[itemKey]) {
       if (field === "subtype") {
         const subtype = (incomingValue as string)?.trim() || "";
@@ -1985,7 +1986,11 @@ export const inventory = createReducer(initialState, (r) => {
   });
 
   r.addCase(split_inventory_item, (state, action) => {
-    const { sourceId, splits } = action.payload;
+    const sourceId = canonicalizeInventoryItemKey(action.payload.sourceId);
+    const splits = action.payload.splits.map((s) => ({
+      ...s,
+      newId: canonicalizeInventoryItemKey(s.newId),
+    }));
     const sourceItem = state.idToItem[sourceId];
 
     if (!sourceItem) {
