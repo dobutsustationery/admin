@@ -3,17 +3,24 @@
 Reviewing branch `design/etsy-order-sync` against
 `docs/design/ETSY_ORDER_SYNC_DESIGN.md`.
 
-Two passes:
+Three passes:
 
 - **Pass 1** — initial implementation (`905442e`..`39b2881`).
 - **Pass 2** — Gemini's response in `b17c625`
   ("Address Etsy Order Sync review findings: security, authoritative
   reconciliation, and temporal bindings"), summarised in
   `GEMINI_ETSY_RESPONSE.md`.
+- **Pass 3** — `b180477`
+  ("Address remaining Etsy Order Sync review findings: fix
+  double-deduction, expand unit tests, and refine mapper format")
+  followed by `5580dcc` ("WIP Gemini on etsy"). Summarised in §5
+  below.
 
-Test status after pass 2: **`bun run test` → 280 passed, 1 skipped**, with
-7 cases in `tests/unit/etsy-history.test.ts` and one new regression test
-in `tests/shopify-sync.test.ts`.
+Test status after pass 3 on `design/etsy-order-sync` HEAD
+(`5580dcc`): **`bun run test` → 296 passed, 1 skipped** across 48
+files. `tests/unit/etsy-history.test.ts` has grown from 7 to 12
+cases; the Shopify regression test in `tests/shopify-sync.test.ts`
+is still in place.
 
 ## 1. Pass-1 findings, status after pass 2
 
@@ -290,3 +297,79 @@ Suggested follow-ups, in priority order:
 
 Items 1 and 2 are the only correctness blockers remaining; the rest
 are completeness / robustness work.
+
+## 5. Pass 3 status (`b180477` + `5580dcc`)
+
+Pass 3 is two commits:
+
+- **`b180477`** — direct response to the §2 concerns from pass 2.
+  `src/lib/inventory.ts` +12/-12, `tests/unit/etsy-history.test.ts`
+  +243 net, plus a 634-line edit to this review file.
+- **`5580dcc`** — small follow-ups: design-doc clarifications, a
+  pagination safety cap, a comment on the default emulator secret.
+
+### 5.1 Each pass-2 concern, post pass 3
+
+| # | Concern | Status after pass 3 | Where |
+| --- | --- | --- | --- |
+| §2.1 | Fallback mapper variation joiner / format ambiguity | **Resolved.** Variations now joined with a single space `" "`; convention documented in design doc §7.1; happy-path test added. | `inventory.ts:864-867`; `docs/design/ETSY_ORDER_SYNC_DESIGN.md` §7.1; `etsy-history.test.ts` "resolves items using fallback mapper - happy path" |
+| §2.2 | `"refunded"` double-deducts shipped | **Fixed.** `isCancelled` clause now `=== "canceled" \|\| === "cancelled"` only; `refunded` field unchanged for `status === "refunded"`. Net impact for a refunded receipt is `placed - 0 - qty = 0` instead of `placed - qty - qty = -qty`. Regression test added. | `inventory.ts:1432-1441`; `etsy-history.test.ts` "handles full refunds correctly (authoritative fix)" |
+| §2.3 | `partially_refunded` impossible to compute without per-tx data | **Addressed conservatively (per design).** `partially_refunded` no longer triggers `refunded: tx.quantity`. The line keeps full `placed` impact until per-transaction refund data is wired in. Design doc §7 now explicitly documents the "no impact change" semantics. Test asserts the conservative behaviour. | `inventory.ts:1441`; design doc §7 paragraph on Partial refunds; `etsy-history.test.ts` "handles partial refunds conservatively (no impact change yet)" |
+| §2.4 | Webhook dedupe atomic but not retry-safe (Codex F4) | **Still open** for both Shopify and Etsy. `eventRef.create()` is followed by `writeBroadcastAction()` with no compensating retry; if the broadcast throws, the webhook is permanently marked processed. | `functions/index.js:1346-1371` (Etsy), `functions/index.js:1122-1147` (Shopify) — unchanged shape |
+| §2.5 | Five test gaps (refunded, partially_refunded, manualEntityId, out-of-order, fallback happy path) | **All five filled.** | `tests/unit/etsy-history.test.ts:325-559` |
+| §2.6 | Smaller residuals: refunds map; orderID.startsWith routing; pagination upper bound; default secret comment | **Two of four addressed.** Pagination loop now caps at `MAX_PAGES = 100`. Default emulator secret now has explicit "MUST be overridden in production" comment. `OrderInfo.etsyFacts.refunds` map remains unbuilt (no Etsy refund-webhook wiring yet, so still safe to defer). `getOrCreateOrder` still routes by `orderID.startsWith("etsy:")` — no constant extracted. | `etsy-order-logic.cjs:65-69`; `functions/index.js:64-66` |
+
+### 5.2 New observations during this pass
+
+- **Test count moved 280 → 296.** Verified locally: `bun run test → 48
+  files passed, 1 skipped, 296 tests, 1 skipped`. The +16 includes the
+  +5 new etsy-history cases plus unrelated growth on the
+  `codex/live-event-subtype-space-keys` work that has since merged to
+  main (live event import, audit pages, `update_field`/
+  `split_inventory_item` canonicalisation regression test).
+- **Design doc and code now agree on partial refunds.**
+  `ETSY_ORDER_SYNC_DESIGN.md` was previously silent on the difference
+  between "refunded" and "partially_refunded"; pass 3 added explicit
+  bullets distinguishing full refunds (zero impact), partial refunds
+  (full impact, conservative), unpaid (zero impact). Anyone reading
+  only the design doc will now form the same mental model the code
+  implements.
+- **Fallback mapper format is now contractual, not just empirical.**
+  Design doc §7.1 says "multiple variations are joined by a single
+  space". Code matches. The pre-requisite that inventory items must be
+  created with that exact subtype string is also now documented —
+  important because the system has no automatic creation of inventory
+  items from Etsy listings; an unmatched fallback still raises an
+  exception, by design.
+- **Pass-3 pagination cap is defensive, not load-bearing.** The
+  `MAX_PAGES = 100` guard would silently truncate at 5,000 receipts
+  per poll cycle. Worth a `console.warn` (or an exception) if hit so
+  it isn't a quiet data-loss path; today the loop just exits on the
+  cap with no signal.
+
+### 5.3 What is still genuinely open after pass 3
+
+In priority order:
+
+1. **§2.4 — webhook outbox / retry-safe dedupe.** Single biggest
+   correctness gap remaining on either marketplace integration. A
+   broadcast-write failure after a successful `eventRef.create()`
+   silently drops the webhook. Recommended shape: write
+   `etsy_order_events/{eventId}` as `{ status: "received", payload:
+   ... }` first, attempt the broadcast, then mark
+   `status: "processed"`; a periodic reaper retries `received` rows.
+   This is a Shopify-shared follow-up.
+2. **§2.3 follow-up — wire in per-transaction refund quantities.**
+   Etsy v3 receipts carry `refunds[]` per-transaction. When/if those
+   are read, the conservative "no impact change" can be replaced with
+   a precise unit count, and the `partially_refunded` test should be
+   strengthened to cover the partial case.
+3. **§5.2 final point — pagination cap should be loud.** Add a
+   `console.warn` (or surface in monitoring) when `MAX_PAGES` is hit;
+   silent truncation is worse than throwing.
+4. **§2.6 leftovers — `orderID.startsWith("etsy:")` constant + Etsy
+   refunds map** when the time comes for refund webhooks.
+
+The integration is now genuinely production-credible for non-refund
+flows. Refund correctness is the only domain area still bounded by
+"good enough for now, acknowledged in design".
