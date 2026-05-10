@@ -36,6 +36,7 @@ const targetPath = resolve(functionsDir, ".env");
 
 const keepPrefixes = [
   "SHOPIFY_",
+  "ETSY_",
   "FIREBASE_",
   "FIRESTORE_",
   "AUTH_",
