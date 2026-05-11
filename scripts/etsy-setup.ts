@@ -133,6 +133,98 @@ function envFilePathFor(envName: string): string {
   return resolve(process.cwd(), `.env.${envName}`);
 }
 
+function resolveProjectId(envName: string): string | null {
+  const firebasercPath = resolve(process.cwd(), ".firebaserc");
+  if (!existsSync(firebasercPath)) return null;
+  const firebaserc = JSON.parse(readFileSync(firebasercPath, "utf-8"));
+  return (
+    firebaserc.projects?.[envName] ||
+    firebaserc.projects?.default ||
+    null
+  );
+}
+
+function findEtsyWebhookUrl(node: any): string | null {
+  // Walk an arbitrary JSON tree looking for an entry that names the etsy
+  // webhook function and exposes a URL.  The Firebase CLI's
+  // functions:list --json output format varies by version, so we accept
+  // any of: top-level array, { result: [...] }, { functions: [...] }, or
+  // an object keyed by function name.
+  const looksLikeEntry = (entry: any): boolean => {
+    if (!entry || typeof entry !== "object") return false;
+    const name =
+      entry.id || entry.name || entry.functionName || entry.entryPoint || "";
+    return String(name).toLowerCase().includes("etsyorderwebhook");
+  };
+  const extractUrl = (entry: any): string | null => {
+    if (!entry) return null;
+    return (
+      entry.url ||
+      entry.uri ||
+      entry.httpsTrigger?.url ||
+      entry.serviceConfig?.uri ||
+      entry.eventTrigger?.url ||
+      null
+    );
+  };
+
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      if (looksLikeEntry(entry)) {
+        const url = extractUrl(entry);
+        if (url) return url;
+      }
+      const nested = findEtsyWebhookUrl(entry);
+      if (nested) return nested;
+    }
+    return null;
+  }
+  if (node && typeof node === "object") {
+    for (const [key, value] of Object.entries(node)) {
+      if (
+        String(key).toLowerCase().includes("etsyorderwebhook") &&
+        value &&
+        typeof value === "object"
+      ) {
+        const url = extractUrl(value);
+        if (url) return url;
+      }
+      if (looksLikeEntry(value)) {
+        const url = extractUrl(value);
+        if (url) return url;
+      }
+      const nested = findEtsyWebhookUrl(value);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function discoverWebhookUrlFromFirebase(envName: string): string | null {
+  const projectId = resolveProjectId(envName);
+  if (!projectId) return null;
+  let raw: string;
+  try {
+    raw = execSync(`firebase functions:list --project ${projectId} --json`, {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (e: any) {
+    const stderr = e?.stderr?.toString?.() || "";
+    if (stderr) {
+      console.log(`    firebase functions:list failed: ${stderr.split("\n")[0]}`);
+    }
+    return null;
+  }
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return findEtsyWebhookUrl(parsed);
+}
+
 async function prompt(question: string): Promise<string> {
   const rl = readline.createInterface({ input: stdin, output: stdout });
   try {
@@ -429,32 +521,38 @@ async function main() {
     console.log(`    ETSY_ORDER_WEBHOOK_URL = ${env.ETSY_ORDER_WEBHOOK_URL}`);
   } else {
     console.log(
-      "    ETSY_ORDER_WEBHOOK_URL not set yet.  Deploy functions first:",
+      "    ETSY_ORDER_WEBHOOK_URL not set; looking up via firebase functions:list…",
     );
-    console.log(`        npm run deploy:functions:${envName}`);
-    console.log(
-      "    then find the URL in the Firebase Console (Functions > etsyOrderWebhook)",
-    );
-    console.log("    or via:");
-    const firebasercPath = resolve(process.cwd(), ".firebaserc");
-    const firebaserc = existsSync(firebasercPath)
-      ? JSON.parse(readFileSync(firebasercPath, "utf-8"))
-      : { projects: {} };
-    const projectId = firebaserc.projects?.[envName] ||
-      firebaserc.projects?.default ||
-      "<project-id>";
-    console.log(`        firebase functions:list --project ${projectId}`);
-    if (dryRun) {
-      console.log("    (dry run) would prompt for URL");
-    } else {
-      const url = await prompt("Paste webhook URL now, or Enter to skip: ");
-      if (url) {
-        updateEnvFile(envPath, { ETSY_ORDER_WEBHOOK_URL: url });
+    const discovered = dryRun ? null : discoverWebhookUrlFromFirebase(envName);
+    if (discovered) {
+      if (!dryRun) {
+        updateEnvFile(envPath, { ETSY_ORDER_WEBHOOK_URL: discovered });
         env = loadEnvFile(envPath);
-        console.log(`    ETSY_ORDER_WEBHOOK_URL = ${url}`);
+      }
+      console.log(`    ETSY_ORDER_WEBHOOK_URL = ${discovered}`);
+    } else {
+      const projectId = resolveProjectId(envName) || "<project-id>";
+      console.log(
+        "    Could not find etsyOrderWebhook in firebase functions:list output.",
+      );
+      console.log("    The function may not be deployed yet.  Deploy first:");
+      console.log(`        npm run deploy:functions:${envName}`);
+      console.log("    or inspect the listing manually:");
+      console.log(`        firebase functions:list --project ${projectId}`);
+      if (dryRun) {
+        console.log("    (dry run) would prompt for URL");
       } else {
-        console.log("    Skipped.  Re-run this script after deploy.");
-        return;
+        const url = await prompt(
+          "Paste webhook URL now, or Enter to skip: ",
+        );
+        if (url) {
+          updateEnvFile(envPath, { ETSY_ORDER_WEBHOOK_URL: url });
+          env = loadEnvFile(envPath);
+          console.log(`    ETSY_ORDER_WEBHOOK_URL = ${url}`);
+        } else {
+          console.log("    Skipped.  Re-run this script after deploy.");
+          return;
+        }
       }
     }
   }
