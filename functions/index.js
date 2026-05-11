@@ -62,13 +62,18 @@ function getEtsyConfig() {
   // Public clients accept just the keystring. The shared secret here is the
   // *app-level* secret shown on the Etsy developer-portal API page, not the
   // per-webhook secret used for HMAC verification (ETSY_SHARED_SECRET).
-  const apiKey = process.env.ETSY_KEYSTRING_SHARED_SECRET
-    ? `${process.env.ETSY_API_KEY || ""}:${process.env.ETSY_KEYSTRING_SHARED_SECRET}`
-    : process.env.ETSY_API_KEY || "";
+  const keystring = process.env.ETSY_API_KEY || "";
+  const keystringSharedSecret = process.env.ETSY_KEYSTRING_SHARED_SECRET || "";
+  const apiKey = keystringSharedSecret
+    ? `${keystring}:${keystringSharedSecret}`
+    : keystring;
   return {
     shopId: process.env.ETSY_SHOP_ID || "",
     apiKey,
+    keystring,
+    keystringSharedSecret,
     accessToken: process.env.ETSY_ACCESS_TOKEN || "",
+    refreshToken: process.env.ETSY_REFRESH_TOKEN || "",
     // NOTE: Default secret is for emulator use only.
     // MUST be overridden via ETSY_SHARED_SECRET env var in production.
     sharedSecret: process.env.ETSY_SHARED_SECRET || "whsec_dGVzdF9zZWNyZXQ=",
@@ -1404,11 +1409,35 @@ exports.etsyOrderReconcile = onSchedule(
     const stateSnap = await stateRef.get();
     const state = stateSnap.exists ? stateSnap.data() : {};
 
+    // Tokens persisted in Firestore take precedence over .env values.
+    // The function refreshes its own access+refresh pair on 401 and writes
+    // the rotated pair back here so the next invocation reuses them.
+    if (state.accessToken) config.accessToken = state.accessToken;
+    if (state.refreshToken) config.refreshToken = state.refreshToken;
+
+    const onTokensRefreshed = async (tokens) => {
+      await stateRef.set(
+        {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          tokensRefreshedAt: Date.now(),
+        },
+        { merge: true },
+      );
+      logger.info("Refreshed Etsy access token", {
+        expiresIn: tokens.expiresIn,
+      });
+    };
+
     let lastCursor = state.lastReceiptModifiedTimestamp || 0;
 
     try {
-      const receipts = await etsyOrderLogic.fetchChangedReceipts(config, lastCursor);
-      
+      const receipts = await etsyOrderLogic.fetchChangedReceipts(
+        config,
+        lastCursor,
+        onTokensRefreshed,
+      );
+
       let newCursorMs = lastCursor * 1000;
       for (const receipt of receipts) {
         await writeBroadcastAction({

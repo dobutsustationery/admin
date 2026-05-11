@@ -5,13 +5,6 @@ const crypto = require("crypto");
  * Etsy v3 webhooks include an x-etsy-signature header.
  * The signature is a HMAC-SHA256 hash of:
  *   webhook_id + "." + webhook_timestamp + "." + raw_body
- *
- * @param {string|Buffer} rawBody
- * @param {string} signatureHeader
- * @param {string} secret
- * @param {string} webhookId
- * @param {string} webhookTimestamp
- * @returns {boolean}
  */
 function verifyEtsyWebhookSignature(
   rawBody,
@@ -23,19 +16,12 @@ function verifyEtsyWebhookSignature(
   if (!signatureHeader || !secret || !webhookId || !webhookTimestamp) {
     return false;
   }
-
-  // 1. Prepare the secret (remove prefix and decode)
   const secretKey = secret.replace("whsec_", "");
   const secretBytes = Buffer.from(secretKey, "base64");
-
-  // 2. Construct the signed content string
   const signedContent = `${webhookId}.${webhookTimestamp}.${rawBody}`;
-
-  // 3. Compute HMAC-SHA256
   const hmac = crypto.createHmac("sha256", secretBytes);
   hmac.update(signedContent);
   const expectedSignature = hmac.digest("base64");
-
   try {
     return crypto.timingSafeEqual(
       Buffer.from(expectedSignature, "base64"),
@@ -47,14 +33,91 @@ function verifyEtsyWebhookSignature(
 }
 
 /**
- * Fetches receipts that have been modified since the given timestamp.
- * Supports pagination.
- * @param {Object} config Etsy configuration
- * @param {number} lastModifiedTimestamp Cursor in seconds
- * @returns {Promise<Array>} List of raw Etsy receipts
+ * Refresh the Etsy OAuth tokens using the stored refresh_token.
+ * Etsy v3 access tokens expire after ~1 hour; refresh tokens rotate on
+ * every refresh, so the caller MUST persist the returned pair.
  */
-async function fetchChangedReceipts(config, lastModifiedTimestamp) {
-  const { shopId, apiKey, accessToken } = config;
+async function refreshEtsyTokens(config) {
+  const body = {
+    grant_type: "refresh_token",
+    client_id: config.keystring,
+    refresh_token: config.refreshToken,
+  };
+  // Confidential clients also need the keystring shared secret.  Public
+  // clients will reject it; Etsy currently accepts the extra parameter for
+  // both client types, so we always include it when available.
+  if (config.keystringSharedSecret) {
+    body.client_secret = config.keystringSharedSecret;
+  }
+  const resp = await fetch("https://api.etsy.com/v3/public/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(body),
+  });
+  if (!resp.ok) {
+    throw new Error(`Etsy token refresh failed (${resp.status}): ${await resp.text()}`);
+  }
+  const data = await resp.json();
+  if (!data.access_token || !data.refresh_token) {
+    throw new Error(`Etsy token refresh: malformed response ${JSON.stringify(data)}`);
+  }
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    expiresIn: data.expires_in || 3600,
+  };
+}
+
+/**
+ * Fetch an Etsy v3 endpoint, refreshing the access token once on 401
+ * "invalid_token / expired" and retrying.  `config` is mutated in place
+ * with the new tokens so subsequent calls in the same run reuse them.
+ * `onTokensRefreshed`, if provided, is awaited after a successful
+ * refresh so callers can persist the new pair.
+ */
+async function fetchEtsyApi(config, url, opts = {}, onTokensRefreshed) {
+  const doCall = () =>
+    fetch(url, {
+      ...opts,
+      headers: {
+        ...(opts.headers || {}),
+        "x-api-key": config.apiKey,
+        Authorization: `Bearer ${config.accessToken}`,
+      },
+    });
+  let resp = await doCall();
+  if (resp.status === 401) {
+    const body = await resp.text();
+    const looksExpired =
+      body.includes("invalid_token") ||
+      body.includes("expired") ||
+      body.includes("access token");
+    if (!looksExpired || !config.refreshToken) {
+      // Reconstitute the response so the caller still sees a proper
+      // Response-like object with the body we already consumed.
+      return new Response(body, { status: 401, headers: resp.headers });
+    }
+    const tokens = await refreshEtsyTokens(config);
+    config.accessToken = tokens.accessToken;
+    config.refreshToken = tokens.refreshToken;
+    if (onTokensRefreshed) {
+      await onTokensRefreshed(tokens);
+    }
+    resp = await doCall();
+  }
+  return resp;
+}
+
+/**
+ * Fetches receipts that have been modified since the given timestamp.
+ * Supports pagination and transparent token refresh.
+ */
+async function fetchChangedReceipts(
+  config,
+  lastModifiedTimestamp,
+  onTokensRefreshed,
+) {
+  const { shopId, accessToken } = config;
   if (!shopId || !accessToken) {
     throw new Error("Missing Etsy shopId or accessToken");
   }
@@ -67,22 +130,13 @@ async function fetchChangedReceipts(config, lastModifiedTimestamp) {
 
   while (pageCount < MAX_PAGES) {
     pageCount++;
-    // Etsy v3: GET /v3/application/shops/{shop_id}/receipts
-    // Query params: min_last_modified_timestamp
     const params = new URLSearchParams({
       min_last_modified_timestamp: String(lastModifiedTimestamp),
       limit: String(limit),
       offset: String(offset),
     });
-
     const url = `https://openapi.etsy.com/v3/application/shops/${shopId}/receipts?${params.toString()}`;
-
-    const response = await fetch(url, {
-      headers: {
-        "x-api-key": apiKey,
-        "Authorization": `Bearer ${accessToken}`,
-      },
-    });
+    const response = await fetchEtsyApi(config, url, {}, onTokensRefreshed);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -99,8 +153,6 @@ async function fetchChangedReceipts(config, lastModifiedTimestamp) {
     offset += limit;
   }
 
-  // Each receipt needs its transactions for inventory mapping.
-  // Using a small concurrency limit to avoid hitting Etsy rate limits too hard.
   const CONCURRENCY = 5;
   const results = [];
   for (let i = 0; i < allReceipts.length; i += CONCURRENCY) {
@@ -110,6 +162,7 @@ async function fetchChangedReceipts(config, lastModifiedTimestamp) {
         const transactions = await fetchReceiptTransactions(
           config,
           receipt.receipt_id,
+          onTokensRefreshed,
         );
         return {
           ...receipt,
@@ -123,21 +176,12 @@ async function fetchChangedReceipts(config, lastModifiedTimestamp) {
   return results;
 }
 
-async function fetchReceiptTransactions(config, receiptId) {
-  const { apiKey, accessToken } = config;
+async function fetchReceiptTransactions(config, receiptId, onTokensRefreshed) {
   const url = `https://openapi.etsy.com/v3/application/shops/${config.shopId}/receipts/${receiptId}/transactions`;
-  
-  const response = await fetch(url, {
-    headers: {
-      "x-api-key": apiKey,
-      "Authorization": `Bearer ${accessToken}`,
-    }
-  });
-
+  const response = await fetchEtsyApi(config, url, {}, onTokensRefreshed);
   if (!response.ok) {
     return []; // Fallback to empty if transactions fail
   }
-
   const data = await response.json();
   return data.results || [];
 }
@@ -145,4 +189,6 @@ async function fetchReceiptTransactions(config, receiptId) {
 module.exports = {
   verifyEtsyWebhookSignature,
   fetchChangedReceipts,
+  refreshEtsyTokens,
+  fetchEtsyApi,
 };
