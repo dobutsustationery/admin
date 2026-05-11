@@ -205,10 +205,13 @@ function discoverWebhookUrlFromFirebase(envName: string): string | null {
   if (!projectId) return null;
   let raw: string;
   try {
-    raw = execSync(`firebase functions:list --project ${projectId} --json`, {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    raw = execSync(
+      `npx --no-install firebase functions:list --project ${projectId} --json`,
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
   } catch (e: any) {
     const stderr = e?.stderr?.toString?.() || "";
     if (stderr) {
