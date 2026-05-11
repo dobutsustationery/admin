@@ -1,25 +1,55 @@
 #!/usr/bin/env bun
 
+/**
+ * Etsy setup tool.
+ *
+ * Runs the minimum number of API calls needed to provision Etsy for
+ * one environment (emulator/staging/production), writing all
+ * discovered values back to the appropriate `.env.<env>` file.
+ *
+ * Usage:
+ *   bun scripts/etsy-setup.ts --env staging
+ *
+ * One-time prerequisite: ETSY_API_KEY (keystring) must already be in
+ * `.env.<env>`.  Everything else is discovered or interactively
+ * captured and persisted.
+ *
+ * On a fresh setup the script will:
+ *   1. Run OAuth PKCE if ETSY_ACCESS_TOKEN is missing.  Opens the
+ *      browser; prompts for the redirect 'code' from the URL bar.
+ *   2. Discover ETSY_SHOP_ID via /v3/application/users/me.
+ *   3. If ETSY_ORDER_WEBHOOK_URL isn't set yet, prompt for it (the
+ *      URL only exists after the first functions deploy).  Or pass
+ *      --webhook-url <url>.
+ *   4. List existing webhooks; register any missing topics; capture
+ *      shared_secret and persist as ETSY_SHARED_SECRET.
+ *
+ * Re-running is safe and idempotent: it skips any step whose output
+ * is already in env.
+ *
+ * Flags:
+ *   --env <name>           env name (default emulator)
+ *   --webhook-url <url>    override ETSY_ORDER_WEBHOOK_URL
+ *   --redirect-uri <url>   OAuth redirect (default https://localhost)
+ *   --reauth               force OAuth even if token exists
+ *   --dry-run              don't write env or register webhooks
+ */
+
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Buffer } from "node:buffer";
 import * as crypto from "node:crypto";
+import { execSync } from "node:child_process";
+import * as readline from "node:readline/promises";
+import { stdin, stdout } from "node:process";
 
 type Args = Record<string, string | boolean | string[]>;
-
-type EtsyConfig = {
-  shopId: string;
-  apiKey: string;
-  accessToken: string;
-  sharedSecret: string;
-};
 
 const DEFAULT_TOPICS = ["receipt.created", "receipt.updated"];
 
 const ETSY_SCOPES = [
-  "transactions_r", // Read receipts/transactions
-  "transactions_w", // Update receipts (e.g. mark as shipped)
-  "listings_r",     // Read listings for mapping
+  "transactions_r",
+  "transactions_w",
+  "listings_r",
 ];
 
 function generateRandomString(length: number): string {
@@ -27,196 +57,421 @@ function generateRandomString(length: number): string {
 }
 
 function generateCodeChallenge(verifier: string): string {
-  const hash = crypto.createHash("sha256").update(verifier).digest();
-  return hash.toString("base64url");
+  return crypto.createHash("sha256").update(verifier).digest("base64url");
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const envName = getStringArg(args, "env", "local");
-  const envFile = envName === "local" ? ".env" : `.env.${envName}`;
-  const env = loadEnvFile(resolve(process.cwd(), envFile));
-
-  const config: EtsyConfig = {
-    shopId: getStringArg(args, "shop-id", env.ETSY_SHOP_ID),
-    apiKey: getStringArg(args, "api-key", env.ETSY_API_KEY),
-    accessToken: getStringArg(args, "access-token", env.ETSY_ACCESS_TOKEN),
-    sharedSecret: getStringArg(args, "shared-secret", env.ETSY_SHARED_SECRET),
-  };
-
-  const webhookUrl = getStringArg(
-    args,
-    "webhook-url",
-    env.ETSY_ORDER_WEBHOOK_URL,
-  );
-  const apply = getBooleanArg(args, "apply", false);
-  const isTokenRequest = getBooleanArg(args, "token", false);
-  const exchangeCode = getStringArg(args, "exchange", "");
-
-  console.log(`Etsy Setup Tool (${envName})`);
-
-  if (isTokenRequest) {
-    if (!config.apiKey) {
-      console.error("Error: Missing ETSY_API_KEY (Keystring)");
-      process.exit(1);
-    }
-    const verifier = generateRandomString(32);
-    const challenge = generateCodeChallenge(verifier);
-    const state = generateRandomString(16);
-    const redirectUri = getStringArg(args, "redirect-uri", "https://localhost");
-
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: config.apiKey,
-      redirect_uri: redirectUri,
-      scope: ETSY_SCOPES.join(" "),
-      state: state,
-      code_challenge: challenge,
-      code_challenge_method: "S256",
-    });
-
-    console.log("\n--- ETSY OAUTH SETUP ---");
-    console.log("1. Save this CODE VERIFIER (you will need it for --exchange):");
-    console.log(`   ${verifier}`);
-    console.log("\n2. Open this URL in your browser and authorize the app:");
-    console.log(`   https://www.etsy.com/oauth/connect?${params.toString()}`);
-    console.log("\n3. After authorizing, you will be redirected to your redirect URI.");
-    console.log("   Copy the 'code' parameter from the URL.");
-    console.log("\n4. Run this script again with:");
-    console.log(`   bun scripts/etsy-setup.ts --env ${envName} --exchange <code> --verifier ${verifier}`);
-    return;
-  }
-
-  if (exchangeCode) {
-    const verifier = getStringArg(args, "verifier", "");
-    if (!verifier) {
-      console.error("Error: Missing --verifier (saved from step 1)");
-      process.exit(1);
-    }
-    const redirectUri = getStringArg(args, "redirect-uri", "https://localhost");
-
-    console.log("Exchanging code for access token...");
-    const response = await fetch("https://api.etsy.com/v3/public/oauth/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        client_id: config.apiKey,
-        redirect_uri: redirectUri,
-        code: exchangeCode,
-        code_verifier: verifier,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      console.error(`Exchange failed: ${err}`);
-      process.exit(1);
-    }
-
-    const data = await response.json();
-    console.log("\n--- SUCCESS ---");
-    console.log("Access Token:", data.access_token);
-    console.log("Refresh Token:", data.refresh_token);
-    
-    if (envName === "local") {
-      updateEnvFile(resolve(process.cwd(), ".env"), {
-        ETSY_ACCESS_TOKEN: data.access_token,
-      });
-      console.log("\nUpdated .env with new access token.");
+function parseArgs(argv: string[]): Args {
+  const out: Args = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("--")) continue;
+    const key = a.slice(2);
+    const next = argv[i + 1];
+    if (next && !next.startsWith("--")) {
+      out[key] = next;
+      i++;
     } else {
-      console.log(`\nPlease update ${envFile} with:`);
-      console.log(`ETSY_ACCESS_TOKEN=${data.access_token}`);
+      out[key] = true;
     }
-    return;
   }
+  return out;
+}
 
-  console.log(`Shop ID: ${config.shopId}`);
-  console.log(`Webhook URL: ${webhookUrl}`);
+function getStringArg(args: Args, key: string, fallback = ""): string {
+  const v = args[key];
+  return typeof v === "string" ? v : fallback;
+}
 
-  if (!config.shopId || !config.accessToken || !config.apiKey) {
-    console.error("Error: Missing required Etsy credentials (ETSY_SHOP_ID, ETSY_API_KEY, ETSY_ACCESS_TOKEN)");
-    process.exit(1);
-  }
+function getBooleanArg(args: Args, key: string, fallback = false): boolean {
+  const v = args[key];
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") return v !== "false";
+  return fallback;
+}
 
-  if (!webhookUrl) {
-    console.error("Error: Missing ETSY_ORDER_WEBHOOK_URL");
-    process.exit(1);
-  }
-
-  try {
-    // 1. Check existing webhooks
-    console.log("\nChecking existing Etsy webhooks...");
-    const listResponse = await fetch(`https://openapi.etsy.com/v3/application/shops/${config.shopId}/webhooks`, {
-      headers: {
-        "x-api-key": config.apiKey,
-        "Authorization": `Bearer ${config.accessToken}`,
-      }
-    });
-
-    if (listResponse.ok) {
-      const listData = await listResponse.json();
-      console.log(`Found ${listData.count || 0} existing webhooks.`);
-    } else {
-      console.log("Could not list webhooks (endpoint might be restricted).");
+function loadEnvFile(path: string): Record<string, string> {
+  if (!existsSync(path)) return {};
+  const content = readFileSync(path, "utf-8");
+  const out: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq < 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
     }
-    
-    if (apply) {
-      console.log("\nRegistering webhooks...");
-      for (const topic of DEFAULT_TOPICS) {
-        console.log(`Registering ${topic}...`);
-        const regResponse = await fetch(`https://openapi.etsy.com/v3/application/shops/${config.shopId}/webhooks`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "x-api-key": config.apiKey,
-            "Authorization": `Bearer ${config.accessToken}`,
-          },
-          body: new URLSearchParams({
-            topic,
-            url: webhookUrl,
-          })
-        });
-
-        if (regResponse.ok) {
-          const regData = await regResponse.json();
-          console.log(`Successfully registered ${topic}. Shared Secret: ${regData.shared_secret}`);
-          if (envName === "local") {
-             updateEnvFile(resolve(process.cwd(), ".env"), {
-               ETSY_SHARED_SECRET: regData.shared_secret
-             });
-          }
-        } else {
-          const err = await regResponse.text();
-          console.error(`Failed to register ${topic}: ${err}`);
-        }
-      }
-      console.log("\nRegistration complete.");
-    } else {
-      console.log("\nDry run complete. Use --apply to register webhooks.");
-    }
-  } catch (error) {
-    console.error("Setup failed:", error);
-    process.exit(1);
+    out[key] = val;
   }
+  return out;
 }
 
 function updateEnvFile(path: string, updates: Record<string, string>) {
-  let content = "";
-  if (existsSync(path)) {
-    content = readFileSync(path, "utf-8");
-  }
-  
+  let content = existsSync(path) ? readFileSync(path, "utf-8") : "";
   for (const [key, value] of Object.entries(updates)) {
     const regex = new RegExp(`^${key}=.*$`, "m");
     if (regex.test(content)) {
       content = content.replace(regex, `${key}=${value}`);
     } else {
-      content += `\n${key}=${value}\n`;
+      content += (content.endsWith("\n") || content === "" ? "" : "\n") +
+        `${key}=${value}\n`;
     }
   }
-  
-  writeFileSync(path, content.trim() + "\n");
+  writeFileSync(path, content);
 }
 
-main();
+function envFilePathFor(envName: string): string {
+  // Mirror prepare-functions-env.js: "local" → .env.emulator.
+  if (envName === "local" || envName === "emulator") {
+    return resolve(process.cwd(), ".env.emulator");
+  }
+  return resolve(process.cwd(), `.env.${envName}`);
+}
+
+async function prompt(question: string): Promise<string> {
+  const rl = readline.createInterface({ input: stdin, output: stdout });
+  try {
+    return (await rl.question(question)).trim();
+  } finally {
+    rl.close();
+  }
+}
+
+async function runOAuthFlow(
+  apiKey: string,
+  redirectUri: string,
+): Promise<{ access_token: string; refresh_token: string }> {
+  const verifier = generateRandomString(32);
+  const challenge = generateCodeChallenge(verifier);
+  const state = generateRandomString(16);
+
+  const authUrl =
+    "https://www.etsy.com/oauth/connect?" +
+    new URLSearchParams({
+      response_type: "code",
+      client_id: apiKey,
+      redirect_uri: redirectUri,
+      scope: ETSY_SCOPES.join(" "),
+      state,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    }).toString();
+
+  console.log("Authorize this app in your browser:");
+  console.log(`  ${authUrl}`);
+  try {
+    execSync(`open "${authUrl}"`, { stdio: "ignore" });
+  } catch {
+    // Non-macOS or no `open`; the user opens manually.
+  }
+
+  console.log();
+  console.log(
+    `After authorising, the browser will redirect to ${redirectUri}/?code=...&state=...`,
+  );
+  console.log("It will likely fail to load (that's fine). Copy the 'code'");
+  console.log("query parameter from the URL bar.");
+  const code = await prompt("Paste code: ");
+  if (!code) throw new Error("Empty code");
+
+  const response = await fetch(
+    "https://api.etsy.com/v3/public/oauth/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: apiKey,
+        redirect_uri: redirectUri,
+        code,
+        code_verifier: verifier,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`OAuth token exchange failed: ${await response.text()}`);
+  }
+  return await response.json();
+}
+
+async function discoverShopId(
+  apiKey: string,
+  accessToken: string,
+): Promise<string> {
+  const headers = {
+    "x-api-key": apiKey,
+    Authorization: `Bearer ${accessToken}`,
+  };
+  const meResp = await fetch(
+    "https://openapi.etsy.com/v3/application/users/me",
+    { headers },
+  );
+  if (!meResp.ok) {
+    throw new Error(`users/me failed: ${await meResp.text()}`);
+  }
+  const me = await meResp.json();
+  if (me.shop_id) return String(me.shop_id);
+
+  const userId = me.user_id;
+  if (!userId) throw new Error("users/me returned no user_id or shop_id");
+  const shopsResp = await fetch(
+    `https://openapi.etsy.com/v3/application/users/${userId}/shops`,
+    { headers },
+  );
+  if (!shopsResp.ok) {
+    throw new Error(
+      `users/${userId}/shops failed: ${await shopsResp.text()}`,
+    );
+  }
+  const shops = await shopsResp.json();
+  const shopId =
+    shops.shop_id ||
+    shops.results?.[0]?.shop_id ||
+    shops.shops?.[0]?.shop_id;
+  if (!shopId) throw new Error("Could not find a shop_id for this user");
+  return String(shopId);
+}
+
+async function listWebhooks(env: Record<string, string>): Promise<any[]> {
+  const resp = await fetch(
+    `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/webhooks`,
+    {
+      headers: {
+        "x-api-key": env.ETSY_API_KEY,
+        Authorization: `Bearer ${env.ETSY_ACCESS_TOKEN}`,
+      },
+    },
+  );
+  if (!resp.ok) {
+    throw new Error(`list webhooks failed: ${await resp.text()}`);
+  }
+  const data = await resp.json();
+  return data.results || [];
+}
+
+async function deleteWebhook(
+  env: Record<string, string>,
+  webhookId: string | number,
+): Promise<void> {
+  const resp = await fetch(
+    `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/webhooks/${webhookId}`,
+    {
+      method: "DELETE",
+      headers: {
+        "x-api-key": env.ETSY_API_KEY,
+        Authorization: `Bearer ${env.ETSY_ACCESS_TOKEN}`,
+      },
+    },
+  );
+  if (!resp.ok) {
+    throw new Error(
+      `delete webhook ${webhookId} failed: ${await resp.text()}`,
+    );
+  }
+}
+
+async function registerWebhook(
+  env: Record<string, string>,
+  topic: string,
+): Promise<{ shared_secret?: string; webhook_id?: string | number }> {
+  const resp = await fetch(
+    `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/webhooks`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "x-api-key": env.ETSY_API_KEY,
+        Authorization: `Bearer ${env.ETSY_ACCESS_TOKEN}`,
+      },
+      body: new URLSearchParams({
+        topic,
+        url: env.ETSY_ORDER_WEBHOOK_URL,
+      }),
+    },
+  );
+  if (!resp.ok) {
+    throw new Error(`register ${topic} failed: ${await resp.text()}`);
+  }
+  return await resp.json();
+}
+
+async function ensureWebhooks(
+  env: Record<string, string>,
+  envPath: string,
+  dryRun: boolean,
+): Promise<string | null> {
+  const existing = await listWebhooks(env);
+  const existingByTopic = new Map<string, any>(
+    existing.map((w) => [w.topic, w]),
+  );
+  let capturedSecret: string | null = env.ETSY_SHARED_SECRET || null;
+  let secretsSeen = new Set<string>();
+  if (capturedSecret) secretsSeen.add(capturedSecret);
+
+  for (const topic of DEFAULT_TOPICS) {
+    const hook = existingByTopic.get(topic);
+    if (hook && hook.url === env.ETSY_ORDER_WEBHOOK_URL) {
+      console.log(`    ${topic}: already registered`);
+      continue;
+    }
+    if (hook && hook.url !== env.ETSY_ORDER_WEBHOOK_URL) {
+      console.log(
+        `    ${topic}: registered with different URL (${hook.url}); replacing`,
+      );
+      if (!dryRun) await deleteWebhook(env, hook.webhook_id);
+    }
+    if (dryRun) {
+      console.log(
+        `    ${topic}: would register against ${env.ETSY_ORDER_WEBHOOK_URL}`,
+      );
+      continue;
+    }
+    const result = await registerWebhook(env, topic);
+    console.log(`    ${topic}: registered`);
+    if (result.shared_secret) {
+      capturedSecret = result.shared_secret;
+      secretsSeen.add(result.shared_secret);
+    }
+  }
+
+  if (secretsSeen.size > 1) {
+    console.log(
+      "    note: Etsy returned distinct shared_secrets per webhook; using the most recent.",
+    );
+  }
+
+  if (capturedSecret && capturedSecret !== env.ETSY_SHARED_SECRET && !dryRun) {
+    updateEnvFile(envPath, { ETSY_SHARED_SECRET: capturedSecret });
+  }
+  return capturedSecret;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const envName = getStringArg(args, "env", "emulator");
+  const dryRun = getBooleanArg(args, "dry-run", false);
+  const reauth = getBooleanArg(args, "reauth", false);
+  const redirectUri = getStringArg(args, "redirect-uri", "https://localhost");
+  const envPath = envFilePathFor(envName);
+
+  if (!existsSync(envPath)) {
+    console.error(`${envPath} does not exist.  Create it first.`);
+    process.exit(1);
+  }
+
+  console.log(`Etsy setup — ${envName} (${envPath})`);
+  let env = loadEnvFile(envPath);
+
+  if (!env.ETSY_API_KEY) {
+    console.error(`ETSY_API_KEY missing from ${envPath}.  Add it first.`);
+    process.exit(1);
+  }
+
+  // Step 1: OAuth
+  console.log("[1/4] OAuth");
+  if (env.ETSY_ACCESS_TOKEN && !reauth) {
+    console.log("    ETSY_ACCESS_TOKEN already set");
+  } else {
+    if (dryRun) {
+      console.log("    (dry run) would run OAuth flow");
+    } else {
+      const tokens = await runOAuthFlow(env.ETSY_API_KEY, redirectUri);
+      updateEnvFile(envPath, {
+        ETSY_ACCESS_TOKEN: tokens.access_token,
+        ETSY_REFRESH_TOKEN: tokens.refresh_token,
+      });
+      env = loadEnvFile(envPath);
+      console.log("    ETSY_ACCESS_TOKEN persisted");
+    }
+  }
+
+  // Step 2: Discover shop id
+  console.log("[2/4] Shop id");
+  if (env.ETSY_SHOP_ID) {
+    console.log(`    ETSY_SHOP_ID = ${env.ETSY_SHOP_ID}`);
+  } else if (!env.ETSY_ACCESS_TOKEN) {
+    console.log("    (no access token; cannot discover)");
+  } else if (dryRun) {
+    console.log("    (dry run) would call /users/me");
+  } else {
+    const shopId = await discoverShopId(
+      env.ETSY_API_KEY,
+      env.ETSY_ACCESS_TOKEN,
+    );
+    updateEnvFile(envPath, { ETSY_SHOP_ID: shopId });
+    env = loadEnvFile(envPath);
+    console.log(`    ETSY_SHOP_ID = ${shopId}`);
+  }
+
+  // Step 3: Webhook URL
+  console.log("[3/4] Webhook URL");
+  const cliWebhookUrl = getStringArg(args, "webhook-url", "");
+  if (cliWebhookUrl && cliWebhookUrl !== env.ETSY_ORDER_WEBHOOK_URL) {
+    if (!dryRun) {
+      updateEnvFile(envPath, { ETSY_ORDER_WEBHOOK_URL: cliWebhookUrl });
+      env = loadEnvFile(envPath);
+    }
+    console.log(`    ETSY_ORDER_WEBHOOK_URL = ${cliWebhookUrl}`);
+  } else if (env.ETSY_ORDER_WEBHOOK_URL) {
+    console.log(`    ETSY_ORDER_WEBHOOK_URL = ${env.ETSY_ORDER_WEBHOOK_URL}`);
+  } else {
+    console.log(
+      "    ETSY_ORDER_WEBHOOK_URL not set yet.  Deploy functions first:",
+    );
+    console.log(`        npm run deploy:functions:${envName}`);
+    console.log(
+      "    then find the URL in the Firebase Console (Functions > etsyOrderWebhook)",
+    );
+    console.log("    or via:");
+    const firebasercPath = resolve(process.cwd(), ".firebaserc");
+    const firebaserc = existsSync(firebasercPath)
+      ? JSON.parse(readFileSync(firebasercPath, "utf-8"))
+      : { projects: {} };
+    const projectId = firebaserc.projects?.[envName] ||
+      firebaserc.projects?.default ||
+      "<project-id>";
+    console.log(`        firebase functions:list --project ${projectId}`);
+    if (dryRun) {
+      console.log("    (dry run) would prompt for URL");
+    } else {
+      const url = await prompt("Paste webhook URL now, or Enter to skip: ");
+      if (url) {
+        updateEnvFile(envPath, { ETSY_ORDER_WEBHOOK_URL: url });
+        env = loadEnvFile(envPath);
+        console.log(`    ETSY_ORDER_WEBHOOK_URL = ${url}`);
+      } else {
+        console.log("    Skipped.  Re-run this script after deploy.");
+        return;
+      }
+    }
+  }
+
+  // Step 4: Register webhooks
+  console.log("[4/4] Webhooks");
+  if (
+    !env.ETSY_SHOP_ID ||
+    !env.ETSY_ACCESS_TOKEN ||
+    !env.ETSY_ORDER_WEBHOOK_URL
+  ) {
+    console.log("    skipped (missing shop id, access token, or webhook URL)");
+    return;
+  }
+  await ensureWebhooks(env, envPath, dryRun);
+
+  console.log();
+  console.log(`Done.  ${envPath} now has the Etsy values for ${envName}.`);
+  if (envName !== "emulator" && envName !== "local") {
+    console.log(`Run \`npm run deploy:functions:${envName}\` to ship the`);
+    console.log("shared secret to the deployed function.");
+  }
+}
+
+main().catch((e) => {
+  console.error(String(e?.message || e));
+  process.exit(1);
+});
