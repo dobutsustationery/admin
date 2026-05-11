@@ -199,29 +199,31 @@ async function runOAuthFlow(
   return await response.json();
 }
 
-async function discoverShopId(
-  apiKey: string,
-  accessToken: string,
-): Promise<string> {
-  const headers = {
+function etsyAuthHeaders(env: Record<string, string>): Record<string, string> {
+  // Etsy v3 "confidential" apps require the keystring concatenated with the
+  // app's shared secret (separated by a colon) as the x-api-key value.
+  // Public apps accept just the keystring.  We support both transparently:
+  // if ETSY_KEYSTRING_SHARED_SECRET is set, we append it.
+  const apiKey = env.ETSY_KEYSTRING_SHARED_SECRET
+    ? `${env.ETSY_API_KEY}:${env.ETSY_KEYSTRING_SHARED_SECRET}`
+    : env.ETSY_API_KEY;
+  return {
     "x-api-key": apiKey,
-    Authorization: `Bearer ${accessToken}`,
+    Authorization: `Bearer ${env.ETSY_ACCESS_TOKEN}`,
   };
-  const meResp = await fetch(
-    "https://openapi.etsy.com/v3/application/users/me",
-    { headers },
-  );
-  if (!meResp.ok) {
-    throw new Error(`users/me failed: ${await meResp.text()}`);
-  }
-  const me = await meResp.json();
-  if (me.shop_id) return String(me.shop_id);
+}
 
-  const userId = me.user_id;
-  if (!userId) throw new Error("users/me returned no user_id or shop_id");
+async function discoverShopId(env: Record<string, string>): Promise<string> {
+  // Etsy v3 access tokens are formatted as `<user_id>.<token>`.
+  const userId = env.ETSY_ACCESS_TOKEN.split(".")[0];
+  if (!userId || !/^\d+$/.test(userId)) {
+    throw new Error(
+      `Could not parse user_id from access token (expected '<user_id>.<token>')`,
+    );
+  }
   const shopsResp = await fetch(
     `https://openapi.etsy.com/v3/application/users/${userId}/shops`,
-    { headers },
+    { headers: etsyAuthHeaders(env) },
   );
   if (!shopsResp.ok) {
     throw new Error(
@@ -240,12 +242,7 @@ async function discoverShopId(
 async function listWebhooks(env: Record<string, string>): Promise<any[]> {
   const resp = await fetch(
     `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/webhooks`,
-    {
-      headers: {
-        "x-api-key": env.ETSY_API_KEY,
-        Authorization: `Bearer ${env.ETSY_ACCESS_TOKEN}`,
-      },
-    },
+    { headers: etsyAuthHeaders(env) },
   );
   if (!resp.ok) {
     throw new Error(`list webhooks failed: ${await resp.text()}`);
@@ -262,10 +259,7 @@ async function deleteWebhook(
     `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/webhooks/${webhookId}`,
     {
       method: "DELETE",
-      headers: {
-        "x-api-key": env.ETSY_API_KEY,
-        Authorization: `Bearer ${env.ETSY_ACCESS_TOKEN}`,
-      },
+      headers: etsyAuthHeaders(env),
     },
   );
   if (!resp.ok) {
@@ -284,9 +278,8 @@ async function registerWebhook(
     {
       method: "POST",
       headers: {
+        ...etsyAuthHeaders(env),
         "Content-Type": "application/x-www-form-urlencoded",
-        "x-api-key": env.ETSY_API_KEY,
-        Authorization: `Bearer ${env.ETSY_ACCESS_TOKEN}`,
       },
       body: new URLSearchParams({
         topic,
@@ -397,15 +390,30 @@ async function main() {
   } else if (!env.ETSY_ACCESS_TOKEN) {
     console.log("    (no access token; cannot discover)");
   } else if (dryRun) {
-    console.log("    (dry run) would call /users/me");
+    console.log("    (dry run) would call /users/<user_id>/shops");
   } else {
-    const shopId = await discoverShopId(
-      env.ETSY_API_KEY,
-      env.ETSY_ACCESS_TOKEN,
-    );
-    updateEnvFile(envPath, { ETSY_SHOP_ID: shopId });
-    env = loadEnvFile(envPath);
-    console.log(`    ETSY_SHOP_ID = ${shopId}`);
+    try {
+      const shopId = await discoverShopId(env);
+      updateEnvFile(envPath, { ETSY_SHOP_ID: shopId });
+      env = loadEnvFile(envPath);
+      console.log(`    ETSY_SHOP_ID = ${shopId}`);
+    } catch (err) {
+      const msg = String((err as Error)?.message || err);
+      if (msg.includes("Shared secret is required")) {
+        console.error(
+          "    Etsy rejected the call because your app is a *confidential* client.",
+        );
+        console.error(
+          `    Add ETSY_KEYSTRING_SHARED_SECRET to ${envPath} — it's the`,
+        );
+        console.error(
+          "    'Shared Secret' shown next to your keystring on the Etsy",
+        );
+        console.error("    developer-portal API page — then re-run.");
+        process.exit(1);
+      }
+      throw err;
+    }
   }
 
   // Step 3: Webhook URL

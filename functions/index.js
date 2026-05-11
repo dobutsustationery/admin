@@ -57,11 +57,19 @@ function getShopifyConfig() {
 }
 
 function getEtsyConfig() {
+  // If the Etsy app is configured as a confidential client (the default on
+  // newer Etsy apps), every API call must send `x-api-key: <keystring>:<shared_secret>`.
+  // Public clients accept just the keystring. The shared secret here is the
+  // *app-level* secret shown on the Etsy developer-portal API page, not the
+  // per-webhook secret used for HMAC verification (ETSY_SHARED_SECRET).
+  const apiKey = process.env.ETSY_KEYSTRING_SHARED_SECRET
+    ? `${process.env.ETSY_API_KEY || ""}:${process.env.ETSY_KEYSTRING_SHARED_SECRET}`
+    : process.env.ETSY_API_KEY || "";
   return {
     shopId: process.env.ETSY_SHOP_ID || "",
-    apiKey: process.env.ETSY_API_KEY || "",
+    apiKey,
     accessToken: process.env.ETSY_ACCESS_TOKEN || "",
-    // NOTE: Default secret is for emulator use only. 
+    // NOTE: Default secret is for emulator use only.
     // MUST be overridden via ETSY_SHARED_SECRET env var in production.
     sharedSecret: process.env.ETSY_SHARED_SECRET || "whsec_dGVzdF9zZWNyZXQ=",
   };
