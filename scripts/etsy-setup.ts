@@ -17,12 +17,15 @@
  * On a fresh setup the script will:
  *   1. Run OAuth PKCE if ETSY_ACCESS_TOKEN is missing.  Opens the
  *      browser; prompts for the redirect 'code' from the URL bar.
- *   2. Discover ETSY_SHOP_ID via /v3/application/users/me.
- *   3. If ETSY_ORDER_WEBHOOK_URL isn't set yet, prompt for it (the
- *      URL only exists after the first functions deploy).  Or pass
- *      --webhook-url <url>.
- *   4. List existing webhooks; register any missing topics; capture
- *      shared_secret and persist as ETSY_SHARED_SECRET.
+ *   2. Discover ETSY_SHOP_ID by parsing the user_id out of the
+ *      access token, then calling /v3/application/users/{id}/shops.
+ *   3. Discover ETSY_ORDER_WEBHOOK_URL via `firebase functions:list`
+ *      against the project resolved from .firebaserc, or prompt
+ *      interactively if the function isn't deployed yet.
+ *   4. Print Etsy developer-portal instructions for configuring
+ *      webhooks (URL + topics) and prompt for the resulting signing
+ *      secret.  Etsy v3 does NOT expose a public webhook-management
+ *      API; configuration is portal-only.
  *
  * Re-running is safe and idempotent: it skips any step whose output
  * is already in env.
@@ -43,8 +46,6 @@ import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
 type Args = Record<string, string | boolean | string[]>;
-
-const DEFAULT_TOPICS = ["receipt.created", "receipt.updated"];
 
 const ETSY_SCOPES = [
   "transactions_r",
@@ -334,111 +335,6 @@ async function discoverShopId(env: Record<string, string>): Promise<string> {
   return String(shopId);
 }
 
-async function listWebhooks(env: Record<string, string>): Promise<any[]> {
-  const resp = await fetch(
-    `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/webhooks`,
-    { headers: etsyAuthHeaders(env) },
-  );
-  if (!resp.ok) {
-    throw new Error(`list webhooks failed: ${await resp.text()}`);
-  }
-  const data = await resp.json();
-  return data.results || [];
-}
-
-async function deleteWebhook(
-  env: Record<string, string>,
-  webhookId: string | number,
-): Promise<void> {
-  const resp = await fetch(
-    `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/webhooks/${webhookId}`,
-    {
-      method: "DELETE",
-      headers: etsyAuthHeaders(env),
-    },
-  );
-  if (!resp.ok) {
-    throw new Error(
-      `delete webhook ${webhookId} failed: ${await resp.text()}`,
-    );
-  }
-}
-
-async function registerWebhook(
-  env: Record<string, string>,
-  topic: string,
-): Promise<{ shared_secret?: string; webhook_id?: string | number }> {
-  const resp = await fetch(
-    `https://openapi.etsy.com/v3/application/shops/${env.ETSY_SHOP_ID}/webhooks`,
-    {
-      method: "POST",
-      headers: {
-        ...etsyAuthHeaders(env),
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        topic,
-        url: env.ETSY_ORDER_WEBHOOK_URL,
-      }),
-    },
-  );
-  if (!resp.ok) {
-    throw new Error(`register ${topic} failed: ${await resp.text()}`);
-  }
-  return await resp.json();
-}
-
-async function ensureWebhooks(
-  env: Record<string, string>,
-  envPath: string,
-  dryRun: boolean,
-): Promise<string | null> {
-  const existing = await listWebhooks(env);
-  const existingByTopic = new Map<string, any>(
-    existing.map((w) => [w.topic, w]),
-  );
-  let capturedSecret: string | null = env.ETSY_SHARED_SECRET || null;
-  let secretsSeen = new Set<string>();
-  if (capturedSecret) secretsSeen.add(capturedSecret);
-
-  for (const topic of DEFAULT_TOPICS) {
-    const hook = existingByTopic.get(topic);
-    if (hook && hook.url === env.ETSY_ORDER_WEBHOOK_URL) {
-      console.log(`    ${topic}: already registered`);
-      continue;
-    }
-    if (hook && hook.url !== env.ETSY_ORDER_WEBHOOK_URL) {
-      console.log(
-        `    ${topic}: registered with different URL (${hook.url}); replacing`,
-      );
-      if (!dryRun) await deleteWebhook(env, hook.webhook_id);
-    }
-    if (dryRun) {
-      console.log(
-        `    ${topic}: would register against ${env.ETSY_ORDER_WEBHOOK_URL}`,
-      );
-      continue;
-    }
-    const result = await registerWebhook(env, topic);
-    console.log(`    ${topic}: registered`);
-    if (result.shared_secret) {
-      capturedSecret = result.shared_secret;
-      secretsSeen.add(result.shared_secret);
-    }
-  }
-
-  if (secretsSeen.size > 1) {
-    console.log(
-      "    note: Etsy returned distinct shared_secrets per webhook; using the most recent.",
-    );
-  }
-
-  if (capturedSecret && capturedSecret !== env.ETSY_SHARED_SECRET && !dryRun) {
-    updateEnvFile(envPath, { ETSY_SHARED_SECRET: capturedSecret });
-  }
-  return capturedSecret;
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const envName = getStringArg(args, "env", "emulator");
@@ -560,7 +456,7 @@ async function main() {
     }
   }
 
-  // Step 4: Register webhooks
+  // Step 4: Webhook configuration is portal-only on Etsy v3.
   console.log("[4/4] Webhooks");
   if (
     !env.ETSY_SHOP_ID ||
@@ -570,7 +466,34 @@ async function main() {
     console.log("    skipped (missing shop id, access token, or webhook URL)");
     return;
   }
-  await ensureWebhooks(env, envPath, dryRun);
+  console.log(
+    "    Etsy v3 has no public webhook-management API; configure in the portal:",
+  );
+  console.log("        https://www.etsy.com/developers/your-apps");
+  console.log("    Open your app, add two webhooks:");
+  console.log(`        URL:   ${env.ETSY_ORDER_WEBHOOK_URL}`);
+  console.log("        Topics: receipt.created, receipt.updated");
+  console.log(
+    "    Etsy will display a signing secret (or use the app's shared secret).",
+  );
+  console.log(`    Paste it into ${envFilePathFor(envName)} as ETSY_SHARED_SECRET.`);
+  if (!env.ETSY_SHARED_SECRET) {
+    if (dryRun) {
+      console.log("    (dry run) would prompt for ETSY_SHARED_SECRET");
+    } else {
+      const secret = await prompt(
+        "Paste webhook signing secret now, or Enter to skip: ",
+      );
+      if (secret) {
+        updateEnvFile(envPath, { ETSY_SHARED_SECRET: secret });
+        console.log("    ETSY_SHARED_SECRET persisted.");
+      } else {
+        console.log("    Skipped.  Re-run this script after adding it.");
+      }
+    }
+  } else {
+    console.log("    ETSY_SHARED_SECRET already set.");
+  }
 
   console.log();
   console.log(`Done.  ${envPath} now has the Etsy values for ${envName}.`);
