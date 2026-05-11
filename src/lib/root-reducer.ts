@@ -1260,10 +1260,27 @@ export const rootReducer = (
           ? Number(inventoryItems[0].item?.qty || 0)
           : 0;
 
-      const variantsWithItem = p.variants.map((v: any) => ({
-        ...v,
-        itemId: baseItemId, // Enrich variant with inventory link
-      }));
+      // Bind each variant to the pre-existing handle-less inventory item
+      // whose subtype matches the variant's option1Value.  This avoids the
+      // bug where every variant got pinned to inventoryItems[0] and
+      // approve_proposal then emitted a single split_inventory_item that
+      // redistributed qty across already-separate items.
+      const subtypeToItem = new Map<string, { id: string; item: any }>();
+      for (const entry of inventoryItems) {
+        const subtype = String((entry.item as any)?.subtype || "");
+        if (subtype && !subtypeToItem.has(subtype)) {
+          subtypeToItem.set(subtype, entry);
+        }
+      }
+
+      const variantsWithItem = p.variants.map((v: any) => {
+        const subtype = String(v.option1Value || "");
+        const match = subtype ? subtypeToItem.get(subtype) : null;
+        return {
+          ...v,
+          itemId: match?.id || baseItemId,
+        };
+      });
 
       // Persist initial allocations for split variants so UI/state agree and approval is deterministic.
       const explicitQtyTotal = variantsWithItem.reduce(
