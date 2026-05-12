@@ -91,18 +91,37 @@
       }
     };
   }
-  function cancelOrder() {
-    const plan = prepareCancelOrder(
-      orderID,
-      $user?.uid,
-      displayStatus === "canceled",
-    );
+  let cancelError = "";
+  let cancelPending = false;
+
+  async function cancelOrder() {
+    cancelError = "";
+    const uid = $user?.uid;
+    if (!orderID) {
+      cancelError = "No order id in the URL.";
+      return;
+    }
+    if (!uid) {
+      cancelError =
+        "Not signed in. Reload the page once sign-in completes and try again.";
+      return;
+    }
+    if (displayStatus === "canceled") return;
+    const plan = prepareCancelOrder(orderID, uid, false);
     if (!plan) return;
     const ok = confirm(
       "Cancel this order?\n\nThis reverses the shipped quantity for every line item and marks the order Canceled. Refresh the marketplace side separately if needed.",
     );
     if (!ok) return;
-    broadcast(firestore, plan.uid, plan.action);
+    cancelPending = true;
+    try {
+      await broadcast(firestore, plan.uid, plan.action);
+    } catch (e) {
+      cancelError = "Failed to cancel order: " + (e as Error).message;
+      console.error("Cancel order failed", e);
+    } finally {
+      cancelPending = false;
+    }
   }
   function updateSubtype(lineItem: LineItem) {
     return (e: CustomEvent) => {
@@ -167,11 +186,20 @@
 
 <button
   on:click={cancelOrder}
-  disabled={displayStatus === "canceled"}
+  disabled={displayStatus === "canceled" || cancelPending}
   class="cancel-button"
 >
-  {displayStatus === "canceled" ? "Order Canceled" : "Cancel Order"}
+  {#if displayStatus === "canceled"}
+    Order Canceled
+  {:else if cancelPending}
+    Cancelling…
+  {:else}
+    Cancel Order
+  {/if}
 </button>
+{#if cancelError}
+  <p class="cancel-error" role="alert">{cancelError}</p>
+{/if}
 
 <style>
   .status-banner {
@@ -232,5 +260,11 @@
     background: #eee;
     border-color: #ccc;
     cursor: not-allowed;
+  }
+
+  .cancel-error {
+    margin-top: 0.5em;
+    color: #8b1a1a;
+    font-weight: 600;
   }
 </style>

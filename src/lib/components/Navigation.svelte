@@ -90,7 +90,7 @@
     </ul>
 
     <div class="nav-footer">
-      {#if $user}
+      {#if $user?.signedIn}
         <div class="user-info">
           <img src={$user.photo} alt={$user.name} class="avatar" />
           <span class="username">{$user.name}</span>
