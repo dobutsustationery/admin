@@ -5,7 +5,9 @@
   import { user } from "$lib/globals";
   import {
     delete_empty_order,
+    getOrderDisplayStatus,
     type LineItem,
+    type OrderDisplayStatus,
     package_item,
     quantify_item,
     retype_item,
@@ -22,15 +24,28 @@
   $: product = $page.url.searchParams.get("product");
 
   let orderItems: LineItem[] = [];
+  let orderStatusRaw = "";
+  let displayStatus: OrderDisplayStatus = "ok";
   $: if ($store) {
     state = store.getState();
     if (
       orderID !== null &&
       state.inventory.orderIdToOrder[orderID] !== undefined
     ) {
-      orderItems = state.inventory.orderIdToOrder[orderID]?.items;
+      const order = state.inventory.orderIdToOrder[orderID];
+      orderItems = order.items;
+      orderStatusRaw = order.status || "";
+      displayStatus = getOrderDisplayStatus(order);
     }
   }
+
+  const STATUS_LABEL: Record<OrderDisplayStatus, string> = {
+    ok: "",
+    canceled: "Canceled",
+    refunded: "Refunded",
+    partial_refund: "Partially refunded",
+    unpaid: "Unpaid",
+  };
 
   function barcode(e: CustomEvent) {
     let itemKey = e.detail;
@@ -112,6 +127,25 @@
 </script>
 
 <BarcodeScanner on:barcode={barcode} on:snapshot={snapshot} />
+{#if displayStatus !== "ok"}
+  <div class="status-banner {displayStatus}">
+    <span class="status-label">{STATUS_LABEL[displayStatus]}</span>
+    {#if orderStatusRaw && orderStatusRaw.toLowerCase() !== STATUS_LABEL[displayStatus].toLowerCase()}
+      <span class="status-raw">({orderStatusRaw})</span>
+    {/if}
+    <span class="status-hint">
+      {#if displayStatus === "canceled"}
+        Do not pack or ship. Inventory impact has been reversed.
+      {:else if displayStatus === "refunded"}
+        Inventory impact has been reversed; do not ship.
+      {:else if displayStatus === "partial_refund"}
+        Refund recorded; verify before shipping.
+      {:else if displayStatus === "unpaid"}
+        Order is unpaid; do not pack until payment clears.
+      {/if}
+    </span>
+  </div>
+{/if}
 <p>Order: {product} ({orderID}) for {email}</p>
 <table>
   <thead
@@ -135,3 +169,45 @@
 </table>
 
 <button on:click={deleteOrder}> Delete Order </button>
+
+<style>
+  .status-banner {
+    padding: 0.6em 1em;
+    margin: 0.5em 0;
+    border-radius: 6px;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    flex-wrap: wrap;
+  }
+  .status-banner.canceled {
+    background: #fdecec;
+    color: #8b1a1a;
+    border: 1px solid #f1b9b9;
+  }
+  .status-banner.refunded,
+  .status-banner.partial_refund {
+    background: #fff5d6;
+    color: #6b4a00;
+    border: 1px solid #ecd07a;
+  }
+  .status-banner.unpaid {
+    background: #ecebfd;
+    color: #4a3a8b;
+    border: 1px solid #c3bff0;
+  }
+  .status-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .status-raw {
+    font-family: ui-monospace, monospace;
+    opacity: 0.7;
+    font-size: 0.85em;
+  }
+  .status-hint {
+    font-weight: 400;
+  }
+</style>
