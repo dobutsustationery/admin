@@ -6,6 +6,7 @@ import {
   inventory,
   new_order,
   package_item,
+  prepareCancelOrder,
   update_item,
 } from "../../src/lib/inventory";
 
@@ -103,6 +104,35 @@ describe("cancel_order", () => {
     expect(fact.placed).toBe(4);
     expect(fact.cancelled).toBe(4);
     expect(fact.refunded).toBe(0);
+  });
+
+  describe("prepareCancelOrder (UI click guard)", () => {
+    it("returns null when uid is undefined (the crash bug)", () => {
+      // Reproduces the production crash: $user is the writable<User>() store's
+      // initial value (undefined), so $user.uid would throw.  The helper
+      // accepts undefined uid and returns null without throwing.
+      expect(prepareCancelOrder("etsy:123", undefined, false)).toBeNull();
+      expect(prepareCancelOrder("etsy:123", null, false)).toBeNull();
+      expect(prepareCancelOrder("etsy:123", "", false)).toBeNull();
+    });
+
+    it("returns null when orderID is missing", () => {
+      expect(prepareCancelOrder(null, "uid-1", false)).toBeNull();
+      expect(prepareCancelOrder(undefined, "uid-1", false)).toBeNull();
+      expect(prepareCancelOrder("", "uid-1", false)).toBeNull();
+    });
+
+    it("returns null when the order is already canceled (no double-cancel)", () => {
+      expect(prepareCancelOrder("etsy:123", "uid-1", true)).toBeNull();
+    });
+
+    it("returns a valid plan when all preconditions are met", () => {
+      const plan = prepareCancelOrder("etsy:123", "uid-1", false);
+      expect(plan).not.toBeNull();
+      expect(plan!.uid).toBe("uid-1");
+      expect(plan!.action.type).toBe("cancel_order");
+      expect((plan!.action as any).payload).toEqual({ orderID: "etsy:123" });
+    });
   });
 
   it("is a no-op for unknown order ids", () => {
