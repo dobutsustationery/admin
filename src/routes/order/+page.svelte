@@ -4,11 +4,11 @@
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/globals";
   import {
-    cancel_order,
     getOrderDisplayStatus,
     type LineItem,
     type OrderDisplayStatus,
     package_item,
+    prepareCancelOrder,
     quantify_item,
     retype_item,
   } from "$lib/inventory";
@@ -56,11 +56,12 @@
         itemKey = possibleKeys[0];
       }
     }
-    if (state.inventory.idToItem[itemKey] && orderID !== null && $user.uid) {
+    const uid = $user?.uid;
+    if (state.inventory.idToItem[itemKey] && orderID !== null && uid) {
       const qty = 1;
       broadcast(
         firestore,
-        $user.uid,
+        uid,
         package_item({
           orderID,
           itemKey: canonicalizeInventoryItemKey(itemKey),
@@ -76,10 +77,11 @@
   function updateQuantity(itemKey: string) {
     return (e: CustomEvent) => {
       const qty = +e.detail;
-      if (state.inventory.idToItem[itemKey] && orderID !== null && $user.uid) {
+      const uid = $user?.uid;
+      if (state.inventory.idToItem[itemKey] && orderID !== null && uid) {
         broadcast(
           firestore,
-          $user.uid,
+          uid,
           quantify_item({
             orderID,
             itemKey: canonicalizeInventoryItemKey(itemKey),
@@ -90,24 +92,29 @@
     };
   }
   function cancelOrder() {
-    if (orderID === null || !$user.uid) return;
-    if (displayStatus === "canceled") return;
+    const plan = prepareCancelOrder(
+      orderID,
+      $user?.uid,
+      displayStatus === "canceled",
+    );
+    if (!plan) return;
     const ok = confirm(
       "Cancel this order?\n\nThis reverses the shipped quantity for every line item and marks the order Canceled. Refresh the marketplace side separately if needed.",
     );
     if (!ok) return;
-    broadcast(firestore, $user.uid, cancel_order({ orderID }));
+    broadcast(firestore, plan.uid, plan.action);
   }
   function updateSubtype(lineItem: LineItem) {
     return (e: CustomEvent) => {
       const subtype = e.detail as string;
       const itemKey = lineItem.itemKey;
       const qty = lineItem.qty;
-      if (state.inventory.idToItem[itemKey] && orderID !== null && $user.uid) {
+      const uid = $user?.uid;
+      if (state.inventory.idToItem[itemKey] && orderID !== null && uid) {
         const janCode = state.inventory.idToItem[itemKey].janCode;
         broadcast(
           firestore,
-          $user.uid,
+          uid,
           retype_item({ orderID, itemKey, subtype, qty, janCode }),
         );
       }

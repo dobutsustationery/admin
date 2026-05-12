@@ -199,6 +199,26 @@ export const delete_empty_order = createAction<{
 export const cancel_order = createAction<{
   orderID: string;
 }>("cancel_order");
+
+/**
+ * Pure decision helper used by the order-detail page's Cancel Order button.
+ *
+ * Returns the broadcast inputs (uid + action) when a cancel is safe to send,
+ * or null when any precondition is missing.  This exists as a standalone
+ * function so the null-safety can be exercised by unit tests without booting
+ * a Svelte component -- a previous bug crashed in the click handler when the
+ * user store was undefined.
+ */
+export function prepareCancelOrder(
+  orderID: string | null | undefined,
+  uid: string | null | undefined,
+  alreadyCanceled: boolean,
+): { uid: string; action: ReturnType<typeof cancel_order> } | null {
+  if (!orderID) return null;
+  if (!uid) return null;
+  if (alreadyCanceled) return null;
+  return { uid, action: cancel_order({ orderID }) };
+}
 export const archive_inventory = createAction<{
   archiveName: string;
 }>("archive_inventory");
