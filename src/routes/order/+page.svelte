@@ -4,7 +4,7 @@
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/globals";
   import {
-    delete_empty_order,
+    cancel_order,
     getOrderDisplayStatus,
     type LineItem,
     type OrderDisplayStatus,
@@ -89,24 +89,14 @@
       }
     };
   }
-  function deleteOrder() {
-    if (orderID !== null) {
-      // set quantity of all items to zero
-      for (const item of state.inventory.orderIdToOrder[orderID].items) {
-        const qty = 0;
-        const itemKey = item.itemKey;
-        if ($user.uid) {
-          broadcast(
-            firestore,
-            $user.uid,
-            quantify_item({ orderID, itemKey, qty }),
-          );
-        }
-      }
-      if ($user.uid) {
-        broadcast(firestore, $user.uid, delete_empty_order({ orderID }));
-      }
-    }
+  function cancelOrder() {
+    if (orderID === null || !$user.uid) return;
+    if (displayStatus === "canceled") return;
+    const ok = confirm(
+      "Cancel this order?\n\nThis reverses the shipped quantity for every line item and marks the order Canceled. Refresh the marketplace side separately if needed.",
+    );
+    if (!ok) return;
+    broadcast(firestore, $user.uid, cancel_order({ orderID }));
   }
   function updateSubtype(lineItem: LineItem) {
     return (e: CustomEvent) => {
@@ -168,7 +158,13 @@
   {/each}
 </table>
 
-<button on:click={deleteOrder}> Delete Order </button>
+<button
+  on:click={cancelOrder}
+  disabled={displayStatus === "canceled"}
+  class="cancel-button"
+>
+  {displayStatus === "canceled" ? "Order Canceled" : "Cancel Order"}
+</button>
 
 <style>
   .status-banner {
@@ -209,5 +205,25 @@
   }
   .status-hint {
     font-weight: 400;
+  }
+
+  .cancel-button {
+    margin-top: 1em;
+    padding: 0.5em 1em;
+    border: 1px solid #c89292;
+    background: #fff5f5;
+    color: #8b1a1a;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .cancel-button:hover:not(:disabled) {
+    background: #fdecec;
+  }
+  .cancel-button:disabled {
+    color: #666;
+    background: #eee;
+    border-color: #ccc;
+    cursor: not-allowed;
   }
 </style>

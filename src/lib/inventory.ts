@@ -196,6 +196,9 @@ export const fix_jancode = createAction<{
 export const delete_empty_order = createAction<{
   orderID: string;
 }>("delete_empty_order");
+export const cancel_order = createAction<{
+  orderID: string;
+}>("cancel_order");
 export const archive_inventory = createAction<{
   archiveName: string;
 }>("archive_inventory");
@@ -2174,6 +2177,46 @@ export const inventory = createReducer(initialState, (r) => {
         delete state.orderIdToOrder[orderID];
       }
     }
+  });
+  r.addCase(cancel_order, (state, action) => {
+    const orderID = action.payload.orderID;
+    const order = state.orderIdToOrder[orderID];
+    if (!order) return;
+
+    // 1. Reverse shipped impact for every line currently attributed to
+    //    this order in idToItem.shipped.
+    for (const line of order.items) {
+      const itemKey = canonicalizeInventoryItemKey(line.itemKey);
+      const item = state.idToItem[itemKey];
+      if (item !== undefined && line.qty) {
+        item.shipped -= line.qty;
+      }
+    }
+
+    // 2. For marketplace-derived orders (etsy/shopify), update the
+    //    underlying facts so the next reconcile doesn't undo us.  Marking
+    //    every fact as cancelled=placed leaves a 0-impact record that
+    //    syncOrderItemsFromFacts will collapse to an empty items array.
+    if (order.etsyFacts) {
+      for (const lineId in order.etsyFacts.lines) {
+        const fact = order.etsyFacts.lines[lineId];
+        fact.cancelled = fact.placed;
+        fact.refunded = 0;
+      }
+      syncOrderItemsFromFacts(order);
+    } else if (order.shopifyFacts) {
+      for (const lineId in order.shopifyFacts.lines) {
+        const fact = order.shopifyFacts.lines[lineId];
+        fact.cancelled = fact.placed;
+        fact.refunded = 0;
+      }
+      syncOrderItemsFromFacts(order);
+    } else {
+      // Non-marketplace order: items is the source of truth, just empty it.
+      order.items = [];
+    }
+
+    order.status = "Canceled";
   });
   r.addCase(archive_inventory, (state, action) => {
     const archiveName = action.payload.archiveName;
