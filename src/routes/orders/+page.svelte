@@ -2,7 +2,11 @@
   import { collection, onSnapshot, query } from "firebase/firestore";
   import { goto } from "$app/navigation";
   import { firestore } from "$lib/firebase";
-  import { new_order } from "$lib/inventory";
+  import {
+    getOrderDisplayStatus,
+    new_order,
+    type OrderDisplayStatus,
+  } from "$lib/inventory";
   import { store } from "$lib/store";
 
   interface OrderInfo {
@@ -11,6 +15,8 @@
     item: string;
     date: Date;
     eventDate?: Date;
+    status?: string;
+    displayStatus: OrderDisplayStatus;
   }
 
   function updateOrderInfo() {
@@ -23,7 +29,17 @@
       const item = order.product || "";
       const date = order.date;
       const eventDate = order.eventDate;
-      orderInfo.push({ id, email, item, date, eventDate });
+      const status = order.status;
+      const displayStatus = getOrderDisplayStatus(order);
+      orderInfo.push({
+        id,
+        email,
+        item,
+        date,
+        eventDate,
+        status,
+        displayStatus,
+      });
     }
     orderInfo.sort((a, b) => {
       const aPrimary = (a.eventDate ?? a.date).getTime();
@@ -31,6 +47,14 @@
       return bPrimary - aPrimary;
     });
   }
+
+  const STATUS_LABEL: Record<OrderDisplayStatus, string> = {
+    ok: "",
+    canceled: "Canceled",
+    refunded: "Refunded",
+    partial_refund: "Partial refund",
+    unpaid: "Unpaid",
+  };
 
   $: if ($store) {
     updateOrderInfo();
@@ -84,14 +108,28 @@
 <h1>Orders</h1>
 <table>
   <tr
-    ><th>Order Date</th><th>Entered</th><th>ID</th><th>Email</th><th>Product</th
-    ></tr
+    ><th>Order Date</th><th>Entered</th><th>ID</th><th>Status</th><th>Email</th
+    ><th>Product</th></tr
   >
   {#each orderInfo as order}
-    <tr on:click={packOrder(order.id, order.email, order.item)}>
+    <tr
+      class:row-canceled={order.displayStatus === "canceled"}
+      class:row-refunded={order.displayStatus === "refunded" ||
+        order.displayStatus === "partial_refund"}
+      class:row-unpaid={order.displayStatus === "unpaid"}
+      on:click={packOrder(order.id, order.email, order.item)}
+    >
       <td>{formatDate(order.eventDate ?? order.date)}</td>
       <td class="entered">{formatDate(order.date)}</td>
-      <td>{order.id}</td><td>{order.email}</td><td>{order.item}</td></tr
+      <td>{order.id}</td>
+      <td>
+        {#if order.displayStatus !== "ok"}
+          <span class="badge {order.displayStatus}"
+            >{STATUS_LABEL[order.displayStatus]}</span
+          >
+        {/if}
+      </td>
+      <td>{order.email}</td><td>{order.item}</td></tr
     >
   {/each}
 </table>
@@ -112,5 +150,43 @@
   td.entered {
     color: #58606f;
     font-size: 0.9em;
+  }
+
+  .row-canceled td {
+    color: #8b1a1a;
+    text-decoration: line-through;
+  }
+  .row-refunded td {
+    color: #6b4a00;
+  }
+  .row-unpaid td {
+    color: #4a3a8b;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 0.1em 0.5em;
+    border-radius: 4px;
+    font-size: 0.78em;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+  .badge.canceled {
+    background: #fdecec;
+    color: #8b1a1a;
+    border: 1px solid #f1b9b9;
+  }
+  .badge.refunded,
+  .badge.partial_refund {
+    background: #fff5d6;
+    color: #6b4a00;
+    border: 1px solid #ecd07a;
+  }
+  .badge.unpaid {
+    background: #ecebfd;
+    color: #4a3a8b;
+    border: 1px solid #c3bff0;
   }
 </style>

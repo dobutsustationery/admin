@@ -127,6 +127,52 @@ describe("Etsy Order History logging", () => {
     expect(history.some((h) => h.desc.includes("diff -5"))).toBe(true);
   });
 
+  it("recognises Etsy's title-cased 'Canceled' status and reverses shipped", () => {
+    const store = setupStore();
+    const receiptId = "title-cancel-1";
+
+    // 1. Paid first.
+    store.dispatch({
+      ...etsy_order_created({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          status: "Paid",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 3 }],
+        },
+        topic: "receipt.created",
+      }),
+      timestamp: { seconds: 1200, nanoseconds: 0 },
+    } as any);
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(3);
+
+    // 2. Reconcile arrives with the exact production payload shape:
+    //    status: "Canceled" (capital C).  Pre-fix, this was treated as
+    //    "normal paid order" and shipped stayed at 3.
+    store.dispatch({
+      ...etsy_order_reconciled({
+        raw: {
+          receipt_id: receiptId,
+          create_timestamp: 1000,
+          updated_timestamp: 1500,
+          status: "Canceled",
+          is_paid: true,
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 3 }],
+        },
+        topic: "reconcile",
+      }),
+      timestamp: { seconds: 1500, nanoseconds: 0 },
+    } as any);
+
+    expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(0);
+
+    // 3. The order's status is persisted verbatim for the UI.
+    const order =
+      store.getState().inventory.orderIdToOrder[`etsy:${receiptId}`];
+    expect(order.status).toBe("Canceled");
+    expect(order.isPaid).toBe(true);
+  });
+
   it("handles authoritative reconciliation: removes deleted transactions", () => {
     const store = setupStore();
     const receiptId = "auth-123";

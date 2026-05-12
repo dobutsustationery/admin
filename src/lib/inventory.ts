@@ -47,6 +47,31 @@ export interface ShopifyLineFact {
   entityId?: InventoryEntityId;
   manualEntityId?: InventoryEntityId;
 }
+export type OrderDisplayStatus =
+  | "ok"
+  | "canceled"
+  | "refunded"
+  | "partial_refund"
+  | "unpaid";
+
+export function getOrderDisplayStatus(order: {
+  status?: string;
+  isPaid?: boolean;
+}): OrderDisplayStatus {
+  const s = String(order.status || "")
+    .trim()
+    .toLowerCase();
+  if (s === "canceled" || s === "cancelled") return "canceled";
+  if (s === "refunded" || s === "fully refunded" || s === "fully_refunded") {
+    return "refunded";
+  }
+  if (s === "partially refunded" || s === "partially_refunded") {
+    return "partial_refund";
+  }
+  if (order.isPaid === false || s === "unpaid") return "unpaid";
+  return "ok";
+}
+
 export interface OrderInfo {
   date: Date;
   eventDate?: Date;
@@ -54,6 +79,11 @@ export interface OrderInfo {
   product?: string;
   id: string;
   items: LineItem[];
+  // Verbatim status string from the upstream marketplace (e.g. Etsy's
+  // "Canceled", "Paid", "Completed", "Fully Refunded").  Used by the UI
+  // to flag non-normal orders; compare case-insensitively.
+  status?: string;
+  isPaid?: boolean;
   shopifyFacts?: {
     lines: Record<string, ShopifyLineFact>; // lineItemID -> counts
     refunds: Record<string, boolean>; // refundID -> processed
@@ -1429,16 +1459,26 @@ export const inventory = createReducer(initialState, (r) => {
           );
         }
 
+        // Etsy emits status strings in title case (e.g. "Canceled",
+        // "Fully Refunded"); compare case-insensitively after stripping
+        // whitespace so a typo'd payload still resolves correctly.
+        const normalizedStatus = String(rawReceipt.status || "")
+          .trim()
+          .toLowerCase();
         const isCancelled =
-          rawReceipt.status === "canceled" || rawReceipt.status === "cancelled";
+          normalizedStatus === "canceled" || normalizedStatus === "cancelled";
         const isUnpaid =
-          rawReceipt.is_paid === false || rawReceipt.status === "unpaid";
+          rawReceipt.is_paid === false || normalizedStatus === "unpaid";
+        const isFullRefund =
+          normalizedStatus === "refunded" ||
+          normalizedStatus === "fully refunded" ||
+          normalizedStatus === "fully_refunded";
 
         newFacts[lineItemID] = {
           itemKey: canonicalKey,
           placed: tx.quantity,
           cancelled: isCancelled || isUnpaid ? tx.quantity : 0,
-          refunded: rawReceipt.status === "refunded" ? tx.quantity : 0,
+          refunded: isFullRefund ? tx.quantity : 0,
           rawSku,
           entityId,
           manualEntityId: oldFact?.manualEntityId,
@@ -1496,6 +1536,12 @@ export const inventory = createReducer(initialState, (r) => {
     // Authoritative commit
     order.etsyFacts!.lines = newFacts;
     order.etsyFacts!.reconciledTimestamp = timestamp;
+    if (typeof rawReceipt.status === "string") {
+      order.status = rawReceipt.status;
+    }
+    if (typeof rawReceipt.is_paid === "boolean") {
+      order.isPaid = rawReceipt.is_paid;
+    }
     syncOrderItemsFromFacts(order);
   }
 
