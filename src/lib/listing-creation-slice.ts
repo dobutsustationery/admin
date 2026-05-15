@@ -324,10 +324,19 @@ const listingCreationSlice = createSlice({
       }>,
     ) => {
       const { janCode, field, value } = action.payload;
-      if (state.proposals[janCode]) {
-        // @ts-ignore - dynamic field access
-        state.proposals[janCode][field] = value;
+      const proposal = state.proposals[janCode];
+      if (!proposal) return;
+      // The Handle column in /listings/create is a free-form text input
+      // and the operator can paste any string. Shopify handles must be
+      // slug-shape (lowercase, hyphenated, no whitespace / `&` / parens),
+      // so canonicalize at the reducer boundary. See
+      // docs/investigations/PROPOSAL_HANDLE_NOT_SLUGIFIED.md.
+      if (field === "handle" && typeof value === "string") {
+        proposal.handle = canonicalizeHandle(value, proposal.janCode);
+        return;
       }
+      // @ts-ignore - dynamic field access
+      proposal[field] = value;
     },
     add_listing_only_image: (
       state,
@@ -1268,7 +1277,7 @@ export const generate_proposals =
     }
   };
 
-import { generateHandle } from "./handle-utils";
+import { canonicalizeHandle, generateHandle } from "./handle-utils";
 
 export const approve_proposal_thunk =
   (janCode: string): AppThunk =>
