@@ -1902,16 +1902,20 @@ export const inventory = createReducer(initialState, (r) => {
           order.items.push({ itemKey: newItemKey, qty: moveQty });
         }
 
-        // Now update shipped (also surgical/idempotent based on moveQty)
-        if (
-          state.idToItem[itemKey] !== undefined &&
-          state.idToItem[newItemKey] !== undefined
-        ) {
+        // Shipped accumulator is decoupled per side: the order line was moved
+        // qty units from old -> new, so old.shipped should drop and
+        // new.shipped should rise — independently. The previous both-must-exist
+        // guard silently dropped the increment when the retype's source key
+        // was a renamed-away ghost, leaving inventory.shipped behind the
+        // order's view (see docs/investigations/GHOST_MISSING_15_AUDIT.md).
+        if (state.idToItem[itemKey] !== undefined) {
           state.idToItem[itemKey].shipped -= moveQty;
+        }
+        if (state.idToItem[newItemKey] !== undefined) {
           state.idToItem[newItemKey].shipped += moveQty;
         } else {
           console.warn(
-            `Skipping retype_item shipped update for missing item(s): ${itemKey} or ${newItemKey}`,
+            `Skipping retype_item shipped update for missing new item: ${newItemKey}`,
             action.payload,
           );
         }
