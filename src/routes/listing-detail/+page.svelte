@@ -1684,18 +1684,10 @@
           to: handle,
         }),
       );
-      // 3. Sync Subtype
-      if (subtype && subtype !== item.subtype) {
-        dispatchBroadcast(
-          update_field({
-            id: itemId,
-            field: "subtype",
-            from: item.subtype || "",
-            to: subtype,
-          }),
-        );
-      }
-      // 4. Sync Qty (for the new item itself)
+      // 3. Sync Qty (for the new item itself) — must happen BEFORE subtype,
+      // because the subtype update re-keys idToItem and any subsequent
+      // action against itemId silently no-ops. Same discipline as
+      // confirm_proposal in src/lib/root-reducer.ts.
       if (typeof qty === "number" && qty !== item.qty) {
         dispatchBroadcast(
           update_field({
@@ -1703,6 +1695,17 @@
             field: "qty",
             from: item.qty,
             to: qty,
+          }),
+        );
+      }
+      // 4. Sync Subtype LAST (triggers the rename).
+      if (subtype && subtype !== item.subtype) {
+        dispatchBroadcast(
+          update_field({
+            id: itemId,
+            field: "subtype",
+            from: item.subtype || "",
+            to: subtype,
           }),
         );
       }
