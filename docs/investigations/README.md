@@ -6,3 +6,4 @@ Records of technical investigations.
 - [Ghost-access "missing" rows — Apr 2026 audit](./GHOST_MISSING_15_AUDIT.md)
 - [Phantom "red" variant on JAN 4542804113471 — Shopify-import MATCH path](./SHOPIFY_IMPORT_OPTION1_PHANTOM_VARIANT.md)
 - [Spaces in Shopify handles — proposal handle never slugified](./PROPOSAL_HANDLE_NOT_SLUGIFIED.md)
+- [console.error census — Apr 25 backup replay](./REPLAY_CONSOLE_ERRORS.md)
