@@ -295,24 +295,104 @@ order; the audit only marks five of them missing.
     that amount today and a corrective `update_field` (using the
     canonical Transparent id) would fix it.
 
-## Recommended remediation (informational only — not implementing)
+## Recommended remediation
 
-Three concrete cases warrant remediation actions, all using current
-canonical keys:
+Three of the shipped-counter divergences are eliminated by a single
+reducer change (see "Reducer fix" below). After replaying the Apr 25
+backup against the patched reducer, the three Swan/Strawberry/Cherry
+counters land exactly on the values the audit recommends — no manual
+broadcast actions needed for those three rows.
 
-| Target | Subtype | Field | From → To |
+The remaining row (Transparent qty edit) is structurally different and
+still requires a one-shot broadcast against the canonical key.
+
+| Target | Subtype | Field | Fix delivered by |
 |---|---|---|---|
-| `4542804130904Swan` | Swan | `shipped` | bump by `+1` to reflect order `5XX72156AK696890X-2of3` |
-| `4542804112832Strawberry` | Strawberry | `shipped` | bump by `+1` to reflect order `Helen3` |
-| `4542804112832Cherry` | Cherry | `shipped` | bump by `+3` to reflect order `Helen3` |
-| `4542804123579Transparent` | Transparent | `qty` | set to user-intended value (likely `12`) — confirm by stock-take first |
-
-Each is a single broadcast action against the current canonical key.
-None require any reducer change.
+| `4542804130904Swan` | Swan | `shipped` +1 (order `5XX72156AK696890X-2of3`) | **Reducer fix** (replays cleanly) |
+| `4542804112832Strawberry` | Strawberry | `shipped` +1 (order `Helen3`) | **Reducer fix** (replays cleanly) |
+| `4542804112832Cherry` | Cherry | `shipped` +3 (order `Helen3`) | **Reducer fix** (replays cleanly) |
+| `4542804123579Transparent` | Transparent | `qty` → user-intended value (likely `12`) | One-shot `update_field` after stock-take |
 
 The other 12 missing rows are noise — already-realized intent or
 identity no-ops — and need no follow-up beyond UX nits (rows 4-6
 re-fire suggests a stuck blur handler).
+
+## Reducer fix
+
+The three shipped-counter divergences (rows 7+9 on Swan, rows 11 and 14
+on Helen3) share one root cause: `retype_item` in `src/lib/inventory.ts`
+gated its shipped-accumulator block on **both** the old and the new key
+existing in `idToItem`. When the old key was a renamed-away ghost
+(Purple, Orange) the gate failed and the new key never received credit,
+even though the order line was correctly moved old → new.
+
+The order line move and the shipped adjustment have different
+preconditions: the line move only needs the old line to be present on
+the order; the shipped adjustment is per-side — decrement old only if
+old still exists, increment new only if new exists. Coupling them was
+the bug.
+
+Fix (`src/lib/inventory.ts`, inside `r.addCase(retype_item, ...)`):
+
+```diff
+- if (state.idToItem[itemKey] !== undefined &&
+-     state.idToItem[newItemKey] !== undefined) {
+-   state.idToItem[itemKey].shipped -= moveQty;
+-   state.idToItem[newItemKey].shipped += moveQty;
+- } else { /* warn */ }
++ if (state.idToItem[itemKey] !== undefined) {
++   state.idToItem[itemKey].shipped -= moveQty;
++ }
++ if (state.idToItem[newItemKey] !== undefined) {
++   state.idToItem[newItemKey].shipped += moveQty;
++ } else { /* warn — new key missing */ }
+```
+
+Idempotency is preserved: `moveQty` derives from finding the old key on
+the order's items (`oldItemIdx !== -1`), so a replayed-against-current
+retype with no matching old line produces `moveQty = 0` and is a no-op
+on both sides.
+
+### Post-fix replay impact (Apr 25 backup, 24,799 actions)
+
+Three `retype_item` actions now credit shipped where they previously
+dropped it. Net delta vs. the unpatched reducer:
+
+| At | Order | Old → New | qty | Credited to |
+|---|---|---|---:|---|
+| 2025-05-29 09:28:55 | `5XX72156AK696890X-2of3` | Purple → **Swan** | 1 | `4542804130904Swan` (+1) |
+| 2025-07-25 12:59:04 | `Helen3` | Orange → **Strawberry** | 1 | `4542804112832Strawberry` (+1) |
+| 2025-07-25 13:08:27 | `Helen3` | Orange → **Cherry** | 3 | `4542804112832Cherry` (+3) |
+
+Final shipped readings after replay match the remediation table above:
+
+```
+4542804130904Swan:        shipped=1  qty=23
+4542804112832Strawberry:  shipped=3  qty=11
+4542804112832Cherry:      shipped=3  qty=10
+```
+
+Net +5 shipped units across 3 keys; no other inventory cell changes.
+The 15 audit-page ghost-access events are unchanged — the audit fires
+before the reducer outcome and measures structural lookup, not whether
+the reducer eventually did the right thing.
+
+### Regression coverage
+
+`tests/unit/ghost-shipped-counter-replay.test.ts` replays the Apr 25
+backup and asserts the three remediation targets land on the post-fix
+values. Without the fix it fails on the very first assertion
+(`Swan.shipped == 1`); with the fix it passes.
+
+### What was NOT touched
+
+`package_item` and `quantify_item` still skip their shipped block when
+the literal `itemKey` is absent from `idToItem`. That's the right
+behavior: those actions only carry the old key, with no semantic target
+to redirect into. Rows 7, 10, 12, and 13 are the "ghost line drops onto
+the order with no shipped change" steps; rows 9, 11, and 14 — the
+follow-up retypes — are where the order line gets reconciled onto a
+real key, and where the fix takes effect.
 
 ## Reproduction
 
@@ -320,8 +400,16 @@ re-fire suggests a stuck blur handler).
 bun run scripts/audit-missing-15.ts
 # detailed JSON: /tmp/audit-missing-15.json
 # human log:    /tmp/audit-missing-15.log
+
+bun run scripts/assess-ghost-fix-impact.ts
+# enumerates retype_item actions whose shipped behavior changes under
+# the fix and prints the per-key net delta and final readings.
+
+bun run test -- --run --no-coverage \
+  tests/unit/ghost-shipped-counter-replay.test.ts
+# vitest regression test (~50s; auto-skips if the backup is absent).
 ```
 
-The script replays the apr-25 backup and emits the 15 records with
-pre-state, final state, the relevant order-items snapshots, and the
-`intentSatisfied` flag for field updates.
+The audit script replays the apr-25 backup and emits the 15 records
+with pre-state, final state, the relevant order-items snapshots, and
+the `intentSatisfied` flag for field updates.
