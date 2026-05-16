@@ -190,7 +190,14 @@ test.describe("Variant Updates (Modal-driven)", () => {
     test.setTimeout(120000);
 
     const janCode = "LIVE-SPLIT-TEST";
-    const item1Id = `${janCode}:S`;
+    const subtype = "S";
+    // Canonical inventory item key = makeInventoryItemKey(jan, subtype),
+    // i.e. jan + subtype with no separator. Previously this test used a
+    // "JAN:Subtype" colon id, which only survived as an inventory key
+    // because applyInventoryUpdate wrote non-canonical ids verbatim;
+    // that bug is now fixed (writes are canonicalized), so the split's
+    // sourceId is the canonical key.
+    const item1Id = `${janCode}${subtype}`;
     const handle = "live-handle";
 
     await page.goto(`/listing-detail?mode=live&handle=${handle}`);

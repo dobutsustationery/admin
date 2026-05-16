@@ -613,6 +613,66 @@ export function itemsLookIdentical(oldItem: Item, mergeItem: Item) {
   return true;
 }
 
+// When applyInventoryUpdate redirects a write from a bare-JAN id to its
+// canonical (subtyped) id, a row may already exist under the bare-JAN
+// key (e.g. created by an order import before the Shopify import
+// assigned a subtype). Leaving it behind produces an orphaned shell and
+// shifts order-line keys. Migrate it into the canonical row using the
+// same semantics as rename_subtype: additive qty/shipped merge, order
+// reference + entity-binding rewrite, history merge, then delete the
+// stale bare-JAN row. See docs/investigations/REPLAY_CONSOLE_ERRORS.md.
+function migrateBareJanRowToCanonical(
+  state: InventoryState,
+  oldKey: string,
+  canonicalId: string,
+  subtype: string,
+  timestamp: any,
+  actionType: string,
+) {
+  // Order references and entity bindings are rewritten unconditionally:
+  // once this JAN is known to be subtyped, any line still pointing at
+  // the bare JAN is the malformed one we want to repair.
+  rewriteOrderItemKeyReferences(
+    state,
+    oldKey as InventoryItemKey,
+    canonicalId as InventoryItemKey,
+  );
+  renameInventoryEntityKey(
+    state,
+    oldKey,
+    canonicalId,
+    getTimestampMs(timestamp),
+    actionType,
+  );
+
+  const oldItem = state.idToItem[oldKey];
+  if (oldItem) {
+    const mergeItem = state.idToItem[canonicalId];
+    if (mergeItem) {
+      mergeItem.qty += oldItem.qty || 0;
+      mergeItem.shipped = (mergeItem.shipped || 0) + (oldItem.shipped || 0);
+    } else {
+      state.idToItem[canonicalId] = { ...oldItem, subtype };
+    }
+  }
+
+  const oldHistory = state.idToHistory[oldKey];
+  if (oldHistory && oldHistory.length > 0) {
+    if (!state.idToHistory[canonicalId]) state.idToHistory[canonicalId] = [];
+    const prefixed = oldHistory.map((h) => ({
+      ...h,
+      desc: `[${oldKey}] ${h.desc}`,
+    }));
+    state.idToHistory[canonicalId] = [
+      ...state.idToHistory[canonicalId],
+      ...prefixed,
+    ].sort((a, b) => (a.val || 0) - (b.val || 0));
+  }
+
+  delete state.idToItem[oldKey];
+  delete state.idToHistory[oldKey];
+}
+
 // Helper to apply update logic
 function applyInventoryUpdate(
   state: InventoryState,
@@ -637,15 +697,50 @@ function applyInventoryUpdate(
 
   id = id.trim();
 
-  // Validation: check if the provided ID matches the canonical ID
-  // derived from its janCode + subtype. If not, log an error.
+  // Validation: the idToItem key must equal makeInventoryItemKey(janCode,
+  // subtype). When the payload carries an explicit (janCode, subtype),
+  // that pair is authoritative — canonicalize on write instead of logging
+  // and writing under a stale/bare-JAN key. See
+  // docs/investigations/REPLAY_CONSOLE_ERRORS.md and
+  // SHOPIFY_IMPORT_OPTION1_PHANTOM_VARIANT.md.
   if (item.janCode) {
     const canonicalId = makeInventoryItemKey(item.janCode, item.subtype || "");
     if (
       id !== canonicalId &&
       canonicalizeInventoryItemKey(id) === canonicalId
     ) {
+      // Structural-normalization case (whitespace / format).
       id = canonicalId;
+    }
+    // "Bare JAN" = a numeric JAN with NO subtype component. Use the
+    // structural split (digits prefix + remainder); the id is bare only
+    // when the remainder is empty. This excludes ids that already encode
+    // a subtype (e.g. a "Variant SKU" of "4542804108606Bear" parsed as
+    // janCode), arbitrary synthetic itemIds, and "JAN:Subtype" variant
+    // ids — all of which other slices reference and must not be silently
+    // re-keyed here.
+    const idMatch = id.trim().match(/^(\d+)(.*)$/);
+    const idIsBareJan = !!idMatch && idMatch[2] === "";
+    if (
+      id !== canonicalId &&
+      idIsBareJan &&
+      (item.subtype || "").trim() !== ""
+    ) {
+      // Bare numeric JAN id + explicit payload subtype: the Shopify
+      // import MATCH/NEW signature — 100% of the 93 production
+      // console.error cases. Redirect the write to the canonical key and
+      // migrate any stale bare-JAN row (and its order references) into
+      // it.
+      const staleKey = id;
+      id = canonicalId;
+      migrateBareJanRowToCanonical(
+        state,
+        staleKey,
+        canonicalId,
+        canonicalizeSubtype(item.subtype),
+        timestamp,
+        actionType,
+      );
     }
     if (id !== canonicalId) {
       console.error(
