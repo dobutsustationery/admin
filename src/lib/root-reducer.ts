@@ -264,6 +264,78 @@ const applyKeyAuditInstrumentation = (
   return { ...nextState, keyAudit: nextKeyAudit };
 };
 
+// When applyInventoryUpdate redirects a bare-JAN import write to its
+// canonical (jan+subtype) key and migrates the inventory row, the
+// listings.idToHandle map and photos.janCodeToPhotos groups still point
+// at the stale bare-JAN key (they live in other slices the inventory
+// reducer cannot touch). Mirror the rename_subtype cross-slice
+// orchestration for each such re-key. See
+// docs/investigations/REPLAY_CONSOLE_ERRORS.md.
+const reconcileImportItemRekeys = (
+  nextState: any,
+  items: Array<{ id?: string; item?: any }>,
+  logger: any,
+  ts: number,
+): any => {
+  if (!Array.isArray(items) || items.length === 0) return nextState;
+  for (const entry of items) {
+    const rawId = (entry?.id || "").toString().trim();
+    const jan = entry?.item?.janCode;
+    const subtype = (entry?.item?.subtype || "").toString().trim();
+    if (!rawId || !jan || !subtype) continue;
+    const newKey = makeInventoryItemKey(jan, subtype);
+    if (rawId === newKey) continue;
+
+    // 1. listings.idToHandle
+    const handle = nextState.listings?.idToHandle?.[rawId];
+    if (handle) {
+      const listingState = nextState.listings;
+      const nextIdToHandle = { ...listingState.idToHandle, [newKey]: handle };
+      delete nextIdToHandle[rawId];
+      nextState = {
+        ...nextState,
+        listings: { ...listingState, idToHandle: nextIdToHandle },
+      };
+    }
+
+    // 2. photos.janCodeToPhotos
+    const photoCandidates = [rawId, `${jan}:`, jan];
+    const found = photoCandidates.find(
+      (c) => nextState.photos?.janCodeToPhotos?.[c],
+    );
+    const newPhotoKey = `${jan}:${subtype}`;
+    if (found && found !== newPhotoKey) {
+      const photosState = nextState.photos;
+      const nextJanCodeToPhotos = { ...photosState.janCodeToPhotos };
+      const groupPhotos = nextJanCodeToPhotos[found] || [];
+      if (groupPhotos.length > 0) {
+        if (!nextJanCodeToPhotos[newPhotoKey]) {
+          nextJanCodeToPhotos[newPhotoKey] = [];
+        }
+        nextJanCodeToPhotos[newPhotoKey] = [
+          ...nextJanCodeToPhotos[newPhotoKey],
+          ...groupPhotos,
+        ];
+        delete nextJanCodeToPhotos[found];
+        nextState = {
+          ...nextState,
+          photos: { ...photosState, janCodeToPhotos: nextJanCodeToPhotos },
+        };
+        logger(
+          {
+            type: "photos/rename_jan_group (synthetic)",
+            payload: { oldJan: found, newJan: newPhotoKey },
+            _ephemeral: true,
+          },
+          nextState,
+          ts,
+        );
+      }
+    }
+  }
+  return nextState;
+};
+
 // Helper to map Order Import Item to Inventory Item
 const mapOrderToInventory = (importItem: any): Item => {
   return {
@@ -400,6 +472,28 @@ export const rootReducer = (
 
   // 2.5 Key integrity observability (non-blocking, no behavior changes)
   nextState = applyKeyAuditInstrumentation(state, action, nextState);
+
+  // 2.6 Direct update_item / bulk_import_items can also trigger the
+  // bare-JAN -> canonical inventory re-key inside applyInventoryUpdate;
+  // mirror the cross-slice (idToHandle / photo group) migration.
+  if (action.type === "update_item" && action.payload) {
+    nextState = reconcileImportItemRekeys(
+      nextState,
+      [{ id: action.payload.id, item: action.payload.item }],
+      logger,
+      action._timestamp,
+    );
+  } else if (
+    action.type === "bulk_import_items" &&
+    Array.isArray(action.payload?.items)
+  ) {
+    nextState = reconcileImportItemRekeys(
+      nextState,
+      action.payload.items,
+      logger,
+      action._timestamp,
+    );
+  }
 
   // 3. Interception & Composition
 
@@ -979,6 +1073,12 @@ export const rootReducer = (
         inventory: inventory(nextState.inventory, internalAction),
       };
       logger(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
+      nextState = reconcileImportItemRekeys(
+        nextState,
+        bulkUpdates,
+        logger,
+        action._timestamp,
+      );
     }
 
     if (indices.length > 0) {
@@ -1132,6 +1232,12 @@ export const rootReducer = (
         listings: listings(nextState.listings, internalAction),
       };
       logger(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
+      nextState = reconcileImportItemRekeys(
+        nextState,
+        bulkUpdates,
+        logger,
+        action._timestamp,
+      );
     }
 
     if (listingUpdates && listingUpdates.length > 0) {
