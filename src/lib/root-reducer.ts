@@ -6,6 +6,7 @@ import {
   type BulkImportItem,
   type Item,
   update_field,
+  update_fields,
   new_order,
   package_item,
   split_inventory_item,
@@ -2003,7 +2004,56 @@ export const rootReducer = (
         if (v.option1Value)
           fields.push({ field: "subtype", value: v.option1Value });
 
-        fields.forEach((f) => {
+        // Collapse the per-(variant×field) reducer fan-out (the dominant
+        // approve_proposal cost — see docs/investigations/
+        // REPLAY_PERFORMANCE.md): apply all non-subtype fields in ONE
+        // inventory produce via update_fields. The listings reducer only
+        // consumes handle/description (all other fields are no-ops there),
+        // so dispatch just those to listings, in original field order, to
+        // preserve applyHandleUpdate / title-sync behaviour exactly.
+        // subtype stays a separate, last update_field because it re-keys.
+        const nonSubtype = fields.filter((f) => f.field !== "subtype");
+        const subtypeField = fields.find((f) => f.field === "subtype");
+
+        if (nonSubtype.length > 0) {
+          const batchAction = inheritTimestamp({
+            ...update_fields({
+              id: currentItemId,
+              fields: nonSubtype.map((f) => ({
+                field: f.field,
+                from: "",
+                to: f.value,
+              })),
+            }),
+            _ephemeral: true,
+          });
+          nextState = {
+            ...nextState,
+            inventory: inventory(nextState.inventory, batchAction),
+          };
+          logger(batchAction, nextState, action._timestamp);
+
+          for (const f of nonSubtype) {
+            if (f.field !== "handle" && f.field !== "description") continue;
+            const listingAction = inheritTimestamp({
+              ...update_field({
+                id: currentItemId,
+                field: f.field,
+                from: "",
+                to: f.value,
+              }),
+              _ephemeral: true,
+            });
+            nextState = {
+              ...nextState,
+              listings: listings(nextState.listings, listingAction),
+            };
+            logger(listingAction, nextState, action._timestamp);
+          }
+        }
+
+        if (subtypeField) {
+          const f = subtypeField;
           const itemBeforeUpdate = nextState.inventory.idToItem[currentItemId];
           const janBeforeUpdate =
             itemBeforeUpdate?.janCode ||
@@ -2026,36 +2076,35 @@ export const rootReducer = (
           };
           logger(updateAction, nextState, action._timestamp);
 
-          // Subtype updates can re-key inventory IDs (jan+subtype). Keep local references in sync
-          // so downstream idToHandle aggregation includes renamed keys (required for subtype pills).
-          if (f.field === "subtype") {
-            const subtype = (f.value as string)?.trim() || "";
-            const baseJan = janBeforeUpdate;
-            const renamedItemId = makeInventoryItemKey(baseJan, subtype);
-            if (
-              renamedItemId &&
-              renamedItemId !== currentItemId &&
-              nextState.inventory.idToItem[renamedItemId]
-            ) {
-              const listingState = nextState.listings;
-              const nextIdToHandle = { ...listingState.idToHandle };
-              const mappedHandle = nextIdToHandle[currentItemId] || finalHandle;
-              nextIdToHandle[renamedItemId] = mappedHandle;
-              delete nextIdToHandle[currentItemId];
+          // Subtype updates re-key inventory IDs (jan+subtype). Keep local
+          // references in sync so downstream idToHandle aggregation
+          // includes renamed keys (required for subtype pills).
+          const subtype = (f.value as string)?.trim() || "";
+          const baseJan = janBeforeUpdate;
+          const renamedItemId = makeInventoryItemKey(baseJan, subtype);
+          if (
+            renamedItemId &&
+            renamedItemId !== currentItemId &&
+            nextState.inventory.idToItem[renamedItemId]
+          ) {
+            const listingState = nextState.listings;
+            const nextIdToHandle = { ...listingState.idToHandle };
+            const mappedHandle = nextIdToHandle[currentItemId] || finalHandle;
+            nextIdToHandle[renamedItemId] = mappedHandle;
+            delete nextIdToHandle[currentItemId];
 
-              nextState = {
-                ...nextState,
-                listings: {
-                  ...listingState,
-                  idToHandle: nextIdToHandle,
-                },
-              };
+            nextState = {
+              ...nextState,
+              listings: {
+                ...listingState,
+                idToHandle: nextIdToHandle,
+              },
+            };
 
-              currentItemId = renamedItemId;
-              variantIdToItemId.set(v.id, renamedItemId);
-            }
+            currentItemId = renamedItemId;
+            variantIdToItemId.set(v.id, renamedItemId);
           }
-        });
+        }
       });
 
       // 4.5 Ensure ALL merged items point to the final handle in listings state
