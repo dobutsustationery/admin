@@ -1829,8 +1829,14 @@
     showVariantModal = false;
 
     if (isLiveMode && handle) {
-      // 1. Apply all quantity changes
+      // 1. Apply all quantity changes. Skip rows scheduled for removal:
+      // toggleRemoval zeroes their proposedQtys, and detaching a variant
+      // from a listing must not also zero a real inventory row's qty.
+      // handleRemovals (below) clears the handle to detach it. See
+      // docs/investigations/MANAGE_VARIANTS_CANNOT_REMOVE.md.
+      const removalSet = new Set(removals);
       Object.entries(proposedQtys).forEach(([itemId, newQty]) => {
+        if (removalSet.has(itemId)) return;
         const item = $store.inventory.idToItem[itemId];
         if (item && item.qty !== newQty) {
           console.log(
