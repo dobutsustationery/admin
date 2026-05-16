@@ -161,3 +161,83 @@ Look at: "Wall time per 1000-action bucket" (21k–23k spike),
 "State size growth" (flat ⇒ not O(n)-over-growth), and "30 slowest
 individual actions" (all `photos/shopify_cdn_uploaded`, indices
 21.5k–23k).
+
+---
+
+## Addendum — post-memoization re-profile (PR #129 merged)
+
+After memoizing the Shopify-CDN URL transforms, the bottleneck moved.
+Re-profiled on `main` (memoization merged):
+
+```
+Total replay: 81.8 s  →  18.2 s   (4.5x; the 21k–23k spike is gone)
+photos/shopify_cdn_uploaded: 60,467 ms (74%)  →  538 ms (~3%)
+```
+
+The originally-recommended #2 (short-circuit the clones) and #3
+(reverse index) are **retired**: with the handler down to 538 ms,
+removing it entirely would save <3% of an 18 s replay while adding
+branching to a hot reducer. Memoization captured ~95% of the win.
+
+New #1 cost: **`listingCreation/approve_proposal` — 4,293 ms across
+280 actions (~23% of the remaining replay), ~15 ms/action, 54 ms
+worst case.**
+
+### What is wrong with approve_proposal
+
+Phase-timed instrumentation on the real backup:
+
+```
+field-update loop : 3,789 ms  (99%)
+buildDraftListingImages : 6 ms
+section 4.5 (handle reconcile) : 19 ms
+```
+
+Splitting the field loop further:
+
+```
+inventory reducer calls : 3,629 ms  over ~3,288 calls (~1.1 ms each)
+  - non-subtype fields : 3,058 ms
+  - subtype field      :   587 ms
+listings reducer calls  :   164 ms
+  - skippable (non handle/description) : only 25 ms
+```
+
+So it is **not** the subtype rename and **not** the listings reducer.
+The defect is *dispatch fan-out*: the orchestrator emits one
+`update_field` per (variant × ~6 fields), driving ~3,288 separate
+Immer `produce` passes over the large inventory slice for 280
+approvals. Per-call cost is uniform (~1.1 ms) regardless of field.
+
+### Fix
+
+Added `update_fields` (batched, non-re-keying) to the inventory slice,
+exactly mirroring the non-subtype `update_field` branch (same field
+write + same history entry, per entry, in order). `approve_proposal`
+now applies all non-subtype fields for a variant in **one** inventory
+produce; the `listings` reducer is invoked only for `handle` /
+`description` (the only fields it consumes — all others were verified
+no-ops), in original order; `subtype` stays a separate last
+`update_field` (it re-keys), with its rekey block unchanged.
+
+Inventory produces/variant: ~6 → 2.
+
+### Result (full Apr 25 replay, atop the merged memoization)
+
+```
+approve_proposal total : 4,293 ms  →  1,931 ms   (2.2x; 7.83 → 3.52 ms/variant)
+full replay            : ~18.7 s   →  ~16.1 s     (~14% faster)
+```
+
+**Behavior proven identical:** a determinism-robust full-state hash
+(sorted idToItem incl. image/price/handle/pos/desc, full idToHistory
+entries, idToHandle, per-listing sorted image-URL sets) is byte-
+identical on `main` and the fix branch across repeated runs
+(`15bfb5c4…`). Unit test `tests/unit/update-fields-equivalence.test.ts`
+pins `update_fields ≡ sequential update_field`. (The preexisting
+`crypto.randomUUID` replay nondeterminism — see PR #129 — is excluded
+from the hash and remains a separate future item.)
+
+Beyond this, remaining replay cost is broadly distributed
+(`photos/complete_upload`/`complete_edit` ≈ 1.1–1.3 ms over thousands
+of actions) — diminishing returns; no further single hotspot.

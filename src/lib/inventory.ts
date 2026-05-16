@@ -158,6 +158,21 @@ export const update_field = createAction<{
   from: string | number;
   to: string | number;
 }>("update_field");
+// Batched, non-re-keying field writes for a single item. Semantically
+// identical to dispatching update_field once per entry in order, but in
+// a single Immer produce. Used by the approve_proposal orchestration to
+// collapse ~6 inventory reducer passes/variant into 1 (see
+// docs/investigations/REPLAY_PERFORMANCE.md). "subtype" is intentionally
+// NOT supported here — it re-keys the item and must stay a separate,
+// last update_field.
+export const update_fields = createAction<{
+  id: string;
+  fields: {
+    field: keyof Item;
+    from: string | number;
+    to: string | number;
+  }[];
+}>("update_fields");
 export const new_order = createAction<{
   orderID: string;
   date: Date;
@@ -1832,6 +1847,50 @@ export const inventory = createReducer(initialState, (r) => {
     } else {
       console.warn(
         `Skipping update_field for missing item: ${itemKey}`,
+        action.payload,
+      );
+    }
+  });
+  r.addCase(update_fields, (state, action) => {
+    const itemKey = canonicalizeInventoryItemKey(action.payload.id);
+    if (state.idToItem[itemKey]) {
+      const timestamp = (action as any).timestamp;
+      let val = 0;
+      let creationDate = "Invalid Date";
+      if (timestamp) {
+        if (timestamp.seconds) {
+          val = new Date(timestamp.seconds * 1000).getTime();
+        } else if (typeof timestamp === "number") {
+          val = timestamp;
+        }
+        if (val > 0) {
+          creationDate = new Date(val).toLocaleString("en", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          });
+        }
+      }
+      // Mirror the non-subtype branch of update_field exactly, per entry,
+      // in dispatch order — same field write + same history entry.
+      for (const { field, from, to: incomingValue } of action.payload.fields) {
+        (state.idToItem[itemKey] as any)[field] =
+          field === "qty" ||
+          field === "shipped" ||
+          field === "price" ||
+          field === "cost" ||
+          field === "weight"
+            ? Number(incomingValue)
+            : incomingValue;
+        state.idToHistory[itemKey].push({
+          date: creationDate,
+          desc: `${field} changed from ${from} to ${incomingValue}`,
+          val,
+        });
+      }
+    } else {
+      console.warn(
+        `Skipping update_fields for missing item: ${itemKey}`,
         action.payload,
       );
     }
