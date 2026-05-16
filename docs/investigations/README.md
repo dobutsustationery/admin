@@ -8,3 +8,4 @@ Records of technical investigations.
 - [Spaces in Shopify handles — proposal handle never slugified](./PROPOSAL_HANDLE_NOT_SLUGIFIED.md)
 - [console.error census — Apr 25 backup replay](./REPLAY_CONSOLE_ERRORS.md)
 - [Manage Variants modal cannot remove an erroneous subtype](./MANAGE_VARIANTS_CANNOT_REMOVE.md)
+- [Replay performance — Apr 25 backup profile](./REPLAY_PERFORMANCE.md)
