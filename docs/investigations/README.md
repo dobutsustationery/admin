@@ -10,3 +10,4 @@ Records of technical investigations.
 - [Manage Variants modal cannot remove an erroneous subtype](./MANAGE_VARIANTS_CANNOT_REMOVE.md)
 - [Replay performance — Apr 25 backup profile](./REPLAY_PERFORMANCE.md)
 - [SKU Review COST exceptions — supplier-CSV categorization](./COST_EXCEPTIONS.md)
+- [Inventory cost must be a weighted moving average (not last-write)](./COST_SHOULD_BE_MOVING_AVERAGE.md)
