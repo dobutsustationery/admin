@@ -116,6 +116,59 @@ const parseNumberish = (value: string | undefined): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const cleanMoney = (value: string | undefined): number | undefined => {
+  if (!value) return undefined;
+  const n = parseFloat(value.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) ? n : undefined;
+};
+
+// See docs/investigations/COST_EXCEPTIONS.md (bucket B).
+const resolveSupplierCost = (row: any): number | undefined => {
+  // 1. Historical primary — preserve exact prior behaviour/value.
+  const primary = cleanMoney(row["unit price (yen)"]);
+  if (primary !== undefined) return primary;
+
+  // 2. Other explicit per-unit price columns.
+  const altPerUnit = cleanMoney(
+    getValueByHeaders(row, [
+      (h) => h === "unit price (jpy)",
+      (h) => h === "unit price jpy",
+      (h) => h === "list price",
+      (h) =>
+        h.includes("unit price") && (h.includes("yen") || h.includes("jpy")),
+    ]),
+  );
+  if (altPerUnit !== undefined) return altPerUnit;
+
+  // 3. Derive per-unit from a line total when no per-unit column
+  //    exists: total / (pieces-per-unit * units ordered).
+  const total = cleanMoney(
+    getValueByHeaders(row, [
+      (h) => h === "total wholesale amount yen",
+      (h) => h.includes("total wholesale amount") && h.includes("yen"),
+    ]),
+  );
+  if (total === undefined) return undefined;
+  const pcs = parseInt(
+    getValueByHeaders(row, [
+      (h) => /order\s*q'?ty/.test(h) && !h.includes("unit"),
+      (h) => h === "total pcs",
+      (h) => h === "qty",
+    ]) || "0",
+    10,
+  );
+  const units = parseInt(
+    getValueByHeaders(row, [
+      (h) => /order\s*q'?ty/.test(h) && h.includes("unit"),
+      (h) => h === "order q'ty unit",
+    ]) || "0",
+    10,
+  );
+  const denom = pcs * units;
+  if (!Number.isFinite(denom) || denom <= 0) return undefined;
+  return total / denom;
+};
+
 const mapImportItem = (row: any): ImportItem => {
   const janCode = (
     row["jan code"] ||
@@ -167,10 +220,15 @@ const mapImportItem = (row: any): ImportItem => {
     qty,
     carton: row["carton number"] || row["carton"] || "",
     hsCode: findHSCode(row),
-    // Map CSV 'unit price (yen)' (supplier cost) to 'cost'. Strict match required.
-    cost: row["unit price (yen)"]
-      ? parseFloat(row["unit price (yen)"].replace(/[^0-9.]/g, ""))
-      : undefined,
+    // Supplier cost. Resolution order (see docs/investigations/
+    // COST_EXCEPTIONS.md, bucket B):
+    //  1. The historical primary column `unit price (yen)` — parsed
+    //     EXACTLY as before so files that have it are byte-identical.
+    //  2. Other per-UNIT price columns (jpy aliases, list price).
+    //  3. Derived: when only a line TOTAL is given (e.g. the Kanegen
+    //     export has `Total Wholesale Amount YEN` and no per-unit
+    //     column), cost = total / (Order Q'ty PCS * Order Q'ty Unit).
+    cost: resolveSupplierCost(row),
     price: undefined,
     weight,
     countryOfOrigin: countryOfOrigin || undefined,
