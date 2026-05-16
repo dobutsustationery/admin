@@ -351,6 +351,11 @@ const mapOrderToInventory = (importItem: any): Item => {
     creationDate: "Unknown",
     timestamp: 0,
     price: importItem.price,
+    // Order-import parses supplier cost from the CSV (unit price (yen)),
+    // but this mapper previously dropped it, so every order-import-created
+    // item lost its cost — the largest SKU-review COST-exception
+    // bucket. See docs/investigations/COST_EXCEPTIONS.md.
+    cost: importItem.cost,
     weight: importItem.weight,
     countryOfOrigin: importItem.countryOfOrigin,
   };
