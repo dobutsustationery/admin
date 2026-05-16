@@ -7,3 +7,4 @@ Records of technical investigations.
 - [Phantom "red" variant on JAN 4542804113471 — Shopify-import MATCH path](./SHOPIFY_IMPORT_OPTION1_PHANTOM_VARIANT.md)
 - [Spaces in Shopify handles — proposal handle never slugified](./PROPOSAL_HANDLE_NOT_SLUGIFIED.md)
 - [console.error census — Apr 25 backup replay](./REPLAY_CONSOLE_ERRORS.md)
+- [Manage Variants modal cannot remove an erroneous subtype](./MANAGE_VARIANTS_CANNOT_REMOVE.md)
