@@ -94,6 +94,56 @@ export interface OrderInfo {
     reconciledTimestamp?: number;
   };
 }
+// M2: a received-cost lot. `cost` is never mutated forward — it is
+// DERIVED from this ledger so processing an old order late (or editing
+// a received date) re-derives the past correctly. See
+// docs/investigations/DESIGN_RECEIVED_INVENTORY_AND_MOVING_AVERAGE_COST.md
+export interface CostLot {
+  receivedAt: number;
+  qty: number;
+  unitCost: number;
+  source: string;
+  seq?: number;
+}
+
+/**
+ * Perpetual weighted moving-average over received lots, folded in
+ * receivedAt order (tiebreak: seq, then source). Bootstrap (owner
+ * decision): first lot, or any lot with no established stock/avg, sets
+ * the basis with NO averaging ("0 -> incoming"); subsequent lots blend
+ *   avg = (onHandQty*avg + lot.qty*lot.unitCost)/(onHandQty + lot.qty).
+ * undefined when no usable lots. Sale interleaving (true perpetual
+ * COGS) is a later milestone; receipt-weighted is already strictly
+ * correct vs last-write-wins.
+ */
+export function deriveAverageCost(
+  lots: readonly CostLot[] | undefined,
+): number | undefined {
+  if (!lots || lots.length === 0) return undefined;
+  const ordered = [...lots].sort((a, b) => {
+    if (a.receivedAt !== b.receivedAt) return a.receivedAt - b.receivedAt;
+    const as = a.seq ?? 0;
+    const bs = b.seq ?? 0;
+    if (as !== bs) return as - bs;
+    return String(a.source).localeCompare(String(b.source));
+  });
+  let onHandQty = 0;
+  let avg: number | undefined = undefined;
+  for (const lot of ordered) {
+    const qty = Number(lot.qty) || 0;
+    const unit = Number(lot.unitCost);
+    if (!Number.isFinite(unit)) continue;
+    if (onHandQty <= 0 || avg === undefined || avg === 0) {
+      avg = unit;
+      onHandQty = Math.max(onHandQty, 0) + qty;
+    } else {
+      const denom = onHandQty + qty;
+      avg = denom > 0 ? (onHandQty * avg + qty * unit) / denom : avg;
+      onHandQty = denom;
+    }
+  }
+  return avg;
+}
 export interface InventoryState {
   idToItem: { [key: string]: Item };
   idToHistory: {
@@ -106,6 +156,10 @@ export interface InventoryState {
   salesEvents: { [key: string]: OrderInfo };
   orderIdToOrder: { [key: string]: OrderInfo };
   shopifyUrlToDriveUrl: { [key: string]: string }; // [shopifyUrl] -> driveUrl
+  // M2: per-item received-cost lot ledger. cost is DERIVED from this
+  // via deriveAverageCost (sorted by receivedAt). See
+  // docs/investigations/DESIGN_RECEIVED_INVENTORY_AND_MOVING_AVERAGE_COST.md
+  costLots?: { [key: string]: CostLot[] };
   hiddenExceptions?: { [key: string]: boolean };
   shopifyExceptions?: { [key: string]: string[] };
   etsyExceptions?: { [key: string]: string[] };
@@ -954,6 +1008,7 @@ export const initialState: InventoryState = {
   hiddenInventoryState: {},
   salesEvents: {},
   shopifyUrlToDriveUrl: {},
+  costLots: {},
   shopifyExceptions: {},
   etsyExceptions: {},
   initialized: false,
@@ -2410,6 +2465,7 @@ export const inventory = createReducer(initialState, (r) => {
       archivedInventoryState: {},
       hiddenInventoryState: {},
       shopifyUrlToDriveUrl: {},
+      costLots: {},
       initialized: state.initialized,
     });
     const timestamp = (action as any).timestamp;
