@@ -110,9 +110,19 @@
   // Total available is sum of all variants currently on listing
   // PLUS the quantity of any NEW item being brought in.
   $: totalAvailable = (() => {
-    // Sum unique inventory item quantities
+    // Sum unique inventory item quantities. Rows marked for removal are
+    // excluded from the pool: removing an erroneous subtype discards
+    // that variant rather than redistributing its units, so the
+    // conservation invariant must balance over the *kept* variants
+    // only. Without this a removal-only change can never balance and
+    // Confirm stays disabled. See
+    // docs/investigations/MANAGE_VARIANTS_CANNOT_REMOVE.md.
     const sourceMap = new Map<string, number>();
-    associatedItems.forEach((i) => sourceMap.set(i.id, i.qty || 0));
+    associatedItems.forEach((i) => {
+      const rowId = i.variantId || i.id;
+      if (pendingRemovals.has(rowId)) return;
+      sourceMap.set(i.id, i.qty || 0);
+    });
     if (selectedItemToAdd) {
       if (!sourceMap.has(selectedItemToAdd.id)) {
         sourceMap.set(selectedItemToAdd.id, selectedItemToAdd.qty || 0);

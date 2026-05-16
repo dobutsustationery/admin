@@ -276,4 +276,141 @@ test.describe("Variant Updates (Modal-driven)", () => {
     expect(payload.splits[0].subtype).toBe("M");
     expect(payload.splits[0].qty).toBe(2);
   });
+
+  test("User can remove an erroneous subtype from a Live listing without zeroing inventory", async ({
+    authenticatedPage: page,
+  }) => {
+    test.setTimeout(120000);
+
+    const janCode = "LIVE-REMOVE-TEST";
+    const keepId = `${janCode}Good`; // canonical inventory key
+    const errId = `${janCode}Bad`; // erroneous subtype to remove
+    const handle = "live-remove-handle";
+
+    await page.goto(`/listing-detail?mode=live&handle=${handle}`);
+    await waitForAppReady(page);
+    await page.waitForFunction(() => (window as any).testHelpers);
+    await page.waitForFunction(
+      () => (window as any).testHelpers.store.getState().inventory.initialized,
+      { timeout: 60000 },
+    );
+
+    // Capture qty + handle update_field actions.
+    await page.evaluate(() => {
+      const { store } = (window as any).testHelpers;
+      (window as any).broadcastHistory = [];
+      const originalDispatch = store.dispatch;
+      store.dispatch = (action: any) => {
+        if (action.type === "update_field")
+          (window as any).broadcastHistory.push(action);
+        return originalDispatch(action);
+      };
+    });
+
+    // Two variants on one live listing: a good one and an erroneous one.
+    await page.evaluate(
+      ({ janCode, keepId, errId, handle }) => {
+        const { store, actions } = (window as any).testHelpers;
+        store.dispatch(
+          actions.bulk_import_items({
+            items: [
+              {
+                id: keepId,
+                item: { janCode, subtype: "Good", qty: 7, handle },
+                type: "new",
+              },
+              {
+                id: errId,
+                item: { janCode, subtype: "Bad", qty: 4, handle },
+                type: "new",
+              },
+            ],
+          }),
+        );
+        store.dispatch(
+          actions.create_listing({
+            handle,
+            listing: { handle, title: "Live Remove Test", images: [] },
+          }),
+        );
+      },
+      { janCode, keepId, errId, handle },
+    );
+
+    await expect(
+      page.locator(".subtype-label", { hasText: "Good" }).first(),
+    ).toBeVisible({ timeout: 10000 });
+
+    await page.click('button:has-text("Manage Variants")');
+
+    // Mark the erroneous "Bad" variant for removal.
+    await page
+      .locator(".allocation-row", { hasText: "Bad" })
+      .first()
+      .locator(".row-remove-btn")
+      .click();
+    await expect(
+      page.locator(".allocation-row", { hasText: "Bad" }).first(),
+    ).toHaveClass(/is-removed/);
+
+    // The fix: a removal-only change balances, so Confirm is enabled.
+    const saveBtn = page.locator("button.btn-save");
+    await expect(saveBtn).toBeEnabled();
+    await saveBtn.click();
+
+    await page.waitForFunction(
+      () =>
+        (window as any).broadcastHistory.some(
+          (a: any) =>
+            a.payload?.field === "handle" && a.payload?.to === "",
+        ),
+      undefined,
+      { timeout: 10000 },
+    );
+
+    const actionsFired = await page.evaluate(
+      () => (window as any).broadcastHistory,
+    );
+
+    // The erroneous variant is detached (handle cleared)...
+    const handleClear = actionsFired.find(
+      (a: any) =>
+        a.payload?.id === errId &&
+        a.payload?.field === "handle" &&
+        a.payload?.to === "",
+    );
+    expect(handleClear).toBeTruthy();
+
+    // ...but its inventory qty is NOT zeroed (no qty update for it)...
+    const errQtyWrite = actionsFired.find(
+      (a: any) => a.payload?.id === errId && a.payload?.field === "qty",
+    );
+    expect(errQtyWrite).toBeFalsy();
+
+    // ...and the kept variant's qty is untouched.
+    const keepQtyWrite = actionsFired.find(
+      (a: any) => a.payload?.id === keepId && a.payload?.field === "qty",
+    );
+    expect(keepQtyWrite).toBeFalsy();
+
+    // Inventory state: kept qty intact, erroneous qty preserved (not
+    // zeroed), erroneous variant detached from the listing.
+    const finalState = await page.evaluate(
+      ({ keepId, errId }) => {
+        const inv = (
+          window as any
+        ).testHelpers.store.getState().inventory.idToItem;
+        return {
+          keepQty: inv[keepId]?.qty,
+          errQty: inv[errId]?.qty,
+          errHandle: inv[errId]?.handle,
+        };
+      },
+      { keepId, errId },
+    );
+
+    expect(finalState.keepQty).toBe(7);
+    expect(finalState.errQty).toBe(4);
+    expect(finalState.errHandle).toBe("");
+  });
 });
