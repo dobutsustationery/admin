@@ -181,3 +181,39 @@ insertion** = the temporal guarantee), and pre-push.
    manual dated entry is supplied? (Recommended.)
 4. COGS/valuation surfacing — out of scope here (the fold computes it;
    where it's reported is a later design).
+
+---
+
+## Resolution of open questions (code-backed, may-16 backup)
+
+Reproducer: `/tmp/cost-writers.ts` (enumerates update_field cost
+actions; replays and attributes every idToItem cost transition to the
+authoring action type; flags shopify-originated changes).
+
+**Q2 — Shopify / update_field as a cost "correction" path: SPECIOUS.**
+- `update_field` actions with `field === "cost"`: **0** in the entire
+  history. There is no manual cost-edit path to reconcile.
+- `shopify-import-slice.ts` contains no `cost` logic; the Shopify CSV
+  has no cost column; `mapShopifyToInventory` cannot introduce cost.
+- Exactly **one** shopify action (`#3809 shopifyImport/import_batch`)
+  shows cost transitions, all `undefined → <order cost>` (e.g. `→194`
+  = Furukawa LS494 ¥194 from Kanegen Order 3). These are
+  order-import-authored costs being **carried onto the canonical key
+  by the PR #125 re-key migration** at that action — not authored by
+  Shopify. The 232 `approve_proposal` transitions are the same re-key
+  carry.
+- ⇒ **Cost is authored only by order imports** (and the M6 manual
+  dated-cost flow). No non-order author exists. Shopify / approve /
+  update_field merely relocate an existing cost across a re-key, which
+  a per-item lot ledger handles by construction.
+
+**Q3 — bootstrap: `0/unknown → incoming cost, NO averaging`** (owner
+decision). First lot establishes basis; subsequent lots blend. Items
+with no cost over an interval are surfaced on the exceptions page
+(M6) for review rather than guessed.
+
+**Q1** remains (received date when supplier CSV lacks one) — handled
+by option (a): action-timestamp fallback + `needsReview` + editable
+via `/received-inventory`.
+
+⇒ M2's algorithm is fully specified; M1/M2 unblocked.
