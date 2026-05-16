@@ -381,7 +381,31 @@ const trimString = (value: unknown): string =>
 const isShopifyCdnUrl = (value: string): boolean =>
   value.includes("cdn.shopify.com");
 
-const canonicalizeShopifyCdnUrl = (raw: string): string => {
+// These three are pure string->string transforms but each runs a
+// `new URL()` parse. During a full replay the photos/shopify_cdn_uploaded
+// handler calls them on every inventory item image and every listing
+// image on every action, re-parsing the same URLs ~10^6 times (see
+// docs/investigations/REPLAY_PERFORMANCE.md). Memoize on the raw input
+// string: same input always yields the same output, so the cache cannot
+// change behavior. A bounded cap prevents unbounded growth in the
+// long-lived app (replay distinct-URL counts are well under the cap).
+const SHOPIFY_URL_MEMO_CAP = 50_000;
+const memoizeStringFn = (
+  fn: (raw: string) => string,
+): ((raw: string) => string) => {
+  const cache = new Map<string, string>();
+  return (raw: string): string => {
+    const key = typeof raw === "string" ? raw : "";
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const out = fn(raw);
+    if (cache.size >= SHOPIFY_URL_MEMO_CAP) cache.clear();
+    cache.set(key, out);
+    return out;
+  };
+};
+
+const canonicalizeShopifyCdnUrl = memoizeStringFn((raw: string): string => {
   const value = trimString(raw);
   if (!value) return "";
   let parsed: URL;
@@ -395,46 +419,50 @@ const canonicalizeShopifyCdnUrl = (raw: string): string => {
   // Normalize repeated slashes in path and preserve search params order as-is.
   parsed.pathname = parsed.pathname.replace(/\/{2,}/g, "/");
   return parsed.toString();
-};
+});
 
-const toDeletedShopifyPathVariant = (rawUrl: string): string => {
-  const value = trimString(rawUrl);
-  if (!value) return "";
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch (_) {
-    return "";
-  }
-  if (!parsed.hostname.toLowerCase().includes("cdn.shopify.com")) return "";
-  const normalizedPath = parsed.pathname.replace(/\/{2,}/g, "/");
-  const nextPath = normalizedPath.replace(
-    /^(\/s\/files\/(?:[^/]+\/){4})(?:deleted\/)?files\//i,
-    "$1deleted/files/",
-  );
-  if (nextPath === normalizedPath) return "";
-  parsed.pathname = nextPath.replace(/\/{2,}/g, "/");
-  return parsed.toString();
-};
+const toDeletedShopifyPathVariant = memoizeStringFn(
+  (rawUrl: string): string => {
+    const value = trimString(rawUrl);
+    if (!value) return "";
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch (_) {
+      return "";
+    }
+    if (!parsed.hostname.toLowerCase().includes("cdn.shopify.com")) return "";
+    const normalizedPath = parsed.pathname.replace(/\/{2,}/g, "/");
+    const nextPath = normalizedPath.replace(
+      /^(\/s\/files\/(?:[^/]+\/){4})(?:deleted\/)?files\//i,
+      "$1deleted/files/",
+    );
+    if (nextPath === normalizedPath) return "";
+    parsed.pathname = nextPath.replace(/\/{2,}/g, "/");
+    return parsed.toString();
+  },
+);
 
-const toNonDeletedShopifyPathVariant = (rawUrl: string): string => {
-  const value = trimString(rawUrl);
-  if (!value) return "";
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch (_) {
-    return "";
-  }
-  if (!parsed.hostname.toLowerCase().includes("cdn.shopify.com")) return "";
-  const nextPath = parsed.pathname.replace(
-    /^(\/s\/files\/(?:[^/]+\/){4})deleted\/files\//i,
-    "$1files/",
-  );
-  if (nextPath === parsed.pathname) return "";
-  parsed.pathname = nextPath.replace(/\/{2,}/g, "/");
-  return parsed.toString();
-};
+const toNonDeletedShopifyPathVariant = memoizeStringFn(
+  (rawUrl: string): string => {
+    const value = trimString(rawUrl);
+    if (!value) return "";
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch (_) {
+      return "";
+    }
+    if (!parsed.hostname.toLowerCase().includes("cdn.shopify.com")) return "";
+    const nextPath = parsed.pathname.replace(
+      /^(\/s\/files\/(?:[^/]+\/){4})deleted\/files\//i,
+      "$1files/",
+    );
+    if (nextPath === parsed.pathname) return "";
+    parsed.pathname = nextPath.replace(/\/{2,}/g, "/");
+    return parsed.toString();
+  },
+);
 
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
 export const rootReducer = (
