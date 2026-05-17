@@ -4,6 +4,7 @@ import {
   valueAt,
   totalValuation,
   UNKNOWN_RECEIPT_DATE,
+  parseReceiptDate,
   type LedgerEntry,
 } from "$lib/cost-engine";
 
@@ -111,6 +112,16 @@ describe("cost-engine", () => {
     const t = totalValuation([itemA, itemB]);
     expect(t.valueJpy).toBe(1000 + 3 * 50);
     expect(t.valueEur).toBeCloseTo(10 + 3 * 0.4, 9);
+  });
+
+  it("parseReceiptDate strips the (n) marker and falls back safely", () => {
+    expect(parseReceiptDate("Oct 9, 2024 (30)")).toBe(
+      Date.parse("Oct 9, 2024"),
+    );
+    expect(parseReceiptDate("Nov 9, 2023")).toBe(Date.parse("Nov 9, 2023"));
+    expect(parseReceiptDate("")).toBe(UNKNOWN_RECEIPT_DATE);
+    expect(parseReceiptDate(undefined)).toBe(UNKNOWN_RECEIPT_DATE);
+    expect(parseReceiptDate("garbage")).toBe(UNKNOWN_RECEIPT_DATE);
   });
 
   it("UNKNOWN_RECEIPT_DATE is a normal date the engine does not special-case", () => {

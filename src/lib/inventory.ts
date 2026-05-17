@@ -11,6 +11,12 @@ import {
   type FirestoreTimestampLike,
   toTimestampMs,
 } from "./timestamped-action";
+import {
+  type LedgerEntry,
+  walkLedger,
+  parseReceiptDate,
+  UNKNOWN_RECEIPT_DATE,
+} from "./cost-engine";
 
 // TODO hceck item history for 4542804115635Silver
 export interface Item {
@@ -109,7 +115,19 @@ export interface InventoryState {
   hiddenExceptions?: { [key: string]: boolean };
   shopifyExceptions?: { [key: string]: string[] };
   etsyExceptions?: { [key: string]: string[] };
+  // Per-item date-sorted receipt/sale ledger; `cost` is derived from it.
+  // See docs/investigations/DESIGN_INVENTORY_COST_AND_VALUATION.md
+  costLedger?: { [key: string]: LedgerEntry[] };
+  // Per stock-order receipt date + JPY/EUR totals (owner-supplied).
+  stockOrderRegistry?: { [orderId: string]: StockOrderMeta };
   initialized: boolean;
+}
+
+export interface StockOrderMeta {
+  supplier?: string;
+  receivedAt?: number; // epoch ms; absent -> UNKNOWN_RECEIPT_DATE
+  totalOrderJpy?: number;
+  totalOrderEur?: number;
 }
 
 export type InventoryEntityId = string;
@@ -248,11 +266,27 @@ export interface BulkImportItem {
   type: "new" | "update";
   id: InventoryItemKey | string; // janCode or itemKey
   item: Item; // The full item object or partial update
+  // Present when this row originates from a stock-order import. Marks the
+  // qty delta as a genuine receipt (vs. archive-restore / manual / live)
+  // and carries the per-unit cost + receipt date for the ledger.
+  stockOrder?: {
+    orderId: string;
+    unitCostJpy: number;
+    unitCostEur: number;
+    receivedAt: number;
+  };
 }
 
 export const bulk_import_items = createAction<{
   items: Array<BulkImportItem>;
 }>("bulk_import_items");
+
+// Owner-supplied receipt date / paid-exchange totals for a stock order.
+// Replays like any other action; the ledger reads it on materialisation.
+export const set_stock_order_meta = createAction<{
+  orderId: string;
+  meta: StockOrderMeta;
+}>("set_stock_order_meta");
 
 export const shopify_order_created = createAction<{
   raw: any;
@@ -684,8 +718,55 @@ function migrateBareJanRowToCanonical(
     ].sort((a, b) => (a.val || 0) - (b.val || 0));
   }
 
+  migrateCostLedger(state, oldKey, canonicalId);
+
   delete state.idToItem[oldKey];
   delete state.idToHistory[oldKey];
+}
+
+// Carry the cost ledger with the item across a key change/merge. Entries
+// from the old key are appended after the destination's and re-seq'd so
+// the deterministic (at, seq) order is preserved; the destination cost is
+// re-derived. See docs/investigations/DESIGN_INVENTORY_COST_AND_VALUATION.md
+function migrateCostLedger(
+  state: InventoryState,
+  oldKey: string,
+  newKey: string,
+) {
+  if (!state.costLedger || !state.costLedger[oldKey]) return;
+  if (!state.costLedger[newKey]) state.costLedger[newKey] = [];
+  const merged = [...state.costLedger[newKey], ...state.costLedger[oldKey]];
+  merged.forEach((e, i) => (e.seq = i));
+  state.costLedger[newKey] = merged;
+  delete state.costLedger[oldKey];
+  rederiveCostFromLedger(state, newKey);
+}
+
+// Copy (don't move) a ledger to a new key — for splits where the source
+// row survives. Entries are deep-cloned so later mutation is independent.
+function copyCostLedger(
+  state: InventoryState,
+  sourceKey: string,
+  newKey: string,
+) {
+  if (!state.costLedger || !state.costLedger[sourceKey]) return;
+  state.costLedger[newKey] = state.costLedger[sourceKey].map((e, i) => ({
+    ...e,
+    seq: i,
+  }));
+  rederiveCostFromLedger(state, newKey);
+}
+
+function rederiveCostFromLedger(state: InventoryState, key: string) {
+  const ledger = state.costLedger?.[key];
+  const item = state.idToItem[key];
+  if (!ledger || !item) return;
+  const hasPriced = ledger.some(
+    (e) => e.kind === "receipt" && e.unitCostJpy > 0,
+  );
+  if (ledger.length >= 2 || hasPriced) {
+    item.cost = walkLedger(ledger).avgJpy;
+  }
 }
 
 // Helper to apply update logic
@@ -696,6 +777,7 @@ function applyInventoryUpdate(
   timestamp: any,
   actionType = "update_item",
   actionDocId?: string,
+  stockOrder?: BulkImportItem["stockOrder"],
 ) {
   if (!id) {
     console.error(
@@ -924,6 +1006,67 @@ function applyInventoryUpdate(
   // Always try to bind, it handles its own idempotency
   bindNewInventoryEntity(state, id, val, actionType, actionDocId);
 
+  // --- Cost-lot ledger materialisation -------------------------------
+  // See docs/investigations/DESIGN_INVENTORY_COST_AND_VALUATION.md
+  // `cost` is derived from this ledger. Single-receipt items derive the
+  // exact same value as the old last-write (walk of one priced lot ==
+  // that lot's cost); only genuine stock-order re-orders add a second
+  // lot and therefore blend. Never-priced items keep cost untouched.
+  if (!state.costLedger) state.costLedger = {};
+  if (!state.costLedger[id]) state.costLedger[id] = [];
+  const ledger = state.costLedger[id];
+  const deltaQty = Number(item.qty);
+  let ledgerChanged = false;
+
+  if (isNewItem) {
+    ledger.push({
+      kind: "receipt",
+      at: parseReceiptDate(state.idToItem[id].creationDate),
+      seq: ledger.length,
+      qty: Number.isFinite(deltaQty) ? deltaQty : 0,
+      unitCostJpy: Number(item.cost) > 0 ? Number(item.cost) : 0,
+      unitCostEur: 0,
+    });
+    ledgerChanged = true;
+  } else if (stockOrder) {
+    if (Number.isFinite(deltaQty) && deltaQty > 0) {
+      // Genuine re-order: a new dated receipt at the re-order price.
+      ledger.push({
+        kind: "receipt",
+        at: stockOrder.receivedAt || UNKNOWN_RECEIPT_DATE,
+        seq: ledger.length,
+        qty: deltaQty,
+        unitCostJpy: stockOrder.unitCostJpy,
+        unitCostEur: stockOrder.unitCostEur,
+      });
+      ledgerChanged = true;
+    } else {
+      // Original order (qty 0): attach landed cost to unpriced receipts.
+      for (const e of ledger) {
+        if (e.kind === "receipt" && !(e.unitCostJpy > 0)) {
+          e.unitCostJpy = stockOrder.unitCostJpy;
+          e.unitCostEur = stockOrder.unitCostEur;
+          ledgerChanged = true;
+        }
+      }
+    }
+  }
+
+  if (ledgerChanged) {
+    const hasPriced = ledger.some(
+      (e) => e.kind === "receipt" && e.unitCostJpy > 0,
+    );
+    if (ledger.length >= 2 || hasPriced) {
+      const derived = walkLedger(ledger).avgJpy;
+      state.idToItem[id].cost = derived;
+      historyEntries.push({
+        date: globalDate,
+        desc: `Cost derived from ${ledger.length} lot(s): ${formatYen(derived)}`,
+        val,
+      });
+    }
+  }
+
   // 3. Push History
   // Final check before push
   if (!state.idToHistory[id]) {
@@ -956,6 +1099,8 @@ export const initialState: InventoryState = {
   shopifyUrlToDriveUrl: {},
   shopifyExceptions: {},
   etsyExceptions: {},
+  costLedger: {},
+  stockOrderRegistry: {},
   initialized: false,
 };
 
@@ -1707,6 +1852,14 @@ export const inventory = createReducer(initialState, (r) => {
       delete state.hiddenExceptions[action.payload.itemKey];
     }
   });
+  r.addCase(set_stock_order_meta, (state, action) => {
+    if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
+    const { orderId, meta } = action.payload;
+    state.stockOrderRegistry[orderId] = {
+      ...state.stockOrderRegistry[orderId],
+      ...meta,
+    };
+  });
   r.addCase(update_item, (state, action) => {
     applyInventoryUpdate(
       state,
@@ -1774,6 +1927,7 @@ export const inventory = createReducer(initialState, (r) => {
           getTimestampMs((action as any).timestamp),
           action.type,
         );
+        migrateCostLedger(state, itemKey, mergeItemKey);
 
         // Merge history
         const oldHistory = state.idToHistory[itemKey] || [];
@@ -2200,6 +2354,7 @@ export const inventory = createReducer(initialState, (r) => {
         getTimestampMs((action as any).timestamp),
         action.type,
       );
+      migrateCostLedger(state, itemKey, mergeItemKey);
 
       // Merge history: Copy old history to new key
       const oldHistory = state.idToHistory[itemKey] || [];
@@ -2318,6 +2473,7 @@ export const inventory = createReducer(initialState, (r) => {
     // Rewrite order line items and consolidate duplicates.
     rewriteOrderItemKeyReferences(state, oldKey, newKey);
     renameInventoryEntityKey(state, oldKey, newKey, val, action.type);
+    migrateCostLedger(state, oldKey, newKey);
 
     if (!state.idToHistory[newKey]) {
       state.idToHistory[newKey] = [];
@@ -2579,6 +2735,9 @@ export const inventory = createReducer(initialState, (r) => {
         };
       }
 
+      // New item inherits the source's cost basis (same unit cost).
+      copyCostLedger(state, sourceId, split.newId);
+
       // History for new item
       if (!state.idToHistory[split.newId]) state.idToHistory[split.newId] = [];
       state.idToHistory[split.newId].push({
@@ -2599,6 +2758,7 @@ export const inventory = createReducer(initialState, (r) => {
     if (sourceItem.qty <= 0) {
       closeInventoryEntityKey(state, sourceId, val, action.type);
       delete state.idToItem[sourceId];
+      if (state.costLedger) delete state.costLedger[sourceId];
     }
   });
 
@@ -2614,6 +2774,7 @@ export const inventory = createReducer(initialState, (r) => {
         timestamp,
         action.type,
         (action as any).id,
+        update.stockOrder,
       );
     });
   });

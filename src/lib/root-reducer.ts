@@ -12,6 +12,7 @@ import {
   split_inventory_item,
   fix_jancode,
 } from "./inventory";
+import { UNKNOWN_RECEIPT_DATE } from "./cost-engine";
 import { names } from "./names";
 import { photos, rename_jan_group } from "./photos-slice";
 import {
@@ -1090,11 +1091,35 @@ export const rootReducer = (
       filter,
     );
 
-    const bulkUpdates: BulkImportItem[] = updates.map((u) => ({
-      type: u.type,
-      id: u.id,
-      item: u.type === "new" ? mapOrderToInventory(u.item) : u.item,
-    }));
+    const orderId =
+      nextState.orderImport.activeFile?.id ||
+      nextState.orderImport.activeFile?.name ||
+      "unknown-stock-order";
+    const meta = nextState.inventory.stockOrderRegistry?.[orderId];
+    const receivedAt =
+      meta?.receivedAt && Number.isFinite(meta.receivedAt)
+        ? meta.receivedAt
+        : UNKNOWN_RECEIPT_DATE;
+    const fx =
+      meta?.totalOrderJpy && meta?.totalOrderEur && meta.totalOrderJpy > 0
+        ? meta.totalOrderEur / meta.totalOrderJpy
+        : 0;
+
+    const bulkUpdates: BulkImportItem[] = updates.map((u) => {
+      const item = u.type === "new" ? mapOrderToInventory(u.item) : u.item;
+      const unitCostJpy = Number(item.cost) > 0 ? Number(item.cost) : 0;
+      return {
+        type: u.type,
+        id: u.id,
+        item,
+        stockOrder: {
+          orderId,
+          unitCostJpy,
+          unitCostEur: fx > 0 ? unitCostJpy * fx : 0,
+          receivedAt,
+        },
+      };
+    });
 
     if (bulkUpdates.length > 0) {
       const internalAction = inheritTimestamp({
