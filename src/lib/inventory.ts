@@ -757,6 +757,28 @@ function copyCostLedger(
   rederiveCostFromLedger(state, newKey);
 }
 
+// Append a dated sale (outflow) to the ledger so the perpetual walk
+// reduces on-hand at the right point in time. `qty` may be negative
+// (a refund/cancel/reset restores on-hand). No-op if the item has no
+// ledger (nothing was ever received -> sale is irrelevant to cost).
+function recordSale(
+  state: InventoryState,
+  key: string,
+  qty: number,
+  atMs: number,
+) {
+  if (!qty || !Number.isFinite(qty)) return;
+  if (!state.costLedger || !state.costLedger[key]) return;
+  const ledger = state.costLedger[key];
+  ledger.push({
+    kind: "sale",
+    at: Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE,
+    seq: ledger.length,
+    qty,
+  });
+  rederiveCostFromLedger(state, key);
+}
+
 function rederiveCostFromLedger(state: InventoryState, key: string) {
   const ledger = state.costLedger?.[key];
   const item = state.idToItem[key];
@@ -1368,6 +1390,7 @@ export const inventory = createReducer(initialState, (r) => {
       if (state.idToItem[effectiveKey]) {
         if (!isReconciledLater && delta > 0) {
           state.idToItem[effectiveKey].shipped += delta;
+          recordSale(state, effectiveKey, delta, effectiveAtMs);
         }
 
         const historyVal = actionTimestamp;
@@ -1596,6 +1619,7 @@ export const inventory = createReducer(initialState, (r) => {
       if (diff !== 0) {
         if (state.idToItem[canonicalKey]) {
           state.idToItem[canonicalKey].shipped += diff;
+          recordSale(state, canonicalKey, diff, effectiveAtMs);
           const historyVal = actionTimestamp;
           if (!state.idToHistory[canonicalKey])
             state.idToHistory[canonicalKey] = [];
@@ -1618,6 +1642,7 @@ export const inventory = createReducer(initialState, (r) => {
       const canonicalKey = key as InventoryItemKey;
       if (qty !== 0 && state.idToItem[canonicalKey]) {
         state.idToItem[canonicalKey].shipped -= qty;
+        recordSale(state, canonicalKey, -qty, effectiveAtMs);
         const historyVal = actionTimestamp;
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
@@ -1794,6 +1819,7 @@ export const inventory = createReducer(initialState, (r) => {
     for (const [canonicalKey, diff] of Object.entries(netDiffMap)) {
       if (diff !== 0 && state.idToItem[canonicalKey] !== undefined) {
         state.idToItem[canonicalKey].shipped += diff;
+        recordSale(state, canonicalKey, diff, effectiveAtMs);
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
         state.idToHistory[canonicalKey].push({
@@ -2655,9 +2681,14 @@ export const inventory = createReducer(initialState, (r) => {
         });
       }
     }
+    const date = action.payload.date;
+    const saleAtMs =
+      date instanceof Date ? date.getTime() : getTimestampMs(date);
+    for (const it of items) {
+      recordSale(state, it.itemKey, it.qty, saleAtMs);
+    }
     const email = "dobutsustationery@gmail.com";
     const product = archiveName;
-    const date = action.payload.date;
     state.salesEvents[archiveName] = {
       id: orderID,
       items,
