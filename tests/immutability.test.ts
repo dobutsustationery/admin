@@ -6,7 +6,7 @@ import {
   archive_inventory,
   delete_empty_order,
   hide_archive,
-  inventory,
+  inventory as _inventory,
   initialState as inventoryInitialState,
   make_sales,
   new_order,
@@ -17,6 +17,16 @@ import {
   update_field,
   update_item,
 } from "$lib/inventory";
+// Fixtures omit the per-action timestamp that every replayed action
+// carries in production; stamp one (deriveCreationTimestampMs fails
+// loudly on a missing timestamp).
+const inventory = (s: any, a: any) =>
+  _inventory(
+    s,
+    a && typeof a === "object" && a.type && !("timestamp" in a)
+      ? { ...a, timestamp: { _seconds: 1_700_000_000, _nanoseconds: 0 } }
+      : a,
+  );
 import {
   create_name,
   names,

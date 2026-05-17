@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { rootReducer } from "$lib/root-reducer";
+import { rootReducer as _rootReducer } from "$lib/root-reducer";
+// Fixtures omit the per-action timestamp that every replayed action
+// carries in production; stamp one (deriveCreationTimestampMs fails
+// loudly on a missing timestamp).
+const rootReducer = (s: any, a: any) =>
+  _rootReducer(
+    s,
+    a && typeof a === "object" && a.type && !("timestamp" in a)
+      ? { ...a, timestamp: { _seconds: 1_700_000_000, _nanoseconds: 0 } }
+      : a,
+  );
 import { update_field, update_item, type Item } from "$lib/inventory";
 
 describe("inventory handle updates sync to listings", () => {

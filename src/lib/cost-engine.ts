@@ -11,19 +11,6 @@
 // recognises it, so computation never branches on "problem exists".
 export const UNKNOWN_RECEIPT_DATE = Date.UTC(2026, 0, 1); // 2026-01-01
 
-/**
- * Parse an item `creationDate` ("Mon D, YYYY (n)" or "Mon D, YYYY") to
- * epoch ms. The trailing " (n)" batch marker is ignored. Unparseable
- * input falls back to UNKNOWN_RECEIPT_DATE so callers never get NaN/null.
- */
-export function parseReceiptDate(creationDate: unknown): number {
-  const head = String(creationDate ?? "")
-    .split(" (")[0]
-    .trim();
-  const t = Date.parse(head);
-  return Number.isFinite(t) ? t : UNKNOWN_RECEIPT_DATE;
-}
-
 export type ReceiptEntry = {
   kind: "receipt";
   at: number; // epoch ms; always a real date (UNKNOWN_RECEIPT_DATE if not known)

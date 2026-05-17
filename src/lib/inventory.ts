@@ -10,11 +10,11 @@ export type { InventoryItemKey };
 import {
   type FirestoreTimestampLike,
   toTimestampMs,
+  deriveCreationTimestampMs,
 } from "./timestamped-action";
 import {
   type LedgerEntry,
   walkLedger,
-  parseReceiptDate,
   UNKNOWN_RECEIPT_DATE,
 } from "./cost-engine";
 
@@ -1040,17 +1040,22 @@ function applyInventoryUpdate(
   const deltaQty = Number(item.qty);
   let ledgerChanged = false;
 
-  if (isNewItem) {
+  // Pending writes (atMs <= 0, e.g. an optimistic local write before the
+  // server timestamp resolves) are guarded here exactly like entity
+  // binding: defer ledger materialisation until the confirming write
+  // carries a real timestamp. deriveCreationTimestampMs stays strict —
+  // it is only reached on a resolved (val > 0) timestamp.
+  if (val > 0 && isNewItem) {
     ledger.push({
       kind: "receipt",
-      at: parseReceiptDate(state.idToItem[id].creationDate),
+      at: deriveCreationTimestampMs(timestamp),
       seq: ledger.length,
       qty: Number.isFinite(deltaQty) ? deltaQty : 0,
       unitCostJpy: Number(item.cost) > 0 ? Number(item.cost) : 0,
       unitCostEur: 0,
     });
     ledgerChanged = true;
-  } else if (stockOrder) {
+  } else if (val > 0 && stockOrder) {
     if (Number.isFinite(deltaQty) && deltaQty > 0) {
       // Genuine re-order: a new dated receipt at the re-order price.
       ledger.push({
@@ -1993,12 +1998,11 @@ export const inventory = createReducer(initialState, (r) => {
       let val = 0;
       let creationDate = "Invalid Date";
 
+      // Pending-tolerant (null / {seconds:0} are valid pending writes
+      // here, not errors): resolve via the canonical converter and only
+      // format a date when it resolves to a real (> 0) time.
       if (timestamp) {
-        if (timestamp.seconds) {
-          val = new Date(timestamp.seconds * 1000).getTime();
-        } else if (typeof timestamp === "number") {
-          val = timestamp;
-        }
+        val = toTimestampMs(timestamp as FirestoreTimestampLike) ?? 0;
 
         if (val > 0) {
           creationDate = new Date(val).toLocaleString("en", {

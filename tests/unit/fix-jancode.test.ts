@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rootReducer } from "$lib/root-reducer";
+import { rootReducer as _rootReducer } from "$lib/root-reducer";
 import {
   fix_jancode,
   new_order,
@@ -11,6 +11,18 @@ import { categorize_photo } from "$lib/photos-slice";
 import { add_proposals_internal } from "$lib/listing-creation-slice";
 import { resolve_conflict as resolveOrderConflict } from "$lib/order-import-slice";
 import { resolve_conflict as resolveShopifyConflict } from "$lib/shopify-import-slice";
+
+// Every replayed action carries a timestamp in production; these
+// fixtures omit it, so stamp a fixed one (deriveCreationTimestampMs
+// fails loudly on a missing timestamp).
+const TS = { _seconds: 1_700_000_000, _nanoseconds: 0 };
+const rootReducer = (s: any, a: any) =>
+  _rootReducer(
+    s,
+    a && typeof a === "object" && a.type && !("timestamp" in a)
+      ? { ...a, timestamp: TS }
+      : a,
+  );
 
 describe("fix_jancode", () => {
   it("re-keys inventory and dependent references without requiring an order retype flow", () => {

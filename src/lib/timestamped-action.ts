@@ -59,6 +59,26 @@ export const toTimestampMs = (ts: FirestoreTimestampLike): number | null => {
   return null;
 };
 
+/**
+ * Derive an entity's creation/receipt timestamp (epoch ms) from an
+ * action timestamp. This is the single source of truth for "when was
+ * this created" — never parse a formatted `creationDate` string.
+ *
+ * Fails loudly: a missing/unresolvable timestamp is a programming error
+ * (every replayed action carries one), not a recoverable fallback.
+ */
+export const deriveCreationTimestampMs = (
+  ts: FirestoreTimestampLike,
+): number => {
+  const ms = toTimestampMs(ts);
+  if (ms === null || !(ms > 0)) {
+    throw new Error(
+      `deriveCreationTimestampMs: timestamp not set (got ${JSON.stringify(ts)})`,
+    );
+  }
+  return ms;
+};
+
 export const toFirestoreTimestamp = (
   ts: FirestoreTimestampLike,
 ): FirestoreTimestamp | null => {

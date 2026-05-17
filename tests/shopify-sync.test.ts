@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeInventoryItemKey } from "$lib/sku";
 import {
   initialState,
-  inventory,
+  inventory as _inventory,
   shopify_order_created,
   shopify_order_updated,
   shopify_order_cancelled,
@@ -17,6 +17,16 @@ import {
   type InventoryItemKey,
 } from "$lib/inventory";
 
+// Fixtures omit the per-action timestamp that every replayed action
+// carries in production; stamp one (deriveCreationTimestampMs fails
+// loudly on a missing timestamp).
+const inventory = (s: any, a: any) =>
+  _inventory(
+    s,
+    a && typeof a === "object" && a.type && !("timestamp" in a)
+      ? { ...a, timestamp: { _seconds: 1_700_000_000, _nanoseconds: 0 } }
+      : a,
+  );
 describe("Shopify Sync Reducer", () => {
   const withBroadcastMeta = <T extends { type: string }>(
     action: T,
