@@ -40,4 +40,31 @@ describe("order import populates cost on NEW items", () => {
     expect(item.qty).toBe(12);
     expect(item.cost).toBe(62);
   });
+
+  it("derives per-unit cost as Total Wholesale ÷ PCS when no unit-price column (M3a)", () => {
+    const JAN2 = "4542804188888";
+    // No unit-price column; UNIT (4) must be disregarded -> 4700/20 = 235.
+    const csv = [
+      "JAN code,Product name,Order Q'ty Unit,Order Q'ty PCS,Total Wholesale Amount YEN",
+      `${JAN2},Letter Set, 4 , 20 ," 4,700 "`,
+    ].join("\n");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(s, {
+      ...start_session({ id: "f2", name: "senshu.csv" }),
+      timestamp: TS,
+    } as any);
+    s = rootReducer(s, {
+      ...append_raw_rows({ rawRows: csv, done: true }),
+      timestamp: TS,
+    } as any);
+    s = rootReducer(s, {
+      ...import_batch({ filter: "NEW" }),
+      timestamp: TS,
+    } as any);
+
+    const item = s.inventory.idToItem[JAN2];
+    expect(item).toBeDefined();
+    expect(item.qty).toBe(20);
+    expect(item.cost).toBe(235);
+  });
 });

@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import Papa from "papaparse";
+import { parseStockOrderUnitCostJpy } from "./stock-order-cost";
 
 export interface ImportItem {
   janCode: string;
@@ -167,10 +168,17 @@ const mapImportItem = (row: any): ImportItem => {
     qty,
     carton: row["carton number"] || row["carton"] || "",
     hsCode: findHSCode(row),
-    // Map CSV 'unit price (yen)' (supplier cost) to 'cost'. Strict match required.
-    cost: row["unit price (yen)"]
-      ? parseFloat(row["unit price (yen)"].replace(/[^0-9.]/g, ""))
-      : undefined,
+    // Per-unit JPY supplier cost. M1 rule (design §6.2): explicit
+    // unit-price column if finite, else Total Wholesale Amount YEN ÷
+    // Order Q'ty PCS (Q'ty UNIT disregarded). 0 -> unknown -> undefined.
+    cost: (() => {
+      const keys = Object.keys(row);
+      const v = parseStockOrderUnitCostJpy(
+        keys,
+        keys.map((k) => row[k]),
+      );
+      return v > 0 ? v : undefined;
+    })(),
     price: undefined,
     weight,
     countryOfOrigin: countryOfOrigin || undefined,
