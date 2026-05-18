@@ -206,35 +206,15 @@
   </section>
 
   {#if fixPreview}
-    {@const mp = fixPreview.metaPreview}
-    {@const cp = fixPreview.cost}
+    {@const rc = fixPreview.reconciliation}
     <section>
-      <h2>Preview</h2>
-      {#if hasMeta}
-        <p class="preview">
-          fx = {fmt(mp.fx, 6)} €/¥ · {mp.affectedLots} lot(s) from this order re-dated
-          / re-priced in EUR ({mp.items.length} item(s)).
-        </p>
-        {#if mp.items.length}
-          <table class="mini">
-            <thead
-              ><tr><th>Item</th><th>¥ old→new</th><th>€ old→new</th></tr></thead
-            >
-            <tbody>
-              {#each mp.items as it (it.key)}
-                <tr>
-                  <td>{it.key}</td>
-                  <td>{fmt(it.oldCostJpy)} → {fmt(it.newCostJpy)}</td>
-                  <td>{fmt(it.oldCostEur, 4)} → {fmt(it.newCostEur, 4)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-      {/if}
+      <h2>Preview — net effect of this one commit</h2>
+      <p class="preview">
+        fx = {fmt(fixPreview.fx, 6)} €/¥ · {fixPreview.affectedLots} lot(s) in this
+        order · {fixPreview.items.length} item(s) re-derive cost.
+      </p>
 
-      {#if cp}
-        {@const rc = cp.reconciliation}
+      {#if rc}
         {#if !rc.chosen}
           <p class="bad">
             Could not resolve the invoice columns (JAN + quantity + a
@@ -242,8 +222,8 @@
           </p>
         {:else}
           <p>
-            Interpretation: <strong>{rc.chosen.label}</strong> ({rc.chosen
-              .kind}) · Σ {fmt(rc.chosen.sum, 0)} ¥ vs goods {goodsJpy ||
+            Invoice interpretation: <strong>{rc.chosen.label}</strong> ({rc
+              .chosen.kind}) · Σ {fmt(rc.chosen.sum, 0)} ¥ vs goods {goodsJpy ||
               fmt(current.valueOfGoodsJpy, 0)} ¥ ·
             {#if rc.reconciled}
               <span class="ok">reconciled ✓</span>
@@ -255,7 +235,7 @@
                 )} ¥</span
               >
             {:else}
-              <span class="bad">value of goods unknown</span>
+              <span class="bad">enter value of goods to reconcile</span>
             {/if}
           </p>
           {#if rc.candidates.length > 1}
@@ -266,31 +246,17 @@
             </p>
           {/if}
           <p>
-            {cp.matched.length} lot(s) priced ·
-            {cp.unmatchedJans.length} TSV row(s) with no lot in this order ·
-            {cp.matched.filter((m) => m.isOverride).length} override existing
+            {fixPreview.matched.length} lot(s) priced from TSV ·
+            {fixPreview.unmatchedJans.length} TSV row(s) with no lot in this order
+            ·
+            {fixPreview.matched.filter((m) => m.isOverride).length} override existing
           </p>
-          {#if cp.matched.length}
-            <table class="mini">
-              <thead
-                ><tr><th>Item</th><th>Qty</th><th>¥ old→new</th><th></th></tr
-                ></thead
-              >
-              <tbody>
-                {#each cp.matched as m (m.key)}
-                  <tr>
-                    <td>{m.key}</td><td>{m.qty}</td>
-                    <td>{fmt(m.oldUnitJpy, 0)} → {fmt(m.newUnitJpy, 0)}</td>
-                    <td>{m.isOverride ? "override" : ""}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
+          {#if fixPreview.unmatchedJans.length}
+            <p class="hint">
+              Unmatched: {fixPreview.unmatchedJans.join(", ")}
+            </p>
           {/if}
-          {#if cp.unmatchedJans.length}
-            <p class="hint">Unmatched: {cp.unmatchedJans.join(", ")}</p>
-          {/if}
-          {#if cp.matched.some((m) => m.isOverride)}
+          {#if fixPreview.matched.some((m) => m.isOverride)}
             <label class="chk">
               <input type="checkbox" bind:checked={overrideExisting} />
               Override lots that already have a cost
@@ -306,6 +272,25 @@
             </label>
           {/if}
         {/if}
+      {/if}
+
+      {#if fixPreview.items.length}
+        <table class="mini">
+          <thead>
+            <tr>
+              <th>Item</th><th>cost ¥ old→new</th><th>cost € old→new</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each fixPreview.items as it (it.key)}
+              <tr>
+                <td>{it.key}</td>
+                <td>{fmt(it.oldCostJpy)} → {fmt(it.newCostJpy)}</td>
+                <td>{fmt(it.oldCostEur, 4)} → {fmt(it.newCostEur, 4)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       {/if}
 
       <button on:click={commitFix} disabled={commitDisabled}>

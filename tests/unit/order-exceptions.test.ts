@@ -9,6 +9,7 @@ import { set_stock_order_meta, fix_stock_order } from "$lib/inventory";
 import {
   selectOrderExceptions,
   previewOrderMetaFix,
+  previewStockOrderFix,
   paidToEur,
 } from "$lib/order-exceptions";
 
@@ -205,5 +206,61 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       timestamp: TS,
     } as any);
     expect(s3.inventory.costLedger![key][0].unitCostJpy).toBe(200);
+  });
+});
+
+describe("order-exceptions M3.5 — unified previewStockOrderFix", () => {
+  const NOCOST = [
+    "JAN code,Product name,Order Q'ty PCS",
+    `${JAN},Widget,10`,
+  ].join("\n");
+  function unpriced() {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    const w = (a: any) => ({ ...a, timestamp: TS });
+    s = rootReducer(s, w(start_session({ id: "fp", name: "Supplier P" })));
+    s = rootReducer(s, w(append_raw_rows({ rawRows: NOCOST, done: true })));
+    s = rootReducer(s, w(import_batch({ filter: "NEW" })));
+    return s;
+  }
+  const tsv = ["JAN code\tUNIT PRICE (YEN)\tQuantity", `${JAN}\t200\t10`].join(
+    "\n",
+  );
+
+  it("combined preview shows the real old→new (not 0→0) when TSV matches", () => {
+    const s = unpriced();
+    const pv = previewStockOrderFix(s.inventory, "fp", {
+      meta: {
+        valueOfGoodsJpy: 2000,
+        valueOfOrderJpy: 2000,
+        paidAmount: 20,
+        paidCurrency: "EUR",
+      },
+      rawPaste: tsv,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+    expect(pv.reconciliation?.reconciled).toBe(true);
+    expect(pv.matched.length).toBe(1);
+    expect(pv.items.length).toBe(1);
+    // unpriced 0 -> 200 from the TSV, reflected in the ONE combined table
+    expect(pv.items[0].oldCostJpy).toBe(0);
+    expect(pv.items[0].newCostJpy).toBe(200);
+    // fx = 20/2000 = 0.01 -> EUR 2
+    expect(pv.fx).toBeCloseTo(0.01, 9);
+    expect(pv.items[0].newCostEur).toBeCloseTo(2, 9);
+    expect(pv.blocked).toBe(false);
+  });
+
+  it("no paste: still previews meta-only effect, items present", () => {
+    const s = unpriced();
+    const pv = previewStockOrderFix(s.inventory, "fp", {
+      meta: { receivedAt: Date.parse("2025-09-01") },
+      rawPaste: "",
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+    expect(pv.reconciliation).toBeNull();
+    expect(pv.affectedLots).toBe(1);
+    expect(pv.blocked).toBe(false);
   });
 });

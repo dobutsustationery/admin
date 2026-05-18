@@ -260,16 +260,32 @@ export function computeStockOrderCostCommit(args: {
   return { reconciliation, matched, unmatchedJans, affected };
 }
 
+export interface StockOrderFixItem {
+  key: string;
+  oldCostJpy?: number;
+  newCostJpy?: number;
+  oldCostEur?: number;
+  newCostEur?: number;
+}
+
 export interface StockOrderFixPreview {
-  metaPreview: OrderFixPreview;
-  cost: StockOrderCostCommitPreview | null;
+  fx: number;
+  receivedAt?: number;
+  affectedLots: number;
+  // ONE combined old→new per affected item: meta (date/EUR) AND the
+  // reconciled TSV applied together — exactly what the single commit does.
+  items: StockOrderFixItem[];
+  reconciliation: StockOrderCostReconciliation | null;
+  matched: StockOrderCostCommitMatch[];
+  unmatchedJans: string[];
   blocked: boolean;
 }
 
 /**
- * Unified preview for the single atomic order fix: project the proposed
- * meta (date/EUR) AND reconcile the staged TSV against the *proposed*
- * value-of-goods (so the user need not commit money first). Pure.
+ * Unified preview for the single atomic order fix. Projects the proposed
+ * meta (receipt date + paid→EUR) AND the reconciled cost TSV onto this
+ * order's source-tagged lots TOGETHER, then walks each affected item's
+ * cost old→new. Pure; mirrors exactly what `fix_stock_order` commits.
  */
 export function previewStockOrderFix(
   inventory: Pick<
@@ -284,29 +300,99 @@ export function previewStockOrderFix(
     approveDiscrepancy: boolean;
   },
 ): StockOrderFixPreview {
-  const metaPreview = previewOrderMetaFix(inventory, orderId, opts.meta);
-  const mergedReg = {
-    ...(inventory.stockOrderRegistry || {}),
-    [orderId]: {
-      ...(inventory.stockOrderRegistry?.[orderId] || {}),
-      ...opts.meta,
-    },
+  const eff: StockOrderMeta = {
+    ...(inventory.stockOrderRegistry?.[orderId] || {}),
+    ...opts.meta,
   };
+  const totalOrderEur = paidToEur(eff);
+  const fx =
+    totalOrderEur && (eff.valueOfOrderJpy || 0) > 0
+      ? totalOrderEur / (eff.valueOfOrderJpy as number)
+      : 0;
+  const receivedAt =
+    eff.receivedAt && eff.receivedAt > 0 ? eff.receivedAt : undefined;
+
   const cost = opts.rawPaste.trim()
     ? computeStockOrderCostCommit({
         rawPaste: opts.rawPaste,
         orderId,
         overrideExisting: opts.overrideExisting,
-        inventory: { ...inventory, stockOrderRegistry: mergedReg },
+        inventory: {
+          ...inventory,
+          stockOrderRegistry: {
+            ...inventory.stockOrderRegistry,
+            [orderId]: eff,
+          },
+        },
       })
     : null;
+  const reconciliation = cost?.reconciliation ?? null;
+  const want = new Map<string, number>();
+  if (reconciliation)
+    for (const r of reconciliation.rows)
+      want.set(`${r.jan}|${r.subtype || ""}`, r.unitCostJpy);
+
+  const tag = `stockOrder:${orderId}`;
+  const ledger = inventory.costLedger || {};
+  const items: StockOrderFixItem[] = [];
+  let affectedLots = 0;
+
+  for (const key of Object.keys(ledger)) {
+    const orig = ledger[key];
+    const item = inventory.idToItem[key];
+    let inOrder = 0;
+    const projected = orig.map((e) => {
+      if (e.kind !== "receipt" || e.source !== tag) return e;
+      inOrder++;
+      let unitCostJpy = e.unitCostJpy;
+      if (item) {
+        const v =
+          want.get(`${item.janCode}|${item.subtype || ""}`) ??
+          want.get(`${item.janCode}|`);
+        if (v != null && (!(e.unitCostJpy > 0) || opts.overrideExisting))
+          unitCostJpy = v;
+      }
+      const unitCostEur = fx > 0 ? unitCostJpy * fx : e.unitCostEur;
+      return {
+        ...e,
+        at: receivedAt ?? e.at,
+        unitCostJpy,
+        unitCostEur,
+      };
+    });
+    if (inOrder === 0) continue;
+    affectedLots += inOrder;
+    const before = walkLedger(orig);
+    const after = walkLedger(projected);
+    items.push({
+      key,
+      oldCostJpy: before.avgJpy,
+      newCostJpy: after.avgJpy,
+      oldCostEur: before.avgEur,
+      newCostEur: after.avgEur,
+    });
+  }
+  items.sort((a, b) => a.key.localeCompare(b.key));
+
   const blocked =
-    !!cost &&
-    (!cost.reconciliation.chosen ||
-      cost.reconciliation.rows.length === 0 ||
-      (!cost.reconciliation.reconciled &&
-        cost.reconciliation.discrepancy != null &&
+    !!reconciliation &&
+    (!reconciliation.chosen ||
+      reconciliation.rows.length === 0 ||
+      (!reconciliation.reconciled &&
+        reconciliation.discrepancy != null &&
         !opts.approveDiscrepancy) ||
-      (cost.matched.some((m) => m.isOverride) && !opts.overrideExisting));
-  return { metaPreview, cost, blocked };
+      (!!cost &&
+        cost.matched.some((m) => m.isOverride) &&
+        !opts.overrideExisting));
+
+  return {
+    fx,
+    receivedAt,
+    affectedLots,
+    items,
+    reconciliation,
+    matched: cost?.matched ?? [],
+    unmatchedJans: cost?.unmatchedJans ?? [],
+    blocked,
+  };
 }
