@@ -210,8 +210,13 @@
     <section>
       <h2>Preview — net effect of this one commit</h2>
       <p class="preview">
-        fx = {fmt(fixPreview.fx, 6)} €/¥ · {fixPreview.affectedLots} lot(s) in this
-        order · {fixPreview.items.length} item(s) re-derive cost.
+        {#if fixPreview.fx > 0}
+          exchange = {fmt(fixPreview.fx, 6)} €/¥
+        {:else}
+          exchange not set (EUR pending)
+        {/if}
+        · {fixPreview.affectedLots} lot(s) in this order ·
+        {fixPreview.items.length} item(s) re-derive cost.
       </p>
 
       {#if rc}
@@ -275,10 +280,21 @@
       {/if}
 
       {#if fixPreview.items.length}
+        {@const eurKnown = fixPreview.fx > 0}
+        {#if !eurKnown}
+          <p class="hint">
+            EUR cost is pending — it is computed only once <em
+              >Value of order</em
+            >
+            and <em>Order paid</em> are entered (exchange = paid ÷ value of order).
+            The JPY repricing below is final.
+          </p>
+        {/if}
         <table class="mini">
           <thead>
             <tr>
-              <th>Item</th><th>cost ¥ old→new</th><th>cost € old→new</th>
+              <th>Item</th><th>cost ¥ old→new</th>
+              <th>cost € old→new</th>
             </tr>
           </thead>
           <tbody>
@@ -286,7 +302,13 @@
               <tr>
                 <td>{it.key}</td>
                 <td>{fmt(it.oldCostJpy)} → {fmt(it.newCostJpy)}</td>
-                <td>{fmt(it.oldCostEur, 4)} → {fmt(it.newCostEur, 4)}</td>
+                <td>
+                  {#if eurKnown}
+                    {fmt(it.oldCostEur, 4)} → {fmt(it.newCostEur, 4)}
+                  {:else}
+                    <span class="hint">pending exchange</span>
+                  {/if}
+                </td>
               </tr>
             {/each}
           </tbody>
