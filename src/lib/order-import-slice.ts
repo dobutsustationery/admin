@@ -300,15 +300,29 @@ export const computeOrderImportBatch = (
               const invItem = inventoryIdToItem[itemKey];
               if (invItem) {
                 const { shipped: _shipped, ...baseItem } = invItem;
+                const splitItem: any = {
+                  ...baseItem,
+                  qty: qty,
+                  // Propagate incoming data (Cost, etc.) to the split items?
+                  cost: item.cost !== undefined ? item.cost : baseItem.cost,
+                };
+                // Fill missing metadata from the incoming order row
+                // (same fill-if-missing semantics as the data_mismatch
+                // branch): a split must not drop COO/weight/HS that the
+                // invoice provides but the inventory row lacks.
+                if (!(invItem.weight && invItem.weight > 0) && item.weight) {
+                  splitItem.weight = item.weight;
+                }
+                if (!invItem.countryOfOrigin && item.countryOfOrigin) {
+                  splitItem.countryOfOrigin = item.countryOfOrigin;
+                }
+                if (!invItem.hsCode && item.hsCode) {
+                  splitItem.hsCode = item.hsCode;
+                }
                 updates.push({
                   type: "update",
                   id: itemKey,
-                  item: {
-                    ...baseItem,
-                    qty: qty,
-                    // Propagate incoming data (Cost, etc.) to the split items?
-                    cost: item.cost !== undefined ? item.cost : baseItem.cost,
-                  },
+                  item: splitItem,
                 });
               }
             }
