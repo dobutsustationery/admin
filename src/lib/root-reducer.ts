@@ -32,10 +32,6 @@ import {
   computeLiveEventImportCommit,
   mark_rows_done as markLiveEventRowsDone,
 } from "./live-event-import-slice";
-import {
-  stockOrderCost,
-  clear_stock_order_cost_paste,
-} from "./stock-order-cost-slice";
 import { computeStockOrderCostCommit } from "./order-exceptions";
 import {
   listings,
@@ -87,7 +83,6 @@ const reducerObject = {
   orderImport,
   shopifyImport,
   liveEventImport,
-  stockOrderCost,
   listings,
   shopifySync,
   shopifyCatalog,
@@ -1428,25 +1423,40 @@ export const rootReducer = (
     }
   }
 
-  // Stock-order cost TSV commit (order-exceptions §6.3)
-  if (
-    action.type === "stockOrderCost/commit_stock_order_costs" &&
-    nextState.stockOrderCost
-  ) {
-    const { orderId, overrideExisting, approveDiscrepancy } = action.payload;
-    const staged = nextState.stockOrderCost.byOrder?.[orderId];
-    if (staged?.rawPaste) {
+  // One atomic order-exceptions fix: receipt date + money facts + the
+  // reconciling cost TSV, applied in a single log entry. Meta is set
+  // first so the TSV reconciles against the just-set value-of-goods —
+  // the user need not order the fields.
+  if (action.type === "fix_stock_order") {
+    const { orderId, meta, costTsv, overrideExisting, approveDiscrepancy } =
+      action.payload;
+
+    if (meta && Object.values(meta).some((v) => v !== undefined)) {
+      const metaAction = inheritTimestamp({
+        ...set_stock_order_meta({ orderId, meta }),
+        _ephemeral: true,
+      });
+      nextState = {
+        ...nextState,
+        inventory: inventory(nextState.inventory, metaAction),
+      };
+      logger(metaAction, nextState, action._timestamp);
+    }
+
+    if (typeof costTsv === "string" && costTsv.trim()) {
       const preview = computeStockOrderCostCommit({
-        rawPaste: staged.rawPaste,
+        rawPaste: costTsv,
         orderId,
         overrideExisting,
-        inventory: nextState.inventory,
+        inventory: nextState.inventory, // reflects the meta just set
       });
       const r = preview.reconciliation;
       const blocked =
         !r.chosen ||
-        (!r.reconciled && r.discrepancy != null && !approveDiscrepancy);
-      if (!blocked && r.rows.length > 0) {
+        r.rows.length === 0 ||
+        (!r.reconciled && r.discrepancy != null && !approveDiscrepancy) ||
+        (preview.matched.some((m) => m.isOverride) && !overrideExisting);
+      if (!blocked) {
         const applyAction = inheritTimestamp({
           ...apply_stock_order_costs({
             orderId,
@@ -1464,15 +1474,6 @@ export const rootReducer = (
           inventory: inventory(nextState.inventory, applyAction),
         };
         logger(applyAction, nextState, action._timestamp);
-
-        const clearAction = inheritTimestamp(
-          clear_stock_order_cost_paste({ orderId }),
-        );
-        nextState = {
-          ...nextState,
-          stockOrderCost: stockOrderCost(nextState.stockOrderCost, clearAction),
-        };
-        logger(clearAction, nextState, action._timestamp);
       }
     }
   }

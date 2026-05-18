@@ -5,11 +5,7 @@ import {
   append_raw_rows,
   import_batch,
 } from "$lib/order-import-slice";
-import { set_stock_order_meta } from "$lib/inventory";
-import {
-  set_stock_order_cost_paste,
-  commit_stock_order_costs,
-} from "$lib/stock-order-cost-slice";
+import { set_stock_order_meta, fix_stock_order } from "$lib/inventory";
 import {
   selectOrderExceptions,
   previewOrderMetaFix,
@@ -146,79 +142,63 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     return s;
   }
 
-  it("reconciled TSV prices the unpriced lot and re-derives cost", () => {
+  const tsvPaste = [
+    "JAN code\tUNIT PRICE (YEN)\tQuantity",
+    `${JAN}\t200\t10`,
+  ].join("\n");
+
+  it("one atomic fix_stock_order: meta + reconciled TSV prices the lot", () => {
     let s = unpricedOrder();
     const key = Object.keys(s.inventory.costLedger!).find((k) =>
       k.startsWith(JAN),
     )!;
     expect(s.inventory.costLedger![key][0].unitCostJpy).toBe(0); // unpriced
 
+    // Single action carries the goods value AND the TSV; the TSV
+    // reconciles against the just-set value-of-goods.
     s = rootReducer(s, {
-      ...set_stock_order_meta({
+      ...fix_stock_order({
         orderId: "fc",
         meta: { valueOfGoodsJpy: 2000 },
-      }),
-      timestamp: TS,
-    } as any);
-    const tsvPaste = [
-      "JAN code\tUNIT PRICE (YEN)\tQuantity",
-      `${JAN}\t200\t10`,
-    ].join("\n");
-    s = rootReducer(s, {
-      ...set_stock_order_cost_paste({ orderId: "fc", rawPaste: tsvPaste }),
-      timestamp: TS,
-    } as any);
-    s = rootReducer(s, {
-      ...commit_stock_order_costs({
-        orderId: "fc",
+        costTsv: tsvPaste,
         overrideExisting: false,
         approveDiscrepancy: false,
       }),
       timestamp: TS,
     } as any);
 
+    expect(s.inventory.stockOrderRegistry!["fc"].valueOfGoodsJpy).toBe(2000);
     expect(s.inventory.costLedger![key][0].unitCostJpy).toBe(200);
     expect(s.inventory.idToItem[key].cost).toBe(200);
-    // staged paste cleared after commit
-    expect(s.inventory && s.stockOrderCost.byOrder["fc"]).toBeUndefined();
   });
 
   it("non-reconciling TSV is blocked unless discrepancy approved", () => {
-    let s = unpricedOrder();
-    const key = Object.keys(s.inventory.costLedger!).find((k) =>
+    const s0 = unpricedOrder();
+    const key = Object.keys(s0.inventory.costLedger!).find((k) =>
       k.startsWith(JAN),
     )!;
-    s = rootReducer(s, {
-      ...set_stock_order_meta({
-        orderId: "fc",
-        meta: { valueOfGoodsJpy: 1999 }, // off by 1 vs 200*10
-      }),
-      timestamp: TS,
-    } as any);
-    const tsvPaste = [
-      "JAN code\tUNIT PRICE (YEN)\tQuantity",
-      `${JAN}\t200\t10`,
-    ].join("\n");
-    s = rootReducer(s, {
-      ...set_stock_order_cost_paste({ orderId: "fc", rawPaste: tsvPaste }),
-      timestamp: TS,
-    } as any);
 
-    // not approved -> no change
-    let s2 = rootReducer(s, {
-      ...commit_stock_order_costs({
+    // goods 1999 vs Σ 200*10=2000 -> discrepancy; not approved -> no change
+    const s2 = rootReducer(s0, {
+      ...fix_stock_order({
         orderId: "fc",
+        meta: { valueOfGoodsJpy: 1999 },
+        costTsv: tsvPaste,
         overrideExisting: false,
         approveDiscrepancy: false,
       }),
       timestamp: TS,
     } as any);
     expect(s2.inventory.costLedger![key][0].unitCostJpy).toBe(0);
+    // meta still applied (atomic, but cost gated separately)
+    expect(s2.inventory.stockOrderRegistry!["fc"].valueOfGoodsJpy).toBe(1999);
 
     // approved -> applied
-    let s3 = rootReducer(s, {
-      ...commit_stock_order_costs({
+    const s3 = rootReducer(s0, {
+      ...fix_stock_order({
         orderId: "fc",
+        meta: { valueOfGoodsJpy: 1999 },
+        costTsv: tsvPaste,
         overrideExisting: false,
         approveDiscrepancy: true,
       }),

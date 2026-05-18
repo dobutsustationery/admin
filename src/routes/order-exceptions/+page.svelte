@@ -4,15 +4,10 @@
   import { user } from "$lib/user-store";
   import { firestore } from "$lib/firebase";
   import { broadcast } from "$lib/redux-firestore";
-  import { set_stock_order_meta } from "$lib/inventory";
-  import {
-    set_stock_order_cost_paste,
-    commit_stock_order_costs,
-  } from "$lib/stock-order-cost-slice";
+  import { fix_stock_order, type StockOrderMeta } from "$lib/inventory";
   import {
     selectOrderExceptions,
-    previewOrderMetaFix,
-    computeStockOrderCostCommit,
+    previewStockOrderFix,
     type OrderExceptionRow,
   } from "$lib/order-exceptions";
 
@@ -23,44 +18,19 @@
 
   let statusMessage = "";
 
-  // --- detail form state ---
+  // One atomic edit: all fields feed a single proposed fix.
   let dateStr = "";
   let goodsJpy = "";
   let orderJpy = "";
   let paidAmount = "";
   let paidCurrency: "EUR" | "BGN" = "EUR";
-
   let costPaste = "";
   let overrideExisting = false;
   let approveDiscrepancy = false;
 
-  $: stagedPaste = current
-    ? ($store.stockOrderCost?.byOrder?.[current.orderId]?.rawPaste ?? "")
-    : "";
-  $: costPreview =
-    current && stagedPaste
-      ? computeStockOrderCostCommit({
-          rawPaste: stagedPaste,
-          orderId: current.orderId,
-          overrideExisting,
-          inventory: $store.inventory,
-        })
-      : null;
-  $: commitBlocked =
-    !costPreview ||
-    !costPreview.reconciliation.chosen ||
-    costPreview.reconciliation.rows.length === 0 ||
-    (!costPreview.reconciliation.reconciled &&
-      costPreview.reconciliation.discrepancy != null &&
-      !approveDiscrepancy) ||
-    (costPreview.matched.some((m) => m.isOverride) && !overrideExisting);
-
   let lastLoadedOrder = "";
   $: if (current && current.orderId !== lastLoadedOrder) {
     lastLoadedOrder = current.orderId;
-    costPaste = "";
-    overrideExisting = false;
-    approveDiscrepancy = false;
     dateStr =
       current.receivedAt && current.receivedAt > 0
         ? new Date(current.receivedAt).toISOString().slice(0, 10)
@@ -69,6 +39,9 @@
     orderJpy = current.valueOfOrderJpy?.toString() ?? "";
     paidAmount = current.paidAmount?.toString() ?? "";
     paidCurrency = current.paidCurrency ?? "EUR";
+    costPaste = "";
+    overrideExisting = false;
+    approveDiscrepancy = false;
   }
 
   function num(s: string): number | undefined {
@@ -76,14 +49,12 @@
     return Number.isFinite(n) && s.trim() !== "" ? n : undefined;
   }
 
-  $: proposedDateMeta = (() => {
-    if (!dateStr) return null;
-    const ms = Date.parse(dateStr + "T00:00:00Z");
-    return Number.isFinite(ms) ? { receivedAt: ms } : null;
-  })();
-
-  $: proposedMoneyMeta = (() => {
-    const m: any = {};
+  $: proposedMeta = (() => {
+    const m: StockOrderMeta = {};
+    if (dateStr) {
+      const ms = Date.parse(dateStr + "T00:00:00Z");
+      if (Number.isFinite(ms)) m.receivedAt = ms;
+    }
     const g = num(goodsJpy);
     const o = num(orderJpy);
     const p = num(paidAmount);
@@ -93,21 +64,20 @@
       m.paidAmount = p;
       m.paidCurrency = paidCurrency;
     }
-    return Object.keys(m).length ? m : null;
+    return m;
   })();
 
-  $: datePreview =
-    current && proposedDateMeta
-      ? previewOrderMetaFix($store.inventory, current.orderId, proposedDateMeta)
-      : null;
-  $: moneyPreview =
-    current && proposedMoneyMeta
-      ? previewOrderMetaFix(
-          $store.inventory,
-          current.orderId,
-          proposedMoneyMeta,
-        )
-      : null;
+  $: hasMeta = Object.values(proposedMeta).some((v) => v !== undefined);
+  $: fixPreview = current
+    ? previewStockOrderFix($store.inventory, current.orderId, {
+        meta: proposedMeta,
+        rawPaste: costPaste,
+        overrideExisting,
+        approveDiscrepancy,
+      })
+    : null;
+  $: nothingToDo = !hasMeta && !costPaste.trim();
+  $: commitDisabled = !fixPreview || nothingToDo || fixPreview.blocked;
 
   function broadcastAction(action: any): boolean {
     if (!$user?.uid) {
@@ -118,54 +88,20 @@
     return true;
   }
 
-  function commitDate() {
-    if (!current || !proposedDateMeta) return;
+  function commitFix() {
+    if (!current || commitDisabled) return;
     if (
       broadcastAction(
-        set_stock_order_meta({
+        fix_stock_order({
           orderId: current.orderId,
-          meta: proposedDateMeta,
-        }),
-      )
-    )
-      statusMessage = "Receipt date saved.";
-  }
-
-  function commitMoney() {
-    if (!current || !proposedMoneyMeta) return;
-    if (
-      broadcastAction(
-        set_stock_order_meta({
-          orderId: current.orderId,
-          meta: proposedMoneyMeta,
-        }),
-      )
-    )
-      statusMessage = "Order money facts saved.";
-  }
-
-  function stageCostPaste() {
-    if (!current) return;
-    broadcastAction(
-      set_stock_order_cost_paste({
-        orderId: current.orderId,
-        rawPaste: costPaste,
-      }),
-    );
-  }
-
-  function commitCosts() {
-    if (!current || commitBlocked) return;
-    if (
-      broadcastAction(
-        commit_stock_order_costs({
-          orderId: current.orderId,
+          meta: proposedMeta,
+          costTsv: costPaste.trim() ? costPaste : undefined,
           overrideExisting,
           approveDiscrepancy,
         }),
       )
     )
-      statusMessage = "Costs applied from invoice TSV.";
+      statusMessage = "Order fix committed.";
   }
 
   function fmt(n: number | undefined, digits = 2): string {
@@ -234,37 +170,18 @@
   <a class="back" href="/order-exceptions">← All exceptions</a>
   <h1>Fix Order: {current.name}</h1>
   {#if statusMessage}<p class="status">{statusMessage}</p>{/if}
+  <p class="hint">
+    Fill any of the fields below — receipt date, the money facts, and/or the
+    invoice cost TSV — then commit once. They apply together as a single atomic
+    change; order does not matter (the TSV reconciles against the value of goods
+    you enter here).
+  </p>
 
   <section>
-    <h2>1. Receipt date</h2>
+    <h2>Receipt date</h2>
     <input type="date" bind:value={dateStr} />
-    {#if datePreview}
-      <p class="preview">
-        {datePreview.affectedLots} lot(s) from this order move to {dateStr};
-        {datePreview.items.length} item(s) re-derive cost.
-      </p>
-      {#if datePreview.items.length}
-        <table class="mini">
-          <thead><tr><th>Item</th><th>Cost ¥ old→new</th></tr></thead>
-          <tbody>
-            {#each datePreview.items as it (it.key)}
-              <tr
-                ><td>{it.key}</td><td
-                  >{fmt(it.oldCostJpy)} → {fmt(it.newCostJpy)}</td
-                ></tr
-              >
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-    {/if}
-    <button on:click={commitDate} disabled={!proposedDateMeta}>
-      Commit receipt date
-    </button>
-  </section>
 
-  <section>
-    <h2>2. Order money facts</h2>
+    <h2>Money facts (JPY) + paid amount</h2>
     <label>Value of goods (¥)<input bind:value={goodsJpy} /></label>
     <label
       >Value of order (¥, incl. shipping/tax)<input
@@ -279,51 +196,45 @@
         <option value="BGN">BGN (lev)</option>
       </select>
     </label>
-    {#if moneyPreview}
-      <p class="preview">
-        fx = {fmt(moneyPreview.fx, 6)} €/¥ · {moneyPreview.affectedLots} lot(s) re-priced
-        in EUR.
-      </p>
-      {#if moneyPreview.items.length}
-        <table class="mini">
-          <thead><tr><th>Item</th><th>EUR cost old→new</th></tr></thead>
-          <tbody>
-            {#each moneyPreview.items as it (it.key)}
-              <tr
-                ><td>{it.key}</td><td
-                  >{fmt(it.oldCostEur, 4)} → {fmt(it.newCostEur, 4)}</td
-                ></tr
-              >
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-    {/if}
-    <button on:click={commitMoney} disabled={!proposedMoneyMeta}>
-      Commit money facts
-    </button>
-  </section>
 
-  <section>
-    <h2>3. Missing costs — paste invoice TSV (JPY)</h2>
-    <p class="hint">
-      Paste the supplier invoice (tab-separated). Value of goods ¥{fmt(
-        current.valueOfGoodsJpy,
-        0,
-      )} is the reconciliation target — set it in section 2 first if unknown.
-    </p>
+    <h2>Missing costs — paste invoice TSV (JPY)</h2>
     <textarea
       bind:value={costPaste}
       rows="6"
       placeholder="JAN code&#9;UNIT PRICE (YEN)&#9;Quantity&#9;TOTAL (YEN)"
     ></textarea>
-    <button on:click={stageCostPaste} disabled={!costPaste.trim()}>
-      Preview
-    </button>
+  </section>
 
-    {#if costPreview}
-      {@const rc = costPreview.reconciliation}
-      <div class="preview">
+  {#if fixPreview}
+    {@const mp = fixPreview.metaPreview}
+    {@const cp = fixPreview.cost}
+    <section>
+      <h2>Preview</h2>
+      {#if hasMeta}
+        <p class="preview">
+          fx = {fmt(mp.fx, 6)} €/¥ · {mp.affectedLots} lot(s) from this order re-dated
+          / re-priced in EUR ({mp.items.length} item(s)).
+        </p>
+        {#if mp.items.length}
+          <table class="mini">
+            <thead
+              ><tr><th>Item</th><th>¥ old→new</th><th>€ old→new</th></tr></thead
+            >
+            <tbody>
+              {#each mp.items as it (it.key)}
+                <tr>
+                  <td>{it.key}</td>
+                  <td>{fmt(it.oldCostJpy)} → {fmt(it.newCostJpy)}</td>
+                  <td>{fmt(it.oldCostEur, 4)} → {fmt(it.newCostEur, 4)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/if}
+
+      {#if cp}
+        {@const rc = cp.reconciliation}
         {#if !rc.chosen}
           <p class="bad">
             Could not resolve the invoice columns (JAN + quantity + a
@@ -332,10 +243,8 @@
         {:else}
           <p>
             Interpretation: <strong>{rc.chosen.label}</strong> ({rc.chosen
-              .kind}) · Σ {fmt(rc.chosen.sum, 0)} ¥ vs goods {fmt(
-              current.valueOfGoodsJpy,
-              0,
-            )} ¥ ·
+              .kind}) · Σ {fmt(rc.chosen.sum, 0)} ¥ vs goods {goodsJpy ||
+              fmt(current.valueOfGoodsJpy, 0)} ¥ ·
             {#if rc.reconciled}
               <span class="ok">reconciled ✓</span>
             {:else if rc.discrepancy != null}
@@ -357,19 +266,18 @@
             </p>
           {/if}
           <p>
-            {costPreview.matched.length} lot(s) priced ·
-            {costPreview.unmatchedJans.length} TSV row(s) with no lot in this order
-            ·
-            {costPreview.matched.filter((m) => m.isOverride).length} override existing
+            {cp.matched.length} lot(s) priced ·
+            {cp.unmatchedJans.length} TSV row(s) with no lot in this order ·
+            {cp.matched.filter((m) => m.isOverride).length} override existing
           </p>
-          {#if costPreview.matched.length}
+          {#if cp.matched.length}
             <table class="mini">
               <thead
                 ><tr><th>Item</th><th>Qty</th><th>¥ old→new</th><th></th></tr
                 ></thead
               >
               <tbody>
-                {#each costPreview.matched as m (m.key)}
+                {#each cp.matched as m (m.key)}
                   <tr>
                     <td>{m.key}</td><td>{m.qty}</td>
                     <td>{fmt(m.oldUnitJpy, 0)} → {fmt(m.newUnitJpy, 0)}</td>
@@ -379,32 +287,35 @@
               </tbody>
             </table>
           {/if}
-          {#if costPreview.unmatchedJans.length}
-            <p class="hint">
-              Unmatched: {costPreview.unmatchedJans.join(", ")}
-            </p>
+          {#if cp.unmatchedJans.length}
+            <p class="hint">Unmatched: {cp.unmatchedJans.join(", ")}</p>
+          {/if}
+          {#if cp.matched.some((m) => m.isOverride)}
+            <label class="chk">
+              <input type="checkbox" bind:checked={overrideExisting} />
+              Override lots that already have a cost
+            </label>
+          {/if}
+          {#if !rc.reconciled && rc.discrepancy != null}
+            <label class="chk">
+              <input type="checkbox" bind:checked={approveDiscrepancy} />
+              Approve despite {rc.discrepancy > 0 ? "+" : ""}{fmt(
+                rc.discrepancy,
+                0,
+              )} ¥ discrepancy
+            </label>
           {/if}
         {/if}
-      </div>
-
-      <label class="chk">
-        <input type="checkbox" bind:checked={overrideExisting} />
-        Override lots that already have a cost
-      </label>
-      {#if !rc.reconciled && rc.discrepancy != null}
-        <label class="chk">
-          <input type="checkbox" bind:checked={approveDiscrepancy} />
-          Approve despite {rc.discrepancy > 0 ? "+" : ""}{fmt(
-            rc.discrepancy,
-            0,
-          )} ¥ discrepancy
-        </label>
       {/if}
-      <button on:click={commitCosts} disabled={commitBlocked}>
-        Commit costs
+
+      <button on:click={commitFix} disabled={commitDisabled}>
+        Commit all fixes
       </button>
-    {/if}
-  </section>
+      {#if nothingToDo}
+        <p class="hint">Enter at least one field above.</p>
+      {/if}
+    </section>
+  {/if}
 {/if}
 
 <style>
@@ -414,7 +325,7 @@
   }
   h2 {
     font-size: 1.1rem;
-    margin: 0.5rem 0;
+    margin: 0.8rem 0 0.3rem;
   }
   table {
     border-collapse: collapse;

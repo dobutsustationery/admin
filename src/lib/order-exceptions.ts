@@ -259,3 +259,54 @@ export function computeStockOrderCostCommit(args: {
 
   return { reconciliation, matched, unmatchedJans, affected };
 }
+
+export interface StockOrderFixPreview {
+  metaPreview: OrderFixPreview;
+  cost: StockOrderCostCommitPreview | null;
+  blocked: boolean;
+}
+
+/**
+ * Unified preview for the single atomic order fix: project the proposed
+ * meta (date/EUR) AND reconcile the staged TSV against the *proposed*
+ * value-of-goods (so the user need not commit money first). Pure.
+ */
+export function previewStockOrderFix(
+  inventory: Pick<
+    InventoryState,
+    "stockOrderRegistry" | "costLedger" | "idToItem"
+  >,
+  orderId: string,
+  opts: {
+    meta: StockOrderMeta;
+    rawPaste: string;
+    overrideExisting: boolean;
+    approveDiscrepancy: boolean;
+  },
+): StockOrderFixPreview {
+  const metaPreview = previewOrderMetaFix(inventory, orderId, opts.meta);
+  const mergedReg = {
+    ...(inventory.stockOrderRegistry || {}),
+    [orderId]: {
+      ...(inventory.stockOrderRegistry?.[orderId] || {}),
+      ...opts.meta,
+    },
+  };
+  const cost = opts.rawPaste.trim()
+    ? computeStockOrderCostCommit({
+        rawPaste: opts.rawPaste,
+        orderId,
+        overrideExisting: opts.overrideExisting,
+        inventory: { ...inventory, stockOrderRegistry: mergedReg },
+      })
+    : null;
+  const blocked =
+    !!cost &&
+    (!cost.reconciliation.chosen ||
+      cost.reconciliation.rows.length === 0 ||
+      (!cost.reconciliation.reconciled &&
+        cost.reconciliation.discrepancy != null &&
+        !opts.approveDiscrepancy) ||
+      (cost.matched.some((m) => m.isOverride) && !opts.overrideExisting));
+  return { metaPreview, cost, blocked };
+}

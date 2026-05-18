@@ -296,12 +296,25 @@ export const set_stock_order_meta = createAction<{
 }>("set_stock_order_meta");
 
 // Internal: apply reconciled per-line costs to a stock order's lots.
-// Emitted by the root-reducer interceptor for commit_stock_order_costs.
+// Emitted by the root-reducer interceptor for fix_stock_order.
 export const apply_stock_order_costs = createAction<{
   orderId: string;
   rows: { jan: string; subtype: string; unitCostJpy: number }[];
   overrideExisting: boolean;
 }>("apply_stock_order_costs");
+
+// One atomic order-exceptions fix: receipt date + money facts + the
+// reconciling cost-TSV, applied together in a single log entry. The
+// root-reducer interceptor sets meta first, then reconciles the TSV
+// against the just-set value-of-goods, so the user need not order the
+// fields. costTsv "" / undefined = no cost paste.
+export const fix_stock_order = createAction<{
+  orderId: string;
+  meta: StockOrderMeta;
+  costTsv?: string;
+  overrideExisting: boolean;
+  approveDiscrepancy: boolean;
+}>("fix_stock_order");
 
 export const shopify_order_created = createAction<{
   raw: any;
