@@ -295,6 +295,14 @@ export const set_stock_order_meta = createAction<{
   meta: StockOrderMeta;
 }>("set_stock_order_meta");
 
+// Internal: apply reconciled per-line costs to a stock order's lots.
+// Emitted by the root-reducer interceptor for commit_stock_order_costs.
+export const apply_stock_order_costs = createAction<{
+  orderId: string;
+  rows: { jan: string; subtype: string; unitCostJpy: number }[];
+  overrideExisting: boolean;
+}>("apply_stock_order_costs");
+
 export const shopify_order_created = createAction<{
   raw: any;
   topic: string;
@@ -1928,6 +1936,43 @@ export const inventory = createReducer(initialState, (r) => {
           if (fx > 0) e.unitCostEur = e.unitCostJpy * fx;
           touched = true;
         }
+      }
+      if (touched) rederiveCostFromLedger(state, key);
+    }
+  });
+  r.addCase(apply_stock_order_costs, (state, action) => {
+    const { orderId, rows, overrideExisting } = action.payload;
+    if (!state.costLedger) return;
+    const reg = state.stockOrderRegistry?.[orderId];
+    const totalOrderEur =
+      reg?.paidAmount != null && reg?.paidCurrency
+        ? reg.paidCurrency === "BGN"
+          ? reg.paidAmount / BGN_PER_EUR
+          : reg.paidAmount
+        : reg?.totalOrderEur;
+    const fx =
+      totalOrderEur && (reg?.valueOfOrderJpy || 0) > 0
+        ? totalOrderEur / (reg!.valueOfOrderJpy as number)
+        : 0;
+    const want = new Map<string, number>();
+    for (const row of rows)
+      want.set(`${row.jan}|${row.subtype || ""}`, row.unitCostJpy);
+    const tag = `stockOrder:${orderId}`;
+    for (const key of Object.keys(state.costLedger)) {
+      const item = state.idToItem[key];
+      if (!item) continue;
+      let touched = false;
+      for (const e of state.costLedger[key]) {
+        if (e.kind !== "receipt" || e.source !== tag) continue;
+        const v =
+          want.get(`${item.janCode}|${item.subtype || ""}`) ??
+          want.get(`${item.janCode}|`);
+        if (v == null) continue;
+        const priced = e.unitCostJpy > 0;
+        if (priced && !overrideExisting) continue;
+        e.unitCostJpy = v;
+        if (fx > 0) e.unitCostEur = v * fx;
+        touched = true;
       }
       if (touched) rederiveCostFromLedger(state, key);
     }

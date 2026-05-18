@@ -12,6 +12,7 @@ import {
   split_inventory_item,
   fix_jancode,
   set_stock_order_meta,
+  apply_stock_order_costs,
 } from "./inventory";
 import { UNKNOWN_RECEIPT_DATE } from "./cost-engine";
 import { names } from "./names";
@@ -31,6 +32,11 @@ import {
   computeLiveEventImportCommit,
   mark_rows_done as markLiveEventRowsDone,
 } from "./live-event-import-slice";
+import {
+  stockOrderCost,
+  clear_stock_order_cost_paste,
+} from "./stock-order-cost-slice";
+import { computeStockOrderCostCommit } from "./order-exceptions";
 import {
   listings,
   add_listing_image,
@@ -81,6 +87,7 @@ const reducerObject = {
   orderImport,
   shopifyImport,
   liveEventImport,
+  stockOrderCost,
   listings,
   shopifySync,
   shopifyCatalog,
@@ -1418,6 +1425,55 @@ export const rootReducer = (
         liveEventImport: liveEventImport(nextState.liveEventImport, markAction),
       };
       logger(markAction, nextState, action._timestamp);
+    }
+  }
+
+  // Stock-order cost TSV commit (order-exceptions §6.3)
+  if (
+    action.type === "stockOrderCost/commit_stock_order_costs" &&
+    nextState.stockOrderCost
+  ) {
+    const { orderId, overrideExisting, approveDiscrepancy } = action.payload;
+    const staged = nextState.stockOrderCost.byOrder?.[orderId];
+    if (staged?.rawPaste) {
+      const preview = computeStockOrderCostCommit({
+        rawPaste: staged.rawPaste,
+        orderId,
+        overrideExisting,
+        inventory: nextState.inventory,
+      });
+      const r = preview.reconciliation;
+      const blocked =
+        !r.chosen ||
+        (!r.reconciled && r.discrepancy != null && !approveDiscrepancy);
+      if (!blocked && r.rows.length > 0) {
+        const applyAction = inheritTimestamp({
+          ...apply_stock_order_costs({
+            orderId,
+            rows: r.rows.map((x) => ({
+              jan: x.jan,
+              subtype: x.subtype,
+              unitCostJpy: x.unitCostJpy,
+            })),
+            overrideExisting,
+          }),
+          _ephemeral: true,
+        });
+        nextState = {
+          ...nextState,
+          inventory: inventory(nextState.inventory, applyAction),
+        };
+        logger(applyAction, nextState, action._timestamp);
+
+        const clearAction = inheritTimestamp(
+          clear_stock_order_cost_paste({ orderId }),
+        );
+        nextState = {
+          ...nextState,
+          stockOrderCost: stockOrderCost(nextState.stockOrderCost, clearAction),
+        };
+        logger(clearAction, nextState, action._timestamp);
+      }
     }
   }
 

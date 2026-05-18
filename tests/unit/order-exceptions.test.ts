@@ -7,6 +7,10 @@ import {
 } from "$lib/order-import-slice";
 import { set_stock_order_meta } from "$lib/inventory";
 import {
+  set_stock_order_cost_paste,
+  commit_stock_order_costs,
+} from "$lib/stock-order-cost-slice";
+import {
   selectOrderExceptions,
   previewOrderMetaFix,
   paidToEur,
@@ -124,5 +128,102 @@ describe("order-exceptions M3.2", () => {
       timestamp: TS,
     } as any);
     expect(s.inventory.stockOrderRegistry!["f2"].totalOrderEur).toBe(250);
+  });
+});
+
+describe("order-exceptions M3.4 — TSV cost commit", () => {
+  // Order import with NO cost column -> unpriced source-tagged lot.
+  const NOCOST = [
+    "JAN code,Product name,Order Q'ty PCS",
+    `${JAN},Widget,10`,
+  ].join("\n");
+  function unpricedOrder() {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    const w = (a: any) => ({ ...a, timestamp: TS });
+    s = rootReducer(s, w(start_session({ id: "fc", name: "Supplier C" })));
+    s = rootReducer(s, w(append_raw_rows({ rawRows: NOCOST, done: true })));
+    s = rootReducer(s, w(import_batch({ filter: "NEW" })));
+    return s;
+  }
+
+  it("reconciled TSV prices the unpriced lot and re-derives cost", () => {
+    let s = unpricedOrder();
+    const key = Object.keys(s.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    expect(s.inventory.costLedger![key][0].unitCostJpy).toBe(0); // unpriced
+
+    s = rootReducer(s, {
+      ...set_stock_order_meta({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 2000 },
+      }),
+      timestamp: TS,
+    } as any);
+    const tsvPaste = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t10`,
+    ].join("\n");
+    s = rootReducer(s, {
+      ...set_stock_order_cost_paste({ orderId: "fc", rawPaste: tsvPaste }),
+      timestamp: TS,
+    } as any);
+    s = rootReducer(s, {
+      ...commit_stock_order_costs({
+        orderId: "fc",
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(s.inventory.costLedger![key][0].unitCostJpy).toBe(200);
+    expect(s.inventory.idToItem[key].cost).toBe(200);
+    // staged paste cleared after commit
+    expect(s.inventory && s.stockOrderCost.byOrder["fc"]).toBeUndefined();
+  });
+
+  it("non-reconciling TSV is blocked unless discrepancy approved", () => {
+    let s = unpricedOrder();
+    const key = Object.keys(s.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    s = rootReducer(s, {
+      ...set_stock_order_meta({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 1999 }, // off by 1 vs 200*10
+      }),
+      timestamp: TS,
+    } as any);
+    const tsvPaste = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t10`,
+    ].join("\n");
+    s = rootReducer(s, {
+      ...set_stock_order_cost_paste({ orderId: "fc", rawPaste: tsvPaste }),
+      timestamp: TS,
+    } as any);
+
+    // not approved -> no change
+    let s2 = rootReducer(s, {
+      ...commit_stock_order_costs({
+        orderId: "fc",
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(s2.inventory.costLedger![key][0].unitCostJpy).toBe(0);
+
+    // approved -> applied
+    let s3 = rootReducer(s, {
+      ...commit_stock_order_costs({
+        orderId: "fc",
+        overrideExisting: false,
+        approveDiscrepancy: true,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(s3.inventory.costLedger![key][0].unitCostJpy).toBe(200);
   });
 });

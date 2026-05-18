@@ -1,14 +1,18 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { goto } from "$app/navigation";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
   import { firestore } from "$lib/firebase";
   import { broadcast } from "$lib/redux-firestore";
   import { set_stock_order_meta } from "$lib/inventory";
   import {
+    set_stock_order_cost_paste,
+    commit_stock_order_costs,
+  } from "$lib/stock-order-cost-slice";
+  import {
     selectOrderExceptions,
     previewOrderMetaFix,
+    computeStockOrderCostCommit,
     type OrderExceptionRow,
   } from "$lib/order-exceptions";
 
@@ -26,9 +30,37 @@
   let paidAmount = "";
   let paidCurrency: "EUR" | "BGN" = "EUR";
 
+  let costPaste = "";
+  let overrideExisting = false;
+  let approveDiscrepancy = false;
+
+  $: stagedPaste = current
+    ? ($store.stockOrderCost?.byOrder?.[current.orderId]?.rawPaste ?? "")
+    : "";
+  $: costPreview =
+    current && stagedPaste
+      ? computeStockOrderCostCommit({
+          rawPaste: stagedPaste,
+          orderId: current.orderId,
+          overrideExisting,
+          inventory: $store.inventory,
+        })
+      : null;
+  $: commitBlocked =
+    !costPreview ||
+    !costPreview.reconciliation.chosen ||
+    costPreview.reconciliation.rows.length === 0 ||
+    (!costPreview.reconciliation.reconciled &&
+      costPreview.reconciliation.discrepancy != null &&
+      !approveDiscrepancy) ||
+    (costPreview.matched.some((m) => m.isOverride) && !overrideExisting);
+
   let lastLoadedOrder = "";
   $: if (current && current.orderId !== lastLoadedOrder) {
     lastLoadedOrder = current.orderId;
+    costPaste = "";
+    overrideExisting = false;
+    approveDiscrepancy = false;
     dateStr =
       current.receivedAt && current.receivedAt > 0
         ? new Date(current.receivedAt).toISOString().slice(0, 10)
@@ -110,6 +142,30 @@
       )
     )
       statusMessage = "Order money facts saved.";
+  }
+
+  function stageCostPaste() {
+    if (!current) return;
+    broadcastAction(
+      set_stock_order_cost_paste({
+        orderId: current.orderId,
+        rawPaste: costPaste,
+      }),
+    );
+  }
+
+  function commitCosts() {
+    if (!current || commitBlocked) return;
+    if (
+      broadcastAction(
+        commit_stock_order_costs({
+          orderId: current.orderId,
+          overrideExisting,
+          approveDiscrepancy,
+        }),
+      )
+    )
+      statusMessage = "Costs applied from invoice TSV.";
   }
 
   function fmt(n: number | undefined, digits = 2): string {
@@ -248,9 +304,106 @@
     </button>
   </section>
 
-  <section class="todo">
-    <h2>3. Missing costs (TSV paste)</h2>
-    <p>Coming next (M3.4): paste the invoice TSV to fill unpriced lots.</p>
+  <section>
+    <h2>3. Missing costs — paste invoice TSV (JPY)</h2>
+    <p class="hint">
+      Paste the supplier invoice (tab-separated). Value of goods ¥{fmt(
+        current.valueOfGoodsJpy,
+        0,
+      )} is the reconciliation target — set it in section 2 first if unknown.
+    </p>
+    <textarea
+      bind:value={costPaste}
+      rows="6"
+      placeholder="JAN code&#9;UNIT PRICE (YEN)&#9;Quantity&#9;TOTAL (YEN)"
+    ></textarea>
+    <button on:click={stageCostPaste} disabled={!costPaste.trim()}>
+      Preview
+    </button>
+
+    {#if costPreview}
+      {@const rc = costPreview.reconciliation}
+      <div class="preview">
+        {#if !rc.chosen}
+          <p class="bad">
+            Could not resolve the invoice columns (JAN + quantity + a
+            cost/total). Check the paste.
+          </p>
+        {:else}
+          <p>
+            Interpretation: <strong>{rc.chosen.label}</strong> ({rc.chosen
+              .kind}) · Σ {fmt(rc.chosen.sum, 0)} ¥ vs goods {fmt(
+              current.valueOfGoodsJpy,
+              0,
+            )} ¥ ·
+            {#if rc.reconciled}
+              <span class="ok">reconciled ✓</span>
+            {:else if rc.discrepancy != null}
+              <span class="bad"
+                >discrepancy {rc.discrepancy > 0 ? "+" : ""}{fmt(
+                  rc.discrepancy,
+                  0,
+                )} ¥</span
+              >
+            {:else}
+              <span class="bad">value of goods unknown</span>
+            {/if}
+          </p>
+          {#if rc.candidates.length > 1}
+            <p class="hint">
+              Candidates: {rc.candidates
+                .map((c) => `${c.label}=${fmt(c.sum, 0)}`)
+                .join(" · ")}
+            </p>
+          {/if}
+          <p>
+            {costPreview.matched.length} lot(s) priced ·
+            {costPreview.unmatchedJans.length} TSV row(s) with no lot in this order
+            ·
+            {costPreview.matched.filter((m) => m.isOverride).length} override existing
+          </p>
+          {#if costPreview.matched.length}
+            <table class="mini">
+              <thead
+                ><tr><th>Item</th><th>Qty</th><th>¥ old→new</th><th></th></tr
+                ></thead
+              >
+              <tbody>
+                {#each costPreview.matched as m (m.key)}
+                  <tr>
+                    <td>{m.key}</td><td>{m.qty}</td>
+                    <td>{fmt(m.oldUnitJpy, 0)} → {fmt(m.newUnitJpy, 0)}</td>
+                    <td>{m.isOverride ? "override" : ""}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+          {#if costPreview.unmatchedJans.length}
+            <p class="hint">
+              Unmatched: {costPreview.unmatchedJans.join(", ")}
+            </p>
+          {/if}
+        {/if}
+      </div>
+
+      <label class="chk">
+        <input type="checkbox" bind:checked={overrideExisting} />
+        Override lots that already have a cost
+      </label>
+      {#if !rc.reconciled && rc.discrepancy != null}
+        <label class="chk">
+          <input type="checkbox" bind:checked={approveDiscrepancy} />
+          Approve despite {rc.discrepancy > 0 ? "+" : ""}{fmt(
+            rc.discrepancy,
+            0,
+          )} ¥ discrepancy
+        </label>
+      {/if}
+      <button on:click={commitCosts} disabled={commitBlocked}>
+        Commit costs
+      </button>
+    {/if}
   </section>
 {/if}
 
@@ -303,8 +456,29 @@
     padding: 1rem;
     margin: 1rem 0;
   }
-  section.todo {
-    opacity: 0.6;
+  textarea {
+    width: 100%;
+    font-family: monospace;
+    font-size: 0.85rem;
+  }
+  .hint {
+    color: #666;
+    font-size: 0.85rem;
+  }
+  .ok {
+    color: #155724;
+    font-weight: 600;
+  }
+  .bad {
+    color: #842029;
+    font-weight: 600;
+  }
+  .chk {
+    display: block;
+    margin: 0.3rem 0;
+  }
+  .chk input {
+    margin-right: 0.4rem;
   }
   label {
     display: block;

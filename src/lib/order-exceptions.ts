@@ -2,6 +2,11 @@
 // See docs/investigations/DESIGN_ORDER_EXCEPTIONS_ROUTE.md §3
 import type { InventoryState, StockOrderMeta } from "./inventory";
 import { UNKNOWN_RECEIPT_DATE, BGN_PER_EUR, walkLedger } from "./cost-engine";
+import {
+  parseStockOrderCostTsv,
+  reconcileStockOrderCostTsv,
+  type StockOrderCostReconciliation,
+} from "./stock-order-cost-tsv";
 
 export interface OrderExceptionRow {
   orderId: string;
@@ -158,4 +163,99 @@ export function previewOrderMetaFix(
   }
   items.sort((a, b) => a.key.localeCompare(b.key));
   return { orderId, fx, receivedAt, affectedLots, items };
+}
+
+export interface StockOrderCostCommitMatch {
+  key: string;
+  jan: string;
+  subtype: string;
+  qty: number;
+  oldUnitJpy: number;
+  newUnitJpy: number;
+  isOverride: boolean;
+}
+
+export interface StockOrderCostCommitPreview {
+  reconciliation: StockOrderCostReconciliation;
+  matched: StockOrderCostCommitMatch[];
+  unmatchedJans: string[]; // TSV rows with no lot in this order
+  affected: { key: string; oldCostJpy?: number; newCostJpy?: number }[];
+}
+
+/**
+ * Pure preview for the staged TSV: reconcile to value-of-goods, match
+ * each row to this order's source-tagged lots, and project the
+ * re-derived item cost. No mutation. Mirrors the live-event commit
+ * preview. Same matching the apply reducer uses.
+ */
+export function computeStockOrderCostCommit(args: {
+  rawPaste: string;
+  orderId: string;
+  overrideExisting: boolean;
+  inventory: Pick<
+    InventoryState,
+    "costLedger" | "idToItem" | "stockOrderRegistry"
+  >;
+}): StockOrderCostCommitPreview {
+  const { rawPaste, orderId, overrideExisting, inventory } = args;
+  const reg = inventory.stockOrderRegistry?.[orderId];
+  const reconciliation = reconcileStockOrderCostTsv(
+    parseStockOrderCostTsv(rawPaste),
+    reg?.valueOfGoodsJpy,
+  );
+  const want = new Map<string, number>();
+  for (const row of reconciliation.rows)
+    want.set(`${row.jan}|${row.subtype || ""}`, row.unitCostJpy);
+
+  const tag = `stockOrder:${orderId}`;
+  const ledger = inventory.costLedger || {};
+  const matched: StockOrderCostCommitMatch[] = [];
+  const matchedRowKeys = new Set<string>();
+  const affected: { key: string; oldCostJpy?: number; newCostJpy?: number }[] =
+    [];
+
+  for (const key of Object.keys(ledger)) {
+    const item = inventory.idToItem[key];
+    if (!item) continue;
+    const orig = ledger[key];
+    let anyChange = false;
+    const projected = orig.map((e) => {
+      if (e.kind !== "receipt" || e.source !== tag) return e;
+      const rk = `${item.janCode}|${item.subtype || ""}`;
+      const v = want.get(rk) ?? want.get(`${item.janCode}|`);
+      if (v == null) return e;
+      matchedRowKeys.add(want.has(rk) ? rk : `${item.janCode}|`);
+      const priced = e.unitCostJpy > 0;
+      const isOverride = priced;
+      if (priced && !overrideExisting) return e;
+      matched.push({
+        key,
+        jan: item.janCode,
+        subtype: item.subtype || "",
+        qty: e.qty,
+        oldUnitJpy: e.unitCostJpy,
+        newUnitJpy: v,
+        isOverride,
+      });
+      anyChange = true;
+      return { ...e, unitCostJpy: v };
+    });
+    if (anyChange) {
+      affected.push({
+        key,
+        oldCostJpy: walkLedger(orig).avgJpy,
+        newCostJpy: walkLedger(projected).avgJpy,
+      });
+    }
+  }
+
+  const unmatchedJans = reconciliation.rows
+    .filter(
+      (r) =>
+        !matchedRowKeys.has(`${r.jan}|${r.subtype || ""}`) &&
+        !matchedRowKeys.has(`${r.jan}|`),
+    )
+    .map((r) => r.jan);
+
+  return { reconciliation, matched, unmatchedJans, affected };
 }
