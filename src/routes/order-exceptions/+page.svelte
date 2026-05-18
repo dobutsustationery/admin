@@ -8,7 +8,9 @@
   import {
     selectOrderExceptions,
     previewStockOrderFix,
+    stockOrderCostColumns,
     type OrderExceptionRow,
+    type StockOrderCostMatchRow,
   } from "$lib/order-exceptions";
 
   $: orderId = $page.url.searchParams.get("orderId");
@@ -27,10 +29,19 @@
   let costPaste = "";
   let overrideExisting = false;
   let approveDiscrepancy = false;
+  let ignoreUnmatchedRows = false;
+  let fixCountryOfOrigin = false;
+  let fixWeights = false;
+  let resolutionFilter = "all";
+  let manualOverride = false;
+  let manualKind: "unit" | "total" = "total";
+  let manualCostColumnIndex = -1;
+  let manualQtyColumnIndex = -1;
 
   let lastLoadedOrder = "";
   $: if (current && current.orderId !== lastLoadedOrder) {
     lastLoadedOrder = current.orderId;
+    manualOverride = false;
     dateStr =
       current.receivedAt && current.receivedAt > 0
         ? new Date(current.receivedAt).toISOString().slice(0, 10)
@@ -42,6 +53,12 @@
     costPaste = "";
     overrideExisting = false;
     approveDiscrepancy = false;
+    ignoreUnmatchedRows = false;
+    fixCountryOfOrigin = false;
+    fixWeights = false;
+    resolutionFilter = "all";
+    manualCostColumnIndex = -1;
+    manualQtyColumnIndex = -1;
   }
 
   function num(s: string): number | undefined {
@@ -68,14 +85,55 @@
   })();
 
   $: hasMeta = Object.values(proposedMeta).some((v) => v !== undefined);
+  $: valueOfGoodsJpy = proposedMeta.valueOfGoodsJpy ?? current?.valueOfGoodsJpy;
+  // Columns + auto-detected interpretation for the manual dropdowns.
+  $: costCols = costPaste.trim()
+    ? stockOrderCostColumns(costPaste, valueOfGoodsJpy)
+    : { columns: [], headerRows: 1, auto: null };
+  // Default the manual selectors to the same goods-aware auto pick used by
+  // the preview whenever the user has not taken manual control.
+  $: if (!manualOverride && costCols.auto) {
+    manualKind = costCols.auto.kind;
+    manualCostColumnIndex = costCols.auto.costColumnIndex;
+    manualQtyColumnIndex = costCols.auto.qtyColumnIndex;
+  }
+  $: interpretation =
+    manualOverride && manualCostColumnIndex >= 0 && manualQtyColumnIndex >= 0
+      ? {
+          kind: manualKind,
+          costColumnIndex: manualCostColumnIndex,
+          qtyColumnIndex: manualQtyColumnIndex,
+        }
+      : undefined;
   $: fixPreview = current
     ? previewStockOrderFix($store.inventory, current.orderId, {
         meta: proposedMeta,
         rawPaste: costPaste,
         overrideExisting,
         approveDiscrepancy,
+        interpretation,
+        ignoreUnmatchedRows,
       })
     : null;
+  $: matchRows = fixPreview?.matchRows ?? [];
+  $: hasUnmatchedRows = matchRows.some((r) => r.isUnmatched);
+  $: hasCountryOfOriginFixes = matchRows.some((r) => r.canFixCountryOfOrigin);
+  $: hasWeightFixes = matchRows.some((r) => r.canFixWeight);
+  $: hasCountryOfOriginWarnings = matchRows.some(
+    (r) => r.countryOfOriginMismatch,
+  );
+  $: hasWeightWarnings = matchRows.some((r) => r.weightMismatch);
+  $: if (!hasCountryOfOriginFixes) fixCountryOfOrigin = false;
+  $: if (!hasWeightFixes) fixWeights = false;
+  $: resolutionKinds = [
+    "all",
+    ...Array.from(new Set(matchRows.flatMap((r) => r.kinds))),
+  ];
+  $: if (!resolutionKinds.includes(resolutionFilter)) resolutionFilter = "all";
+  $: filteredMatchRows =
+    resolutionFilter === "all"
+      ? matchRows
+      : matchRows.filter((r) => rowHasKind(r, resolutionFilter));
   $: nothingToDo = !hasMeta && !costPaste.trim();
   $: commitDisabled = !fixPreview || nothingToDo || fixPreview.blocked;
 
@@ -96,8 +154,12 @@
           orderId: current.orderId,
           meta: proposedMeta,
           costTsv: costPaste.trim() ? costPaste : undefined,
+          costInterpretation: interpretation,
           overrideExisting,
           approveDiscrepancy,
+          ignoreUnmatchedRows,
+          fixCountryOfOrigin,
+          fixWeights,
         }),
       )
     )
@@ -107,30 +169,73 @@
   function fmt(n: number | undefined, digits = 2): string {
     return n == null ? "—" : Number(n).toFixed(digits);
   }
+  function cooText(row: StockOrderCostMatchRow): string {
+    const current = row.item?.countryOfOrigin || "—";
+    return row.incomingCountryOfOrigin
+      ? `${current} -> ${row.incomingCountryOfOrigin}`
+      : current;
+  }
+  function weightText(row: StockOrderCostMatchRow): string {
+    const current = row.item?.weight ? `${row.item.weight}g` : "—";
+    return row.incomingWeight
+      ? `${current} -> ${row.incomingWeight}g`
+      : current;
+  }
 
   let copyMsg = "";
   function breakdownTsv(): string {
     const r = fixPreview?.reconciliation?.chosen;
     if (!r) return "";
-    const lines = [["JAN", "Subtype", "Qty", "UnitJPY", "LineJPY"].join("\t")];
+    const rows = filteredMatchRows.length ? filteredMatchRows : matchRows;
+    const lines = [
+      [
+        "Image",
+        "JAN",
+        "Item",
+        "Inventory Key",
+        "Status",
+        "Qty",
+        "UnitJPY",
+        "LineJPY",
+        "COO",
+        "Weight",
+      ].join("\t"),
+    ];
     let totQty = 0;
     let totLine = 0;
-    for (const row of r.rows) {
-      const line = row.unitCostJpy * row.qty;
+    for (const row of rows) {
       totQty += row.qty;
-      totLine += line;
+      totLine += row.lineCostJpy;
       lines.push(
-        [row.jan, row.subtype || "", row.qty, row.unitCostJpy, line].join("\t"),
+        [
+          row.item?.image || "",
+          row.jan,
+          row.item?.description || "",
+          row.key || "",
+          row.status,
+          row.qty,
+          row.unitCostJpy,
+          row.lineCostJpy,
+          cooText(row),
+          weightText(row),
+        ].join("\t"),
       );
     }
-    lines.push(["TOTAL", "", totQty, "", totLine].join("\t"));
+    lines.push(
+      ["TOTAL", "", "", "", "", totQty, "", totLine, "", ""].join("\t"),
+    );
     lines.push(
       [
         "VALUE OF GOODS",
         "",
         "",
         "",
+        "",
+        "",
+        "",
         Number(goodsJpy) || current?.valueOfGoodsJpy || "",
+        "",
+        "",
       ].join("\t"),
     );
     return lines.join("\n");
@@ -147,6 +252,17 @@
     return r.flags.dateUnknown
       ? "⚠ unknown"
       : new Date(r.receivedAt as number).toISOString().slice(0, 10);
+  }
+  function filterLabel(kind: string): string {
+    return kind.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  function rowHasKind(row: { kinds: string[] }, kind: string): boolean {
+    return row.kinds.includes(kind);
+  }
+  function filterCount(kind: string): number {
+    return kind === "all"
+      ? matchRows.length
+      : matchRows.filter((row) => rowHasKind(row, kind)).length;
   }
 </script>
 
@@ -256,6 +372,40 @@
       </p>
 
       {#if rc}
+        <div class="breakdown">
+          <label class="chk">
+            <input type="checkbox" bind:checked={manualOverride} />
+            Manually choose columns / approach
+          </label>
+          {#if manualOverride}
+            <div class="manual">
+              <label>
+                Approach
+                <select bind:value={manualKind}>
+                  <option value="total">Total ÷ Count</option>
+                  <option value="unit">Count × Unit price</option>
+                </select>
+              </label>
+              <label>
+                {manualKind === "total" ? "Total column" : "Unit price column"}
+                <select bind:value={manualCostColumnIndex}>
+                  {#each costCols.columns as c (c.index)}
+                    <option value={c.index}>{c.label}</option>
+                  {/each}
+                </select>
+              </label>
+              <label>
+                Count column
+                <select bind:value={manualQtyColumnIndex}>
+                  {#each costCols.columns as c (c.index)}
+                    <option value={c.index}>{c.label}</option>
+                  {/each}
+                </select>
+              </label>
+            </div>
+          {/if}
+        </div>
+
         {#if !rc.chosen}
           <p class="bad">
             Could not resolve the invoice columns (JAN + quantity + a
@@ -292,35 +442,128 @@
               Copy table as TSV
             </button>
             {#if copyMsg}<span class="hint">{copyMsg}</span>{/if}
-            <table class="mini">
+            {#if resolutionKinds.length > 1}
+              <div class="pills" aria-label="Filter match table">
+                {#each resolutionKinds as kind (kind)}
+                  <button
+                    type="button"
+                    class:active={resolutionFilter === kind}
+                    on:click={() => (resolutionFilter = kind)}
+                  >
+                    {filterLabel(kind)}
+                    <span>{filterCount(kind)}</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+
+            {#if hasCountryOfOriginWarnings || hasWeightWarnings}
+              <p class="warning-block">
+                {#if hasCountryOfOriginWarnings}
+                  Some rows have mismatched COO values between inventory and the
+                  pasted order.
+                {/if}
+                {#if hasWeightWarnings}
+                  Some rows have mismatched weight values between inventory and
+                  the pasted order.
+                {/if}
+              </p>
+            {/if}
+
+            <table class="match-table">
               <thead>
                 <tr>
-                  <th>JAN</th><th>Subtype</th><th>Qty</th>
-                  <th>Unit ¥</th><th>Line ¥ (qty×unit)</th>
+                  <th>Image</th><th>JAN / Item</th><th>Status</th><th>Qty</th>
+                  <th>Unit ¥</th><th>Line ¥</th><th>COO</th><th>Weight</th>
                 </tr>
               </thead>
               <tbody>
-                {#each rc.chosen.rows as row (row.jan + "|" + row.subtype)}
-                  <tr>
-                    <td>{row.jan}</td>
-                    <td>{row.subtype || ""}</td>
+                {#each filteredMatchRows as row (row.rowIndex + ":" + row.jan)}
+                  <tr
+                    class:error-row={row.isUnmatched}
+                    class:fix-row={row.canFixCountryOfOrigin ||
+                      row.canFixWeight}
+                    class:warning-row={row.countryOfOriginMismatch ||
+                      row.weightMismatch}
+                  >
+                    <td class="thumb-cell">
+                      {#if row.item?.image}
+                        <img
+                          class="thumb"
+                          src={row.item.image}
+                          alt={row.item.description || row.jan}
+                        />
+                      {:else}
+                        <span class="no-thumb">—</span>
+                      {/if}
+                    </td>
+                    <td>
+                      <strong>{row.jan}</strong>
+                      {#if row.item}
+                        <div>{row.item.description}</div>
+                        {#if row.item.subtype}
+                          <span class="hint">{row.item.subtype}</span>
+                        {/if}
+                        {#if row.key}<div class="hint">{row.key}</div>{/if}
+                      {:else}
+                        <div class="bad">No lot in this order</div>
+                      {/if}
+                    </td>
+                    <td>
+                      <span class="status-pill">{row.status}</span>
+                      {#if row.canFixCountryOfOrigin}
+                        <span class="status-pill fix">Fix COO</span>
+                      {/if}
+                      {#if row.canFixWeight}
+                        <span class="status-pill fix">Fix Weight</span>
+                      {/if}
+                      {#if row.countryOfOriginMismatch || row.weightMismatch}
+                        <span class="status-pill warn">Warning</span>
+                      {/if}
+                    </td>
                     <td>{row.qty}</td>
                     <td>{fmt(row.unitCostJpy, 0)}</td>
-                    <td>{fmt(row.unitCostJpy * row.qty, 0)}</td>
+                    <td>{fmt(row.lineCostJpy, 0)}</td>
+                    <td>
+                      <span
+                        class:bad={row.countryOfOriginMismatch}
+                        class:ok={row.canFixCountryOfOrigin}
+                      >
+                        {cooText(row)}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        class:bad={row.weightMismatch}
+                        class:ok={row.canFixWeight}
+                      >
+                        {weightText(row)}
+                      </span>
+                    </td>
                   </tr>
                 {/each}
               </tbody>
               <tfoot>
                 <tr class="total">
-                  <td><strong>TOTAL</strong></td>
+                  <td colspan="3"><strong>TOTAL</strong></td>
+                  <td>{filteredMatchRows.reduce((s, r2) => s + r2.qty, 0)}</td>
                   <td></td>
-                  <td>{rc.chosen.rows.reduce((s, r2) => s + r2.qty, 0)}</td>
+                  <td>
+                    <strong>
+                      {fmt(
+                        filteredMatchRows.reduce(
+                          (s, r2) => s + r2.lineCostJpy,
+                          0,
+                        ),
+                        0,
+                      )}
+                    </strong>
+                  </td>
                   <td></td>
-                  <td><strong>{fmt(rc.chosen.sum, 0)}</strong></td>
+                  <td></td>
                 </tr>
                 <tr>
-                  <td>Value of goods</td>
-                  <td></td><td></td><td></td>
+                  <td colspan="5">Value of goods</td>
                   <td
                     >{goodsJpy || fmt(current.valueOfGoodsJpy, 0)}
                     {#if rc.discrepancy != null && rc.discrepancy !== 0}
@@ -332,6 +575,8 @@
                       >
                     {/if}</td
                   >
+                  <td></td>
+                  <td></td>
                 </tr>
               </tfoot>
             </table>
@@ -344,7 +589,7 @@
             {fixPreview.matched.filter((m) => m.isOverride).length} override existing
           </p>
           {#if fixPreview.unmatchedJans.length}
-            <p class="hint">
+            <p class="error-summary">
               Unmatched: {fixPreview.unmatchedJans.join(", ")}
             </p>
           {/if}
@@ -361,6 +606,24 @@
                 rc.discrepancy,
                 0,
               )} ¥ discrepancy
+            </label>
+          {/if}
+          {#if hasCountryOfOriginFixes}
+            <label class="chk">
+              <input type="checkbox" bind:checked={fixCountryOfOrigin} />
+              Fix missing COO values from pasted order rows
+            </label>
+          {/if}
+          {#if hasWeightFixes}
+            <label class="chk">
+              <input type="checkbox" bind:checked={fixWeights} />
+              Fix missing weights from pasted order rows
+            </label>
+          {/if}
+          {#if hasUnmatchedRows}
+            <label class="chk danger">
+              <input type="checkbox" bind:checked={ignoreUnmatchedRows} />
+              Ignore unmatched rows and allow submit
             </label>
           {/if}
         {/if}
@@ -470,6 +733,22 @@
     color: #666;
     font-size: 0.85rem;
   }
+  .warning-block {
+    color: #7a4b00;
+    background: #fff3cd;
+    border: 1px solid #ffda6a;
+    padding: 0.55rem 0.7rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .error-summary {
+    color: #842029;
+    background: #f8d7da;
+    border: 1px solid #f1aeb5;
+    padding: 0.6rem 0.75rem;
+    border-radius: 4px;
+    font-weight: 700;
+  }
   .ok {
     color: #155724;
     font-weight: 600;
@@ -485,6 +764,10 @@
   .chk input {
     margin-right: 0.4rem;
   }
+  .chk.danger {
+    color: #842029;
+    font-weight: 700;
+  }
   label {
     display: block;
     margin: 0.4rem 0;
@@ -499,6 +782,99 @@
   }
   .breakdown {
     margin: 0.5rem 0 1rem;
+  }
+  .manual {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 0.3rem 0 0.6rem;
+  }
+  .manual label {
+    margin: 0;
+  }
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0.55rem 0;
+  }
+  .pills button {
+    margin: 0;
+    border: 1px solid #ced4da;
+    background: #fff;
+    color: #343a40;
+    border-radius: 999px;
+    padding: 0.22rem 0.55rem;
+    font-size: 0.8rem;
+  }
+  .pills button.active {
+    border-color: #0066cc;
+    background: #e7f3ff;
+    color: #004f9e;
+    font-weight: 700;
+  }
+  .pills span {
+    margin-left: 0.3rem;
+    color: #666;
+  }
+  .match-table {
+    width: 100%;
+  }
+  .match-table td {
+    vertical-align: top;
+  }
+  .thumb-cell {
+    width: 56px;
+  }
+  .thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    background: #f8f9fa;
+  }
+  .no-thumb {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    color: #adb5bd;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+  }
+  .status-pill {
+    display: inline-block;
+    margin: 0 0.25rem 0.25rem 0;
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+    background: #e9ecef;
+    color: #343a40;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .status-pill.fix {
+    background: #d1e7dd;
+    color: #0f5132;
+  }
+  .status-pill.warn {
+    background: #fff3cd;
+    color: #664d03;
+  }
+  tr.error-row td {
+    background: #f8d7da;
+  }
+  tr.fix-row td {
+    background: #eaf6ef;
+  }
+  tr.warning-row td {
+    background: #fff3cd;
+  }
+  tr.error-row.warning-row td {
+    background: #f8d7da;
   }
   button.copy {
     margin: 0 0.5rem 0.3rem 0;

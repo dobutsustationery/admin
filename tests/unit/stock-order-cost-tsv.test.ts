@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildInterpretation,
   parseStockOrderCostTsv,
+  reconcileManual,
   reconcileStockOrderCostTsv,
 } from "$lib/stock-order-cost-tsv";
 
@@ -80,6 +82,55 @@ describe("parseStockOrderCostTsv — header shapes", () => {
     // unit 30*5=150 ; total 150/5*5=150
     expect(p.interpretations.map((i) => i.sum)).toContain(150);
   });
+
+  it("labels manual columns with spreadsheet letters and joined two-row headers", () => {
+    const p = parseStockOrderCostTsv(
+      tsv([
+        ["JAN code", "ORDER Q'ty", "Total Amount JPY"],
+        ["", "PCS", "YEN"],
+        ["4900000000006", "5", "150"],
+      ]),
+    );
+
+    expect(p.headerRows).toBe(2);
+    expect(p.columns.map((c) => c.label)).toEqual([
+      "A: JAN code",
+      "B: ORDER Q'ty PCS",
+      "C: Total Amount JPY YEN",
+    ]);
+  });
+
+  it("carries COO and weight from pasted order rows", () => {
+    const p = parseStockOrderCostTsv(
+      tsv([
+        [
+          "JAN code",
+          "Quantity",
+          "UNIT PRICE (YEN)",
+          "Country of Origin",
+          "Weight in Grams per piece",
+        ],
+        ["4900000000007", "3", "120", "Japan", "45g"],
+      ]),
+    );
+
+    expect(p.interpretations[0].rows[0]).toMatchObject({
+      jan: "4900000000007",
+      countryOfOrigin: "Japan",
+      weight: 45,
+    });
+  });
+
+  it("recognizes short weight headers", () => {
+    const p = parseStockOrderCostTsv(
+      tsv([
+        ["JAN code", "Quantity", "UNIT PRICE (YEN)", "Weight (g)"],
+        ["4900000000008", "3", "120", "45"],
+      ]),
+    );
+
+    expect(p.interpretations[0].rows[0].weight).toBe(45);
+  });
 });
 
 describe("reconcileStockOrderCostTsv", () => {
@@ -111,5 +162,45 @@ describe("reconcileStockOrderCostTsv", () => {
     expect(r.reconciled).toBe(false);
     expect(r.discrepancy).toBeUndefined();
     expect(r.rows.length).toBe(2);
+  });
+});
+
+describe("manual stock-order cost interpretation", () => {
+  it("uses explicit column indices, including duplicate normalized labels", () => {
+    const raw = tsv([
+      ["JAN code", "Quantity", "Total (YEN)", "Total YEN"],
+      ["4900000000020", "10", "800", "1000"],
+    ]);
+
+    const interp = buildInterpretation(raw, {
+      kind: "total",
+      costColumnIndex: 3,
+      qtyColumnIndex: 1,
+    });
+    const r = reconcileManual(interp, 1000);
+
+    expect(r.reconciled).toBe(true);
+    expect(r.chosen?.costColumnIndex).toBe(3);
+    expect(r.chosen?.qtyColumnIndex).toBe(1);
+    expect(r.rows[0].unitCostJpy).toBe(100);
+    expect(r.chosen?.sum).toBe(1000);
+  });
+
+  it("can force unit price even when a total column also exists", () => {
+    const raw = tsv([
+      ["JAN code", "UNIT PRICE (YEN)", "Quantity", "TOTAL (YEN)"],
+      ["4900000000021", "200", "10", "1500"],
+    ]);
+
+    const interp = buildInterpretation(raw, {
+      kind: "unit",
+      costColumnIndex: 1,
+      qtyColumnIndex: 2,
+    });
+    const r = reconcileManual(interp, 2000);
+
+    expect(r.reconciled).toBe(true);
+    expect(r.chosen?.kind).toBe("unit");
+    expect(r.rows[0].unitCostJpy).toBe(200);
   });
 });

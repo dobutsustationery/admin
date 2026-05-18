@@ -1,12 +1,45 @@
 // Pure selector for the order-exceptions route.
 // See docs/investigations/DESIGN_ORDER_EXCEPTIONS_ROUTE.md §3
-import type { InventoryState, StockOrderMeta } from "./inventory";
+import type { InventoryState, Item, StockOrderMeta } from "./inventory";
 import { UNKNOWN_RECEIPT_DATE, BGN_PER_EUR, walkLedger } from "./cost-engine";
 import {
   parseStockOrderCostTsv,
   reconcileStockOrderCostTsv,
+  buildInterpretation,
+  reconcileManual,
   type StockOrderCostReconciliation,
+  type TsvColumn,
 } from "./stock-order-cost-tsv";
+
+export type ManualInterpretation = {
+  kind: "unit" | "total";
+  costColumnIndex: number;
+  qtyColumnIndex: number;
+};
+
+/** Columns + the auto interpretation, for the manual-override UI. */
+export function stockOrderCostColumns(
+  rawPaste: string,
+  valueOfGoodsJpy: number | undefined,
+): {
+  columns: TsvColumn[];
+  headerRows: number;
+  auto: ManualInterpretation | null;
+} {
+  const p = parseStockOrderCostTsv(rawPaste);
+  const r = reconcileStockOrderCostTsv(p, valueOfGoodsJpy);
+  return {
+    columns: p.columns,
+    headerRows: p.headerRows,
+    auto: r.chosen
+      ? {
+          kind: r.chosen.kind,
+          costColumnIndex: r.chosen.costColumnIndex,
+          qtyColumnIndex: r.chosen.qtyColumnIndex,
+        }
+      : null,
+  };
+}
 
 export interface OrderExceptionRow {
   orderId: string;
@@ -168,16 +201,49 @@ export function previewOrderMetaFix(
 export interface StockOrderCostCommitMatch {
   key: string;
   jan: string;
-  subtype: string;
   qty: number;
   oldUnitJpy: number;
   newUnitJpy: number;
   isOverride: boolean;
 }
 
+export type StockOrderMatchKind =
+  | "match"
+  | "fix cost"
+  | "override cost"
+  | "fix coo"
+  | "fix weight"
+  | "warning"
+  | "unmatched";
+
+export interface StockOrderCostMatchRow {
+  rowIndex: number;
+  jan: string;
+  qty: number;
+  unitCostJpy: number;
+  lineCostJpy: number;
+  key?: string;
+  item?: Pick<
+    Item,
+    "description" | "image" | "countryOfOrigin" | "weight" | "subtype"
+  >;
+  status: string;
+  kinds: StockOrderMatchKind[];
+  isUnmatched: boolean;
+  isOverride: boolean;
+  costWillApply: boolean;
+  incomingCountryOfOrigin?: string;
+  incomingWeight?: number;
+  canFixCountryOfOrigin: boolean;
+  canFixWeight: boolean;
+  countryOfOriginMismatch: boolean;
+  weightMismatch: boolean;
+}
+
 export interface StockOrderCostCommitPreview {
   reconciliation: StockOrderCostReconciliation;
   matched: StockOrderCostCommitMatch[];
+  matchRows: StockOrderCostMatchRow[];
   unmatchedJans: string[]; // TSV rows with no lot in this order
   affected: { key: string; oldCostJpy?: number; newCostJpy?: number }[];
 }
@@ -192,27 +258,53 @@ export function computeStockOrderCostCommit(args: {
   rawPaste: string;
   orderId: string;
   overrideExisting: boolean;
+  interpretation?: ManualInterpretation;
   inventory: Pick<
     InventoryState,
     "costLedger" | "idToItem" | "stockOrderRegistry"
   >;
 }): StockOrderCostCommitPreview {
-  const { rawPaste, orderId, overrideExisting, inventory } = args;
+  const { rawPaste, orderId, overrideExisting, interpretation, inventory } =
+    args;
   const reg = inventory.stockOrderRegistry?.[orderId];
-  const reconciliation = reconcileStockOrderCostTsv(
-    parseStockOrderCostTsv(rawPaste),
-    reg?.valueOfGoodsJpy,
-  );
+  const reconciliation = interpretation
+    ? reconcileManual(
+        buildInterpretation(rawPaste, interpretation),
+        reg?.valueOfGoodsJpy,
+      )
+    : reconcileStockOrderCostTsv(
+        parseStockOrderCostTsv(rawPaste),
+        reg?.valueOfGoodsJpy,
+      );
+  // Stock orders have no subtypes: key by JAN only.
   const want = new Map<string, number>();
-  for (const row of reconciliation.rows)
-    want.set(`${row.jan}|${row.subtype || ""}`, row.unitCostJpy);
+  for (const row of reconciliation.rows) want.set(row.jan, row.unitCostJpy);
 
   const tag = `stockOrder:${orderId}`;
   const ledger = inventory.costLedger || {};
   const matched: StockOrderCostCommitMatch[] = [];
-  const matchedRowKeys = new Set<string>();
+  const matchedJans = new Set<string>();
   const affected: { key: string; oldCostJpy?: number; newCostJpy?: number }[] =
     [];
+  const orderItemByJan = new Map<
+    string,
+    { key: string; item: Item; oldUnitJpy: number; qty: number }
+  >();
+
+  for (const key of Object.keys(ledger)) {
+    const item = inventory.idToItem[key];
+    if (!item) continue;
+    const receipt = ledger[key].find(
+      (e) => e.kind === "receipt" && e.source === tag,
+    );
+    if (!receipt || receipt.kind !== "receipt") continue;
+    orderItemByJan.set(item.janCode, {
+      key,
+      item,
+      oldUnitJpy: receipt.unitCostJpy,
+      qty: receipt.qty,
+    });
+  }
 
   for (const key of Object.keys(ledger)) {
     const item = inventory.idToItem[key];
@@ -221,17 +313,15 @@ export function computeStockOrderCostCommit(args: {
     let anyChange = false;
     const projected = orig.map((e) => {
       if (e.kind !== "receipt" || e.source !== tag) return e;
-      const rk = `${item.janCode}|${item.subtype || ""}`;
-      const v = want.get(rk) ?? want.get(`${item.janCode}|`);
+      const v = want.get(item.janCode);
       if (v == null) return e;
-      matchedRowKeys.add(want.has(rk) ? rk : `${item.janCode}|`);
+      matchedJans.add(item.janCode);
       const priced = e.unitCostJpy > 0;
       const isOverride = priced;
       if (priced && !overrideExisting) return e;
       matched.push({
         key,
         jan: item.janCode,
-        subtype: item.subtype || "",
         qty: e.qty,
         oldUnitJpy: e.unitCostJpy,
         newUnitJpy: v,
@@ -250,14 +340,91 @@ export function computeStockOrderCostCommit(args: {
   }
 
   const unmatchedJans = reconciliation.rows
-    .filter(
-      (r) =>
-        !matchedRowKeys.has(`${r.jan}|${r.subtype || ""}`) &&
-        !matchedRowKeys.has(`${r.jan}|`),
-    )
+    .filter((r) => !matchedJans.has(r.jan))
     .map((r) => r.jan);
 
-  return { reconciliation, matched, unmatchedJans, affected };
+  const matchRows: StockOrderCostMatchRow[] = reconciliation.rows.map(
+    (row, rowIndex) => {
+      const hit = orderItemByJan.get(row.jan);
+      if (!hit) {
+        return {
+          rowIndex,
+          jan: row.jan,
+          qty: row.qty,
+          unitCostJpy: row.unitCostJpy,
+          lineCostJpy: row.unitCostJpy * row.qty,
+          status: "Unmatched",
+          kinds: ["unmatched"],
+          isUnmatched: true,
+          isOverride: false,
+          costWillApply: false,
+          incomingCountryOfOrigin: row.countryOfOrigin,
+          incomingWeight: row.weight,
+          canFixCountryOfOrigin: false,
+          canFixWeight: false,
+          countryOfOriginMismatch: false,
+          weightMismatch: false,
+        };
+      }
+      const isOverride = hit.oldUnitJpy > 0;
+      const costWillApply = !isOverride || overrideExisting;
+      const existingCoo = hit.item.countryOfOrigin?.trim();
+      const incomingCoo = row.countryOfOrigin?.trim();
+      const existingWeight = hit.item.weight;
+      const incomingWeight = row.weight;
+      const canFixCountryOfOrigin = !existingCoo && !!incomingCoo;
+      const canFixWeight =
+        !(existingWeight && existingWeight > 0) &&
+        incomingWeight != null &&
+        incomingWeight > 0;
+      const countryOfOriginMismatch =
+        !!existingCoo && !!incomingCoo && existingCoo !== incomingCoo;
+      const weightMismatch =
+        existingWeight != null &&
+        existingWeight > 0 &&
+        incomingWeight != null &&
+        incomingWeight > 0 &&
+        existingWeight !== incomingWeight;
+      const kinds: StockOrderMatchKind[] = ["match"];
+      if (!isOverride) kinds.push("fix cost");
+      if (isOverride) kinds.push("override cost");
+      if (canFixCountryOfOrigin) kinds.push("fix coo");
+      if (canFixWeight) kinds.push("fix weight");
+      if (countryOfOriginMismatch || weightMismatch) kinds.push("warning");
+      return {
+        rowIndex,
+        jan: row.jan,
+        qty: row.qty,
+        unitCostJpy: row.unitCostJpy,
+        lineCostJpy: row.unitCostJpy * row.qty,
+        key: hit.key,
+        item: {
+          description: hit.item.description,
+          image: hit.item.image,
+          countryOfOrigin: hit.item.countryOfOrigin,
+          weight: hit.item.weight,
+          subtype: hit.item.subtype,
+        },
+        status: costWillApply
+          ? isOverride
+            ? "Override cost"
+            : "Fix cost"
+          : "Matched, existing cost",
+        kinds,
+        isUnmatched: false,
+        isOverride,
+        costWillApply,
+        incomingCountryOfOrigin: incomingCoo,
+        incomingWeight,
+        canFixCountryOfOrigin,
+        canFixWeight,
+        countryOfOriginMismatch,
+        weightMismatch,
+      };
+    },
+  );
+
+  return { reconciliation, matched, matchRows, unmatchedJans, affected };
 }
 
 export interface StockOrderFixItem {
@@ -277,6 +444,7 @@ export interface StockOrderFixPreview {
   items: StockOrderFixItem[];
   reconciliation: StockOrderCostReconciliation | null;
   matched: StockOrderCostCommitMatch[];
+  matchRows: StockOrderCostMatchRow[];
   unmatchedJans: string[];
   blocked: boolean;
 }
@@ -298,6 +466,8 @@ export function previewStockOrderFix(
     rawPaste: string;
     overrideExisting: boolean;
     approveDiscrepancy: boolean;
+    interpretation?: ManualInterpretation;
+    ignoreUnmatchedRows?: boolean;
   },
 ): StockOrderFixPreview {
   const eff: StockOrderMeta = {
@@ -317,6 +487,7 @@ export function previewStockOrderFix(
         rawPaste: opts.rawPaste,
         orderId,
         overrideExisting: opts.overrideExisting,
+        interpretation: opts.interpretation,
         inventory: {
           ...inventory,
           stockOrderRegistry: {
@@ -329,8 +500,7 @@ export function previewStockOrderFix(
   const reconciliation = cost?.reconciliation ?? null;
   const want = new Map<string, number>();
   if (reconciliation)
-    for (const r of reconciliation.rows)
-      want.set(`${r.jan}|${r.subtype || ""}`, r.unitCostJpy);
+    for (const r of reconciliation.rows) want.set(r.jan, r.unitCostJpy);
 
   const tag = `stockOrder:${orderId}`;
   const ledger = inventory.costLedger || {};
@@ -346,9 +516,7 @@ export function previewStockOrderFix(
       inOrder++;
       let unitCostJpy = e.unitCostJpy;
       if (item) {
-        const v =
-          want.get(`${item.janCode}|${item.subtype || ""}`) ??
-          want.get(`${item.janCode}|`);
+        const v = want.get(item.janCode);
         if (v != null && (!(e.unitCostJpy > 0) || opts.overrideExisting))
           unitCostJpy = v;
       }
@@ -381,6 +549,7 @@ export function previewStockOrderFix(
       (!reconciliation.reconciled &&
         reconciliation.discrepancy != null &&
         !opts.approveDiscrepancy) ||
+      (!!cost && cost.unmatchedJans.length > 0 && !opts.ignoreUnmatchedRows) ||
       (!!cost &&
         cost.matched.some((m) => m.isOverride) &&
         !opts.overrideExisting));
@@ -392,6 +561,7 @@ export function previewStockOrderFix(
     items,
     reconciliation,
     matched: cost?.matched ?? [],
+    matchRows: cost?.matchRows ?? [],
     unmatchedJans: cost?.unmatchedJans ?? [],
     blocked,
   };

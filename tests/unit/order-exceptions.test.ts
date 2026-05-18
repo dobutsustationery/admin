@@ -207,6 +207,109 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     } as any);
     expect(s3.inventory.costLedger![key][0].unitCostJpy).toBe(200);
   });
+
+  it("manual interpretation is used consistently by preview and commit", () => {
+    const s0 = unpricedOrder();
+    const key = Object.keys(s0.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    const ambiguousTsv = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity\tTOTAL (YEN)",
+      `${JAN}\t200\t10\t1500`,
+    ].join("\n");
+    const manualUnit = {
+      kind: "unit" as const,
+      costColumnIndex: 1,
+      qtyColumnIndex: 2,
+    };
+
+    const pv = previewStockOrderFix(s0.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 1500 },
+      rawPaste: ambiguousTsv,
+      overrideExisting: false,
+      approveDiscrepancy: true,
+      interpretation: manualUnit,
+    });
+    expect(pv.reconciliation?.chosen?.kind).toBe("unit");
+    expect(pv.reconciliation?.chosen?.sum).toBe(2000);
+    expect(pv.items[0].newCostJpy).toBe(200);
+
+    const s1 = rootReducer(s0, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 1500 },
+        costTsv: ambiguousTsv,
+        costInterpretation: manualUnit,
+        overrideExisting: false,
+        approveDiscrepancy: true,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(s1.inventory.costLedger![key][0].unitCostJpy).toBe(200);
+  });
+
+  it("blocks unmatched TSV rows unless they are explicitly ignored", () => {
+    const s = unpricedOrder();
+    const withExtra = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t10`,
+      "9999999999999\t100\t1",
+    ].join("\n");
+
+    const blocked = previewStockOrderFix(s.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 2100 },
+      rawPaste: withExtra,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+    expect(blocked.unmatchedJans).toEqual(["9999999999999"]);
+    expect(blocked.blocked).toBe(true);
+
+    const ignored = previewStockOrderFix(s.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 2100 },
+      rawPaste: withExtra,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+      ignoreUnmatchedRows: true,
+    });
+    expect(ignored.blocked).toBe(false);
+  });
+
+  it("fixes missing COO and weight from matched TSV rows", () => {
+    const s0 = unpricedOrder();
+    const key = Object.keys(s0.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    const richTsv = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity\tCountry of Origin\tWeight in Grams per piece",
+      `${JAN}\t200\t10\tJapan\t42`,
+    ].join("\n");
+
+    const pv = previewStockOrderFix(s0.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 2000 },
+      rawPaste: richTsv,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+    expect(pv.matchRows[0].canFixCountryOfOrigin).toBe(true);
+    expect(pv.matchRows[0].canFixWeight).toBe(true);
+
+    const s1 = rootReducer(s0, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 2000 },
+        costTsv: richTsv,
+        overrideExisting: false,
+        approveDiscrepancy: false,
+        fixCountryOfOrigin: true,
+        fixWeights: true,
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(s1.inventory.idToItem[key].countryOfOrigin).toBe("Japan");
+    expect(s1.inventory.idToItem[key].weight).toBe(42);
+  });
 });
 
 describe("order-exceptions M3.5 — unified previewStockOrderFix", () => {

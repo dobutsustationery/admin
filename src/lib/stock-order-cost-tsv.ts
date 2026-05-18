@@ -1,38 +1,50 @@
 // Reconciling parser for a pasted stock-order invoice TSV (JPY).
 // See docs/investigations/DESIGN_ORDER_EXCEPTIONS_ROUTE.md §6.3
 //
-// Invoice headers are inconsistent and sometimes span two rows. We
-// detect the header (1 or 2 rows), enumerate candidate per-line
-// unit-cost interpretations (a direct unit-price column, or a
-// total ÷ qty column), and pick the interpretation whose
-// Σ round(unitCost)·qty *exactly* equals the order's value of goods.
-// If none reconciles, the closest is returned with the exact signed
-// discrepancy for explicit approval.
+// Headers are inconsistent and sometimes span two rows. We detect the
+// header (1 or 2 rows), enumerate candidate per-line unit-cost
+// interpretations (a direct unit-price column, or a total ÷ qty
+// column) and pick the one whose Σ round(unitCost)·qty exactly equals
+// the order's value of goods. Stock orders never have subtypes.
+// Columns are exposed so the UI can offer a manual override.
 
 import { normalizeHeader, parseAmount } from "./stock-order-cost";
 
 export interface StockOrderCostRow {
   jan: string;
-  subtype: string;
   qty: number;
   unitCostJpy: number; // rounded to ¥1
+  countryOfOrigin?: string;
+  weight?: number;
 }
 
 export interface CostInterpretation {
   label: string;
   kind: "unit" | "total";
+  costColumnIndex: number;
+  qtyColumnIndex: number;
+  costLabel: string; // normalized header of the cost/total column used
+  qtyLabel: string; // normalized header of the qty column used
   sum: number; // Σ round(unitCost)·qty
   rows: StockOrderCostRow[];
 }
 
+export interface TsvColumn {
+  index: number;
+  label: string; // display header, prefixed with spreadsheet column name
+  norm: string; // normalized
+}
+
 export interface StockOrderCostParse {
   interpretations: CostInterpretation[];
-  unmatchedHeader: boolean; // could not resolve qty + a cost column
+  unmatchedHeader: boolean;
   headerRows: number; // 1 or 2
+  columns: TsvColumn[]; // all resolved columns (for manual dropdowns)
+  janCol: number;
 }
 
 export interface StockOrderCostReconciliation {
-  reconciled: boolean; // an interpretation summed exactly to goods
+  reconciled: boolean;
   chosen?: CostInterpretation;
   discrepancy?: number; // signed: chosen.sum - valueOfGoodsJpy
   candidates: { label: string; sum: number }[];
@@ -48,120 +60,314 @@ function extractJan(cell: string): string {
   return m ? m[0] : s;
 }
 
-interface ColMap {
-  jan: number;
-  subtype: number;
-  qty: number;
-  unitCols: number[];
-  totalCols: number[];
-}
-
-function resolveColumns(headers: string[]): ColMap | null {
-  const norm = headers.map(normalizeHeader);
-  const find = (pred: (h: string) => boolean) => norm.findIndex(pred);
-  const all = (pred: (h: string) => boolean) =>
-    norm.map((h, i) => (pred(h) ? i : -1)).filter((i) => i >= 0);
-
-  const jan = find(
+function findJan(norm: string[]): number {
+  return norm.findIndex(
     (h) =>
       h.includes("jan") ||
       h.includes("barcode") ||
       h === "sku" ||
       h.includes("productnumber"),
   );
-  // qty: prefer a PCS column, else a generic quantity (not "unit").
-  let qty = find((h) => h.includes("pcs"));
-  if (qty < 0)
-    qty = find(
-      (h) =>
-        (h.includes("qty") || h.includes("quantity")) && !h.includes("unit"),
-    );
-  const subtype = find((h) => h.includes("subtype") || h === "variant");
+}
 
-  const unitCols = all(
-    (h) =>
+// Prefer the TOTAL piece count, never a carton/inner-scoped one.
+function findQty(norm: string[]): number {
+  const cartonish = (h: string) =>
+    h.includes("ctn") || h.includes("carton") || h.includes("inner");
+  let i = norm.findIndex(
+    (h) => h.includes("pcs") && h.includes("total") && !cartonish(h),
+  );
+  if (i < 0) i = norm.findIndex((h) => h.includes("pcs") && !cartonish(h));
+  if (i < 0)
+    i = norm.findIndex(
+      (h) =>
+        (h.includes("qty") || h.includes("quantity")) &&
+        !h.includes("unit") &&
+        !cartonish(h),
+    );
+  if (i < 0) i = norm.findIndex((h) => h.includes("pcs"));
+  return i;
+}
+
+function unitCols(norm: string[]): number[] {
+  return norm
+    .map((h, i) =>
       (h.includes("unitprice") ||
         h.includes("pcspricejpy") ||
         h.includes("exfactory") ||
         (h.includes("price") && !h.includes("total"))) &&
-      !h.includes("original"),
-  );
-  const totalCols = all(
-    (h) =>
+      !h.includes("original")
+        ? i
+        : -1,
+    )
+    .filter((i) => i >= 0);
+}
+function totalCols(norm: string[]): number[] {
+  return norm
+    .map((h, i) =>
       h.includes("total") &&
-      (h.includes("yen") || h.includes("jpy") || h.includes("amount")),
-  );
+      (h.includes("yen") || h.includes("jpy") || h.includes("amount"))
+        ? i
+        : -1,
+    )
+    .filter((i) => i >= 0);
+}
 
-  if (jan < 0 || qty < 0 || (unitCols.length === 0 && totalCols.length === 0))
-    return null;
-  return { jan, subtype, qty, unitCols, totalCols };
+function findCountryOfOrigin(norm: string[]): number {
+  return norm.findIndex(
+    (h) =>
+      h === "countryoforigin" ||
+      h === "origin" ||
+      h === "country" ||
+      h.includes("countryoforigin"),
+  );
+}
+
+function findWeight(norm: string[]): number {
+  const preferred = norm.findIndex(
+    (h) =>
+      h.includes("weightingrams") ||
+      h.includes("weightingram") ||
+      (h.includes("weight") && h.includes("gram")) ||
+      (h.includes("weight") && h.includes("piece")),
+  );
+  if (preferred >= 0) return preferred;
+  return norm.findIndex(
+    (h) =>
+      h === "weight" ||
+      h === "weightg" ||
+      h.includes("weight") ||
+      h.includes("grams"),
+  );
+}
+
+// Detect a 1- or 2-row header. A row variant is "complete" when it
+// resolves JAN + qty + at least one cost/total column. Prefer 1-row;
+// fall back to the 2-row joined header (then to whatever has a JAN so
+// the manual override still has columns).
+function complete(norm: string[]): boolean {
+  return (
+    findJan(norm) >= 0 &&
+    findQty(norm) >= 0 &&
+    (unitCols(norm).length > 0 || totalCols(norm).length > 0)
+  );
+}
+
+function joinHeaderRows(top: string[], bottom: string[] | undefined): string[] {
+  return top.map((c, i) => `${c ?? ""} ${bottom?.[i] ?? ""}`.trim());
+}
+
+function looksLikeHeaderContinuation(
+  secondRow: string[] | undefined,
+  janCol: number,
+): boolean {
+  if (!secondRow) return false;
+  const janCell = String(secondRow[janCol] ?? "").trim();
+  if (/\d{8,14}/.test(janCell)) return false;
+  const headerishCells = secondRow.filter((cell) =>
+    /[a-zA-Z¥円]/.test(String(cell ?? "")),
+  ).length;
+  return headerishCells > 0;
+}
+
+function detectHeader(grid: string[][]): {
+  labels: string[];
+  headerRows: number;
+} {
+  const one = grid[0];
+  const oneNorm = one.map(normalizeHeader);
+  if (grid.length >= 3) {
+    const joined = joinHeaderRows(grid[0], grid[1]);
+    const joinedComplete = complete(joined.map(normalizeHeader));
+    const oneJan = findJan(oneNorm);
+    if (
+      joinedComplete &&
+      oneJan >= 0 &&
+      looksLikeHeaderContinuation(grid[1], oneJan)
+    )
+      return { labels: joined, headerRows: 2 };
+  }
+  if (complete(oneNorm)) return { labels: one, headerRows: 1 };
+  if (grid.length >= 3) {
+    const joined = joinHeaderRows(grid[0], grid[1]);
+    if (complete(joined.map(normalizeHeader)))
+      return { labels: joined, headerRows: 2 };
+  }
+  // Neither is complete: prefer the variant that at least has a JAN.
+  if (findJan(oneNorm) >= 0) return { labels: one, headerRows: 1 };
+  if (grid.length >= 3) {
+    const joined = joinHeaderRows(grid[0], grid[1]);
+    if (findJan(joined.map(normalizeHeader)) >= 0)
+      return { labels: joined, headerRows: 2 };
+  }
+  return { labels: one, headerRows: 1 };
+}
+
+function spreadsheetColumnName(index: number): string {
+  let n = index + 1;
+  let label = "";
+  while (n > 0) {
+    n -= 1;
+    label = String.fromCharCode(65 + (n % 26)) + label;
+    n = Math.floor(n / 26);
+  }
+  return label;
+}
+
+function buildRows(
+  grid: string[][],
+  headerRows: number,
+  janCol: number,
+  qtyCol: number,
+  costCol: number,
+  kind: "unit" | "total",
+  countryCol = -1,
+  weightCol = -1,
+): { rows: StockOrderCostRow[]; sum: number } {
+  const rows: StockOrderCostRow[] = [];
+  let sum = 0;
+  for (const cells of grid.slice(headerRows)) {
+    const jan = extractJan(cells[janCol]);
+    const qty = parseAmount(cells[qtyCol]);
+    if (jan === "" || !Number.isFinite(qty) || qty <= 0) continue;
+    const raw = parseAmount(cells[costCol]);
+    const u = kind === "total" ? raw / qty : raw;
+    if (!Number.isFinite(u) || u <= 0) continue;
+    const unitCostJpy = Math.round(u);
+    const countryOfOrigin =
+      countryCol >= 0 ? String(cells[countryCol] ?? "").trim() : "";
+    const weight = weightCol >= 0 ? parseAmount(cells[weightCol]) : Number.NaN;
+    rows.push({
+      jan,
+      qty,
+      unitCostJpy,
+      ...(countryOfOrigin ? { countryOfOrigin } : {}),
+      ...(Number.isFinite(weight) && weight > 0 ? { weight } : {}),
+    });
+    sum += unitCostJpy * qty;
+  }
+  return { rows, sum };
 }
 
 export function parseStockOrderCostTsv(rawPaste: string): StockOrderCostParse {
   const lines = String(rawPaste ?? "")
     .split(/\r?\n/)
     .filter((l) => l.trim() !== "");
-  if (lines.length < 2)
-    return { interpretations: [], unmatchedHeader: true, headerRows: 1 };
-
+  const empty: StockOrderCostParse = {
+    interpretations: [],
+    unmatchedHeader: true,
+    headerRows: 1,
+    columns: [],
+    janCol: -1,
+  };
+  if (lines.length < 2) return empty;
   const grid = lines.map(splitCells);
 
-  // Try a 1-row header; if qty + a cost column can't be resolved, retry
-  // with the first two rows joined per column (two-row header).
-  let headerRows = 1;
-  let cols = resolveColumns(grid[0]);
-  if (!cols && grid.length >= 3) {
-    const joined = grid[0].map((c, i) => `${c ?? ""} ${grid[1]?.[i] ?? ""}`);
-    cols = resolveColumns(joined);
-    if (cols) headerRows = 2;
-  }
-  if (!cols)
-    return { interpretations: [], unmatchedHeader: true, headerRows: 1 };
-
-  const dataRows = grid.slice(headerRows);
-  const baseRows = dataRows
-    .map((cells) => ({
-      jan: extractJan(cells[cols!.jan]),
-      subtype:
-        cols!.subtype >= 0 ? String(cells[cols!.subtype] ?? "").trim() : "",
-      qty: parseAmount(cells[cols!.qty]),
-      cells,
-    }))
-    .filter((r) => r.jan !== "" && Number.isFinite(r.qty) && r.qty > 0);
+  const { labels, headerRows } = detectHeader(grid);
+  const norm = labels.map(normalizeHeader);
+  const columns: TsvColumn[] = labels.map((label, index) => ({
+    index,
+    label: `${spreadsheetColumnName(index)}: ${
+      String(label ?? "").trim() || `col${index}`
+    }`,
+    norm: norm[index],
+  }));
+  const janCol = findJan(norm);
+  const qtyCol = findQty(norm);
+  const countryCol = findCountryOfOrigin(norm);
+  const weightCol = findWeight(norm);
+  if (janCol < 0 || qtyCol < 0)
+    return { ...empty, columns, janCol, headerRows };
 
   const interpretations: CostInterpretation[] = [];
-  const build = (
-    label: string,
-    kind: "unit" | "total",
-    unitOf: (cells: string[], qty: number) => number,
-  ) => {
-    const rows: StockOrderCostRow[] = [];
-    let sum = 0;
-    for (const r of baseRows) {
-      const u = unitOf(r.cells, r.qty);
-      if (!Number.isFinite(u) || u <= 0) continue;
-      const unitCostJpy = Math.round(u);
-      rows.push({ jan: r.jan, subtype: r.subtype, qty: r.qty, unitCostJpy });
-      sum += unitCostJpy * r.qty;
-    }
-    if (rows.length) interpretations.push({ label, kind, sum, rows });
+  const add = (costCol: number, kind: "unit" | "total") => {
+    const { rows, sum } = buildRows(
+      grid,
+      headerRows,
+      janCol,
+      qtyCol,
+      costCol,
+      kind,
+      countryCol,
+      weightCol,
+    );
+    if (rows.length)
+      interpretations.push({
+        label: norm[costCol] || `${kind}#${costCol}`,
+        kind,
+        costColumnIndex: costCol,
+        qtyColumnIndex: qtyCol,
+        costLabel: norm[costCol],
+        qtyLabel: norm[qtyCol],
+        sum,
+        rows,
+      });
   };
-
-  for (const c of cols.unitCols)
-    build(normalizeHeader(grid[0][c] || `unit#${c}`), "unit", (cells) =>
-      parseAmount(cells[c]),
-    );
-  for (const c of cols.totalCols)
-    build(
-      normalizeHeader(grid[0][c] || `total#${c}`),
-      "total",
-      (cells, qty) => parseAmount(cells[c]) / qty,
-    );
+  for (const c of unitCols(norm)) add(c, "unit");
+  for (const c of totalCols(norm)) add(c, "total");
 
   return {
     interpretations,
     unmatchedHeader: interpretations.length === 0,
     headerRows,
+    columns,
+    janCol,
+  };
+}
+
+/**
+ * Deterministically build a specific interpretation from explicit
+ * column choices (manual override). Re-parses rawPaste so the commit
+ * interceptor can reproduce exactly what the screen previewed.
+ */
+export function buildInterpretation(
+  rawPaste: string,
+  sel: {
+    kind: "unit" | "total";
+    costColumnIndex: number;
+    qtyColumnIndex: number;
+  },
+): CostInterpretation | null {
+  const lines = String(rawPaste ?? "")
+    .split(/\r?\n/)
+    .filter((l) => l.trim() !== "");
+  if (lines.length < 2) return null;
+  const grid = lines.map(splitCells);
+  const { labels, headerRows } = detectHeader(grid);
+  const norm = labels.map(normalizeHeader);
+  const janCol = findJan(norm);
+  const costCol = sel.costColumnIndex;
+  const qtyCol = sel.qtyColumnIndex;
+  const countryCol = findCountryOfOrigin(norm);
+  const weightCol = findWeight(norm);
+  if (
+    janCol < 0 ||
+    costCol < 0 ||
+    qtyCol < 0 ||
+    costCol >= labels.length ||
+    qtyCol >= labels.length
+  )
+    return null;
+  const { rows, sum } = buildRows(
+    grid,
+    headerRows,
+    janCol,
+    qtyCol,
+    costCol,
+    sel.kind,
+    countryCol,
+    weightCol,
+  );
+  if (rows.length === 0) return null;
+  return {
+    label: norm[costCol] || `${sel.kind}#${costCol}`,
+    kind: sel.kind,
+    costColumnIndex: costCol,
+    qtyColumnIndex: qtyCol,
+    costLabel: norm[costCol],
+    qtyLabel: norm[qtyCol],
+    sum,
+    rows,
   };
 }
 
@@ -176,7 +382,6 @@ export function reconcileStockOrderCostTsv(
   if (parse.interpretations.length === 0)
     return { reconciled: false, candidates, rows: [] };
 
-  // Prefer a direct unit-price interpretation on ties.
   const ordered = [...parse.interpretations].sort((a, b) =>
     a.kind === b.kind ? 0 : a.kind === "unit" ? -1 : 1,
   );
@@ -193,7 +398,6 @@ export function reconcileStockOrderCostTsv(
       };
   }
 
-  // No exact match: closest by |sum - goods| (or first if goods unknown).
   const chosen =
     valueOfGoodsJpy == null
       ? ordered[0]
@@ -210,5 +414,23 @@ export function reconcileStockOrderCostTsv(
       valueOfGoodsJpy == null ? undefined : chosen.sum - valueOfGoodsJpy,
     candidates,
     rows: chosen.rows,
+  };
+}
+
+/** Reconcile from a forced manual interpretation (vs. auto-detect). */
+export function reconcileManual(
+  interp: CostInterpretation | null,
+  valueOfGoodsJpy: number | undefined,
+): StockOrderCostReconciliation {
+  if (!interp) return { reconciled: false, candidates: [], rows: [] };
+  const candidates = [{ label: interp.label, sum: interp.sum }];
+  const reconciled = valueOfGoodsJpy != null && interp.sum === valueOfGoodsJpy;
+  return {
+    reconciled,
+    chosen: interp,
+    discrepancy:
+      valueOfGoodsJpy == null ? undefined : interp.sum - valueOfGoodsJpy,
+    candidates,
+    rows: interp.rows,
   };
 }

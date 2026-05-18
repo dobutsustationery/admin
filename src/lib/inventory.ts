@@ -299,7 +299,7 @@ export const set_stock_order_meta = createAction<{
 // Emitted by the root-reducer interceptor for fix_stock_order.
 export const apply_stock_order_costs = createAction<{
   orderId: string;
-  rows: { jan: string; subtype: string; unitCostJpy: number }[];
+  rows: { jan: string; unitCostJpy: number }[];
   overrideExisting: boolean;
 }>("apply_stock_order_costs");
 
@@ -312,8 +312,17 @@ export const fix_stock_order = createAction<{
   orderId: string;
   meta: StockOrderMeta;
   costTsv?: string;
+  // Optional manual column override; absent = auto-reconcile.
+  costInterpretation?: {
+    kind: "unit" | "total";
+    costColumnIndex: number;
+    qtyColumnIndex: number;
+  };
   overrideExisting: boolean;
   approveDiscrepancy: boolean;
+  ignoreUnmatchedRows?: boolean;
+  fixCountryOfOrigin?: boolean;
+  fixWeights?: boolean;
 }>("fix_stock_order");
 
 export const shopify_order_created = createAction<{
@@ -1968,8 +1977,7 @@ export const inventory = createReducer(initialState, (r) => {
         ? totalOrderEur / (reg!.valueOfOrderJpy as number)
         : 0;
     const want = new Map<string, number>();
-    for (const row of rows)
-      want.set(`${row.jan}|${row.subtype || ""}`, row.unitCostJpy);
+    for (const row of rows) want.set(row.jan, row.unitCostJpy);
     const tag = `stockOrder:${orderId}`;
     for (const key of Object.keys(state.costLedger)) {
       const item = state.idToItem[key];
@@ -1977,9 +1985,7 @@ export const inventory = createReducer(initialState, (r) => {
       let touched = false;
       for (const e of state.costLedger[key]) {
         if (e.kind !== "receipt" || e.source !== tag) continue;
-        const v =
-          want.get(`${item.janCode}|${item.subtype || ""}`) ??
-          want.get(`${item.janCode}|`);
+        const v = want.get(item.janCode);
         if (v == null) continue;
         const priced = e.unitCostJpy > 0;
         if (priced && !overrideExisting) continue;

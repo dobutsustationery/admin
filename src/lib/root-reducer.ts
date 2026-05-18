@@ -1428,8 +1428,17 @@ export const rootReducer = (
   // first so the TSV reconciles against the just-set value-of-goods —
   // the user need not order the fields.
   if (action.type === "fix_stock_order") {
-    const { orderId, meta, costTsv, overrideExisting, approveDiscrepancy } =
-      action.payload;
+    const {
+      orderId,
+      meta,
+      costTsv,
+      costInterpretation,
+      overrideExisting,
+      approveDiscrepancy,
+      ignoreUnmatchedRows,
+      fixCountryOfOrigin,
+      fixWeights,
+    } = action.payload;
 
     if (meta && Object.values(meta).some((v) => v !== undefined)) {
       const metaAction = inheritTimestamp({
@@ -1448,6 +1457,7 @@ export const rootReducer = (
         rawPaste: costTsv,
         orderId,
         overrideExisting,
+        interpretation: costInterpretation,
         inventory: nextState.inventory, // reflects the meta just set
       });
       const r = preview.reconciliation;
@@ -1455,6 +1465,7 @@ export const rootReducer = (
         !r.chosen ||
         r.rows.length === 0 ||
         (!r.reconciled && r.discrepancy != null && !approveDiscrepancy) ||
+        (preview.unmatchedJans.length > 0 && !ignoreUnmatchedRows) ||
         (preview.matched.some((m) => m.isOverride) && !overrideExisting);
       if (!blocked) {
         const applyAction = inheritTimestamp({
@@ -1462,7 +1473,6 @@ export const rootReducer = (
             orderId,
             rows: r.rows.map((x) => ({
               jan: x.jan,
-              subtype: x.subtype,
               unitCostJpy: x.unitCostJpy,
             })),
             overrideExisting,
@@ -1474,6 +1484,43 @@ export const rootReducer = (
           inventory: inventory(nextState.inventory, applyAction),
         };
         logger(applyAction, nextState, action._timestamp);
+
+        for (const row of preview.matchRows) {
+          if (!row.key) continue;
+          const fields: Array<{
+            field: keyof Item;
+            from: string | number;
+            to: string | number;
+          }> = [];
+          if (
+            fixCountryOfOrigin &&
+            row.canFixCountryOfOrigin &&
+            row.incomingCountryOfOrigin
+          ) {
+            fields.push({
+              field: "countryOfOrigin",
+              from: row.item?.countryOfOrigin || "",
+              to: row.incomingCountryOfOrigin,
+            });
+          }
+          if (fixWeights && row.canFixWeight && row.incomingWeight != null) {
+            fields.push({
+              field: "weight",
+              from: row.item?.weight || "",
+              to: row.incomingWeight,
+            });
+          }
+          if (fields.length === 0) continue;
+          const updateAction = inheritTimestamp({
+            ...update_fields({ id: row.key, fields }),
+            _ephemeral: true,
+          });
+          nextState = {
+            ...nextState,
+            inventory: inventory(nextState.inventory, updateAction),
+          };
+          logger(updateAction, nextState, action._timestamp);
+        }
       }
     }
   }
