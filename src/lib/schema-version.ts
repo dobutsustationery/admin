@@ -8,4 +8,10 @@
 //    snapshots carry stale last-write cost and no costLedger, so they
 //    must be discarded and re-derived via full replay. See
 //    docs/investigations/DESIGN_INVENTORY_COST_AND_VALUATION.md
-export const CURRENT_SCHEMA_VERSION = 5;
+// 6: subsequent derived-cost changes (sale interleaving, Total÷PCS
+//    order-cost parser, lot `source` tagging, and the auto-populated
+//    stockOrderRegistry for the order-exceptions route) all change the
+//    materialised costLedger / registry. A v5 snapshot from an earlier
+//    replay lacks them, so it must be discarded and fully re-derived.
+//    See docs/investigations/DESIGN_ORDER_EXCEPTIONS_ROUTE.md
+export const CURRENT_SCHEMA_VERSION = 6;
