@@ -6,7 +6,11 @@ import {
   import_batch,
 } from "$lib/order-import-slice";
 import { set_stock_order_meta } from "$lib/inventory";
-import { selectOrderExceptions } from "$lib/order-exceptions";
+import {
+  selectOrderExceptions,
+  previewOrderMetaFix,
+  paidToEur,
+} from "$lib/order-exceptions";
 
 // M3.2: set_stock_order_meta normalises the real paid currency to EUR
 // (lev peg), retro-updates the order's source-tagged lots (date + EUR),
@@ -80,6 +84,34 @@ describe("order-exceptions M3.2", () => {
     expect(r.flags.paidUnknown).toBe(false);
     expect(r.flags.goodsValueUnknown).toBe(true); // still no value-of-goods
     expect(r.isException).toBe(true);
+  });
+
+  it("paidToEur normalises BGN via the fixed peg", () => {
+    expect(paidToEur({ paidCurrency: "BGN", paidAmount: 195.583 })).toBeCloseTo(
+      100,
+      6,
+    );
+    expect(paidToEur({ paidCurrency: "EUR", paidAmount: 250 })).toBe(250);
+    expect(paidToEur({ totalOrderEur: 7 })).toBe(7);
+  });
+
+  it("previewOrderMetaFix projects date + EUR without mutating state", () => {
+    const s = importOrder("f1", "Supplier A");
+    const before = JSON.stringify(s.inventory.costLedger);
+    const T = Date.parse("2025-09-01");
+    const pv = previewOrderMetaFix(s.inventory, "f1", {
+      receivedAt: T,
+      valueOfOrderJpy: 1000,
+      paidCurrency: "BGN",
+      paidAmount: 195.583,
+    });
+    expect(pv.affectedLots).toBe(1);
+    expect(pv.fx).toBeCloseTo(0.1, 9);
+    expect(pv.items).toHaveLength(1);
+    // unitCostJpy 200 -> EUR 20 at fx 0.1
+    expect(pv.items[0].newCostEur).toBeCloseTo(20, 6);
+    // state untouched by the pure preview
+    expect(JSON.stringify(s.inventory.costLedger)).toBe(before);
   });
 
   it("EUR paid amount passes through unchanged", () => {

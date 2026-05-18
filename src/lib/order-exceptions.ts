@@ -1,7 +1,7 @@
 // Pure selector for the order-exceptions route.
 // See docs/investigations/DESIGN_ORDER_EXCEPTIONS_ROUTE.md §3
-import type { InventoryState } from "./inventory";
-import { UNKNOWN_RECEIPT_DATE } from "./cost-engine";
+import type { InventoryState, StockOrderMeta } from "./inventory";
+import { UNKNOWN_RECEIPT_DATE, BGN_PER_EUR, walkLedger } from "./cost-engine";
 
 export interface OrderExceptionRow {
   orderId: string;
@@ -77,4 +77,85 @@ export function selectOrderExceptions(
   }
   rows.sort((a, b) => a.name.localeCompare(b.name));
   return rows;
+}
+
+/** Normalise the real paid amount to EUR (lev is pegged). */
+export function paidToEur(meta: StockOrderMeta): number | undefined {
+  if (meta.paidAmount == null || !meta.paidCurrency) return meta.totalOrderEur;
+  return meta.paidCurrency === "BGN"
+    ? meta.paidAmount / BGN_PER_EUR
+    : meta.paidAmount;
+}
+
+export interface OrderFixPreviewItem {
+  key: string;
+  lotsInOrder: number;
+  oldCostJpy?: number;
+  newCostJpy?: number;
+  oldCostEur?: number;
+  newCostEur?: number;
+}
+
+export interface OrderFixPreview {
+  orderId: string;
+  fx: number;
+  receivedAt?: number;
+  affectedLots: number;
+  items: OrderFixPreviewItem[];
+}
+
+/**
+ * Pure projection of what `set_stock_order_meta(orderId, proposed)`
+ * would do to this order's source-tagged lots — for the
+ * preview-before-commit screen. Does not mutate state.
+ */
+export function previewOrderMetaFix(
+  state: Pick<InventoryState, "stockOrderRegistry" | "costLedger">,
+  orderId: string,
+  proposed: StockOrderMeta,
+): OrderFixPreview {
+  const eff: StockOrderMeta = {
+    ...(state.stockOrderRegistry?.[orderId] || {}),
+    ...proposed,
+  };
+  const totalOrderEur = paidToEur(eff);
+  const fx =
+    totalOrderEur && (eff.valueOfOrderJpy || 0) > 0
+      ? totalOrderEur / (eff.valueOfOrderJpy as number)
+      : 0;
+  const receivedAt =
+    eff.receivedAt && eff.receivedAt > 0 ? eff.receivedAt : undefined;
+  const tag = `stockOrder:${orderId}`;
+  const ledger = state.costLedger || {};
+
+  const items: OrderFixPreviewItem[] = [];
+  let affectedLots = 0;
+  for (const key of Object.keys(ledger)) {
+    const orig = ledger[key];
+    const inOrder = orig.filter(
+      (e) => e.kind === "receipt" && e.source === tag,
+    ).length;
+    if (inOrder === 0) continue;
+    affectedLots += inOrder;
+    const projected = orig.map((e) => {
+      if (e.kind !== "receipt" || e.source !== tag) return e;
+      return {
+        ...e,
+        at: receivedAt ?? e.at,
+        unitCostEur: fx > 0 ? e.unitCostJpy * fx : e.unitCostEur,
+      };
+    });
+    const before = walkLedger(orig);
+    const after = walkLedger(projected);
+    items.push({
+      key,
+      lotsInOrder: inOrder,
+      oldCostJpy: before.avgJpy,
+      newCostJpy: after.avgJpy,
+      oldCostEur: before.avgEur,
+      newCostEur: after.avgEur,
+    });
+  }
+  items.sort((a, b) => a.key.localeCompare(b.key));
+  return { orderId, fx, receivedAt, affectedLots, items };
 }
