@@ -108,11 +108,22 @@ npm run data:import -- --target emulator --input ./data-export
 # Import to staging
 npm run data:import -- --target staging --input ./data-export
 
+# Resume a partially completed staging import
+npm run data:import -- --target staging --input ./data-export --append
+
 # Import to PRODUCTION (requires --force and special credentials)
 npm run data:import -- --target production --input ./data-export --force
 ```
 
 **⚠️ Warning**: Import will overwrite existing documents with the same IDs!
+
+**Append/resume mode**: `--append` sorts each exported collection by `timestamp`,
+falling back to `createdAtMs` when every exported document has that field and
+`timestamp` is incomplete. It normally resumes from the newest target cursor
+with a one-document overlap. If the target cursor says the collection reached
+the end, it checks the target count; only when that count is wrong does it scan
+document IDs to find the first missing target document. Collections without a
+complete cursor field are imported in full.
 
 **🔒 Production Write Protection**: Importing to production requires:
 

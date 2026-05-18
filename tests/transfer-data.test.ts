@@ -42,4 +42,19 @@ describe("data transfer script", () => {
     expect(content).toContain("async function exportData");
     expect(content).toContain("async function importData");
   });
+
+  it("script supports append imports by timestamp or createdAtMs", () => {
+    const scriptPath = resolve(process.cwd(), "scripts/transfer-data.js");
+    const content = readFileSync(scriptPath, "utf8");
+
+    expect(content).toContain("append: options.append === true");
+    expect(content).toContain("async function selectAppendDocuments");
+    expect(content).toContain("APPEND_CURSOR_FIELDS");
+    expect(content).toContain('name: "timestamp"');
+    expect(content).toContain('name: "createdAtMs"');
+    expect(content).toContain("async function getCollectionCount");
+    expect(content).toContain("collectionRef.count().get()");
+    expect(content).toContain("async function selectMissingAppendDocuments");
+    expect(content).toContain("db.getAll(...docRefs)");
+  });
 });
