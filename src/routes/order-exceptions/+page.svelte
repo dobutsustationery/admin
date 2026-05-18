@@ -107,6 +107,42 @@
   function fmt(n: number | undefined, digits = 2): string {
     return n == null ? "—" : Number(n).toFixed(digits);
   }
+
+  let copyMsg = "";
+  function breakdownTsv(): string {
+    const r = fixPreview?.reconciliation?.chosen;
+    if (!r) return "";
+    const lines = [["JAN", "Subtype", "Qty", "UnitJPY", "LineJPY"].join("\t")];
+    let totQty = 0;
+    let totLine = 0;
+    for (const row of r.rows) {
+      const line = row.unitCostJpy * row.qty;
+      totQty += row.qty;
+      totLine += line;
+      lines.push(
+        [row.jan, row.subtype || "", row.qty, row.unitCostJpy, line].join("\t"),
+      );
+    }
+    lines.push(["TOTAL", "", totQty, "", totLine].join("\t"));
+    lines.push(
+      [
+        "VALUE OF GOODS",
+        "",
+        "",
+        "",
+        Number(goodsJpy) || current?.valueOfGoodsJpy || "",
+      ].join("\t"),
+    );
+    return lines.join("\n");
+  }
+  async function copyBreakdown() {
+    try {
+      await navigator.clipboard.writeText(breakdownTsv());
+      copyMsg = "Copied TSV to clipboard.";
+    } catch {
+      copyMsg = "Clipboard blocked — select the table manually.";
+    }
+  }
   function dateLabel(r: OrderExceptionRow): string {
     return r.flags.dateUnknown
       ? "⚠ unknown"
@@ -245,11 +281,62 @@
           </p>
           {#if rc.candidates.length > 1}
             <p class="hint">
-              Candidates: {rc.candidates
+              Candidates (Σ per interpretation): {rc.candidates
                 .map((c) => `${c.label}=${fmt(c.sum, 0)}`)
                 .join(" · ")}
             </p>
           {/if}
+
+          <div class="breakdown">
+            <button class="copy" on:click={copyBreakdown}>
+              Copy table as TSV
+            </button>
+            {#if copyMsg}<span class="hint">{copyMsg}</span>{/if}
+            <table class="mini">
+              <thead>
+                <tr>
+                  <th>JAN</th><th>Subtype</th><th>Qty</th>
+                  <th>Unit ¥</th><th>Line ¥ (qty×unit)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each rc.chosen.rows as row (row.jan + "|" + row.subtype)}
+                  <tr>
+                    <td>{row.jan}</td>
+                    <td>{row.subtype || ""}</td>
+                    <td>{row.qty}</td>
+                    <td>{fmt(row.unitCostJpy, 0)}</td>
+                    <td>{fmt(row.unitCostJpy * row.qty, 0)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+              <tfoot>
+                <tr class="total">
+                  <td><strong>TOTAL</strong></td>
+                  <td></td>
+                  <td>{rc.chosen.rows.reduce((s, r2) => s + r2.qty, 0)}</td>
+                  <td></td>
+                  <td><strong>{fmt(rc.chosen.sum, 0)}</strong></td>
+                </tr>
+                <tr>
+                  <td>Value of goods</td>
+                  <td></td><td></td><td></td>
+                  <td
+                    >{goodsJpy || fmt(current.valueOfGoodsJpy, 0)}
+                    {#if rc.discrepancy != null && rc.discrepancy !== 0}
+                      <span class="bad"
+                        >(Δ {rc.discrepancy > 0 ? "+" : ""}{fmt(
+                          rc.discrepancy,
+                          0,
+                        )})</span
+                      >
+                    {/if}</td
+                  >
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
           <p>
             {fixPreview.matched.length} lot(s) priced from TSV ·
             {fixPreview.unmatchedJans.length} TSV row(s) with no lot in this order
@@ -409,6 +496,18 @@
   button {
     margin-top: 0.5rem;
     padding: 0.4rem 0.9rem;
+  }
+  .breakdown {
+    margin: 0.5rem 0 1rem;
+  }
+  button.copy {
+    margin: 0 0.5rem 0.3rem 0;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+  }
+  tr.total td {
+    border-top: 2px solid #adb5bd;
+    background: #f1f3f5;
   }
   .back {
     font-size: 0.85rem;
