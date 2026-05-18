@@ -333,12 +333,20 @@ export const computeOrderImportBatch = (
                 fieldResolutions["Weight"] === "incoming"
                   ? item.weight
                   : invItem.weight;
+            } else if (
+              !(invItem.weight && invItem.weight > 0) &&
+              item.weight &&
+              item.weight > 0
+            ) {
+              newItem.weight = item.weight;
             }
             if (fieldResolutions["Country of Origin"]) {
               newItem.countryOfOrigin =
                 fieldResolutions["Country of Origin"] === "incoming"
                   ? item.countryOfOrigin
                   : invItem.countryOfOrigin;
+            } else if (!invItem.countryOfOrigin && item.countryOfOrigin) {
+              newItem.countryOfOrigin = item.countryOfOrigin;
             }
 
             // Always update cost if present in CSV
