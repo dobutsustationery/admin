@@ -11,6 +11,10 @@
 // recognises it, so computation never branches on "problem exists".
 export const UNKNOWN_RECEIPT_DATE = Date.UTC(2026, 0, 1); // 2026-01-01
 
+// Bulgarian lev is fixed to the euro by currency-board peg.
+// State stores EUR; the action records the real paid currency.
+export const BGN_PER_EUR = 1.95583; // 1 EUR = 1.95583 BGN (fixed)
+
 export type ReceiptEntry = {
   kind: "receipt";
   at: number; // epoch ms; always a real date (UNKNOWN_RECEIPT_DATE if not known)

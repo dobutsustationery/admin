@@ -16,6 +16,7 @@ import {
   type LedgerEntry,
   walkLedger,
   UNKNOWN_RECEIPT_DATE,
+  BGN_PER_EUR,
 } from "./cost-engine";
 
 // TODO hceck item history for 4542804115635Silver
@@ -1894,10 +1895,42 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(set_stock_order_meta, (state, action) => {
     if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
     const { orderId, meta } = action.payload;
-    state.stockOrderRegistry[orderId] = {
+    const entry = {
       ...state.stockOrderRegistry[orderId],
       ...meta,
     };
+    // Normalise the real paid amount to EUR (lev is pegged).
+    if (entry.paidAmount != null && entry.paidCurrency) {
+      entry.totalOrderEur =
+        entry.paidCurrency === "BGN"
+          ? entry.paidAmount / BGN_PER_EUR
+          : entry.paidAmount;
+    }
+    state.stockOrderRegistry[orderId] = entry;
+
+    // Retroactively repair this order's lots: import happened earlier in
+    // the log with sentinel date / 0 EUR; this (logged) action fixes
+    // exactly the lots it sourced, then re-derives affected items.
+    const fx =
+      entry.totalOrderEur && (entry.valueOfOrderJpy || 0) > 0
+        ? entry.totalOrderEur / (entry.valueOfOrderJpy as number)
+        : 0;
+    const receivedAt =
+      entry.receivedAt && entry.receivedAt > 0 ? entry.receivedAt : 0;
+    if (!state.costLedger || (!fx && !receivedAt)) return;
+    const tag = `stockOrder:${orderId}`;
+    for (const key of Object.keys(state.costLedger)) {
+      const ledger = state.costLedger[key];
+      let touched = false;
+      for (const e of ledger) {
+        if (e.kind === "receipt" && e.source === tag) {
+          if (receivedAt) e.at = receivedAt;
+          if (fx > 0) e.unitCostEur = e.unitCostJpy * fx;
+          touched = true;
+        }
+      }
+      if (touched) rederiveCostFromLedger(state, key);
+    }
   });
   r.addCase(update_item, (state, action) => {
     applyInventoryUpdate(
