@@ -98,4 +98,31 @@ describe("parseStockOrderUnitCostJpy", () => {
     const headers = ["ORDER \nQ'ty PCS", "Total Wholesale Amount YEN"];
     expect(parseStockOrderUnitCostJpy(headers, ["20", "5000"])).toBe(250);
   });
+
+  it("rule 3: derives cost from TOTAL (YEN) ÷ TOTAL PCS when no unit price", () => {
+    // Senshu shape: no unit-price col, only a JPY line total + TOTAL PCS.
+    const headers = ["JAN Code", "TOTAL PCS", "TOTAL (YEN)", "TOTAL (BGN)"];
+    expect(
+      parseStockOrderUnitCostJpy(headers, [
+        "4977564690045",
+        "20",
+        "¥2,540",
+        "lev28.63",
+      ]),
+    ).toBe(127); // 2540 / 20
+  });
+
+  it("rule 3: ignores lev/BGN totals, picks the yen line total", () => {
+    const headers = ["JAN", "TOTAL PCS", "TOTAL (BGN)", "TOTAL AMOUNT YEN"];
+    expect(
+      parseStockOrderUnitCostJpy(headers, ["x", "10", "lev99", "1000"]),
+    ).toBe(100);
+  });
+
+  it("rule 3 does not override an explicit unit price (rule 1 wins)", () => {
+    const headers = ["JAN", "UNIT PRICE (YEN)", "TOTAL PCS", "TOTAL (YEN)"];
+    expect(
+      parseStockOrderUnitCostJpy(headers, ["x", "130", "20", "2540"]),
+    ).toBe(130); // explicit price, not 2540/20=127
+  });
 });

@@ -80,5 +80,35 @@ export function parseStockOrderUnitCostJpy(
     }
   }
 
+  // 3. Generic line-total ÷ piece-count fallback (only reached when the
+  //    above failed, i.e. cost would otherwise be unknown). Some
+  //    invoices give no per-unit price, only a JPY line total ("TOTAL
+  //    (YEN)" / "TOTAL AMOUNT") and a piece count ("TOTAL PCS") — the
+  //    same piece column the order-import qty logic already resolves.
+  //    Exclude lev/BGN totals.
+  const lineTotalCol = find(
+    idx,
+    (h) =>
+      h.includes("total") &&
+      (h.includes("yen") || h.includes("jpy") || h.includes("amount")) &&
+      !h.includes("bgn") &&
+      !h.includes("lev"),
+  );
+  let pcs2Col = find(idx, (h) => h === "totalpcs");
+  if (pcs2Col < 0) pcs2Col = find(idx, (h) => h.includes("pcs"));
+  if (pcs2Col < 0)
+    pcs2Col = find(
+      idx,
+      (h) =>
+        (h.includes("qty") || h.includes("quantity")) && !h.includes("unit"),
+    );
+  if (lineTotalCol >= 0 && pcs2Col >= 0) {
+    const total = parseAmount(row[lineTotalCol]);
+    const pcs = parseAmount(row[pcs2Col]);
+    if (Number.isFinite(total) && Number.isFinite(pcs) && pcs > 0) {
+      return total / pcs;
+    }
+  }
+
   return STOCK_ORDER_UNIT_COST_UNKNOWN;
 }
