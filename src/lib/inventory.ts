@@ -124,10 +124,16 @@ export interface InventoryState {
 }
 
 export interface StockOrderMeta {
+  name?: string; // activeFile.name (supplier/order label)
   supplier?: string;
   receivedAt?: number; // epoch ms; absent -> UNKNOWN_RECEIPT_DATE
+  valueOfGoodsJpy?: number; // Σ line goods (TSV reconciliation anchor)
+  valueOfOrderJpy?: number; // invoice total JPY (incl. shipping/tax)
+  paidCurrency?: "EUR" | "BGN"; // the real fact paid
+  paidAmount?: number;
+  totalOrderEur?: number; // derived: paid normalised to EUR
+  // legacy (pre-M3) — kept for back-compat with any external callers
   totalOrderJpy?: number;
-  totalOrderEur?: number;
 }
 
 export type InventoryEntityId = string;
@@ -1053,6 +1059,7 @@ function applyInventoryUpdate(
       qty: Number.isFinite(deltaQty) ? deltaQty : 0,
       unitCostJpy: Number(item.cost) > 0 ? Number(item.cost) : 0,
       unitCostEur: 0,
+      source: stockOrder ? `stockOrder:${stockOrder.orderId}` : actionType,
     });
     ledgerChanged = true;
   } else if (val > 0 && stockOrder) {
@@ -1065,6 +1072,7 @@ function applyInventoryUpdate(
         qty: deltaQty,
         unitCostJpy: stockOrder.unitCostJpy,
         unitCostEur: stockOrder.unitCostEur,
+        source: `stockOrder:${stockOrder.orderId}`,
       });
       ledgerChanged = true;
     } else {

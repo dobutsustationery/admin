@@ -18,6 +18,10 @@ export type ReceiptEntry = {
   qty: number;
   unitCostJpy: number; // always a number (0 = unknown, surfaced elsewhere)
   unitCostEur: number; // always a number (0 = unknown, surfaced elsewhere)
+  // Provenance: "stockOrder:<orderId>" for order-sourced lots, else the
+  // creating action type. Lets the exceptions UI target a given order's
+  // lots. Does not affect the cost walk (not a sort key).
+  source?: string;
 };
 
 export type SaleEntry = {

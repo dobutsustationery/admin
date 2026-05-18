@@ -11,6 +11,7 @@ import {
   package_item,
   split_inventory_item,
   fix_jancode,
+  set_stock_order_meta,
 } from "./inventory";
 import { UNKNOWN_RECEIPT_DATE } from "./cost-engine";
 import { names } from "./names";
@@ -1095,6 +1096,22 @@ export const rootReducer = (
       nextState.orderImport.activeFile?.id ||
       nextState.orderImport.activeFile?.name ||
       "unknown-stock-order";
+    // Auto-register the stock order so the exceptions UI can enumerate
+    // it without scanning the action log. Idempotent; metadata only.
+    if (!nextState.inventory.stockOrderRegistry?.[orderId]) {
+      const registerAction = inheritTimestamp({
+        ...set_stock_order_meta({
+          orderId,
+          meta: { name: nextState.orderImport.activeFile?.name || orderId },
+        }),
+        _ephemeral: true,
+      });
+      nextState = {
+        ...nextState,
+        inventory: inventory(nextState.inventory, registerAction),
+      };
+      logger(registerAction, nextState, action._timestamp);
+    }
     const meta = nextState.inventory.stockOrderRegistry?.[orderId];
     const receivedAt =
       meta?.receivedAt && Number.isFinite(meta.receivedAt)
