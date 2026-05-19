@@ -14,7 +14,7 @@ import {
 } from "./timestamped-action";
 import {
   type LedgerEntry,
-  walkLedger,
+  type ReceiptEntry,
   UNKNOWN_RECEIPT_DATE,
   BGN_PER_EUR,
   lotMatchesOrder,
@@ -282,6 +282,7 @@ export interface BulkImportItem {
     unitCostJpy: number;
     unitCostEur: number;
     receivedAt: number;
+    orderedQty?: number;
   };
 }
 
@@ -826,9 +827,129 @@ function rederiveCostFromLedger(state: InventoryState, key: string) {
   const hasPriced = ledger.some(
     (e) => e.kind === "receipt" && e.unitCostJpy > 0,
   );
-  if (ledger.length >= 2 || hasPriced) {
-    item.cost = walkLedger(ledger).avgJpy;
+  if (hasPriced) {
+    item.cost = walkLedgerForDerivedCost(ledger).avgJpy;
   }
+}
+
+function sortLedgerEntries(entries: readonly LedgerEntry[]): LedgerEntry[] {
+  return entries
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => {
+      if (a.e.at !== b.e.at) return a.e.at - b.e.at;
+      if (a.e.seq !== b.e.seq) return a.e.seq - b.e.seq;
+      return a.i - b.i;
+    })
+    .map((x) => x.e);
+}
+
+function walkLedgerForDerivedCost(entries: readonly LedgerEntry[]) {
+  let onHand = 0;
+  let avgJpy = 0;
+  let avgEur = 0;
+
+  for (const e of sortLedgerEntries(entries)) {
+    if (e.kind === "receipt") {
+      const next = onHand + e.qty;
+      if (next <= 0) {
+        onHand = next > 0 ? next : 0;
+        continue;
+      }
+      if (e.unitCostJpy > 0 || e.unitCostEur > 0) {
+        avgJpy = (onHand * avgJpy + e.qty * e.unitCostJpy) / next;
+        avgEur = (onHand * avgEur + e.qty * e.unitCostEur) / next;
+      }
+      onHand = next;
+    } else {
+      onHand = Math.max(0, onHand - e.qty);
+    }
+  }
+
+  return { onHand, avgJpy, avgEur };
+}
+
+function nextLedgerSeq(ledger: readonly LedgerEntry[]): number {
+  return ledger.reduce((max, e) => Math.max(max, e.seq), -1) + 1;
+}
+
+function applyStockOrderCostToReceipt(
+  receipt: ReceiptEntry,
+  stockOrder: NonNullable<BulkImportItem["stockOrder"]>,
+): boolean {
+  let changed = false;
+  if (receipt.costOrderId !== stockOrder.orderId) {
+    receipt.costOrderId = stockOrder.orderId;
+    changed = true;
+  }
+  if (
+    stockOrder.unitCostJpy > 0 &&
+    receipt.unitCostJpy !== stockOrder.unitCostJpy
+  ) {
+    receipt.unitCostJpy = stockOrder.unitCostJpy;
+    changed = true;
+  }
+  if (
+    stockOrder.unitCostEur > 0 &&
+    receipt.unitCostEur !== stockOrder.unitCostEur
+  ) {
+    receipt.unitCostEur = stockOrder.unitCostEur;
+    changed = true;
+  }
+  return changed;
+}
+
+function allocateZeroedStockOrderToReceipts(
+  ledger: LedgerEntry[],
+  stockOrder: NonNullable<BulkImportItem["stockOrder"]>,
+): boolean {
+  const targetQty =
+    Number(stockOrder.orderedQty) > 0
+      ? Number(stockOrder.orderedQty)
+      : undefined;
+  let remaining = targetQty ?? Number.POSITIVE_INFINITY;
+  let changed = false;
+
+  const candidates = ledger
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => {
+      if (entry.kind !== "receipt") return false;
+      if (entry.source?.startsWith("stockOrder:")) return false;
+      if (entry.costOrderId && entry.costOrderId !== stockOrder.orderId) {
+        return false;
+      }
+      return entry.qty > 0;
+    })
+    .sort((a, b) => {
+      if (a.entry.at !== b.entry.at) return a.entry.at - b.entry.at;
+      if (a.entry.seq !== b.entry.seq) return a.entry.seq - b.entry.seq;
+      return a.index - b.index;
+    });
+
+  for (const { entry, index } of candidates) {
+    if (remaining <= 0) break;
+    const receipt = entry as ReceiptEntry;
+    if (receipt.qty > remaining) {
+      const unallocated: ReceiptEntry = {
+        ...receipt,
+        seq: nextLedgerSeq(ledger),
+        qty: receipt.qty - remaining,
+        unitCostJpy: 0,
+        unitCostEur: 0,
+        costOrderId: undefined,
+      };
+      receipt.qty = remaining;
+      changed = applyStockOrderCostToReceipt(receipt, stockOrder) || changed;
+      ledger.splice(index + 1, 0, unallocated);
+      changed = true;
+      remaining = 0;
+      break;
+    }
+
+    remaining -= receipt.qty;
+    changed = applyStockOrderCostToReceipt(receipt, stockOrder) || changed;
+  }
+
+  return changed;
 }
 
 // Helper to apply update logic
@@ -1113,28 +1234,35 @@ function applyInventoryUpdate(
       ledgerChanged = true;
     } else {
       // Original order (qty 0): attach landed cost to pre-existing
-      // (scan-sourced) receipts. The lot keeps its scan source/date;
-      // we additionally stamp costOrderId so the exceptions UI can
-      // target it (even when no cost is supplied yet — a later invoice
-      // TSV fills it). Cost/ledgerChanged behaviour is unchanged.
-      for (const e of ledger) {
-        if (e.kind !== "receipt") continue;
-        e.costOrderId = stockOrder.orderId; // additive metadata only
-        if (!(e.unitCostJpy > 0)) {
-          e.unitCostJpy = stockOrder.unitCostJpy;
-          e.unitCostEur = stockOrder.unitCostEur;
-          ledgerChanged = true;
-        }
-      }
+      // (scan-sourced) receipts. Allocate oldest unmatched receipts first
+      // using the supplier row quantity when available; this prevents later
+      // zeroed orders from overwriting earlier lot attribution.
+      ledgerChanged = allocateZeroedStockOrderToReceipts(ledger, stockOrder);
     }
+  } else if (
+    val > 0 &&
+    actionType === "update_item" &&
+    Number.isFinite(deltaQty) &&
+    deltaQty > 0
+  ) {
+    ledger.push({
+      kind: "receipt",
+      at: deriveCreationTimestampMs(timestamp),
+      seq: ledger.length,
+      qty: deltaQty,
+      unitCostJpy: Number(item.cost) > 0 ? Number(item.cost) : 0,
+      unitCostEur: 0,
+      source: actionType,
+    });
+    ledgerChanged = true;
   }
 
   if (ledgerChanged) {
     const hasPriced = ledger.some(
       (e) => e.kind === "receipt" && e.unitCostJpy > 0,
     );
-    if (ledger.length >= 2 || hasPriced) {
-      const derived = walkLedger(ledger).avgJpy;
+    if (hasPriced) {
+      const derived = walkLedgerForDerivedCost(ledger).avgJpy;
       state.idToItem[id].cost = derived;
       historyEntries.push({
         date: globalDate,

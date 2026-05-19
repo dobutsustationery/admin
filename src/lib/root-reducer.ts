@@ -1136,6 +1136,10 @@ export const rootReducer = (
           unitCostJpy,
           unitCostEur: fx > 0 ? unitCostJpy * fx : 0,
           receivedAt,
+          orderedQty:
+            Number((u as any).orderedQty ?? (u.item as any).orderedQty) > 0
+              ? Number((u as any).orderedQty ?? (u.item as any).orderedQty)
+              : undefined,
         },
       };
     });

@@ -112,3 +112,80 @@ export function parseStockOrderUnitCostJpy(
 
   return STOCK_ORDER_UNIT_COST_UNKNOWN;
 }
+
+/**
+ * Ordered quantity for one stock-order row.
+ *
+ * Supplier sheets are inconsistent: some expose a direct quantity column,
+ * while Kanegen-style files only expose unit price and line total. This is
+ * separate from inventory `qty`, because zeroed historical stock-order rows
+ * intentionally apply no stock delta but still need their original order
+ * quantity for lot attribution.
+ */
+export function parseStockOrderOrderedQty(
+  headers: readonly string[],
+  row: readonly unknown[],
+): number | undefined {
+  const idx = buildIndex(headers);
+
+  let explicitQtyCol = find(
+    idx,
+    (h) => h === "totalpcs" || h === "orderqtypcs",
+  );
+  if (explicitQtyCol < 0) {
+    explicitQtyCol = find(
+      idx,
+      (h) =>
+        (h.includes("qty") || h.includes("quantity")) && !h.includes("unit"),
+    );
+  }
+  if (explicitQtyCol >= 0) {
+    const qty = parseAmount(row[explicitQtyCol]);
+    if (Number.isFinite(qty) && qty > 0) return qty;
+  }
+
+  const unitPriceCol = find(
+    idx,
+    (h) =>
+      h.includes("unitprice") &&
+      !h.includes("total") &&
+      !h.includes("amount") &&
+      !h.includes("bgn") &&
+      !h.includes("lev") &&
+      !h.includes("eur"),
+  );
+  if (unitPriceCol < 0) return undefined;
+
+  const unitPrice = parseAmount(row[unitPriceCol]);
+  if (!Number.isFinite(unitPrice) || unitPrice <= 0) return undefined;
+
+  const lineTotalCol = find(
+    idx,
+    (h) =>
+      h.includes("total") &&
+      (h.includes("yen") || h.includes("jpy") || h.includes("amount")) &&
+      !h.includes("bgn") &&
+      !h.includes("lev") &&
+      !h.includes("eur") &&
+      !h.includes("taxincluded"),
+  );
+  const estimatedTotalCol = find(
+    idx,
+    (h) =>
+      h.includes("estimatedamount") &&
+      !h.includes("taxincluded") &&
+      !h.includes("bgn") &&
+      !h.includes("lev") &&
+      !h.includes("eur"),
+  );
+  const totalCol = lineTotalCol >= 0 ? lineTotalCol : estimatedTotalCol;
+  if (totalCol < 0) return undefined;
+
+  const total = parseAmount(row[totalCol]);
+  if (!Number.isFinite(total) || total <= 0) return undefined;
+
+  const qty = total / unitPrice;
+  if (!Number.isFinite(qty) || qty <= 0) return undefined;
+  const rounded = Math.round(qty);
+  return Math.abs(qty - rounded) < 1e-6 ? rounded : qty;
+}

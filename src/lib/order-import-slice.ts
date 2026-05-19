@@ -1,6 +1,9 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import Papa from "papaparse";
-import { parseStockOrderUnitCostJpy } from "./stock-order-cost";
+import {
+  parseStockOrderOrderedQty,
+  parseStockOrderUnitCostJpy,
+} from "./stock-order-cost";
 
 export interface ImportItem {
   janCode: string;
@@ -11,6 +14,7 @@ export interface ImportItem {
   processed?: boolean;
   price?: number;
   cost?: number;
+  orderedQty?: number;
   weight?: number; // in grams
   countryOfOrigin?: string;
 }
@@ -153,6 +157,8 @@ const mapImportItem = (row: any): ImportItem => {
     ]) || "0",
     10,
   );
+  const keys = Object.keys(row);
+  const values = keys.map((k) => row[k]);
 
   return {
     janCode,
@@ -172,13 +178,10 @@ const mapImportItem = (row: any): ImportItem => {
     // unit-price column if finite, else Total Wholesale Amount YEN ÷
     // Order Q'ty PCS (Q'ty UNIT disregarded). 0 -> unknown -> undefined.
     cost: (() => {
-      const keys = Object.keys(row);
-      const v = parseStockOrderUnitCostJpy(
-        keys,
-        keys.map((k) => row[k]),
-      );
+      const v = parseStockOrderUnitCostJpy(keys, values);
       return v > 0 ? v : undefined;
     })(),
+    orderedQty: parseStockOrderOrderedQty(keys, values),
     price: undefined,
     weight,
     countryOfOrigin: countryOfOrigin || undefined,
@@ -323,6 +326,7 @@ export const computeOrderImportBatch = (
                   type: "update",
                   id: itemKey,
                   item: splitItem,
+                  orderedQty: qty,
                 });
               }
             }
@@ -372,6 +376,7 @@ export const computeOrderImportBatch = (
               type: "update",
               id: itemKey,
               item: newItem,
+              orderedQty: item.orderedQty,
             });
             indices.push(index);
           }
@@ -431,6 +436,7 @@ export const computeOrderImportBatch = (
           updates.push({
             type: "update",
             id: id,
+            orderedQty: item.orderedQty,
             item: {
               ...baseItem,
               janCode: item.janCode,
@@ -451,6 +457,7 @@ export const computeOrderImportBatch = (
         updates.push({
           type: "update",
           id: id,
+          orderedQty: item.orderedQty,
           item: {
             ...baseItem,
             janCode: item.janCode,
@@ -475,6 +482,7 @@ export const computeOrderImportBatch = (
         type: "new",
         id: item.janCode,
         item: item,
+        orderedQty: item.orderedQty,
       });
       indices.push(index);
     }

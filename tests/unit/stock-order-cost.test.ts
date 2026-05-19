@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  parseStockOrderOrderedQty,
   parseStockOrderUnitCostJpy,
   parseAmount,
   normalizeHeader,
@@ -20,6 +21,38 @@ describe("parseAmount", () => {
     expect(Number.isNaN(parseAmount("  "))).toBe(true);
     expect(Number.isNaN(parseAmount(undefined))).toBe(true);
     expect(Number.isNaN(parseAmount(Number.NaN))).toBe(true);
+  });
+});
+
+describe("parseStockOrderOrderedQty", () => {
+  it("uses a direct PCS quantity when present", () => {
+    expect(
+      parseStockOrderOrderedQty(
+        ["JAN Code", "ORDER \nQ'ty PCS", "UNIT PRICE (YEN)"],
+        ["x", "20", "100"],
+      ),
+    ).toBe(20);
+  });
+
+  it("derives quantity from Kanegen unit and line totals", () => {
+    expect(
+      parseStockOrderOrderedQty(
+        ["JAN Code", "UNIT PRICE (YEN)", "TOTAL (YEN)", "TOTAL (BGN)"],
+        ["4901681382316", "¥636", "¥6,360", "lev71.68"],
+      ),
+    ).toBe(10);
+
+    expect(
+      parseStockOrderOrderedQty(
+        [
+          "JAN code",
+          "Unit price excluding tax\n（C rank）",
+          "estimated\namount",
+          "Estimated amount, \ntax included",
+        ],
+        ["4901681382316", "660", "2,640", "2,904"],
+      ),
+    ).toBe(4);
   });
 });
 
