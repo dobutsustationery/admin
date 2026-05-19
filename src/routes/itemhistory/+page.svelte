@@ -8,6 +8,7 @@
   import Signin, { type User } from "$lib/Signin.svelte";
   import { store } from "$lib/store";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
+  import ItemCard from "$lib/components/ItemCard.svelte";
 
   let me: User = { signedIn: false };
   let searchQuery = "";
@@ -85,35 +86,14 @@
   </div>
 
   {#if itemKey}
-    <div class="header-section">
-      {#if currentItem && currentItem.image}
-        <div class="main-thumb">
-          <ImageThumbnail
-            src={currentItem.image}
-            alt={currentItem.description}
-            width="100px"
-            height="100px"
-          />
-        </div>
-      {/if}
-      <div class="title-info">
-        <h1>Item History</h1>
-        {#if currentItem}
-          <h2 class="subtitle">{currentItem.description}</h2>
-          <div class="meta">
-            <span class="jan">{currentItem.janCode}</span>
-            {#if currentItem.subtype}<span class="subtype"
-                >({currentItem.subtype})</span
-              >{/if}
-          </div>
-        {:else}
-          <h2 class="subtitle">
-            {itemKey} (Item not found in current inventory)
-          </h2>
-        {/if}
-      </div>
-    </div>
+    <h1 class="page-title">Item History</h1>
+    <ItemCard
+      item={currentItem}
+      {itemKey}
+      ledger={$store.inventory?.costLedger?.[itemKey] || []}
+    />
 
+    <h2 class="history-title">History</h2>
     <table>
       <thead>
         <tr>
@@ -219,32 +199,15 @@
     max-width: 300px;
   }
 
-  .header-section {
-    display: flex;
-    gap: 1.5rem;
-    align-items: center;
-    margin-bottom: 2rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid #eee;
-  }
-
-  .main-thumb {
-    flex-shrink: 0;
-  }
-
-  .title-info h1 {
-    margin: 0 0 0.5rem 0;
+  .page-title {
+    margin: 0 0 1rem;
     font-size: 1.5rem;
+    color: #111827;
   }
-  .subtitle {
-    margin: 0 0 0.25rem 0;
-    font-size: 1.1rem;
-    color: #333;
-    font-weight: normal;
-  }
-  .meta {
-    color: #666;
-    font-family: monospace;
+  .history-title {
+    margin: 2rem 0 0.75rem;
+    font-size: 1.25rem;
+    color: #111827;
   }
 
   table {
