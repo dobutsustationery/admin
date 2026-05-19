@@ -32,6 +32,8 @@
   let ignoreUnmatchedRows = false;
   let fixCountryOfOrigin = false;
   let fixWeights = false;
+  const weightToleranceOptions = [0, 0.1, 1, 5, 10];
+  let weightToleranceG = 0;
   let resolutionFilter = "all";
   let manualOverride = false;
   let manualKind: "unit" | "total" = "total";
@@ -58,6 +60,7 @@
     ignoreUnmatchedRows = false;
     fixCountryOfOrigin = false;
     fixWeights = false;
+    weightToleranceG = 0;
     resolutionFilter = "all";
     manualCostColumnIndex = -1;
     manualQtyColumnIndex = -1;
@@ -131,6 +134,7 @@
         approveDiscrepancy,
         interpretation,
         ignoreUnmatchedRows,
+        weightToleranceG: Number(weightToleranceG),
       })
     : null;
   $: matchRows = fixPreview?.matchRows ?? [];
@@ -478,6 +482,14 @@
               Copy table as TSV
             </button>
             {#if copyMsg}<span class="hint">{copyMsg}</span>{/if}
+            <label class="weight-threshold">
+              Weight match threshold
+              <select bind:value={weightToleranceG}>
+                {#each weightToleranceOptions as g}
+                  <option value={g}>{g}g</option>
+                {/each}
+              </select>
+            </label>
             {#if resolutionKinds.length > 1}
               <div class="pills" aria-label="Filter match table">
                 {#each resolutionKinds as kind (kind)}
@@ -500,8 +512,8 @@
                   pasted order.
                 {/if}
                 {#if hasWeightWarnings}
-                  Some rows have mismatched weight values between inventory and
-                  the pasted order.
+                  Some rows have weight differences beyond the selected
+                  threshold.
                 {/if}
               </p>
             {/if}
@@ -833,6 +845,10 @@
     flex-wrap: wrap;
     gap: 0.35rem;
     margin: 0.55rem 0;
+  }
+  .weight-threshold {
+    display: inline-block;
+    margin: 0 0 0.55rem;
   }
   .pills button {
     margin: 0;

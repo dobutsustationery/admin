@@ -275,6 +275,7 @@ export function computeStockOrderCostCommit(args: {
   rawPaste: string;
   orderId: string;
   overrideExisting: boolean;
+  weightToleranceG?: number;
   interpretation?: ManualInterpretation;
   inventory: Pick<
     InventoryState,
@@ -283,6 +284,7 @@ export function computeStockOrderCostCommit(args: {
 }): StockOrderCostCommitPreview {
   const { rawPaste, orderId, overrideExisting, interpretation, inventory } =
     args;
+  const weightToleranceG = Math.max(0, Number(args.weightToleranceG) || 0);
   const reg = inventory.stockOrderRegistry?.[orderId];
   const reconciliation = interpretation
     ? reconcileManual(
@@ -398,7 +400,7 @@ export function computeStockOrderCostCommit(args: {
         existingWeight > 0 &&
         incomingWeight != null &&
         incomingWeight > 0 &&
-        existingWeight !== incomingWeight;
+        Math.abs(existingWeight - incomingWeight) > weightToleranceG;
       const kinds: StockOrderMatchKind[] = ["match"];
       if (!isOverride) kinds.push("fix cost");
       if (isOverride) kinds.push("override cost");
@@ -482,6 +484,7 @@ export function previewStockOrderFix(
     approveDiscrepancy: boolean;
     interpretation?: ManualInterpretation;
     ignoreUnmatchedRows?: boolean;
+    weightToleranceG?: number;
   },
 ): StockOrderFixPreview {
   const eff: StockOrderMeta = {
@@ -501,6 +504,7 @@ export function previewStockOrderFix(
         rawPaste: opts.rawPaste,
         orderId,
         overrideExisting: opts.overrideExisting,
+        weightToleranceG: opts.weightToleranceG,
         interpretation: opts.interpretation,
         inventory: {
           ...inventory,

@@ -5,7 +5,11 @@ import {
   append_raw_rows,
   import_batch,
 } from "$lib/order-import-slice";
-import { set_stock_order_meta, fix_stock_order } from "$lib/inventory";
+import {
+  set_stock_order_meta,
+  fix_stock_order,
+  update_field,
+} from "$lib/inventory";
 import {
   selectOrderExceptions,
   previewOrderMetaFix,
@@ -309,6 +313,46 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
 
     expect(s1.inventory.idToItem[key].countryOfOrigin).toBe("Japan");
     expect(s1.inventory.idToItem[key].weight).toBe(42);
+  });
+
+  it("uses the selected weight tolerance for mismatch warnings", () => {
+    let s0 = unpricedOrder();
+    const key = Object.keys(s0.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    s0 = rootReducer(s0, {
+      ...update_field({
+        id: key,
+        field: "weight",
+        from: "",
+        to: 42,
+      }),
+      timestamp: TS,
+    } as any);
+    const richTsv = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity\tWeight in Grams per piece",
+      `${JAN}\t200\t10\t42.05`,
+    ].join("\n");
+
+    const strict = previewStockOrderFix(s0.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 2000 },
+      rawPaste: richTsv,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+      weightToleranceG: 0,
+    });
+    expect(strict.matchRows[0].weightMismatch).toBe(true);
+    expect(strict.matchRows[0].kinds).toContain("warning");
+
+    const tolerant = previewStockOrderFix(s0.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 2000 },
+      rawPaste: richTsv,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+      weightToleranceG: 0.1,
+    });
+    expect(tolerant.matchRows[0].weightMismatch).toBe(false);
+    expect(tolerant.matchRows[0].kinds).not.toContain("warning");
   });
 });
 
