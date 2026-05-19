@@ -4,8 +4,8 @@
 // Headers are inconsistent and sometimes span two rows. We detect the
 // header (1 or 2 rows), enumerate candidate per-line unit-cost
 // interpretations (a direct unit-price column, or a total ÷ qty
-// column) and pick the one whose Σ round(unitCost)·qty exactly equals
-// the order's value of goods. Stock orders never have subtypes.
+// column) and pick the one whose line sum exactly equals the order's
+// value of goods. Stock orders never have subtypes.
 // Columns are exposed so the UI can offer a manual override.
 
 import Papa from "papaparse";
@@ -15,7 +15,7 @@ import { normalizeHeader, parseAmount } from "./stock-order-cost";
 export interface StockOrderCostRow {
   jan: string;
   qty: number;
-  unitCostJpy: number; // rounded to ¥1
+  unitCostJpy: number; // unit rows are rounded to ¥1; total rows may be fractional
   countryOfOrigin?: string;
   weight?: number;
 }
@@ -29,7 +29,7 @@ export interface CostInterpretation {
   weightColumnIndex: number; // -1 = none
   costLabel: string; // normalized header of the cost/total column used
   qtyLabel: string; // normalized header of the qty column used
-  sum: number; // Σ round(unitCost)·qty
+  sum: number; // unit rows: Σ round(unitCost)·qty; total rows: Σ line total
   rows: StockOrderCostRow[];
 }
 
@@ -253,7 +253,7 @@ function buildRows(
     const raw = parseAmount(cells[costCol]);
     const u = kind === "total" ? raw / qty : raw;
     if (!Number.isFinite(u) || u <= 0) continue;
-    const unitCostJpy = Math.round(u);
+    const unitCostJpy = kind === "total" ? u : Math.round(u);
     const countryOfOrigin =
       countryCol >= 0 ? String(cells[countryCol] ?? "").trim() : "";
     const weight = weightCol >= 0 ? parseAmount(cells[weightCol]) : Number.NaN;
@@ -264,7 +264,7 @@ function buildRows(
       ...(countryOfOrigin ? { countryOfOrigin } : {}),
       ...(Number.isFinite(weight) && weight > 0 ? { weight } : {}),
     });
-    sum += unitCostJpy * qty;
+    sum += kind === "total" ? raw : unitCostJpy * qty;
   }
   return { rows, sum };
 }

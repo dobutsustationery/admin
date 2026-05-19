@@ -157,6 +157,23 @@ describe("reconcileStockOrderCostTsv", () => {
     expect(r.discrepancy).toBe(-5); // chosen.sum - goods
   });
 
+  it("does not round total/qty unit costs before reconciliation", () => {
+    const p = parseStockOrderCostTsv(
+      tsv([
+        ["JAN code", "Quantity", "TOTAL (YEN)"],
+        ["4900000000012", "3", "1000"],
+        ["4900000000013", "7", "2000"],
+      ]),
+    );
+
+    const r = reconcileStockOrderCostTsv(p, 3000);
+
+    expect(r.reconciled).toBe(true);
+    expect(r.chosen?.kind).toBe("total");
+    expect(r.rows.map((row) => row.unitCostJpy)).toEqual([1000 / 3, 2000 / 7]);
+    expect(r.chosen?.sum).toBe(3000);
+  });
+
   it("goods unknown: first interpretation, no discrepancy", () => {
     const r = reconcileStockOrderCostTsv(parse, undefined);
     expect(r.reconciled).toBe(false);
