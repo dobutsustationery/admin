@@ -37,6 +37,8 @@
   let manualKind: "unit" | "total" = "total";
   let manualCostColumnIndex = -1;
   let manualQtyColumnIndex = -1;
+  let manualCountryColumnIndex = -1;
+  let manualWeightColumnIndex = -1;
 
   let lastLoadedOrder = "";
   $: if (current && current.orderId !== lastLoadedOrder) {
@@ -59,6 +61,8 @@
     resolutionFilter = "all";
     manualCostColumnIndex = -1;
     manualQtyColumnIndex = -1;
+    manualCountryColumnIndex = -1;
+    manualWeightColumnIndex = -1;
   }
 
   function num(s: string): number | undefined {
@@ -89,7 +93,13 @@
   // Columns + auto-detected interpretation for the manual dropdowns.
   $: costCols = costPaste.trim()
     ? stockOrderCostColumns(costPaste, valueOfGoodsJpy)
-    : { columns: [], headerRows: 1, auto: null };
+    : {
+        columns: [],
+        headerRows: 1,
+        auto: null,
+        countryColumnIndex: -1,
+        weightColumnIndex: -1,
+      };
   // Default the manual selectors to the same goods-aware auto pick used by
   // the preview whenever the user has not taken manual control.
   $: if (!manualOverride && costCols.auto) {
@@ -97,12 +107,20 @@
     manualCostColumnIndex = costCols.auto.costColumnIndex;
     manualQtyColumnIndex = costCols.auto.qtyColumnIndex;
   }
+  // COO/weight follow the auto-detected columns until the user takes
+  // manual control, so the dropdowns always show the chosen column.
+  $: if (!manualOverride) {
+    manualCountryColumnIndex = costCols.countryColumnIndex ?? -1;
+    manualWeightColumnIndex = costCols.weightColumnIndex ?? -1;
+  }
   $: interpretation =
     manualOverride && manualCostColumnIndex >= 0 && manualQtyColumnIndex >= 0
       ? {
           kind: manualKind,
           costColumnIndex: manualCostColumnIndex,
           qtyColumnIndex: manualQtyColumnIndex,
+          countryColumnIndex: manualCountryColumnIndex,
+          weightColumnIndex: manualWeightColumnIndex,
         }
       : undefined;
   $: fixPreview = current
@@ -397,6 +415,24 @@
               <label>
                 Count column
                 <select bind:value={manualQtyColumnIndex}>
+                  {#each costCols.columns as c (c.index)}
+                    <option value={c.index}>{c.label}</option>
+                  {/each}
+                </select>
+              </label>
+              <label>
+                Country of Origin column
+                <select bind:value={manualCountryColumnIndex}>
+                  <option value={-1}>— none —</option>
+                  {#each costCols.columns as c (c.index)}
+                    <option value={c.index}>{c.label}</option>
+                  {/each}
+                </select>
+              </label>
+              <label>
+                Weight column
+                <select bind:value={manualWeightColumnIndex}>
+                  <option value={-1}>— none —</option>
                   {#each costCols.columns as c (c.index)}
                     <option value={c.index}>{c.label}</option>
                   {/each}

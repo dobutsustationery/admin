@@ -203,6 +203,62 @@ describe("manual stock-order cost interpretation", () => {
     expect(r.chosen?.kind).toBe("unit");
     expect(r.rows[0].unitCostJpy).toBe(200);
   });
+
+  it("can force COO and weight columns independently of auto-detection", () => {
+    const raw = tsv([
+      [
+        "JAN code",
+        "UNIT PRICE (YEN)",
+        "Quantity",
+        "Country of Origin",
+        "COO override",
+        "Weight in Grams",
+        "Manual Weight",
+      ],
+      ["4900000000022", "200", "10", "Japan", "China", "25", "42"],
+    ]);
+
+    const interp = buildInterpretation(raw, {
+      kind: "unit",
+      costColumnIndex: 1,
+      qtyColumnIndex: 2,
+      countryColumnIndex: 4,
+      weightColumnIndex: 6,
+    });
+
+    expect(interp?.countryColumnIndex).toBe(4);
+    expect(interp?.weightColumnIndex).toBe(6);
+    expect(interp?.rows[0]).toMatchObject({
+      countryOfOrigin: "China",
+      weight: 42,
+    });
+  });
+
+  it("can disable COO and weight columns with explicit none selections", () => {
+    const raw = tsv([
+      [
+        "JAN code",
+        "UNIT PRICE (YEN)",
+        "Quantity",
+        "Country of Origin",
+        "Weight in Grams",
+      ],
+      ["4900000000023", "200", "10", "Japan", "25"],
+    ]);
+
+    const interp = buildInterpretation(raw, {
+      kind: "unit",
+      costColumnIndex: 1,
+      qtyColumnIndex: 2,
+      countryColumnIndex: -1,
+      weightColumnIndex: -1,
+    });
+
+    expect(interp?.countryColumnIndex).toBe(-1);
+    expect(interp?.weightColumnIndex).toBe(-1);
+    expect(interp?.rows[0].countryOfOrigin).toBeUndefined();
+    expect(interp?.rows[0].weight).toBeUndefined();
+  });
 });
 
 describe("parseStockOrderCostTsv — quoted embedded newline in header", () => {

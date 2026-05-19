@@ -20,6 +20,9 @@ export type ManualInterpretation = {
   kind: "unit" | "total";
   costColumnIndex: number;
   qtyColumnIndex: number;
+  // undefined = auto-detect; -1 = explicitly none; >=0 = that column.
+  countryColumnIndex?: number;
+  weightColumnIndex?: number;
 };
 
 /** Columns + the auto interpretation, for the manual-override UI. */
@@ -30,6 +33,10 @@ export function stockOrderCostColumns(
   columns: TsvColumn[];
   headerRows: number;
   auto: ManualInterpretation | null;
+  // Auto-detected COO/weight columns, surfaced so the UI can show the
+  // chosen column even when no cost interpretation reconciled. -1 = none.
+  countryColumnIndex: number;
+  weightColumnIndex: number;
 } {
   const p = parseStockOrderCostTsv(rawPaste);
   const r = reconcileStockOrderCostTsv(p, valueOfGoodsJpy);
@@ -41,8 +48,12 @@ export function stockOrderCostColumns(
           kind: r.chosen.kind,
           costColumnIndex: r.chosen.costColumnIndex,
           qtyColumnIndex: r.chosen.qtyColumnIndex,
+          countryColumnIndex: r.chosen.countryColumnIndex,
+          weightColumnIndex: r.chosen.weightColumnIndex,
         }
       : null,
+    countryColumnIndex: p.countryCol,
+    weightColumnIndex: p.weightCol,
   };
 }
 

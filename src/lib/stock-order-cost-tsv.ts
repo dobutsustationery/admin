@@ -25,6 +25,8 @@ export interface CostInterpretation {
   kind: "unit" | "total";
   costColumnIndex: number;
   qtyColumnIndex: number;
+  countryColumnIndex: number; // -1 = none
+  weightColumnIndex: number; // -1 = none
   costLabel: string; // normalized header of the cost/total column used
   qtyLabel: string; // normalized header of the qty column used
   sum: number; // Σ round(unitCost)·qty
@@ -43,6 +45,8 @@ export interface StockOrderCostParse {
   headerRows: number; // 1 or 2
   columns: TsvColumn[]; // all resolved columns (for manual dropdowns)
   janCol: number;
+  countryCol: number; // auto-detected COO column, -1 = none
+  weightCol: number; // auto-detected weight column, -1 = none
 }
 
 export interface StockOrderCostReconciliation {
@@ -273,6 +277,8 @@ export function parseStockOrderCostTsv(rawPaste: string): StockOrderCostParse {
     headerRows: 1,
     columns: [],
     janCol: -1,
+    countryCol: -1,
+    weightCol: -1,
   };
   if (grid.length < 2) return empty;
 
@@ -290,7 +296,7 @@ export function parseStockOrderCostTsv(rawPaste: string): StockOrderCostParse {
   const countryCol = findCountryOfOrigin(norm);
   const weightCol = findWeight(norm);
   if (janCol < 0 || qtyCol < 0)
-    return { ...empty, columns, janCol, headerRows };
+    return { ...empty, columns, janCol, headerRows, countryCol, weightCol };
 
   const interpretations: CostInterpretation[] = [];
   const add = (costCol: number, kind: "unit" | "total") => {
@@ -310,6 +316,8 @@ export function parseStockOrderCostTsv(rawPaste: string): StockOrderCostParse {
         kind,
         costColumnIndex: costCol,
         qtyColumnIndex: qtyCol,
+        countryColumnIndex: countryCol,
+        weightColumnIndex: weightCol,
         costLabel: norm[costCol],
         qtyLabel: norm[qtyCol],
         sum,
@@ -325,6 +333,8 @@ export function parseStockOrderCostTsv(rawPaste: string): StockOrderCostParse {
     headerRows,
     columns,
     janCol,
+    countryCol,
+    weightCol,
   };
 }
 
@@ -339,6 +349,9 @@ export function buildInterpretation(
     kind: "unit" | "total";
     costColumnIndex: number;
     qtyColumnIndex: number;
+    // undefined = auto-detect; -1 = explicitly none; >=0 = that column.
+    countryColumnIndex?: number;
+    weightColumnIndex?: number;
   },
 ): CostInterpretation | null {
   const grid = toGrid(rawPaste);
@@ -348,8 +361,15 @@ export function buildInterpretation(
   const janCol = findJan(norm);
   const costCol = sel.costColumnIndex;
   const qtyCol = sel.qtyColumnIndex;
-  const countryCol = findCountryOfOrigin(norm);
-  const weightCol = findWeight(norm);
+  const inBounds = (i: number) => (i >= 0 && i < labels.length ? i : -1);
+  const countryCol =
+    sel.countryColumnIndex === undefined
+      ? findCountryOfOrigin(norm)
+      : inBounds(sel.countryColumnIndex);
+  const weightCol =
+    sel.weightColumnIndex === undefined
+      ? findWeight(norm)
+      : inBounds(sel.weightColumnIndex);
   if (
     janCol < 0 ||
     costCol < 0 ||
@@ -374,6 +394,8 @@ export function buildInterpretation(
     kind: sel.kind,
     costColumnIndex: costCol,
     qtyColumnIndex: qtyCol,
+    countryColumnIndex: countryCol,
+    weightColumnIndex: weightCol,
     costLabel: norm[costCol],
     qtyLabel: norm[qtyCol],
     sum,

@@ -318,6 +318,8 @@ export const fix_stock_order = createAction<{
     kind: "unit" | "total";
     costColumnIndex: number;
     qtyColumnIndex: number;
+    countryColumnIndex?: number;
+    weightColumnIndex?: number;
   };
   overrideExisting: boolean;
   approveDiscrepancy: boolean;
