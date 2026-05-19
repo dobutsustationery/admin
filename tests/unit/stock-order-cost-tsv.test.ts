@@ -204,3 +204,42 @@ describe("manual stock-order cost interpretation", () => {
     expect(r.rows[0].unitCostJpy).toBe(200);
   });
 });
+
+describe("parseStockOrderCostTsv — quoted embedded newline in header", () => {
+  // Real Kanegen header: the weight column header is a CSV-quoted cell
+  // with a literal newline. Naive line splitting tore the header in two
+  // and misaligned every column; a quote-aware parse keeps it intact.
+  const csv = [
+    'JAN code,Country of Origin,Order Q\'ty PCS,Total Wholesale Amount YEN,"※Weight in Grams\nper piece. (g)"',
+    "4901681506606,Japan,12,9600,33",
+    "4901681519309,Japan,20,16000,8",
+  ].join("\r\n");
+
+  it("parses the header as one row and resolves the weight column", () => {
+    const p = parseStockOrderCostTsv(csv);
+    expect(p.unmatchedHeader).toBe(false);
+    expect(p.headerRows).toBe(1);
+    expect(p.janCol).toBe(0);
+    const interp = p.interpretations.find((i) => i.kind === "total");
+    expect(interp).toBeTruthy();
+    expect(interp!.rows.map((r) => r.jan)).toEqual([
+      "4901681506606",
+      "4901681519309",
+    ]);
+    // unit = total / qty = 9600/12 = 800, 16000/20 = 800
+    expect(interp!.rows.map((r) => r.unitCostJpy)).toEqual([800, 800]);
+    // weight is read from the embedded-newline column, not lost
+    expect(interp!.rows.map((r) => r.weight)).toEqual([33, 8]);
+  });
+
+  it("buildInterpretation reproduces the same parse for the commit path", () => {
+    const interp = buildInterpretation(csv, {
+      kind: "total",
+      costColumnIndex: 3,
+      qtyColumnIndex: 2,
+    });
+    expect(interp).toBeTruthy();
+    expect(interp!.rows[0].weight).toBe(33);
+    expect(interp!.rows[0].unitCostJpy).toBe(800);
+  });
+});

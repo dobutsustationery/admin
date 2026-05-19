@@ -8,6 +8,8 @@
 // the order's value of goods. Stock orders never have subtypes.
 // Columns are exposed so the UI can offer a manual override.
 
+import Papa from "papaparse";
+
 import { normalizeHeader, parseAmount } from "./stock-order-cost";
 
 export interface StockOrderCostRow {
@@ -51,8 +53,22 @@ export interface StockOrderCostReconciliation {
   rows: StockOrderCostRow[];
 }
 
-const splitCells = (line: string): string[] =>
-  line.includes("\t") ? line.split("\t") : line.split(",");
+// Quote-aware grid. A header cell can contain a quoted embedded
+// newline (e.g. `"※Weight in Grams\nper piece. (g)"`); naive
+// line/cell splitting would tear that header across two rows and
+// misalign every column. Papa respects RFC-4180 quoting, matching
+// the order-import parser's behaviour.
+const toGrid = (rawPaste: string): string[][] => {
+  const raw = String(rawPaste ?? "");
+  const delimiter = raw.includes("\t") ? "\t" : ",";
+  const { data } = Papa.parse<string[]>(raw, {
+    delimiter,
+    skipEmptyLines: true,
+  });
+  return data.filter((row) =>
+    row.some((cell) => String(cell ?? "").trim() !== ""),
+  );
+};
 
 function extractJan(cell: string): string {
   const s = String(cell ?? "").trim();
@@ -250,9 +266,7 @@ function buildRows(
 }
 
 export function parseStockOrderCostTsv(rawPaste: string): StockOrderCostParse {
-  const lines = String(rawPaste ?? "")
-    .split(/\r?\n/)
-    .filter((l) => l.trim() !== "");
+  const grid = toGrid(rawPaste);
   const empty: StockOrderCostParse = {
     interpretations: [],
     unmatchedHeader: true,
@@ -260,8 +274,7 @@ export function parseStockOrderCostTsv(rawPaste: string): StockOrderCostParse {
     columns: [],
     janCol: -1,
   };
-  if (lines.length < 2) return empty;
-  const grid = lines.map(splitCells);
+  if (grid.length < 2) return empty;
 
   const { labels, headerRows } = detectHeader(grid);
   const norm = labels.map(normalizeHeader);
@@ -328,11 +341,8 @@ export function buildInterpretation(
     qtyColumnIndex: number;
   },
 ): CostInterpretation | null {
-  const lines = String(rawPaste ?? "")
-    .split(/\r?\n/)
-    .filter((l) => l.trim() !== "");
-  if (lines.length < 2) return null;
-  const grid = lines.map(splitCells);
+  const grid = toGrid(rawPaste);
+  if (grid.length < 2) return null;
   const { labels, headerRows } = detectHeader(grid);
   const norm = labels.map(normalizeHeader);
   const janCol = findJan(norm);
