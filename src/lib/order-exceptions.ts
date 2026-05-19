@@ -1,7 +1,12 @@
 // Pure selector for the order-exceptions route.
 // See docs/investigations/DESIGN_ORDER_EXCEPTIONS_ROUTE.md §3
 import type { InventoryState, Item, StockOrderMeta } from "./inventory";
-import { UNKNOWN_RECEIPT_DATE, BGN_PER_EUR, walkLedger } from "./cost-engine";
+import {
+  UNKNOWN_RECEIPT_DATE,
+  BGN_PER_EUR,
+  walkLedger,
+  lotMatchesOrder,
+} from "./cost-engine";
 import {
   parseStockOrderCostTsv,
   reconcileStockOrderCostTsv,
@@ -76,15 +81,13 @@ export function selectOrderExceptions(
   const rows: OrderExceptionRow[] = [];
   for (const orderId of Object.keys(registry)) {
     const m = registry[orderId];
-    const tag = `stockOrder:${orderId}`;
-
     let lotCount = 0;
     let unpricedCount = 0;
     for (const key of Object.keys(ledger)) {
       for (const e of ledger[key]) {
-        if (e.kind === "receipt" && e.source === tag) {
+        if (lotMatchesOrder(e, orderId)) {
           lotCount++;
-          if (!(e.unitCostJpy > 0)) unpricedCount++;
+          if (!((e as any).unitCostJpy > 0)) unpricedCount++;
         }
       }
     }
@@ -170,17 +173,20 @@ export function previewOrderMetaFix(
   let affectedLots = 0;
   for (const key of Object.keys(ledger)) {
     const orig = ledger[key];
-    const inOrder = orig.filter(
-      (e) => e.kind === "receipt" && e.source === tag,
-    ).length;
+    const inOrder = orig.filter((e) => lotMatchesOrder(e, orderId)).length;
     if (inOrder === 0) continue;
     affectedLots += inOrder;
     const projected = orig.map((e) => {
-      if (e.kind !== "receipt" || e.source !== tag) return e;
+      if (!lotMatchesOrder(e, orderId) || e.kind !== "receipt") return e;
+      // Only move the date for lots the order actually created
+      // (source-tagged); a cost-attach to a pre-existing scan lot
+      // keeps its scan date — only its EUR is re-derived.
+      const fromThisOrder = e.source === tag;
       return {
         ...e,
-        at: receivedAt ?? e.at,
-        unitCostEur: fx > 0 ? e.unitCostJpy * fx : e.unitCostEur,
+        at: fromThisOrder ? (receivedAt ?? e.at) : e.at,
+        unitCostEur:
+          fx > 0 ? (e as any).unitCostJpy * fx : (e as any).unitCostEur,
       };
     });
     const before = walkLedger(orig);
@@ -280,7 +286,6 @@ export function computeStockOrderCostCommit(args: {
   const want = new Map<string, number>();
   for (const row of reconciliation.rows) want.set(row.jan, row.unitCostJpy);
 
-  const tag = `stockOrder:${orderId}`;
   const ledger = inventory.costLedger || {};
   const matched: StockOrderCostCommitMatch[] = [];
   const matchedJans = new Set<string>();
@@ -294,9 +299,7 @@ export function computeStockOrderCostCommit(args: {
   for (const key of Object.keys(ledger)) {
     const item = inventory.idToItem[key];
     if (!item) continue;
-    const receipt = ledger[key].find(
-      (e) => e.kind === "receipt" && e.source === tag,
-    );
+    const receipt = ledger[key].find((e) => lotMatchesOrder(e, orderId));
     if (!receipt || receipt.kind !== "receipt") continue;
     orderItemByJan.set(item.janCode, {
       key,
@@ -312,7 +315,7 @@ export function computeStockOrderCostCommit(args: {
     const orig = ledger[key];
     let anyChange = false;
     const projected = orig.map((e) => {
-      if (e.kind !== "receipt" || e.source !== tag) return e;
+      if (!lotMatchesOrder(e, orderId) || e.kind !== "receipt") return e;
       const v = want.get(item.janCode);
       if (v == null) return e;
       matchedJans.add(item.janCode);
@@ -512,8 +515,9 @@ export function previewStockOrderFix(
     const item = inventory.idToItem[key];
     let inOrder = 0;
     const projected = orig.map((e) => {
-      if (e.kind !== "receipt" || e.source !== tag) return e;
+      if (!lotMatchesOrder(e, orderId) || e.kind !== "receipt") return e;
       inOrder++;
+      const fromThisOrder = e.source === tag;
       let unitCostJpy = e.unitCostJpy;
       if (item) {
         const v = want.get(item.janCode);
@@ -523,7 +527,9 @@ export function previewStockOrderFix(
       const unitCostEur = fx > 0 ? unitCostJpy * fx : e.unitCostEur;
       return {
         ...e,
-        at: receivedAt ?? e.at,
+        // Scan-attached lots keep their scan date; only lots the
+        // order created get re-dated.
+        at: fromThisOrder ? (receivedAt ?? e.at) : e.at,
         unitCostJpy,
         unitCostEur,
       };

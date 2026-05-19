@@ -4,6 +4,7 @@ import {
   valueAt,
   totalValuation,
   UNKNOWN_RECEIPT_DATE,
+  lotMatchesOrder,
   type LedgerEntry,
 } from "$lib/cost-engine";
 
@@ -121,5 +122,35 @@ describe("cost-engine", () => {
     ]);
     expect(w.onHand).toBe(20);
     expect(w.avgJpy).toBeCloseTo(150, 9);
+  });
+});
+
+describe("lotMatchesOrder", () => {
+  const rc = (over: Partial<any> = {}): LedgerEntry =>
+    ({
+      kind: "receipt",
+      at: 1,
+      seq: 0,
+      qty: 1,
+      unitCostJpy: 0,
+      unitCostEur: 0,
+      ...over,
+    }) as any;
+
+  it("matches a receipt the order created (source-tagged)", () => {
+    expect(lotMatchesOrder(rc({ source: "stockOrder:O1" }), "O1")).toBe(true);
+    expect(lotMatchesOrder(rc({ source: "stockOrder:O1" }), "O2")).toBe(false);
+  });
+
+  it("matches a scan lot whose cost a zeroed order supplied (costOrderId)", () => {
+    const e = rc({ source: "update_item", costOrderId: "O1" });
+    expect(lotMatchesOrder(e, "O1")).toBe(true); // scan-sourced but cost from O1
+    expect(lotMatchesOrder(e, "O2")).toBe(false);
+  });
+
+  it("never matches a sale entry", () => {
+    expect(
+      lotMatchesOrder({ kind: "sale", at: 1, seq: 0, qty: 1 } as any, "O1"),
+    ).toBe(false);
   });
 });

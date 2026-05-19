@@ -26,6 +26,11 @@ export type ReceiptEntry = {
   // creating action type. Lets the exceptions UI target a given order's
   // lots. Does not affect the cost walk (not a sort key).
   source?: string;
+  // The stock order that supplied this lot's cost. Set even when a
+  // "Zeroed Quantities" original order attaches cost to a pre-existing
+  // scan lot (which keeps its scan `source`/`at`). Metadata only — the
+  // exceptions UI keys off `source OR costOrderId`. Not a sort key.
+  costOrderId?: string;
 };
 
 export type SaleEntry = {
@@ -36,6 +41,20 @@ export type SaleEntry = {
 };
 
 export type LedgerEntry = ReceiptEntry | SaleEntry;
+
+/**
+ * Does this ledger entry belong to stock order `orderId`? True for a
+ * receipt the order created (`source === "stockOrder:"+orderId`) OR a
+ * pre-existing scan lot whose cost that order supplied
+ * (`costOrderId === orderId`, e.g. a "Zeroed Quantities" original
+ * order). The single predicate every order-exceptions consumer uses.
+ */
+export function lotMatchesOrder(e: LedgerEntry, orderId: string): boolean {
+  return (
+    e.kind === "receipt" &&
+    (e.source === `stockOrder:${orderId}` || e.costOrderId === orderId)
+  );
+}
 
 export interface CostState {
   onHand: number;

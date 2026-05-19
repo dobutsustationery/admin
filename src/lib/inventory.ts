@@ -17,6 +17,7 @@ import {
   walkLedger,
   UNKNOWN_RECEIPT_DATE,
   BGN_PER_EUR,
+  lotMatchesOrder,
 } from "./cost-engine";
 
 // TODO hceck item history for 4542804115635Silver
@@ -1091,6 +1092,7 @@ function applyInventoryUpdate(
       unitCostJpy: Number(item.cost) > 0 ? Number(item.cost) : 0,
       unitCostEur: 0,
       source: stockOrder ? `stockOrder:${stockOrder.orderId}` : actionType,
+      ...(stockOrder ? { costOrderId: stockOrder.orderId } : {}),
     });
     ledgerChanged = true;
   } else if (val > 0 && stockOrder) {
@@ -1104,12 +1106,19 @@ function applyInventoryUpdate(
         unitCostJpy: stockOrder.unitCostJpy,
         unitCostEur: stockOrder.unitCostEur,
         source: `stockOrder:${stockOrder.orderId}`,
+        costOrderId: stockOrder.orderId,
       });
       ledgerChanged = true;
     } else {
-      // Original order (qty 0): attach landed cost to unpriced receipts.
+      // Original order (qty 0): attach landed cost to pre-existing
+      // (scan-sourced) receipts. The lot keeps its scan source/date;
+      // we additionally stamp costOrderId so the exceptions UI can
+      // target it (even when no cost is supplied yet — a later invoice
+      // TSV fills it). Cost/ledgerChanged behaviour is unchanged.
       for (const e of ledger) {
-        if (e.kind === "receipt" && !(e.unitCostJpy > 0)) {
+        if (e.kind !== "receipt") continue;
+        e.costOrderId = stockOrder.orderId; // additive metadata only
+        if (!(e.unitCostJpy > 0)) {
           e.unitCostJpy = stockOrder.unitCostJpy;
           e.unitCostEur = stockOrder.unitCostEur;
           ledgerChanged = true;
@@ -1953,11 +1962,12 @@ export const inventory = createReducer(initialState, (r) => {
       const ledger = state.costLedger[key];
       let touched = false;
       for (const e of ledger) {
-        if (e.kind === "receipt" && e.source === tag) {
-          if (receivedAt) e.at = receivedAt;
-          if (fx > 0) e.unitCostEur = e.unitCostJpy * fx;
-          touched = true;
-        }
+        if (!lotMatchesOrder(e, orderId) || e.kind !== "receipt") continue;
+        // Only re-date lots the order actually created; a cost-attach
+        // to a pre-existing scan lot keeps its scan date.
+        if (receivedAt && e.source === tag) e.at = receivedAt;
+        if (fx > 0) e.unitCostEur = e.unitCostJpy * fx;
+        touched = true;
       }
       if (touched) rederiveCostFromLedger(state, key);
     }
@@ -1978,13 +1988,12 @@ export const inventory = createReducer(initialState, (r) => {
         : 0;
     const want = new Map<string, number>();
     for (const row of rows) want.set(row.jan, row.unitCostJpy);
-    const tag = `stockOrder:${orderId}`;
     for (const key of Object.keys(state.costLedger)) {
       const item = state.idToItem[key];
       if (!item) continue;
       let touched = false;
       for (const e of state.costLedger[key]) {
-        if (e.kind !== "receipt" || e.source !== tag) continue;
+        if (!lotMatchesOrder(e, orderId) || e.kind !== "receipt") continue;
         const v = want.get(item.janCode);
         if (v == null) continue;
         const priced = e.unitCostJpy > 0;
