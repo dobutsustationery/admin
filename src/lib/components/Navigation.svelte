@@ -55,6 +55,7 @@
     { href: "/shows", label: "Shows", icon: Tv },
     { href: "/sku-review", label: "SKU Review", icon: CheckSquare },
     { href: "/order-exceptions", label: "Order Exceptions", icon: Import },
+    { href: "/inventory-value", label: "Inventory Value", icon: CreditCard },
     { href: "/test-edit", label: "Test Edit", icon: FileEdit },
     { href: "/devtools", label: "DevTools", icon: Bug },
   ];
