@@ -8,7 +8,11 @@
   } from "$lib/cost-engine";
   import type { InventoryState, Item } from "$lib/inventory";
 
-  type UnpricedScanLot = {
+  type CostLedgerIssueKind = "unpriced-scan" | "missing-exchange";
+
+  type CostLedgerIssueRow = {
+    issueKind: CostLedgerIssueKind;
+    issueLabel: string;
     key: string;
     jan: string;
     subtype: string;
@@ -27,7 +31,7 @@
     currentAvgJpy: number;
     currentAvgEur: number;
     receiptCount: number;
-    zeroScanDates: number[];
+    issueDates: number[];
     ledger: LedgerEntry[];
     ledgerIndex: number;
   };
@@ -39,16 +43,36 @@
   function isUnpricedScanReceipt(entry: LedgerEntry): entry is ReceiptEntry {
     return (
       entry.kind === "receipt" &&
-      entry.unitCostJpy <= 0 &&
+      !entry.ignored &&
+      !(entry.unitCostJpy > 0) &&
       !entry.costOrderId &&
       !String(entry.source || "").startsWith("stockOrder:")
     );
   }
 
-  function buildRows(inventory: InventoryState): UnpricedScanLot[] {
+  function isMissingExchangeReceipt(entry: LedgerEntry): entry is ReceiptEntry {
+    return (
+      entry.kind === "receipt" &&
+      !entry.ignored &&
+      entry.unitCostJpy > 0 &&
+      !(entry.unitCostEur > 0)
+    );
+  }
+
+  function issueKind(entry: LedgerEntry): CostLedgerIssueKind | null {
+    if (isUnpricedScanReceipt(entry)) return "unpriced-scan";
+    if (isMissingExchangeReceipt(entry)) return "missing-exchange";
+    return null;
+  }
+
+  function issueLabel(kind: CostLedgerIssueKind): string {
+    return kind === "missing-exchange" ? "Missing exchange" : "Zero JPY scan";
+  }
+
+  function buildRows(inventory: InventoryState): CostLedgerIssueRow[] {
     const costLedger = inventory.costLedger || {};
     const idToItem = inventory.idToItem || {};
-    const rows: UnpricedScanLot[] = [];
+    const rows: CostLedgerIssueRow[] = [];
 
     for (const [key, ledger] of Object.entries(costLedger)) {
       const item = idToItem[key] as Item | undefined;
@@ -58,13 +82,17 @@
       const remainingByIndex = receiptRemainingByIndex(sorted);
       const current = walkLedger(sorted);
       const receiptCount = sorted.filter((e) => e.kind === "receipt").length;
-      const zeroScanDates = sorted
-        .filter(isUnpricedScanReceipt)
-        .map((entry) => entry.at)
-        .sort((a, b) => a - b);
       for (const [ledgerIndex, entry] of sorted.entries()) {
-        if (!isUnpricedScanReceipt(entry)) continue;
+        const kind = issueKind(entry);
+        if (!kind) continue;
+        const receipt = entry as ReceiptEntry;
+        const issueDates = sorted
+          .filter((candidate) => issueKind(candidate) === kind)
+          .map((candidate) => candidate.at)
+          .sort((a, b) => a - b);
         rows.push({
+          issueKind: kind,
+          issueLabel: issueLabel(kind),
           key,
           jan: item.janCode || "",
           subtype: item.subtype || "",
@@ -75,17 +103,20 @@
           lotQty: entry.qty,
           at: entry.at,
           seq: entry.seq,
-          source: entry.source || "",
-          unitCostJpy: entry.unitCostJpy,
-          unitCostEur: entry.unitCostEur,
+          source: receipt.source || "",
+          unitCostJpy: receipt.unitCostJpy,
+          unitCostEur: receipt.unitCostEur,
           remainingLotQty: remainingByIndex.get(ledgerIndex) || 0,
-          affectsAverage:
-            (remainingByIndex.get(ledgerIndex) || 0) > 0 &&
-            !isArchiveCarryReceipt(sorted, ledgerIndex),
+          affectsAverage: issueAffectsAverage(
+            sorted,
+            ledgerIndex,
+            remainingByIndex.get(ledgerIndex) || 0,
+            kind,
+          ),
           currentAvgJpy: current.avgJpy,
           currentAvgEur: current.avgEur,
           receiptCount,
-          zeroScanDates,
+          issueDates,
           ledger: sorted,
           ledgerIndex,
         });
@@ -114,6 +145,12 @@
   $: filteredLotQty = filteredRows.reduce((sum, row) => sum + row.lotQty, 0);
   $: itemCount = new Set(rows.map((row) => row.key)).size;
   $: affectingRows = rows.filter((row) => row.affectsAverage).length;
+  $: zeroJpyRows = rows.filter(
+    (row) => row.issueKind === "unpriced-scan",
+  ).length;
+  $: missingExchangeRows = rows.filter(
+    (row) => row.issueKind === "missing-exchange",
+  ).length;
 
   function fmtDate(ms: number): string {
     if (!Number.isFinite(ms) || ms <= 0) return "-";
@@ -143,6 +180,7 @@
     const openLots: { index: number; remaining: number }[] = [];
 
     for (const [index, entry] of ledger.entries()) {
+      if (entry.ignored) continue;
       if (entry.kind === "receipt") {
         const qty = Math.max(0, Number(entry.qty) || 0);
         remaining.set(index, qty);
@@ -163,6 +201,18 @@
     return remaining;
   }
 
+  function issueAffectsAverage(
+    ledger: readonly LedgerEntry[],
+    ledgerIndex: number,
+    remainingLotQty: number,
+    kind: CostLedgerIssueKind,
+  ): boolean {
+    if (remainingLotQty <= 0) return false;
+    return (
+      kind === "missing-exchange" || !isArchiveCarryReceipt(ledger, ledgerIndex)
+    );
+  }
+
   function isArchiveCarryReceipt(
     ledger: readonly LedgerEntry[],
     targetIndex: number,
@@ -173,9 +223,10 @@
     let carry: { jpy: number; eur: number } | null = null;
 
     for (const [index, entry] of ledger.entries()) {
+      if (entry.ignored) continue;
       if (entry.kind === "receipt") {
         if (index === targetIndex) {
-          return entry.unitCostJpy <= 0 && onHand === 0 && carry !== null;
+          return !(entry.unitCostJpy > 0) && onHand === 0 && carry !== null;
         }
 
         const next = onHand + entry.qty;
@@ -230,14 +281,14 @@
       return entry.isArchive ? `${base} archive` : base;
     }
     const source = entry.costOrderId || entry.source || "";
-    return `${base} @ ${fmtYen(entry.unitCostJpy)}${source ? ` ${source}` : ""}`;
+    return `${base} @ ${fmtYen(entry.unitCostJpy)} / ${fmtEur(entry.unitCostEur)}${source ? ` ${source}` : ""}`;
   }
 </script>
 
-<svelte:head><title>Unpriced Scan Lots</title></svelte:head>
+<svelte:head><title>Cost Ledger Issues</title></svelte:head>
 
 <main>
-  <h1>Unpriced Scan Lots</h1>
+  <h1>Cost Ledger Issues</h1>
 
   <div class="summary">
     <div>
@@ -251,6 +302,14 @@
     <div>
       <strong>{totalLotQty}</strong>
       <span>unit(s)</span>
+    </div>
+    <div>
+      <strong>{zeroJpyRows}</strong>
+      <span>zero JPY</span>
+    </div>
+    <div>
+      <strong>{missingExchangeRows}</strong>
+      <span>missing exchange</span>
     </div>
   </div>
 
@@ -271,7 +330,7 @@
 
   <p class="hint">
     Showing {filteredRows.length} lot(s), {filteredLotQty} unit(s). These are receipt
-    lots with zero JPY cost, non-stock-order source, and no cost order attached.
+    lots with zero JPY scan cost or JPY cost without EUR/exchange.
     {affectingRows} still affect the moving average.
   </p>
 
@@ -280,8 +339,9 @@
       <tr>
         <th>Image</th>
         <th>Item</th>
-        <th>Zero-scan dates</th>
+        <th>Issue dates</th>
         <th>Current lot</th>
+        <th>Issue</th>
         <th>Qty</th>
         <th>On hand</th>
         <th>Current avg</th>
@@ -290,8 +350,8 @@
       </tr>
     </thead>
     <tbody>
-      {#each filteredRows as row (`${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
-        <tr>
+      {#each filteredRows as row (`${row.issueKind}:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
+        <tr class:missingExchange={row.issueKind === "missing-exchange"}>
           <td class="thumb-cell">
             {#if row.image}
               <ImageThumbnail
@@ -314,9 +374,9 @@
             {/if}
           </td>
           <td>
-            <div>{uniqueDateLabels(row.zeroScanDates)}</div>
+            <div>{uniqueDateLabels(row.issueDates)}</div>
             <span class="hint"
-              >{row.zeroScanDates.length} zero-cost scan lot(s)</span
+              >{row.issueDates.length} matching issue lot(s)</span
             >
           </td>
           <td>
@@ -328,6 +388,9 @@
             <div class="hint">
               avg impact: {row.affectsAverage ? "yes" : "no"}
             </div>
+          </td>
+          <td>
+            <span class={`issue ${row.issueKind}`}>{row.issueLabel}</span>
           </td>
           <td>{row.lotQty}</td>
           <td>{Math.max(0, row.itemQty - row.shipped)} / {row.itemQty}</td>
@@ -412,6 +475,9 @@
   th {
     background: #f8f9fa;
   }
+  tr.missingExchange {
+    background: #fffaf0;
+  }
   .thumb-cell {
     width: 72px;
   }
@@ -427,6 +493,22 @@
   .target-entry {
     color: #b42318;
     font-weight: 600;
+  }
+  .issue {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .issue.unpriced-scan {
+    color: #842029;
+    background: #f8d7da;
+  }
+  .issue.missing-exchange {
+    color: #7a4d00;
+    background: #fff3cd;
   }
   .no-thumb {
     display: inline-flex;

@@ -56,7 +56,7 @@
     { href: "/sku-review", label: "SKU Review", icon: CheckSquare },
     { href: "/order-exceptions", label: "Order Exceptions", icon: Import },
     { href: "/inventory-value", label: "Inventory Value", icon: CreditCard },
-    { href: "/unpriced", label: "Unpriced Lots", icon: ClipboardList },
+    { href: "/unpriced", label: "Cost Issues", icon: ClipboardList },
     { href: "/test-edit", label: "Test Edit", icon: FileEdit },
     { href: "/devtools", label: "DevTools", icon: Bug },
   ];
