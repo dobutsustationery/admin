@@ -4,6 +4,7 @@ import {
   update_item,
   bulk_import_items,
   fix_jancode,
+  set_cost_ledger_entries_ignored,
   type Item,
 } from "$lib/inventory";
 
@@ -176,6 +177,50 @@ describe("cost-ledger materialisation in the reducer", () => {
       ["receipt", 10, 282.7, 1.8, undefined],
     ]);
     expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(282.7, 9);
+  });
+
+  it("can mark a specific ledger entry ignored and rederive cost", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(10, { cost: 100 }) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(10, { cost: 50 }) }), 200),
+    );
+    expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(75, 9);
+
+    const entry = s.inventory.costLedger![KEY][1] as any;
+    s = rootReducer(
+      s,
+      withTs(
+        set_cost_ledger_entries_ignored({
+          itemKey: KEY,
+          ignored: true,
+          refs: [
+            {
+              kind: "receipt",
+              at: entry.at,
+              seq: entry.seq,
+              qty: entry.qty,
+              unitCostJpy: entry.unitCostJpy,
+              unitCostEur: entry.unitCostEur,
+              source: entry.source || "",
+              costOrderId: entry.costOrderId || "",
+            },
+          ],
+          reason: "duplicate scan",
+        }),
+        300,
+      ),
+    );
+
+    expect(s.inventory.costLedger![KEY][1].ignored).toBe(true);
+    expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(100, 9);
+    expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
+      "duplicate scan",
+    );
   });
 
   it("the ledger follows the item across a JAN re-key", () => {

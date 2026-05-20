@@ -31,6 +31,9 @@ export type ReceiptEntry = {
   // scan lot (which keeps its scan `source`/`at`). Metadata only — the
   // exceptions UI keys off `source OR costOrderId`. Not a sort key.
   costOrderId?: string;
+  // Manual override for historical bad scans/imports. Kept on the entry
+  // so the logged correction replays deterministically.
+  ignored?: boolean;
 };
 
 export type SaleEntry = {
@@ -46,6 +49,7 @@ export type SaleEntry = {
   // €0 forward. With this flag, `walkLedger` remembers the pre-archive
   // average and inherits it on the next unpriced post-archive receipt.
   isArchive?: boolean;
+  ignored?: boolean;
 };
 
 export type LedgerEntry = ReceiptEntry | SaleEntry;
@@ -106,6 +110,7 @@ export function walkLedger(
 
   for (const e of sortLedger(entries)) {
     if (e.at > asOf) break;
+    if (e.ignored) continue;
     if (e.kind === "receipt") {
       const next = onHand + e.qty;
       if (next <= 0) {

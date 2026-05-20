@@ -56,6 +56,15 @@ describe("cost-engine", () => {
     expect(w).toEqual({ onHand: 6, avgJpy: 100, avgEur: 1 });
   });
 
+  it("skips ignored ledger entries", () => {
+    const ignored = { ...r(2, 10, 0, 0, 1), ignored: true };
+    expect(walkLedger([r(1, 10, 100, 1), ignored])).toEqual({
+      onHand: 10,
+      avgJpy: 100,
+      avgEur: 1,
+    });
+  });
+
   it("ORDER MATTERS: sale before a re-order blends against reduced on-hand", () => {
     // sale-then-reorder: 10@100, sell 8, +10@75 -> (2*100+10*75)/12
     const interleaved = walkLedger([

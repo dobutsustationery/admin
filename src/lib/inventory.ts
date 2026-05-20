@@ -271,6 +271,26 @@ export const make_sales = createAction<{
   archiveName: string;
   date: Date;
 }>("make_sales");
+
+export type CostLedgerEntryRef = {
+  kind: "receipt" | "sale";
+  at: number;
+  seq: number;
+  qty: number;
+  unitCostJpy?: number;
+  unitCostEur?: number;
+  source?: string;
+  costOrderId?: string;
+  isArchive?: boolean;
+};
+
+export const set_cost_ledger_entries_ignored = createAction<{
+  itemKey: InventoryItemKey | string;
+  refs: CostLedgerEntryRef[];
+  ignored: boolean;
+  reason?: string;
+}>("set_cost_ledger_entries_ignored");
+
 export interface BulkImportItem {
   type: "new" | "update";
   id: InventoryItemKey | string; // janCode or itemKey
@@ -842,11 +862,62 @@ function rederiveCostFromLedger(state: InventoryState, key: string) {
   const item = state.idToItem[key];
   if (!ledger || !item) return;
   const hasPriced = ledger.some(
-    (e) => e.kind === "receipt" && e.unitCostJpy > 0,
+    (e) => !e.ignored && e.kind === "receipt" && e.unitCostJpy > 0,
   );
   if (hasPriced) {
     item.cost = walkLedgerForDerivedCost(ledger).avgJpy;
   }
+}
+
+function ledgerEntryMatchesRef(
+  entry: LedgerEntry,
+  ref: CostLedgerEntryRef,
+): boolean {
+  if (entry.kind !== ref.kind) return false;
+  if (entry.at !== ref.at) return false;
+  if (entry.seq !== ref.seq) return false;
+  if (entry.qty !== ref.qty) return false;
+  if (
+    ref.kind === "receipt" &&
+    entry.kind === "receipt" &&
+    ref.unitCostJpy !== undefined &&
+    entry.unitCostJpy !== ref.unitCostJpy
+  ) {
+    return false;
+  }
+  if (
+    ref.kind === "receipt" &&
+    entry.kind === "receipt" &&
+    ref.unitCostEur !== undefined &&
+    entry.unitCostEur !== ref.unitCostEur
+  ) {
+    return false;
+  }
+  if (
+    ref.kind === "receipt" &&
+    entry.kind === "receipt" &&
+    ref.source !== undefined &&
+    (entry.source || "") !== ref.source
+  ) {
+    return false;
+  }
+  if (
+    ref.kind === "receipt" &&
+    entry.kind === "receipt" &&
+    ref.costOrderId !== undefined &&
+    (entry.costOrderId || "") !== ref.costOrderId
+  ) {
+    return false;
+  }
+  if (
+    ref.kind === "sale" &&
+    entry.kind === "sale" &&
+    ref.isArchive !== undefined &&
+    Boolean(entry.isArchive) !== ref.isArchive
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function sortLedgerEntries(entries: readonly LedgerEntry[]): LedgerEntry[] {
@@ -866,6 +937,7 @@ function walkLedgerForDerivedCost(entries: readonly LedgerEntry[]) {
   let avgEur = 0;
 
   for (const e of sortLedgerEntries(entries)) {
+    if (e.ignored) continue;
     if (e.kind === "receipt") {
       const next = onHand + e.qty;
       if (next <= 0) {
@@ -1276,7 +1348,7 @@ function applyInventoryUpdate(
 
   if (ledgerChanged) {
     const hasPriced = ledger.some(
-      (e) => e.kind === "receipt" && e.unitCostJpy > 0,
+      (e) => !e.ignored && e.kind === "receipt" && e.unitCostJpy > 0,
     );
     if (hasPriced) {
       const derived = walkLedgerForDerivedCost(ledger).avgJpy;
@@ -2077,6 +2149,36 @@ export const inventory = createReducer(initialState, (r) => {
     if (state.hiddenExceptions) {
       delete state.hiddenExceptions[action.payload.itemKey];
     }
+  });
+  r.addCase(set_cost_ledger_entries_ignored, (state, action) => {
+    const { itemKey, refs, ignored, reason } = action.payload;
+    const ledger = state.costLedger?.[itemKey];
+    if (!ledger || refs.length === 0) return;
+
+    let changed = 0;
+    for (const ref of refs) {
+      const entry = ledger.find((candidate) =>
+        ledgerEntryMatchesRef(candidate, ref),
+      );
+      if (!entry || Boolean(entry.ignored) === ignored) continue;
+      entry.ignored = ignored;
+      changed++;
+    }
+
+    if (changed === 0) return;
+    rederiveCostFromLedger(state, itemKey);
+    if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+    const val = getTimestampMs((action as any).timestamp);
+    const date = new Date(val || Date.UTC(2026, 0, 1)).toLocaleString("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    state.idToHistory[itemKey].push({
+      date,
+      desc: `${ignored ? "Ignored" : "Restored"} ${changed} cost ledger row(s)${reason ? `: ${reason}` : ""}`,
+      val,
+    });
   });
   r.addCase(set_stock_order_meta, (state, action) => {
     if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
