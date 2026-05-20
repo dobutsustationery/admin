@@ -9,6 +9,7 @@
   import { store } from "$lib/store";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import ItemCard from "$lib/components/ItemCard.svelte";
+  import { walkLedger, type LedgerEntry } from "$lib/cost-engine";
 
   let me: User = { signedIn: false };
   let searchQuery = "";
@@ -18,6 +19,14 @@
     itemKey && $store.inventory?.idToItem
       ? $store.inventory.idToItem[itemKey]
       : null;
+  $: currentLedger =
+    itemKey && $store.inventory?.costLedger?.[itemKey]
+      ? $store.inventory.costLedger[itemKey]
+      : [];
+  $: ledgerRows = sortedLedger(currentLedger).map((entry, index, ledger) => ({
+    entry,
+    running: walkLedger(ledger.slice(0, index + 1)),
+  }));
 
   $: allMatches = (
     searchQuery.length > 2 && $store.inventory?.idToItem
@@ -45,6 +54,37 @@
   function selectItem(key: string) {
     goto(`/itemhistory?itemKey=${key}`);
     searchQuery = ""; // Clear search or keep it? Clearing feels cleaner once selected.
+  }
+
+  function sortedLedger(ledger: readonly LedgerEntry[]): LedgerEntry[] {
+    return [...ledger].sort((a, b) => a.at - b.at || a.seq - b.seq);
+  }
+
+  function fmtDate(ms: number): string {
+    if (!Number.isFinite(ms) || ms <= 0) return "-";
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+
+  function fmtYen(n: number | undefined): string {
+    return Number.isFinite(n)
+      ? `¥${Math.round(n as number).toLocaleString()}`
+      : "-";
+  }
+
+  function fmtEur(n: number | undefined): string {
+    return Number.isFinite(n) && (n as number) > 0
+      ? `€${(n as number).toFixed(2)}`
+      : "-";
+  }
+
+  function ledgerKind(entry: LedgerEntry): string {
+    if (entry.kind === "sale" && entry.isArchive) return "archive sale";
+    return entry.kind;
+  }
+
+  function ledgerSource(entry: LedgerEntry): string {
+    if (entry.kind !== "receipt") return "-";
+    return entry.source || "-";
   }
 </script>
 
@@ -87,11 +127,54 @@
 
   {#if itemKey}
     <h1 class="page-title">Item History</h1>
-    <ItemCard
-      item={currentItem}
-      {itemKey}
-      ledger={$store.inventory?.costLedger?.[itemKey] || []}
-    />
+    <ItemCard item={currentItem} {itemKey} ledger={currentLedger} />
+
+    <h2 class="history-title">Cost Ledger</h2>
+    {#if ledgerRows.length > 0}
+      <table class="ledger-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Kind</th>
+            <th>Qty</th>
+            <th>Unit Cost</th>
+            <th>Source</th>
+            <th>Running On Hand</th>
+            <th>Running Avg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each ledgerRows as row}
+            <tr>
+              <td class="date-col">{fmtDate(row.entry.at)}</td>
+              <td>{ledgerKind(row.entry)}</td>
+              <td>{row.entry.qty}</td>
+              <td>
+                {#if row.entry.kind === "receipt"}
+                  <div>{fmtYen(row.entry.unitCostJpy)}</div>
+                  <span class="muted">{fmtEur(row.entry.unitCostEur)}</span>
+                {:else}
+                  <span class="muted">-</span>
+                {/if}
+              </td>
+              <td>
+                <div>{ledgerSource(row.entry)}</div>
+                {#if row.entry.kind === "receipt" && row.entry.costOrderId}
+                  <span class="muted">{row.entry.costOrderId}</span>
+                {/if}
+              </td>
+              <td>{row.running.onHand}</td>
+              <td>
+                <div>{fmtYen(row.running.avgJpy)}</div>
+                <span class="muted">{fmtEur(row.running.avgEur)}</span>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {:else}
+      <p class="muted">No cost ledger entries.</p>
+    {/if}
 
     <h2 class="history-title">History</h2>
     <table>
@@ -214,6 +297,15 @@
     width: 100%;
     border-collapse: collapse;
     border: 1px solid #eee;
+  }
+
+  .ledger-table {
+    font-size: 0.9rem;
+  }
+
+  .muted {
+    color: #666;
+    font-size: 0.85rem;
   }
 
   th,
