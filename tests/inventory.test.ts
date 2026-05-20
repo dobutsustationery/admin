@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { walkLedger } from "$lib/cost-engine";
 import { makeInventoryItemKey } from "$lib/sku";
 import {
   archive_inventory,
@@ -1233,6 +1234,109 @@ describe("inventory reducer", () => {
 
       expect(nextState.idToHistory[id]).toBeDefined();
       expect(nextState.idToHistory[id].length).toBeGreaterThan(0);
+    });
+
+    it("records the archive wipe before recount so unpriced recounts carry cost", () => {
+      const item: Item = {
+        janCode: "4542804044355",
+        subtype: "",
+        description: "Design Paper Square Astronomy",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 12,
+        pieces: 1,
+        shipped: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+        cost: 65,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      let nextState = inventory(initialState, update_item({ id, item }));
+
+      const archiveName = "Japan Festival April 2025";
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
+      expect(nextState.costLedger![id]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "sale",
+            qty: 12,
+            isArchive: true,
+          }),
+        ]),
+      );
+
+      nextState = inventory(
+        nextState,
+        update_item({
+          id,
+          item: { ...item, qty: 7, cost: undefined },
+        }),
+      );
+
+      const beforeMakeSalesLedger = nextState.costLedger![id].length;
+      const walkedAfterRecount = walkLedger(nextState.costLedger![id]);
+      expect(walkedAfterRecount.onHand).toBe(7);
+      expect(walkedAfterRecount.avgJpy).toBe(65);
+
+      nextState = inventory(
+        nextState,
+        make_sales({ archiveName, date: new Date("2025-05-06") }),
+      );
+
+      const salesItem = nextState.salesEvents[archiveName].items.find(
+        (i) => i.itemKey === id,
+      );
+      expect(salesItem?.qty).toBe(5);
+      expect(nextState.costLedger![id]).toHaveLength(beforeMakeSalesLedger);
+      expect(walkLedger(nextState.costLedger![id]).avgJpy).toBe(65);
+    });
+
+    it("archives the full ledger on-hand before recounting even when shipped is already set", () => {
+      const item: Item = {
+        janCode: "4977564720742",
+        subtype: "Books",
+        description: "Document File",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 10,
+        pieces: 1,
+        shipped: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+        cost: 178.2,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      let nextState = inventory(initialState, update_item({ id, item }));
+
+      nextState = inventory(
+        nextState,
+        package_item({ itemKey: id, orderID: "ORDER-1", qty: 4 }),
+      );
+      expect(nextState.idToItem[id].shipped).toBe(4);
+
+      const archiveName = "Japan Festival April 2025";
+      nextState = inventory(nextState, archive_inventory({ archiveName }));
+      expect(nextState.costLedger![id]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "sale",
+            qty: 10,
+            isArchive: true,
+          }),
+        ]),
+      );
+
+      nextState = inventory(
+        nextState,
+        update_item({
+          id,
+          item: { ...item, qty: 6, cost: undefined, shipped: 0 },
+        }),
+      );
+
+      const walkedAfterRecount = walkLedger(nextState.costLedger![id]);
+      expect(walkedAfterRecount.onHand).toBe(6);
+      expect(walkedAfterRecount.avgJpy).toBeCloseTo(178.2, 9);
     });
   });
 

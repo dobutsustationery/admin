@@ -38,6 +38,14 @@ export type SaleEntry = {
   at: number;
   seq: number;
   qty: number;
+  // True when this sale was emitted by an inventory archive (a
+  // stock-take wipe), not a real customer/event sale. Archives are
+  // typically followed by a recount that re-adds inventory; without
+  // a hint, the perpetual blend would zero the running average at the
+  // archive's zero-crossing and an unpriced recount lot would carry
+  // €0 forward. With this flag, `walkLedger` remembers the pre-archive
+  // average and inherits it on the next unpriced post-archive receipt.
+  isArchive?: boolean;
 };
 
 export type LedgerEntry = ReceiptEntry | SaleEntry;
@@ -91,6 +99,10 @@ export function walkLedger(
   let onHand = 0;
   let avgJpy = 0;
   let avgEur = 0;
+  // Set by an archive sale (`isArchive: true`) that brought on-hand to
+  // zero. The next receipt blends with this prior average for any
+  // currency it doesn't itself price, then `carry` is consumed.
+  let carry: { jpy: number; eur: number } | null = null;
 
   for (const e of sortLedger(entries)) {
     if (e.at > asOf) break;
@@ -101,11 +113,45 @@ export function walkLedger(
         onHand = next > 0 ? next : 0;
         continue;
       }
-      avgJpy = (onHand * avgJpy + e.qty * e.unitCostJpy) / next;
-      avgEur = (onHand * avgEur + e.qty * e.unitCostEur) / next;
+      if (onHand === 0 && carry) {
+        // First post-archive receipt. Priced currencies override.
+        // For a currency that is itself unpriced, derive it from the
+        // OTHER currency on the same receipt via the fx ratio implicit
+        // in the carry (avgEur/avgJpy or its inverse). The avg ratio is
+        // dilution-invariant: even if the pre-archive blend mixed
+        // priced lots with unpriced scan lots, `carry.eur/carry.jpy`
+        // still equals the priced lot's per-unit fx. Only when the
+        // receipt is unpriced in BOTH currencies do we fall back to
+        // inheriting the carried averages directly (no anchor to scale).
+        const jpyPriced = e.unitCostJpy > 0;
+        const eurPriced = e.unitCostEur > 0;
+        if (jpyPriced && eurPriced) {
+          avgJpy = e.unitCostJpy;
+          avgEur = e.unitCostEur;
+        } else if (jpyPriced) {
+          avgJpy = e.unitCostJpy;
+          avgEur =
+            carry.jpy > 0 ? (e.unitCostJpy * carry.eur) / carry.jpy : carry.eur;
+        } else if (eurPriced) {
+          avgEur = e.unitCostEur;
+          avgJpy =
+            carry.eur > 0 ? (e.unitCostEur * carry.jpy) / carry.eur : carry.jpy;
+        } else {
+          avgJpy = carry.jpy;
+          avgEur = carry.eur;
+        }
+        carry = null;
+      } else {
+        avgJpy = (onHand * avgJpy + e.qty * e.unitCostJpy) / next;
+        avgEur = (onHand * avgEur + e.qty * e.unitCostEur) / next;
+      }
       onHand = next;
     } else {
+      const prev = onHand;
       onHand = Math.max(0, onHand - e.qty);
+      if (e.isArchive && prev > 0 && onHand === 0) {
+        carry = { jpy: avgJpy, eur: avgEur };
+      }
     }
   }
 

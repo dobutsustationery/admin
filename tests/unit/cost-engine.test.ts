@@ -154,3 +154,86 @@ describe("lotMatchesOrder", () => {
     ).toBe(false);
   });
 });
+
+describe("archive zero-crossing carries the running average", () => {
+  // sale-archive helper.
+  const sa = (at: number, qty: number, seq = 0): LedgerEntry => ({
+    kind: "sale",
+    at,
+    seq,
+    qty,
+    isArchive: true,
+  });
+
+  it("unpriced post-archive receipt inherits pre-archive JPY and EUR", () => {
+    // Pre: receipt qty 2 @ ¥282 / €1.835 → avg = 282 / 1.835.
+    // Archive sale 2 → on-hand 0 (carry set). Then unpriced recount qty 10.
+    const w = walkLedger([r(1, 2, 282, 1.835), sa(2, 2, 1), r(3, 10, 0, 0, 2)]);
+    expect(w.onHand).toBe(10);
+    expect(w.avgJpy).toBeCloseTo(282, 6);
+    expect(w.avgEur).toBeCloseTo(1.835, 6);
+  });
+
+  it("priced JPY but unpriced EUR: JPY wins, EUR derived via carried fx (the 4902778028216 shape)", () => {
+    // Pre-archive: a single priced lot at JPY 282 / EUR 1.835.
+    // Implicit fx = 1.835/282. Recount priced in JPY 243, EUR 0.
+    // Derived EUR = 243 * 1.835 / 282.
+    const w = walkLedger([
+      r(1, 2, 282, 1.835),
+      sa(2, 2, 1),
+      r(3, 10, 243, 0, 2),
+    ]);
+    expect(w.onHand).toBe(10);
+    expect(w.avgJpy).toBe(243);
+    expect(w.avgEur).toBeCloseTo((243 * 1.835) / 282, 6);
+  });
+
+  it("fx ratio is dilution-invariant across pre-archive unpriced scan lots", () => {
+    // The 4902778028216 reality: priced lot mixed with two unpriced
+    // scan lots before the archive. avg ratio still equals priced fx.
+    const w = walkLedger([
+      r(1, 2, 282, 1.835), // priced (Order 1 cost-attach)
+      r(1, 20, 0, 0, 1), // unpriced scan
+      r(1, 2, 0, 0, 2), // unpriced scan
+      sa(2, 24, 3), // archive
+      r(3, 10, 243, 0, 4), // recount: JPY priced, EUR unpriced
+    ]);
+    expect(w.onHand).toBe(10);
+    expect(w.avgJpy).toBe(243);
+    // Pre-archive avgJpy = (2*282)/24 = 23.5, avgEur = (2*1.835)/24 = 0.1529;
+    // ratio = 0.1529/23.5 = 0.006507; 243 * ratio = 1.581.
+    expect(w.avgEur).toBeCloseTo((243 * 1.835) / 282, 6);
+  });
+
+  it("fully priced recount overrides the carry (no fictionalisation)", () => {
+    const w = walkLedger([
+      r(1, 2, 282, 1.835),
+      sa(2, 2, 1),
+      r(3, 10, 500, 3, 2),
+    ]);
+    expect(w.avgJpy).toBe(500);
+    expect(w.avgEur).toBe(3);
+  });
+
+  it("a NON-archive zero-crossing does NOT carry (current behaviour preserved)", () => {
+    // Identical shape but the sale is a normal sale: unpriced recount
+    // zeros the average as before.
+    const w = walkLedger([r(1, 2, 282, 1.835), s(2, 2, 1), r(3, 10, 0, 0, 2)]);
+    expect(w.avgJpy).toBe(0);
+    expect(w.avgEur).toBe(0);
+  });
+
+  it("carry is consumed by the first post-archive receipt; later receipts blend normally", () => {
+    // Fully unpriced recount inherits BOTH carried averages (282 / 1.835).
+    // A subsequent priced receipt then blends against those, not the carry.
+    const w = walkLedger([
+      r(1, 2, 282, 1.835),
+      sa(2, 2, 1),
+      r(3, 10, 0, 0, 2), // carry → avg 282 JPY, 1.835 EUR; on-hand 10
+      r(4, 10, 100, 0.5, 3), // blend: (10*282 + 10*100)/20, (10*1.835 + 10*0.5)/20
+    ]);
+    expect(w.onHand).toBe(20);
+    expect(w.avgJpy).toBe((10 * 282 + 10 * 100) / 20);
+    expect(w.avgEur).toBeCloseTo((10 * 1.835 + 10 * 0.5) / 20, 6);
+  });
+});

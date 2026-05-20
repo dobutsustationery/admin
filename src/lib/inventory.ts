@@ -18,6 +18,7 @@ import {
   UNKNOWN_RECEIPT_DATE,
   BGN_PER_EUR,
   lotMatchesOrder,
+  walkLedger,
 } from "./cost-engine";
 
 // TODO hceck item history for 4542804115635Silver
@@ -807,6 +808,7 @@ function recordSale(
   key: string,
   qty: number,
   atMs: number,
+  isArchive = false,
 ) {
   if (!qty || !Number.isFinite(qty)) return;
   if (!state.costLedger || !state.costLedger[key]) return;
@@ -816,8 +818,23 @@ function recordSale(
     at: Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE,
     seq: ledger.length,
     qty,
+    ...(isArchive ? { isArchive: true } : {}),
   });
   rederiveCostFromLedger(state, key);
+}
+
+function effectiveArchiveQuantity(
+  item: Pick<Item, "qty" | "pieces" | "shipped">,
+) {
+  let qty = Number(item.qty) || 0;
+  if (item.pieces > 1) {
+    qty *= item.pieces;
+  }
+  qty -= Number(item.shipped) || 0;
+  if (item.pieces > 1) {
+    qty /= item.pieces;
+  }
+  return qty;
 }
 
 function rederiveCostFromLedger(state: InventoryState, key: string) {
@@ -933,8 +950,8 @@ function allocateZeroedStockOrderToReceipts(
         ...receipt,
         seq: nextLedgerSeq(ledger),
         qty: receipt.qty - remaining,
-        unitCostJpy: 0,
-        unitCostEur: 0,
+        unitCostJpy: stockOrder.unitCostJpy > 0 ? stockOrder.unitCostJpy : 0,
+        unitCostEur: stockOrder.unitCostEur > 0 ? stockOrder.unitCostEur : 0,
         costOrderId: undefined,
       };
       receipt.qty = remaining;
@@ -2857,6 +2874,18 @@ export const inventory = createReducer(initialState, (r) => {
     state.idToItem = {};
     for (const itemKey in archive.idToItem) {
       state.idToItem[itemKey] = { ...archive.idToItem[itemKey] };
+      const archiveSaleQty = state.costLedger?.[itemKey]
+        ? walkLedger(state.costLedger[itemKey]).onHand
+        : effectiveArchiveQuantity(state.idToItem[itemKey]);
+      // The archive is the real stock-take wipe in the cost ledger. A later
+      // make_sales action reports shrinkage but should not also mutate cost.
+      recordSale(
+        state,
+        itemKey,
+        archiveSaleQty,
+        getTimestampMs(timestamp),
+        true,
+      );
       const origShipped = state.idToItem[itemKey].shipped;
       state.idToItem[itemKey].shipped = 0;
       const origQty = state.idToItem[itemKey].qty;
@@ -2900,22 +2929,8 @@ export const inventory = createReducer(initialState, (r) => {
     for (const itemKey in archive.idToItem) {
       const preitem = archive.idToItem[itemKey];
       const postitem = state.idToItem[itemKey];
-      let preitemq = preitem.qty;
-      if (preitem.pieces > 1) {
-        preitemq *= preitem.pieces;
-      }
-      preitemq -= preitem.shipped;
-      if (preitem.pieces > 1) {
-        preitemq /= preitem.pieces;
-      }
-      let postitemq = postitem?.qty || 0;
-      if (postitem?.pieces > 1) {
-        postitemq *= postitem.pieces;
-      }
-      postitemq -= postitem?.shipped || 0;
-      if (postitem?.pieces > 1) {
-        postitemq /= postitem.pieces;
-      }
+      const preitemq = effectiveArchiveQuantity(preitem);
+      const postitemq = postitem ? effectiveArchiveQuantity(postitem) : 0;
       const qty = preitemq - postitemq;
       if (itemKey.startsWith("4542804104370")) {
         console.log("ITEM: ", itemKey);
@@ -2930,11 +2945,6 @@ export const inventory = createReducer(initialState, (r) => {
       }
     }
     const date = action.payload.date;
-    const saleAtMs =
-      date instanceof Date ? date.getTime() : getTimestampMs(date);
-    for (const it of items) {
-      recordSale(state, it.itemKey, it.qty, saleAtMs);
-    }
     const email = "dobutsustationery@gmail.com";
     const product = archiveName;
     state.salesEvents[archiveName] = {

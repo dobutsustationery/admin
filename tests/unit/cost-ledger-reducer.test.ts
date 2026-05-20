@@ -131,6 +131,53 @@ describe("cost-ledger materialisation in the reducer", () => {
     expect(s.inventory.idToItem[KEY].qty).toBe(18);
   });
 
+  it("prices the same-scan remainder when a stock-order cost only claims part of a scan receipt", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(20) }), 100),
+    );
+
+    s = rootReducer(
+      s,
+      withTs(
+        bulk_import_items({
+          items: [
+            {
+              type: "update",
+              id: KEY,
+              item: baseItem(0),
+              stockOrder: {
+                orderId: "o1",
+                unitCostJpy: 282.7,
+                unitCostEur: 1.8,
+                receivedAt: Date.parse("Nov 9, 2023"),
+                orderedQty: 10,
+              },
+            },
+          ],
+        }),
+        200,
+      ),
+    );
+
+    const led = s.inventory.costLedger![KEY];
+    expect(led).toHaveLength(2);
+    expect(
+      led.map((e: any) => [
+        e.kind,
+        e.qty,
+        e.unitCostJpy,
+        e.unitCostEur,
+        e.costOrderId,
+      ]),
+    ).toEqual([
+      ["receipt", 10, 282.7, 1.8, "o1"],
+      ["receipt", 10, 282.7, 1.8, undefined],
+    ]);
+    expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(282.7, 9);
+  });
+
   it("the ledger follows the item across a JAN re-key", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {

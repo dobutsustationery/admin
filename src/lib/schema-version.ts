@@ -14,4 +14,11 @@
 //    materialised costLedger / registry. A v5 snapshot from an earlier
 //    replay lacks them, so it must be discarded and fully re-derived.
 //    See docs/investigations/DESIGN_ORDER_EXCEPTIONS_ROUTE.md
-export const CURRENT_SCHEMA_VERSION = 6;
+// 7: archive sales now carry an `isArchive` flag and `walkLedger`
+//    carries the pre-archive weighted-average across an archive's
+//    zero-crossing (so an unpriced post-archive recount lot inherits
+//    historical cost instead of silently zeroing it). v6 snapshots
+//    lack the flag on their sale entries and would produce stale €0
+//    averages on items affected by a stock-take wipe — discard and
+//    re-derive.
+export const CURRENT_SCHEMA_VERSION = 7;
