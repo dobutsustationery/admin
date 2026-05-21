@@ -23,6 +23,7 @@
   // One atomic edit: all fields feed a single proposed fix.
   let dateStr = "";
   let goodsJpy = "";
+  let expectedItemCount = "";
   let orderJpy = "";
   let paidAmount = "";
   let paidCurrency: "EUR" | "BGN" = "EUR";
@@ -51,6 +52,7 @@
         ? new Date(current.receivedAt).toISOString().slice(0, 10)
         : "";
     goodsJpy = current.valueOfGoodsJpy?.toString() ?? "";
+    expectedItemCount = current.expectedItemCount?.toString() ?? "";
     orderJpy = current.valueOfOrderJpy?.toString() ?? "";
     paidAmount = current.paidAmount?.toString() ?? "";
     paidCurrency = current.paidCurrency ?? "EUR";
@@ -59,7 +61,7 @@
     approveDiscrepancy = false;
     ignoreUnmatchedRows = false;
     fixCountryOfOrigin = false;
-    fixWeights = false;
+    fixWeights = true;
     weightToleranceG = 0;
     resolutionFilter = "all";
     manualCostColumnIndex = -1;
@@ -80,9 +82,11 @@
       if (Number.isFinite(ms)) m.receivedAt = ms;
     }
     const g = num(goodsJpy);
+    const c = num(expectedItemCount);
     const o = num(orderJpy);
     const p = num(paidAmount);
     if (g != null) m.valueOfGoodsJpy = g;
+    if (c != null) m.expectedItemCount = c;
     if (o != null) m.valueOfOrderJpy = o;
     if (p != null) {
       m.paidAmount = p;
@@ -93,9 +97,11 @@
 
   $: hasMeta = Object.values(proposedMeta).some((v) => v !== undefined);
   $: valueOfGoodsJpy = proposedMeta.valueOfGoodsJpy ?? current?.valueOfGoodsJpy;
+  $: expectedItems =
+    proposedMeta.expectedItemCount ?? current?.expectedItemCount;
   // Columns + auto-detected interpretation for the manual dropdowns.
   $: costCols = costPaste.trim()
-    ? stockOrderCostColumns(costPaste, valueOfGoodsJpy)
+    ? stockOrderCostColumns(costPaste, valueOfGoodsJpy, expectedItems)
     : {
         columns: [],
         headerRows: 1,
@@ -139,6 +145,15 @@
     : null;
   $: matchRows = fixPreview?.matchRows ?? [];
   $: hasUnmatchedRows = matchRows.some((r) => r.isUnmatched);
+  $: hasValueDiscrepancy =
+    fixPreview?.reconciliation?.discrepancy != null &&
+    fixPreview.reconciliation.discrepancy !== 0;
+  $: valueDiscrepancy = fixPreview?.reconciliation?.discrepancy ?? 0;
+  $: hasItemCountDiscrepancy =
+    fixPreview?.reconciliation?.itemCountDiscrepancy != null &&
+    fixPreview.reconciliation.itemCountDiscrepancy !== 0;
+  $: itemCountDiscrepancy =
+    fixPreview?.reconciliation?.itemCountDiscrepancy ?? 0;
   $: hasCountryOfOriginFixes = matchRows.some((r) => r.canFixCountryOfOrigin);
   $: hasWeightFixes = matchRows.some((r) => r.canFixWeight);
   $: hasCountryOfOriginWarnings = matchRows.some(
@@ -146,7 +161,6 @@
   );
   $: hasWeightWarnings = matchRows.some((r) => r.weightMismatch);
   $: if (!hasCountryOfOriginFixes) fixCountryOfOrigin = false;
-  $: if (!hasWeightFixes) fixWeights = false;
   $: resolutionKinds = [
     "all",
     ...Array.from(new Set(matchRows.flatMap((r) => r.kinds))),
@@ -357,6 +371,7 @@
 
     <h2>Money facts (JPY) + paid amount</h2>
     <label>Value of goods (¥)<input bind:value={goodsJpy} /></label>
+    <label>Expected item count<input bind:value={expectedItemCount} /></label>
     <label
       >Value of order (¥, incl. shipping/tax)<input
         bind:value={orderJpy}
@@ -467,6 +482,24 @@
               >
             {:else}
               <span class="bad">enter value of goods to reconcile</span>
+            {/if}
+          </p>
+          <p>
+            Item count: parsed Σ {fmt(rc.qtySum, 0)} item(s)
+            {#if expectedItems}
+              vs expected {fmt(expectedItems, 0)}
+              {#if rc.itemCountReconciled}
+                <span class="ok">reconciled ✓</span>
+              {:else if rc.itemCountDiscrepancy != null}
+                <span class="bad"
+                  >discrepancy {rc.itemCountDiscrepancy > 0 ? "+" : ""}{fmt(
+                    rc.itemCountDiscrepancy,
+                    0,
+                  )}</span
+                >
+              {/if}
+            {:else}
+              <span class="bad">enter expected item count to reconcile</span>
             {/if}
           </p>
           {#if rc.candidates.length > 1}
@@ -647,13 +680,23 @@
               Override lots that already have a cost
             </label>
           {/if}
-          {#if !rc.reconciled && rc.discrepancy != null}
+          {#if hasValueDiscrepancy || hasItemCountDiscrepancy}
             <label class="chk">
               <input type="checkbox" bind:checked={approveDiscrepancy} />
-              Approve despite {rc.discrepancy > 0 ? "+" : ""}{fmt(
-                rc.discrepancy,
-                0,
-              )} ¥ discrepancy
+              Approve despite
+              {#if hasValueDiscrepancy}
+                {valueDiscrepancy > 0 ? "+" : ""}{fmt(valueDiscrepancy, 0)} ¥ value
+                discrepancy
+              {/if}
+              {#if hasValueDiscrepancy && hasItemCountDiscrepancy}
+                and
+              {/if}
+              {#if hasItemCountDiscrepancy}
+                {itemCountDiscrepancy > 0 ? "+" : ""}{fmt(
+                  itemCountDiscrepancy,
+                  0,
+                )} item count discrepancy
+              {/if}
             </label>
           {/if}
           {#if hasCountryOfOriginFixes}

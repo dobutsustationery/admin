@@ -1469,6 +1469,9 @@ export const rootReducer = (
         !r.chosen ||
         r.rows.length === 0 ||
         (!r.reconciled && r.discrepancy != null && !approveDiscrepancy) ||
+        (r.itemCountDiscrepancy != null &&
+          r.itemCountDiscrepancy !== 0 &&
+          !approveDiscrepancy) ||
         (preview.unmatchedJans.length > 0 && !ignoreUnmatchedRows) ||
         (preview.matched.some((m) => m.isOverride) && !overrideExisting);
       if (!blocked) {

@@ -48,6 +48,37 @@ describe("parseStockOrderCostTsv — header shapes", () => {
     // qty resolves to PCS (20); unit cols 50 & 200; total 1000/20=50
     const sums = p.interpretations.map((i) => i.sum);
     expect(sums).toContain(1000); // 50*20
+    expect(p.interpretations.every((i) => i.qtyColumnIndex === 4)).toBe(true);
+    expect(
+      p.interpretations.find((i) => i.kind === "total")?.rows[0],
+    ).toMatchObject({
+      qty: 20,
+      unitCostJpy: 50,
+    });
+  });
+
+  it("does not confuse PCS Price JPY with ORDER Q'ty PCS", () => {
+    const p = parseStockOrderCostTsv(
+      tsv([
+        [
+          "Bar-Code No.",
+          "PCS Price JPY",
+          "UNIT Price JPY",
+          "ORDER Q'ty UNIT",
+          "ORDER Q'ty PCS",
+          "Total Wholesale Amount YEN",
+        ],
+        ["4542804117776", "35", "350", "4", "40", "1400"],
+      ]),
+    );
+
+    const total = p.interpretations.find((i) => i.kind === "total");
+    expect(total?.qtyColumnIndex).toBe(4);
+    expect(total?.rows[0]).toMatchObject({
+      jan: "4542804117776",
+      qty: 40,
+      unitCostJpy: 35,
+    });
   });
 
   it("shape 4: 'Original price' is NOT treated as unit cost", () => {
@@ -155,6 +186,20 @@ describe("reconcileStockOrderCostTsv", () => {
     const r = reconcileStockOrderCostTsv(parse, goods);
     expect(r.reconciled).toBe(false);
     expect(r.discrepancy).toBe(-5); // chosen.sum - goods
+  });
+
+  it("reconciles parsed item count against an expected count", () => {
+    const r = reconcileStockOrderCostTsv(parse, 65 * 6 + 62 * 12, 18);
+    expect(r.qtySum).toBe(18);
+    expect(r.itemCountReconciled).toBe(true);
+    expect(r.itemCountDiscrepancy).toBe(0);
+  });
+
+  it("reports parsed item count discrepancies", () => {
+    const r = reconcileStockOrderCostTsv(parse, 65 * 6 + 62 * 12, 20);
+    expect(r.qtySum).toBe(18);
+    expect(r.itemCountReconciled).toBe(false);
+    expect(r.itemCountDiscrepancy).toBe(-2);
   });
 
   it("does not round total/qty unit costs before reconciliation", () => {

@@ -6,6 +6,8 @@ import {
   BGN_PER_EUR,
   walkLedger,
   lotMatchesOrder,
+  type LedgerEntry,
+  type ReceiptEntry,
 } from "./cost-engine";
 import {
   parseStockOrderCostTsv,
@@ -29,6 +31,7 @@ export type ManualInterpretation = {
 export function stockOrderCostColumns(
   rawPaste: string,
   valueOfGoodsJpy: number | undefined,
+  expectedItemCount?: number,
 ): {
   columns: TsvColumn[];
   headerRows: number;
@@ -39,7 +42,7 @@ export function stockOrderCostColumns(
   weightColumnIndex: number;
 } {
   const p = parseStockOrderCostTsv(rawPaste);
-  const r = reconcileStockOrderCostTsv(p, valueOfGoodsJpy);
+  const r = reconcileStockOrderCostTsv(p, valueOfGoodsJpy, expectedItemCount);
   return {
     columns: p.columns,
     headerRows: p.headerRows,
@@ -63,6 +66,7 @@ export interface OrderExceptionRow {
   receivedAt?: number;
   valueOfGoodsJpy?: number;
   valueOfOrderJpy?: number;
+  expectedItemCount?: number;
   totalOrderEur?: number;
   paidCurrency?: "EUR" | "BGN";
   paidAmount?: number;
@@ -118,6 +122,7 @@ export function selectOrderExceptions(
       receivedAt: m.receivedAt,
       valueOfGoodsJpy: m.valueOfGoodsJpy,
       valueOfOrderJpy: m.valueOfOrderJpy,
+      expectedItemCount: m.expectedItemCount,
       totalOrderEur: m.totalOrderEur,
       paidCurrency: m.paidCurrency,
       paidAmount: m.paidAmount,
@@ -307,6 +312,27 @@ function findZeroedAllocationCandidate(
   };
 }
 
+function hasSourceTaggedStockOrderReceipt(
+  inventory: Pick<InventoryState, "costLedger" | "idToItem">,
+  orderId: string,
+  jan: string,
+): boolean {
+  const ledgerByKey = inventory.costLedger || {};
+  const source = `stockOrder:${orderId}`;
+  for (const [key, ledger] of Object.entries(ledgerByKey)) {
+    const item = inventory.idToItem[key];
+    if (!item || item.janCode !== jan) continue;
+    if (
+      ledger.some(
+        (entry) =>
+          entry.kind === "receipt" && entry.source === source && entry.qty > 0,
+      )
+    )
+      return true;
+  }
+  return false;
+}
+
 /**
  * Pure preview for the staged TSV: reconcile to value-of-goods, match
  * each row to this order's source-tagged lots, and project the
@@ -332,10 +358,12 @@ export function computeStockOrderCostCommit(args: {
     ? reconcileManual(
         buildInterpretation(rawPaste, interpretation),
         reg?.valueOfGoodsJpy,
+        reg?.expectedItemCount,
       )
     : reconcileStockOrderCostTsv(
         parseStockOrderCostTsv(rawPaste),
         reg?.valueOfGoodsJpy,
+        reg?.expectedItemCount,
       );
   // Stock orders have no subtypes: key by JAN only.
   const want = new Map<string, number>();
@@ -582,45 +610,104 @@ export function previewStockOrderFix(
 
   const tag = `stockOrder:${orderId}`;
   const ledger = inventory.costLedger || {};
-  const items: StockOrderFixItem[] = [];
+  const projectedByKey = new Map<string, LedgerEntry[]>();
+  const touchedKeys = new Set<string>();
   let affectedLots = 0;
 
   for (const key of Object.keys(ledger)) {
     const orig = ledger[key];
     const item = inventory.idToItem[key];
-    let inOrder = 0;
     const projected = orig.map((e) => {
-      if (!lotMatchesOrder(e, orderId) || e.kind !== "receipt") return e;
-      inOrder++;
-      const fromThisOrder = e.source === tag;
-      let unitCostJpy = e.unitCostJpy;
+      const entry = { ...e } as LedgerEntry;
+      if (!lotMatchesOrder(entry, orderId) || entry.kind !== "receipt")
+        return entry;
+      affectedLots++;
+      touchedKeys.add(key);
+      const fromThisOrder = entry.source === tag;
+      let unitCostJpy = entry.unitCostJpy;
       if (item) {
         const v = want.get(item.janCode);
-        if (v != null && (!(e.unitCostJpy > 0) || opts.overrideExisting))
+        if (v != null && (!(entry.unitCostJpy > 0) || opts.overrideExisting))
           unitCostJpy = v;
       }
-      const unitCostEur = fx > 0 ? unitCostJpy * fx : e.unitCostEur;
+      const unitCostEur = fx > 0 ? unitCostJpy * fx : entry.unitCostEur;
       return {
-        ...e,
+        ...entry,
         // Scan-attached lots keep their scan date; only lots the
         // order created get re-dated.
-        at: fromThisOrder ? (receivedAt ?? e.at) : e.at,
+        at: fromThisOrder ? (receivedAt ?? entry.at) : entry.at,
         unitCostJpy,
         unitCostEur,
       };
-    });
-    if (inOrder === 0) continue;
-    affectedLots += inOrder;
-    const before = walkLedger(orig);
-    const after = walkLedger(projected);
-    items.push({
+    }) as LedgerEntry[];
+    projectedByKey.set(key, projected);
+  }
+
+  if (reconciliation && receivedAt) {
+    for (const row of reconciliation.rows) {
+      if (!(Number(row.qty) > 0)) continue;
+      if (hasSourceTaggedStockOrderReceipt(inventory, orderId, row.jan))
+        continue;
+      const queues = Object.entries(inventory.idToItem)
+        .filter(([, item]) => item.janCode === row.jan)
+        .map(([key]) => {
+          const projected =
+            projectedByKey.get(key) ||
+            ((ledger[key] || []).map((e) => ({ ...e })) as LedgerEntry[]);
+          projectedByKey.set(key, projected);
+          const candidates = projected
+            .map((entry, index) => ({ entry, index }))
+            .filter(({ entry }) => {
+              if (entry.kind !== "receipt") return false;
+              if (entry.ignored) return false;
+              if (entry.at < receivedAt) return false;
+              if (entry.source?.startsWith("stockOrder:")) return false;
+              if (entry.costOrderId) return false;
+              return entry.qty > 0;
+            })
+            .sort((a, b) => {
+              if (a.entry.at !== b.entry.at) return a.entry.at - b.entry.at;
+              if (a.entry.seq !== b.entry.seq) return a.entry.seq - b.entry.seq;
+              return a.index - b.index;
+            });
+          return { key, candidates };
+        })
+        .filter((queue) => queue.candidates.length > 0);
+
+      let remaining = row.qty;
+      while (remaining > 0) {
+        let consumedAny = false;
+        for (const queue of queues) {
+          if (remaining <= 0) break;
+          const next = queue.candidates.shift();
+          if (!next) continue;
+          const receipt = next.entry as ReceiptEntry;
+          receipt.costOrderId = orderId;
+          receipt.unitCostJpy = row.unitCostJpy;
+          receipt.unitCostEur =
+            fx > 0 ? row.unitCostJpy * fx : receipt.unitCostEur;
+          if (receipt.qty > remaining) receipt.auditSeverity = "danger";
+          remaining -= receipt.qty;
+          affectedLots++;
+          touchedKeys.add(queue.key);
+          consumedAny = true;
+        }
+        if (!consumedAny) break;
+      }
+    }
+  }
+
+  const items: StockOrderFixItem[] = [...touchedKeys].map((key) => {
+    const before = walkLedger(ledger[key] || []);
+    const after = walkLedger(projectedByKey.get(key) || ledger[key] || []);
+    return {
       key,
       oldCostJpy: before.avgJpy,
       newCostJpy: after.avgJpy,
       oldCostEur: before.avgEur,
       newCostEur: after.avgEur,
-    });
-  }
+    };
+  });
   items.sort((a, b) => a.key.localeCompare(b.key));
 
   const blocked =
@@ -629,6 +716,9 @@ export function previewStockOrderFix(
       reconciliation.rows.length === 0 ||
       (!reconciliation.reconciled &&
         reconciliation.discrepancy != null &&
+        !opts.approveDiscrepancy) ||
+      (reconciliation.itemCountDiscrepancy != null &&
+        reconciliation.itemCountDiscrepancy !== 0 &&
         !opts.approveDiscrepancy) ||
       (!!cost && cost.unmatchedJans.length > 0 && !opts.ignoreUnmatchedRows) ||
       (!!cost &&

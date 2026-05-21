@@ -55,6 +55,10 @@ export interface StockOrderCostReconciliation {
   discrepancy?: number; // signed: chosen.sum - valueOfGoodsJpy
   candidates: { label: string; sum: number }[];
   rows: StockOrderCostRow[];
+  qtySum?: number;
+  expectedItemCount?: number;
+  itemCountReconciled?: boolean;
+  itemCountDiscrepancy?: number; // signed: qtySum - expectedItemCount
 }
 
 // Quote-aware grid. A header cell can contain a quoted embedded
@@ -94,18 +98,41 @@ function findJan(norm: string[]): number {
 function findQty(norm: string[]): number {
   const cartonish = (h: string) =>
     h.includes("ctn") || h.includes("carton") || h.includes("inner");
-  let i = norm.findIndex(
-    (h) => h.includes("pcs") && h.includes("total") && !cartonish(h),
-  );
-  if (i < 0) i = norm.findIndex((h) => h.includes("pcs") && !cartonish(h));
+  const moneyish = (h: string) =>
+    h.includes("price") ||
+    h.includes("cost") ||
+    h.includes("amount") ||
+    h.includes("yen") ||
+    h.includes("jpy") ||
+    h.includes("bgn") ||
+    h.includes("lev") ||
+    h.includes("eur") ||
+    h.includes("wholesale") ||
+    h.includes("tax");
+  const usableQty = (h: string) => !cartonish(h) && !moneyish(h);
+
+  let i = norm.findIndex((h) => h === "totalpcs" || h === "orderqtypcs");
+  if (i < 0)
+    i = norm.findIndex(
+      (h) => h.includes("order") && h.includes("qty") && h.includes("pcs"),
+    );
+  if (i < 0)
+    i = norm.findIndex(
+      (h) => h.includes("pcs") && h.includes("total") && usableQty(h),
+    );
+  if (i < 0)
+    i = norm.findIndex(
+      (h) => h.includes("pcs") && h.includes("qty") && usableQty(h),
+    );
+  if (i < 0) i = norm.findIndex((h) => h.includes("pcs") && usableQty(h));
   if (i < 0)
     i = norm.findIndex(
       (h) =>
         (h.includes("qty") || h.includes("quantity")) &&
         !h.includes("unit") &&
-        !cartonish(h),
+        usableQty(h),
     );
-  if (i < 0) i = norm.findIndex((h) => h.includes("pcs"));
+  if (i < 0) i = norm.findIndex((h) => h.includes("pcs") && !cartonish(h));
   return i;
 }
 
@@ -406,13 +433,19 @@ export function buildInterpretation(
 export function reconcileStockOrderCostTsv(
   parse: StockOrderCostParse,
   valueOfGoodsJpy: number | undefined,
+  expectedItemCount?: number,
 ): StockOrderCostReconciliation {
   const candidates = parse.interpretations.map((i) => ({
     label: i.label,
     sum: i.sum,
   }));
   if (parse.interpretations.length === 0)
-    return { reconciled: false, candidates, rows: [] };
+    return {
+      reconciled: false,
+      candidates,
+      rows: [],
+      ...itemCountFields([], expectedItemCount),
+    };
 
   const ordered = [...parse.interpretations].sort((a, b) =>
     a.kind === b.kind ? 0 : a.kind === "unit" ? -1 : 1,
@@ -427,6 +460,7 @@ export function reconcileStockOrderCostTsv(
         discrepancy: 0,
         candidates,
         rows: exact.rows,
+        ...itemCountFields(exact.rows, expectedItemCount),
       };
   }
 
@@ -446,6 +480,7 @@ export function reconcileStockOrderCostTsv(
       valueOfGoodsJpy == null ? undefined : chosen.sum - valueOfGoodsJpy,
     candidates,
     rows: chosen.rows,
+    ...itemCountFields(chosen.rows, expectedItemCount),
   };
 }
 
@@ -453,8 +488,15 @@ export function reconcileStockOrderCostTsv(
 export function reconcileManual(
   interp: CostInterpretation | null,
   valueOfGoodsJpy: number | undefined,
+  expectedItemCount?: number,
 ): StockOrderCostReconciliation {
-  if (!interp) return { reconciled: false, candidates: [], rows: [] };
+  if (!interp)
+    return {
+      reconciled: false,
+      candidates: [],
+      rows: [],
+      ...itemCountFields([], expectedItemCount),
+    };
   const candidates = [{ label: interp.label, sum: interp.sum }];
   const reconciled = valueOfGoodsJpy != null && interp.sum === valueOfGoodsJpy;
   return {
@@ -464,5 +506,27 @@ export function reconcileManual(
       valueOfGoodsJpy == null ? undefined : interp.sum - valueOfGoodsJpy,
     candidates,
     rows: interp.rows,
+    ...itemCountFields(interp.rows, expectedItemCount),
+  };
+}
+
+function itemCountFields(
+  rows: readonly StockOrderCostRow[],
+  expectedItemCount?: number,
+): Pick<
+  StockOrderCostReconciliation,
+  | "qtySum"
+  | "expectedItemCount"
+  | "itemCountReconciled"
+  | "itemCountDiscrepancy"
+> {
+  const qtySum = rows.reduce((sum, row) => sum + row.qty, 0);
+  if (!(Number(expectedItemCount) > 0)) return { qtySum };
+  const expected = Number(expectedItemCount);
+  return {
+    qtySum,
+    expectedItemCount: expected,
+    itemCountReconciled: qtySum === expected,
+    itemCountDiscrepancy: qtySum - expected,
   };
 }

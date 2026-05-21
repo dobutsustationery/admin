@@ -203,6 +203,35 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       timestamp: { _seconds: 210, _nanoseconds: 0 },
     } as any);
 
+    const preview = previewStockOrderFix(s.inventory, "fc", {
+      meta: {
+        receivedAt: 150_000,
+        valueOfGoodsJpy: 2400,
+        valueOfOrderJpy: 2400,
+        paidCurrency: "EUR",
+        paidAmount: 24,
+      },
+      rawPaste: [
+        "JAN code\tUNIT PRICE (YEN)\tQuantity",
+        `${JAN}\t100\t24`,
+      ].join("\n"),
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+
+    expect(
+      preview.items.map((item) => [
+        item.key,
+        item.oldCostJpy,
+        item.newCostJpy,
+        item.oldCostEur,
+        item.newCostEur,
+      ]),
+    ).toEqual([
+      [`${JAN}Blue`, 0, 100, 0, 1],
+      [`${JAN}Pink`, 0, 100, 0, 1],
+    ]);
+
     s = rootReducer(s, {
       ...fix_stock_order({
         orderId: "fc",
@@ -274,6 +303,48 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       timestamp: TS,
     } as any);
     expect(s3.inventory.costLedger![key][0].unitCostJpy).toBe(200);
+  });
+
+  it("blocks item-count discrepancies unless explicitly approved", () => {
+    const s0 = unpricedOrder();
+    const key = Object.keys(s0.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+
+    const blockedPreview = previewStockOrderFix(s0.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 2000, expectedItemCount: 9 },
+      rawPaste: tsvPaste,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+    expect(blockedPreview.reconciliation?.qtySum).toBe(10);
+    expect(blockedPreview.reconciliation?.itemCountDiscrepancy).toBe(1);
+    expect(blockedPreview.blocked).toBe(true);
+
+    const s1 = rootReducer(s0, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 2000, expectedItemCount: 9 },
+        costTsv: tsvPaste,
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(s1.inventory.stockOrderRegistry!["fc"].expectedItemCount).toBe(9);
+    expect(s1.inventory.costLedger![key][0].unitCostJpy).toBe(0);
+
+    const s2 = rootReducer(s0, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 2000, expectedItemCount: 9 },
+        costTsv: tsvPaste,
+        overrideExisting: false,
+        approveDiscrepancy: true,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(s2.inventory.costLedger![key][0].unitCostJpy).toBe(200);
   });
 
   it("manual interpretation is used consistently by preview and commit", () => {

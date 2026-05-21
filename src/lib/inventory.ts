@@ -132,6 +132,7 @@ export interface StockOrderMeta {
   receivedAt?: number; // epoch ms; absent -> UNKNOWN_RECEIPT_DATE
   valueOfGoodsJpy?: number; // Σ line goods (TSV reconciliation anchor)
   valueOfOrderJpy?: number; // invoice total JPY (incl. shipping/tax)
+  expectedItemCount?: number; // owner-entered Σ item count reconciliation anchor
   paidCurrency?: "EUR" | "BGN"; // the real fact paid
   paidAmount?: number;
   totalOrderEur?: number; // derived: paid normalised to EUR
