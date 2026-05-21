@@ -843,6 +843,132 @@ function recordSale(
   rederiveCostFromLedger(state, key);
 }
 
+type QuantityCorrectionSummary = {
+  adjustedLots: number;
+  reducedQty: number;
+  visibleQty: number;
+  requestedVisibleQty?: number;
+};
+
+function quantityCorrectionHistoryDesc(
+  correction: QuantityCorrectionSummary,
+): string {
+  const target =
+    correction.requestedVisibleQty === undefined
+      ? `visible qty ${correction.visibleQty}`
+      : `ledger qty ${correction.visibleQty} (visible qty ${correction.requestedVisibleQty})`;
+  return `Cost ledger qty correction: reduced ${correction.adjustedLots} receipt lot(s) by ${correction.reducedQty} unit(s) to match ${target}`;
+}
+
+function receiptQuantityCorrectionComment(
+  reducedBy: number,
+  fromVisibleQty: unknown,
+  visibleQty: number,
+  requestedVisibleQty?: number,
+): string {
+  const target =
+    requestedVisibleQty === undefined
+      ? `visible qty ${visibleQty}`
+      : `ledger qty ${visibleQty} (requested visible qty ${requestedVisibleQty})`;
+  return `Reducer qty correction reduced this receipt by ${reducedBy} unit(s), from visible qty ${fromVisibleQty} to ${target}.`;
+}
+
+function applyQuantityCorrectionToReceipts(
+  state: InventoryState,
+  key: string,
+  fromVisibleQty: unknown,
+  nextVisibleQty: unknown,
+  atMs: number,
+  actionType: string,
+  actionDocId?: string,
+): QuantityCorrectionSummary | null {
+  const ledger = state.costLedger?.[key];
+  if (!ledger) return null;
+  const requestedVisible = Number(nextVisibleQty);
+  if (!Number.isFinite(requestedVisible)) return null;
+  const visible = Math.max(0, requestedVisible);
+  const requestedVisibleQty =
+    requestedVisible !== visible ? requestedVisible : undefined;
+  let remainingDecrease = walkLedgerForDerivedCost(ledger).onHand - visible;
+  if (remainingDecrease <= 0) return null;
+
+  const sorted = ledger
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      if (a.entry.at !== b.entry.at) return a.entry.at - b.entry.at;
+      if (a.entry.seq !== b.entry.seq) return a.entry.seq - b.entry.seq;
+      return a.index - b.index;
+    });
+
+  const openLots: { index: number; remaining: number }[] = [];
+  for (const { entry, index } of sorted) {
+    if (entry.ignored) continue;
+    if (entry.kind === "receipt") {
+      const qty = Math.max(0, Number(entry.qty) || 0);
+      if (qty > 0) openLots.push({ index, remaining: qty });
+      continue;
+    }
+    let saleQty = Math.max(0, Number(entry.qty) || 0);
+    for (const lot of openLots) {
+      if (saleQty <= 0) break;
+      const used = Math.min(lot.remaining, saleQty);
+      lot.remaining -= used;
+      saleQty -= used;
+    }
+  }
+
+  const openReceipts = openLots.filter((lot) => lot.remaining > 0);
+  let adjustedLots = 0;
+  let reducedQty = 0;
+  const correctionAt =
+    Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE;
+
+  for (let i = openReceipts.length - 1; i >= 0 && remainingDecrease > 0; i--) {
+    const lot = openReceipts[i];
+    const used = Math.min(lot.remaining, remainingDecrease);
+    if (used <= 0) continue;
+
+    const receipt = ledger[lot.index] as ReceiptEntry;
+    const beforeQty = Number(receipt.qty) || 0;
+    if (beforeQty <= 0) continue;
+
+    if (receipt.originalQty === undefined) receipt.originalQty = beforeQty;
+    receipt.qty = Math.max(0, beforeQty - used);
+    const fromVisible = Number(fromVisibleQty);
+    const corrections = receipt.quantityCorrections || [];
+    corrections.push({
+      at: correctionAt,
+      actionType,
+      ...(actionDocId ? { actionDocId } : {}),
+      fromVisibleQty: fromVisible,
+      toVisibleQty: visible,
+      ...(requestedVisibleQty !== undefined ? { requestedVisibleQty } : {}),
+      reducedBy: used,
+    });
+    receipt.quantityCorrections = corrections;
+    receipt.auditComment = receiptQuantityCorrectionComment(
+      used,
+      fromVisible,
+      visible,
+      requestedVisibleQty,
+    );
+    receipt.auditSeverity = receipt.qty <= 0 ? "danger" : "warning";
+    if (receipt.qty <= 0) {
+      receipt.ignored = true;
+      receipt.ignoreReason = "qty correction reduced receipt to zero";
+      receipt.auditSeverity = "danger";
+    }
+
+    adjustedLots++;
+    reducedQty += used;
+    remainingDecrease -= used;
+  }
+
+  if (adjustedLots === 0) return null;
+  rederiveCostFromLedger(state, key);
+  return { adjustedLots, reducedQty, visibleQty: visible, requestedVisibleQty };
+}
+
 function effectiveArchiveQuantity(
   item: Pick<Item, "qty" | "pieces" | "shipped">,
 ) {
@@ -2349,6 +2475,10 @@ export const inventory = createReducer(initialState, (r) => {
         return state;
       }
 
+      const previousVisibleQty =
+        Number(state.idToItem[itemKey].qty || 0) -
+        Number(state.idToItem[itemKey].shipped || 0);
+
       (state.idToItem[itemKey] as any)[field] =
         field === "qty" ||
         field === "shipped" ||
@@ -2381,6 +2511,25 @@ export const inventory = createReducer(initialState, (r) => {
         desc: `${field} changed from ${from} to ${incomingValue}`,
         val,
       });
+      if (field === "qty") {
+        const correction = applyQuantityCorrectionToReceipts(
+          state,
+          itemKey,
+          previousVisibleQty,
+          Number(state.idToItem[itemKey].qty || 0) -
+            Number(state.idToItem[itemKey].shipped || 0),
+          val,
+          action.type,
+          (action as any).id,
+        );
+        if (correction) {
+          state.idToHistory[itemKey].push({
+            date: creationDate,
+            desc: quantityCorrectionHistoryDesc(correction),
+            val,
+          });
+        }
+      }
       if (field === "qty") {
         const q = state.idToItem[itemKey][field];
         // type mismatch issue TODO
@@ -2421,6 +2570,9 @@ export const inventory = createReducer(initialState, (r) => {
       // Mirror the non-subtype branch of update_field exactly, per entry,
       // in dispatch order — same field write + same history entry.
       for (const { field, from, to: incomingValue } of action.payload.fields) {
+        const previousVisibleQty =
+          Number(state.idToItem[itemKey].qty || 0) -
+          Number(state.idToItem[itemKey].shipped || 0);
         (state.idToItem[itemKey] as any)[field] =
           field === "qty" ||
           field === "shipped" ||
@@ -2434,6 +2586,25 @@ export const inventory = createReducer(initialState, (r) => {
           desc: `${field} changed from ${from} to ${incomingValue}`,
           val,
         });
+        if (field === "qty") {
+          const correction = applyQuantityCorrectionToReceipts(
+            state,
+            itemKey,
+            previousVisibleQty,
+            Number(state.idToItem[itemKey].qty || 0) -
+              Number(state.idToItem[itemKey].shipped || 0),
+            val,
+            action.type,
+            (action as any).id,
+          );
+          if (correction) {
+            state.idToHistory[itemKey].push({
+              date: creationDate,
+              desc: quantityCorrectionHistoryDesc(correction),
+              val,
+            });
+          }
+        }
       }
     } else {
       console.warn(

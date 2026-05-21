@@ -210,7 +210,13 @@ describe("inventory reducer", () => {
         nextState,
         update_field({ id, field: "qty", from: 10, to: 8 }),
       );
-      expect(nextState.idToHistory[id].length).toBe(initialHistoryLength + 1);
+      expect(nextState.idToHistory[id].length).toBe(initialHistoryLength + 2);
+      expect(nextState.idToHistory[id].at(-2)?.desc).toBe(
+        "qty changed from 10 to 8",
+      );
+      expect(nextState.idToHistory[id].at(-1)?.desc).toBe(
+        "Cost ledger qty correction: reduced 1 receipt lot(s) by 2 unit(s) to match visible qty 8",
+      );
     });
 
     it("handles qty field set to 0", () => {

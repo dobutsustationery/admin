@@ -34,6 +34,22 @@ export type ReceiptEntry = {
   // Manual override for historical bad scans/imports. Kept on the entry
   // so the logged correction replays deterministically.
   ignored?: boolean;
+  // Audit marker for reducer-applied visible-qty corrections. The entry's
+  // current qty is authoritative; originalQty and quantityCorrections explain
+  // why a scanned receipt was reduced or ignored.
+  originalQty?: number;
+  quantityCorrections?: {
+    at: number;
+    actionType: string;
+    actionDocId?: string;
+    fromVisibleQty: number;
+    toVisibleQty: number;
+    requestedVisibleQty?: number;
+    reducedBy: number;
+  }[];
+  auditComment?: string;
+  auditSeverity?: "warning" | "danger";
+  ignoreReason?: string;
 };
 
 export type SaleEntry = {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { rootReducer } from "$lib/root-reducer";
 import {
   update_item,
+  update_field,
   bulk_import_items,
   fix_jancode,
   set_cost_ledger_entries_ignored,
@@ -177,6 +178,136 @@ describe("cost-ledger materialisation in the reducer", () => {
       ["receipt", 10, 282.7, 1.8, undefined],
     ]);
     expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(282.7, 9);
+  });
+
+  it("reduces the newest scan receipt when a qty correction lowers inventory", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(10) }), 100),
+    );
+
+    s = rootReducer(
+      s,
+      withTs(update_field({ id: KEY, field: "qty", from: 10, to: "5" }), 150),
+    );
+
+    expect(s.inventory.idToItem[KEY].qty).toBe(5);
+    expect(s.inventory.costLedger![KEY]).toEqual([
+      expect.objectContaining({
+        kind: "receipt",
+        qty: 5,
+        unitCostJpy: 0,
+        originalQty: 10,
+        quantityCorrections: [
+          expect.objectContaining({
+            actionType: "update_field",
+            fromVisibleQty: 10,
+            toVisibleQty: 5,
+            reducedBy: 5,
+          }),
+        ],
+        auditComment:
+          "Reducer qty correction reduced this receipt by 5 unit(s), from visible qty 10 to visible qty 5.",
+        auditSeverity: "warning",
+      }),
+    ]);
+    expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
+      "Cost ledger qty correction",
+    );
+
+    s = rootReducer(
+      s,
+      withTs(
+        bulk_import_items({
+          items: [
+            {
+              type: "update",
+              id: KEY,
+              item: baseItem(0),
+              stockOrder: {
+                orderId: "o1",
+                unitCostJpy: 65,
+                unitCostEur: 0.38,
+                receivedAt: Date.parse("Nov 9, 2023"),
+                orderedQty: 5,
+              },
+            },
+          ],
+        }),
+        200,
+      ),
+    );
+
+    expect(s.inventory.costLedger![KEY]).toHaveLength(1);
+    expect(s.inventory.costLedger![KEY][0]).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        qty: 5,
+        unitCostJpy: 65,
+        unitCostEur: 0.38,
+        costOrderId: "o1",
+      }),
+    );
+  });
+
+  it("audits qty corrections across multiple newest open receipts", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(12) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(7) }), 110),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(12) }), 120),
+    );
+
+    s = rootReducer(
+      s,
+      withTs(update_field({ id: KEY, field: "qty", from: 31, to: "12" }), 150),
+    );
+
+    const ledger = s.inventory.costLedger![KEY] as any[];
+    expect(
+      ledger.map((entry) => [entry.kind, entry.qty, entry.ignored]),
+    ).toEqual([
+      ["receipt", 12, undefined],
+      ["receipt", 0, true],
+      ["receipt", 0, true],
+    ]);
+    expect(ledger[1]).toEqual(
+      expect.objectContaining({
+        originalQty: 7,
+        ignoreReason: "qty correction reduced receipt to zero",
+        quantityCorrections: [
+          expect.objectContaining({
+            fromVisibleQty: 31,
+            toVisibleQty: 12,
+            reducedBy: 7,
+          }),
+        ],
+        auditSeverity: "danger",
+      }),
+    );
+    expect(ledger[2]).toEqual(
+      expect.objectContaining({
+        originalQty: 12,
+        quantityCorrections: [
+          expect.objectContaining({
+            fromVisibleQty: 31,
+            toVisibleQty: 12,
+            reducedBy: 12,
+          }),
+        ],
+      }),
+    );
+    expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toBe(
+      "Cost ledger qty correction: reduced 2 receipt lot(s) by 19 unit(s) to match visible qty 12",
+    );
   });
 
   it("can mark a specific ledger entry ignored and rederive cost", () => {
