@@ -9,6 +9,8 @@ import {
   set_stock_order_meta,
   fix_stock_order,
   update_field,
+  update_item,
+  type Item,
 } from "$lib/inventory";
 import {
   selectOrderExceptions,
@@ -28,6 +30,19 @@ const CSV = [
   "JAN code,Product name,Order Q'ty PCS,UNIT PRICE (YEN)",
   `${JAN},Widget, 10 , 200 `,
 ].join("\n");
+
+const scanItem = (subtype: string, qty: number): Item => ({
+  janCode: JAN,
+  subtype,
+  description: "Widget",
+  hsCode: "48211010",
+  image: "",
+  qty,
+  pieces: 1,
+  shipped: 0,
+  creationDate: "Nov 14, 2023 (0)",
+  timestamp: 0,
+});
 
 function importOrder(id: string, name: string) {
   let s = rootReducer(undefined, { type: "@@INIT" });
@@ -175,6 +190,55 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     expect(s.inventory.stockOrderRegistry!["fc"].valueOfGoodsJpy).toBe(2000);
     expect(s.inventory.costLedger![key][0].unitCostJpy).toBe(200);
     expect(s.inventory.idToItem[key].cost).toBe(200);
+  });
+
+  it("fix_stock_order can price eligible zeroed scan receipts once the real order date is known", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(s, {
+      ...update_item({ id: `${JAN}Blue`, item: scanItem("Blue", 12) }),
+      timestamp: { _seconds: 200, _nanoseconds: 0 },
+    } as any);
+    s = rootReducer(s, {
+      ...update_item({ id: `${JAN}Pink`, item: scanItem("Pink", 12) }),
+      timestamp: { _seconds: 210, _nanoseconds: 0 },
+    } as any);
+
+    s = rootReducer(s, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: {
+          receivedAt: 150_000,
+          valueOfGoodsJpy: 2400,
+          valueOfOrderJpy: 2400,
+          paidCurrency: "EUR",
+          paidAmount: 24,
+        },
+        costTsv: [
+          "JAN code\tUNIT PRICE (YEN)\tQuantity",
+          `${JAN}\t100\t24`,
+        ].join("\n"),
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(
+      (s.inventory.costLedger![`${JAN}Blue`] as any[]).map((e) => [
+        e.qty,
+        e.unitCostJpy,
+        e.unitCostEur,
+        e.costOrderId,
+      ]),
+    ).toEqual([[12, 100, 1, "fc"]]);
+    expect(
+      (s.inventory.costLedger![`${JAN}Pink`] as any[]).map((e) => [
+        e.qty,
+        e.unitCostJpy,
+        e.unitCostEur,
+        e.costOrderId,
+      ]),
+    ).toEqual([[12, 100, 1, "fc"]]);
   });
 
   it("non-reconciling TSV is blocked unless discrepancy approved", () => {

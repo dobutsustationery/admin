@@ -265,6 +265,48 @@ export interface StockOrderCostCommitPreview {
   affected: { key: string; oldCostJpy?: number; newCostJpy?: number }[];
 }
 
+function findZeroedAllocationCandidate(
+  inventory: Pick<InventoryState, "costLedger" | "idToItem">,
+  jan: string,
+  receivedAt?: number,
+): { key: string; item: Item; oldUnitJpy: number; qty: number } | undefined {
+  if (!receivedAt || receivedAt === UNKNOWN_RECEIPT_DATE) return undefined;
+  const ledger = inventory.costLedger || {};
+  const candidates: Array<{
+    key: string;
+    item: Item;
+    receipt: any;
+    index: number;
+  }> = [];
+  for (const key of Object.keys(ledger)) {
+    const item = inventory.idToItem[key];
+    if (!item || item.janCode !== jan) continue;
+    ledger[key].forEach((entry: any, index: number) => {
+      if (entry.kind !== "receipt") return;
+      if (entry.ignored) return;
+      if (entry.at < receivedAt) return;
+      if (entry.source?.startsWith("stockOrder:")) return;
+      if (entry.costOrderId) return;
+      if (!(entry.qty > 0)) return;
+      candidates.push({ key, item, receipt: entry, index });
+    });
+  }
+  candidates.sort((a, b) => {
+    if (a.receipt.at !== b.receipt.at) return a.receipt.at - b.receipt.at;
+    if (a.receipt.seq !== b.receipt.seq) return a.receipt.seq - b.receipt.seq;
+    if (a.key !== b.key) return a.key.localeCompare(b.key);
+    return a.index - b.index;
+  });
+  const hit = candidates[0];
+  if (!hit) return undefined;
+  return {
+    key: hit.key,
+    item: hit.item,
+    oldUnitJpy: hit.receipt.unitCostJpy,
+    qty: hit.receipt.qty,
+  };
+}
+
 /**
  * Pure preview for the staged TSV: reconcile to value-of-goods, match
  * each row to this order's source-tagged lots, and project the
@@ -304,6 +346,10 @@ export function computeStockOrderCostCommit(args: {
   const matchedJans = new Set<string>();
   const affected: { key: string; oldCostJpy?: number; newCostJpy?: number }[] =
     [];
+  const allocationCandidateByJan = new Map<
+    string,
+    { key: string; item: Item; oldUnitJpy: number; qty: number }
+  >();
   const orderItemByJan = new Map<
     string,
     { key: string; item: Item; oldUnitJpy: number; qty: number }
@@ -320,6 +366,17 @@ export function computeStockOrderCostCommit(args: {
       oldUnitJpy: receipt.unitCostJpy,
       qty: receipt.qty,
     });
+  }
+  for (const row of reconciliation.rows) {
+    if (orderItemByJan.has(row.jan) || allocationCandidateByJan.has(row.jan)) {
+      continue;
+    }
+    const candidate = findZeroedAllocationCandidate(
+      inventory,
+      row.jan,
+      reg?.receivedAt,
+    );
+    if (candidate) allocationCandidateByJan.set(row.jan, candidate);
   }
 
   for (const key of Object.keys(ledger)) {
@@ -356,12 +413,15 @@ export function computeStockOrderCostCommit(args: {
   }
 
   const unmatchedJans = reconciliation.rows
-    .filter((r) => !matchedJans.has(r.jan))
+    .filter(
+      (r) => !matchedJans.has(r.jan) && !allocationCandidateByJan.has(r.jan),
+    )
     .map((r) => r.jan);
 
   const matchRows: StockOrderCostMatchRow[] = reconciliation.rows.map(
     (row, rowIndex) => {
-      const hit = orderItemByJan.get(row.jan);
+      const hit =
+        orderItemByJan.get(row.jan) || allocationCandidateByJan.get(row.jan);
       if (!hit) {
         return {
           rowIndex,

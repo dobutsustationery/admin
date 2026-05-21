@@ -61,7 +61,7 @@ describe("cost-ledger materialisation in the reducer", () => {
                 orderId: "order-1",
                 unitCostJpy: 65,
                 unitCostEur: 0,
-                receivedAt: Date.parse("Nov 9, 2023"),
+                receivedAt: 90_000,
               },
             },
           ],
@@ -92,7 +92,7 @@ describe("cost-ledger materialisation in the reducer", () => {
                 orderId: "o1",
                 unitCostJpy: 65,
                 unitCostEur: 0,
-                receivedAt: Date.parse("Nov 9, 2023"),
+                receivedAt: 90_000,
               },
             },
           ],
@@ -133,7 +133,7 @@ describe("cost-ledger materialisation in the reducer", () => {
     expect(s.inventory.idToItem[KEY].qty).toBe(18);
   });
 
-  it("prices the same-scan remainder when a stock-order cost only claims part of a scan receipt", () => {
+  it("keeps a same-scan receipt intact and audits stock-order over-consumption", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(
       s,
@@ -153,7 +153,7 @@ describe("cost-ledger materialisation in the reducer", () => {
                 orderId: "o1",
                 unitCostJpy: 282.7,
                 unitCostEur: 1.8,
-                receivedAt: Date.parse("Nov 9, 2023"),
+                receivedAt: 90_000,
                 orderedQty: 10,
               },
             },
@@ -164,7 +164,7 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
 
     const led = s.inventory.costLedger![KEY];
-    expect(led).toHaveLength(2);
+    expect(led).toHaveLength(1);
     expect(
       led.map((e: any) => [
         e.kind,
@@ -172,12 +172,100 @@ describe("cost-ledger materialisation in the reducer", () => {
         e.unitCostJpy,
         e.unitCostEur,
         e.costOrderId,
+        e.auditSeverity,
+      ]),
+    ).toEqual([["receipt", 20, 282.7, 1.8, "o1", "danger"]]);
+    expect((led[0] as any).auditComment).toContain("over-consumed by 10");
+    expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(282.7, 9);
+  });
+
+  it("round-robins zeroed stock-order cost assignment across sibling SKUs after the order date", () => {
+    const pinkKey = `${JAN}Pink`;
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(5) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(12) }), 200),
+    );
+    s = rootReducer(
+      s,
+      withTs(
+        update_item({
+          id: pinkKey,
+          item: baseItem(12, { subtype: "Pink" }),
+        }),
+        210,
+      ),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(8) }), 220),
+    );
+    s = rootReducer(
+      s,
+      withTs(
+        update_item({
+          id: pinkKey,
+          item: baseItem(10, { subtype: "Pink" }),
+        }),
+        230,
+      ),
+    );
+
+    const stockOrder = {
+      orderId: "o1",
+      unitCostJpy: 65,
+      unitCostEur: 0.38,
+      receivedAt: 150_000,
+      orderedQty: 24,
+    };
+    s = rootReducer(
+      s,
+      withTs(
+        bulk_import_items({
+          items: [
+            {
+              type: "update",
+              id: KEY,
+              item: baseItem(0),
+              stockOrder,
+            },
+            {
+              type: "update",
+              id: pinkKey,
+              item: baseItem(0, { subtype: "Pink" }),
+              stockOrder,
+            },
+          ],
+        }),
+        300,
+      ),
+    );
+
+    expect(
+      (s.inventory.costLedger![KEY] as any[]).map((e) => [
+        e.qty,
+        e.unitCostJpy,
+        e.costOrderId,
       ]),
     ).toEqual([
-      ["receipt", 10, 282.7, 1.8, "o1"],
-      ["receipt", 10, 282.7, 1.8, undefined],
+      [5, 0, undefined],
+      [12, 65, "o1"],
+      [8, 0, undefined],
     ]);
-    expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(282.7, 9);
+    expect(
+      (s.inventory.costLedger![pinkKey] as any[]).map((e) => [
+        e.qty,
+        e.unitCostJpy,
+        e.costOrderId,
+      ]),
+    ).toEqual([
+      [12, 65, "o1"],
+      [10, 0, undefined],
+    ]);
   });
 
   it("reduces the newest scan receipt when a qty correction lowers inventory", () => {
@@ -229,7 +317,7 @@ describe("cost-ledger materialisation in the reducer", () => {
                 orderId: "o1",
                 unitCostJpy: 65,
                 unitCostEur: 0.38,
-                receivedAt: Date.parse("Nov 9, 2023"),
+                receivedAt: 90_000,
                 orderedQty: 5,
               },
             },
@@ -290,7 +378,7 @@ describe("cost-ledger materialisation in the reducer", () => {
             reducedBy: 7,
           }),
         ],
-        auditSeverity: "danger",
+        auditSeverity: "warning",
       }),
     );
     expect(ledger[2]).toEqual(

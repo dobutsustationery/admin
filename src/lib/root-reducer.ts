@@ -1478,6 +1478,7 @@ export const rootReducer = (
             rows: r.rows.map((x) => ({
               jan: x.jan,
               unitCostJpy: x.unitCostJpy,
+              qty: x.qty,
             })),
             overrideExisting,
           }),

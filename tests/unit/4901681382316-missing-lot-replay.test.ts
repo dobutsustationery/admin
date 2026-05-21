@@ -67,7 +67,7 @@ function withActionTimestamp(action: any, timestampSource: any) {
 }
 
 describe("4901681382316 stock-order lot replay", () => {
-  it("attributes the first scanned lot to order 1 and the next scanned lot to order 2", () => {
+  it("does not attribute scanned lots while the stock-order dates are unknown", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -77,6 +77,7 @@ describe("4901681382316 stock-order lot replay", () => {
       const receipts = ledger.filter((e: any) => e.kind === "receipt");
 
       expect(receipts.map((e: any) => e.qty)).toEqual([4, 10, 10]);
+      expect(receipts.map((e: any) => e.unitCostJpy)).toEqual([0, 0, 0]);
 
       const order1Receipts = receipts.filter((e: any) =>
         lotMatchesOrder(e, ORDER_1),
@@ -85,14 +86,8 @@ describe("4901681382316 stock-order lot replay", () => {
         lotMatchesOrder(e, ORDER_2),
       );
 
-      expect(order1Receipts.map((e: any) => [e.qty, e.unitCostJpy])).toEqual([
-        [4, 726],
-      ]);
-      expect(order2Receipts.map((e: any) => [e.qty, e.unitCostJpy])).toEqual([
-        [10, 636],
-      ]);
-      expect(order1Receipts[0].costOrderId).toBe(ORDER_1);
-      expect(order2Receipts[0].costOrderId).toBe(ORDER_2);
+      expect(order1Receipts).toEqual([]);
+      expect(order2Receipts).toEqual([]);
     } finally {
       logSpy.mockRestore();
       warnSpy.mockRestore();

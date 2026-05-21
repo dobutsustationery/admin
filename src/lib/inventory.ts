@@ -322,7 +322,7 @@ export const set_stock_order_meta = createAction<{
 // Emitted by the root-reducer interceptor for fix_stock_order.
 export const apply_stock_order_costs = createAction<{
   orderId: string;
-  rows: { jan: string; unitCostJpy: number }[];
+  rows: { jan: string; unitCostJpy: number; qty?: number }[];
   overrideExisting: boolean;
 }>("apply_stock_order_costs");
 
@@ -952,11 +952,10 @@ function applyQuantityCorrectionToReceipts(
       visible,
       requestedVisibleQty,
     );
-    receipt.auditSeverity = receipt.qty <= 0 ? "danger" : "warning";
+    receipt.auditSeverity = "warning";
     if (receipt.qty <= 0) {
       receipt.ignored = true;
       receipt.ignoreReason = "qty correction reduced receipt to zero";
-      receipt.auditSeverity = "danger";
     }
 
     adjustedLots++;
@@ -1083,10 +1082,6 @@ function walkLedgerForDerivedCost(entries: readonly LedgerEntry[]) {
   return { onHand, avgJpy, avgEur };
 }
 
-function nextLedgerSeq(ledger: readonly LedgerEntry[]): number {
-  return ledger.reduce((max, e) => Math.max(max, e.seq), -1) + 1;
-}
-
 function applyStockOrderCostToReceipt(
   receipt: ReceiptEntry,
   stockOrder: NonNullable<BulkImportItem["stockOrder"]>,
@@ -1113,10 +1108,67 @@ function applyStockOrderCostToReceipt(
   return changed;
 }
 
-function allocateZeroedStockOrderToReceipts(
-  ledger: LedgerEntry[],
-  stockOrder: NonNullable<BulkImportItem["stockOrder"]>,
+function stockOrderOverconsumptionComment(
+  receiptQty: number,
+  remainingQty: number,
+  orderId: string,
+): string {
+  return `Stock order ${orderId} over-consumed by ${receiptQty - remainingQty} unit(s): full scan receipt qty ${receiptQty} was costed with only ${remainingQty} order unit(s) remaining so the scan lot stayed intact.`;
+}
+
+type ZeroedStockOrderAllocationInput = {
+  key: string;
+  stockOrder: NonNullable<BulkImportItem["stockOrder"]>;
+};
+
+function zeroedAllocationGroupKey(
+  input: ZeroedStockOrderAllocationInput,
+): string {
+  const item = input.key ? input.key.match(/^(\d+)/)?.[1] || "" : "";
+  const order = input.stockOrder;
+  return [
+    order.orderId,
+    item,
+    order.unitCostJpy,
+    order.unitCostEur,
+    order.orderedQty || "",
+    order.receivedAt || "",
+  ].join("|");
+}
+
+function applyZeroedStockOrderAllocations(
+  state: InventoryState,
+  inputs: ZeroedStockOrderAllocationInput[],
 ): boolean {
+  if (!state.costLedger || inputs.length === 0) return false;
+  const groups = new Map<string, ZeroedStockOrderAllocationInput[]>();
+  for (const input of inputs) {
+    const key = zeroedAllocationGroupKey(input);
+    groups.set(key, [...(groups.get(key) || []), input]);
+  }
+
+  let anyChanged = false;
+  for (const group of groups.values()) {
+    anyChanged =
+      applyZeroedStockOrderAllocationGroup(state, group) || anyChanged;
+  }
+  return anyChanged;
+}
+
+function applyZeroedStockOrderAllocationGroup(
+  state: InventoryState,
+  inputs: ZeroedStockOrderAllocationInput[],
+): boolean {
+  const stockOrder = inputs[0]?.stockOrder;
+  if (!stockOrder || !state.costLedger) return false;
+  const orderDate =
+    stockOrder.receivedAt &&
+    stockOrder.receivedAt > 0 &&
+    stockOrder.receivedAt !== UNKNOWN_RECEIPT_DATE
+      ? stockOrder.receivedAt
+      : 0;
+  if (!orderDate) return false;
+
   const targetQty =
     Number(stockOrder.orderedQty) > 0
       ? Number(stockOrder.orderedQty)
@@ -1124,47 +1176,98 @@ function allocateZeroedStockOrderToReceipts(
   let remaining = targetQty ?? Number.POSITIVE_INFINITY;
   let changed = false;
 
-  const candidates = ledger
-    .map((entry, index) => ({ entry, index }))
-    .filter(({ entry }) => {
-      if (entry.kind !== "receipt") return false;
-      if (entry.source?.startsWith("stockOrder:")) return false;
-      if (entry.costOrderId && entry.costOrderId !== stockOrder.orderId) {
-        return false;
-      }
-      return entry.qty > 0;
+  const seenKeys = new Set<string>();
+  const queues = inputs
+    .filter((input) => {
+      if (seenKeys.has(input.key)) return false;
+      seenKeys.add(input.key);
+      return true;
     })
-    .sort((a, b) => {
-      if (a.entry.at !== b.entry.at) return a.entry.at - b.entry.at;
-      if (a.entry.seq !== b.entry.seq) return a.entry.seq - b.entry.seq;
-      return a.index - b.index;
-    });
+    .map((input) => {
+      const ledger = state.costLedger?.[input.key] || [];
+      const candidates = ledger
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => {
+          if (entry.kind !== "receipt") return false;
+          if (entry.ignored) return false;
+          if (entry.at < orderDate) return false;
+          if (entry.source?.startsWith("stockOrder:")) return false;
+          if (entry.costOrderId) return false;
+          return entry.qty > 0;
+        })
+        .sort((a, b) => {
+          if (a.entry.at !== b.entry.at) return a.entry.at - b.entry.at;
+          if (a.entry.seq !== b.entry.seq) return a.entry.seq - b.entry.seq;
+          return a.index - b.index;
+        });
+      return { key: input.key, candidates };
+    })
+    .filter((queue) => queue.candidates.length > 0);
 
-  for (const { entry, index } of candidates) {
-    if (remaining <= 0) break;
-    const receipt = entry as ReceiptEntry;
-    if (receipt.qty > remaining) {
-      const unallocated: ReceiptEntry = {
-        ...receipt,
-        seq: nextLedgerSeq(ledger),
-        qty: receipt.qty - remaining,
-        unitCostJpy: stockOrder.unitCostJpy > 0 ? stockOrder.unitCostJpy : 0,
-        unitCostEur: stockOrder.unitCostEur > 0 ? stockOrder.unitCostEur : 0,
-        costOrderId: undefined,
-      };
-      receipt.qty = remaining;
-      changed = applyStockOrderCostToReceipt(receipt, stockOrder) || changed;
-      ledger.splice(index + 1, 0, unallocated);
-      changed = true;
-      remaining = 0;
-      break;
+  while (remaining > 0) {
+    let consumedAny = false;
+    for (const queue of queues) {
+      if (remaining <= 0) break;
+      const next = queue.candidates.shift();
+      if (!next) continue;
+      const receipt = next.entry as ReceiptEntry;
+      const beforeRemaining = remaining;
+      const overConsumes =
+        Number.isFinite(remaining) && receipt.qty > beforeRemaining;
+      let touched = applyStockOrderCostToReceipt(receipt, stockOrder);
+      if (overConsumes) {
+        receipt.auditComment = stockOrderOverconsumptionComment(
+          receipt.qty,
+          beforeRemaining,
+          stockOrder.orderId,
+        );
+        receipt.auditSeverity = "danger";
+        touched = true;
+      }
+      remaining -= receipt.qty;
+      consumedAny = true;
+      if (touched) {
+        changed = true;
+        rederiveCostFromLedger(state, queue.key);
+      }
     }
-
-    remaining -= receipt.qty;
-    changed = applyStockOrderCostToReceipt(receipt, stockOrder) || changed;
+    if (!consumedAny) break;
   }
 
   return changed;
+}
+
+function inventoryKeyForBulkImportItem(update: BulkImportItem): string {
+  const item = update.item;
+  if (item?.janCode)
+    return makeInventoryItemKey(item.janCode, item.subtype || "");
+  return canonicalizeInventoryItemKey(update.id);
+}
+
+function isZeroedStockOrderUpdate(update: BulkImportItem): boolean {
+  return !!update.stockOrder && !(Number(update.item.qty) > 0);
+}
+
+function hasSourceTaggedStockOrderReceipt(
+  state: InventoryState,
+  orderId: string,
+  jan: string,
+): boolean {
+  if (!state.costLedger) return false;
+  const source = `stockOrder:${orderId}`;
+  for (const [key, ledger] of Object.entries(state.costLedger)) {
+    const item = state.idToItem[key];
+    if (!item || item.janCode !== jan) continue;
+    if (
+      ledger.some(
+        (entry) =>
+          entry.kind === "receipt" && entry.source === source && entry.qty > 0,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Helper to apply update logic
@@ -1448,11 +1551,10 @@ function applyInventoryUpdate(
       });
       ledgerChanged = true;
     } else {
-      // Original order (qty 0): attach landed cost to pre-existing
-      // (scan-sourced) receipts. Allocate oldest unmatched receipts first
-      // using the supplier row quantity when available; this prevents later
-      // zeroed orders from overwriting earlier lot attribution.
-      ledgerChanged = allocateZeroedStockOrderToReceipts(ledger, stockOrder);
+      // Original order (qty 0): cost attachment to pre-existing scan
+      // receipts is handled after the whole bulk import is applied, because
+      // matching variants for the same JAN must share the supplier row via
+      // round-robin allocation.
     }
   } else if (
     val > 0 &&
@@ -2361,6 +2463,30 @@ export const inventory = createReducer(initialState, (r) => {
       totalOrderEur && (reg?.valueOfOrderJpy || 0) > 0
         ? totalOrderEur / (reg!.valueOfOrderJpy as number)
         : 0;
+    const allocationInputs: ZeroedStockOrderAllocationInput[] = [];
+    const seenAllocationInputs = new Set<string>();
+    for (const row of rows) {
+      if (!(Number(row.qty) > 0)) continue;
+      if (hasSourceTaggedStockOrderReceipt(state, orderId, row.jan)) continue;
+      for (const [key, item] of Object.entries(state.idToItem)) {
+        if (item.janCode !== row.jan) continue;
+        const inputKey = `${key}|${row.jan}`;
+        if (seenAllocationInputs.has(inputKey)) continue;
+        seenAllocationInputs.add(inputKey);
+        allocationInputs.push({
+          key,
+          stockOrder: {
+            orderId,
+            unitCostJpy: row.unitCostJpy,
+            unitCostEur: fx > 0 ? row.unitCostJpy * fx : 0,
+            receivedAt: reg?.receivedAt || UNKNOWN_RECEIPT_DATE,
+            orderedQty: row.qty,
+          },
+        });
+      }
+    }
+    applyZeroedStockOrderAllocations(state, allocationInputs);
+
     const want = new Map<string, number>();
     for (const row of rows) want.set(row.jan, row.unitCostJpy);
     for (const key of Object.keys(state.costLedger)) {
@@ -3327,6 +3453,7 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(bulk_import_items, (state, action) => {
     const updates = action.payload.items;
     const timestamp = (action as any).timestamp;
+    const zeroedStockOrderAllocations: ZeroedStockOrderAllocationInput[] = [];
 
     updates.forEach((update) => {
       applyInventoryUpdate(
@@ -3338,6 +3465,14 @@ export const inventory = createReducer(initialState, (r) => {
         (action as any).id,
         update.stockOrder,
       );
+      if (isZeroedStockOrderUpdate(update) && update.stockOrder) {
+        zeroedStockOrderAllocations.push({
+          key: inventoryKeyForBulkImportItem(update),
+          stockOrder: update.stockOrder,
+        });
+      }
     });
+
+    applyZeroedStockOrderAllocations(state, zeroedStockOrderAllocations);
   });
 });
