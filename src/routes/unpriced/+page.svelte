@@ -36,6 +36,26 @@
     ledgerIndex: number;
   };
 
+  type CostLedgerAuditRow = {
+    key: string;
+    jan: string;
+    subtype: string;
+    description: string;
+    image: string;
+    itemQty: number;
+    shipped: number;
+    at: number;
+    seq: number;
+    source: string;
+    lotQty: number;
+    originalQty?: number;
+    reducedQty: number;
+    auditComment: string;
+    auditSeverity: "warning" | "danger";
+    ledger: LedgerEntry[];
+    ledgerIndex: number;
+  };
+
   let search = "";
   let hideZeroOnHand = false;
   let onlyAffectsAverage = false;
@@ -128,11 +148,69 @@
     );
   }
 
+  function buildAuditRows(inventory: InventoryState): CostLedgerAuditRow[] {
+    const costLedger = inventory.costLedger || {};
+    const idToItem = inventory.idToItem || {};
+    const rows: CostLedgerAuditRow[] = [];
+
+    for (const [key, ledger] of Object.entries(costLedger)) {
+      const item = idToItem[key] as Item | undefined;
+      if (!item) continue;
+
+      const sorted = sortedLedger(ledger);
+      for (const [ledgerIndex, entry] of sorted.entries()) {
+        if (entry.kind !== "receipt") continue;
+        if (!entry.auditComment && !entry.quantityCorrections?.length) continue;
+        const reducedQty = (entry.quantityCorrections || []).reduce(
+          (sum, correction) => sum + correction.reducedBy,
+          0,
+        );
+        rows.push({
+          key,
+          jan: item.janCode || "",
+          subtype: item.subtype || "",
+          description: item.description || "",
+          image: item.image || "",
+          itemQty: Number(item.qty) || 0,
+          shipped: Number(item.shipped) || 0,
+          at: entry.at,
+          seq: entry.seq,
+          source: entry.costOrderId || entry.source || "",
+          lotQty: entry.qty,
+          originalQty: entry.originalQty,
+          reducedQty,
+          auditComment:
+            entry.auditComment ||
+            `Reducer qty correction reduced this receipt by ${reducedQty} unit(s).`,
+          auditSeverity:
+            entry.auditSeverity || (entry.ignored ? "danger" : "warning"),
+          ledger: sorted,
+          ledgerIndex,
+        });
+      }
+    }
+
+    return rows.sort(
+      (a, b) => a.at - b.at || a.key.localeCompare(b.key) || a.seq - b.seq,
+    );
+  }
+
   $: rows = buildRows($store.inventory);
+  $: auditRows = buildAuditRows($store.inventory);
   $: query = search.trim().toLowerCase();
   $: filteredRows = rows.filter((row) => {
     if (hideZeroOnHand && row.itemQty - row.shipped <= 0) return false;
     if (onlyAffectsAverage && !row.affectsAverage) return false;
+    if (!query) return true;
+    return (
+      row.key.toLowerCase().includes(query) ||
+      row.jan.includes(query) ||
+      row.description.toLowerCase().includes(query) ||
+      row.subtype.toLowerCase().includes(query)
+    );
+  });
+  $: filteredAuditRows = auditRows.filter((row) => {
+    if (hideZeroOnHand && row.itemQty - row.shipped <= 0) return false;
     if (!query) return true;
     return (
       row.key.toLowerCase().includes(query) ||
@@ -167,6 +245,11 @@
 
   function fmtEur(n: number): string {
     return Number.isFinite(n) && n > 0 ? `€${n.toFixed(2)}` : "-";
+  }
+
+  function fmtQty(n: number | undefined): string {
+    if (!Number.isFinite(n)) return "-";
+    return Number.isInteger(n as number) ? String(n) : (n as number).toFixed(2);
   }
 
   function sortedLedger(ledger: readonly LedgerEntry[]): LedgerEntry[] {
@@ -311,6 +394,10 @@
       <strong>{missingExchangeRows}</strong>
       <span>missing exchange</span>
     </div>
+    <div>
+      <strong>{auditRows.length}</strong>
+      <span>audit adjustment(s)</span>
+    </div>
   </div>
 
   <div class="controls">
@@ -333,6 +420,59 @@
     lots with zero JPY scan cost or JPY cost without EUR/exchange.
     {affectingRows} still affect the moving average.
   </p>
+
+  <h2>Audit Adjustments</h2>
+  {#if filteredAuditRows.length > 0}
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Date</th>
+          <th>Current qty</th>
+          <th>Original qty</th>
+          <th>Reduced by</th>
+          <th>Source</th>
+          <th>Audit comment</th>
+          <th>Cost ledger</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each filteredAuditRows as row (`audit:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
+          <tr
+            class:audit-warning={row.auditSeverity === "warning"}
+            class:audit-danger={row.auditSeverity === "danger"}
+          >
+            <td>
+              <a href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}>
+                <strong>{row.key}</strong>
+              </a>
+              <div>{row.description}</div>
+              {#if row.subtype}
+                <span class="hint">{row.subtype}</span>
+              {/if}
+            </td>
+            <td>{fmtDate(row.at)}</td>
+            <td>{fmtQty(row.lotQty)}</td>
+            <td>{fmtQty(row.originalQty)}</td>
+            <td>{fmtQty(row.reducedQty)}</td>
+            <td>{row.source || "-"}</td>
+            <td>{row.auditComment}</td>
+            <td class="ledger-cell">
+              {#each row.ledger as entry, index}
+                <div class:target-entry={index === row.ledgerIndex}>
+                  {ledgerEntryLabel(entry)}
+                </div>
+              {/each}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p class="hint">No audit adjustments match the current filters.</p>
+  {/if}
+
+  <h2>Cost Issues</h2>
 
   <table>
     <thead>
@@ -424,6 +564,10 @@
     font-size: 1.4rem;
     margin: 0 0 1rem;
   }
+  h2 {
+    font-size: 1.1rem;
+    margin: 1.25rem 0 0.5rem;
+  }
   .summary {
     display: flex;
     flex-wrap: wrap;
@@ -477,6 +621,12 @@
   }
   tr.missingExchange {
     background: #fffaf0;
+  }
+  tr.audit-warning {
+    background: #fff8db;
+  }
+  tr.audit-danger {
+    background: #ffe8ee;
   }
   .thumb-cell {
     width: 72px;

@@ -147,12 +147,44 @@
     if (entry.kind === "sale") {
       return entry.isArchive ? "archive sale" : "sale";
     }
+    if (entry.quantityCorrections?.length) return "adjusted receipt";
     return "receipt";
   }
 
   function sourceLabel(entry: LedgerEntry): string {
     if (entry.kind !== "receipt") return "-";
     return entry.costOrderId || entry.source || "-";
+  }
+
+  function fmtQty(n: number): string {
+    return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  }
+
+  function noteLabel(entry: LedgerEntry): string {
+    if (entry.kind !== "receipt") return entry.ignored ? "ignored" : "-";
+    const notes: string[] = [];
+    if (entry.quantityCorrections?.length) {
+      const reduced = entry.quantityCorrections.reduce(
+        (sum, correction) => sum + correction.reducedBy,
+        0,
+      );
+      notes.push(`qty correction -${fmtQty(reduced)}`);
+      const requested = entry.quantityCorrections.find(
+        (correction) => correction.requestedVisibleQty !== undefined,
+      );
+      if (requested?.requestedVisibleQty !== undefined) {
+        notes.push(
+          `requested visible ${fmtQty(requested.requestedVisibleQty)}`,
+        );
+      }
+    }
+    if (entry.originalQty !== undefined) {
+      notes.push(`original qty ${fmtQty(entry.originalQty)}`);
+    }
+    if (entry.auditComment) notes.push(entry.auditComment);
+    if (entry.ignoreReason) notes.push(entry.ignoreReason);
+    if (entry.ignored && !entry.ignoreReason) notes.push("ignored");
+    return notes.length ? notes.join("; ") : "-";
   }
 </script>
 
@@ -236,13 +268,20 @@
           <th class="num">Unit JPY</th>
           <th class="num">Unit EUR</th>
           <th>Source</th>
+          <th>Notes</th>
           <th class="num">Running Qty</th>
           <th class="num">Running Avg</th>
         </tr>
       </thead>
       <tbody>
         {#each ledgerRows as row (rowKey(row))}
-          <tr class:ignored={row.entry.ignored}>
+          <tr
+            class:ignored={row.entry.ignored}
+            class:audit-warning={row.entry.kind === "receipt" &&
+              row.entry.auditSeverity === "warning"}
+            class:audit-danger={row.entry.kind === "receipt" &&
+              row.entry.auditSeverity === "danger"}
+          >
             <td>
               <input
                 type="checkbox"
@@ -266,6 +305,7 @@
                 )}{:else}-{/if}
             </td>
             <td>{sourceLabel(row.entry)}</td>
+            <td>{noteLabel(row.entry)}</td>
             <td class="num">{row.running.onHand}</td>
             <td class="num">{fmtYen(row.running.avgJpy)}</td>
           </tr>
@@ -399,8 +439,13 @@
   }
   tr.ignored {
     color: #6b7280;
-    background: #fff5f5;
     text-decoration: line-through;
+  }
+  tr.audit-warning {
+    background: #fff8db;
+  }
+  tr.audit-danger {
+    background: #ffe8ee;
   }
   .date {
     white-space: nowrap;

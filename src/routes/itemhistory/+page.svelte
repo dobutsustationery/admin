@@ -86,6 +86,21 @@
     if (entry.kind !== "receipt") return "-";
     return entry.source || "-";
   }
+
+  function fmtQty(n: number): string {
+    return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  }
+
+  function ledgerNote(entry: LedgerEntry): string {
+    if (entry.kind !== "receipt") return "";
+    const notes: string[] = [];
+    if (entry.auditComment) notes.push(entry.auditComment);
+    if (entry.originalQty !== undefined) {
+      notes.push(`Original qty ${fmtQty(entry.originalQty)}`);
+    }
+    if (entry.ignoreReason) notes.push(entry.ignoreReason);
+    return notes.join(" ");
+  }
 </script>
 
 <div class="page-container">
@@ -145,7 +160,12 @@
         </thead>
         <tbody>
           {#each ledgerRows as row}
-            <tr>
+            <tr
+              class:audit-warning={row.entry.kind === "receipt" &&
+                row.entry.auditSeverity === "warning"}
+              class:audit-danger={row.entry.kind === "receipt" &&
+                row.entry.auditSeverity === "danger"}
+            >
               <td class="date-col">{fmtDate(row.entry.at)}</td>
               <td>{ledgerKind(row.entry)}</td>
               <td>{row.entry.qty}</td>
@@ -161,6 +181,9 @@
                 <div>{ledgerSource(row.entry)}</div>
                 {#if row.entry.kind === "receipt" && row.entry.costOrderId}
                   <span class="muted">{row.entry.costOrderId}</span>
+                {/if}
+                {#if ledgerNote(row.entry)}
+                  <div class="audit-note">{ledgerNote(row.entry)}</div>
                 {/if}
               </td>
               <td>{row.running.onHand}</td>
@@ -319,6 +342,21 @@
   th {
     background-color: #f9fafb;
     font-weight: 600;
+  }
+
+  tr.audit-warning {
+    background: #fff8db;
+  }
+
+  tr.audit-danger {
+    background: #ffe8ee;
+  }
+
+  .audit-note {
+    margin-top: 0.35rem;
+    color: #7a4d00;
+    font-size: 0.8rem;
+    line-height: 1.35;
   }
 
   .date-col {
