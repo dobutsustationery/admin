@@ -421,57 +421,6 @@
     {affectingRows} still affect the moving average.
   </p>
 
-  <h2>Audit Adjustments</h2>
-  {#if filteredAuditRows.length > 0}
-    <table>
-      <thead>
-        <tr>
-          <th>Item</th>
-          <th>Date</th>
-          <th>Current qty</th>
-          <th>Original qty</th>
-          <th>Reduced by</th>
-          <th>Source</th>
-          <th>Audit comment</th>
-          <th>Cost ledger</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each filteredAuditRows as row (`audit:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
-          <tr
-            class:audit-warning={row.auditSeverity === "warning"}
-            class:audit-danger={row.auditSeverity === "danger"}
-          >
-            <td>
-              <a href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}>
-                <strong>{row.key}</strong>
-              </a>
-              <div>{row.description}</div>
-              {#if row.subtype}
-                <span class="hint">{row.subtype}</span>
-              {/if}
-            </td>
-            <td>{fmtDate(row.at)}</td>
-            <td>{fmtQty(row.lotQty)}</td>
-            <td>{fmtQty(row.originalQty)}</td>
-            <td>{fmtQty(row.reducedQty)}</td>
-            <td>{row.source || "-"}</td>
-            <td>{row.auditComment}</td>
-            <td class="ledger-cell">
-              {#each row.ledger as entry, index}
-                <div class:target-entry={index === row.ledgerIndex}>
-                  {ledgerEntryLabel(entry)}
-                </div>
-              {/each}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {:else}
-    <p class="hint">No audit adjustments match the current filters.</p>
-  {/if}
-
   <h2>Cost Issues</h2>
 
   <table>
@@ -554,6 +503,57 @@
       {/each}
     </tbody>
   </table>
+
+  <h2>Audit Adjustments</h2>
+  {#if filteredAuditRows.length > 0}
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Date</th>
+          <th>Current qty</th>
+          <th>Original qty</th>
+          <th>Reduced by</th>
+          <th>Source</th>
+          <th>Audit comment</th>
+          <th>Cost ledger</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each filteredAuditRows as row (`audit:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
+          <tr
+            class:audit-warning={row.auditSeverity === "warning"}
+            class:audit-danger={row.auditSeverity === "danger"}
+          >
+            <td>
+              <a href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}>
+                <strong>{row.key}</strong>
+              </a>
+              <div>{row.description}</div>
+              {#if row.subtype}
+                <span class="hint">{row.subtype}</span>
+              {/if}
+            </td>
+            <td>{fmtDate(row.at)}</td>
+            <td>{fmtQty(row.lotQty)}</td>
+            <td>{fmtQty(row.originalQty)}</td>
+            <td>{fmtQty(row.reducedQty)}</td>
+            <td>{row.source || "-"}</td>
+            <td>{row.auditComment}</td>
+            <td class="ledger-cell">
+              {#each row.ledger as entry, index}
+                <div class:target-entry={index === row.ledgerIndex}>
+                  {ledgerEntryLabel(entry)}
+                </div>
+              {/each}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p class="hint">No audit adjustments match the current filters.</p>
+  {/if}
 </main>
 
 <style>
