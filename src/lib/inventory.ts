@@ -851,6 +851,12 @@ type QuantityCorrectionSummary = {
   requestedVisibleQty?: number;
 };
 
+type VisibleQtyIncreaseSummary = {
+  increasedQty: number;
+  appendedReceipt: boolean;
+  visibleQty: number;
+};
+
 function quantityCorrectionHistoryDesc(
   correction: QuantityCorrectionSummary,
 ): string {
@@ -874,25 +880,9 @@ function receiptQuantityCorrectionComment(
   return `Reducer qty correction reduced this receipt by ${reducedBy} unit(s), from visible qty ${fromVisibleQty} to ${target}.`;
 }
 
-function applyQuantityCorrectionToReceipts(
-  state: InventoryState,
-  key: string,
-  fromVisibleQty: unknown,
-  nextVisibleQty: unknown,
-  atMs: number,
-  actionType: string,
-  actionDocId?: string,
-): QuantityCorrectionSummary | null {
-  const ledger = state.costLedger?.[key];
-  if (!ledger) return null;
-  const requestedVisible = Number(nextVisibleQty);
-  if (!Number.isFinite(requestedVisible)) return null;
-  const visible = Math.max(0, requestedVisible);
-  const requestedVisibleQty =
-    requestedVisible !== visible ? requestedVisible : undefined;
-  let remainingDecrease = walkLedgerForDerivedCost(ledger).onHand - visible;
-  if (remainingDecrease <= 0) return null;
-
+function openReceiptLotsForLedger(
+  ledger: LedgerEntry[],
+): { index: number; remaining: number }[] {
   const sorted = ledger
     .map((entry, index) => ({ entry, index }))
     .sort((a, b) => {
@@ -918,7 +908,29 @@ function applyQuantityCorrectionToReceipts(
     }
   }
 
-  const openReceipts = openLots.filter((lot) => lot.remaining > 0);
+  return openLots.filter((lot) => lot.remaining > 0);
+}
+
+function applyQuantityCorrectionToReceipts(
+  state: InventoryState,
+  key: string,
+  fromVisibleQty: unknown,
+  nextVisibleQty: unknown,
+  atMs: number,
+  actionType: string,
+  actionDocId?: string,
+): QuantityCorrectionSummary | null {
+  const ledger = state.costLedger?.[key];
+  if (!ledger) return null;
+  const requestedVisible = Number(nextVisibleQty);
+  if (!Number.isFinite(requestedVisible)) return null;
+  const visible = Math.max(0, requestedVisible);
+  const requestedVisibleQty =
+    requestedVisible !== visible ? requestedVisible : undefined;
+  let remainingDecrease = walkLedgerForDerivedCost(ledger).onHand - visible;
+  if (remainingDecrease <= 0) return null;
+
+  const openReceipts = openReceiptLotsForLedger(ledger);
   let adjustedLots = 0;
   let reducedQty = 0;
   const correctionAt =
@@ -935,6 +947,9 @@ function applyQuantityCorrectionToReceipts(
 
     if (receipt.originalQty === undefined) receipt.originalQty = beforeQty;
     receipt.qty = Math.max(0, beforeQty - used);
+    if (actionType === "update_item" && lot.remaining >= beforeQty) {
+      receipt.at = correctionAt;
+    }
     const fromVisible = Number(fromVisibleQty);
     const corrections = receipt.quantityCorrections || [];
     corrections.push({
@@ -967,6 +982,55 @@ function applyQuantityCorrectionToReceipts(
   if (adjustedLots === 0) return null;
   rederiveCostFromLedger(state, key);
   return { adjustedLots, reducedQty, visibleQty: visible, requestedVisibleQty };
+}
+
+function increaseNewestReceiptToMatchVisibleQty(
+  state: InventoryState,
+  key: string,
+  nextVisibleQty: unknown,
+  atMs: number,
+): VisibleQtyIncreaseSummary | null {
+  const ledger = state.costLedger?.[key];
+  if (!ledger) return null;
+  const visible = Number(nextVisibleQty);
+  if (!Number.isFinite(visible)) return null;
+  const increase =
+    Math.max(0, visible) - walkLedgerForDerivedCost(ledger).onHand;
+  if (increase <= 0) return null;
+
+  const receiptLot = openReceiptLotsForLedger(ledger).at(-1);
+  const receiptIndex = receiptLot?.index;
+  let appendedReceipt = false;
+
+  if (receiptIndex === undefined) {
+    appendedReceipt = true;
+    ledger.push({
+      kind: "receipt",
+      at: Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE,
+      seq: ledger.length,
+      qty: increase,
+      unitCostJpy: 0,
+      unitCostEur: 0,
+      source: "update_item",
+    });
+  } else {
+    const receipt = ledger[receiptIndex] as ReceiptEntry;
+    receipt.qty += increase;
+    if (receiptLot && receiptLot.remaining >= receipt.qty - increase) {
+      receipt.at = Number.isFinite(atMs) && atMs > 0 ? atMs : receipt.at;
+    }
+    if (receipt.ignored && receipt.qty > 0) {
+      delete receipt.ignored;
+      delete receipt.ignoreReason;
+    }
+  }
+
+  rederiveCostFromLedger(state, key);
+  return {
+    increasedQty: increase,
+    appendedReceipt,
+    visibleQty: Math.max(0, visible),
+  };
 }
 
 function effectiveArchiveQuantity(
@@ -1397,17 +1461,23 @@ function applyInventoryUpdate(
         val,
       });
     }
-    if (item.qty !== undefined && item.qty !== 0) {
-      // Qty is usually a delta in bulk import (e.g. +50)
-      // But wait, update_item usually takes a FULL ITEM or DELTA?
-      // In computeOrderImportBatch, we passed: qty: item.qty (Delta)
-      // The applyInventoryUpdate logic below does: qty = Number(item.qty) + qty (existing)
-      // So item.qty IS a delta here.
-      historyEntries.push({
-        date: globalDate,
-        desc: `Quantity adjustment: ${item.qty > 0 ? "+" : ""}${item.qty} (New Total: ${existingItem.qty + item.qty})`,
-        val,
-      });
+    if (item.qty !== undefined) {
+      const incomingQty = Number(item.qty);
+      if (actionType === "update_item") {
+        if (incomingQty !== 0 && incomingQty !== existingItem.qty) {
+          historyEntries.push({
+            date: globalDate,
+            desc: `Quantity updated: ${existingItem.qty} -> ${incomingQty}`,
+            val,
+          });
+        }
+      } else if (incomingQty !== 0) {
+        historyEntries.push({
+          date: globalDate,
+          desc: `Quantity adjustment: ${incomingQty > 0 ? "+" : ""}${incomingQty} (New Total: ${existingItem.qty + incomingQty})`,
+          val,
+        });
+      }
     }
     if (item.hsCode && item.hsCode !== existingItem.hsCode) {
       historyEntries.push({
@@ -1472,6 +1542,17 @@ function applyInventoryUpdate(
   // 2. Apply State Updates
   const currentQty = existingItem ? existingItem.qty : 0;
   const currentShipped = existingItem ? existingItem.shipped || 0 : 0;
+  const updateItemIsSnapshot = actionType === "update_item";
+  const incomingQty = Number(item.qty);
+  const incomingShipped = Number(item.shipped) || 0;
+  const nextQty =
+    updateItemIsSnapshot && item.qty !== undefined && incomingQty !== 0
+      ? incomingQty
+      : (Number.isFinite(incomingQty) ? incomingQty : 0) + currentQty;
+  const nextShipped =
+    updateItemIsSnapshot && item.shipped !== undefined && incomingShipped !== 0
+      ? incomingShipped
+      : incomingShipped + currentShipped;
   const currentCreationDate = existingItem
     ? existingItem.creationDate
     : globalDate + ` (${item.qty})`;
@@ -1496,8 +1577,8 @@ function applyInventoryUpdate(
     cost:
       item.cost !== undefined ? Number(item.cost) : state.idToItem[id]?.cost,
     creationDate: currentCreationDate,
-    qty: Number(item.qty) + currentQty, // Apply Delta
-    shipped: (Number(item.shipped) || 0) + currentShipped,
+    qty: nextQty,
+    shipped: nextShipped,
     timestamp: val,
   };
 
@@ -1519,6 +1600,43 @@ function applyInventoryUpdate(
   const ledger = state.costLedger[id];
   const deltaQty = Number(item.qty);
   let ledgerChanged = false;
+
+  if (val > 0 && existingItem && updateItemIsSnapshot) {
+    const previousVisibleQty = currentQty - currentShipped;
+    const nextVisibleQty = nextQty - nextShipped;
+    const canReconcileLedgerQty = nextVisibleQty >= 0;
+    const correction = canReconcileLedgerQty
+      ? applyQuantityCorrectionToReceipts(
+          state,
+          id,
+          previousVisibleQty,
+          nextVisibleQty,
+          val,
+          actionType,
+          actionDocId,
+        )
+      : null;
+    const increase = canReconcileLedgerQty
+      ? increaseNewestReceiptToMatchVisibleQty(state, id, nextVisibleQty, val)
+      : null;
+    if (correction) {
+      historyEntries.push({
+        date: globalDate,
+        desc: quantityCorrectionHistoryDesc(correction),
+        val,
+      });
+    }
+    if (increase) {
+      const desc = increase.appendedReceipt
+        ? `Cost ledger qty replacement: added ${increase.increasedQty} unit receipt to match visible qty ${increase.visibleQty}`
+        : `Cost ledger qty replacement: increased open receipt by ${increase.increasedQty} unit(s) to match visible qty ${increase.visibleQty}`;
+      historyEntries.push({
+        date: globalDate,
+        desc,
+        val,
+      });
+    }
+  }
 
   // Pending writes (atMs <= 0, e.g. an optimistic local write before the
   // server timestamp resolves) are guarded here exactly like entity
@@ -1560,6 +1678,7 @@ function applyInventoryUpdate(
   } else if (
     val > 0 &&
     actionType === "update_item" &&
+    isNewItem &&
     Number.isFinite(deltaQty) &&
     deltaQty > 0
   ) {

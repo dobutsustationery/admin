@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { rootReducer } from "$lib/root-reducer";
 import {
+  archive_inventory,
   update_item,
   update_field,
   bulk_import_items,
@@ -8,6 +9,7 @@ import {
   set_cost_ledger_entries_ignored,
   type Item,
 } from "$lib/inventory";
+import { walkLedger } from "$lib/cost-engine";
 
 // M2: `cost` is derived from the per-item costLedger materialised in
 // applyInventoryUpdate. Single priced lot -> cost == that lot (identical
@@ -251,21 +253,14 @@ describe("cost-ledger materialisation in the reducer", () => {
         e.unitCostJpy,
         e.costOrderId,
       ]),
-    ).toEqual([
-      [5, 0, undefined],
-      [12, 65, "o1"],
-      [8, 0, undefined],
-    ]);
+    ).toEqual([[8, 65, "o1"]]);
     expect(
       (s.inventory.costLedger![pinkKey] as any[]).map((e) => [
         e.qty,
         e.unitCostJpy,
         e.costOrderId,
       ]),
-    ).toEqual([
-      [12, 65, "o1"],
-      [10, 0, undefined],
-    ]);
+    ).toEqual([[10, 65, "o1"]]);
   });
 
   it("reduces the newest scan receipt when a qty correction lowers inventory", () => {
@@ -339,7 +334,7 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
   });
 
-  it("audits qty corrections across multiple newest open receipts", () => {
+  it("replaces qty on repeated update_item scans without creating duplicate receipt lots", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(
       s,
@@ -354,48 +349,44 @@ describe("cost-ledger materialisation in the reducer", () => {
       withTs(update_item({ id: KEY, item: baseItem(12) }), 120),
     );
 
+    const ledger = s.inventory.costLedger![KEY] as any[];
+    expect(s.inventory.idToItem[KEY].qty).toBe(12);
+    expect(
+      ledger.map((entry) => [entry.kind, entry.qty, entry.ignored]),
+    ).toEqual([["receipt", 12, undefined]]);
+  });
+
+  it("adds a new receipt when a post-archive update_item scan restores stock", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(
       s,
-      withTs(update_field({ id: KEY, field: "qty", from: 31, to: "12" }), 150),
+      withTs(update_item({ id: KEY, item: baseItem(20) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(archive_inventory({ archiveName: "Japan Festival" }), 200),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(20) }), 300),
     );
 
     const ledger = s.inventory.costLedger![KEY] as any[];
+    expect(s.inventory.idToItem[KEY].qty).toBe(20);
     expect(
-      ledger.map((entry) => [entry.kind, entry.qty, entry.ignored]),
+      ledger.map((entry) => [
+        entry.kind,
+        entry.qty,
+        entry.source,
+        entry.isArchive,
+        entry.at,
+      ]),
     ).toEqual([
-      ["receipt", 12, undefined],
-      ["receipt", 0, true],
-      ["receipt", 0, true],
+      ["receipt", 20, "update_item", undefined, 100_000],
+      ["sale", 20, undefined, true, 200_000],
+      ["receipt", 20, "update_item", undefined, 300_000],
     ]);
-    expect(ledger[1]).toEqual(
-      expect.objectContaining({
-        originalQty: 7,
-        ignoreReason: "qty correction reduced receipt to zero",
-        quantityCorrections: [
-          expect.objectContaining({
-            fromVisibleQty: 31,
-            toVisibleQty: 12,
-            reducedBy: 7,
-          }),
-        ],
-        auditSeverity: "warning",
-      }),
-    );
-    expect(ledger[2]).toEqual(
-      expect.objectContaining({
-        originalQty: 12,
-        quantityCorrections: [
-          expect.objectContaining({
-            fromVisibleQty: 31,
-            toVisibleQty: 12,
-            reducedBy: 12,
-          }),
-        ],
-      }),
-    );
-    expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toBe(
-      "Cost ledger qty correction: reduced 2 receipt lot(s) by 19 unit(s) to match visible qty 12",
-    );
+    expect(walkLedger(ledger).onHand).toBe(20);
   });
 
   it("can mark a specific ledger entry ignored and rederive cost", () => {
@@ -406,7 +397,25 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
     s = rootReducer(
       s,
-      withTs(update_item({ id: KEY, item: baseItem(10, { cost: 50 }) }), 200),
+      withTs(
+        bulk_import_items({
+          items: [
+            {
+              type: "update",
+              id: KEY,
+              item: baseItem(10),
+              stockOrder: {
+                orderId: "o2",
+                unitCostJpy: 50,
+                unitCostEur: 0,
+                receivedAt: 200_000,
+                orderedQty: 10,
+              },
+            },
+          ],
+        }),
+        200,
+      ),
     );
     expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(75, 9);
 

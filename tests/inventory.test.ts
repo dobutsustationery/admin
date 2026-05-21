@@ -54,7 +54,7 @@ describe("inventory reducer", () => {
       expect(nextState.idToItem[id].qty).toBe(10);
     });
 
-    it("accumulates quantities when updating existing item", () => {
+    it("replaces quantities when updating existing item", () => {
       const item: Item = {
         janCode: "4901234567890",
         subtype: "Blue",
@@ -73,10 +73,10 @@ describe("inventory reducer", () => {
 
       const item2 = { ...item, qty: 5 };
       nextState = inventory(nextState, update_item({ id, item: item2 }));
-      expect(nextState.idToItem[id].qty).toBe(15);
+      expect(nextState.idToItem[id].qty).toBe(5);
     });
 
-    it("accumulates shipped quantities when updating existing item", () => {
+    it("replaces shipped quantities when updating existing item", () => {
       const item: Item = {
         janCode: "4901234567890",
         subtype: "Green",
@@ -95,7 +95,7 @@ describe("inventory reducer", () => {
 
       const item2 = { ...item, qty: 5, shipped: 3 };
       nextState = inventory(nextState, update_item({ id, item: item2 }));
-      expect(nextState.idToItem[id].shipped).toBe(5);
+      expect(nextState.idToItem[id].shipped).toBe(3);
     });
 
     it("ensures shipped is defined in state", () => {
