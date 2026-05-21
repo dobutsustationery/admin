@@ -45,19 +45,24 @@ describe("parseStockOrderCostTsv — header shapes", () => {
       ]),
     );
     expect(p.unmatchedHeader).toBe(false);
-    // qty resolves to PCS (20); unit cols 50 & 200; total 1000/20=50
+    // qty resolves to UNIT (4); UNIT price is tried before PCS price.
     const sums = p.interpretations.map((i) => i.sum);
-    expect(sums).toContain(1000); // 50*20
-    expect(p.interpretations.every((i) => i.qtyColumnIndex === 4)).toBe(true);
+    expect(sums).toContain(800); // 200*4
+    expect(p.interpretations.every((i) => i.qtyColumnIndex === 3)).toBe(true);
+    expect(p.interpretations[0]).toMatchObject({
+      kind: "unit",
+      costColumnIndex: 2,
+      qtyColumnIndex: 3,
+    });
     expect(
       p.interpretations.find((i) => i.kind === "total")?.rows[0],
     ).toMatchObject({
-      qty: 20,
-      unitCostJpy: 50,
+      qty: 4,
+      unitCostJpy: 250,
     });
   });
 
-  it("does not confuse PCS Price JPY with ORDER Q'ty PCS", () => {
+  it("prefers UNIT price and UNIT quantity columns over PCS columns", () => {
     const p = parseStockOrderCostTsv(
       tsv([
         [
@@ -72,13 +77,19 @@ describe("parseStockOrderCostTsv — header shapes", () => {
       ]),
     );
 
-    const total = p.interpretations.find((i) => i.kind === "total");
-    expect(total?.qtyColumnIndex).toBe(4);
-    expect(total?.rows[0]).toMatchObject({
-      jan: "4542804117776",
-      qty: 40,
-      unitCostJpy: 35,
+    const r = reconcileStockOrderCostTsv(p, 1400, 4);
+    expect(r.reconciled).toBe(true);
+    expect(r.chosen).toMatchObject({
+      kind: "unit",
+      costColumnIndex: 2,
+      qtyColumnIndex: 3,
     });
+    expect(r.rows[0]).toMatchObject({
+      jan: "4542804117776",
+      qty: 4,
+      unitCostJpy: 350,
+    });
+    expect(r.itemCountReconciled).toBe(true);
   });
 
   it("shape 4: 'Original price' is NOT treated as unit cost", () => {

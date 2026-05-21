@@ -94,7 +94,7 @@ function findJan(norm: string[]): number {
   );
 }
 
-// Prefer the TOTAL piece count, never a carton/inner-scoped one.
+// Prefer order-unit counts, never a carton/inner-scoped or money column.
 function findQty(norm: string[]): number {
   const cartonish = (h: string) =>
     h.includes("ctn") || h.includes("carton") || h.includes("inner");
@@ -111,7 +111,17 @@ function findQty(norm: string[]): number {
     h.includes("tax");
   const usableQty = (h: string) => !cartonish(h) && !moneyish(h);
 
-  let i = norm.findIndex((h) => h === "totalpcs" || h === "orderqtypcs");
+  let i = norm.findIndex(
+    (h) =>
+      h.includes("unit") &&
+      (h.includes("qty") || h.includes("quantity")) &&
+      usableQty(h),
+  );
+  if (i < 0)
+    i = norm.findIndex(
+      (h) => h.includes("order") && h.includes("unit") && usableQty(h),
+    );
+  if (i < 0) i = norm.findIndex((h) => h === "totalpcs" || h === "orderqtypcs");
   if (i < 0)
     i = norm.findIndex(
       (h) => h.includes("order") && h.includes("qty") && h.includes("pcs"),
@@ -147,7 +157,12 @@ function unitCols(norm: string[]): number[] {
         ? i
         : -1,
     )
-    .filter((i) => i >= 0);
+    .filter((i) => i >= 0)
+    .sort((a, b) => {
+      const au = norm[a].includes("unit") ? 0 : 1;
+      const bu = norm[b].includes("unit") ? 0 : 1;
+      return au - bu || a - b;
+    });
 }
 function totalCols(norm: string[]): number[] {
   return norm
