@@ -23,6 +23,7 @@
     CheckSquare,
     FileEdit,
     Bug,
+    Split,
   } from "lucide-svelte";
 
   export let unsyncedActions = 0;
@@ -36,6 +37,7 @@
     { href: "/inventory", label: "View Inventory", icon: ClipboardList },
     { href: "/orders", label: "Process Orders", icon: Package },
     { href: "/subtypes", label: "Subtypes", icon: Grid },
+    { href: "/subtype-exceptions", label: "Subtype Exceptions", icon: Split },
     { href: "/payments", label: "Payments", icon: CreditCard },
     { href: "/csv", label: "Export CSV", icon: Download },
     { href: "/names", label: "Manage Names", icon: Tag },

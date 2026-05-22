@@ -236,6 +236,13 @@ export const fix_jancode = createAction<{
   mergeMode?: "strict" | "merge_if_identical";
   reason?: string;
 }>("fix_jancode");
+export const resolve_subtype_exception = createAction<{
+  janCode: string;
+  mode: "split_bare_to_subtypes" | "merge_subtypes_to_bare";
+  allocations?: { subtype: string; qty: number }[];
+  orderMoves?: { orderID: string; subtype: string; qty: number }[];
+  reason?: string;
+}>("resolve_subtype_exception");
 export const delete_empty_order = createAction<{
   orderID: string;
 }>("delete_empty_order");
@@ -803,6 +810,143 @@ function migrateCostLedger(
   state.costLedger[newKey] = merged;
   delete state.costLedger[oldKey];
   rederiveCostFromLedger(state, newKey);
+}
+
+function reseqLedger(entries: LedgerEntry[]): LedgerEntry[] {
+  return sortLedgerEntries(entries).map((entry, seq) => ({ ...entry, seq }));
+}
+
+function copyLedgerEntryForSubtypeResolution(
+  entry: LedgerEntry,
+  qty: number,
+  janCode: string,
+  subtype: string,
+): LedgerEntry {
+  const next = { ...entry, qty };
+  if (next.kind === "receipt") {
+    next.auditComment = `Subtype remediation split bare ${janCode} into ${subtype || "bare"}: allocated ${qty} unit(s) from original ${entry.qty} unit ledger entry.`;
+    next.auditSeverity = "warning";
+  }
+  return next;
+}
+
+function distributeSubtypeResolutionLedgerEntries(
+  entries: LedgerEntry[],
+  allocations: { key: string; subtype: string; qty: number; shipped: number }[],
+  janCode: string,
+): Map<string, LedgerEntry[]> {
+  const result = new Map<string, LedgerEntry[]>();
+  for (const allocation of allocations) result.set(allocation.key, []);
+
+  const totalQty = allocations.reduce((sum, a) => sum + a.qty, 0);
+  const totalShipped = allocations.reduce((sum, a) => sum + a.shipped, 0);
+
+  for (const entry of entries) {
+    const basis = entry.kind === "receipt" ? totalQty : totalShipped;
+    const amount = entry.kind === "receipt" ? "qty" : "shipped";
+    const eligible = allocations.filter((a) => a[amount] > 0);
+    if (!(basis > 0) || eligible.length === 0) continue;
+
+    let assigned = 0;
+    eligible.forEach((allocation, index) => {
+      const isLast = index === eligible.length - 1;
+      const raw = isLast
+        ? entry.qty - assigned
+        : (entry.qty * allocation[amount]) / basis;
+      const qty = Number(raw.toFixed(6));
+      assigned += qty;
+      if (qty === 0) return;
+      result
+        .get(allocation.key)
+        ?.push(
+          copyLedgerEntryForSubtypeResolution(
+            entry,
+            qty,
+            janCode,
+            allocation.subtype,
+          ),
+        );
+    });
+  }
+
+  return result;
+}
+
+function moveOrderLineQuantity(
+  state: InventoryState,
+  orderID: string,
+  oldKey: InventoryItemKey,
+  newKey: InventoryItemKey,
+  qty: number,
+): number {
+  const order = state.orderIdToOrder[orderID];
+  if (!order || qty <= 0) return 0;
+
+  let remaining = qty;
+  const nextItems: LineItem[] = [];
+  let moved = 0;
+  for (const line of order.items) {
+    if (line.itemKey !== oldKey || remaining <= 0) {
+      nextItems.push(line);
+      continue;
+    }
+    const moveQty = Math.min(line.qty, remaining);
+    moved += moveQty;
+    remaining -= moveQty;
+    const leftover = line.qty - moveQty;
+    if (leftover > 0) nextItems.push({ ...line, qty: leftover });
+  }
+
+  if (moved > 0) {
+    const existing = nextItems.find((line) => line.itemKey === newKey);
+    if (existing) {
+      existing.qty += moved;
+    } else {
+      nextItems.push({ itemKey: newKey, qty: moved });
+    }
+    order.items = nextItems;
+
+    if (order.shopifyFacts?.lines) {
+      for (const fact of Object.values(order.shopifyFacts.lines)) {
+        if (fact.itemKey === oldKey) fact.itemKey = newKey;
+      }
+    }
+    if (order.etsyFacts?.lines) {
+      for (const fact of Object.values(order.etsyFacts.lines)) {
+        if (fact.itemKey === oldKey) fact.itemKey = newKey;
+      }
+    }
+  }
+
+  return moved;
+}
+
+function appendSubtypeResolutionHistory(
+  state: InventoryState,
+  key: string,
+  desc: string,
+  val: number,
+) {
+  const date = new Date(val).toLocaleString("en", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  if (!state.idToHistory[key]) state.idToHistory[key] = [];
+  state.idToHistory[key].push({ date, desc, val });
+}
+
+function moveHistoryForSubtypeResolution(
+  state: InventoryState,
+  oldKey: string,
+  newKey: string,
+) {
+  const oldHistory = state.idToHistory[oldKey] || [];
+  if (!state.idToHistory[newKey]) state.idToHistory[newKey] = [];
+  state.idToHistory[newKey] = [
+    ...state.idToHistory[newKey],
+    ...oldHistory.map((h) => ({ ...h, desc: `[${oldKey}] ${h.desc}` })),
+  ].sort((a, b) => (a.val || 0) - (b.val || 0));
 }
 
 // Copy (don't move) a ledger to a new key — for splits where the source
@@ -3313,6 +3457,229 @@ export const inventory = createReducer(initialState, (r) => {
 
     delete state.idToItem[oldKey];
     delete state.idToHistory[oldKey];
+  });
+  r.addCase(resolve_subtype_exception, (state, action) => {
+    const janCode = action.payload.janCode.trim();
+    if (!janCode) return;
+
+    const val = getTimestampMs((action as any).timestamp);
+    const keys = Object.keys(state.idToItem).filter(
+      (key) => state.idToItem[key]?.janCode === janCode,
+    );
+    const bareKey = makeInventoryItemKey(janCode, "");
+    const bareItem = state.idToItem[bareKey];
+    const subtypeKeys = keys.filter((key) => key !== bareKey);
+
+    if (action.payload.mode === "merge_subtypes_to_bare") {
+      if (!bareItem && subtypeKeys.length === 0) return;
+      if (!state.idToItem[bareKey]) {
+        const seed = state.idToItem[subtypeKeys[0]];
+        state.idToItem[bareKey] = {
+          ...seed,
+          janCode,
+          subtype: "",
+          qty: 0,
+          shipped: 0,
+        };
+      }
+      state.idToItem[bareKey].subtype = "";
+
+      for (const subtypeKey of subtypeKeys) {
+        const item = state.idToItem[subtypeKey];
+        if (!item) continue;
+        state.idToItem[bareKey].qty += Number(item.qty) || 0;
+        state.idToItem[bareKey].shipped += Number(item.shipped) || 0;
+        rewriteOrderItemKeyReferences(
+          state,
+          subtypeKey as InventoryItemKey,
+          bareKey as InventoryItemKey,
+        );
+        renameInventoryEntityKey(state, subtypeKey, bareKey, val, action.type);
+        migrateCostLedger(state, subtypeKey, bareKey);
+        moveHistoryForSubtypeResolution(state, subtypeKey, bareKey);
+        delete state.idToItem[subtypeKey];
+        delete state.idToHistory[subtypeKey];
+      }
+
+      appendSubtypeResolutionHistory(
+        state,
+        bareKey,
+        `Subtype exception resolved by merging ${subtypeKeys.length} subtype row(s) back into bare JAN${action.payload.reason ? `: ${action.payload.reason}` : ""}`,
+        val,
+      );
+      rederiveCostFromLedger(state, bareKey);
+      return;
+    }
+
+    if (!bareItem) return;
+    const allocations = (action.payload.allocations || [])
+      .map((allocation) => ({
+        subtype: allocation.subtype.trim(),
+        qty: Number(allocation.qty) || 0,
+      }))
+      .filter((allocation) => allocation.subtype && allocation.qty >= 0);
+    if (allocations.length === 0) {
+      appendSubtypeResolutionHistory(
+        state,
+        bareKey,
+        "Subtype exception split blocked: no target subtype allocations were supplied.",
+        val,
+      );
+      return;
+    }
+
+    const totalQty = allocations.reduce((sum, a) => sum + a.qty, 0);
+    if (Math.abs(totalQty - (Number(bareItem.qty) || 0)) > 0.000001) {
+      appendSubtypeResolutionHistory(
+        state,
+        bareKey,
+        `Subtype exception split blocked: allocations total ${totalQty}, bare qty is ${Number(bareItem.qty) || 0}.`,
+        val,
+      );
+      return;
+    }
+
+    const targetAllocations = allocations.map((allocation) => ({
+      ...allocation,
+      key: makeInventoryItemKey(janCode, allocation.subtype),
+      shipped: 0,
+    }));
+    const bySubtype = new Map(
+      targetAllocations.map((allocation) => [allocation.subtype, allocation]),
+    );
+
+    const orderMoves = action.payload.orderMoves || [];
+    const requestedMoveQty = orderMoves.reduce(
+      (sum, move) => sum + (Number(move.qty) || 0),
+      0,
+    );
+    const bareShipped = Number(bareItem.shipped) || 0;
+    if (Math.abs(requestedMoveQty - bareShipped) > 0.000001) {
+      appendSubtypeResolutionHistory(
+        state,
+        bareKey,
+        `Subtype exception split blocked: order moves total ${requestedMoveQty}, bare shipped is ${bareShipped}.`,
+        val,
+      );
+      return;
+    }
+    for (const move of orderMoves) {
+      const subtype = move.subtype.trim();
+      if (!bySubtype.has(subtype)) {
+        appendSubtypeResolutionHistory(
+          state,
+          bareKey,
+          `Subtype exception split blocked: order ${move.orderID} targets unknown subtype ${subtype}.`,
+          val,
+        );
+        return;
+      }
+      const available =
+        state.orderIdToOrder[move.orderID]?.items
+          .filter((line) => line.itemKey === bareKey)
+          .reduce((sum, line) => sum + line.qty, 0) || 0;
+      if (available < (Number(move.qty) || 0)) {
+        appendSubtypeResolutionHistory(
+          state,
+          bareKey,
+          `Subtype exception split blocked: order ${move.orderID} has ${available} bare unit(s), requested ${Number(move.qty) || 0}.`,
+          val,
+        );
+        return;
+      }
+    }
+    const requestedByOrder = new Map<string, number>();
+    for (const move of orderMoves) {
+      requestedByOrder.set(
+        move.orderID,
+        (requestedByOrder.get(move.orderID) || 0) + (Number(move.qty) || 0),
+      );
+    }
+    for (const [orderID, requestedQty] of requestedByOrder) {
+      const available =
+        state.orderIdToOrder[orderID]?.items
+          .filter((line) => line.itemKey === bareKey)
+          .reduce((sum, line) => sum + line.qty, 0) || 0;
+      if (available < requestedQty) {
+        appendSubtypeResolutionHistory(
+          state,
+          bareKey,
+          `Subtype exception split blocked: order ${orderID} has ${available} bare unit(s), requested ${requestedQty}.`,
+          val,
+        );
+        return;
+      }
+    }
+
+    let movedShipped = 0;
+    for (const move of orderMoves) {
+      const allocation = bySubtype.get(move.subtype.trim());
+      if (!allocation) continue;
+      const moveQty = Number(move.qty) || 0;
+      const moved = moveOrderLineQuantity(
+        state,
+        move.orderID,
+        bareKey as InventoryItemKey,
+        allocation.key as InventoryItemKey,
+        moveQty,
+      );
+      allocation.shipped += moved;
+      movedShipped += moved;
+    }
+
+    const sourceLedger = state.costLedger?.[bareKey] || [];
+    const distributedLedgers = distributeSubtypeResolutionLedgerEntries(
+      sourceLedger,
+      targetAllocations,
+      janCode,
+    );
+
+    for (const allocation of targetAllocations) {
+      const target = state.idToItem[allocation.key];
+      if (target) {
+        target.qty += allocation.qty;
+        target.shipped = (Number(target.shipped) || 0) + allocation.shipped;
+      } else {
+        state.idToItem[allocation.key] = {
+          ...bareItem,
+          subtype: allocation.subtype,
+          qty: allocation.qty,
+          shipped: allocation.shipped,
+          timestamp: val,
+        };
+      }
+
+      moveHistoryForSubtypeResolution(state, bareKey, allocation.key);
+      appendSubtypeResolutionHistory(
+        state,
+        allocation.key,
+        `Subtype exception resolved by splitting bare JAN ${bareKey} into ${allocation.subtype}: qty ${allocation.qty}, shipped ${allocation.shipped}${action.payload.reason ? ` (${action.payload.reason})` : ""}`,
+        val,
+      );
+
+      const movedLedger = distributedLedgers.get(allocation.key) || [];
+      if (movedLedger.length > 0) {
+        if (!state.costLedger) state.costLedger = {};
+        state.costLedger[allocation.key] = reseqLedger([
+          ...(state.costLedger[allocation.key] || []),
+          ...movedLedger,
+        ]);
+        rederiveCostFromLedger(state, allocation.key);
+      }
+
+      bindNewInventoryEntity(
+        state,
+        allocation.key,
+        val,
+        action.type,
+        (action as any).id,
+      );
+    }
+
+    closeInventoryEntityKey(state, bareKey, val, action.type);
+    delete state.idToItem[bareKey];
+    delete state.idToHistory[bareKey];
+    if (state.costLedger) delete state.costLedger[bareKey];
   });
   r.addCase(delete_empty_order, (state, action) => {
     const orderID = action.payload.orderID;
