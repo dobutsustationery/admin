@@ -15,6 +15,7 @@ import {
   buildInterpretation,
   reconcileManual,
   type StockOrderCostReconciliation,
+  type StockOrderCostRow,
   type TsvColumn,
 } from "./stock-order-cost-tsv";
 
@@ -333,6 +334,25 @@ function hasSourceTaggedStockOrderReceipt(
   return false;
 }
 
+function aggregateStockOrderAllocationRows(
+  rows: readonly StockOrderCostRow[],
+): StockOrderCostRow[] {
+  const aggregated = new Map<string, StockOrderCostRow>();
+  for (const row of rows) {
+    const qty = Number(row.qty);
+    if (!(qty > 0)) continue;
+    const unitCostJpy = Number(row.unitCostJpy);
+    const key = `${row.jan}|${unitCostJpy}`;
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.qty += qty;
+    } else {
+      aggregated.set(key, { ...row, qty, unitCostJpy });
+    }
+  }
+  return [...aggregated.values()];
+}
+
 /**
  * Pure preview for the staged TSV: reconcile to value-of-goods, match
  * each row to this order's source-tagged lots, and project the
@@ -644,7 +664,7 @@ export function previewStockOrderFix(
   }
 
   if (reconciliation && receivedAt) {
-    for (const row of reconciliation.rows) {
+    for (const row of aggregateStockOrderAllocationRows(reconciliation.rows)) {
       if (!(Number(row.qty) > 0)) continue;
       if (hasSourceTaggedStockOrderReceipt(inventory, orderId, row.jan))
         continue;

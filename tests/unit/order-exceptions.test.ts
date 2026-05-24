@@ -270,6 +270,61 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     ).toEqual([[12, 100, 1, "fc"]]);
   });
 
+  it("aggregates duplicate stock-order rows before matching scan receipts", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(s, {
+      ...update_item({ id: `${JAN}Blue`, item: scanItem("Blue", 20) }),
+      timestamp: { _seconds: 200, _nanoseconds: 0 },
+    } as any);
+
+    const duplicateRows = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t10`,
+      `${JAN}\t200\t10`,
+    ].join("\n");
+    const meta = {
+      receivedAt: 150_000,
+      valueOfGoodsJpy: 4000,
+      valueOfOrderJpy: 4000,
+      expectedItemCount: 20,
+      paidCurrency: "EUR",
+      paidAmount: 40,
+    } as const;
+
+    const preview = previewStockOrderFix(s.inventory, "fc", {
+      meta,
+      rawPaste: duplicateRows,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+
+    expect(preview.reconciliation?.rows).toHaveLength(2);
+    expect(preview.reconciliation?.qtySum).toBe(20);
+    expect(preview.items.map((item) => [item.key, item.newCostJpy])).toEqual([
+      [`${JAN}Blue`, 200],
+    ]);
+    expect(preview.blocked).toBe(false);
+
+    s = rootReducer(s, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta,
+        costTsv: duplicateRows,
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+
+    const receipt = s.inventory.costLedger![`${JAN}Blue`][0] as any;
+    expect(receipt.qty).toBe(20);
+    expect(receipt.unitCostJpy).toBe(200);
+    expect(receipt.unitCostEur).toBe(2);
+    expect(receipt.costOrderId).toBe("fc");
+    expect(receipt.auditSeverity).toBeUndefined();
+    expect(receipt.auditComment).toBeUndefined();
+  });
+
   it("non-reconciling TSV is blocked unless discrepancy approved", () => {
     const s0 = unpricedOrder();
     const key = Object.keys(s0.inventory.costLedger!).find((k) =>

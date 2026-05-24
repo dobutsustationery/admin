@@ -1325,6 +1325,28 @@ function stockOrderOverconsumptionComment(
   return `Stock order ${orderId} over-consumed by ${receiptQty - remainingQty} unit(s): full scan receipt qty ${receiptQty} was costed with only ${remainingQty} order unit(s) remaining so the scan lot stayed intact.`;
 }
 
+function aggregateStockOrderAllocationRows(
+  rows: readonly { jan: string; unitCostJpy: number; qty?: number }[],
+): { jan: string; unitCostJpy: number; qty: number }[] {
+  const aggregated = new Map<
+    string,
+    { jan: string; unitCostJpy: number; qty: number }
+  >();
+  for (const row of rows) {
+    const qty = Number(row.qty);
+    if (!(qty > 0)) continue;
+    const unitCostJpy = Number(row.unitCostJpy);
+    const key = `${row.jan}|${unitCostJpy}`;
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.qty += qty;
+    } else {
+      aggregated.set(key, { jan: row.jan, unitCostJpy, qty });
+    }
+  }
+  return [...aggregated.values()];
+}
+
 type ZeroedStockOrderAllocationInput = {
   key: string;
   stockOrder: NonNullable<BulkImportItem["stockOrder"]>;
@@ -2728,15 +2750,10 @@ export const inventory = createReducer(initialState, (r) => {
         ? totalOrderEur / (reg!.valueOfOrderJpy as number)
         : 0;
     const allocationInputs: ZeroedStockOrderAllocationInput[] = [];
-    const seenAllocationInputs = new Set<string>();
-    for (const row of rows) {
-      if (!(Number(row.qty) > 0)) continue;
+    for (const row of aggregateStockOrderAllocationRows(rows)) {
       if (hasSourceTaggedStockOrderReceipt(state, orderId, row.jan)) continue;
       for (const [key, item] of Object.entries(state.idToItem)) {
         if (item.janCode !== row.jan) continue;
-        const inputKey = `${key}|${row.jan}`;
-        if (seenAllocationInputs.has(inputKey)) continue;
-        seenAllocationInputs.add(inputKey);
         allocationInputs.push({
           key,
           stockOrder: {
