@@ -46,6 +46,7 @@ export type ReceiptEntry = {
     toVisibleQty: number;
     requestedVisibleQty?: number;
     reducedBy: number;
+    increasedBy?: number;
   }[];
   auditComment?: string;
   auditSeverity?: "warning" | "danger";

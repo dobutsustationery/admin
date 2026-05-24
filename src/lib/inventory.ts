@@ -1061,12 +1061,14 @@ type QuantityCorrectionSummary = {
   reducedQty: number;
   visibleQty: number;
   requestedVisibleQty?: number;
+  affectedOrderIds: string[];
 };
 
 type VisibleQtyIncreaseSummary = {
   increasedQty: number;
   appendedReceipt: boolean;
   visibleQty: number;
+  affectedOrderIds: string[];
 };
 
 function quantityCorrectionHistoryDesc(
@@ -1090,6 +1092,22 @@ function receiptQuantityCorrectionComment(
       ? `visible qty ${visibleQty}`
       : `ledger qty ${visibleQty} (requested visible qty ${requestedVisibleQty})`;
   return `Reducer qty correction reduced this receipt by ${reducedBy} unit(s), from visible qty ${fromVisibleQty} to ${target}.`;
+}
+
+function quantityIncreaseHistoryDesc(
+  increase: VisibleQtyIncreaseSummary,
+): string {
+  return increase.appendedReceipt
+    ? `Cost ledger qty correction: added ${increase.increasedQty} unit receipt to match visible qty ${increase.visibleQty}`
+    : `Cost ledger qty correction: increased open receipt by ${increase.increasedQty} unit(s) to match visible qty ${increase.visibleQty}`;
+}
+
+function receiptQuantityIncreaseComment(
+  increasedBy: number,
+  fromVisibleQty: unknown,
+  visibleQty: number,
+): string {
+  return `Reducer qty correction increased this receipt by ${increasedBy} unit(s), from visible qty ${fromVisibleQty} to visible qty ${visibleQty}.`;
 }
 
 function openReceiptLotsForLedger(
@@ -1145,6 +1163,7 @@ function applyQuantityCorrectionToReceipts(
   const openReceipts = openReceiptLotsForLedger(ledger);
   let adjustedLots = 0;
   let reducedQty = 0;
+  const affectedOrderIds = new Set<string>();
   const correctionAt =
     Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE;
 
@@ -1158,6 +1177,9 @@ function applyQuantityCorrectionToReceipts(
     if (beforeQty <= 0) continue;
 
     if (receipt.originalQty === undefined) receipt.originalQty = beforeQty;
+    for (const orderId of stockOrderIdsForLedgerEntry(receipt)) {
+      affectedOrderIds.add(orderId);
+    }
     receipt.qty = Math.max(0, beforeQty - used);
     if (actionType === "update_item" && lot.remaining >= beforeQty) {
       receipt.at = correctionAt;
@@ -1193,7 +1215,13 @@ function applyQuantityCorrectionToReceipts(
 
   if (adjustedLots === 0) return null;
   rederiveCostFromLedger(state, key);
-  return { adjustedLots, reducedQty, visibleQty: visible, requestedVisibleQty };
+  return {
+    adjustedLots,
+    reducedQty,
+    visibleQty: visible,
+    requestedVisibleQty,
+    affectedOrderIds: [...affectedOrderIds],
+  };
 }
 
 function increaseNewestReceiptToMatchVisibleQty(
@@ -1201,6 +1229,13 @@ function increaseNewestReceiptToMatchVisibleQty(
   key: string,
   nextVisibleQty: unknown,
   atMs: number,
+  options: {
+    actionType?: string;
+    actionDocId?: string;
+    fromVisibleQty?: unknown;
+    audit?: boolean;
+    preserveReceiptDate?: boolean;
+  } = {},
 ): VisibleQtyIncreaseSummary | null {
   const ledger = state.costLedger?.[key];
   if (!ledger) return null;
@@ -1213,27 +1248,70 @@ function increaseNewestReceiptToMatchVisibleQty(
   const receiptLot = openReceiptLotsForLedger(ledger).at(-1);
   const receiptIndex = receiptLot?.index;
   let appendedReceipt = false;
+  const affectedOrderIds = new Set<string>();
+  const correctionAt =
+    Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE;
 
   if (receiptIndex === undefined) {
     appendedReceipt = true;
     ledger.push({
       kind: "receipt",
-      at: Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE,
+      at: correctionAt,
       seq: ledger.length,
       qty: increase,
       unitCostJpy: 0,
       unitCostEur: 0,
-      source: "update_item",
+      source: options.actionType || "update_item",
+      ...(options.audit
+        ? {
+            auditComment: receiptQuantityIncreaseComment(
+              increase,
+              options.fromVisibleQty,
+              Math.max(0, visible),
+            ),
+            auditSeverity: "warning" as const,
+          }
+        : {}),
     });
   } else {
     const receipt = ledger[receiptIndex] as ReceiptEntry;
+    const beforeQty = Number(receipt.qty) || 0;
+    if (options.audit && receipt.originalQty === undefined) {
+      receipt.originalQty = beforeQty;
+    }
+    for (const orderId of stockOrderIdsForLedgerEntry(receipt)) {
+      affectedOrderIds.add(orderId);
+    }
     receipt.qty += increase;
-    if (receiptLot && receiptLot.remaining >= receipt.qty - increase) {
-      receipt.at = Number.isFinite(atMs) && atMs > 0 ? atMs : receipt.at;
+    if (
+      !options.preserveReceiptDate &&
+      receiptLot &&
+      receiptLot.remaining >= receipt.qty - increase
+    ) {
+      receipt.at = correctionAt;
     }
     if (receipt.ignored && receipt.qty > 0) {
       delete receipt.ignored;
       delete receipt.ignoreReason;
+    }
+    if (options.audit) {
+      const corrections = receipt.quantityCorrections || [];
+      corrections.push({
+        at: correctionAt,
+        actionType: options.actionType || "update_field",
+        ...(options.actionDocId ? { actionDocId: options.actionDocId } : {}),
+        fromVisibleQty: Number(options.fromVisibleQty),
+        toVisibleQty: Math.max(0, visible),
+        reducedBy: 0,
+        increasedBy: increase,
+      });
+      receipt.quantityCorrections = corrections;
+      receipt.auditComment = receiptQuantityIncreaseComment(
+        increase,
+        options.fromVisibleQty,
+        Math.max(0, visible),
+      );
+      receipt.auditSeverity = "warning";
     }
   }
 
@@ -1242,6 +1320,7 @@ function increaseNewestReceiptToMatchVisibleQty(
     increasedQty: increase,
     appendedReceipt,
     visibleQty: Math.max(0, visible),
+    affectedOrderIds: [...affectedOrderIds],
   };
 }
 
@@ -1984,6 +2063,9 @@ function applyInventoryUpdate(
       ? increaseNewestReceiptToMatchVisibleQty(state, id, nextVisibleQty, val)
       : null;
     if (correction) {
+      for (const orderId of correction.affectedOrderIds) {
+        refreshStockOrderCostIssues(state, orderId);
+      }
       historyEntries.push({
         date: globalDate,
         desc: quantityCorrectionHistoryDesc(correction),
@@ -1991,6 +2073,9 @@ function applyInventoryUpdate(
       });
     }
     if (increase) {
+      for (const orderId of increase.affectedOrderIds) {
+        refreshStockOrderCostIssues(state, orderId);
+      }
       const desc = increase.appendedReceipt
         ? `Cost ledger qty replacement: added ${increase.increasedQty} unit receipt to match visible qty ${increase.visibleQty}`
         : `Cost ledger qty replacement: increased open receipt by ${increase.increasedQty} unit(s) to match visible qty ${increase.visibleQty}`;
@@ -3164,20 +3249,51 @@ export const inventory = createReducer(initialState, (r) => {
         val,
       });
       if (field === "qty") {
+        const nextVisibleQty =
+          Number(state.idToItem[itemKey].qty || 0) -
+          Number(state.idToItem[itemKey].shipped || 0);
         const correction = applyQuantityCorrectionToReceipts(
           state,
           itemKey,
           previousVisibleQty,
-          Number(state.idToItem[itemKey].qty || 0) -
-            Number(state.idToItem[itemKey].shipped || 0),
+          nextVisibleQty,
           val,
           action.type,
           (action as any).id,
         );
+        const increase =
+          nextVisibleQty >= 0
+            ? increaseNewestReceiptToMatchVisibleQty(
+                state,
+                itemKey,
+                nextVisibleQty,
+                val,
+                {
+                  actionType: action.type,
+                  actionDocId: (action as any).id,
+                  fromVisibleQty: previousVisibleQty,
+                  audit: true,
+                  preserveReceiptDate: true,
+                },
+              )
+            : null;
         if (correction) {
+          for (const orderId of correction.affectedOrderIds) {
+            refreshStockOrderCostIssues(state, orderId);
+          }
           state.idToHistory[itemKey].push({
             date: creationDate,
             desc: quantityCorrectionHistoryDesc(correction),
+            val,
+          });
+        }
+        if (increase) {
+          for (const orderId of increase.affectedOrderIds) {
+            refreshStockOrderCostIssues(state, orderId);
+          }
+          state.idToHistory[itemKey].push({
+            date: creationDate,
+            desc: quantityIncreaseHistoryDesc(increase),
             val,
           });
         }
@@ -3239,20 +3355,51 @@ export const inventory = createReducer(initialState, (r) => {
           val,
         });
         if (field === "qty") {
+          const nextVisibleQty =
+            Number(state.idToItem[itemKey].qty || 0) -
+            Number(state.idToItem[itemKey].shipped || 0);
           const correction = applyQuantityCorrectionToReceipts(
             state,
             itemKey,
             previousVisibleQty,
-            Number(state.idToItem[itemKey].qty || 0) -
-              Number(state.idToItem[itemKey].shipped || 0),
+            nextVisibleQty,
             val,
             action.type,
             (action as any).id,
           );
+          const increase =
+            nextVisibleQty >= 0
+              ? increaseNewestReceiptToMatchVisibleQty(
+                  state,
+                  itemKey,
+                  nextVisibleQty,
+                  val,
+                  {
+                    actionType: action.type,
+                    actionDocId: (action as any).id,
+                    fromVisibleQty: previousVisibleQty,
+                    audit: true,
+                    preserveReceiptDate: true,
+                  },
+                )
+              : null;
           if (correction) {
+            for (const orderId of correction.affectedOrderIds) {
+              refreshStockOrderCostIssues(state, orderId);
+            }
             state.idToHistory[itemKey].push({
               date: creationDate,
               desc: quantityCorrectionHistoryDesc(correction),
+              val,
+            });
+          }
+          if (increase) {
+            for (const orderId of increase.affectedOrderIds) {
+              refreshStockOrderCostIssues(state, orderId);
+            }
+            state.idToHistory[itemKey].push({
+              date: creationDate,
+              desc: quantityIncreaseHistoryDesc(increase),
               val,
             });
           }

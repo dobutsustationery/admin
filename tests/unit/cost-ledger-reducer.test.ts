@@ -337,6 +337,65 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
   });
 
+  it("increases the open receipt when a qty correction raises inventory", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(
+        bulk_import_items({
+          items: [
+            {
+              type: "update",
+              id: KEY,
+              item: baseItem(12, { cost: 140 }),
+              stockOrder: {
+                orderId: "o1",
+                unitCostJpy: 140,
+                unitCostEur: 0.82,
+                receivedAt: 90_000,
+                orderedQty: 24,
+              },
+            },
+          ],
+        }),
+        100,
+      ),
+    );
+
+    s = rootReducer(
+      s,
+      withTs(update_field({ id: KEY, field: "qty", from: 12, to: "24" }), 150),
+    );
+
+    expect(s.inventory.idToItem[KEY].qty).toBe(24);
+    expect(s.inventory.costLedger![KEY]).toEqual([
+      expect.objectContaining({
+        kind: "receipt",
+        at: 100_000,
+        qty: 24,
+        unitCostJpy: 140,
+        unitCostEur: 0,
+        source: "stockOrder:o1",
+        costOrderId: "o1",
+        originalQty: 12,
+        quantityCorrections: [
+          expect.objectContaining({
+            actionType: "update_field",
+            fromVisibleQty: 12,
+            toVisibleQty: 24,
+            increasedBy: 12,
+          }),
+        ],
+        auditComment:
+          "Reducer qty correction increased this receipt by 12 unit(s), from visible qty 12 to visible qty 24.",
+        auditSeverity: "warning",
+      }),
+    ]);
+    expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
+      "Cost ledger qty correction: increased open receipt by 12 unit(s) to match visible qty 24",
+    );
+  });
+
   it("replaces qty on repeated update_item scans without creating duplicate receipt lots", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(
