@@ -17,6 +17,10 @@
     })}`;
   const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`;
 
+  function valuePair(eurValue: number, jpyValue: number): string {
+    return `${eur(eurValue)} / ${yen(jpyValue)}`;
+  }
+
   let copyMsg = "";
   async function copyTsv() {
     try {
@@ -72,6 +76,8 @@
           <th>Event</th>
           <th class="num">Value (EUR)</th>
           <th class="num">Value (JPY)</th>
+          <th class="num">Cumulative Inventory Value</th>
+          <th class="num">Cumulative Sold Inventory Value</th>
         </tr>
       </thead>
       <tbody>
@@ -87,6 +93,15 @@
             <td>{r.label}</td>
             <td class="num">{eur(r.valueEur)}</td>
             <td class="num jpy">{yen(r.valueJpy)}</td>
+            <td class="num">
+              {valuePair(
+                r.cumulativeInventoryValueEur,
+                r.cumulativeInventoryValueJpy,
+              )}
+            </td>
+            <td class="num">
+              {valuePair(r.cumulativeSoldValueEur, r.cumulativeSoldValueJpy)}
+            </td>
           </tr>
         {/each}
       </tbody>

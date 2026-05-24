@@ -136,8 +136,21 @@ export interface StockOrderMeta {
   paidCurrency?: "EUR" | "BGN"; // the real fact paid
   paidAmount?: number;
   totalOrderEur?: number; // derived: paid normalised to EUR
+  costIssues?: StockOrderCostIssue[];
   // legacy (pre-M3) — kept for back-compat with any external callers
   totalOrderJpy?: number;
+}
+
+export type StockOrderCostIssueKind = "unmatched-row" | "overmatched-row";
+
+export interface StockOrderCostIssue {
+  kind: StockOrderCostIssueKind;
+  jan: string;
+  qty: number;
+  expectedQty: number;
+  matchedQty: number;
+  unitCostJpy?: number;
+  lineCostJpy?: number;
 }
 
 export type InventoryEntityId = string;
@@ -1345,6 +1358,76 @@ function aggregateStockOrderAllocationRows(
     }
   }
   return [...aggregated.values()];
+}
+
+function stockOrderCostIssues(
+  state: InventoryState,
+  orderId: string,
+  rows: readonly { jan: string; unitCostJpy: number; qty?: number }[],
+): StockOrderCostIssue[] {
+  const expected = new Map<
+    string,
+    { expectedQty: number; lineCostJpy: number }
+  >();
+  for (const row of rows) {
+    const qty = Number(row.qty);
+    if (!(qty > 0)) continue;
+    const unitCostJpy = Number(row.unitCostJpy);
+    const current = expected.get(row.jan) || {
+      expectedQty: 0,
+      lineCostJpy: 0,
+    };
+    current.expectedQty += qty;
+    current.lineCostJpy += qty * unitCostJpy;
+    expected.set(row.jan, current);
+  }
+
+  const matchedQtyByJan = new Map<string, number>();
+  const costLedger = state.costLedger || {};
+  for (const [key, ledger] of Object.entries(costLedger)) {
+    const jan = state.idToItem[key]?.janCode;
+    if (!jan) continue;
+    let matchedQty = matchedQtyByJan.get(jan) || 0;
+    for (const entry of ledger) {
+      if (!lotMatchesOrder(entry, orderId) || entry.kind !== "receipt")
+        continue;
+      matchedQty += Number(entry.qty) || 0;
+    }
+    if (matchedQty > 0) matchedQtyByJan.set(jan, matchedQty);
+  }
+
+  const issues: StockOrderCostIssue[] = [];
+  for (const [jan, value] of expected) {
+    const matchedQty = matchedQtyByJan.get(jan) || 0;
+    const expectedQty = value.expectedQty;
+    const unitCostJpy =
+      expectedQty > 0 ? value.lineCostJpy / expectedQty : undefined;
+    if (matchedQty < expectedQty) {
+      const qty = expectedQty - matchedQty;
+      issues.push({
+        kind: "unmatched-row",
+        jan,
+        qty,
+        expectedQty,
+        matchedQty,
+        unitCostJpy,
+        lineCostJpy: unitCostJpy != null ? unitCostJpy * qty : undefined,
+      });
+    } else if (matchedQty > expectedQty) {
+      const qty = matchedQty - expectedQty;
+      issues.push({
+        kind: "overmatched-row",
+        jan,
+        qty,
+        expectedQty,
+        matchedQty,
+        unitCostJpy,
+        lineCostJpy: unitCostJpy != null ? unitCostJpy * qty : undefined,
+      });
+    }
+  }
+
+  return issues.sort((a, b) => a.jan.localeCompare(b.jan));
 }
 
 type ZeroedStockOrderAllocationInput = {
@@ -2742,7 +2825,7 @@ export const inventory = createReducer(initialState, (r) => {
   });
   r.addCase(apply_stock_order_costs, (state, action) => {
     const { orderId, rows, overrideExisting } = action.payload;
-    if (!state.costLedger) return;
+    if (!state.costLedger) state.costLedger = {};
     const reg = state.stockOrderRegistry?.[orderId];
     const totalOrderEur =
       reg?.paidAmount != null && reg?.paidCurrency
@@ -2791,6 +2874,12 @@ export const inventory = createReducer(initialState, (r) => {
       }
       if (touched) rederiveCostFromLedger(state, key);
     }
+
+    if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
+    state.stockOrderRegistry[orderId] = {
+      ...state.stockOrderRegistry[orderId],
+      costIssues: stockOrderCostIssues(state, orderId, rows),
+    };
   });
   r.addCase(update_item, (state, action) => {
     applyInventoryUpdate(

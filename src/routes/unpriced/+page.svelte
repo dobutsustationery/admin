@@ -6,7 +6,11 @@
     type LedgerEntry,
     type ReceiptEntry,
   } from "$lib/cost-engine";
-  import type { InventoryState, Item } from "$lib/inventory";
+  import type {
+    InventoryState,
+    Item,
+    StockOrderCostIssue,
+  } from "$lib/inventory";
 
   type CostLedgerIssueKind = "unpriced-scan" | "missing-exchange";
 
@@ -54,6 +58,15 @@
     auditSeverity: "warning" | "danger";
     ledger: LedgerEntry[];
     ledgerIndex: number;
+  };
+
+  type StockOrderMatchIssueRow = StockOrderCostIssue & {
+    orderId: string;
+    orderName: string;
+    itemKey?: string;
+    subtype: string;
+    description: string;
+    image: string;
   };
 
   let search = "";
@@ -195,8 +208,41 @@
     );
   }
 
+  function buildStockOrderMatchIssueRows(
+    inventory: InventoryState,
+  ): StockOrderMatchIssueRow[] {
+    const rows: StockOrderMatchIssueRow[] = [];
+    const idToItem = inventory.idToItem || {};
+    for (const [orderId, meta] of Object.entries(
+      inventory.stockOrderRegistry || {},
+    )) {
+      for (const issue of meta.costIssues || []) {
+        const hit = Object.entries(idToItem)
+          .filter(([, item]) => item.janCode === issue.jan)
+          .sort(([a], [b]) => a.localeCompare(b))[0];
+        const [itemKey, item] = hit || [];
+        rows.push({
+          ...issue,
+          orderId,
+          orderName: meta.name || meta.supplier || "",
+          itemKey,
+          subtype: item?.subtype || "",
+          description: item?.description || "",
+          image: item?.image || "",
+        });
+      }
+    }
+    return rows.sort(
+      (a, b) =>
+        a.orderId.localeCompare(b.orderId) ||
+        a.jan.localeCompare(b.jan) ||
+        a.kind.localeCompare(b.kind),
+    );
+  }
+
   $: rows = buildRows($store.inventory);
   $: auditRows = buildAuditRows($store.inventory);
+  $: stockOrderMatchIssueRows = buildStockOrderMatchIssueRows($store.inventory);
   $: query = search.trim().toLowerCase();
   $: filteredRows = rows.filter((row) => {
     if (hideZeroOnHand && row.itemQty - row.shipped <= 0) return false;
@@ -219,6 +265,19 @@
       row.subtype.toLowerCase().includes(query)
     );
   });
+  $: filteredStockOrderMatchIssueRows = stockOrderMatchIssueRows.filter(
+    (row) => {
+      if (!query) return true;
+      return (
+        row.orderId.toLowerCase().includes(query) ||
+        row.orderName.toLowerCase().includes(query) ||
+        row.jan.includes(query) ||
+        (row.itemKey || "").toLowerCase().includes(query) ||
+        row.description.toLowerCase().includes(query) ||
+        row.subtype.toLowerCase().includes(query)
+      );
+    },
+  );
   $: totalLotQty = rows.reduce((sum, row) => sum + row.lotQty, 0);
   $: filteredLotQty = filteredRows.reduce((sum, row) => sum + row.lotQty, 0);
   $: itemCount = new Set(rows.map((row) => row.key)).size;
@@ -228,6 +287,12 @@
   ).length;
   $: missingExchangeRows = rows.filter(
     (row) => row.issueKind === "missing-exchange",
+  ).length;
+  $: unmatchedOrderRows = stockOrderMatchIssueRows.filter(
+    (row) => row.kind === "unmatched-row",
+  ).length;
+  $: overmatchedOrderRows = stockOrderMatchIssueRows.filter(
+    (row) => row.kind === "overmatched-row",
   ).length;
 
   function fmtDate(ms: number): string {
@@ -245,6 +310,12 @@
 
   function fmtEur(n: number): string {
     return Number.isFinite(n) && n > 0 ? `€${n.toFixed(2)}` : "-";
+  }
+
+  function stockOrderMatchIssueLabel(
+    kind: StockOrderCostIssue["kind"],
+  ): string {
+    return kind === "overmatched-row" ? "Overmatched row" : "Unmatched row";
   }
 
   function fmtQty(n: number | undefined): string {
@@ -395,6 +466,14 @@
       <span>missing exchange</span>
     </div>
     <div>
+      <strong>{unmatchedOrderRows}</strong>
+      <span>unmatched order row(s)</span>
+    </div>
+    <div>
+      <strong>{overmatchedOrderRows}</strong>
+      <span>overmatched order row(s)</span>
+    </div>
+    <div>
       <strong>{auditRows.length}</strong>
       <span>audit adjustment(s)</span>
     </div>
@@ -503,6 +582,83 @@
       {/each}
     </tbody>
   </table>
+
+  <h2>Stock Order Match Issues</h2>
+  {#if filteredStockOrderMatchIssueRows.length > 0}
+    <table>
+      <thead>
+        <tr>
+          <th>Image</th>
+          <th>Order</th>
+          <th>Item</th>
+          <th>Issue</th>
+          <th>Expected qty</th>
+          <th>Matched qty</th>
+          <th>Difference</th>
+          <th>Row cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each filteredStockOrderMatchIssueRows as row (`order-match:${row.orderId}:${row.kind}:${row.jan}`)}
+          <tr
+            class:stock-order-unmatched={row.kind === "unmatched-row"}
+            class:stock-order-overmatched={row.kind === "overmatched-row"}
+          >
+            <td class="thumb-cell">
+              {#if row.image}
+                <ImageThumbnail
+                  src={row.image}
+                  alt={row.description}
+                  width="56px"
+                  height="56px"
+                />
+              {:else}
+                <span class="no-thumb">-</span>
+              {/if}
+            </td>
+            <td>
+              <strong>{row.orderId}</strong>
+              {#if row.orderName}
+                <div>{row.orderName}</div>
+              {/if}
+            </td>
+            <td>
+              {#if row.itemKey}
+                <a
+                  href={`/itemhistory?itemKey=${encodeURIComponent(row.itemKey)}`}
+                >
+                  <strong>{row.itemKey}</strong>
+                </a>
+              {:else}
+                <strong>{row.jan}</strong>
+              {/if}
+              {#if row.description}
+                <div>{row.description}</div>
+              {/if}
+              {#if row.subtype}
+                <span class="hint">{row.subtype}</span>
+              {/if}
+            </td>
+            <td>
+              <span class={`issue ${row.kind}`}>
+                {stockOrderMatchIssueLabel(row.kind)}
+              </span>
+            </td>
+            <td>{fmtQty(row.expectedQty)}</td>
+            <td>{fmtQty(row.matchedQty)}</td>
+            <td>{fmtQty(row.qty)}</td>
+            <td>
+              <div>{fmtYen(row.unitCostJpy || 0)} / unit</div>
+              <span class="hint">{fmtYen(row.lineCostJpy || 0)} difference</span
+              >
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p class="hint">No stock order match issues match the current filters.</p>
+  {/if}
 
   <h2>Audit Adjustments</h2>
   {#if filteredAuditRows.length > 0}
@@ -628,6 +784,12 @@
   tr.audit-danger {
     background: #ffe8ee;
   }
+  tr.stock-order-unmatched {
+    background: #fff8db;
+  }
+  tr.stock-order-overmatched {
+    background: #ffe8ee;
+  }
   .thumb-cell {
     width: 72px;
   }
@@ -659,6 +821,14 @@
   .issue.missing-exchange {
     color: #7a4d00;
     background: #fff3cd;
+  }
+  .issue.unmatched-row {
+    color: #7a4d00;
+    background: #fff3cd;
+  }
+  .issue.overmatched-row {
+    color: #842029;
+    background: #f8d7da;
   }
   .no-thumb {
     display: inline-flex;

@@ -483,6 +483,59 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       ignoreUnmatchedRows: true,
     });
     expect(ignored.blocked).toBe(false);
+
+    const committed = rootReducer(s, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 2100 },
+        costTsv: withExtra,
+        overrideExisting: false,
+        approveDiscrepancy: false,
+        ignoreUnmatchedRows: true,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual([
+      {
+        kind: "unmatched-row",
+        jan: "9999999999999",
+        qty: 1,
+        expectedQty: 1,
+        matchedQty: 0,
+        unitCostJpy: 100,
+        lineCostJpy: 100,
+      },
+    ]);
+  });
+
+  it("records stock order overmatches when attached lots exceed row qty", () => {
+    const s = unpricedOrder();
+    const shortPaste = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t9`,
+    ].join("\n");
+
+    const committed = rootReducer(s, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 1800 },
+        costTsv: shortPaste,
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual([
+      {
+        kind: "overmatched-row",
+        jan: JAN,
+        qty: 1,
+        expectedQty: 9,
+        matchedQty: 10,
+        unitCostJpy: 200,
+        lineCostJpy: 200,
+      },
+    ]);
   });
 
   it("fixes missing COO and weight from matched TSV rows", () => {
