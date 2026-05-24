@@ -63,6 +63,7 @@
   type StockOrderMatchIssueRow = StockOrderCostIssue & {
     orderId: string;
     orderName: string;
+    orderDate?: number;
     itemKey?: string;
     subtype: string;
     description: string;
@@ -72,6 +73,7 @@
   type StockOrderMatchIssueGroup = {
     orderId: string;
     orderName: string;
+    orderDate?: number;
     rows: StockOrderMatchIssueRow[];
     unmatchedRows: number;
     overmatchedRows: number;
@@ -81,6 +83,10 @@
   let search = "";
   let hideZeroOnHand = false;
   let onlyAffectsAverage = false;
+  let showCostIssues = false;
+  let showAuditAdjustments = false;
+  let showStockOrderIssues: Record<string, boolean> = {};
+  let copyMsg = "";
 
   function isUnpricedScanReceipt(entry: LedgerEntry): entry is ReceiptEntry {
     return (
@@ -234,6 +240,7 @@
           ...issue,
           orderId,
           orderName: meta.name || meta.supplier || "",
+          orderDate: meta.receivedAt,
           itemKey,
           subtype: item?.subtype || "",
           description: item?.description || "",
@@ -257,6 +264,7 @@
       const group = groups.get(row.orderId) || {
         orderId: row.orderId,
         orderName: row.orderName,
+        orderDate: row.orderDate,
         rows: [],
         unmatchedRows: 0,
         overmatchedRows: 0,
@@ -268,9 +276,15 @@
       if (row.kind === "overmatched-row") group.overmatchedRows++;
       groups.set(row.orderId, group);
     }
-    return [...groups.values()].sort((a, b) =>
-      a.orderId.localeCompare(b.orderId),
-    );
+    return [...groups.values()].sort((a, b) => {
+      const aDate = validSortDate(a.orderDate);
+      const bDate = validSortDate(b.orderDate);
+      return (
+        aDate - bDate ||
+        a.orderName.localeCompare(b.orderName) ||
+        a.orderId.localeCompare(b.orderId)
+      );
+    });
   }
 
   $: rows = buildRows($store.inventory);
@@ -316,6 +330,9 @@
   );
   $: totalLotQty = rows.reduce((sum, row) => sum + row.lotQty, 0);
   $: filteredLotQty = filteredRows.reduce((sum, row) => sum + row.lotQty, 0);
+  $: filteredAffectingRows = filteredRows.filter(
+    (row) => row.affectsAverage,
+  ).length;
   $: itemCount = new Set(rows.map((row) => row.key)).size;
   $: affectingRows = rows.filter((row) => row.affectsAverage).length;
   $: zeroJpyRows = rows.filter(
@@ -357,6 +374,175 @@
   function fmtQty(n: number | undefined): string {
     if (!Number.isFinite(n)) return "-";
     return Number.isInteger(n as number) ? String(n) : (n as number).toFixed(2);
+  }
+
+  function validSortDate(ms: number | undefined): number {
+    return Number.isFinite(ms) && (ms as number) > 0
+      ? (ms as number)
+      : Number.MAX_SAFE_INTEGER;
+  }
+
+  function toggleCostIssues() {
+    const nextOpen = !showCostIssues;
+    console.log("[CostIssues] twisty handler fired", {
+      key: "cost-issues",
+      wasOpen: showCostIssues,
+      nextOpen,
+      at: new Date().toISOString(),
+    });
+    showCostIssues = nextOpen;
+  }
+
+  function toggleStockOrderIssues(orderId: string) {
+    const nextOpen = !showStockOrderIssues[orderId];
+    console.log("[CostIssues] twisty handler fired", {
+      key: `stock-order:${orderId}`,
+      wasOpen: !!showStockOrderIssues[orderId],
+      nextOpen,
+      at: new Date().toISOString(),
+    });
+    showStockOrderIssues = { ...showStockOrderIssues, [orderId]: nextOpen };
+  }
+
+  function toggleAuditAdjustments() {
+    const nextOpen = !showAuditAdjustments;
+    console.log("[CostIssues] twisty handler fired", {
+      key: "audit-adjustments",
+      wasOpen: showAuditAdjustments,
+      nextOpen,
+      at: new Date().toISOString(),
+    });
+    showAuditAdjustments = nextOpen;
+  }
+
+  function tsvCell(value: unknown): string {
+    return String(value ?? "")
+      .replace(/\t/g, " ")
+      .replace(/\r?\n/g, " ")
+      .trim();
+  }
+
+  function toTsv(headers: string[], rows: unknown[][]): string {
+    return [
+      headers.map(tsvCell).join("\t"),
+      ...rows.map((row) => row.map(tsvCell).join("\t")),
+    ].join("\n");
+  }
+
+  async function copyTsv(label: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copyMsg = `Copied ${label}.`;
+    } catch {
+      copyMsg = "Clipboard blocked.";
+    }
+  }
+
+  function costIssuesTsv(rows: CostLedgerIssueRow[]): string {
+    return toTsv(
+      [
+        "Key",
+        "JAN",
+        "Subtype",
+        "Description",
+        "Issue dates",
+        "Lot date",
+        "Issue",
+        "Lot qty",
+        "Remaining lot qty",
+        "On hand",
+        "Item qty",
+        "Current avg JPY",
+        "Current avg EUR",
+        "Raw JPY",
+        "Raw EUR",
+        "Source",
+      ],
+      rows.map((row) => [
+        row.key,
+        row.jan,
+        row.subtype,
+        row.description,
+        uniqueDateLabels(row.issueDates),
+        fmtDate(row.at),
+        row.issueLabel,
+        row.lotQty,
+        row.remainingLotQty,
+        Math.max(0, row.itemQty - row.shipped),
+        row.itemQty,
+        Math.round(row.currentAvgJpy),
+        row.currentAvgEur,
+        row.unitCostJpy,
+        row.unitCostEur,
+        row.source,
+      ]),
+    );
+  }
+
+  function stockOrderGroupTsv(group: StockOrderMatchIssueGroup): string {
+    return toTsv(
+      [
+        "Order ID",
+        "Order name",
+        "Order date",
+        "Item key",
+        "JAN",
+        "Subtype",
+        "Description",
+        "Issue",
+        "Expected qty",
+        "Matched qty",
+        "Difference",
+        "Unit cost JPY",
+        "Line cost JPY",
+      ],
+      group.rows.map((row) => [
+        row.orderId,
+        row.orderName,
+        fmtDate(row.orderDate || 0),
+        row.itemKey || "",
+        row.jan,
+        row.subtype,
+        row.description,
+        stockOrderMatchIssueLabel(row.kind),
+        fmtQty(row.expectedQty),
+        fmtQty(row.matchedQty),
+        fmtQty(row.qty),
+        row.unitCostJpy || 0,
+        row.lineCostJpy || 0,
+      ]),
+    );
+  }
+
+  function auditAdjustmentsTsv(rows: CostLedgerAuditRow[]): string {
+    return toTsv(
+      [
+        "Key",
+        "JAN",
+        "Subtype",
+        "Description",
+        "Date",
+        "Current lot qty",
+        "Original qty",
+        "Reduced by",
+        "Source",
+        "Severity",
+        "Audit comment",
+      ],
+      rows.map((row) => [
+        row.key,
+        row.jan,
+        row.subtype,
+        row.description,
+        fmtDate(row.at),
+        fmtQty(row.lotQty),
+        fmtQty(row.originalQty),
+        fmtQty(row.reducedQty),
+        row.source,
+        row.auditSeverity,
+        row.auditComment,
+      ]),
+    );
   }
 
   function sortedLedger(ledger: readonly LedgerEntry[]): LedgerEntry[] {
@@ -535,89 +721,120 @@
     lots with zero JPY scan cost or JPY cost without EUR/exchange.
     {affectingRows} still affect the moving average.
   </p>
+  {#if copyMsg}
+    <p class="copy-status">{copyMsg}</p>
+  {/if}
 
   <h2>Cost Issues</h2>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Image</th>
-        <th>Item</th>
-        <th>Issue dates</th>
-        <th>Current lot</th>
-        <th>Issue</th>
-        <th>Qty</th>
-        <th>On hand</th>
-        <th>Current avg</th>
-        <th>Cost ledger</th>
-        <th>Raw cost</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each filteredRows as row (`${row.issueKind}:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
-        <tr class:missingExchange={row.issueKind === "missing-exchange"}>
-          <td class="thumb-cell">
-            {#if row.image}
-              <ImageThumbnail
-                src={row.image}
-                alt={row.description}
-                width="56px"
-                height="56px"
-              />
-            {:else}
-              <span class="no-thumb">-</span>
-            {/if}
-          </td>
-          <td>
-            <a href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}>
-              <strong>{row.key}</strong>
-            </a>
-            <div>{row.description}</div>
-            {#if row.subtype}
-              <span class="hint">{row.subtype}</span>
-            {/if}
-          </td>
-          <td>
-            <div>{uniqueDateLabels(row.issueDates)}</div>
-            <span class="hint"
-              >{row.issueDates.length} matching issue lot(s)</span
-            >
-          </td>
-          <td>
-            <div>{fmtDate(row.at)}</div>
-            <span class="hint">seq {row.seq} · {row.source || "-"}</span>
-            <div class="hint">
-              remaining from lot: {row.remainingLotQty} / {row.lotQty}
-            </div>
-            <div class="hint">
-              avg impact: {row.affectsAverage ? "yes" : "no"}
-            </div>
-          </td>
-          <td>
-            <span class={`issue ${row.issueKind}`}>{row.issueLabel}</span>
-          </td>
-          <td>{row.lotQty}</td>
-          <td>{Math.max(0, row.itemQty - row.shipped)} / {row.itemQty}</td>
-          <td>
-            <div>{fmtYen(row.currentAvgJpy)}</div>
-            <span class="hint">{fmtEur(row.currentAvgEur)}</span>
-          </td>
-          <td class="ledger-cell">
-            {#each row.ledger as entry, index}
-              <div class:target-entry={index === row.ledgerIndex}>
-                {ledgerEntryLabel(entry)}
-              </div>
-            {/each}
-          </td>
-          <td>
-            <div>{fmtYen(row.unitCostJpy)}</div>
-            <span class="hint">{fmtEur(row.unitCostEur)}</span>
-            <div class="hint">{row.receiptCount} receipt lot(s)</div>
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  <div class="table-section">
+    <div class="table-summary">
+      <div>
+        <strong>Cost Issues</strong>
+        <span>
+          {filteredRows.length} row(s), {filteredLotQty} unit(s), {filteredAffectingRows}
+          affecting average.
+        </span>
+      </div>
+      <button
+        type="button"
+        class="copy-button twisty-button"
+        on:click={toggleCostIssues}
+      >
+        {showCostIssues ? "v Hide" : "> Show"}
+      </button>
+      <button
+        type="button"
+        class="copy-button"
+        on:click={() => copyTsv("Cost Issues TSV", costIssuesTsv(filteredRows))}
+      >
+        Copy TSV
+      </button>
+    </div>
+
+    <div class:hidden={!showCostIssues}>
+      <table>
+        <thead>
+          <tr>
+            <th>Image</th>
+            <th>Item</th>
+            <th>Issue dates</th>
+            <th>Current lot</th>
+            <th>Issue</th>
+            <th>Qty</th>
+            <th>On hand</th>
+            <th>Current avg</th>
+            <th>Cost ledger</th>
+            <th>Raw cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each filteredRows as row (`${row.issueKind}:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
+            <tr class:missingExchange={row.issueKind === "missing-exchange"}>
+              <td class="thumb-cell">
+                {#if row.image}
+                  <ImageThumbnail
+                    src={row.image}
+                    alt={row.description}
+                    width="56px"
+                    height="56px"
+                  />
+                {:else}
+                  <span class="no-thumb">-</span>
+                {/if}
+              </td>
+              <td>
+                <a href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}>
+                  <strong>{row.key}</strong>
+                </a>
+                <div>{row.description}</div>
+                {#if row.subtype}
+                  <span class="hint">{row.subtype}</span>
+                {/if}
+              </td>
+              <td>
+                <div>{uniqueDateLabels(row.issueDates)}</div>
+                <span class="hint"
+                  >{row.issueDates.length} matching issue lot(s)</span
+                >
+              </td>
+              <td>
+                <div>{fmtDate(row.at)}</div>
+                <span class="hint">seq {row.seq} · {row.source || "-"}</span>
+                <div class="hint">
+                  remaining from lot: {row.remainingLotQty} / {row.lotQty}
+                </div>
+                <div class="hint">
+                  avg impact: {row.affectsAverage ? "yes" : "no"}
+                </div>
+              </td>
+              <td>
+                <span class={`issue ${row.issueKind}`}>{row.issueLabel}</span>
+              </td>
+              <td>{row.lotQty}</td>
+              <td>{Math.max(0, row.itemQty - row.shipped)} / {row.itemQty}</td>
+              <td>
+                <div>{fmtYen(row.currentAvgJpy)}</div>
+                <span class="hint">{fmtEur(row.currentAvgEur)}</span>
+              </td>
+              <td class="ledger-cell">
+                {#each row.ledger as entry, index}
+                  <div class:target-entry={index === row.ledgerIndex}>
+                    {ledgerEntryLabel(entry)}
+                  </div>
+                {/each}
+              </td>
+              <td>
+                <div>{fmtYen(row.unitCostJpy)}</div>
+                <span class="hint">{fmtEur(row.unitCostEur)}</span>
+                <div class="hint">{row.receiptCount} receipt lot(s)</div>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  </div>
 
   <h2>Stock Order Match Issues</h2>
   {#if stockOrderMatchIssueGroups.length > 0}
@@ -634,71 +851,100 @@
           different.
           {group.unmatchedRows} unmatched, {group.overmatchedRows} overmatched.
         </p>
-        <table>
-          <thead>
-            <tr>
-              <th>Image</th>
-              <th>Item</th>
-              <th>Issue</th>
-              <th>Expected qty</th>
-              <th>Matched qty</th>
-              <th>Difference</th>
-              <th>Row cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each group.rows as row (`order-match:${row.orderId}:${row.kind}:${row.jan}`)}
-              <tr
-                class:stock-order-unmatched={row.kind === "unmatched-row"}
-                class:stock-order-overmatched={row.kind === "overmatched-row"}
-              >
-                <td class="thumb-cell">
-                  {#if row.image}
-                    <ImageThumbnail
-                      src={row.image}
-                      alt={row.description}
-                      width="56px"
-                      height="56px"
-                    />
-                  {:else}
-                    <span class="no-thumb">-</span>
-                  {/if}
-                </td>
-                <td>
-                  {#if row.itemKey}
-                    <a
-                      href={`/itemhistory?itemKey=${encodeURIComponent(row.itemKey)}`}
-                    >
-                      <strong>{row.itemKey}</strong>
-                    </a>
-                  {:else}
-                    <strong>{row.jan}</strong>
-                  {/if}
-                  {#if row.description}
-                    <div>{row.description}</div>
-                  {/if}
-                  {#if row.subtype}
-                    <span class="hint">{row.subtype}</span>
-                  {/if}
-                </td>
-                <td>
-                  <span class={`issue ${row.kind}`}>
-                    {stockOrderMatchIssueLabel(row.kind)}
-                  </span>
-                </td>
-                <td>{fmtQty(row.expectedQty)}</td>
-                <td>{fmtQty(row.matchedQty)}</td>
-                <td>{fmtQty(row.qty)}</td>
-                <td>
-                  <div>{fmtYen(row.unitCostJpy || 0)} / unit</div>
-                  <span class="hint">
-                    {fmtYen(row.lineCostJpy || 0)} difference
-                  </span>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+        <div class="table-section">
+          <div class="table-summary">
+            <div>
+              <strong>{fmtDate(group.orderDate || 0)}</strong>
+              <span>
+                {group.rows.length} row(s), {fmtQty(group.differenceQty)} unit(s)
+                different.
+              </span>
+            </div>
+            <button
+              type="button"
+              class="copy-button twisty-button"
+              on:click={() => toggleStockOrderIssues(group.orderId)}
+            >
+              {showStockOrderIssues[group.orderId] ? "v Hide" : "> Show"}
+            </button>
+            <button
+              type="button"
+              class="copy-button"
+              on:click={() =>
+                copyTsv(`${group.orderId} TSV`, stockOrderGroupTsv(group))}
+            >
+              Copy TSV
+            </button>
+          </div>
+          <div class:hidden={!showStockOrderIssues[group.orderId]}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Image</th>
+                  <th>Item</th>
+                  <th>Issue</th>
+                  <th>Expected qty</th>
+                  <th>Matched qty</th>
+                  <th>Difference</th>
+                  <th>Row cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each group.rows as row (`order-match:${row.orderId}:${row.kind}:${row.jan}`)}
+                  <tr
+                    class:stock-order-unmatched={row.kind === "unmatched-row"}
+                    class:stock-order-overmatched={row.kind ===
+                      "overmatched-row"}
+                  >
+                    <td class="thumb-cell">
+                      {#if row.image}
+                        <ImageThumbnail
+                          src={row.image}
+                          alt={row.description}
+                          width="56px"
+                          height="56px"
+                        />
+                      {:else}
+                        <span class="no-thumb">-</span>
+                      {/if}
+                    </td>
+                    <td>
+                      {#if row.itemKey}
+                        <a
+                          href={`/itemhistory?itemKey=${encodeURIComponent(row.itemKey)}`}
+                        >
+                          <strong>{row.itemKey}</strong>
+                        </a>
+                      {:else}
+                        <strong>{row.jan}</strong>
+                      {/if}
+                      {#if row.description}
+                        <div>{row.description}</div>
+                      {/if}
+                      {#if row.subtype}
+                        <span class="hint">{row.subtype}</span>
+                      {/if}
+                    </td>
+                    <td>
+                      <span class={`issue ${row.kind}`}>
+                        {stockOrderMatchIssueLabel(row.kind)}
+                      </span>
+                    </td>
+                    <td>{fmtQty(row.expectedQty)}</td>
+                    <td>{fmtQty(row.matchedQty)}</td>
+                    <td>{fmtQty(row.qty)}</td>
+                    <td>
+                      <div>{fmtYen(row.unitCostJpy || 0)} / unit</div>
+                      <span class="hint">
+                        {fmtYen(row.lineCostJpy || 0)} difference
+                      </span>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
     {/each}
   {:else}
@@ -707,51 +953,81 @@
 
   <h2>Audit Adjustments</h2>
   {#if filteredAuditRows.length > 0}
-    <table>
-      <thead>
-        <tr>
-          <th>Item</th>
-          <th>Date</th>
-          <th>Current qty</th>
-          <th>Original qty</th>
-          <th>Reduced by</th>
-          <th>Source</th>
-          <th>Audit comment</th>
-          <th>Cost ledger</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each filteredAuditRows as row (`audit:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
-          <tr
-            class:audit-warning={row.auditSeverity === "warning"}
-            class:audit-danger={row.auditSeverity === "danger"}
-          >
-            <td>
-              <a href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}>
-                <strong>{row.key}</strong>
-              </a>
-              <div>{row.description}</div>
-              {#if row.subtype}
-                <span class="hint">{row.subtype}</span>
-              {/if}
-            </td>
-            <td>{fmtDate(row.at)}</td>
-            <td>{fmtQty(row.lotQty)}</td>
-            <td>{fmtQty(row.originalQty)}</td>
-            <td>{fmtQty(row.reducedQty)}</td>
-            <td>{row.source || "-"}</td>
-            <td>{row.auditComment}</td>
-            <td class="ledger-cell">
-              {#each row.ledger as entry, index}
-                <div class:target-entry={index === row.ledgerIndex}>
-                  {ledgerEntryLabel(entry)}
-                </div>
-              {/each}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <div class="table-section">
+      <div class="table-summary">
+        <div>
+          <strong>Audit Adjustments</strong>
+          <span>{filteredAuditRows.length} row(s)</span>
+        </div>
+        <button
+          type="button"
+          class="copy-button twisty-button"
+          on:click={toggleAuditAdjustments}
+        >
+          {showAuditAdjustments ? "v Hide" : "> Show"}
+        </button>
+        <button
+          type="button"
+          class="copy-button"
+          on:click={() =>
+            copyTsv(
+              "Audit Adjustments TSV",
+              auditAdjustmentsTsv(filteredAuditRows),
+            )}
+        >
+          Copy TSV
+        </button>
+      </div>
+      <div class:hidden={!showAuditAdjustments}>
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Date</th>
+              <th>Current qty</th>
+              <th>Original qty</th>
+              <th>Reduced by</th>
+              <th>Source</th>
+              <th>Audit comment</th>
+              <th>Cost ledger</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each filteredAuditRows as row (`audit:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
+              <tr
+                class:audit-warning={row.auditSeverity === "warning"}
+                class:audit-danger={row.auditSeverity === "danger"}
+              >
+                <td>
+                  <a
+                    href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}
+                  >
+                    <strong>{row.key}</strong>
+                  </a>
+                  <div>{row.description}</div>
+                  {#if row.subtype}
+                    <span class="hint">{row.subtype}</span>
+                  {/if}
+                </td>
+                <td>{fmtDate(row.at)}</td>
+                <td>{fmtQty(row.lotQty)}</td>
+                <td>{fmtQty(row.originalQty)}</td>
+                <td>{fmtQty(row.reducedQty)}</td>
+                <td>{row.source || "-"}</td>
+                <td>{row.auditComment}</td>
+                <td class="ledger-cell">
+                  {#each row.ledger as entry, index}
+                    <div class:target-entry={index === row.ledgerIndex}>
+                      {ledgerEntryLabel(entry)}
+                    </div>
+                  {/each}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
   {:else}
     <p class="hint">No audit adjustments match the current filters.</p>
   {/if}
@@ -817,6 +1093,46 @@
   }
   .order-issue-section p {
     margin: 0.25rem 0 0;
+  }
+  .table-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.65rem;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 0.5rem 0.65rem;
+    margin-top: 0.65rem;
+    background: #f8f9fa;
+  }
+  .table-summary strong,
+  .table-summary span {
+    display: block;
+  }
+  .copy-button:hover {
+    background: #e9ecef;
+  }
+  .copy-button {
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    background: #fff;
+    color: #212529;
+    cursor: pointer;
+  }
+  .copy-button {
+    padding: 0.35rem 0.55rem;
+    white-space: nowrap;
+  }
+  .twisty-button {
+    min-width: 4.75rem;
+  }
+  .copy-status {
+    color: #495057;
+    font-size: 0.85rem;
+    margin: 0.5rem 0 0;
+  }
+  .hidden {
+    display: none;
   }
   table {
     border-collapse: collapse;
