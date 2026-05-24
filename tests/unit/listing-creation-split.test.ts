@@ -17,6 +17,7 @@ import {
 } from "../../src/lib/listing-creation-slice";
 import {
   bulk_import_items,
+  split_inventory_item,
   update_item,
   type Item,
 } from "../../src/lib/inventory";
@@ -218,5 +219,130 @@ describe("Listing Creation - Split Inventory", () => {
     expect(state.costLedger[janCode + "Pink"][0].auditComment).toContain(
       `from ${itemId} to ${janCode}Pink`,
     );
+  });
+
+  it("should ignore a zero-quantity split back into the same item", () => {
+    const store = configureStore({ reducer: rootReducer });
+    const blueKey = makeInventoryItemKey("4969757165348", "Blue");
+    const item: Item = {
+      janCode: "4969757165348",
+      subtype: "Blue",
+      description: "Source Product",
+      qty: 10,
+      price: 0,
+      handle: "",
+      shipped: 0,
+      pieces: 1,
+      creationDate: "2026-03-02",
+      timestamp: 1772483113814,
+      hsCode: "49090000",
+      image: "",
+      cost: 65,
+    };
+
+    store.dispatch(
+      bulk_import_items({
+        items: [
+          {
+            type: "new",
+            id: blueKey,
+            item,
+            stockOrder: {
+              orderId: "stock-order-1",
+              unitCostJpy: 65,
+              unitCostEur: 0,
+              receivedAt: 1772483113814,
+              orderedQty: 10,
+            },
+          },
+        ],
+      }),
+    );
+
+    store.dispatch(
+      split_inventory_item({
+        sourceId: blueKey,
+        splits: [
+          {
+            newId: blueKey,
+            qty: 0,
+            subtype: "Blue",
+          },
+        ],
+      }),
+    );
+
+    const ledger = store.getState().inventory.costLedger[blueKey];
+    expect(store.getState().inventory.idToItem[blueKey].qty).toBe(10);
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0].qty).toBe(10);
+    expect(ledger[0].unitCostJpy).toBe(65);
+    expect(ledger[0].auditComment).toBeUndefined();
+  });
+
+  it("should not duplicate source ledger rows when retaining source as a split target", () => {
+    const store = configureStore({ reducer: rootReducer });
+    const blueKey = makeInventoryItemKey("4969757165348", "Blue");
+    const purpleKey = makeInventoryItemKey("4969757165348", "Purple");
+    const item: Item = {
+      janCode: "4969757165348",
+      subtype: "Blue",
+      description: "Source Product",
+      qty: 10,
+      price: 0,
+      handle: "",
+      shipped: 0,
+      pieces: 1,
+      creationDate: "2026-03-02",
+      timestamp: 1772483113814,
+      hsCode: "49090000",
+      image: "",
+      cost: 65,
+    };
+
+    store.dispatch(
+      bulk_import_items({
+        items: [
+          {
+            type: "new",
+            id: blueKey,
+            item,
+            stockOrder: {
+              orderId: "stock-order-1",
+              unitCostJpy: 65,
+              unitCostEur: 0,
+              receivedAt: 1772483113814,
+              orderedQty: 10,
+            },
+          },
+        ],
+      }),
+    );
+
+    store.dispatch(
+      split_inventory_item({
+        sourceId: blueKey,
+        splits: [
+          {
+            newId: blueKey,
+            qty: 5,
+            subtype: "Blue",
+          },
+          {
+            newId: purpleKey,
+            qty: 5,
+            subtype: "Purple",
+          },
+        ],
+      }),
+    );
+
+    const state = store.getState().inventory;
+    expect(state.idToItem[blueKey].qty).toBe(5);
+    expect(state.idToItem[purpleKey].qty).toBe(5);
+    expect(state.costLedger[blueKey]).toHaveLength(1);
+    expect(state.costLedger[purpleKey]).toHaveLength(1);
+    expect(state.costLedger[blueKey][0].qty).toBe(5);
+    expect(state.costLedger[purpleKey][0].qty).toBe(5);
   });
 });

@@ -4048,16 +4048,23 @@ export const inventory = createReducer(initialState, (r) => {
 
   r.addCase(split_inventory_item, (state, action) => {
     const sourceId = canonicalizeInventoryItemKey(action.payload.sourceId);
-    const splits = action.payload.splits.map((s) => ({
-      ...s,
-      newId: canonicalizeInventoryItemKey(s.newId),
-    }));
+    const splits = action.payload.splits
+      .map((s) => ({
+        ...s,
+        newId: canonicalizeInventoryItemKey(s.newId),
+      }))
+      .filter(
+        (split) =>
+          !(split.newId === sourceId && (Number(split.qty) || 0) === 0),
+      );
     const sourceItem = state.idToItem[sourceId];
 
     if (!sourceItem) {
       console.error(`Cannot split missing item: ${sourceId}`);
       return;
     }
+
+    if (splits.length === 0) return;
 
     const sourceQtyBeforeSplit = Number(sourceItem.qty) || 0;
     const totalSplitQty = splits.reduce((sum, s) => sum + s.qty, 0);
@@ -4069,20 +4076,34 @@ export const inventory = createReducer(initialState, (r) => {
     sourceItem.qty -= totalSplitQty;
     const sourceQtyAfterSplit = Math.max(0, Number(sourceItem.qty) || 0);
     const sourceLedger = state.costLedger?.[sourceId] || [];
+    const ledgerAllocations = new Map<
+      string,
+      { key: string; qty: number; shipped: number }
+    >();
+    const addLedgerAllocation = (key: string, qty: number, shipped: number) => {
+      const existing = ledgerAllocations.get(key) || {
+        key,
+        qty: 0,
+        shipped: 0,
+      };
+      existing.qty += qty;
+      existing.shipped += shipped;
+      ledgerAllocations.set(key, existing);
+    };
+    addLedgerAllocation(
+      sourceId,
+      sourceQtyAfterSplit,
+      Number(sourceItem.shipped) || 0,
+    );
+    for (const split of splits) {
+      addLedgerAllocation(split.newId, Number(split.qty) || 0, 0);
+    }
+
     const distributedLedgers = distributeInventorySplitLedgerEntries(
       sourceLedger,
-      [
-        {
-          key: sourceId,
-          qty: sourceQtyAfterSplit,
-          shipped: Number(sourceItem.shipped) || 0,
-        },
-        ...splits.map((split) => ({
-          key: split.newId,
-          qty: Number(split.qty) || 0,
-          shipped: 0,
-        })),
-      ].filter((allocation) => allocation.qty > 0 || allocation.shipped > 0),
+      [...ledgerAllocations.values()].filter(
+        (allocation) => allocation.qty > 0 || allocation.shipped > 0,
+      ),
       sourceId,
     );
 
@@ -4144,7 +4165,7 @@ export const inventory = createReducer(initialState, (r) => {
       }
 
       const movedLedger = distributedLedgers.get(split.newId) || [];
-      if (movedLedger.length > 0) {
+      if (split.newId !== sourceId && movedLedger.length > 0) {
         if (!state.costLedger) state.costLedger = {};
         state.costLedger[split.newId] = reseqLedger([
           ...(state.costLedger[split.newId] || []),
