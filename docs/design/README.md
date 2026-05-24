@@ -16,3 +16,4 @@ Architectural and design documents.
 - [UI Overhaul](./UI_OVERHAUL.md)
 - [Action Audit](./ACTION_AUDIT.md)
 - [Shopify Image Migration](./SHOPIFY_IMAGE_MIGRATION_DESIGN.md)
+- [Subtype Replacement Remediation](./SUBTYPE_REPLACEMENT_REMEDIATION.md)
