@@ -161,7 +161,9 @@
   }
 
   function noteLabel(entry: LedgerEntry): string {
-    if (entry.kind !== "receipt") return entry.ignored ? "ignored" : "-";
+    if (entry.kind !== "receipt") {
+      return entry.ignoreReason || (entry.ignored ? "ignored" : "-");
+    }
     const notes: string[] = [];
     if (entry.quantityCorrections?.length) {
       const reduced = entry.quantityCorrections.reduce(

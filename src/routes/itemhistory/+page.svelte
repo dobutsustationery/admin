@@ -92,7 +92,7 @@
   }
 
   function ledgerNote(entry: LedgerEntry): string {
-    if (entry.kind !== "receipt") return "";
+    if (entry.kind !== "receipt") return entry.ignoreReason || "";
     const notes: string[] = [];
     if (entry.auditComment) notes.push(entry.auditComment);
     if (entry.originalQty !== undefined) {

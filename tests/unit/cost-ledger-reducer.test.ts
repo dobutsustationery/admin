@@ -478,6 +478,7 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
 
     expect(s.inventory.costLedger![KEY][1].ignored).toBe(true);
+    expect(s.inventory.costLedger![KEY][1].ignoreReason).toBe("duplicate scan");
     expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(100, 9);
     expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
       "duplicate scan",

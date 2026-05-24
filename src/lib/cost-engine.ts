@@ -66,6 +66,7 @@ export type SaleEntry = {
   // average and inherits it on the next unpriced post-archive receipt.
   isArchive?: boolean;
   ignored?: boolean;
+  ignoreReason?: string;
 };
 
 export type LedgerEntry = ReceiptEntry | SaleEntry;

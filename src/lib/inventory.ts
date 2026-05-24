@@ -2676,6 +2676,11 @@ export const inventory = createReducer(initialState, (r) => {
       );
       if (!entry || Boolean(entry.ignored) === ignored) continue;
       entry.ignored = ignored;
+      if (ignored) {
+        if (reason?.trim()) entry.ignoreReason = reason.trim();
+      } else {
+        delete entry.ignoreReason;
+      }
       changed++;
     }
 
