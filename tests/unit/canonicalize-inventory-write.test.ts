@@ -58,13 +58,14 @@ describe("canonicalize-on-write inventory redirect + migrate", () => {
       expect(ord1Before).toContain(JAN);
 
       // 3. Shopify-import-style write: bare-JAN id, but item carries the
-      //    Option1-derived subtype. qty is a 0 delta (ignoreShopifyQty).
+      //    Option1-derived subtype. qty is omitted because ignoreShopifyQty
+      //    must not send a quantity snapshot.
       state = rootReducer(
         state,
         withTs(
           update_item({
             id: JAN,
-            item: { ...bareItem, subtype: SUB, qty: 0 },
+            item: omitQty({ ...bareItem, subtype: SUB }),
           }),
           1_700_000_200,
         ) as any,
@@ -110,3 +111,9 @@ describe("canonicalize-on-write inventory redirect + migrate", () => {
     expect(state.inventory.idToItem[CANON].qty).toBe(10);
   });
 });
+
+function omitQty(item: Item): Item {
+  const copy = { ...item };
+  delete (copy as Partial<Item>).qty;
+  return copy;
+}

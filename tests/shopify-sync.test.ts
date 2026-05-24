@@ -1103,7 +1103,7 @@ describe("Shopify Sync Reducer", () => {
     expect(
       state.orderIdToOrder[orderID].shopifyFacts?.lines["li1"].manualEntityId,
     ).toBeDefined();
-    expect(state.idToItem[keyC].shipped).toBe(1);
+    expect(state.idToItem[keyC].shipped).toBe(0);
     expect(state.idToItem[keyA].shipped).toBe(0);
   });
   it("updates stored line facts when an item is renamed (§3.5)", () => {

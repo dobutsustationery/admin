@@ -98,6 +98,60 @@ describe("inventory reducer", () => {
       expect(nextState.idToItem[id].shipped).toBe(3);
     });
 
+    it("resets shipped when a qty snapshot omits shipped", () => {
+      const item: Item = {
+        janCode: "4901234567890",
+        subtype: "Green",
+        description: "Test Item",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 10,
+        pieces: 1,
+        shipped: 2,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      let nextState = inventory(initialState, update_item({ id, item }));
+      expect(nextState.idToItem[id].shipped).toBe(2);
+
+      const item2 = { ...item, qty: 5 };
+      delete (item2 as Partial<Item>).shipped;
+      nextState = inventory(
+        nextState,
+        update_item({ id, item: item2 as Item }),
+      );
+      expect(nextState.idToItem[id].qty).toBe(5);
+      expect(nextState.idToItem[id].shipped).toBe(0);
+    });
+
+    it("treats a zero qty update_item as a snapshot", () => {
+      const item: Item = {
+        janCode: "4901234567890",
+        subtype: "Green",
+        description: "Test Item",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 10,
+        pieces: 1,
+        shipped: 2,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      let nextState = inventory(initialState, update_item({ id, item }));
+      expect(nextState.idToItem[id].qty).toBe(10);
+
+      const item2 = { ...item, qty: 0 };
+      delete (item2 as Partial<Item>).shipped;
+      nextState = inventory(
+        nextState,
+        update_item({ id, item: item2 as Item }),
+      );
+      expect(nextState.idToItem[id].qty).toBe(0);
+      expect(nextState.idToItem[id].shipped).toBe(0);
+    });
+
     it("ensures shipped is defined in state", () => {
       const item: Item = {
         janCode: "4901234567890",

@@ -378,12 +378,17 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
 
     expect(s.inventory.idToItem[KEY].qty).toBe(20);
-    expect(s.inventory.idToItem[KEY].shipped).toBe(20);
-    expect(s.inventory.costLedger![KEY]).toHaveLength(2);
+    expect(s.inventory.idToItem[KEY].shipped).toBe(0);
+    expect(s.inventory.costLedger![KEY]).toHaveLength(3);
     expect(
       s.inventory.idToHistory[KEY].map((entry: { desc: string }) => entry.desc),
     ).toContain(
-      "Quantity snapshot recorded no total change: incoming qty 20 matched existing total qty 20; shipped 20 left visible qty 0",
+      "Quantity snapshot recorded no total change: incoming qty 20 matched existing total qty 20; shipped 20 -> 0; visible qty 0 -> 20",
+    );
+    expect(
+      s.inventory.idToHistory[KEY].map((entry: { desc: string }) => entry.desc),
+    ).toContain(
+      "Cost ledger qty replacement: added 20 unit receipt to match visible qty 20",
     );
   });
 

@@ -1802,18 +1802,23 @@ function applyInventoryUpdate(
     if (item.qty !== undefined) {
       const incomingQty = Number(item.qty);
       if (actionType === "update_item") {
-        if (incomingQty !== 0 && incomingQty !== existingItem.qty) {
+        if (Number.isFinite(incomingQty) && incomingQty !== existingItem.qty) {
           historyEntries.push({
             date: globalDate,
             desc: `Quantity updated: ${existingItem.qty} -> ${incomingQty}`,
             val,
           });
-        } else if (incomingQty !== 0 && Number.isFinite(incomingQty)) {
+        } else if (Number.isFinite(incomingQty)) {
           const shipped = existingItem.shipped || 0;
           const visibleQty = existingItem.qty - shipped;
+          const incomingShipped =
+            item.shipped !== undefined && Number.isFinite(Number(item.shipped))
+              ? Number(item.shipped)
+              : 0;
+          const nextVisibleQty = incomingQty - incomingShipped;
           const context =
-            shipped !== 0
-              ? `; shipped ${formatLedgerQty(shipped)} left visible qty ${formatLedgerQty(visibleQty)}`
+            shipped !== incomingShipped
+              ? `; shipped ${formatLedgerQty(shipped)} -> ${formatLedgerQty(incomingShipped)}; visible qty ${formatLedgerQty(visibleQty)} -> ${formatLedgerQty(nextVisibleQty)}`
               : "";
           historyEntries.push({
             date: globalDate,
@@ -1894,15 +1899,24 @@ function applyInventoryUpdate(
   const currentShipped = existingItem ? existingItem.shipped || 0 : 0;
   const updateItemIsSnapshot = actionType === "update_item";
   const incomingQty = Number(item.qty);
-  const incomingShipped = Number(item.shipped) || 0;
+  const incomingShipped = Number(item.shipped);
   const nextQty =
-    updateItemIsSnapshot && item.qty !== undefined && incomingQty !== 0
+    updateItemIsSnapshot &&
+    item.qty !== undefined &&
+    Number.isFinite(incomingQty)
       ? incomingQty
       : (Number.isFinite(incomingQty) ? incomingQty : 0) + currentQty;
   const nextShipped =
-    updateItemIsSnapshot && item.shipped !== undefined && incomingShipped !== 0
+    updateItemIsSnapshot &&
+    item.shipped !== undefined &&
+    Number.isFinite(incomingShipped)
       ? incomingShipped
-      : incomingShipped + currentShipped;
+      : updateItemIsSnapshot &&
+          item.qty !== undefined &&
+          Number.isFinite(incomingQty)
+        ? 0
+        : (Number.isFinite(incomingShipped) ? incomingShipped : 0) +
+          currentShipped;
   const currentCreationDate = existingItem
     ? existingItem.creationDate
     : globalDate + ` (${item.qty})`;
