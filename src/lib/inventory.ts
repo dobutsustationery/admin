@@ -885,6 +885,62 @@ function distributeSubtypeResolutionLedgerEntries(
   return result;
 }
 
+function copyLedgerEntryForInventorySplit(
+  entry: LedgerEntry,
+  qty: number,
+  sourceKey: string,
+  targetKey: string,
+): LedgerEntry {
+  const next = { ...entry, qty };
+  if (next.kind === "receipt") {
+    next.auditComment = `Inventory split allocated ${qty} unit(s) from ${sourceKey} to ${targetKey}; original receipt qty ${entry.qty}.`;
+    next.auditSeverity = "warning";
+  }
+  return next;
+}
+
+function distributeInventorySplitLedgerEntries(
+  entries: LedgerEntry[],
+  allocations: { key: string; qty: number; shipped: number }[],
+  sourceKey: string,
+): Map<string, LedgerEntry[]> {
+  const result = new Map<string, LedgerEntry[]>();
+  for (const allocation of allocations) result.set(allocation.key, []);
+
+  const totalQty = allocations.reduce((sum, a) => sum + a.qty, 0);
+  const totalShipped = allocations.reduce((sum, a) => sum + a.shipped, 0);
+
+  for (const entry of entries) {
+    const basis = entry.kind === "receipt" ? totalQty : totalShipped;
+    const amount = entry.kind === "receipt" ? "qty" : "shipped";
+    const eligible = allocations.filter((a) => a[amount] > 0);
+    if (!(basis > 0) || eligible.length === 0) continue;
+
+    let assigned = 0;
+    eligible.forEach((allocation, index) => {
+      const isLast = index === eligible.length - 1;
+      const raw = isLast
+        ? entry.qty - assigned
+        : (entry.qty * allocation[amount]) / basis;
+      const qty = Number(raw.toFixed(6));
+      assigned += qty;
+      if (qty === 0) return;
+      result
+        .get(allocation.key)
+        ?.push(
+          copyLedgerEntryForInventorySplit(
+            entry,
+            qty,
+            sourceKey,
+            allocation.key,
+          ),
+        );
+    });
+  }
+
+  return result;
+}
+
 function moveOrderLineQuantity(
   state: InventoryState,
   orderID: string,
@@ -960,21 +1016,6 @@ function moveHistoryForSubtypeResolution(
     ...state.idToHistory[newKey],
     ...oldHistory.map((h) => ({ ...h, desc: `[${oldKey}] ${h.desc}` })),
   ].sort((a, b) => (a.val || 0) - (b.val || 0));
-}
-
-// Copy (don't move) a ledger to a new key — for splits where the source
-// row survives. Entries are deep-cloned so later mutation is independent.
-function copyCostLedger(
-  state: InventoryState,
-  sourceKey: string,
-  newKey: string,
-) {
-  if (!state.costLedger || !state.costLedger[sourceKey]) return;
-  state.costLedger[newKey] = state.costLedger[sourceKey].map((e, i) => ({
-    ...e,
-    seq: i,
-  }));
-  rederiveCostFromLedger(state, newKey);
 }
 
 // Append a dated sale (outflow) to the ledger so the perpetual walk
@@ -4018,6 +4059,7 @@ export const inventory = createReducer(initialState, (r) => {
       return;
     }
 
+    const sourceQtyBeforeSplit = Number(sourceItem.qty) || 0;
     const totalSplitQty = splits.reduce((sum, s) => sum + s.qty, 0);
 
     // Validation (optional, maybe allow negative/overdraft?)
@@ -4025,6 +4067,34 @@ export const inventory = createReducer(initialState, (r) => {
 
     // 1. Update Source Item
     sourceItem.qty -= totalSplitQty;
+    const sourceQtyAfterSplit = Math.max(0, Number(sourceItem.qty) || 0);
+    const sourceLedger = state.costLedger?.[sourceId] || [];
+    const distributedLedgers = distributeInventorySplitLedgerEntries(
+      sourceLedger,
+      [
+        {
+          key: sourceId,
+          qty: sourceQtyAfterSplit,
+          shipped: Number(sourceItem.shipped) || 0,
+        },
+        ...splits.map((split) => ({
+          key: split.newId,
+          qty: Number(split.qty) || 0,
+          shipped: 0,
+        })),
+      ].filter((allocation) => allocation.qty > 0 || allocation.shipped > 0),
+      sourceId,
+    );
+
+    if (state.costLedger?.[sourceId]) {
+      const remainingSourceLedger = distributedLedgers.get(sourceId) || [];
+      if (remainingSourceLedger.length > 0) {
+        state.costLedger[sourceId] = reseqLedger(remainingSourceLedger);
+        rederiveCostFromLedger(state, sourceId);
+      } else {
+        delete state.costLedger[sourceId];
+      }
+    }
 
     const timestamp = (action as any).timestamp;
     let val = 0;
@@ -4073,14 +4143,21 @@ export const inventory = createReducer(initialState, (r) => {
         };
       }
 
-      // New item inherits the source's cost basis (same unit cost).
-      copyCostLedger(state, sourceId, split.newId);
+      const movedLedger = distributedLedgers.get(split.newId) || [];
+      if (movedLedger.length > 0) {
+        if (!state.costLedger) state.costLedger = {};
+        state.costLedger[split.newId] = reseqLedger([
+          ...(state.costLedger[split.newId] || []),
+          ...movedLedger,
+        ]);
+        rederiveCostFromLedger(state, split.newId);
+      }
 
       // History for new item
       if (!state.idToHistory[split.newId]) state.idToHistory[split.newId] = [];
       state.idToHistory[split.newId].push({
         date: dateStr,
-        desc: `Split from ${sourceId} (${split.qty})`,
+        desc: `Split from ${sourceId} (${split.qty} of ${sourceQtyBeforeSplit})`,
         val,
       });
       bindNewInventoryEntity(

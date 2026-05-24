@@ -15,7 +15,11 @@ import {
   approve_proposal_thunk,
   add_proposals_internal,
 } from "../../src/lib/listing-creation-slice";
-import { update_item, type Item } from "../../src/lib/inventory";
+import {
+  bulk_import_items,
+  update_item,
+  type Item,
+} from "../../src/lib/inventory";
 import { makeInventoryItemKey } from "../../src/lib/sku";
 
 describe("Listing Creation - Split Inventory", () => {
@@ -136,5 +140,83 @@ describe("Listing Creation - Split Inventory", () => {
     expect(state.idToItem[memoKey]).toBeDefined();
     expect(state.idToItem[janCode + "DecoSeals"]).toBeUndefined();
     expect(state.idToItem[decoKey].subtype).toBe("Deco Seals");
+  });
+
+  it("should split receipt ledger quantities according to variant quantities", () => {
+    const store = configureStore({ reducer: rootReducer });
+    const janCode = "4571207041944";
+    const itemId = janCode;
+
+    const item: Item = {
+      janCode,
+      subtype: "",
+      description: "Source Product",
+      qty: 24,
+      price: 0,
+      handle: "",
+      shipped: 0,
+      pieces: 1,
+      creationDate: "2026-03-02",
+      timestamp: 1772483113814,
+      hsCode: "82130000",
+      image: "",
+      cost: 74,
+    };
+
+    store.dispatch(
+      bulk_import_items({
+        items: [
+          {
+            type: "new",
+            id: itemId,
+            item,
+            stockOrder: {
+              orderId: "stock-order-1",
+              unitCostJpy: 74,
+              unitCostEur: 0,
+              receivedAt: 1772483113814,
+              orderedQty: 24,
+            },
+          },
+        ],
+      }),
+    );
+
+    store.dispatch(
+      add_proposals_internal([
+        {
+          janCode,
+          inventoryItemIds: [itemId],
+          photoGroupIds: [janCode],
+          title: "Split Product",
+          handle: "split-handle",
+          bodyHtml: "<p>Description</p>",
+          productCategory: "Stationery",
+          vendor: "Dobutsu",
+          tags: ["tag1"],
+          option1Name: "Subtype",
+          variants: [
+            { id: "v-pink", itemId, option1Value: "Pink", qty: 8 },
+            { id: "v-purple", itemId, option1Value: "Purple", qty: 8 },
+            { id: "v-green", itemId, option1Value: "Green", qty: 8 },
+          ],
+          status: "draft",
+          price: 4,
+        },
+      ]),
+    );
+
+    store.dispatch(approve_proposal_thunk(janCode) as any);
+
+    const state = store.getState().inventory;
+    expect(state.idToItem[itemId]).toBeUndefined();
+    expect(state.costLedger[itemId]).toBeUndefined();
+    expect(state.costLedger[janCode + "Pink"][0].qty).toBe(8);
+    expect(state.costLedger[janCode + "Purple"][0].qty).toBe(8);
+    expect(state.costLedger[janCode + "Green"][0].qty).toBe(8);
+    expect(state.costLedger[janCode + "Pink"][0].unitCostJpy).toBe(74);
+    expect(state.costLedger[janCode + "Pink"][0].auditComment).toContain(
+      `from ${itemId} to ${janCode}Pink`,
+    );
   });
 });
