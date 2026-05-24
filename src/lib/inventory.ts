@@ -3584,14 +3584,36 @@ export const inventory = createReducer(initialState, (r) => {
       0,
     );
     const bareShipped = Number(bareItem.shipped) || 0;
-    if (Math.abs(requestedMoveQty - bareShipped) > 0.000001) {
-      appendSubtypeResolutionHistory(
-        state,
-        bareKey,
-        `Subtype exception split blocked: order moves total ${requestedMoveQty}, bare shipped is ${bareShipped}.`,
-        val,
-      );
-      return;
+    const bareOrderQty = Object.values(state.orderIdToOrder || {}).reduce(
+      (sum, order) =>
+        sum +
+        (order.items || [])
+          .filter((line) => line.itemKey === bareKey)
+          .reduce((lineSum, line) => lineSum + (Number(line.qty) || 0), 0),
+      0,
+    );
+    const zeroResidueHistoricalCleanup =
+      (Number(bareItem.qty) || 0) === 0 && bareShipped === 0;
+    if (zeroResidueHistoricalCleanup) {
+      if (Math.abs(requestedMoveQty - bareOrderQty) > 0.000001) {
+        appendSubtypeResolutionHistory(
+          state,
+          bareKey,
+          `Subtype exception split blocked: historical order moves total ${requestedMoveQty}, bare order lines total ${bareOrderQty}.`,
+          val,
+        );
+        return;
+      }
+    } else {
+      if (Math.abs(requestedMoveQty - bareShipped) > 0.000001) {
+        appendSubtypeResolutionHistory(
+          state,
+          bareKey,
+          `Subtype exception split blocked: order moves total ${requestedMoveQty}, bare shipped is ${bareShipped}.`,
+          val,
+        );
+        return;
+      }
     }
     for (const move of orderMoves) {
       const subtype = move.subtype.trim();
@@ -3641,7 +3663,6 @@ export const inventory = createReducer(initialState, (r) => {
       }
     }
 
-    let movedShipped = 0;
     for (const move of orderMoves) {
       const allocation = bySubtype.get(move.subtype.trim());
       if (!allocation) continue;
@@ -3654,7 +3675,25 @@ export const inventory = createReducer(initialState, (r) => {
         moveQty,
       );
       allocation.shipped += moved;
-      movedShipped += moved;
+      if (zeroResidueHistoricalCleanup && moved > 0) {
+        appendSubtypeResolutionHistory(
+          state,
+          allocation.key,
+          `Subtype exception cleanup reassigned historical order ${move.orderID} qty ${moved} from bare JAN ${bareKey} without changing shipped because the bare row was already archived to zero.`,
+          val,
+        );
+      }
+    }
+    if (zeroResidueHistoricalCleanup) {
+      for (const allocation of targetAllocations) {
+        allocation.shipped = 0;
+      }
+      appendSubtypeResolutionHistory(
+        state,
+        bareKey,
+        `Subtype exception cleanup moved ${requestedMoveQty} historical ordered unit(s) from archived bare JAN ${bareKey} without changing shipped counters.`,
+        val,
+      );
     }
 
     const sourceLedger = state.costLedger?.[bareKey] || [];

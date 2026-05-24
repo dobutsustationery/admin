@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { rootReducer as rawRootReducer } from "$lib/root-reducer";
 import {
+  archive_inventory,
   new_order,
   package_item,
   resolve_subtype_exception,
@@ -141,6 +142,87 @@ describe("subtype exception selection and remediation", () => {
       .filter((entry: any) => entry.kind === "receipt")
       .reduce((sum: number, entry: any) => sum + entry.qty, 0);
     expect(receiptQty).toBe(10);
+  });
+
+  it("allows archived zero-residue bare order references to move without changing shipped", () => {
+    const jan = "4444444444444";
+    let state: any = reduce(undefined, { type: "@@INIT" });
+    state = reduce(
+      state,
+      update_item({ id: jan, item: item(jan, "", 1) }),
+      100,
+    );
+    state = reduce(
+      state,
+      update_item({ id: `${jan}Blue`, item: item(jan, "Blue", 0) }),
+      101,
+    );
+    state = reduce(
+      state,
+      new_order({
+        orderID: "order-1",
+        date: new Date("2026-01-01"),
+        email: "test@example.com",
+        product: "Test",
+      }),
+      102,
+    );
+    state = reduce(
+      state,
+      package_item({ orderID: "order-1", itemKey: jan as any, qty: 1 }),
+      103,
+    );
+    state = reduce(state, archive_inventory({ archiveName: "Stocktake" }), 104);
+
+    const exception = selectSubtypeExceptions(state.inventory).find(
+      (row) => row.janCode === jan,
+    );
+    expect(exception).toBeDefined();
+    expect(exception).toMatchObject({
+      status: "zero-residue",
+      bare: { qty: 0, shipped: 0 },
+    });
+
+    const preview = previewSplitBareToSubtypes(
+      exception!,
+      [{ subtype: "Blue", qty: 0 }],
+      [{ orderID: "order-1", subtype: "Blue", qty: 1 }],
+    );
+    expect(preview.blocked).toBe(false);
+    expect(preview.targets[0]).toMatchObject({
+      key: `${jan}Blue`,
+      finalQty: 0,
+      finalShipped: 0,
+    });
+
+    state = reduce(
+      state,
+      resolve_subtype_exception({
+        janCode: jan,
+        mode: "split_bare_to_subtypes",
+        allocations: [{ subtype: "Blue", qty: 0 }],
+        orderMoves: [{ orderID: "order-1", subtype: "Blue", qty: 1 }],
+      }),
+      105,
+    );
+
+    expect(state.inventory.idToItem[jan]).toBeUndefined();
+    expect(state.inventory.idToItem[`${jan}Blue`]).toMatchObject({
+      qty: 0,
+      shipped: 0,
+    });
+    expect(state.inventory.orderIdToOrder["order-1"].items).toEqual([
+      { itemKey: `${jan}Blue`, qty: 1 },
+    ]);
+    expect(state.inventory.idToHistory[`${jan}Blue`]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          desc: expect.stringContaining(
+            "reassigned historical order order-1 qty 1 from bare JAN",
+          ),
+        }),
+      ]),
+    );
   });
 
   it("merges subtype rows back into the bare JAN and rewrites subtype orders", () => {

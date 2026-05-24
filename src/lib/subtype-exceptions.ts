@@ -219,23 +219,34 @@ export function previewSplitBareToSubtypes(
     (sum, move) => sum + (Number(move.qty) || 0),
     0,
   );
-  if (Math.abs(moveQty - exception.bare.shipped) > 0.000001) {
-    warnings.push(
-      `Moved order qty is ${moveQty}; bare shipped qty is ${exception.bare.shipped}.`,
-    );
-  }
-  if (bareOrderQty !== exception.bare.shipped) {
-    warnings.push(
-      `Bare order lines total ${bareOrderQty}, but bare shipped counter is ${exception.bare.shipped}.`,
-    );
+  const zeroResidueHistoricalCleanup =
+    exception.bare.qty === 0 && exception.bare.shipped === 0;
+  if (zeroResidueHistoricalCleanup) {
+    if (Math.abs(moveQty - bareOrderQty) > 0.000001) {
+      warnings.push(
+        `Moved historical order qty is ${moveQty}; bare order lines total ${bareOrderQty}.`,
+      );
+    }
+  } else {
+    if (Math.abs(moveQty - exception.bare.shipped) > 0.000001) {
+      warnings.push(
+        `Moved order qty is ${moveQty}; bare shipped qty is ${exception.bare.shipped}.`,
+      );
+    }
+    if (bareOrderQty !== exception.bare.shipped) {
+      warnings.push(
+        `Bare order lines total ${bareOrderQty}, but bare shipped counter is ${exception.bare.shipped}.`,
+      );
+    }
   }
 
   const shippedBySubtype = new Map<string, number>();
   for (const move of orderMoves) {
     const subtype = move.subtype.trim();
+    const shippedQty = zeroResidueHistoricalCleanup ? 0 : Number(move.qty) || 0;
     shippedBySubtype.set(
       subtype,
-      (shippedBySubtype.get(subtype) || 0) + (Number(move.qty) || 0),
+      (shippedBySubtype.get(subtype) || 0) + shippedQty,
     );
   }
 
