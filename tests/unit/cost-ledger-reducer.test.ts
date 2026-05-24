@@ -359,6 +359,34 @@ describe("cost-ledger materialisation in the reducer", () => {
     ).toEqual([["receipt", 12, undefined]]);
   });
 
+  it("records same-qty update_item snapshots in history when shipped stock makes the scan look ignored", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(20) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(
+        package_item({ itemKey: KEY as any, qty: 20, orderID: "manual-1" }),
+        150,
+      ),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(20) }), 200),
+    );
+
+    expect(s.inventory.idToItem[KEY].qty).toBe(20);
+    expect(s.inventory.idToItem[KEY].shipped).toBe(20);
+    expect(s.inventory.costLedger![KEY]).toHaveLength(2);
+    expect(
+      s.inventory.idToHistory[KEY].map((entry: { desc: string }) => entry.desc),
+    ).toContain(
+      "Quantity snapshot recorded no total change: incoming qty 20 matched existing total qty 20; shipped 20 left visible qty 0",
+    );
+  });
+
   it("adds a new receipt when a post-archive update_item scan restores stock", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(

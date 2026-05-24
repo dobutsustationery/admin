@@ -1808,6 +1808,18 @@ function applyInventoryUpdate(
             desc: `Quantity updated: ${existingItem.qty} -> ${incomingQty}`,
             val,
           });
+        } else if (incomingQty !== 0 && Number.isFinite(incomingQty)) {
+          const shipped = existingItem.shipped || 0;
+          const visibleQty = existingItem.qty - shipped;
+          const context =
+            shipped !== 0
+              ? `; shipped ${formatLedgerQty(shipped)} left visible qty ${formatLedgerQty(visibleQty)}`
+              : "";
+          historyEntries.push({
+            date: globalDate,
+            desc: `Quantity snapshot recorded no total change: incoming qty ${formatLedgerQty(incomingQty)} matched existing total qty ${formatLedgerQty(existingItem.qty)}${context}`,
+            val,
+          });
         }
       } else if (incomingQty !== 0) {
         historyEntries.push({
