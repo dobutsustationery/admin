@@ -137,6 +137,7 @@ export interface StockOrderMeta {
   paidAmount?: number;
   totalOrderEur?: number; // derived: paid normalised to EUR
   costIssues?: StockOrderCostIssue[];
+  costRows?: StockOrderCostRow[];
   // legacy (pre-M3) — kept for back-compat with any external callers
   totalOrderJpy?: number;
 }
@@ -151,6 +152,12 @@ export interface StockOrderCostIssue {
   matchedQty: number;
   unitCostJpy?: number;
   lineCostJpy?: number;
+}
+
+export interface StockOrderCostRow {
+  jan: string;
+  unitCostJpy: number;
+  qty?: number;
 }
 
 export type InventoryEntityId = string;
@@ -312,6 +319,13 @@ export const set_cost_ledger_entries_ignored = createAction<{
   reason?: string;
 }>("set_cost_ledger_entries_ignored");
 
+export const set_cost_ledger_entry_qty = createAction<{
+  itemKey: InventoryItemKey | string;
+  ref: CostLedgerEntryRef;
+  qty: number;
+  note: string;
+}>("set_cost_ledger_entry_qty");
+
 export interface BulkImportItem {
   type: "new" | "update";
   id: InventoryItemKey | string; // janCode or itemKey
@@ -343,7 +357,7 @@ export const set_stock_order_meta = createAction<{
 // Emitted by the root-reducer interceptor for fix_stock_order.
 export const apply_stock_order_costs = createAction<{
   orderId: string;
-  rows: { jan: string; unitCostJpy: number; qty?: number }[];
+  rows: StockOrderCostRow[];
   overrideExisting: boolean;
 }>("apply_stock_order_costs");
 
@@ -1308,6 +1322,10 @@ function ledgerEntryMatchesRef(
   return true;
 }
 
+function formatLedgerQty(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
 function sortLedgerEntries(entries: readonly LedgerEntry[]): LedgerEntry[] {
   return entries
     .map((e, i) => ({ e, i }))
@@ -1404,7 +1422,7 @@ function aggregateStockOrderAllocationRows(
 function stockOrderCostIssues(
   state: InventoryState,
   orderId: string,
-  rows: readonly { jan: string; unitCostJpy: number; qty?: number }[],
+  rows: readonly StockOrderCostRow[],
 ): StockOrderCostIssue[] {
   const expected = new Map<
     string,
@@ -1469,6 +1487,36 @@ function stockOrderCostIssues(
   }
 
   return issues.sort((a, b) => a.jan.localeCompare(b.jan));
+}
+
+function stockOrderCostRowsForIssueRefresh(
+  meta: StockOrderMeta,
+): StockOrderCostRow[] {
+  if (meta.costRows?.length) return meta.costRows;
+  return (meta.costIssues || []).map((issue) => ({
+    jan: issue.jan,
+    unitCostJpy: issue.unitCostJpy || 0,
+    qty: issue.expectedQty,
+  }));
+}
+
+function refreshStockOrderCostIssues(state: InventoryState, orderId: string) {
+  const meta = state.stockOrderRegistry?.[orderId];
+  if (!meta) return;
+  const rows = stockOrderCostRowsForIssueRefresh(meta);
+  if (rows.length === 0) return;
+  meta.costIssues = stockOrderCostIssues(state, orderId, rows);
+}
+
+function stockOrderIdsForLedgerEntry(entry: LedgerEntry): string[] {
+  if (entry.kind !== "receipt") return [];
+  const orderIds = new Set<string>();
+  if (entry.costOrderId) orderIds.add(entry.costOrderId);
+  const prefix = "stockOrder:";
+  if (entry.source?.startsWith(prefix)) {
+    orderIds.add(entry.source.slice(prefix.length));
+  }
+  return [...orderIds];
 }
 
 type ZeroedStockOrderAllocationInput = {
@@ -2823,6 +2871,41 @@ export const inventory = createReducer(initialState, (r) => {
       val,
     });
   });
+  r.addCase(set_cost_ledger_entry_qty, (state, action) => {
+    const { itemKey, ref, qty, note } = action.payload;
+    const ledger = state.costLedger?.[itemKey];
+    const trimmedNote = note.trim();
+    if (!ledger || !Number.isFinite(qty) || qty < 0 || !trimmedNote) return;
+
+    const entry = ledger.find((candidate) =>
+      ledgerEntryMatchesRef(candidate, ref),
+    );
+    if (!entry || entry.qty === qty) return;
+
+    const affectedOrderIds = stockOrderIdsForLedgerEntry(entry);
+    const oldQty = entry.qty;
+    if (entry.originalQty === undefined) entry.originalQty = oldQty;
+    entry.qty = qty;
+    entry.auditComment = `Manual cost ledger qty adjustment: changed qty from ${formatLedgerQty(oldQty)} to ${formatLedgerQty(qty)}. ${trimmedNote}`;
+    entry.auditSeverity = "warning";
+
+    rederiveCostFromLedger(state, itemKey);
+    for (const orderId of affectedOrderIds) {
+      refreshStockOrderCostIssues(state, orderId);
+    }
+    if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+    const val = getTimestampMs((action as any).timestamp);
+    const date = new Date(val || Date.UTC(2026, 0, 1)).toLocaleString("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    state.idToHistory[itemKey].push({
+      date,
+      desc: `Adjusted cost ledger qty from ${formatLedgerQty(oldQty)} to ${formatLedgerQty(qty)}: ${trimmedNote}`,
+      val,
+    });
+  });
   r.addCase(set_stock_order_meta, (state, action) => {
     if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
     const { orderId, meta } = action.payload;
@@ -2919,6 +3002,7 @@ export const inventory = createReducer(initialState, (r) => {
     if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
     state.stockOrderRegistry[orderId] = {
       ...state.stockOrderRegistry[orderId],
+      costRows: rows.map((row) => ({ ...row })),
       costIssues: stockOrderCostIssues(state, orderId, rows),
     };
   });

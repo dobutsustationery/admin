@@ -8,6 +8,7 @@ import {
   fix_jancode,
   package_item,
   quantify_item,
+  set_cost_ledger_entry_qty,
   set_cost_ledger_entries_ignored,
   type Item,
 } from "$lib/inventory";
@@ -482,6 +483,72 @@ describe("cost-ledger materialisation in the reducer", () => {
     expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(100, 9);
     expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
       "duplicate scan",
+    );
+  });
+
+  it("can manually adjust a ledger entry quantity with an audit note", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(10, { cost: 100 }) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(
+        bulk_import_items({
+          items: [
+            {
+              type: "update",
+              id: KEY,
+              item: baseItem(10),
+              stockOrder: {
+                orderId: "o2",
+                unitCostJpy: 50,
+                unitCostEur: 0,
+                receivedAt: 200_000,
+                orderedQty: 10,
+              },
+            },
+          ],
+        }),
+        200,
+      ),
+    );
+
+    const entry = s.inventory.costLedger![KEY][1] as any;
+    s = rootReducer(
+      s,
+      withTs(
+        set_cost_ledger_entry_qty({
+          itemKey: KEY,
+          ref: {
+            kind: "receipt",
+            at: entry.at,
+            seq: entry.seq,
+            qty: entry.qty,
+            unitCostJpy: entry.unitCostJpy,
+            unitCostEur: entry.unitCostEur,
+            source: entry.source || "",
+            costOrderId: entry.costOrderId || "",
+          },
+          qty: 4,
+          note: "matched operator recount",
+        }),
+        300,
+      ),
+    );
+
+    const adjusted = s.inventory.costLedger![KEY][1] as any;
+    expect(adjusted.qty).toBe(4);
+    expect(adjusted.originalQty).toBe(10);
+    expect(adjusted.auditSeverity).toBe("warning");
+    expect(adjusted.auditComment).toContain("matched operator recount");
+    expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(
+      (10 * 100 + 4 * 50) / 14,
+      9,
+    );
+    expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
+      "matched operator recount",
     );
   });
 

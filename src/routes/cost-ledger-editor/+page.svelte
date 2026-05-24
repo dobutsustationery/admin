@@ -3,6 +3,7 @@
   import { page } from "$app/stores";
   import { firestore } from "$lib/firebase";
   import {
+    set_cost_ledger_entry_qty,
     set_cost_ledger_entries_ignored,
     type CostLedgerEntryRef,
     type Item,
@@ -23,6 +24,9 @@
   let reason = "";
   let status = "";
   let pending: Record<string, true> = {};
+  let editingQtyKey = "";
+  let qtyDraft = "";
+  let qtyNote = "";
 
   $: paramKey = $page.url.searchParams.get("itemKey") || "";
   $: if (paramKey && paramKey !== selectedKey) selectedKey = paramKey;
@@ -110,6 +114,7 @@
     selectedKey = key;
     search = "";
     status = "";
+    editingQtyKey = "";
     goto(`/cost-ledger-editor?itemKey=${encodeURIComponent(key)}`);
   }
 
@@ -143,11 +148,70 @@
     }
   }
 
+  function startQtyEdit(row: LedgerRow) {
+    editingQtyKey = rowKey(row);
+    qtyDraft = String(row.entry.qty);
+    qtyNote = "";
+    status = "";
+  }
+
+  function cancelQtyEdit() {
+    editingQtyKey = "";
+    qtyDraft = "";
+    qtyNote = "";
+  }
+
+  async function saveQtyEdit(row: LedgerRow) {
+    if (!$user.uid) {
+      status = "Sign in before editing the cost ledger.";
+      return;
+    }
+    const qty = Number(qtyDraft);
+    const note = qtyNote.trim();
+    if (!Number.isFinite(qty) || qty < 0) {
+      status = "Enter a non-negative quantity.";
+      return;
+    }
+    if (!note) {
+      status = "Enter an audit note for the quantity change.";
+      return;
+    }
+
+    const key = rowKey(row);
+    pending = { ...pending, [key]: true };
+    status = "";
+    try {
+      await broadcast(
+        firestore,
+        $user.uid,
+        set_cost_ledger_entry_qty({
+          itemKey: selectedKey,
+          ref: entryRef(row.entry),
+          qty,
+          note,
+        }),
+      );
+      status = `Adjusted row ${row.index + 1} quantity.`;
+      cancelQtyEdit();
+    } catch (error) {
+      status = error instanceof Error ? error.message : "Failed to save.";
+    } finally {
+      const next = { ...pending };
+      delete next[key];
+      pending = next;
+    }
+  }
+
   function entryLabel(entry: LedgerEntry): string {
     if (entry.kind === "sale") {
+      if (entry.auditComment) {
+        return entry.isArchive ? "adjusted archive sale" : "adjusted sale";
+      }
       return entry.isArchive ? "archive sale" : "sale";
     }
-    if (entry.quantityCorrections?.length) return "adjusted receipt";
+    if (entry.auditComment || entry.quantityCorrections?.length) {
+      return "adjusted receipt";
+    }
     return "receipt";
   }
 
@@ -161,11 +225,8 @@
   }
 
   function noteLabel(entry: LedgerEntry): string {
-    if (entry.kind !== "receipt") {
-      return entry.ignoreReason || (entry.ignored ? "ignored" : "-");
-    }
     const notes: string[] = [];
-    if (entry.quantityCorrections?.length) {
+    if (entry.kind === "receipt" && entry.quantityCorrections?.length) {
       const reduced = entry.quantityCorrections.reduce(
         (sum, correction) => sum + correction.reducedBy,
         0,
@@ -267,6 +328,7 @@
           <th>Date</th>
           <th>Kind</th>
           <th class="num">Qty</th>
+          <th>Adjust</th>
           <th class="num">Unit JPY</th>
           <th class="num">Unit EUR</th>
           <th>Source</th>
@@ -279,10 +341,8 @@
         {#each ledgerRows as row (rowKey(row))}
           <tr
             class:ignored={row.entry.ignored}
-            class:audit-warning={row.entry.kind === "receipt" &&
-              row.entry.auditSeverity === "warning"}
-            class:audit-danger={row.entry.kind === "receipt" &&
-              row.entry.auditSeverity === "danger"}
+            class:audit-warning={row.entry.auditSeverity === "warning"}
+            class:audit-danger={row.entry.auditSeverity === "danger"}
           >
             <td>
               <input
@@ -296,6 +356,16 @@
             <td class="date">{fmtDate(row.entry.at)}</td>
             <td>{entryLabel(row.entry)}</td>
             <td class="num">{row.entry.qty}</td>
+            <td>
+              <button
+                type="button"
+                class="small"
+                disabled={!$user.uid || pending[rowKey(row)]}
+                on:click={() => startQtyEdit(row)}
+              >
+                Adjust qty
+              </button>
+            </td>
             <td class="num">
               {#if row.entry.kind === "receipt"}{fmtYen(
                   row.entry.unitCostJpy,
@@ -311,6 +381,48 @@
             <td class="num">{row.running.onHand}</td>
             <td class="num">{fmtYen(row.running.avgJpy)}</td>
           </tr>
+          {#if editingQtyKey === rowKey(row)}
+            <tr class="qty-editor">
+              <td colspan="11">
+                <div class="qty-editor-controls">
+                  <label>
+                    Quantity
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      bind:value={qtyDraft}
+                    />
+                  </label>
+                  <label class="note-input">
+                    Audit note
+                    <input
+                      bind:value={qtyNote}
+                      placeholder="Required note for this adjustment"
+                    />
+                  </label>
+                  <div class="qty-editor-actions">
+                    <button
+                      type="button"
+                      class="small primary"
+                      disabled={pending[rowKey(row)]}
+                      on:click={() => saveQtyEdit(row)}
+                    >
+                      Save qty
+                    </button>
+                    <button
+                      type="button"
+                      class="small"
+                      disabled={pending[rowKey(row)]}
+                      on:click={cancelQtyEdit}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          {/if}
         {/each}
       </tbody>
     </table>
@@ -448,6 +560,48 @@
   }
   tr.audit-danger {
     background: #ffe8ee;
+  }
+  .small {
+    padding: 0.25rem 0.45rem;
+    border: 1px solid #d0d7de;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  .small:hover:not(:disabled) {
+    background: #f6f8fa;
+  }
+  .small.primary {
+    border-color: #0969da;
+    background: #0969da;
+    color: #fff;
+  }
+  .small:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  tr.qty-editor {
+    background: #f6f8fa;
+  }
+  .qty-editor-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+  }
+  .qty-editor-controls label input {
+    min-width: 8rem;
+  }
+  .qty-editor-controls .note-input {
+    flex: 1 1 24rem;
+  }
+  .qty-editor-controls .note-input input {
+    width: 100%;
+  }
+  .qty-editor-actions {
+    display: flex;
+    gap: 0.5rem;
   }
   .date {
     white-space: nowrap;

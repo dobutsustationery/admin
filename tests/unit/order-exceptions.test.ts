@@ -8,6 +8,7 @@ import {
 import {
   set_stock_order_meta,
   fix_stock_order,
+  set_cost_ledger_entry_qty,
   update_field,
   update_item,
   type Item,
@@ -536,6 +537,60 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         lineCostJpy: 200,
       },
     ]);
+  });
+
+  it("refreshes stock order match issues after a manual ledger qty adjustment", () => {
+    const s = unpricedOrder();
+    const shortPaste = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t9`,
+    ].join("\n");
+
+    let committed = rootReducer(s, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 1800 },
+        costTsv: shortPaste,
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual([
+      expect.objectContaining({
+        kind: "overmatched-row",
+        jan: JAN,
+        expectedQty: 9,
+        matchedQty: 10,
+      }),
+    ]);
+
+    const key = Object.keys(committed.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    const entry = committed.inventory.costLedger![key][0] as any;
+    committed = rootReducer(committed, {
+      ...set_cost_ledger_entry_qty({
+        itemKey: key,
+        ref: {
+          kind: "receipt",
+          at: entry.at,
+          seq: entry.seq,
+          qty: entry.qty,
+          unitCostJpy: entry.unitCostJpy,
+          unitCostEur: entry.unitCostEur,
+          source: entry.source || "",
+          costOrderId: entry.costOrderId || "",
+        },
+        qty: 9,
+        note: "operator confirmed one less unit",
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual(
+      [],
+    );
   });
 
   it("fixes missing COO and weight from matched TSV rows", () => {

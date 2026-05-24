@@ -67,6 +67,9 @@ export type SaleEntry = {
   isArchive?: boolean;
   ignored?: boolean;
   ignoreReason?: string;
+  originalQty?: number;
+  auditComment?: string;
+  auditSeverity?: "warning" | "danger";
 };
 
 export type LedgerEntry = ReceiptEntry | SaleEntry;
