@@ -12,6 +12,7 @@ import type { ListingImage } from "./listings-slice";
 import { categorize_photo, uncategorize_photo } from "./photos-slice";
 import { toGoogleDrivePublicImageUrl } from "./drive-url";
 import { withTimestamp } from "./timestamped-case-reducer";
+import { makeInventoryItemKey } from "./sku";
 
 // Define AppThunk locally if not exported
 export type AppThunk<ReturnType = void> = ThunkAction<
@@ -61,6 +62,49 @@ export interface ListingProposal {
   excludedPhotoIds?: string[]; // IDs of source photos hidden from the listing
 
   status: "draft" | "approved" | "skipped";
+}
+
+function parseListingVariantIdentity(variantId: string):
+  | {
+      itemId: string;
+      option1Value: string;
+      canonicalItemId: string;
+    }
+  | undefined {
+  const [itemId, option1Value] = String(variantId || "").split(":");
+  if (!itemId || !option1Value) return undefined;
+  return {
+    itemId,
+    option1Value,
+    canonicalItemId: makeInventoryItemKey(itemId, option1Value),
+  };
+}
+
+export function findListingVariantIndexByIdentity(
+  proposal: ListingProposal,
+  variantId: string,
+): number {
+  const exactIndex = proposal.variants.findIndex(
+    (v) => v.id === variantId || v.itemId === variantId,
+  );
+  if (exactIndex !== -1) return exactIndex;
+
+  const identity = parseListingVariantIdentity(variantId);
+  if (!identity) return -1;
+
+  return proposal.variants.findIndex(
+    (v) =>
+      v.option1Value === identity.option1Value &&
+      (v.itemId === identity.itemId || v.itemId === identity.canonicalItemId),
+  );
+}
+
+export function findListingVariantByIdentity(
+  proposal: ListingProposal,
+  variantId: string,
+): ListingVariant | undefined {
+  const index = findListingVariantIndexByIdentity(proposal, variantId);
+  return index === -1 ? undefined : proposal.variants[index];
 }
 
 export interface CleanListingVariant extends Omit<ListingVariant, "itemId"> {}
@@ -409,10 +453,7 @@ const listingCreationSlice = createSlice({
       const { janCode, variantId, value } = action.payload;
       const proposal = state.proposals[janCode];
       if (proposal) {
-        // Try finding by ID first, then itemId
-        const variant = proposal.variants.find(
-          (v) => v.id === variantId || v.itemId === variantId,
-        );
+        const variant = findListingVariantByIdentity(proposal, variantId);
         if (variant) {
           variant.option1Value = value;
         }
@@ -429,9 +470,7 @@ const listingCreationSlice = createSlice({
       const { janCode, variantId, qty } = action.payload;
       const proposal = state.proposals[janCode];
       if (proposal) {
-        const variant = proposal.variants.find(
-          (v) => v.id === variantId || v.itemId === variantId,
-        );
+        const variant = findListingVariantByIdentity(proposal, variantId);
         if (variant) {
           variant.qty = qty;
         }
@@ -448,9 +487,7 @@ const listingCreationSlice = createSlice({
       const { janCode, variantId, image } = action.payload;
       const proposal = state.proposals[janCode];
       if (proposal) {
-        const variant = proposal.variants.find(
-          (v) => v.id === variantId || v.itemId === variantId,
-        );
+        const variant = findListingVariantByIdentity(proposal, variantId);
         if (variant) {
           variant.image = image;
         }
@@ -467,9 +504,7 @@ const listingCreationSlice = createSlice({
       const { janCode, variantId, groupKey } = action.payload;
       const proposal = state.proposals[janCode];
       if (proposal) {
-        const variant = proposal.variants.find(
-          (v) => v.id === variantId || v.itemId === variantId,
-        );
+        const variant = findListingVariantByIdentity(proposal, variantId);
         if (variant) {
           if (groupKey === null) {
             delete variant.photoGroupKey;
@@ -518,7 +553,7 @@ const listingCreationSlice = createSlice({
       const proposal = state.proposals[janCode];
       if (!proposal) return;
 
-      const vIdx = proposal.variants.findIndex((v) => v.id === variantId);
+      const vIdx = findListingVariantIndexByIdentity(proposal, variantId);
       if (vIdx === -1) return;
 
       const itemId = proposal.variants[vIdx].itemId;
@@ -566,7 +601,7 @@ const listingCreationSlice = createSlice({
         return;
       }
 
-      const variantIndex = source.variants.findIndex((v) => v.id === variantId);
+      const variantIndex = findListingVariantIndexByIdentity(source, variantId);
       if (variantIndex === -1) return;
 
       const variant = source.variants[variantIndex];
@@ -609,7 +644,7 @@ const listingCreationSlice = createSlice({
       const target = state.proposals[targetJan];
       if (!source || !target || sourceJan === targetJan) return;
 
-      const variantIndex = source.variants.findIndex((v) => v.id === variantId);
+      const variantIndex = findListingVariantIndexByIdentity(source, variantId);
       if (variantIndex === -1) return;
       const variant = source.variants[variantIndex];
       const targetItemId = variant.itemId;

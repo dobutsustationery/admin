@@ -17,6 +17,7 @@ import {
   add_proposals_internal,
   add_variant_requested,
   remove_variant_requested,
+  update_variant_qty,
   update_proposal_field,
   type ListingProposal,
 } from "../../src/lib/listing-creation-slice";
@@ -461,6 +462,77 @@ describe("Listing Creation - Variants & Merging", () => {
 
       // Inventory item B should STILL have its handle (we don't mutate live data in drafts)
       expect(inventoryState.idToItem["item_b"].handle).toBe("handle-a");
+    });
+
+    it("should resolve replayed variant actions by itemId and option value when generated ids differ", () => {
+      const store = configureStore({ reducer: rootReducer });
+      const janA = "4542804151466";
+      const importedJan = "4542804151572";
+
+      store.dispatch(
+        add_proposals_internal([
+          {
+            janCode: janA,
+            inventoryItemIds: [importedJan],
+            photoGroupIds: [janA, importedJan],
+            title: "Merged Product",
+            handle: "amifa-aquarium-mini-card-4542804151572",
+            variants: [
+              {
+                id: `${importedJan}:Default:replay-generated`,
+                itemId: importedJan,
+                option1Value: "Default",
+                qty: 20,
+              },
+              {
+                id: `${importedJan}:Dolphin:replay-generated`,
+                itemId: importedJan,
+                option1Value: "Dolphin",
+                qty: 40,
+              },
+            ],
+            status: "draft",
+            bodyHtml: "",
+            productCategory: "",
+            vendor: "",
+            tags: [],
+            option1Name: "Subtype",
+          },
+        ]),
+      );
+
+      store.dispatch(
+        update_variant_qty({
+          janCode: janA,
+          variantId: `${importedJan}:Dolphin:historical-runtime-id`,
+          qty: 10,
+        }),
+      );
+      store.dispatch(
+        add_variant_requested({
+          targetJan: janA,
+          janCode: importedJan,
+          variantId: `${importedJan}:Penguin:new-runtime-id`,
+          sourceVariantId: `${importedJan}:Dolphin:historical-runtime-id`,
+          subtype: "Penguin",
+          qty: 10,
+        }),
+      );
+      store.dispatch(
+        remove_variant_requested({
+          janCode: janA,
+          variantId: `${importedJan}:Default:historical-runtime-id`,
+        }),
+      );
+
+      const variants =
+        store.getState().listingCreation.proposals[janA].variants;
+      expect(variants).toHaveLength(2);
+      expect(variants[0].option1Value).toBe("Dolphin");
+      expect(variants[0].qty).toBe(10);
+      expect(variants[1].itemId).toBe(importedJan);
+      expect(variants[1].option1Value).toBe("Penguin");
+      expect(variants[1].qty).toBe(10);
     });
 
     it("should prefer bringing in a new item over splitting existing when JAN matches", () => {

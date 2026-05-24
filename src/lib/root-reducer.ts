@@ -48,6 +48,7 @@ import { syncQueue } from "./sync-queue-slice";
 import listingCreation, {
   add_variants_internal,
   add_proposals_internal,
+  findListingVariantByIdentity,
   update_variant_value,
   update_variant_qty,
   set_variant_photo_group,
@@ -1008,9 +1009,7 @@ export const rootReducer = (
       const { janCode, variantId, value } = action.payload;
       const proposal = state.listingCreation.proposals[janCode];
       if (proposal) {
-        const variant = proposal.variants.find(
-          (v: any) => v.id === variantId || v.itemId === variantId,
-        );
+        const variant = findListingVariantByIdentity(proposal, variantId);
         if (variant && variant.photoGroupKey) {
           const oldPhotoKey = variant.photoGroupKey;
           const cleanSubtype = value?.trim() || "";
@@ -1965,7 +1964,7 @@ export const rootReducer = (
           // 2. If no new item found, check if JAN is already present in proposal -> Split from existing
           // Prefer matching by sourceVariantId if provided
           const sourceVariant = sourceVariantId
-            ? targetProposal.variants.find((v: any) => v.id === sourceVariantId)
+            ? findListingVariantByIdentity(targetProposal, sourceVariantId)
             : targetProposal.variants.find((v: any) => {
                 const item = nextState.inventory.idToItem[v.itemId];
                 return item?.janCode === janCode;
@@ -2009,7 +2008,7 @@ export const rootReducer = (
       const { janCode, variantId } = action.payload;
       const proposal = state.listingCreation.proposals[janCode];
       if (proposal) {
-        const variant = proposal.variants.find((v: any) => v.id === variantId);
+        const variant = findListingVariantByIdentity(proposal, variantId);
         if (variant) {
           // 1. Apply Draft Change (Slice Reducer)
           const sliceAction = inheritTimestamp({
