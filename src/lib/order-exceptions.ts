@@ -466,32 +466,41 @@ export function computeStockOrderCostCommit(args: {
     )
     .map((r) => r.jan);
 
-  const matchRows: StockOrderCostMatchRow[] = reconciliation.rows.map(
-    (row, rowIndex) => {
-      const hit =
-        orderItemByJan.get(row.jan) || allocationCandidateByJan.get(row.jan);
-      if (!hit) {
-        return {
-          rowIndex,
-          jan: row.jan,
-          qty: row.qty,
-          unitCostJpy: row.unitCostJpy,
-          lineCostJpy: row.unitCostJpy * row.qty,
-          status: "Unmatched",
-          kinds: ["unmatched"],
-          isUnmatched: true,
-          isOverride: false,
-          costWillApply: false,
-          incomingCountryOfOrigin: row.countryOfOrigin,
-          incomingWeight: row.weight,
-          canFixCountryOfOrigin: false,
-          canFixWeight: false,
-          countryOfOriginMismatch: false,
-          weightMismatch: false,
-        };
-      }
-      const isOverride = hit.oldUnitJpy > 0;
-      const costWillApply = !isOverride || overrideExisting;
+  const matchRows: StockOrderCostMatchRow[] = [];
+  reconciliation.rows.forEach((row, rowIndex) => {
+    const costHit =
+      orderItemByJan.get(row.jan) || allocationCandidateByJan.get(row.jan);
+    const itemHits = Object.entries(inventory.idToItem)
+      .filter(([, item]) => item.janCode === row.jan)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => ({ key, item }));
+
+    if (!costHit && itemHits.length === 0) {
+      matchRows.push({
+        rowIndex,
+        jan: row.jan,
+        qty: row.qty,
+        unitCostJpy: row.unitCostJpy,
+        lineCostJpy: row.unitCostJpy * row.qty,
+        status: "Unmatched",
+        kinds: ["unmatched"],
+        isUnmatched: true,
+        isOverride: false,
+        costWillApply: false,
+        incomingCountryOfOrigin: row.countryOfOrigin,
+        incomingWeight: row.weight,
+        canFixCountryOfOrigin: false,
+        canFixWeight: false,
+        countryOfOriginMismatch: false,
+        weightMismatch: false,
+      });
+      return;
+    }
+
+    const costIsOverride = !!costHit && costHit.oldUnitJpy > 0;
+    const costWillApply = !!costHit && (!costIsOverride || overrideExisting);
+    for (const hit of itemHits) {
+      const isCostTarget = costHit?.key === hit.key;
       const existingCoo = hit.item.countryOfOrigin?.trim();
       const incomingCoo = row.countryOfOrigin?.trim();
       const existingWeight = hit.item.weight;
@@ -510,12 +519,12 @@ export function computeStockOrderCostCommit(args: {
         incomingWeight > 0 &&
         Math.abs(existingWeight - incomingWeight) > weightToleranceG;
       const kinds: StockOrderMatchKind[] = ["match"];
-      if (!isOverride) kinds.push("fix cost");
-      if (isOverride) kinds.push("override cost");
+      if (isCostTarget && !costIsOverride) kinds.push("fix cost");
+      if (isCostTarget && costIsOverride) kinds.push("override cost");
       if (canFixCountryOfOrigin) kinds.push("fix coo");
       if (canFixWeight) kinds.push("fix weight");
       if (countryOfOriginMismatch || weightMismatch) kinds.push("warning");
-      return {
+      matchRows.push({
         rowIndex,
         jan: row.jan,
         qty: row.qty,
@@ -529,24 +538,26 @@ export function computeStockOrderCostCommit(args: {
           weight: hit.item.weight,
           subtype: hit.item.subtype,
         },
-        status: costWillApply
-          ? isOverride
-            ? "Override cost"
-            : "Fix cost"
-          : "Matched, existing cost",
+        status: isCostTarget
+          ? costWillApply
+            ? costIsOverride
+              ? "Override cost"
+              : "Fix cost"
+            : "Matched, existing cost"
+          : "Metadata match",
         kinds,
         isUnmatched: false,
-        isOverride,
-        costWillApply,
+        isOverride: isCostTarget && costIsOverride,
+        costWillApply: isCostTarget && costWillApply,
         incomingCountryOfOrigin: incomingCoo,
         incomingWeight,
         canFixCountryOfOrigin,
         canFixWeight,
         countryOfOriginMismatch,
         weightMismatch,
-      };
-    },
-  );
+      });
+    }
+  });
 
   return { reconciliation, matched, matchRows, unmatchedJans, affected };
 }

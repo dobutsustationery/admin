@@ -217,6 +217,21 @@
       ? `${current} -> ${row.incomingWeight}g`
       : current;
   }
+  function uniqueOrderRows(rows: StockOrderCostMatchRow[]) {
+    const seen = new Set<string>();
+    return rows.filter((row) => {
+      const key = `${row.rowIndex}:${row.jan}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  function sumOrderQty(rows: StockOrderCostMatchRow[]): number {
+    return uniqueOrderRows(rows).reduce((s, row) => s + row.qty, 0);
+  }
+  function sumOrderLineCost(rows: StockOrderCostMatchRow[]): number {
+    return uniqueOrderRows(rows).reduce((s, row) => s + row.lineCostJpy, 0);
+  }
 
   let copyMsg = "";
   function breakdownTsv(): string {
@@ -559,7 +574,7 @@
                 </tr>
               </thead>
               <tbody>
-                {#each filteredMatchRows as row (row.rowIndex + ":" + row.jan)}
+                {#each filteredMatchRows as row (row.rowIndex + ":" + row.jan + ":" + (row.key || ""))}
                   <tr
                     class:error-row={row.isUnmatched}
                     class:fix-row={row.canFixCountryOfOrigin ||
@@ -627,18 +642,12 @@
               <tfoot>
                 <tr class="total">
                   <td colspan="3"><strong>TOTAL</strong></td>
-                  <td>{filteredMatchRows.reduce((s, r2) => s + r2.qty, 0)}</td>
+                  <td>{sumOrderQty(filteredMatchRows)}</td>
                   <td></td>
                   <td>
-                    <strong>
-                      {fmt(
-                        filteredMatchRows.reduce(
-                          (s, r2) => s + r2.lineCostJpy,
-                          0,
-                        ),
-                        0,
-                      )}
-                    </strong>
+                    <strong
+                      >{fmt(sumOrderLineCost(filteredMatchRows), 0)}</strong
+                    >
                   </td>
                   <td></td>
                   <td></td>

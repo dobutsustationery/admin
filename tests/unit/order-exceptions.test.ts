@@ -203,6 +203,11 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       timestamp: { _seconds: 210, _nanoseconds: 0 },
     } as any);
 
+    const richTsv = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity\tCountry of Origin\tWeight in Grams per piece",
+      `${JAN}\t100\t24\tJapan\t42`,
+    ].join("\n");
+
     const preview = previewStockOrderFix(s.inventory, "fc", {
       meta: {
         receivedAt: 150_000,
@@ -211,10 +216,7 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         paidCurrency: "EUR",
         paidAmount: 24,
       },
-      rawPaste: [
-        "JAN code\tUNIT PRICE (YEN)\tQuantity",
-        `${JAN}\t100\t24`,
-      ].join("\n"),
+      rawPaste: richTsv,
       overrideExisting: false,
       approveDiscrepancy: false,
     });
@@ -231,6 +233,17 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       [`${JAN}Blue`, 0, 100, 0, 1],
       [`${JAN}Pink`, 0, 100, 0, 1],
     ]);
+    expect(
+      preview.matchRows.map((row) => [
+        row.key,
+        row.status,
+        row.canFixCountryOfOrigin,
+        row.canFixWeight,
+      ]),
+    ).toEqual([
+      [`${JAN}Blue`, "Fix cost", true, true],
+      [`${JAN}Pink`, "Metadata match", true, true],
+    ]);
 
     s = rootReducer(s, {
       ...fix_stock_order({
@@ -242,12 +255,11 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
           paidCurrency: "EUR",
           paidAmount: 24,
         },
-        costTsv: [
-          "JAN code\tUNIT PRICE (YEN)\tQuantity",
-          `${JAN}\t100\t24`,
-        ].join("\n"),
+        costTsv: richTsv,
         overrideExisting: false,
         approveDiscrepancy: false,
+        fixCountryOfOrigin: true,
+        fixWeights: true,
       }),
       timestamp: TS,
     } as any);
@@ -268,6 +280,10 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         e.costOrderId,
       ]),
     ).toEqual([[12, 100, 1, "fc"]]);
+    expect(s.inventory.idToItem[`${JAN}Blue`].countryOfOrigin).toBe("Japan");
+    expect(s.inventory.idToItem[`${JAN}Blue`].weight).toBe(42);
+    expect(s.inventory.idToItem[`${JAN}Pink`].countryOfOrigin).toBe("Japan");
+    expect(s.inventory.idToItem[`${JAN}Pink`].weight).toBe(42);
   });
 
   it("aggregates duplicate stock-order rows before matching scan receipts", () => {
