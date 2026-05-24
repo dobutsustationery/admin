@@ -1297,7 +1297,7 @@ describe("inventory reducer", () => {
       expect(walkLedger(nextState.costLedger![id]).avgJpy).toBe(65);
     });
 
-    it("archives the full ledger on-hand before recounting even when shipped is already set", () => {
+    it("archives remaining ledger on-hand before recounting when shipped is already ledgered", () => {
       const item: Item = {
         janCode: "4977564720742",
         subtype: "Books",
@@ -1326,7 +1326,7 @@ describe("inventory reducer", () => {
         expect.arrayContaining([
           expect.objectContaining({
             kind: "sale",
-            qty: 10,
+            qty: 6,
             isArchive: true,
           }),
         ]),
@@ -1342,7 +1342,7 @@ describe("inventory reducer", () => {
 
       const walkedAfterRecount = walkLedger(nextState.costLedger![id]);
       expect(walkedAfterRecount.onHand).toBe(6);
-      expect(walkedAfterRecount.avgJpy).toBeCloseTo(178.2, 9);
+      expect(nextState.idToItem[id].cost).toBeCloseTo(178.2, 9);
     });
   });
 

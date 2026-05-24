@@ -6,6 +6,8 @@ import {
   update_field,
   bulk_import_items,
   fix_jancode,
+  package_item,
+  quantify_item,
   set_cost_ledger_entries_ignored,
   type Item,
 } from "$lib/inventory";
@@ -387,6 +389,37 @@ describe("cost-ledger materialisation in the reducer", () => {
       ["receipt", 20, "update_item", undefined, 300_000],
     ]);
     expect(walkLedger(ledger).onHand).toBe(20);
+  });
+
+  it("records legacy package and quantify actions as dated ledger sales", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(20) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(
+        package_item({ itemKey: KEY as any, qty: 5, orderID: "manual-1" }),
+        150,
+      ),
+    );
+    s = rootReducer(
+      s,
+      withTs(
+        quantify_item({ itemKey: KEY as any, qty: 12, orderID: "manual-1" }),
+        160,
+      ),
+    );
+
+    const ledger = s.inventory.costLedger![KEY] as any[];
+    expect(ledger.map((entry) => [entry.kind, entry.qty, entry.at])).toEqual([
+      ["receipt", 20, 100_000],
+      ["sale", 5, 150_000],
+      ["sale", 7, 150_000],
+    ]);
+    expect(s.inventory.idToItem[KEY].shipped).toBe(12);
+    expect(walkLedger(ledger).onHand).toBe(8);
   });
 
   it("can mark a specific ledger entry ignored and rederive cost", () => {

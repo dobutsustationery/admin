@@ -3065,6 +3065,12 @@ export const inventory = createReducer(initialState, (r) => {
     }
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty;
+      recordSale(
+        state,
+        itemKey,
+        qty,
+        state.orderIdToOrder[orderID].date.getTime(),
+      );
       if (!state.idToHistory[itemKey]) {
         console.warn(
           `[InventoryDebug] package_item: idToHistory missing for ${itemKey}. Initializing empty.`,
@@ -3128,7 +3134,14 @@ export const inventory = createReducer(initialState, (r) => {
       });
     }
     if (state.idToItem[itemKey] !== undefined) {
-      state.idToItem[itemKey].shipped += qty - priorQty;
+      const diff = qty - priorQty;
+      state.idToItem[itemKey].shipped += diff;
+      recordSale(
+        state,
+        itemKey,
+        diff,
+        state.orderIdToOrder[orderID].date.getTime(),
+      );
       if (!state.idToHistory[itemKey]) {
         console.warn(
           `[InventoryDebug] quantify_item (shipped update): idToHistory missing for ${itemKey}. Initializing empty.`,
