@@ -272,6 +272,22 @@ export interface StockOrderScanBatchAuditRow {
   unusualCount: number;
 }
 
+export interface StockOrderUnmatchedScanDaySummary {
+  date: string;
+  at: number;
+  unmatchedScanCount: number;
+  matchedScanCount: number;
+  unmatchedQty: number;
+  matchedQty: number;
+  unmatchedUniqueJans: number;
+  unmatchedJans: string[];
+}
+
+export interface StockOrderScannerAuditResult {
+  rows: StockOrderScanBatchAuditRow[];
+  unmatchedScanDays: StockOrderUnmatchedScanDaySummary[];
+}
+
 const SCAN_BATCH_WINDOW_DAYS = 7;
 
 function normalizeJan(value: unknown): string {
@@ -305,12 +321,12 @@ function orderScanBatchScans(
 ): StockOrderScanBatchScan[] {
   return actions
     .filter((action) => action?.type === "update_item")
-    .map((action) => {
+    .map((action, index) => {
       const payload = action.payload || {};
       const item = payload.item || {};
       const rawJan = String(item.janCode || payload.id || "");
       return {
-        actionId: String(action.id || ""),
+        actionId: String(action.id || `scan:${index}`),
         at: timestampSortKey(action),
         rawJan,
         jan: normalizeJan(rawJan),
@@ -431,19 +447,88 @@ function chooseBestScanWindow(
   return { startAt: best.startAt, endAt: best.endAt, scans: best.scans };
 }
 
+function buildUnmatchedScanDaySummaries(
+  scans: readonly StockOrderScanBatchScan[],
+  matchedScanIds: ReadonlySet<string>,
+): StockOrderUnmatchedScanDaySummary[] {
+  const byDate = new Map<
+    string,
+    {
+      date: string;
+      at: number;
+      unmatchedScanCount: number;
+      matchedScanCount: number;
+      unmatchedQty: number;
+      matchedQty: number;
+      unmatchedJans: Set<string>;
+    }
+  >();
+
+  for (const scan of scans) {
+    const at = dayStartUtc(scan.at);
+    const date = new Date(at).toISOString().slice(0, 10);
+    const row =
+      byDate.get(date) ||
+      ({
+        date,
+        at,
+        unmatchedScanCount: 0,
+        matchedScanCount: 0,
+        unmatchedQty: 0,
+        matchedQty: 0,
+        unmatchedJans: new Set<string>(),
+      } satisfies {
+        date: string;
+        at: number;
+        unmatchedScanCount: number;
+        matchedScanCount: number;
+        unmatchedQty: number;
+        matchedQty: number;
+        unmatchedJans: Set<string>;
+      });
+    if (matchedScanIds.has(scan.actionId)) {
+      row.matchedScanCount += 1;
+      row.matchedQty += scan.qty;
+    } else {
+      row.unmatchedScanCount += 1;
+      row.unmatchedQty += scan.qty;
+      row.unmatchedJans.add(scan.jan);
+    }
+    byDate.set(date, row);
+  }
+
+  return [...byDate.values()]
+    .filter((row) => row.unmatchedScanCount > 0)
+    .map((row) => {
+      const unmatchedJans = [...row.unmatchedJans].sort();
+      return {
+        date: row.date,
+        at: row.at,
+        unmatchedScanCount: row.unmatchedScanCount,
+        matchedScanCount: row.matchedScanCount,
+        unmatchedQty: row.unmatchedQty,
+        matchedQty: row.matchedQty,
+        unmatchedUniqueJans: unmatchedJans.length,
+        unmatchedJans,
+      };
+    })
+    .sort((a, b) => a.at - b.at);
+}
+
 /**
  * Compare each stock order's cost rows to the most likely scanner batch
  * containing them. This intentionally uses raw replayed broadcast actions:
  * reducer state alone can no longer distinguish duplicate scanner snapshots
  * that collapsed into one final item.
  */
-export function buildStockOrderScanBatchAudit(
+export function buildStockOrderScannerAudit(
   inventory: Pick<InventoryState, "stockOrderRegistry">,
   actions: readonly any[],
-): StockOrderScanBatchAuditRow[] {
+): StockOrderScannerAuditResult {
   const registry = inventory.stockOrderRegistry || {};
   const scans = orderScanBatchScans(actions);
   const rows: StockOrderScanBatchAuditRow[] = [];
+  const matchedScanIds = new Set<string>();
 
   for (const [orderId, meta] of Object.entries(registry)) {
     if (meta.usesZeroedQuantities !== true) continue;
@@ -455,6 +540,7 @@ export function buildStockOrderScanBatchAudit(
     const batch = chooseBestScanWindow(expectedJans, scans);
     const scanByJan = new Map<string, StockOrderScanBatchScan[]>();
     for (const scan of batch.scans) {
+      if (expectedJans.has(scan.jan)) matchedScanIds.add(scan.actionId);
       const existing = scanByJan.get(scan.jan) || [];
       existing.push(scan);
       scanByJan.set(scan.jan, existing);
@@ -524,7 +610,17 @@ export function buildStockOrderScanBatchAudit(
     if (aStart !== bStart) return aStart - bStart;
     return a.name.localeCompare(b.name);
   });
-  return rows;
+  return {
+    rows,
+    unmatchedScanDays: buildUnmatchedScanDaySummaries(scans, matchedScanIds),
+  };
+}
+
+export function buildStockOrderScanBatchAudit(
+  inventory: Pick<InventoryState, "stockOrderRegistry">,
+  actions: readonly any[],
+): StockOrderScanBatchAuditRow[] {
+  return buildStockOrderScannerAudit(inventory, actions).rows;
 }
 
 export interface StockOrderCostCommitMatch {

@@ -1,11 +1,15 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import type { StockOrderScanBatchAuditRow } from "./order-exceptions";
+import type {
+  StockOrderScanBatchAuditRow,
+  StockOrderUnmatchedScanDaySummary,
+} from "./order-exceptions";
 
 export interface UIState {
   columnWidths: Record<string, number>; // key: "view_field" -> width
   stockOrderScanBatchAudit?: {
     generatedAt: number;
     rows: StockOrderScanBatchAuditRow[];
+    unmatchedScanDays?: StockOrderUnmatchedScanDaySummary[];
   };
 }
 
@@ -30,6 +34,7 @@ const uiSlice = createSlice({
       action: PayloadAction<{
         generatedAt: number;
         rows: StockOrderScanBatchAuditRow[];
+        unmatchedScanDays?: StockOrderUnmatchedScanDaySummary[];
       }>,
     ) => {
       state.stockOrderScanBatchAudit = action.payload;

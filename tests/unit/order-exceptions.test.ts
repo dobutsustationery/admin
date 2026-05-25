@@ -18,6 +18,7 @@ import {
 } from "$lib/inventory";
 import {
   buildStockOrderScanBatchAudit,
+  buildStockOrderScannerAudit,
   selectOrderExceptions,
   previewOrderMetaFix,
   previewStockOrderFix,
@@ -206,6 +207,42 @@ describe("stock order scan batch audit", () => {
     );
 
     expect(audit.map((row) => row.orderId)).toEqual(["zeroedOrder"]);
+  });
+
+  it("summarizes scanner dates with scans that never matched an order", () => {
+    const audit = buildStockOrderScannerAudit(
+      {
+        stockOrderRegistry: {
+          order1: {
+            name: "Order 1",
+            usesZeroedQuantities: true,
+            costRows: [
+              { jan: "A", qty: 10, unitCostJpy: 100 },
+              { jan: "B", qty: 10, unitCostJpy: 100 },
+            ],
+          },
+        },
+      } as any,
+      [
+        scanAction("a1", "A", 10, "2025-01-25T12:00:00Z", "A"),
+        scanAction("x1", "X", 4, "2025-01-25T12:05:00Z", "Extra"),
+        scanAction("b1", "B", 10, "2025-01-26T12:00:00Z", "B"),
+      ],
+    );
+
+    expect(audit.rows[0].extraScans.map((row) => row.jan)).toEqual(["X"]);
+    expect(audit.unmatchedScanDays).toEqual([
+      {
+        date: "2025-01-25",
+        at: Date.parse("2025-01-25T00:00:00Z"),
+        unmatchedScanCount: 1,
+        matchedScanCount: 1,
+        unmatchedQty: 4,
+        matchedQty: 10,
+        unmatchedUniqueJans: 1,
+        unmatchedJans: ["X"],
+      },
+    ]);
   });
 });
 

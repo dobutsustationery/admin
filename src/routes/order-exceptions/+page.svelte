@@ -11,7 +11,7 @@
   import { toTimestampMs } from "$lib/timestamped-action";
   import { set_stock_order_scan_batch_audit } from "$lib/ui-slice";
   import {
-    buildStockOrderScanBatchAudit,
+    buildStockOrderScannerAudit,
     selectOrderExceptions,
     previewStockOrderFix,
     stockOrderCostColumns,
@@ -20,6 +20,7 @@
     type StockOrderScanBatchExpectedRow,
     type StockOrderScanBatchExtraRow,
     type StockOrderScanBatchScan,
+    type StockOrderUnmatchedScanDaySummary,
     type StockOrderCostMatchRow,
   } from "$lib/order-exceptions";
 
@@ -41,6 +42,9 @@
   let statusMessage = "";
   let scanAuditRows: StockOrderScanBatchAuditRow[] = [];
   $: scanAuditRows = $store.ui.stockOrderScanBatchAudit?.rows || [];
+  let unmatchedScanDays: StockOrderUnmatchedScanDaySummary[] = [];
+  $: unmatchedScanDays =
+    $store.ui.stockOrderScanBatchAudit?.unmatchedScanDays || [];
   let scanAuditLoading = false;
   let scanAuditProgress = 0;
   let scanAuditTotal = 0;
@@ -391,17 +395,18 @@
 
       scanAuditMessage = "Comparing order rows to scanner batches...";
       await tick();
-      const rows = buildStockOrderScanBatchAudit(
+      const audit = buildStockOrderScannerAudit(
         replayState.inventory,
         replayActions,
       );
       store.dispatch(
         set_stock_order_scan_batch_audit({
           generatedAt: Date.now(),
-          rows,
+          rows: audit.rows,
+          unmatchedScanDays: audit.unmatchedScanDays,
         }),
       );
-      scanAuditMessage = `Audited ${rows.length.toLocaleString()} zeroed-quantity stock order(s).`;
+      scanAuditMessage = `Audited ${audit.rows.length.toLocaleString()} zeroed-quantity stock order(s).`;
     } catch (e) {
       console.error("Failed to run scan batch audit:", e);
       scanAuditMessage =
@@ -430,6 +435,14 @@
   ): string {
     const scan = row.scans[0];
     return scan ? `${scanTime(scan)} · ${scan.description}` : "—";
+  }
+  function scanJanPreview(row: StockOrderUnmatchedScanDaySummary): string {
+    const visible = row.unmatchedJans.slice(0, 8);
+    const suffix =
+      row.unmatchedJans.length > visible.length
+        ? `, +${row.unmatchedJans.length - visible.length} more`
+        : "";
+    return `${visible.join(", ")}${suffix}`;
   }
 </script>
 
@@ -512,6 +525,29 @@
           Report generated {generatedAtLabel(scanAuditGeneratedAt)}. Re-run the
           audit if cached action history has changed.
         </p>
+      {/if}
+      {#if unmatchedScanDays.length}
+        <h3>Unmatched Scan Days</h3>
+        <table class="scan-audit-table">
+          <thead>
+            <tr>
+              <th>Date</th><th>Unmatched scans</th><th>Matched scans</th>
+              <th>Unmatched qty</th><th>Matched qty</th><th>Unmatched JANs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each unmatchedScanDays as row (row.date)}
+              <tr class:warning-row={true}>
+                <td>{row.date}</td>
+                <td>{row.unmatchedScanCount}</td>
+                <td>{row.matchedScanCount}</td>
+                <td>{row.unmatchedQty}</td>
+                <td>{row.matchedQty}</td>
+                <td>{scanJanPreview(row)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       {/if}
       <label class="chk">
         <input type="checkbox" bind:checked={showAllScanAuditRows} />
