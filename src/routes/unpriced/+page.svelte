@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { firestore } from "$lib/firebase";
   import { store } from "$lib/store";
+  import { user } from "$lib/user-store";
+  import { broadcast } from "$lib/redux-firestore";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import {
     walkLedger,
@@ -11,6 +14,7 @@
     Item,
     StockOrderCostIssue,
   } from "$lib/inventory";
+  import { reconstruct_stock_order_unmatched_receipt } from "$lib/inventory";
 
   type CostLedgerIssueKind = "unpriced-scan" | "missing-exchange";
 
@@ -46,6 +50,7 @@
     subtype: string;
     description: string;
     image: string;
+    kind: LedgerEntry["kind"];
     itemQty: number;
     shipped: number;
     at: number;
@@ -68,6 +73,8 @@
     subtype: string;
     description: string;
     image: string;
+    usesZeroedQuantities: boolean;
+    firstScanAt?: number;
   };
 
   type StockOrderMatchIssueGroup = {
@@ -87,6 +94,10 @@
   let showAuditAdjustments = false;
   let showStockOrderIssues: Record<string, boolean> = {};
   let copyMsg = "";
+  let remediationStatus = "";
+  let remediationDrafts: Record<string, { saleDate: string; note: string }> =
+    {};
+  let pendingRemediations: Record<string, true> = {};
 
   function isUnpricedScanReceipt(entry: LedgerEntry): entry is ReceiptEntry {
     return (
@@ -187,9 +198,10 @@
 
       const sorted = sortedLedger(ledger);
       for (const [ledgerIndex, entry] of sorted.entries()) {
-        if (entry.kind !== "receipt") continue;
-        if (!entry.auditComment && !entry.quantityCorrections?.length) continue;
-        const reducedQty = (entry.quantityCorrections || []).reduce(
+        const corrections =
+          entry.kind === "receipt" ? entry.quantityCorrections || [] : [];
+        if (!entry.auditComment && !corrections.length) continue;
+        const reducedQty = corrections.reduce(
           (sum, correction) => sum + correction.reducedBy,
           0,
         );
@@ -199,11 +211,15 @@
           subtype: item.subtype || "",
           description: item.description || "",
           image: item.image || "",
+          kind: entry.kind,
           itemQty: Number(item.qty) || 0,
           shipped: Number(item.shipped) || 0,
           at: entry.at,
           seq: entry.seq,
-          source: entry.costOrderId || entry.source || "",
+          source:
+            entry.kind === "receipt"
+              ? entry.costOrderId || entry.source || ""
+              : "sale",
           lotQty: entry.qty,
           originalQty: entry.originalQty,
           reducedQty,
@@ -228,6 +244,7 @@
   ): StockOrderMatchIssueRow[] {
     const rows: StockOrderMatchIssueRow[] = [];
     const idToItem = inventory.idToItem || {};
+    const costLedger = inventory.costLedger || {};
     for (const [orderId, meta] of Object.entries(
       inventory.stockOrderRegistry || {},
     )) {
@@ -245,6 +262,10 @@
           subtype: item?.subtype || "",
           description: item?.description || "",
           image: item?.image || "",
+          usesZeroedQuantities: meta.usesZeroedQuantities === true,
+          firstScanAt: itemKey
+            ? firstScanAtForLedger(costLedger[itemKey])
+            : undefined,
         });
       }
     }
@@ -353,6 +374,40 @@
     return new Date(ms).toISOString().slice(0, 10);
   }
 
+  function dateInputValue(ms: number | undefined): string {
+    return ms && Number.isFinite(ms) && ms > 0
+      ? new Date(ms).toISOString().slice(0, 10)
+      : "";
+  }
+
+  function firstScanAtForLedger(
+    ledger: readonly LedgerEntry[] | undefined,
+  ): number | undefined {
+    const sorted = sortedLedger(ledger || []);
+    const scan = sorted.find(
+      (entry) =>
+        entry.kind === "receipt" &&
+        entry.source === "update_item" &&
+        Number.isFinite(entry.at) &&
+        entry.at > 0,
+    );
+    if (scan) return scan.at;
+
+    const nonOrderReceipt = sorted.find(
+      (entry) =>
+        entry.kind === "receipt" &&
+        !String(entry.source || "").startsWith("stockOrder:") &&
+        Number.isFinite(entry.at) &&
+        entry.at > 0,
+    );
+    if (nonOrderReceipt) return nonOrderReceipt.at;
+
+    return sorted.find(
+      (entry) =>
+        entry.kind === "receipt" && Number.isFinite(entry.at) && entry.at > 0,
+    )?.at;
+  }
+
   function uniqueDateLabels(values: number[]): string {
     return Array.from(new Set(values.map(fmtDate))).join(", ");
   }
@@ -435,6 +490,96 @@
       copyMsg = `Copied ${label}.`;
     } catch {
       copyMsg = "Clipboard blocked.";
+    }
+  }
+
+  function remediationKey(row: StockOrderMatchIssueRow): string {
+    return `${row.orderId}:${row.kind}:${row.jan}:${row.itemKey || ""}`;
+  }
+
+  function canReconstruct(row: StockOrderMatchIssueRow): boolean {
+    return (
+      row.kind === "unmatched-row" &&
+      row.usesZeroedQuantities &&
+      Boolean(row.itemKey)
+    );
+  }
+
+  function remediationDraft(row: StockOrderMatchIssueRow) {
+    const key = remediationKey(row);
+    const stored = remediationDrafts[key];
+    if (stored) return stored;
+    return {
+      saleDate: dateInputValue(row.firstScanAt),
+      note: "",
+    };
+  }
+
+  function setRemediationDraft(
+    row: StockOrderMatchIssueRow,
+    field: "saleDate" | "note",
+    value: string,
+  ) {
+    const key = remediationKey(row);
+    remediationDrafts = {
+      ...remediationDrafts,
+      [key]: {
+        ...remediationDraft(row),
+        [field]: value,
+      },
+    };
+  }
+
+  async function reconstructMissingReceipt(row: StockOrderMatchIssueRow) {
+    const key = remediationKey(row);
+    const draft = remediationDraft(row);
+    const note = draft.note.trim();
+    const saleAt = draft.saleDate
+      ? Date.parse(`${draft.saleDate}T00:00:00Z`)
+      : NaN;
+    if (!$user.uid) {
+      remediationStatus = "Sign in before applying a remediation.";
+      return;
+    }
+    if (!canReconstruct(row) || !row.itemKey) {
+      remediationStatus = "This row cannot be reconstructed from here.";
+      return;
+    }
+    if (!Number.isFinite(saleAt)) {
+      remediationStatus = "Enter the historical sale/consumption date.";
+      return;
+    }
+    if (!note) {
+      remediationStatus = "Enter an audit note for the reconstruction.";
+      return;
+    }
+
+    pendingRemediations = { ...pendingRemediations, [key]: true };
+    remediationStatus = "";
+    try {
+      await broadcast(
+        firestore,
+        $user.uid,
+        reconstruct_stock_order_unmatched_receipt({
+          orderId: row.orderId,
+          itemKey: row.itemKey,
+          qty: row.qty,
+          note,
+          saleAt,
+          saleNote: note,
+        }),
+      );
+      remediationStatus = `Reconstructed ${fmtQty(row.qty)} unit(s) for ${row.jan}.`;
+      const nextDrafts = { ...remediationDrafts };
+      delete nextDrafts[key];
+      remediationDrafts = nextDrafts;
+    } catch (error) {
+      remediationStatus =
+        error instanceof Error ? error.message : "Failed to save remediation.";
+    } finally {
+      const nextPending = { ...pendingRemediations };
+      delete nextPending[key];
+      pendingRemediations = nextPending;
     }
   }
 
@@ -522,6 +667,7 @@
         "Subtype",
         "Description",
         "Date",
+        "Kind",
         "Current lot qty",
         "Original qty",
         "Reduced by",
@@ -535,6 +681,7 @@
         row.subtype,
         row.description,
         fmtDate(row.at),
+        row.kind,
         fmtQty(row.lotQty),
         fmtQty(row.originalQty),
         fmtQty(row.reducedQty),
@@ -837,6 +984,9 @@
   </div>
 
   <h2>Stock Order Match Issues</h2>
+  {#if remediationStatus}
+    <p class="copy-status">{remediationStatus}</p>
+  {/if}
   {#if stockOrderMatchIssueGroups.length > 0}
     {#each stockOrderMatchIssueGroups as group (group.orderId)}
       <section class="order-issue-section">
@@ -887,6 +1037,7 @@
                   <th>Matched qty</th>
                   <th>Difference</th>
                   <th>Row cost</th>
+                  <th>Remediation</th>
                 </tr>
               </thead>
               <tbody>
@@ -939,6 +1090,50 @@
                         {fmtYen(row.lineCostJpy || 0)} difference
                       </span>
                     </td>
+                    <td>
+                      {#if canReconstruct(row)}
+                        <div class="remediation-form">
+                          <label>
+                            Sale date
+                            <input
+                              type="date"
+                              value={remediationDraft(row).saleDate}
+                              on:input={(event) =>
+                                setRemediationDraft(
+                                  row,
+                                  "saleDate",
+                                  event.currentTarget.value,
+                                )}
+                            />
+                          </label>
+                          <label>
+                            Note
+                            <input
+                              value={remediationDraft(row).note}
+                              placeholder="e.g. sold at Japan Festival 2025"
+                              on:input={(event) =>
+                                setRemediationDraft(
+                                  row,
+                                  "note",
+                                  event.currentTarget.value,
+                                )}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            class="copy-button"
+                            disabled={pendingRemediations[remediationKey(row)]}
+                            on:click={() => reconstructMissingReceipt(row)}
+                          >
+                            {pendingRemediations[remediationKey(row)]
+                              ? "Saving..."
+                              : "Reconstruct"}
+                          </button>
+                        </div>
+                      {:else}
+                        <span class="hint">-</span>
+                      {/if}
+                    </td>
                   </tr>
                 {/each}
               </tbody>
@@ -984,6 +1179,7 @@
             <tr>
               <th>Item</th>
               <th>Date</th>
+              <th>Kind</th>
               <th>Current qty</th>
               <th>Original qty</th>
               <th>Reduced by</th>
@@ -1010,6 +1206,7 @@
                   {/if}
                 </td>
                 <td>{fmtDate(row.at)}</td>
+                <td>{row.kind}</td>
                 <td>{fmtQty(row.lotQty)}</td>
                 <td>{fmtQty(row.originalQty)}</td>
                 <td>{fmtQty(row.reducedQty)}</td>
@@ -1204,6 +1401,28 @@
   .issue.overmatched-row {
     color: #842029;
     background: #f8d7da;
+  }
+  .remediation-form {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 14rem;
+  }
+  .remediation-form label {
+    display: grid;
+    gap: 0.15rem;
+    color: #495057;
+    font-size: 0.78rem;
+  }
+  .remediation-form input {
+    min-width: 12rem;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 0.3rem 0.4rem;
+    font: inherit;
+  }
+  .copy-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
   .no-thumb {
     display: inline-flex;

@@ -327,6 +327,15 @@ export const set_cost_ledger_entry_qty = createAction<{
   note: string;
 }>("set_cost_ledger_entry_qty");
 
+export const reconstruct_stock_order_unmatched_receipt = createAction<{
+  orderId: string;
+  itemKey: InventoryItemKey | string;
+  qty: number;
+  note: string;
+  saleAt?: number;
+  saleNote?: string;
+}>("reconstruct_stock_order_unmatched_receipt");
+
 export interface BulkImportItem {
   type: "new" | "update";
   id: InventoryItemKey | string; // janCode or itemKey
@@ -1528,6 +1537,7 @@ function stockOrderCostIssues(
     if (!jan) continue;
     let matchedQty = matchedQtyByJan.get(jan) || 0;
     for (const entry of ledger) {
+      if (entry.ignored) continue;
       if (!lotMatchesOrder(entry, orderId) || entry.kind !== "receipt")
         continue;
       matchedQty += Number(entry.qty) || 0;
@@ -1586,6 +1596,27 @@ function refreshStockOrderCostIssues(state: InventoryState, orderId: string) {
   const rows = stockOrderCostRowsForIssueRefresh(meta);
   if (rows.length === 0) return;
   meta.costIssues = stockOrderCostIssues(state, orderId, rows);
+}
+
+function stockOrderRowFactsForJan(
+  rows: readonly StockOrderCostRow[],
+  jan: string,
+): { expectedQty: number; lineCostJpy: number; unitCostJpy: number } {
+  let expectedQty = 0;
+  let lineCostJpy = 0;
+  for (const row of rows) {
+    if (row.jan !== jan) continue;
+    const qty = Number(row.qty);
+    if (!(qty > 0)) continue;
+    const unitCostJpy = Number(row.unitCostJpy) || 0;
+    expectedQty += qty;
+    lineCostJpy += qty * unitCostJpy;
+  }
+  return {
+    expectedQty,
+    lineCostJpy,
+    unitCostJpy: expectedQty > 0 ? lineCostJpy / expectedQty : 0,
+  };
 }
 
 function stockOrderIdsForLedgerEntry(entry: LedgerEntry): string[] {
@@ -3015,6 +3046,104 @@ export const inventory = createReducer(initialState, (r) => {
     state.idToHistory[itemKey].push({
       date,
       desc: `Adjusted cost ledger qty from ${formatLedgerQty(oldQty)} to ${formatLedgerQty(qty)}: ${trimmedNote}`,
+      val,
+    });
+  });
+  r.addCase(reconstruct_stock_order_unmatched_receipt, (state, action) => {
+    const { orderId, itemKey, qty, note, saleAt, saleNote } = action.payload;
+    const trimmedNote = note.trim();
+    const trimmedSaleNote = saleNote?.trim() || "";
+    if (!trimmedNote || !Number.isFinite(qty) || qty <= 0) return;
+
+    const key = canonicalizeInventoryItemKey(itemKey);
+    const item = state.idToItem[key];
+    const meta = state.stockOrderRegistry?.[orderId];
+    if (!item || !meta || meta.usesZeroedQuantities !== true) return;
+    const receivedAt =
+      meta.receivedAt && meta.receivedAt > 0
+        ? meta.receivedAt
+        : UNKNOWN_RECEIPT_DATE;
+    const rows = stockOrderCostRowsForIssueRefresh(meta);
+    const facts = stockOrderRowFactsForJan(rows, item.janCode);
+    if (!(facts.expectedQty > 0) || !(facts.unitCostJpy > 0)) return;
+
+    const issues = stockOrderCostIssues(state, orderId, rows);
+    const unmatched = issues.find(
+      (issue) => issue.kind === "unmatched-row" && issue.jan === item.janCode,
+    );
+    if (!unmatched || qty > unmatched.qty) return;
+    const reconstructedQty = facts.expectedQty;
+
+    const totalOrderEur =
+      meta.paidAmount != null && meta.paidCurrency
+        ? meta.paidCurrency === "BGN"
+          ? meta.paidAmount / BGN_PER_EUR
+          : meta.paidAmount
+        : meta.totalOrderEur;
+    const fx =
+      totalOrderEur && (meta.valueOfOrderJpy || 0) > 0
+        ? totalOrderEur / (meta.valueOfOrderJpy as number)
+        : 0;
+    const unitCostEur = fx > 0 ? facts.unitCostJpy * fx : 0;
+
+    if (!state.costLedger) state.costLedger = {};
+    const ledger = state.costLedger[key] || [];
+    state.costLedger[key] = ledger;
+    const val = getTimestampMs((action as any).timestamp);
+    const source = `stockOrder:${orderId}`;
+    let ignoredRecountQty = 0;
+    for (const entry of ledger) {
+      if (
+        entry.kind !== "receipt" ||
+        entry.ignored ||
+        !lotMatchesOrder(entry, orderId) ||
+        entry.source === source
+      ) {
+        continue;
+      }
+      if (entry.originalQty === undefined) entry.originalQty = entry.qty;
+      entry.ignored = true;
+      entry.ignoreReason = `Ignored recount receipt after reconstructing full stock order ${orderId}. ${trimmedNote}`;
+      entry.auditComment = `Ignored recount receipt after reconstructing full stock order ${orderId}; the real receipt is the reconstructed stock order lot. ${trimmedNote}`;
+      entry.auditSeverity = "warning";
+      ignoredRecountQty += Number(entry.qty) || 0;
+    }
+    ledger.push({
+      kind: "receipt",
+      at: receivedAt,
+      seq: ledger.length,
+      qty: reconstructedQty,
+      unitCostJpy: facts.unitCostJpy,
+      unitCostEur,
+      source,
+      costOrderId: orderId,
+      auditComment: `Reconstructed stock order receipt: added the full ${formatLedgerQty(reconstructedQty)} unit(s) from zeroed-order row ${orderId}. ${ignoredRecountQty > 0 ? `Ignored ${formatLedgerQty(ignoredRecountQty)} recount unit(s). ` : ""}${trimmedNote}`,
+      auditSeverity: "warning",
+    });
+
+    if (saleAt && Number.isFinite(saleAt) && saleAt > 0) {
+      ledger.push({
+        kind: "sale",
+        at: saleAt,
+        seq: ledger.length,
+        qty,
+        auditComment: `Historical sale adjustment consumed ${formatLedgerQty(qty)} reconstructed unit(s) before the recount for stock order ${orderId}.${trimmedSaleNote ? ` ${trimmedSaleNote}` : ""}`,
+        auditSeverity: "warning",
+      });
+    }
+
+    rederiveCostFromLedger(state, key);
+    refreshStockOrderCostIssues(state, orderId);
+
+    if (!state.idToHistory[key]) state.idToHistory[key] = [];
+    const date = new Date(val || Date.UTC(2026, 0, 1)).toLocaleString("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    state.idToHistory[key].push({
+      date,
+      desc: `Reconstructed full ${formatLedgerQty(reconstructedQty)} unit stock order receipt for ${orderId}${ignoredRecountQty > 0 ? ` and ignored ${formatLedgerQty(ignoredRecountQty)} recount unit(s)` : ""}${saleAt ? `; recorded historical sale of ${formatLedgerQty(qty)} unit(s) on ${new Date(saleAt).toISOString().slice(0, 10)}` : ""}: ${trimmedNote}`,
       val,
     });
   });

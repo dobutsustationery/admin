@@ -9,6 +9,7 @@ import {
   set_stock_order_meta,
   fix_stock_order,
   set_cost_ledger_entry_qty,
+  reconstruct_stock_order_unmatched_receipt,
   update_field,
   update_item,
   type Item,
@@ -766,6 +767,132 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual(
       [],
     );
+  });
+
+  it("reconstructs the full zeroed-order receipt, ignores the recount, and records a historical sale", () => {
+    const orderId = "order1";
+    const jan = "4977564720711";
+    const key = `${jan}Lightbulbs`;
+    const receivedAt = Date.parse("2023-08-23T00:00:00Z");
+    const scanAt = Date.parse("2025-05-04T14:36:01Z");
+    const saleAt = Date.parse("2025-05-10T00:00:00Z");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        idToItem: {
+          [key]: {
+            janCode: jan,
+            subtype: "Lightbulbs",
+            description: "Plus Deco Rush",
+            hsCode: "39191080",
+            image: "",
+            qty: 9,
+            pieces: 1,
+            shipped: 1,
+            creationDate: "May 4, 2025 (9)",
+            timestamp: scanAt,
+            cost: 178.2,
+          },
+        },
+        costLedger: {
+          [key]: [
+            {
+              kind: "receipt",
+              at: scanAt,
+              seq: 0,
+              qty: 9,
+              unitCostJpy: 178.2,
+              unitCostEur: 1.1,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+            {
+              kind: "sale",
+              at: Date.parse("2026-01-27T21:19:18Z"),
+              seq: 1,
+              qty: 1,
+            },
+          ],
+        },
+        idToHistory: { [key]: [] },
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Order 1",
+            receivedAt,
+            usesZeroedQuantities: true,
+            valueOfOrderJpy: 90559,
+            paidAmount: 1150.46,
+            paidCurrency: "BGN",
+            totalOrderEur: 1150.46 / 1.95583,
+            costRows: [{ jan, unitCostJpy: 178.2, qty: 10 }],
+            costIssues: [
+              {
+                kind: "unmatched-row",
+                jan,
+                qty: 1,
+                expectedQty: 10,
+                matchedQty: 9,
+                unitCostJpy: 178.2,
+                lineCostJpy: 178.2,
+              },
+            ],
+          },
+        },
+      },
+    } as any;
+
+    const next = rootReducer(s, {
+      ...reconstruct_stock_order_unmatched_receipt({
+        orderId,
+        itemKey: key,
+        qty: 1,
+        saleAt,
+        note: "operator confirmed one unit was sold at Japan Festival 2025",
+        saleNote: "sold at Japan Festival 2025",
+      }),
+      timestamp: TS,
+    } as any);
+
+    const ledger = next.inventory.costLedger![key] as any[];
+    expect(ledger).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "receipt",
+          at: receivedAt,
+          qty: 10,
+          unitCostJpy: 178.2,
+          source: `stockOrder:${orderId}`,
+          costOrderId: orderId,
+          auditComment: expect.stringContaining(
+            "Reconstructed stock order receipt",
+          ),
+        }),
+        expect.objectContaining({
+          kind: "sale",
+          at: saleAt,
+          qty: 1,
+          auditComment: expect.stringContaining("Historical sale adjustment"),
+        }),
+      ]),
+    );
+    expect(ledger[0]).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        qty: 9,
+        ignored: true,
+        auditComment: expect.stringContaining("Ignored recount receipt"),
+      }),
+    );
+    expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
+    expect(next.inventory.idToHistory[key]).toEqual([
+      expect.objectContaining({
+        desc: expect.stringContaining(
+          "Reconstructed full 10 unit stock order receipt",
+        ),
+      }),
+    ]);
   });
 
   it("fixes missing COO and weight from matched TSV rows", () => {
