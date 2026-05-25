@@ -14,6 +14,7 @@ import {
   type Item,
 } from "$lib/inventory";
 import {
+  buildStockOrderScanBatchAudit,
   selectOrderExceptions,
   previewOrderMetaFix,
   previewStockOrderFix,
@@ -45,6 +46,36 @@ const scanItem = (subtype: string, qty: number): Item => ({
   timestamp: 0,
 });
 
+const scanAction = (
+  id: string,
+  janCode: string,
+  qty: number,
+  iso: string,
+  description = "Scanned item",
+) => {
+  const ms = Date.parse(iso);
+  return {
+    id,
+    type: "update_item",
+    payload: {
+      id: janCode,
+      item: {
+        janCode,
+        subtype: "",
+        description,
+        hsCode: "",
+        image: "",
+        qty,
+        pieces: 1,
+      },
+    },
+    timestamp: {
+      seconds: Math.floor(ms / 1000),
+      nanoseconds: (ms % 1000) * 1_000_000,
+    },
+  };
+};
+
 function importOrder(id: string, name: string) {
   let s = rootReducer(undefined, { type: "@@INIT" });
   const w = (a: any) => ({ ...a, timestamp: TS });
@@ -53,6 +84,127 @@ function importOrder(id: string, name: string) {
   s = rootReducer(s, w(import_batch({ filter: "NEW" })));
   return s;
 }
+
+describe("stock order scan batch audit", () => {
+  it("compares order rows to the best matching scan batch window", () => {
+    const inventory = {
+      stockOrderRegistry: {
+        order3: {
+          name: "Order 3",
+          usesZeroedQuantities: true,
+          costRows: [
+            { jan: "A", qty: 10, unitCostJpy: 100 },
+            { jan: "B", qty: 10, unitCostJpy: 200 },
+            { jan: "D", qty: 10, unitCostJpy: 300 },
+          ],
+        },
+      },
+    };
+    const audit = buildStockOrderScanBatchAudit(inventory as any, [
+      scanAction("a1", "A", 10, "2025-01-25T12:00:00Z", "A"),
+      scanAction("c1", "C", 4, "2025-01-25T12:05:00Z", "Extra"),
+      scanAction("d1", "D\n", 10, "2025-01-26T12:00:00Z", "D"),
+      scanAction("b1", "B", 10, "2025-05-04T12:00:00Z", "Late B"),
+    ]);
+
+    const row = audit[0];
+    expect(row.orderId).toBe("order3");
+    expect(new Date(row.startAt!).toISOString().slice(0, 10)).toBe(
+      "2025-01-25",
+    );
+    expect(row.missingOrShort.map((x) => x.jan)).toEqual(["B"]);
+    expect(row.extraScans.map((x) => x.jan)).toEqual(["C"]);
+    expect(row.unusualCount).toBe(2);
+    expect(row.overScanned).toEqual([]);
+  });
+
+  it("prefers a cleaner receipt batch over a later broad recount batch", () => {
+    const inventory = {
+      stockOrderRegistry: {
+        order2: {
+          name: "Order 2",
+          usesZeroedQuantities: true,
+          costRows: [
+            { jan: "A", qty: 10, unitCostJpy: 100 },
+            { jan: "B", qty: 10, unitCostJpy: 100 },
+            { jan: "C", qty: 10, unitCostJpy: 100 },
+          ],
+        },
+      },
+    };
+    const audit = buildStockOrderScanBatchAudit(inventory as any, [
+      scanAction("a1", "A", 10, "2024-10-10T12:00:00Z", "A"),
+      scanAction("b1", "B", 10, "2024-10-10T12:01:00Z", "B"),
+      scanAction("a2", "A", 8, "2025-05-04T12:00:00Z", "A recount"),
+      scanAction("b2", "B", 8, "2025-05-04T12:01:00Z", "B recount"),
+      scanAction("c2", "C", 8, "2025-05-04T12:02:00Z", "C recount"),
+      scanAction("x1", "X", 8, "2025-05-04T12:03:00Z", "Extra 1"),
+      scanAction("x2", "Y", 8, "2025-05-04T12:04:00Z", "Extra 2"),
+      scanAction("x3", "Z", 8, "2025-05-04T12:05:00Z", "Extra 3"),
+    ]);
+
+    const row = audit[0];
+    expect(new Date(row.startAt!).toISOString().slice(0, 10)).toBe(
+      "2024-10-10",
+    );
+    expect(row.missingOrShort.map((x) => x.jan)).toEqual(["C"]);
+    expect(row.extraScans).toEqual([]);
+  });
+
+  it("includes scan stragglers around the main receipt cohort", () => {
+    const inventory = {
+      stockOrderRegistry: {
+        order1: {
+          name: "Order 1",
+          usesZeroedQuantities: true,
+          costRows: [
+            { jan: "A", qty: 20, unitCostJpy: 100 },
+            { jan: "B", qty: 10, unitCostJpy: 100 },
+            { jan: "C", qty: 10, unitCostJpy: 100 },
+          ],
+        },
+      },
+    };
+    const audit = buildStockOrderScanBatchAudit(inventory as any, [
+      scanAction("a1", "A", 20, "2023-11-13T20:53:30Z", "Early A"),
+      scanAction("x1", "X", 5, "2023-11-14T12:00:00Z", "Other order"),
+      scanAction("x2", "Y", 5, "2023-11-15T12:00:00Z", "Other order"),
+      scanAction("x3", "Z", 5, "2023-11-15T12:05:00Z", "Other order"),
+      scanAction("b1", "B", 10, "2023-11-16T12:00:00Z", "B"),
+      scanAction("c1", "C", 10, "2023-11-17T12:00:00Z", "C"),
+      scanAction("a2", "A", 14, "2025-05-04T12:00:00Z", "Later A recount"),
+    ]);
+
+    const row = audit[0];
+    expect(new Date(row.startAt!).toISOString().slice(0, 10)).toBe(
+      "2023-11-13",
+    );
+    expect(row.missingOrShort).toEqual([]);
+    expect(row.scannedOrderQty).toBe(40);
+  });
+
+  it("skips orders whose imported quantities were not zeroed", () => {
+    const audit = buildStockOrderScanBatchAudit(
+      {
+        stockOrderRegistry: {
+          normalOrder: {
+            name: "Normal receipt import",
+            usesZeroedQuantities: false,
+            costRows: [{ jan: "A", qty: 10, unitCostJpy: 100 }],
+          },
+          zeroedOrder: {
+            name: "Zeroed import",
+            usesZeroedQuantities: true,
+            costRows: [{ jan: "A", qty: 10, unitCostJpy: 100 }],
+          },
+        },
+      } as any,
+      [scanAction("a1", "A", 10, "2025-01-25T12:00:00Z", "A")],
+    );
+
+    expect(audit.map((row) => row.orderId)).toEqual(["zeroedOrder"]);
+  });
+});
 
 describe("order-exceptions M3.2", () => {
   it("auto-registers the order; selector flags all gaps", () => {
@@ -67,6 +219,29 @@ describe("order-exceptions M3.2", () => {
     expect(r.flags.orderValueUnknown).toBe(true);
     expect(r.flags.paidUnknown).toBe(true);
     expect(r.isException).toBe(true);
+  });
+
+  it("sorts stock orders by receipt date with unknown dates last", () => {
+    const rows = selectOrderExceptions({
+      stockOrderRegistry: {
+        later: {
+          name: "B Later",
+          receivedAt: Date.parse("2025-02-01T00:00:00Z"),
+        },
+        unknown: { name: "C Unknown" },
+        earlier: {
+          name: "A Earlier",
+          receivedAt: Date.parse("2025-01-01T00:00:00Z"),
+        },
+      },
+      costLedger: {},
+    } as any);
+
+    expect(rows.map((row) => row.orderId)).toEqual([
+      "earlier",
+      "later",
+      "unknown",
+    ]);
   });
 
   it("BGN paid amount is normalised to EUR; lots retro-updated", () => {

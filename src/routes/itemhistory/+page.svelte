@@ -15,18 +15,25 @@
   let searchQuery = "";
 
   $: itemKey = $page.url.searchParams.get("itemKey");
+  $: normalizedItemKey = (itemKey || "").trim();
   $: currentItem =
-    itemKey && $store.inventory?.idToItem
-      ? $store.inventory.idToItem[itemKey]
+    normalizedItemKey && $store.inventory?.idToItem
+      ? $store.inventory.idToItem[normalizedItemKey]
       : null;
   $: currentLedger =
-    itemKey && $store.inventory?.costLedger?.[itemKey]
-      ? $store.inventory.costLedger[itemKey]
+    normalizedItemKey && $store.inventory?.costLedger?.[normalizedItemKey]
+      ? $store.inventory.costLedger[normalizedItemKey]
       : [];
   $: ledgerRows = sortedLedger(currentLedger).map((entry, index, ledger) => ({
     entry,
     running: walkLedger(ledger.slice(0, index + 1)),
   }));
+  $: janMatches = findJanMatches(normalizedItemKey);
+  $: subtypeMatches = currentItem ? [] : janMatches;
+  $: relatedSubtypeMatches =
+    currentItem?.janCode === normalizedItemKey
+      ? janMatches.filter(([key]) => key !== normalizedItemKey)
+      : [];
 
   $: allMatches = (
     searchQuery.length > 2 && $store.inventory?.idToItem
@@ -52,8 +59,28 @@
   }
 
   function selectItem(key: string) {
-    goto(`/itemhistory?itemKey=${key}`);
+    goto(`/itemhistory?itemKey=${encodeURIComponent(key)}`);
     searchQuery = ""; // Clear search or keep it? Clearing feels cleaner once selected.
+  }
+
+  function findJanMatches(key: string): [string, any][] {
+    const idToItem = $store.inventory?.idToItem;
+    if (!key || !idToItem) return [];
+    return Object.entries(idToItem)
+      .filter(([, item]: [string, any]) => item?.janCode === key)
+      .sort(
+        (
+          [leftKey, leftItem]: [string, any],
+          [rightKey, rightItem]: [string, any],
+        ) => {
+          const leftSubtype = String(leftItem.subtype || "");
+          const rightSubtype = String(rightItem.subtype || "");
+          return (
+            leftSubtype.localeCompare(rightSubtype) ||
+            leftKey.localeCompare(rightKey)
+          );
+        },
+      );
   }
 
   function sortedLedger(ledger: readonly LedgerEntry[]): LedgerEntry[] {
@@ -100,6 +127,14 @@
     if (entry.ignoreReason) notes.push(entry.ignoreReason);
     return notes.join(" ");
   }
+
+  function subtypeLabel(item: any, key: string): string {
+    return item?.subtype ? String(item.subtype) : key;
+  }
+
+  function onHand(item: any): number {
+    return (Number(item?.qty) || 0) - (Number(item?.shipped) || 0);
+  }
 </script>
 
 <div class="page-container">
@@ -141,80 +176,151 @@
 
   {#if itemKey}
     <h1 class="page-title">Item History</h1>
-    <ItemCard item={currentItem} {itemKey} ledger={currentLedger} />
+    {#if subtypeMatches.length > 0}
+      <section class="subtype-section">
+        <h2 class="history-title">Choose a subtype for {normalizedItemKey}</h2>
+        <p class="muted">
+          This JAN has multiple inventory entries. Open a specific subtype to
+          view its item history and cost ledger.
+        </p>
+        <div class="subtype-list">
+          {#each subtypeMatches as [key, item]}
+            <button class="subtype-row" on:click={() => selectItem(key)}>
+              <div class="subtype-thumb">
+                {#if item.image}
+                  <ImageThumbnail
+                    src={item.image}
+                    alt={item.description}
+                    width="48px"
+                    height="48px"
+                  />
+                {/if}
+              </div>
+              <div class="subtype-main">
+                <span class="subtype-name">{subtypeLabel(item, key)}</span>
+                <span class="subtype-desc">{item.description || key}</span>
+                <span class="muted">{key}</span>
+              </div>
+              <div class="subtype-counts">
+                <span>Qty {item.qty || 0}</span>
+                <span>Shipped {item.shipped || 0}</span>
+                <span>On hand {onHand(item)}</span>
+              </div>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {:else}
+      <ItemCard
+        item={currentItem}
+        itemKey={normalizedItemKey}
+        ledger={currentLedger}
+      />
+      {#if relatedSubtypeMatches.length > 0}
+        <section class="subtype-section">
+          <h2 class="history-title">Other entries for {normalizedItemKey}</h2>
+          <div class="subtype-list">
+            {#each relatedSubtypeMatches as [key, item]}
+              <button class="subtype-row" on:click={() => selectItem(key)}>
+                <div class="subtype-thumb">
+                  {#if item.image}
+                    <ImageThumbnail
+                      src={item.image}
+                      alt={item.description}
+                      width="48px"
+                      height="48px"
+                    />
+                  {/if}
+                </div>
+                <div class="subtype-main">
+                  <span class="subtype-name">{subtypeLabel(item, key)}</span>
+                  <span class="subtype-desc">{item.description || key}</span>
+                  <span class="muted">{key}</span>
+                </div>
+                <div class="subtype-counts">
+                  <span>Qty {item.qty || 0}</span>
+                  <span>Shipped {item.shipped || 0}</span>
+                  <span>On hand {onHand(item)}</span>
+                </div>
+              </button>
+            {/each}
+          </div>
+        </section>
+      {/if}
 
-    <h2 class="history-title">Cost Ledger</h2>
-    {#if ledgerRows.length > 0}
-      <table class="ledger-table">
+      <h2 class="history-title">Cost Ledger</h2>
+      {#if ledgerRows.length > 0}
+        <table class="ledger-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Kind</th>
+              <th>Qty</th>
+              <th>Unit Cost</th>
+              <th>Source</th>
+              <th>Running On Hand</th>
+              <th>Running Avg</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each ledgerRows as row}
+              <tr
+                class:audit-warning={row.entry.kind === "receipt" &&
+                  row.entry.auditSeverity === "warning"}
+                class:audit-danger={row.entry.kind === "receipt" &&
+                  row.entry.auditSeverity === "danger"}
+              >
+                <td class="date-col">{fmtDate(row.entry.at)}</td>
+                <td>{ledgerKind(row.entry)}</td>
+                <td>{row.entry.qty}</td>
+                <td>
+                  {#if row.entry.kind === "receipt"}
+                    <div>{fmtYen(row.entry.unitCostJpy)}</div>
+                    <span class="muted">{fmtEur(row.entry.unitCostEur)}</span>
+                  {:else}
+                    <span class="muted">-</span>
+                  {/if}
+                </td>
+                <td>
+                  <div>{ledgerSource(row.entry)}</div>
+                  {#if row.entry.kind === "receipt" && row.entry.costOrderId}
+                    <span class="muted">{row.entry.costOrderId}</span>
+                  {/if}
+                  {#if ledgerNote(row.entry)}
+                    <div class="audit-note">{ledgerNote(row.entry)}</div>
+                  {/if}
+                </td>
+                <td>{row.running.onHand}</td>
+                <td>
+                  <div>{fmtYen(row.running.avgJpy)}</div>
+                  <span class="muted">{fmtEur(row.running.avgEur)}</span>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="muted">No cost ledger entries.</p>
+      {/if}
+
+      <h2 class="history-title">History</h2>
+      <table>
         <thead>
           <tr>
             <th>Date</th>
-            <th>Kind</th>
-            <th>Qty</th>
-            <th>Unit Cost</th>
-            <th>Source</th>
-            <th>Running On Hand</th>
-            <th>Running Avg</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
-          {#each ledgerRows as row}
-            <tr
-              class:audit-warning={row.entry.kind === "receipt" &&
-                row.entry.auditSeverity === "warning"}
-              class:audit-danger={row.entry.kind === "receipt" &&
-                row.entry.auditSeverity === "danger"}
-            >
-              <td class="date-col">{fmtDate(row.entry.at)}</td>
-              <td>{ledgerKind(row.entry)}</td>
-              <td>{row.entry.qty}</td>
-              <td>
-                {#if row.entry.kind === "receipt"}
-                  <div>{fmtYen(row.entry.unitCostJpy)}</div>
-                  <span class="muted">{fmtEur(row.entry.unitCostEur)}</span>
-                {:else}
-                  <span class="muted">-</span>
-                {/if}
-              </td>
-              <td>
-                <div>{ledgerSource(row.entry)}</div>
-                {#if row.entry.kind === "receipt" && row.entry.costOrderId}
-                  <span class="muted">{row.entry.costOrderId}</span>
-                {/if}
-                {#if ledgerNote(row.entry)}
-                  <div class="audit-note">{ledgerNote(row.entry)}</div>
-                {/if}
-              </td>
-              <td>{row.running.onHand}</td>
-              <td>
-                <div>{fmtYen(row.running.avgJpy)}</div>
-                <span class="muted">{fmtEur(row.running.avgEur)}</span>
-              </td>
+          {#each [...($store.inventory?.idToHistory?.[normalizedItemKey] || [])].reverse() as history}
+            <tr>
+              <td class="date-col">{history.date}</td>
+              <td>{history.desc}</td>
             </tr>
           {/each}
         </tbody>
       </table>
-    {:else}
-      <p class="muted">No cost ledger entries.</p>
     {/if}
-
-    <h2 class="history-title">History</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each [...($store.inventory.idToHistory[itemKey] || [])].reverse() as history}
-          <tr>
-            <td class="date-col">{history.date}</td>
-            <td>{history.desc}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
   {:else}
     <div class="empty-state">
       <h1>Item History</h1>
@@ -358,6 +464,72 @@
     line-height: 1.35;
   }
 
+  .subtype-section {
+    margin-top: 1rem;
+  }
+
+  .subtype-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .subtype-row {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .subtype-row:hover {
+    background: #f9fafb;
+    border-color: #d1d5db;
+  }
+
+  .subtype-thumb {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+  }
+
+  .subtype-main,
+  .subtype-counts {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .subtype-name {
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .subtype-desc {
+    color: #374151;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .subtype-counts {
+    color: #374151;
+    font-size: 0.85rem;
+    gap: 0.1rem;
+    white-space: nowrap;
+  }
+
   .date-col {
     white-space: nowrap;
     color: #666;
@@ -381,5 +553,18 @@
   .auth-wrapper {
     margin-top: 2rem;
     text-align: right;
+  }
+
+  @media (max-width: 640px) {
+    .subtype-row {
+      grid-template-columns: 48px minmax(0, 1fr);
+    }
+
+    .subtype-counts {
+      grid-column: 2;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
   }
 </style>

@@ -1,7 +1,12 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import type { StockOrderScanBatchAuditRow } from "./order-exceptions";
 
 export interface UIState {
   columnWidths: Record<string, number>; // key: "view_field" -> width
+  stockOrderScanBatchAudit?: {
+    generatedAt: number;
+    rows: StockOrderScanBatchAuditRow[];
+  };
 }
 
 const initialState: UIState = {
@@ -20,8 +25,18 @@ const uiSlice = createSlice({
       const key = `${view}_${field}`;
       state.columnWidths[key] = width;
     },
+    set_stock_order_scan_batch_audit: (
+      state,
+      action: PayloadAction<{
+        generatedAt: number;
+        rows: StockOrderScanBatchAuditRow[];
+      }>,
+    ) => {
+      state.stockOrderScanBatchAudit = action.payload;
+    },
   },
 });
 
-export const { set_column_width } = uiSlice.actions;
+export const { set_column_width, set_stock_order_scan_batch_audit } =
+  uiSlice.actions;
 export const ui = uiSlice.reducer;

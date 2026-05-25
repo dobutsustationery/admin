@@ -1,15 +1,25 @@
 <script lang="ts">
   import { page } from "$app/stores";
+  import { tick } from "svelte";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
   import { firestore } from "$lib/firebase";
   import { broadcast } from "$lib/redux-firestore";
   import { fix_stock_order, type StockOrderMeta } from "$lib/inventory";
+  import { getAllCachedActions } from "$lib/action-cache";
+  import { rootReducer } from "$lib/root-reducer";
+  import { toTimestampMs } from "$lib/timestamped-action";
+  import { set_stock_order_scan_batch_audit } from "$lib/ui-slice";
   import {
+    buildStockOrderScanBatchAudit,
     selectOrderExceptions,
     previewStockOrderFix,
     stockOrderCostColumns,
     type OrderExceptionRow,
+    type StockOrderScanBatchAuditRow,
+    type StockOrderScanBatchExpectedRow,
+    type StockOrderScanBatchExtraRow,
+    type StockOrderScanBatchScan,
     type StockOrderCostMatchRow,
   } from "$lib/order-exceptions";
 
@@ -17,8 +27,26 @@
   $: rows = selectOrderExceptions($store.inventory);
   $: exceptions = rows.filter((r) => r.isException);
   $: current = orderId ? rows.find((r) => r.orderId === orderId) : undefined;
+  $: currentScanAudit = current
+    ? scanAuditRows.find((r) => r.orderId === current?.orderId)
+    : undefined;
+  $: scanAuditGeneratedAt = $store.ui.stockOrderScanBatchAudit?.generatedAt;
+  $: visibleScanAuditRows = showAllScanAuditRows
+    ? scanAuditRows
+    : scanAuditRows.filter((r) => r.unusualCount > 0);
+  $: unusualScanAuditCount = scanAuditRows.filter(
+    (r) => r.unusualCount > 0,
+  ).length;
 
   let statusMessage = "";
+  let scanAuditRows: StockOrderScanBatchAuditRow[] = [];
+  $: scanAuditRows = $store.ui.stockOrderScanBatchAudit?.rows || [];
+  let scanAuditLoading = false;
+  let scanAuditProgress = 0;
+  let scanAuditTotal = 0;
+  let scanAuditMessage = "";
+  let showAllScanAuditRows = false;
+  const REPLAY_YIELD_EVERY = 500;
 
   // One atomic edit: all fields feed a single proposed fix.
   let dateStr = "";
@@ -315,6 +343,94 @@
       ? matchRows.length
       : matchRows.filter((row) => rowHasKind(row, kind)).length;
   }
+  function actionTimestampSortKey(action: any): number {
+    const ms =
+      toTimestampMs(action?.timestamp) ??
+      (typeof action?._timestamp_millis === "number"
+        ? action._timestamp_millis
+        : typeof action?._timestamp === "number"
+          ? action._timestamp
+          : 0);
+    const nanos =
+      typeof action?.timestamp?.nanoseconds === "number"
+        ? action.timestamp.nanoseconds
+        : typeof action?.timestamp?._nanoseconds === "number"
+          ? action.timestamp._nanoseconds
+          : 0;
+    return ms + nanos / 1_000_000_000;
+  }
+  async function runScanBatchAudit() {
+    scanAuditLoading = true;
+    scanAuditProgress = 0;
+    scanAuditTotal = 0;
+    scanAuditMessage = "Loading cached broadcast actions...";
+    try {
+      const actions = await getAllCachedActions();
+      const replayActions = [...actions].sort(
+        (a, b) => actionTimestampSortKey(a) - actionTimestampSortKey(b),
+      );
+      scanAuditTotal = replayActions.length;
+      scanAuditMessage = `Replaying ${scanAuditTotal.toLocaleString()} actions...`;
+      await tick();
+
+      let replayState = rootReducer(undefined, { type: "@@INIT" });
+      for (let i = 0; i < replayActions.length; i++) {
+        try {
+          replayState = rootReducer(replayState, replayActions[i], () => {});
+        } catch (e) {
+          console.warn("Scan batch audit replay error:", e);
+        }
+        if (
+          (i + 1) % REPLAY_YIELD_EVERY === 0 ||
+          i === replayActions.length - 1
+        ) {
+          scanAuditProgress = i + 1;
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      scanAuditMessage = "Comparing order rows to scanner batches...";
+      await tick();
+      const rows = buildStockOrderScanBatchAudit(
+        replayState.inventory,
+        replayActions,
+      );
+      store.dispatch(
+        set_stock_order_scan_batch_audit({
+          generatedAt: Date.now(),
+          rows,
+        }),
+      );
+      scanAuditMessage = `Audited ${rows.length.toLocaleString()} zeroed-quantity stock order(s).`;
+    } catch (e) {
+      console.error("Failed to run scan batch audit:", e);
+      scanAuditMessage =
+        e instanceof Error ? e.message : "Failed to run scan batch audit.";
+    } finally {
+      scanAuditLoading = false;
+    }
+  }
+  function scanBatchDateRange(row: StockOrderScanBatchAuditRow): string {
+    if (!row.startAt || !row.endAt) return "No matching scans";
+    const start = new Date(row.startAt).toISOString().slice(0, 10);
+    const end = new Date(row.endAt - 1).toISOString().slice(0, 10);
+    return start === end ? start : `${start} to ${end}`;
+  }
+  function scanTime(scan: StockOrderScanBatchScan): string {
+    return new Date(scan.at).toISOString().replace("T", " ").slice(0, 16);
+  }
+  function generatedAtLabel(ms: number | undefined): string {
+    return ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 19) : "";
+  }
+  function orderRowsLabel(row: StockOrderScanBatchExpectedRow): string {
+    return row.rows.join(", ");
+  }
+  function firstScanLabel(
+    row: StockOrderScanBatchExpectedRow | StockOrderScanBatchExtraRow,
+  ): string {
+    const scan = row.scans[0];
+    return scan ? `${scanTime(scan)} · ${scan.description}` : "—";
+  }
 </script>
 
 <svelte:head><title>Order Exceptions</title></svelte:head>
@@ -369,6 +485,75 @@
       </tbody>
     </table>
   {/if}
+
+  <section>
+    <h2>Scanner Batch Audit</h2>
+    <p class="hint">
+      Replays cached broadcast actions and compares each stock order's rows to
+      the scanner batch window that best matches that order. Only
+      zeroed-quantity imports are audited, because normal receipt imports are
+      not expected to have a matching scan batch. This is manual because full
+      replay is intentionally expensive.
+    </p>
+    <button on:click={runScanBatchAudit} disabled={scanAuditLoading}>
+      {scanAuditLoading ? "Running audit..." : "Run scanner batch audit"}
+    </button>
+    {#if scanAuditMessage}
+      <p class="hint">
+        {scanAuditMessage}
+        {#if scanAuditLoading && scanAuditTotal > 0}
+          ({scanAuditProgress.toLocaleString()} / {scanAuditTotal.toLocaleString()})
+        {/if}
+      </p>
+    {/if}
+    {#if scanAuditRows.length}
+      {#if scanAuditGeneratedAt}
+        <p class="hint">
+          Report generated {generatedAtLabel(scanAuditGeneratedAt)}. Re-run the
+          audit if cached action history has changed.
+        </p>
+      {/if}
+      <label class="chk">
+        <input type="checkbox" bind:checked={showAllScanAuditRows} />
+        Show orders with no unusual findings
+      </label>
+      <p class="preview">
+        {unusualScanAuditCount} order(s) with unusual scanner-batch findings ·
+        {scanAuditRows.length} zeroed-quantity order(s) audited.
+      </p>
+      <table class="scan-audit-table">
+        <thead>
+          <tr>
+            <th>Order</th><th>Batch</th><th>Coverage</th><th>Missing / short</th
+            >
+            <th>Over</th><th>Extra</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each visibleScanAuditRows as row (row.orderId)}
+            <tr class:warning-row={row.unusualCount > 0}>
+              <td>{row.name}</td>
+              <td>{scanBatchDateRange(row)}</td>
+              <td>
+                {row.scannedUniqueOrderJans} / {row.expectedUniqueJans} JANs ·
+                {row.scannedOrderQty} / {row.expectedQty} units ·
+                {row.scanCount} scan(s)
+              </td>
+              <td>{row.missingOrShort.length}</td>
+              <td>{row.overScanned.length}</td>
+              <td>{row.extraScans.length}</td>
+              <td>
+                <a
+                  href={`/order-exceptions?orderId=${encodeURIComponent(row.orderId)}`}
+                  >Review</a
+                >
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </section>
 {:else}
   <a class="back" href="/order-exceptions">← All exceptions</a>
   <h1>Fix Order: {current.name}</h1>
@@ -379,6 +564,124 @@
     change; order does not matter (the TSV reconciles against the value of goods
     you enter here).
   </p>
+
+  <section>
+    <h2>Scanner Batch Audit</h2>
+    <p class="hint">
+      Replays cached broadcast actions and compares this order's rows to the
+      scanner batch window that best matches it. Only zeroed-quantity imports
+      are audited, because normal receipt imports are not expected to have a
+      matching scan batch.
+    </p>
+    <button on:click={runScanBatchAudit} disabled={scanAuditLoading}>
+      {scanAuditLoading ? "Running audit..." : "Run scanner batch audit"}
+    </button>
+    {#if scanAuditMessage}
+      <p class="hint">
+        {scanAuditMessage}
+        {#if scanAuditLoading && scanAuditTotal > 0}
+          ({scanAuditProgress.toLocaleString()} / {scanAuditTotal.toLocaleString()})
+        {/if}
+      </p>
+    {/if}
+    {#if currentScanAudit}
+      {#if scanAuditGeneratedAt}
+        <p class="hint">
+          Report generated {generatedAtLabel(scanAuditGeneratedAt)}. Re-run the
+          audit if cached action history has changed.
+        </p>
+      {/if}
+      <p class="preview">
+        Batch {scanBatchDateRange(currentScanAudit)} ·
+        {currentScanAudit.scannedUniqueOrderJans} / {currentScanAudit.expectedUniqueJans}
+        JANs · {currentScanAudit.scannedOrderQty} / {currentScanAudit.expectedQty}
+        units · {currentScanAudit.scanCount} scan(s).
+      </p>
+
+      {#if currentScanAudit.missingOrShort.length}
+        <h3>Missing / Short in Batch</h3>
+        <table class="scan-audit-table">
+          <thead>
+            <tr>
+              <th>Rows</th><th>JAN</th><th>Expected</th><th>Scanned</th>
+              <th>Gap</th><th>Unit ¥</th><th>Scans</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each currentScanAudit.missingOrShort as row (row.jan)}
+              <tr
+                class:error-row={row.scannedQty === 0}
+                class:warning-row={row.scannedQty > 0}
+              >
+                <td>{orderRowsLabel(row)}</td>
+                <td
+                  ><a href={`/itemhistory?itemKey=${row.jan}`}>{row.jan}</a></td
+                >
+                <td>{row.expectedQty}</td>
+                <td>{row.scannedQty}</td>
+                <td>{row.gap}</td>
+                <td>{row.unitCosts.join(", ")}</td>
+                <td>{firstScanLabel(row)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+
+      {#if currentScanAudit.overScanned.length}
+        <h3>Overrepresented in Batch</h3>
+        <table class="scan-audit-table">
+          <thead>
+            <tr>
+              <th>Rows</th><th>JAN</th><th>Expected</th><th>Scanned</th>
+              <th>Over</th><th>Unit ¥</th><th>Scans</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each currentScanAudit.overScanned as row (row.jan)}
+              <tr class:warning-row={true}>
+                <td>{orderRowsLabel(row)}</td>
+                <td
+                  ><a href={`/itemhistory?itemKey=${row.jan}`}>{row.jan}</a></td
+                >
+                <td>{row.expectedQty}</td>
+                <td>{row.scannedQty}</td>
+                <td>{Math.abs(row.gap)}</td>
+                <td>{row.unitCosts.join(", ")}</td>
+                <td>{firstScanLabel(row)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+
+      {#if currentScanAudit.extraScans.length}
+        <h3>Scans Not in This Order</h3>
+        <table class="scan-audit-table">
+          <thead>
+            <tr><th>JAN</th><th>Qty</th><th>First scan</th></tr>
+          </thead>
+          <tbody>
+            {#each currentScanAudit.extraScans as row (row.jan)}
+              <tr class:warning-row={true}>
+                <td
+                  ><a href={`/itemhistory?itemKey=${row.jan}`}>{row.jan}</a></td
+                >
+                <td>{row.scannedQty}</td>
+                <td>{firstScanLabel(row)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+
+      {#if currentScanAudit.unusualCount === 0}
+        <p class="all-clear">
+          No unusual scanner-batch findings for this order.
+        </p>
+      {/if}
+    {/if}
+  </section>
 
   <section>
     <h2>Receipt date</h2>

@@ -1097,13 +1097,25 @@ export const rootReducer = (
       nextState.orderImport.activeFile?.id ||
       nextState.orderImport.activeFile?.name ||
       "unknown-stock-order";
+    const usesZeroedQuantities = nextState.orderImport.rows.some((row: any) => {
+      const parsed = row.parsed;
+      if (!parsed) return false;
+      return !(Number(parsed.qty) > 0) && Number(parsed.orderedQty) > 0;
+    });
     // Auto-register the stock order so the exceptions UI can enumerate
     // it without scanning the action log. Idempotent; metadata only.
-    if (!nextState.inventory.stockOrderRegistry?.[orderId]) {
+    const existingOrderMeta = nextState.inventory.stockOrderRegistry?.[orderId];
+    if (
+      !existingOrderMeta ||
+      existingOrderMeta.usesZeroedQuantities !== usesZeroedQuantities
+    ) {
       const registerAction = inheritTimestamp({
         ...set_stock_order_meta({
           orderId,
-          meta: { name: nextState.orderImport.activeFile?.name || orderId },
+          meta: {
+            name: nextState.orderImport.activeFile?.name || orderId,
+            usesZeroedQuantities,
+          },
         }),
         _ephemeral: true,
       });

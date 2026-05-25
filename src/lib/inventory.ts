@@ -138,6 +138,7 @@ export interface StockOrderMeta {
   totalOrderEur?: number; // derived: paid normalised to EUR
   costIssues?: StockOrderCostIssue[];
   costRows?: StockOrderCostRow[];
+  usesZeroedQuantities?: boolean; // original import rows had qty zeroed; scans are expected separately
   // legacy (pre-M3) — kept for back-compat with any external callers
   totalOrderJpy?: number;
 }

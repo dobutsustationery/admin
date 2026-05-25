@@ -9,6 +9,7 @@ import {
   type LedgerEntry,
   type ReceiptEntry,
 } from "./cost-engine";
+import { toTimestampMs } from "./timestamped-action";
 import {
   parseStockOrderCostTsv,
   reconcileStockOrderCostTsv,
@@ -71,6 +72,7 @@ export interface OrderExceptionRow {
   totalOrderEur?: number;
   paidCurrency?: "EUR" | "BGN";
   paidAmount?: number;
+  usesZeroedQuantities?: boolean;
   lotCount: number;
   unpricedCount: number;
   flags: {
@@ -127,13 +129,19 @@ export function selectOrderExceptions(
       totalOrderEur: m.totalOrderEur,
       paidCurrency: m.paidCurrency,
       paidAmount: m.paidAmount,
+      usesZeroedQuantities: m.usesZeroedQuantities,
       lotCount,
       unpricedCount,
       flags,
       isException: Object.values(flags).some(Boolean),
     });
   }
-  rows.sort((a, b) => a.name.localeCompare(b.name));
+  rows.sort((a, b) => {
+    const aDate = a.receivedAt && a.receivedAt > 0 ? a.receivedAt : Infinity;
+    const bDate = b.receivedAt && b.receivedAt > 0 ? b.receivedAt : Infinity;
+    if (aDate !== bDate) return aDate - bDate;
+    return a.name.localeCompare(b.name);
+  });
   return rows;
 }
 
@@ -219,6 +227,304 @@ export function previewOrderMetaFix(
   }
   items.sort((a, b) => a.key.localeCompare(b.key));
   return { orderId, fx, receivedAt, affectedLots, items };
+}
+
+export interface StockOrderScanBatchScan {
+  actionId: string;
+  at: number;
+  rawJan: string;
+  jan: string;
+  itemKey: string;
+  qty: number;
+  description: string;
+}
+
+export interface StockOrderScanBatchExpectedRow {
+  jan: string;
+  rows: number[];
+  expectedQty: number;
+  scannedQty: number;
+  gap: number;
+  unitCosts: number[];
+  scans: StockOrderScanBatchScan[];
+}
+
+export interface StockOrderScanBatchExtraRow {
+  jan: string;
+  scannedQty: number;
+  scans: StockOrderScanBatchScan[];
+}
+
+export interface StockOrderScanBatchAuditRow {
+  orderId: string;
+  name: string;
+  startAt?: number;
+  endAt?: number;
+  expectedUniqueJans: number;
+  expectedRows: number;
+  expectedQty: number;
+  scannedUniqueOrderJans: number;
+  scannedOrderQty: number;
+  scanCount: number;
+  missingOrShort: StockOrderScanBatchExpectedRow[];
+  overScanned: StockOrderScanBatchExpectedRow[];
+  extraScans: StockOrderScanBatchExtraRow[];
+  unusualCount: number;
+}
+
+const SCAN_BATCH_WINDOW_DAYS = 7;
+
+function normalizeJan(value: unknown): string {
+  return String(value || "").trim();
+}
+
+function timestampSortKey(action: any): number {
+  const ms =
+    toTimestampMs(action?.timestamp) ??
+    (typeof action?._timestamp_millis === "number"
+      ? action._timestamp_millis
+      : typeof action?._timestamp === "number"
+        ? action._timestamp
+        : 0);
+  const nanos =
+    typeof action?.timestamp?.nanoseconds === "number"
+      ? action.timestamp.nanoseconds / 1_000_000
+      : typeof action?.timestamp?._nanoseconds === "number"
+        ? action.timestamp._nanoseconds / 1_000_000
+        : 0;
+  return ms + nanos / 1000;
+}
+
+function dayStartUtc(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function orderScanBatchScans(
+  actions: readonly any[],
+): StockOrderScanBatchScan[] {
+  return actions
+    .filter((action) => action?.type === "update_item")
+    .map((action) => {
+      const payload = action.payload || {};
+      const item = payload.item || {};
+      const rawJan = String(item.janCode || payload.id || "");
+      return {
+        actionId: String(action.id || ""),
+        at: timestampSortKey(action),
+        rawJan,
+        jan: normalizeJan(rawJan),
+        itemKey: String(payload.id || ""),
+        qty: Number(item.qty) || 0,
+        description: String(item.description || ""),
+      };
+    })
+    .filter((scan) => scan.at > 0 && scan.jan)
+    .sort((a, b) => a.at - b.at || a.actionId.localeCompare(b.actionId));
+}
+
+function expectedRowsForOrder(
+  rows: readonly { jan: string; unitCostJpy: number; qty?: number }[],
+) {
+  const expected = new Map<
+    string,
+    {
+      jan: string;
+      rows: number[];
+      expectedQty: number;
+      unitCosts: Set<number>;
+    }
+  >();
+  rows.forEach((row, index) => {
+    const jan = normalizeJan(row.jan);
+    const qty = Number(row.qty) || 0;
+    if (!jan || !(qty > 0)) return;
+    const entry = expected.get(jan) || {
+      jan,
+      rows: [],
+      expectedQty: 0,
+      unitCosts: new Set<number>(),
+    };
+    entry.rows.push(index + 1);
+    entry.expectedQty += qty;
+    if (Number(row.unitCostJpy) > 0) entry.unitCosts.add(row.unitCostJpy);
+    expected.set(jan, entry);
+  });
+  return expected;
+}
+
+function chooseBestScanWindow(
+  expectedJans: Set<string>,
+  scans: readonly StockOrderScanBatchScan[],
+): { startAt?: number; endAt?: number; scans: StockOrderScanBatchScan[] } {
+  const matchingScans = scans.filter((scan) => expectedJans.has(scan.jan));
+  const candidateStarts = [
+    ...new Set(matchingScans.map((scan) => dayStartUtc(scan.at))),
+  ].sort((a, b) => a - b);
+  if (candidateStarts.length === 0) return { scans: [] };
+
+  let best = {
+    startAt: candidateStarts[0],
+    endAt: candidateStarts[0] + SCAN_BATCH_WINDOW_DAYS * 86_400_000,
+    scans: [] as StockOrderScanBatchScan[],
+    score: -1,
+    uniqueMatches: -1,
+    matchedQty: -1,
+    extraUnique: Number.MAX_SAFE_INTEGER,
+    precision: 0,
+  };
+
+  for (const startAt of candidateStarts) {
+    const endAt = startAt + SCAN_BATCH_WINDOW_DAYS * 86_400_000;
+    const windowScans = scans.filter(
+      (scan) => scan.at >= startAt && scan.at < endAt,
+    );
+    const matched = windowScans.filter((scan) => expectedJans.has(scan.jan));
+    const uniqueMatches = new Set(matched.map((scan) => scan.jan)).size;
+    const extraUnique = new Set(
+      windowScans
+        .filter((scan) => !expectedJans.has(scan.jan))
+        .map((scan) => scan.jan),
+    ).size;
+    const matchedQty = matched.reduce((sum, scan) => sum + scan.qty, 0);
+    const precision =
+      uniqueMatches + extraUnique > 0
+        ? uniqueMatches / (uniqueMatches + extraUnique)
+        : 0;
+    const recall =
+      expectedJans.size > 0 ? uniqueMatches / expectedJans.size : 0;
+    const score =
+      precision + recall > 0
+        ? (2 * precision * recall) / (precision + recall)
+        : 0;
+    const uniqueGain = uniqueMatches - best.uniqueMatches;
+    const meaningfulUniqueGain =
+      uniqueGain > 0 &&
+      (best.uniqueMatches < 0 ||
+        precision >= best.precision * 0.75 ||
+        uniqueGain >= Math.max(3, best.uniqueMatches * 0.25));
+    const isBetter =
+      meaningfulUniqueGain ||
+      (uniqueMatches === best.uniqueMatches &&
+        extraUnique < best.extraUnique) ||
+      (uniqueMatches === best.uniqueMatches &&
+        extraUnique === best.extraUnique &&
+        score > best.score) ||
+      (uniqueMatches === best.uniqueMatches &&
+        score === best.score &&
+        extraUnique === best.extraUnique &&
+        matchedQty > best.matchedQty);
+    if (isBetter) {
+      best = {
+        startAt,
+        endAt,
+        scans: windowScans,
+        score,
+        uniqueMatches,
+        matchedQty,
+        extraUnique,
+        precision,
+      };
+    }
+  }
+
+  return { startAt: best.startAt, endAt: best.endAt, scans: best.scans };
+}
+
+/**
+ * Compare each stock order's cost rows to the most likely scanner batch
+ * containing them. This intentionally uses raw replayed broadcast actions:
+ * reducer state alone can no longer distinguish duplicate scanner snapshots
+ * that collapsed into one final item.
+ */
+export function buildStockOrderScanBatchAudit(
+  inventory: Pick<InventoryState, "stockOrderRegistry">,
+  actions: readonly any[],
+): StockOrderScanBatchAuditRow[] {
+  const registry = inventory.stockOrderRegistry || {};
+  const scans = orderScanBatchScans(actions);
+  const rows: StockOrderScanBatchAuditRow[] = [];
+
+  for (const [orderId, meta] of Object.entries(registry)) {
+    if (meta.usesZeroedQuantities !== true) continue;
+    const costRows = meta.costRows || [];
+    const expected = expectedRowsForOrder(costRows);
+    if (expected.size === 0) continue;
+
+    const expectedJans = new Set(expected.keys());
+    const batch = chooseBestScanWindow(expectedJans, scans);
+    const scanByJan = new Map<string, StockOrderScanBatchScan[]>();
+    for (const scan of batch.scans) {
+      const existing = scanByJan.get(scan.jan) || [];
+      existing.push(scan);
+      scanByJan.set(scan.jan, existing);
+    }
+
+    const expectedRows: StockOrderScanBatchExpectedRow[] = [
+      ...expected.values(),
+    ]
+      .map((entry) => {
+        const janScans = scanByJan.get(entry.jan) || [];
+        const scannedQty = janScans.reduce((sum, scan) => sum + scan.qty, 0);
+        return {
+          jan: entry.jan,
+          rows: entry.rows,
+          expectedQty: entry.expectedQty,
+          scannedQty,
+          gap: entry.expectedQty - scannedQty,
+          unitCosts: [...entry.unitCosts].sort((a, b) => a - b),
+          scans: janScans,
+        };
+      })
+      .sort((a, b) => a.rows[0] - b.rows[0]);
+
+    const missingOrShort = expectedRows.filter((row) => row.gap > 0);
+    const overScanned = expectedRows.filter((row) => row.gap < 0);
+    const extraScans = [...scanByJan.entries()]
+      .filter(([jan]) => !expectedJans.has(jan))
+      .map(([jan, janScans]) => ({
+        jan,
+        scannedQty: janScans.reduce((sum, scan) => sum + scan.qty, 0),
+        scans: janScans,
+      }))
+      .sort((a, b) => a.scans[0].at - b.scans[0].at);
+    const scannedUniqueOrderJans = expectedRows.filter(
+      (row) => row.scannedQty > 0,
+    ).length;
+    const scannedOrderQty = expectedRows.reduce(
+      (sum, row) => sum + row.scannedQty,
+      0,
+    );
+
+    rows.push({
+      orderId,
+      name: meta.name || orderId,
+      startAt: batch.startAt,
+      endAt: batch.endAt,
+      expectedUniqueJans: expected.size,
+      expectedRows: costRows.length,
+      expectedQty: expectedRows.reduce((sum, row) => sum + row.expectedQty, 0),
+      scannedUniqueOrderJans,
+      scannedOrderQty,
+      scanCount: batch.scans.length,
+      missingOrShort,
+      overScanned,
+      extraScans,
+      unusualCount:
+        missingOrShort.length + overScanned.length + extraScans.length,
+    });
+  }
+
+  rows.sort((a, b) => {
+    if ((b.unusualCount > 0 ? 1 : 0) !== (a.unusualCount > 0 ? 1 : 0)) {
+      return (b.unusualCount > 0 ? 1 : 0) - (a.unusualCount > 0 ? 1 : 0);
+    }
+    const aStart = a.startAt || Number.MAX_SAFE_INTEGER;
+    const bStart = b.startAt || Number.MAX_SAFE_INTEGER;
+    if (aStart !== bStart) return aStart - bStart;
+    return a.name.localeCompare(b.name);
+  });
+  return rows;
 }
 
 export interface StockOrderCostCommitMatch {
