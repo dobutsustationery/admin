@@ -215,11 +215,24 @@ describe("stock order scan batch audit", () => {
         stockOrderRegistry: {
           order1: {
             name: "Order 1",
+            receivedAt: Date.parse("2025-01-20T00:00:00Z"),
             usesZeroedQuantities: true,
             costRows: [
               { jan: "A", qty: 10, unitCostJpy: 100 },
               { jan: "B", qty: 10, unitCostJpy: 100 },
             ],
+          },
+          orderWithX: {
+            name: "Supplier X",
+            receivedAt: Date.parse("2025-01-10T00:00:00Z"),
+            usesZeroedQuantities: false,
+            costRows: [{ jan: "X", qty: 4, unitCostJpy: 200 }],
+          },
+          laterOrderWithX: {
+            name: "Later Supplier X",
+            receivedAt: Date.parse("2025-01-30T00:00:00Z"),
+            usesZeroedQuantities: false,
+            costRows: [{ jan: "X", qty: 4, unitCostJpy: 200 }],
           },
         },
       } as any,
@@ -241,6 +254,19 @@ describe("stock order scan batch audit", () => {
         matchedQty: 10,
         unmatchedUniqueJans: 1,
         unmatchedJans: ["X"],
+        unmatchedJanOrderRefs: [
+          {
+            jan: "X",
+            orders: [
+              {
+                orderId: "orderWithX",
+                label: "Order #1",
+                name: "Supplier X",
+                receivedAt: Date.parse("2025-01-10T00:00:00Z"),
+              },
+            ],
+          },
+        ],
       },
     ]);
   });

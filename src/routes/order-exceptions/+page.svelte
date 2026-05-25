@@ -20,6 +20,7 @@
     type StockOrderScanBatchExpectedRow,
     type StockOrderScanBatchExtraRow,
     type StockOrderScanBatchScan,
+    type StockOrderScanBatchOrderRef,
     type StockOrderUnmatchedScanDaySummary,
     type StockOrderCostMatchRow,
   } from "$lib/order-exceptions";
@@ -436,13 +437,22 @@
     const scan = row.scans[0];
     return scan ? `${scanTime(scan)} · ${scan.description}` : "—";
   }
-  function scanJanPreview(row: StockOrderUnmatchedScanDaySummary): string {
-    const visible = row.unmatchedJans.slice(0, 8);
-    const suffix =
-      row.unmatchedJans.length > visible.length
-        ? `, +${row.unmatchedJans.length - visible.length} more`
-        : "";
-    return `${visible.join(", ")}${suffix}`;
+  function unmatchedOrderRefs(
+    row: StockOrderUnmatchedScanDaySummary,
+    jan: string,
+  ): StockOrderScanBatchOrderRef[] {
+    return (
+      (row.unmatchedJanOrderRefs || []).find((entry) => entry.jan === jan)
+        ?.orders ?? []
+    );
+  }
+  function unmatchedFoundOrderRefs(row: StockOrderUnmatchedScanDaySummary): {
+    jan: string;
+    orders: StockOrderScanBatchOrderRef[];
+  }[] {
+    return row.unmatchedJans
+      .map((jan) => ({ jan, orders: unmatchedOrderRefs(row, jan) }))
+      .filter((entry) => entry.orders.length > 0);
   }
 </script>
 
@@ -533,6 +543,7 @@
             <tr>
               <th>Date</th><th>Unmatched scans</th><th>Matched scans</th>
               <th>Unmatched qty</th><th>Matched qty</th><th>Unmatched JANs</th>
+              <th>Found in orders</th>
             </tr>
           </thead>
           <tbody>
@@ -543,7 +554,33 @@
                 <td>{row.matchedScanCount}</td>
                 <td>{row.unmatchedQty}</td>
                 <td>{row.matchedQty}</td>
-                <td>{scanJanPreview(row)}</td>
+                <td>
+                  <div class="link-list">
+                    {#each row.unmatchedJans as jan (jan)}
+                      <a
+                        href={`/itemhistory?itemKey=${encodeURIComponent(jan)}`}
+                        >{jan}</a
+                      >
+                    {/each}
+                  </div>
+                </td>
+                <td>
+                  <div class="order-ref-list">
+                    {#each unmatchedFoundOrderRefs(row) as entry (entry.jan)}
+                      <div>
+                        <span>{entry.jan}:</span>
+                        {#each entry.orders as ref, i (ref.orderId)}
+                          {#if i > 0},
+                          {/if}
+                          <a
+                            href={`/order-exceptions?orderId=${encodeURIComponent(ref.orderId)}`}
+                            title={ref.name}>{ref.label}</a
+                          >
+                        {/each}
+                      </div>
+                    {/each}
+                  </div>
+                </td>
               </tr>
             {/each}
           </tbody>
@@ -1323,6 +1360,15 @@
     margin: 0 0.5rem 0.3rem 0;
     font-size: 0.8rem;
     padding: 0.25rem 0.6rem;
+  }
+  .link-list,
+  .order-ref-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.6rem;
+  }
+  .order-ref-list {
+    display: block;
   }
   tr.total td {
     border-top: 2px solid #adb5bd;

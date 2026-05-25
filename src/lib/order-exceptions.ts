@@ -272,6 +272,18 @@ export interface StockOrderScanBatchAuditRow {
   unusualCount: number;
 }
 
+export interface StockOrderScanBatchOrderRef {
+  orderId: string;
+  label: string;
+  name: string;
+  receivedAt?: number;
+}
+
+export interface StockOrderUnmatchedScanJanOrderRef {
+  jan: string;
+  orders: StockOrderScanBatchOrderRef[];
+}
+
 export interface StockOrderUnmatchedScanDaySummary {
   date: string;
   at: number;
@@ -281,6 +293,7 @@ export interface StockOrderUnmatchedScanDaySummary {
   matchedQty: number;
   unmatchedUniqueJans: number;
   unmatchedJans: string[];
+  unmatchedJanOrderRefs: StockOrderUnmatchedScanJanOrderRef[];
 }
 
 export interface StockOrderScannerAuditResult {
@@ -369,6 +382,44 @@ function expectedRowsForOrder(
   return expected;
 }
 
+function sortedStockOrderEntries(
+  registry: NonNullable<InventoryState["stockOrderRegistry"]>,
+) {
+  return Object.entries(registry).sort((a, b) => {
+    const aMeta = a[1];
+    const bMeta = b[1];
+    const aDate =
+      aMeta.receivedAt && aMeta.receivedAt > 0 ? aMeta.receivedAt : Infinity;
+    const bDate =
+      bMeta.receivedAt && bMeta.receivedAt > 0 ? bMeta.receivedAt : Infinity;
+    if (aDate !== bDate) return aDate - bDate;
+    return (aMeta.name || a[0]).localeCompare(bMeta.name || b[0]);
+  });
+}
+
+function orderRefsByJan(
+  registry: NonNullable<InventoryState["stockOrderRegistry"]>,
+): Map<string, StockOrderScanBatchOrderRef[]> {
+  const byJan = new Map<string, StockOrderScanBatchOrderRef[]>();
+  sortedStockOrderEntries(registry).forEach(([orderId, meta], index) => {
+    const ref = {
+      orderId,
+      label: `Order #${index + 1}`,
+      name: meta.name || orderId,
+      receivedAt: meta.receivedAt,
+    };
+    const jans = new Set(
+      (meta.costRows || []).map((row) => normalizeJan(row.jan)).filter(Boolean),
+    );
+    for (const jan of jans) {
+      const refs = byJan.get(jan) || [];
+      refs.push(ref);
+      byJan.set(jan, refs);
+    }
+  });
+  return byJan;
+}
+
 function chooseBestScanWindow(
   expectedJans: Set<string>,
   scans: readonly StockOrderScanBatchScan[],
@@ -450,6 +501,7 @@ function chooseBestScanWindow(
 function buildUnmatchedScanDaySummaries(
   scans: readonly StockOrderScanBatchScan[],
   matchedScanIds: ReadonlySet<string>,
+  orderRefs: ReadonlyMap<string, readonly StockOrderScanBatchOrderRef[]>,
 ): StockOrderUnmatchedScanDaySummary[] {
   const byDate = new Map<
     string,
@@ -510,6 +562,12 @@ function buildUnmatchedScanDaySummaries(
         matchedQty: row.matchedQty,
         unmatchedUniqueJans: unmatchedJans.length,
         unmatchedJans,
+        unmatchedJanOrderRefs: unmatchedJans.map((jan) => ({
+          jan,
+          orders: [...(orderRefs.get(jan) || [])].filter(
+            (ref) => ref.receivedAt != null && ref.receivedAt < row.at,
+          ),
+        })),
       };
     })
     .sort((a, b) => a.at - b.at);
@@ -529,6 +587,7 @@ export function buildStockOrderScannerAudit(
   const scans = orderScanBatchScans(actions);
   const rows: StockOrderScanBatchAuditRow[] = [];
   const matchedScanIds = new Set<string>();
+  const orderRefs = orderRefsByJan(registry);
 
   for (const [orderId, meta] of Object.entries(registry)) {
     if (meta.usesZeroedQuantities !== true) continue;
@@ -612,7 +671,11 @@ export function buildStockOrderScannerAudit(
   });
   return {
     rows,
-    unmatchedScanDays: buildUnmatchedScanDaySummaries(scans, matchedScanIds),
+    unmatchedScanDays: buildUnmatchedScanDaySummaries(
+      scans,
+      matchedScanIds,
+      orderRefs,
+    ),
   };
 }
 
