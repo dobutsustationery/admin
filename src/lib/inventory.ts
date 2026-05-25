@@ -138,6 +138,7 @@ export interface StockOrderMeta {
   totalOrderEur?: number; // derived: paid normalised to EUR
   costIssues?: StockOrderCostIssue[];
   costRows?: StockOrderCostRow[];
+  notReceivedRows?: StockOrderNotReceivedRow[];
   usesZeroedQuantities?: boolean; // original import rows had qty zeroed; scans are expected separately
   // legacy (pre-M3) — kept for back-compat with any external callers
   totalOrderJpy?: number;
@@ -159,6 +160,14 @@ export interface StockOrderCostRow {
   jan: string;
   unitCostJpy: number;
   qty?: number;
+}
+
+export interface StockOrderNotReceivedRow {
+  jan: string;
+  qty: number;
+  unitCostJpy: number;
+  note: string;
+  at?: number;
 }
 
 export type InventoryEntityId = string;
@@ -335,6 +344,19 @@ export const reconstruct_stock_order_unmatched_receipt = createAction<{
   saleAt?: number;
   saleNote?: string;
 }>("reconstruct_stock_order_unmatched_receipt");
+
+export const reconstruct_stock_order_late_scan_receipt = createAction<{
+  orderId: string;
+  itemKey: InventoryItemKey | string;
+  note: string;
+}>("reconstruct_stock_order_late_scan_receipt");
+
+export const mark_stock_order_row_not_received = createAction<{
+  orderId: string;
+  jan: string;
+  qty: number;
+  note: string;
+}>("mark_stock_order_row_not_received");
 
 export interface BulkImportItem {
   type: "new" | "update";
@@ -1529,6 +1551,19 @@ function stockOrderCostIssues(
     current.lineCostJpy += qty * unitCostJpy;
     expected.set(row.jan, current);
   }
+  const meta = state.stockOrderRegistry?.[orderId];
+  for (const row of meta?.notReceivedRows || []) {
+    const qty = Number(row.qty);
+    if (!(qty > 0)) continue;
+    const current = expected.get(row.jan);
+    if (!current) continue;
+    const reduction = Math.min(qty, current.expectedQty);
+    current.expectedQty -= reduction;
+    current.lineCostJpy = Math.max(
+      0,
+      current.lineCostJpy - reduction * (Number(row.unitCostJpy) || 0),
+    );
+  }
 
   const matchedQtyByJan = new Map<string, number>();
   const costLedger = state.costLedger || {};
@@ -1617,6 +1652,16 @@ function stockOrderRowFactsForJan(
     lineCostJpy,
     unitCostJpy: expectedQty > 0 ? lineCostJpy / expectedQty : 0,
   };
+}
+
+function stockOrderNotReceivedQtyForJan(
+  meta: StockOrderMeta | undefined,
+  jan: string,
+): number {
+  return (meta?.notReceivedRows || []).reduce(
+    (sum, row) => sum + (row.jan === jan ? Number(row.qty) || 0 : 0),
+    0,
+  );
 }
 
 function stockOrderIdsForLedgerEntry(entry: LedgerEntry): string[] {
@@ -3144,6 +3189,132 @@ export const inventory = createReducer(initialState, (r) => {
     state.idToHistory[key].push({
       date,
       desc: `Reconstructed full ${formatLedgerQty(reconstructedQty)} unit stock order receipt for ${orderId}${ignoredRecountQty > 0 ? ` and ignored ${formatLedgerQty(ignoredRecountQty)} recount unit(s)` : ""}${saleAt ? `; recorded historical sale of ${formatLedgerQty(qty)} unit(s) on ${new Date(saleAt).toISOString().slice(0, 10)}` : ""}: ${trimmedNote}`,
+      val,
+    });
+  });
+  r.addCase(mark_stock_order_row_not_received, (state, action) => {
+    const { orderId, jan, qty, note } = action.payload;
+    const trimmedJan = String(jan || "").trim();
+    const trimmedNote = note.trim();
+    if (!trimmedJan || !trimmedNote || !Number.isFinite(qty) || qty <= 0)
+      return;
+
+    const meta = state.stockOrderRegistry?.[orderId];
+    if (!meta) return;
+    const rows = stockOrderCostRowsForIssueRefresh(meta);
+    const facts = stockOrderRowFactsForJan(rows, trimmedJan);
+    if (!(facts.expectedQty > 0)) return;
+
+    const issues = stockOrderCostIssues(state, orderId, rows);
+    const unmatched = issues.find(
+      (issue) => issue.kind === "unmatched-row" && issue.jan === trimmedJan,
+    );
+    if (!unmatched || qty > unmatched.qty) return;
+
+    const previouslyNotReceived = stockOrderNotReceivedQtyForJan(
+      meta,
+      trimmedJan,
+    );
+    if (previouslyNotReceived + qty > facts.expectedQty) return;
+
+    const val = getTimestampMs((action as any).timestamp);
+    if (!meta.notReceivedRows) meta.notReceivedRows = [];
+    meta.notReceivedRows.push({
+      jan: trimmedJan,
+      qty,
+      unitCostJpy: unmatched.unitCostJpy || facts.unitCostJpy || 0,
+      note: trimmedNote,
+      at: val || undefined,
+    });
+    refreshStockOrderCostIssues(state, orderId);
+  });
+  r.addCase(reconstruct_stock_order_late_scan_receipt, (state, action) => {
+    const { orderId, itemKey, note } = action.payload;
+    const trimmedNote = note.trim();
+    if (!trimmedNote) return;
+
+    const key = canonicalizeInventoryItemKey(itemKey);
+    const item = state.idToItem[key];
+    const meta = state.stockOrderRegistry?.[orderId];
+    if (!item || !meta) return;
+    const rows = stockOrderCostRowsForIssueRefresh(meta);
+    const facts = stockOrderRowFactsForJan(rows, item.janCode);
+    const notReceivedQty = stockOrderNotReceivedQtyForJan(meta, item.janCode);
+    const reconstructedQty = facts.expectedQty - notReceivedQty;
+    if (!(reconstructedQty > 0) || !(facts.unitCostJpy > 0)) return;
+
+    const ledger = state.costLedger?.[key];
+    if (!ledger) return;
+    const source = `stockOrder:${orderId}`;
+    if (
+      ledger.some(
+        (entry) =>
+          !entry.ignored && entry.kind === "receipt" && entry.source === source,
+      )
+    ) {
+      return;
+    }
+
+    let ignoredLateQty = 0;
+    for (const entry of ledger) {
+      if (
+        entry.kind !== "receipt" ||
+        entry.ignored ||
+        !lotMatchesOrder(entry, orderId) ||
+        entry.source === source
+      ) {
+        continue;
+      }
+      if (entry.originalQty === undefined) entry.originalQty = entry.qty;
+      entry.ignored = true;
+      entry.ignoreReason = `Ignored late scan receipt after reconstructing stock order ${orderId}. ${trimmedNote}`;
+      entry.auditComment = `Ignored late scan receipt after reconstructing stock order ${orderId}; the real receipt is the reconstructed stock order lot. ${trimmedNote}`;
+      entry.auditSeverity = "warning";
+      ignoredLateQty += Number(entry.qty) || 0;
+    }
+    if (!(ignoredLateQty > 0)) return;
+
+    const receivedAt =
+      meta.receivedAt && meta.receivedAt > 0
+        ? meta.receivedAt
+        : UNKNOWN_RECEIPT_DATE;
+    const totalOrderEur =
+      meta.paidAmount != null && meta.paidCurrency
+        ? meta.paidCurrency === "BGN"
+          ? meta.paidAmount / BGN_PER_EUR
+          : meta.paidAmount
+        : meta.totalOrderEur;
+    const fx =
+      totalOrderEur && (meta.valueOfOrderJpy || 0) > 0
+        ? totalOrderEur / (meta.valueOfOrderJpy as number)
+        : 0;
+    const unitCostEur = fx > 0 ? facts.unitCostJpy * fx : 0;
+    ledger.push({
+      kind: "receipt",
+      at: receivedAt,
+      seq: ledger.length,
+      qty: reconstructedQty,
+      unitCostJpy: facts.unitCostJpy,
+      unitCostEur,
+      source,
+      costOrderId: orderId,
+      auditComment: `Reconstructed stock order receipt: added ${formatLedgerQty(reconstructedQty)} unit(s) at the order date for late scan(s) in ${orderId}. Ignored ${formatLedgerQty(ignoredLateQty)} late-scan unit(s). ${trimmedNote}`,
+      auditSeverity: "warning",
+    });
+
+    rederiveCostFromLedger(state, key);
+    refreshStockOrderCostIssues(state, orderId);
+
+    if (!state.idToHistory[key]) state.idToHistory[key] = [];
+    const val = getTimestampMs((action as any).timestamp);
+    const date = new Date(val || Date.UTC(2026, 0, 1)).toLocaleString("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    state.idToHistory[key].push({
+      date,
+      desc: `Reconstructed ${formatLedgerQty(reconstructedQty)} stock order unit(s) at order date for ${orderId} and ignored ${formatLedgerQty(ignoredLateQty)} late-scan unit(s): ${trimmedNote}`,
       val,
     });
   });

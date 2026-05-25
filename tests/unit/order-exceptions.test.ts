@@ -10,6 +10,8 @@ import {
   fix_stock_order,
   set_cost_ledger_entry_qty,
   reconstruct_stock_order_unmatched_receipt,
+  reconstruct_stock_order_late_scan_receipt,
+  mark_stock_order_row_not_received,
   update_field,
   update_item,
   type Item,
@@ -891,6 +893,155 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         desc: expect.stringContaining(
           "Reconstructed full 10 unit stock order receipt",
         ),
+      }),
+    ]);
+  });
+
+  it("marks an unmatched stock order row as not accepted or received", () => {
+    const orderId = "order-rejected";
+    const jan = "4901680123187";
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        costLedger: {},
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Rejected Item Order",
+            receivedAt: Date.parse("2025-01-25T00:00:00Z"),
+            usesZeroedQuantities: true,
+            costRows: [{ jan, unitCostJpy: 120, qty: 4 }],
+            costIssues: [
+              {
+                kind: "unmatched-row",
+                jan,
+                qty: 4,
+                expectedQty: 4,
+                matchedQty: 0,
+                unitCostJpy: 120,
+                lineCostJpy: 480,
+              },
+            ],
+          },
+        },
+      },
+    } as any;
+
+    const next = rootReducer(s, {
+      ...mark_stock_order_row_not_received({
+        orderId,
+        jan,
+        qty: 4,
+        note: "Rejected from inventory on receipt inspection",
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(next.inventory.stockOrderRegistry![orderId].notReceivedRows).toEqual(
+      [
+        expect.objectContaining({
+          jan,
+          qty: 4,
+          unitCostJpy: 120,
+          note: "Rejected from inventory on receipt inspection",
+        }),
+      ],
+    );
+    expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
+  });
+
+  it("reconstructs an order-date receipt for a late scan", () => {
+    const orderId = "order-late";
+    const jan = "4542804085181";
+    const key = `${jan}Blue`;
+    const receivedAt = Date.parse("2025-01-25T00:00:00Z");
+    const lateScanAt = Date.parse("2025-04-10T12:00:00Z");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        idToItem: {
+          [key]: {
+            janCode: jan,
+            subtype: "Blue",
+            description: "Late scanned item",
+            hsCode: "39191080",
+            image: "",
+            qty: 5,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "Apr 10, 2025 (5)",
+            timestamp: lateScanAt,
+            cost: 80,
+          },
+        },
+        costLedger: {
+          [key]: [
+            {
+              kind: "receipt",
+              at: lateScanAt,
+              seq: 0,
+              qty: 5,
+              unitCostJpy: 80,
+              unitCostEur: 0.5,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+        },
+        idToHistory: { [key]: [] },
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Late Scan Order",
+            receivedAt,
+            usesZeroedQuantities: true,
+            valueOfOrderJpy: 400,
+            totalOrderEur: 2.5,
+            costRows: [{ jan, unitCostJpy: 80, qty: 5 }],
+            costIssues: [],
+          },
+        },
+      },
+    } as any;
+
+    const next = rootReducer(s, {
+      ...reconstruct_stock_order_late_scan_receipt({
+        orderId,
+        itemKey: key,
+        note: "late scan should become an order-date receipt",
+      }),
+      timestamp: TS,
+    } as any);
+
+    const ledger = next.inventory.costLedger![key] as any[];
+    expect(ledger[0]).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        qty: 5,
+        ignored: true,
+        auditComment: expect.stringContaining("Ignored late scan receipt"),
+      }),
+    );
+    expect(ledger).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "receipt",
+          at: receivedAt,
+          qty: 5,
+          source: `stockOrder:${orderId}`,
+          costOrderId: orderId,
+          auditComment: expect.stringContaining(
+            "Reconstructed stock order receipt",
+          ),
+        }),
+      ]),
+    );
+    expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
+    expect(next.inventory.idToHistory[key]).toEqual([
+      expect.objectContaining({
+        desc: expect.stringContaining("Reconstructed 5 stock order unit"),
       }),
     ]);
   });
