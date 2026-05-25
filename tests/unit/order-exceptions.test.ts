@@ -270,6 +270,72 @@ describe("stock order scan batch audit", () => {
       },
     ]);
   });
+
+  it("attaches late expected-JAN scans without widening the core batch", () => {
+    const inventory = {
+      stockOrderRegistry: {
+        order1: {
+          name: "Order 1",
+          receivedAt: Date.parse("2025-01-01T00:00:00Z"),
+          usesZeroedQuantities: true,
+          costRows: [
+            { jan: "A", qty: 10, unitCostJpy: 100 },
+            { jan: "B", qty: 10, unitCostJpy: 100 },
+          ],
+        },
+      },
+    };
+    const audit = buildStockOrderScannerAudit(inventory as any, [
+      scanAction("a1", "A", 10, "2025-01-02T12:00:00Z", "A"),
+      scanAction("x1", "X", 4, "2025-01-20T12:00:00Z", "Unrelated"),
+      scanAction("b1", "B", 10, "2025-01-20T12:05:00Z", "Late B"),
+    ]);
+
+    const row = audit.rows[0];
+    expect(new Date(row.startAt!).toISOString().slice(0, 10)).toBe(
+      "2025-01-02",
+    );
+    expect(new Date(row.endAt! - 1).toISOString().slice(0, 10)).toBe(
+      "2025-01-08",
+    );
+    expect(row.stragglerScanCount).toBe(1);
+    expect(row.stragglerScans?.map((scan) => scan.jan)).toEqual(["B"]);
+    expect(row.missingOrShort).toEqual([]);
+    expect(row.scannedOrderQty).toBe(20);
+    expect(row.extraScans).toEqual([]);
+    expect(audit.unmatchedScanDays.map((day) => day.date)).toEqual([
+      "2025-01-20",
+    ]);
+    expect(audit.unmatchedScanDays[0].unmatchedJans).toEqual(["X"]);
+  });
+
+  it("does not attach expected-JAN stragglers after the next stock order date", () => {
+    const inventory = {
+      stockOrderRegistry: {
+        order1: {
+          name: "Order 1",
+          receivedAt: Date.parse("2025-01-01T00:00:00Z"),
+          usesZeroedQuantities: true,
+          costRows: [{ jan: "A", qty: 20, unitCostJpy: 100 }],
+        },
+        order2: {
+          name: "Order 2",
+          receivedAt: Date.parse("2025-01-15T00:00:00Z"),
+          usesZeroedQuantities: false,
+          costRows: [{ jan: "B", qty: 1, unitCostJpy: 100 }],
+        },
+      },
+    };
+    const audit = buildStockOrderScannerAudit(inventory as any, [
+      scanAction("a1", "A", 10, "2025-01-02T12:00:00Z", "A"),
+      scanAction("a2", "A", 10, "2025-01-20T12:00:00Z", "Too late A"),
+    ]);
+
+    const row = audit.rows[0];
+    expect(row.stragglerScanCount).toBe(0);
+    expect(row.missingOrShort[0].gap).toBe(10);
+    expect(audit.unmatchedScanDays[0].unmatchedJans).toEqual(["A"]);
+  });
 });
 
 describe("order-exceptions M3.2", () => {

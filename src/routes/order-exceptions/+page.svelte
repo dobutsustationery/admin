@@ -46,6 +46,8 @@
   let unmatchedScanDays: StockOrderUnmatchedScanDaySummary[] = [];
   $: unmatchedScanDays =
     $store.ui.stockOrderScanBatchAudit?.unmatchedScanDays || [];
+  let expandedUnmatchedJanDays = new Set<string>();
+  let expandedFoundOrderDays = new Set<string>();
   let scanAuditLoading = false;
   let scanAuditProgress = 0;
   let scanAuditTotal = 0;
@@ -420,7 +422,14 @@
     if (!row.startAt || !row.endAt) return "No matching scans";
     const start = new Date(row.startAt).toISOString().slice(0, 10);
     const end = new Date(row.endAt - 1).toISOString().slice(0, 10);
-    return start === end ? start : `${start} to ${end}`;
+    const core = start === end ? start : `${start} to ${end}`;
+    if (row.stragglerScanCount && row.stragglerEndAt) {
+      const stragglerEnd = new Date(row.stragglerEndAt - 1)
+        .toISOString()
+        .slice(0, 10);
+      return `${core} · +${row.stragglerScanCount} expected late scan(s) through ${stragglerEnd}`;
+    }
+    return core;
   }
   function scanTime(scan: StockOrderScanBatchScan): string {
     return new Date(scan.at).toISOString().replace("T", " ").slice(0, 16);
@@ -453,6 +462,57 @@
     return row.unmatchedJans
       .map((jan) => ({ jan, orders: unmatchedOrderRefs(row, jan) }))
       .filter((entry) => entry.orders.length > 0);
+  }
+  function toggledSet(set: Set<string>, key: string): Set<string> {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  }
+  function toggleUnmatchedJans(date: string): void {
+    expandedUnmatchedJanDays = toggledSet(expandedUnmatchedJanDays, date);
+  }
+  function toggleFoundOrders(date: string): void {
+    expandedFoundOrderDays = toggledSet(expandedFoundOrderDays, date);
+  }
+  function visibleUnmatchedJans(
+    row: StockOrderUnmatchedScanDaySummary,
+  ): string[] {
+    if (
+      expandedUnmatchedJanDays.has(row.date) ||
+      row.unmatchedJans.length <= 20
+    ) {
+      return row.unmatchedJans;
+    }
+    return row.unmatchedJans.slice(0, 19);
+  }
+  function hiddenUnmatchedJanCount(
+    row: StockOrderUnmatchedScanDaySummary,
+  ): number {
+    if (
+      expandedUnmatchedJanDays.has(row.date) ||
+      row.unmatchedJans.length <= 20
+    ) {
+      return 0;
+    }
+    return row.unmatchedJans.length - 19;
+  }
+  function visibleFoundOrderRefs(row: StockOrderUnmatchedScanDaySummary): {
+    jan: string;
+    orders: StockOrderScanBatchOrderRef[];
+  }[] {
+    const entries = unmatchedFoundOrderRefs(row);
+    if (expandedFoundOrderDays.has(row.date) || entries.length <= 5) {
+      return entries;
+    }
+    return entries.slice(0, 4);
+  }
+  function hiddenFoundOrderCount(
+    row: StockOrderUnmatchedScanDaySummary,
+  ): number {
+    const entries = unmatchedFoundOrderRefs(row);
+    if (expandedFoundOrderDays.has(row.date) || entries.length <= 5) return 0;
+    return entries.length - 4;
   }
 </script>
 
@@ -541,32 +601,43 @@
         <table class="scan-audit-table">
           <thead>
             <tr>
-              <th>Date</th><th>Unmatched scans</th><th>Matched scans</th>
+              <th class="scan-date-col">Date</th><th>Unmatched scans</th><th
+                >Matched scans</th
+              >
               <th>Unmatched qty</th><th>Matched qty</th><th>Unmatched JANs</th>
-              <th>Found in orders</th>
+              <th class="found-orders-col">Found in orders</th>
             </tr>
           </thead>
           <tbody>
             {#each unmatchedScanDays as row (row.date)}
               <tr class:warning-row={true}>
-                <td>{row.date}</td>
+                <td class="scan-date-col">{row.date}</td>
                 <td>{row.unmatchedScanCount}</td>
                 <td>{row.matchedScanCount}</td>
                 <td>{row.unmatchedQty}</td>
                 <td>{row.matchedQty}</td>
                 <td>
                   <div class="link-list">
-                    {#each row.unmatchedJans as jan (jan)}
+                    {#each visibleUnmatchedJans(row) as jan (jan)}
                       <a
                         href={`/itemhistory?itemKey=${encodeURIComponent(jan)}`}
                         >{jan}</a
                       >
                     {/each}
+                    {#if hiddenUnmatchedJanCount(row) > 0}
+                      <button
+                        type="button"
+                        class="link-button"
+                        on:click={() => toggleUnmatchedJans(row.date)}
+                      >
+                        Show {hiddenUnmatchedJanCount(row)} more
+                      </button>
+                    {/if}
                   </div>
                 </td>
-                <td>
+                <td class="found-orders-col">
                   <div class="order-ref-list">
-                    {#each unmatchedFoundOrderRefs(row) as entry (entry.jan)}
+                    {#each visibleFoundOrderRefs(row) as entry (entry.jan)}
                       <div>
                         <span>{entry.jan}:</span>
                         {#each entry.orders as ref, i (ref.orderId)}
@@ -579,6 +650,15 @@
                         {/each}
                       </div>
                     {/each}
+                    {#if hiddenFoundOrderCount(row) > 0}
+                      <button
+                        type="button"
+                        class="link-button"
+                        on:click={() => toggleFoundOrders(row.date)}
+                      >
+                        Show {hiddenFoundOrderCount(row)} more
+                      </button>
+                    {/if}
                   </div>
                 </td>
               </tr>
@@ -1369,6 +1449,27 @@
   }
   .order-ref-list {
     display: block;
+  }
+  .order-ref-list > div {
+    margin-bottom: 0.25rem;
+  }
+  .scan-date-col {
+    min-width: 7rem;
+    width: 7.5rem;
+  }
+  .found-orders-col {
+    min-width: 12rem;
+    width: 14rem;
+  }
+  .link-button {
+    border: 0;
+    background: none;
+    color: #0066cc;
+    cursor: pointer;
+    font: inherit;
+    margin: 0;
+    padding: 0;
+    text-decoration: underline;
   }
   tr.total td {
     border-top: 2px solid #adb5bd;

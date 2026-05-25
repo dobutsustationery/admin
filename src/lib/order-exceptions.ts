@@ -260,6 +260,10 @@ export interface StockOrderScanBatchAuditRow {
   name: string;
   startAt?: number;
   endAt?: number;
+  stragglerEndAt?: number;
+  stragglerScanCount?: number;
+  stragglerQty?: number;
+  stragglerScans?: StockOrderScanBatchScan[];
   expectedUniqueJans: number;
   expectedRows: number;
   expectedQty: number;
@@ -301,7 +305,12 @@ export interface StockOrderScannerAuditResult {
   unmatchedScanDays: StockOrderUnmatchedScanDaySummary[];
 }
 
+export interface StockOrderScannerAuditOptions {
+  includeExpectedStragglers?: boolean;
+}
+
 const SCAN_BATCH_WINDOW_DAYS = 7;
+const SCAN_STRAGGLER_WINDOW_DAYS = 30;
 
 function normalizeJan(value: unknown): string {
   return String(value || "").trim();
@@ -420,6 +429,19 @@ function orderRefsByJan(
   return byJan;
 }
 
+function nextReceivedAtByOrderId(
+  registry: NonNullable<InventoryState["stockOrderRegistry"]>,
+): Map<string, number | undefined> {
+  const dated = sortedStockOrderEntries(registry).filter(
+    ([, meta]) => meta.receivedAt && meta.receivedAt > 0,
+  );
+  const nextById = new Map<string, number | undefined>();
+  dated.forEach(([orderId], index) => {
+    nextById.set(orderId, dated[index + 1]?.[1].receivedAt);
+  });
+  return nextById;
+}
+
 function chooseBestScanWindow(
   expectedJans: Set<string>,
   scans: readonly StockOrderScanBatchScan[],
@@ -496,6 +518,36 @@ function chooseBestScanWindow(
   }
 
   return { startAt: best.startAt, endAt: best.endAt, scans: best.scans };
+}
+
+function expectedScanStragglers(
+  expectedJans: Set<string>,
+  scans: readonly StockOrderScanBatchScan[],
+  batch: { startAt?: number; endAt?: number; scans: StockOrderScanBatchScan[] },
+  nextReceivedAt?: number,
+): {
+  scans: StockOrderScanBatchScan[];
+  endAt?: number;
+} {
+  if (!batch.startAt || !batch.endAt) return { scans: [] };
+  const maxEndAt = batch.startAt + SCAN_STRAGGLER_WINDOW_DAYS * 86_400_000;
+  const cappedEndAt =
+    nextReceivedAt && nextReceivedAt > batch.endAt
+      ? Math.min(maxEndAt, nextReceivedAt)
+      : maxEndAt;
+  const endAt = Math.max(batch.endAt, cappedEndAt);
+  if (endAt <= batch.endAt) return { scans: [], endAt };
+  const coreScanIds = new Set(batch.scans.map((scan) => scan.actionId));
+  return {
+    endAt,
+    scans: scans.filter(
+      (scan) =>
+        scan.at >= batch.endAt! &&
+        scan.at < endAt &&
+        expectedJans.has(scan.jan) &&
+        !coreScanIds.has(scan.actionId),
+    ),
+  };
 }
 
 function buildUnmatchedScanDaySummaries(
@@ -582,12 +634,15 @@ function buildUnmatchedScanDaySummaries(
 export function buildStockOrderScannerAudit(
   inventory: Pick<InventoryState, "stockOrderRegistry">,
   actions: readonly any[],
+  options: StockOrderScannerAuditOptions = {},
 ): StockOrderScannerAuditResult {
   const registry = inventory.stockOrderRegistry || {};
   const scans = orderScanBatchScans(actions);
   const rows: StockOrderScanBatchAuditRow[] = [];
   const matchedScanIds = new Set<string>();
   const orderRefs = orderRefsByJan(registry);
+  const nextOrderAt = nextReceivedAtByOrderId(registry);
+  const includeExpectedStragglers = options.includeExpectedStragglers !== false;
 
   for (const [orderId, meta] of Object.entries(registry)) {
     if (meta.usesZeroedQuantities !== true) continue;
@@ -597,8 +652,19 @@ export function buildStockOrderScannerAudit(
 
     const expectedJans = new Set(expected.keys());
     const batch = chooseBestScanWindow(expectedJans, scans);
+    const stragglers = includeExpectedStragglers
+      ? expectedScanStragglers(
+          expectedJans,
+          scans,
+          batch,
+          nextOrderAt.get(orderId),
+        )
+      : { scans: [] as StockOrderScanBatchScan[], endAt: batch.endAt };
+    const batchScans = [...batch.scans, ...stragglers.scans].sort(
+      (a, b) => a.at - b.at || a.actionId.localeCompare(b.actionId),
+    );
     const scanByJan = new Map<string, StockOrderScanBatchScan[]>();
-    for (const scan of batch.scans) {
+    for (const scan of batchScans) {
       if (expectedJans.has(scan.jan)) matchedScanIds.add(scan.actionId);
       const existing = scanByJan.get(scan.jan) || [];
       existing.push(scan);
@@ -646,12 +712,17 @@ export function buildStockOrderScannerAudit(
       name: meta.name || orderId,
       startAt: batch.startAt,
       endAt: batch.endAt,
+      stragglerEndAt:
+        stragglers.scans.length > 0 ? stragglers.endAt : undefined,
+      stragglerScanCount: stragglers.scans.length,
+      stragglerQty: stragglers.scans.reduce((sum, scan) => sum + scan.qty, 0),
+      stragglerScans: stragglers.scans,
       expectedUniqueJans: expected.size,
       expectedRows: costRows.length,
       expectedQty: expectedRows.reduce((sum, row) => sum + row.expectedQty, 0),
       scannedUniqueOrderJans,
       scannedOrderQty,
-      scanCount: batch.scans.length,
+      scanCount: batchScans.length,
       missingOrShort,
       overScanned,
       extraScans,
