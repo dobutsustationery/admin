@@ -1294,6 +1294,72 @@ describe("order-exceptions M3.5 — unified previewStockOrderFix", () => {
     expect(pv.blocked).toBe(false);
   });
 
+  it("combined preview shows historical receipt lot repricing even when current average stays zero", () => {
+    const historicalReceiptAt = Date.parse("2023-11-16T12:00:00Z");
+    const laterReceiptAt = Date.parse("2025-05-04T12:00:00Z");
+    const inventory = {
+      stockOrderRegistry: {
+        fp: {
+          receivedAt: Date.parse("2023-08-23T00:00:00Z"),
+          valueOfGoodsJpy: 2000,
+          expectedItemCount: 10,
+          valueOfOrderJpy: 2000,
+          paidAmount: 20,
+          paidCurrency: "EUR",
+        },
+      },
+      idToItem: {
+        [JAN]: scanItem("", 5),
+      },
+      costLedger: {
+        [JAN]: [
+          {
+            kind: "receipt" as const,
+            at: historicalReceiptAt,
+            seq: 0,
+            qty: 10,
+            unitCostJpy: 0,
+            unitCostEur: 0,
+            source: "update_item",
+          },
+          {
+            kind: "sale" as const,
+            at: historicalReceiptAt + 1,
+            seq: 1,
+            qty: 10,
+          },
+          {
+            kind: "receipt" as const,
+            at: laterReceiptAt,
+            seq: 2,
+            qty: 5,
+            unitCostJpy: 0,
+            unitCostEur: 0,
+            source: "update_item",
+          },
+        ],
+      },
+    };
+
+    const pv = previewStockOrderFix(inventory as any, "fp", {
+      meta: {},
+      rawPaste: tsv,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+
+    expect(pv.reconciliation?.reconciled).toBe(true);
+    expect(pv.items).toEqual([
+      expect.objectContaining({
+        key: JAN,
+        oldCostJpy: 0,
+        newCostJpy: 200,
+        oldCostEur: 0,
+        newCostEur: 2,
+      }),
+    ]);
+  });
+
   it("no paste: still previews meta-only effect, items present", () => {
     const s = unpriced();
     const pv = previewStockOrderFix(s.inventory, "fp", {

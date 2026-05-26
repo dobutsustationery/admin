@@ -1120,6 +1120,51 @@ export interface StockOrderFixPreview {
   blocked: boolean;
 }
 
+function affectedOrderReceiptCostChange(
+  before: readonly LedgerEntry[],
+  after: readonly LedgerEntry[],
+  orderId: string,
+): Pick<
+  StockOrderFixItem,
+  "oldCostJpy" | "newCostJpy" | "oldCostEur" | "newCostEur"
+> {
+  let qty = 0;
+  let oldJpy = 0;
+  let newJpy = 0;
+  let oldEur = 0;
+  let newEur = 0;
+  const length = Math.max(before.length, after.length);
+  for (let i = 0; i < length; i++) {
+    const oldEntry = before[i];
+    const newEntry = after[i];
+    const entry = newEntry || oldEntry;
+    if (!entry || entry.kind !== "receipt") continue;
+    if (
+      !lotMatchesOrder(oldEntry || entry, orderId) &&
+      !lotMatchesOrder(newEntry || entry, orderId)
+    ) {
+      continue;
+    }
+    const receiptQty = Number(entry.qty) || 0;
+    if (!(receiptQty > 0)) continue;
+    qty += receiptQty;
+    oldJpy +=
+      receiptQty * (Number((oldEntry as ReceiptEntry)?.unitCostJpy) || 0);
+    newJpy +=
+      receiptQty * (Number((newEntry as ReceiptEntry)?.unitCostJpy) || 0);
+    oldEur +=
+      receiptQty * (Number((oldEntry as ReceiptEntry)?.unitCostEur) || 0);
+    newEur +=
+      receiptQty * (Number((newEntry as ReceiptEntry)?.unitCostEur) || 0);
+  }
+  return {
+    oldCostJpy: qty > 0 ? oldJpy / qty : 0,
+    newCostJpy: qty > 0 ? newJpy / qty : 0,
+    oldCostEur: qty > 0 ? oldEur / qty : 0,
+    newCostEur: qty > 0 ? newEur / qty : 0,
+  };
+}
+
 /**
  * Unified preview for the single atomic order fix. Projects the proposed
  * meta (receipt date + paid→EUR) AND the reconciled cost TSV onto this
@@ -1265,14 +1310,13 @@ export function previewStockOrderFix(
   }
 
   const items: StockOrderFixItem[] = [...touchedKeys].map((key) => {
-    const before = walkLedger(ledger[key] || []);
-    const after = walkLedger(projectedByKey.get(key) || ledger[key] || []);
     return {
       key,
-      oldCostJpy: before.avgJpy,
-      newCostJpy: after.avgJpy,
-      oldCostEur: before.avgEur,
-      newCostEur: after.avgEur,
+      ...affectedOrderReceiptCostChange(
+        ledger[key] || [],
+        projectedByKey.get(key) || ledger[key] || [],
+        orderId,
+      ),
     };
   });
   items.sort((a, b) => a.key.localeCompare(b.key));
