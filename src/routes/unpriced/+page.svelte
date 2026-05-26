@@ -402,29 +402,6 @@
     };
   }
 
-  function cumulativeMatchedOrderValueJpy(
-    inventory: InventoryState,
-    asOf: number,
-  ): number {
-    let total = 0;
-    for (const ledger of Object.values(inventory.costLedger || {})) {
-      for (const entry of ledger) {
-        if (
-          entry.kind !== "receipt" ||
-          entry.ignored ||
-          entry.at > asOf ||
-          !Number.isFinite(entry.at) ||
-          (!entry.costOrderId &&
-            !String(entry.source || "").startsWith("stockOrder:"))
-        ) {
-          continue;
-        }
-        total += (Number(entry.qty) || 0) * (Number(entry.unitCostJpy) || 0);
-      }
-    }
-    return total;
-  }
-
   function inventoryValueJpyAsOf(inventory: InventoryState, asOf: number) {
     return totalValuation(Object.values(inventory.costLedger || {}), asOf)
       .valueJpy;
@@ -492,12 +469,11 @@
         return aDate - bDate || a.orderId.localeCompare(b.orderId);
       });
 
+    let cumulativeOrderValueJpy = 0;
     for (const row of rows) {
       const asOf = row.valuationAt || 0;
-      row.cumulativeOrderValueJpy =
-        asOf > 0
-          ? Math.round(cumulativeMatchedOrderValueJpy(inventory, asOf))
-          : 0;
+      cumulativeOrderValueJpy += row.receivedOrderValueJpy;
+      row.cumulativeOrderValueJpy = Math.round(cumulativeOrderValueJpy);
       row.cumulativeInventoryValueJpy =
         asOf > 0 ? Math.round(inventoryValueJpyAsOf(inventory, asOf)) : 0;
       row.mismatchJpy =
