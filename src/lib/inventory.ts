@@ -881,6 +881,18 @@ function reseqLedger(entries: LedgerEntry[]): LedgerEntry[] {
   return sortLedgerEntries(entries).map((entry, seq) => ({ ...entry, seq }));
 }
 
+function hasPriorArchiveSale(
+  ledger: readonly LedgerEntry[],
+  atMs: number,
+): boolean {
+  return ledger.some(
+    (entry) =>
+      entry.kind === "sale" &&
+      entry.isArchive === true &&
+      Number(entry.at) <= atMs,
+  );
+}
+
 function copyLedgerEntryForSubtypeResolution(
   entry: LedgerEntry,
   qty: number,
@@ -889,6 +901,15 @@ function copyLedgerEntryForSubtypeResolution(
 ): LedgerEntry {
   const next = { ...entry, qty };
   if (next.kind === "receipt") {
+    if (
+      entry.kind === "receipt" &&
+      entry.receivedQty !== undefined &&
+      entry.qty !== 0
+    ) {
+      next.receivedQty = Number(
+        ((entry.receivedQty * qty) / entry.qty).toFixed(6),
+      );
+    }
     next.auditComment = `Subtype remediation split bare ${janCode} into ${subtype || "bare"}: allocated ${qty} unit(s) from original ${entry.qty} unit ledger entry.`;
     next.auditSeverity = "warning";
   }
@@ -945,6 +966,15 @@ function copyLedgerEntryForInventorySplit(
 ): LedgerEntry {
   const next = { ...entry, qty };
   if (next.kind === "receipt") {
+    if (
+      entry.kind === "receipt" &&
+      entry.receivedQty !== undefined &&
+      entry.qty !== 0
+    ) {
+      next.receivedQty = Number(
+        ((entry.receivedQty * qty) / entry.qty).toFixed(6),
+      );
+    }
     next.auditComment = `Inventory split allocated ${qty} unit(s) from ${sourceKey} to ${targetKey}; original receipt qty ${entry.qty}.`;
     next.auditSeverity = "warning";
   }
@@ -1291,12 +1321,14 @@ function increaseNewestReceiptToMatchVisibleQty(
     Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE;
 
   if (receiptIndex === undefined) {
+    const isPostArchiveRecount = hasPriorArchiveSale(ledger, correctionAt);
     appendedReceipt = true;
     ledger.push({
       kind: "receipt",
       at: correctionAt,
       seq: ledger.length,
       qty: increase,
+      ...(isPostArchiveRecount ? { receivedQty: 0 } : {}),
       unitCostJpy: 0,
       unitCostEur: 0,
       source: options.actionType || "update_item",

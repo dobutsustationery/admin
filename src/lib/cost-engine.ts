@@ -20,6 +20,11 @@ export type ReceiptEntry = {
   at: number; // epoch ms; always a real date (UNKNOWN_RECEIPT_DATE if not known)
   seq: number; // deterministic tiebreak within equal `at`
   qty: number;
+  // Quantity that represents newly received purchased goods for cumulative
+  // received-value reporting. Defaults to `qty`. Recount/quantity-adjustment
+  // receipts can carry stock value without pretending a supplier receipt
+  // happened again.
+  receivedQty?: number;
   unitCostJpy: number; // always a number (0 = unknown, surfaced elsewhere)
   unitCostEur: number; // always a number (0 = unknown, surfaced elsewhere)
   // Provenance: "stockOrder:<orderId>" for order-sourced lots, else the

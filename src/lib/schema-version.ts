@@ -30,4 +30,7 @@
 //    subtype scan receipts instead of adding the full order row to each
 //    subtype. v8 snapshots may contain duplicated reconstructed lots and
 //    must replay from broadcast.
-export const CURRENT_SCHEMA_VERSION = 9;
+// 10: reducer-created recount/quantity-adjustment receipts now carry
+//     `receivedQty: 0` so they preserve cost basis for stock valuation and
+//     later sales without inflating cumulative received purchase value.
+export const CURRENT_SCHEMA_VERSION = 10;

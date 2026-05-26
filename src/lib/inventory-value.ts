@@ -104,8 +104,12 @@ function cumulativeLedgerValues(
         carry = null;
       }
 
-      inventoryJpy += entry.qty * unitCostJpy;
-      inventoryEur += entry.qty * unitCostEur;
+      const receivedQty =
+        Number.isFinite(entry.receivedQty) && entry.receivedQty != null
+          ? entry.receivedQty
+          : entry.qty;
+      inventoryJpy += receivedQty * unitCostJpy;
+      inventoryEur += receivedQty * unitCostEur;
 
       if (next <= 0) {
         onHand = next > 0 ? next : 0;

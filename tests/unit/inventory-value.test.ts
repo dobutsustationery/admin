@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildInventoryValueReport,
   inventoryValueTsv,
+  totalCumulativeValues,
 } from "$lib/inventory-value";
+import type { LedgerEntry } from "$lib/cost-engine";
 
 const D = (s: string) => Date.parse(s + "T00:00:00Z");
 
@@ -17,7 +19,7 @@ describe("buildInventoryValueReport", () => {
   });
 
   it("values inventory at each period end, stock order, and now", () => {
-    const ledger = {
+    const ledger: Record<string, LedgerEntry[]> = {
       A: [
         {
           kind: "receipt",
@@ -63,7 +65,7 @@ describe("buildInventoryValueReport", () => {
   });
 
   it("does not emit period rows beyond max(activity, now)", () => {
-    const ledger = {
+    const ledger: Record<string, LedgerEntry[]> = {
       A: [
         {
           kind: "receipt",
@@ -101,6 +103,42 @@ describe("buildInventoryValueReport", () => {
     expect(current.valueJpy).toBe(700);
     expect(current.cumulativeInventoryValueJpy).toBe(1000);
     expect(current.cumulativeSoldValueJpy).toBe(300);
+  });
+
+  it("excludes recount adjustment receipts from cumulative received value while preserving stock value", () => {
+    const ledger: Record<string, LedgerEntry[]> = {
+      A: [
+        {
+          kind: "receipt",
+          at: D("2025-01-10"),
+          seq: 0,
+          qty: 2,
+          unitCostJpy: 100,
+          unitCostEur: 1,
+        },
+        { kind: "sale", at: D("2025-01-20"), seq: 1, qty: 2, isArchive: true },
+        {
+          kind: "receipt",
+          at: D("2025-01-25"),
+          seq: 2,
+          qty: 10,
+          receivedQty: 0,
+          unitCostJpy: 0,
+          unitCostEur: 0,
+        },
+      ],
+    };
+
+    const rows = buildInventoryValueReport(inv(ledger), D("2025-01-31"));
+    const current = rows.at(-1)!;
+    const cumulative = totalCumulativeValues(
+      Object.values(ledger),
+      D("2025-01-31"),
+    );
+
+    expect(current.valueJpy).toBe(1000);
+    expect(current.cumulativeInventoryValueJpy).toBe(200);
+    expect(cumulative.inventoryJpy).toBe(200);
   });
 
   it("exports a TSV with header and one line per row", () => {

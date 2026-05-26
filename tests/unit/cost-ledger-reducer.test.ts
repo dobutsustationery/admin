@@ -495,7 +495,7 @@ describe("cost-ledger materialisation in the reducer", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(
       s,
-      withTs(update_item({ id: KEY, item: baseItem(20) }), 100),
+      withTs(update_item({ id: KEY, item: baseItem(20, { cost: 65 }) }), 100),
     );
     s = rootReducer(
       s,
@@ -515,13 +515,15 @@ describe("cost-ledger materialisation in the reducer", () => {
         entry.source,
         entry.isArchive,
         entry.at,
+        entry.receivedQty,
       ]),
     ).toEqual([
-      ["receipt", 20, "update_item", undefined, 100_000],
-      ["sale", 20, undefined, true, 200_000],
-      ["receipt", 20, "update_item", undefined, 300_000],
+      ["receipt", 20, "update_item", undefined, 100_000, undefined],
+      ["sale", 20, undefined, true, 200_000, undefined],
+      ["receipt", 20, "update_item", undefined, 300_000, 0],
     ]);
     expect(walkLedger(ledger).onHand).toBe(20);
+    expect(walkLedger(ledger).avgJpy).toBe(65);
   });
 
   it("records legacy package and quantify actions as dated ledger sales", () => {
