@@ -131,7 +131,7 @@ function cumulativeLedgerValues(
   return { inventoryJpy, inventoryEur, soldJpy, soldEur };
 }
 
-function totalCumulativeValues(
+export function totalCumulativeValues(
   ledgers: Iterable<readonly LedgerEntry[]>,
   asOf: number,
 ): {

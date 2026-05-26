@@ -6,11 +6,11 @@
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import {
     lotMatchesOrder,
-    totalValuation,
     walkLedger,
     type LedgerEntry,
     type ReceiptEntry,
   } from "$lib/cost-engine";
+  import { totalCumulativeValues } from "$lib/inventory-value";
   import type {
     InventoryState,
     Item,
@@ -402,9 +402,14 @@
     };
   }
 
-  function inventoryValueJpyAsOf(inventory: InventoryState, asOf: number) {
-    return totalValuation(Object.values(inventory.costLedger || {}), asOf)
-      .valueJpy;
+  function cumulativeInventoryValueJpyAsOf(
+    inventory: InventoryState,
+    asOf: number,
+  ) {
+    return totalCumulativeValues(
+      Object.values(inventory.costLedger || {}),
+      asOf,
+    ).inventoryJpy;
   }
 
   function matchedOrderReceiptValueJpy(
@@ -475,7 +480,9 @@
       cumulativeOrderValueJpy += row.receivedOrderValueJpy;
       row.cumulativeOrderValueJpy = Math.round(cumulativeOrderValueJpy);
       row.cumulativeInventoryValueJpy =
-        asOf > 0 ? Math.round(inventoryValueJpyAsOf(inventory, asOf)) : 0;
+        asOf > 0
+          ? Math.round(cumulativeInventoryValueJpyAsOf(inventory, asOf))
+          : 0;
       row.mismatchJpy =
         row.cumulativeInventoryValueJpy - row.cumulativeOrderValueJpy;
     }
