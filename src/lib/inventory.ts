@@ -2137,7 +2137,12 @@ function applyInventoryUpdate(
         )
       : null;
     const increase = canReconcileLedgerQty
-      ? increaseNewestReceiptToMatchVisibleQty(state, id, nextVisibleQty, val)
+      ? increaseNewestReceiptToMatchVisibleQty(state, id, nextVisibleQty, val, {
+          actionType,
+          actionDocId,
+          fromVisibleQty: previousVisibleQty,
+          audit: true,
+        })
       : null;
     if (correction) {
       for (const orderId of correction.affectedOrderIds) {

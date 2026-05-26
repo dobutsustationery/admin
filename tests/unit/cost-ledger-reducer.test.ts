@@ -418,6 +418,46 @@ describe("cost-ledger materialisation in the reducer", () => {
     ).toEqual([["receipt", 12, undefined]]);
   });
 
+  it("audits update_item qty replacement increases on the adjusted receipt", () => {
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(12) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(3) }), 110),
+    );
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(12) }), 120),
+    );
+
+    const ledger = s.inventory.costLedger![KEY] as any[];
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        qty: 12,
+        originalQty: 12,
+        auditComment:
+          "Reducer qty correction increased this receipt by 9 unit(s), from visible qty 3 to visible qty 12.",
+        auditSeverity: "warning",
+      }),
+    );
+    expect(ledger[0].quantityCorrections.at(-1)).toEqual(
+      expect.objectContaining({
+        actionType: "update_item",
+        fromVisibleQty: 3,
+        toVisibleQty: 12,
+        increasedBy: 9,
+      }),
+    );
+    expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
+      "Cost ledger qty replacement: increased open receipt by 9 unit(s) to match visible qty 12",
+    );
+  });
+
   it("records same-qty update_item snapshots in history when shipped stock makes the scan look ignored", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(
