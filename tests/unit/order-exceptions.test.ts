@@ -9,6 +9,7 @@ import {
   set_stock_order_meta,
   fix_stock_order,
   apply_stock_order_costs,
+  set_cost_ledger_entries_ignored,
   set_cost_ledger_entry_qty,
   reconstruct_stock_order_unmatched_receipt,
   reconstruct_stock_order_late_scan_receipt,
@@ -988,6 +989,85 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual(
       [],
     );
+  });
+
+  it("refreshes stock order match issues after ledger rows are ignored or restored", () => {
+    const s = unpricedOrder();
+    const shortPaste = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t9`,
+    ].join("\n");
+
+    let committed = rootReducer(s, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 1800 },
+        costTsv: shortPaste,
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+    expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual([
+      expect.objectContaining({
+        kind: "overmatched-row",
+        jan: JAN,
+        expectedQty: 9,
+        matchedQty: 10,
+      }),
+    ]);
+
+    const key = Object.keys(committed.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    const entry = committed.inventory.costLedger![key][0] as any;
+    const ref = {
+      kind: "receipt" as const,
+      at: entry.at,
+      seq: entry.seq,
+      qty: entry.qty,
+      unitCostJpy: entry.unitCostJpy,
+      unitCostEur: entry.unitCostEur,
+      source: entry.source || "",
+      costOrderId: entry.costOrderId || "",
+    };
+
+    committed = rootReducer(committed, {
+      ...set_cost_ledger_entries_ignored({
+        itemKey: key,
+        refs: [ref],
+        ignored: true,
+        reason: "not part of this order",
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual([
+      expect.objectContaining({
+        kind: "unmatched-row",
+        jan: JAN,
+        expectedQty: 9,
+        matchedQty: 0,
+      }),
+    ]);
+
+    committed = rootReducer(committed, {
+      ...set_cost_ledger_entries_ignored({
+        itemKey: key,
+        refs: [ref],
+        ignored: false,
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(committed.inventory.stockOrderRegistry!["fc"].costIssues).toEqual([
+      expect.objectContaining({
+        kind: "overmatched-row",
+        jan: JAN,
+        expectedQty: 9,
+        matchedQty: 10,
+      }),
+    ]);
   });
 
   it("reconstructs the full zeroed-order receipt, ignores the recount, and records a historical sale", () => {

@@ -3173,11 +3173,15 @@ export const inventory = createReducer(initialState, (r) => {
     if (!ledger || refs.length === 0) return;
 
     let changed = 0;
+    const affectedOrderIds = new Set<string>();
     for (const ref of refs) {
       const entry = ledger.find((candidate) =>
         ledgerEntryMatchesRef(candidate, ref),
       );
       if (!entry || Boolean(entry.ignored) === ignored) continue;
+      for (const orderId of stockOrderIdsForLedgerEntry(entry)) {
+        affectedOrderIds.add(orderId);
+      }
       entry.ignored = ignored;
       if (ignored) {
         if (reason?.trim()) entry.ignoreReason = reason.trim();
@@ -3189,6 +3193,9 @@ export const inventory = createReducer(initialState, (r) => {
 
     if (changed === 0) return;
     rederiveCostFromLedger(state, itemKey);
+    for (const orderId of affectedOrderIds) {
+      refreshStockOrderCostIssues(state, orderId);
+    }
     if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
     const val = getTimestampMs((action as any).timestamp);
     const date = new Date(val || Date.UTC(2026, 0, 1)).toLocaleString("en", {
