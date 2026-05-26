@@ -144,16 +144,22 @@ export interface StockOrderMeta {
   totalOrderJpy?: number;
 }
 
-export type StockOrderCostIssueKind = "unmatched-row" | "overmatched-row";
+export type StockOrderCostIssueKind =
+  | "unmatched-row"
+  | "overmatched-row"
+  | "late-scan";
 
 export interface StockOrderCostIssue {
   kind: StockOrderCostIssueKind;
   jan: string;
+  itemKey?: string;
   qty: number;
   expectedQty: number;
   matchedQty: number;
   unitCostJpy?: number;
   lineCostJpy?: number;
+  scanAt?: number;
+  source?: string;
 }
 
 export interface StockOrderCostRow {
@@ -1530,6 +1536,77 @@ function aggregateStockOrderAllocationRows(
   return [...aggregated.values()];
 }
 
+const LATE_STOCK_ORDER_SCAN_GAP_MS = 30 * 24 * 60 * 60 * 1000;
+
+function monthEndMs(ms: number): number {
+  const date = new Date(ms);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1) - 1;
+}
+
+type StockOrderMatchedReceipt = {
+  key: string;
+  jan: string;
+  at: number;
+  seq?: number;
+  qty: number;
+  unitCostJpy: number;
+  source?: string;
+};
+
+function stockOrderMatchedReceipts(
+  state: InventoryState,
+  orderId: string,
+): StockOrderMatchedReceipt[] {
+  const receipts: StockOrderMatchedReceipt[] = [];
+  for (const [key, ledger] of Object.entries(state.costLedger || {})) {
+    const jan = state.idToItem[key]?.janCode;
+    if (!jan) continue;
+    for (const entry of ledger) {
+      if (
+        entry.kind !== "receipt" ||
+        entry.ignored ||
+        !lotMatchesOrder(entry, orderId) ||
+        !Number.isFinite(entry.at) ||
+        entry.at <= 0
+      ) {
+        continue;
+      }
+      receipts.push({
+        key,
+        jan,
+        at: entry.at,
+        seq: entry.seq,
+        qty: Number(entry.qty) || 0,
+        unitCostJpy: Number(entry.unitCostJpy) || 0,
+        source: entry.source,
+      });
+    }
+  }
+  return receipts.sort((a, b) => a.at - b.at || a.key.localeCompare(b.key));
+}
+
+function lateStockOrderScanReceipts(
+  state: InventoryState,
+  orderId: string,
+): StockOrderMatchedReceipt[] {
+  const meta = state.stockOrderRegistry?.[orderId];
+  if (meta?.usesZeroedQuantities !== true) return [];
+  const receipts = stockOrderMatchedReceipts(state, orderId).filter(
+    (receipt) => !String(receipt.source || "").startsWith("stockOrder:"),
+  );
+  const firstScanAt = receipts[0]?.at;
+  const lastScanAt = receipts.at(-1)?.at;
+  if (
+    firstScanAt == null ||
+    lastScanAt == null ||
+    lastScanAt - firstScanAt <= LATE_STOCK_ORDER_SCAN_GAP_MS
+  ) {
+    return [];
+  }
+  const valuationAt = monthEndMs(firstScanAt);
+  return receipts.filter((receipt) => receipt.at > valuationAt);
+}
+
 function stockOrderCostIssues(
   state: InventoryState,
   orderId: string,
@@ -1565,19 +1642,19 @@ function stockOrderCostIssues(
     );
   }
 
+  const lateReceipts = lateStockOrderScanReceipts(state, orderId);
+  const lateReceiptKeys = new Set(
+    lateReceipts.map(
+      (receipt) =>
+        `${receipt.key}|${receipt.at}|${receipt.seq ?? ""}|${receipt.qty}|${receipt.source || ""}`,
+    ),
+  );
   const matchedQtyByJan = new Map<string, number>();
-  const costLedger = state.costLedger || {};
-  for (const [key, ledger] of Object.entries(costLedger)) {
-    const jan = state.idToItem[key]?.janCode;
-    if (!jan) continue;
-    let matchedQty = matchedQtyByJan.get(jan) || 0;
-    for (const entry of ledger) {
-      if (entry.ignored) continue;
-      if (!lotMatchesOrder(entry, orderId) || entry.kind !== "receipt")
-        continue;
-      matchedQty += Number(entry.qty) || 0;
-    }
-    if (matchedQty > 0) matchedQtyByJan.set(jan, matchedQty);
+  for (const receipt of stockOrderMatchedReceipts(state, orderId)) {
+    const receiptKey = `${receipt.key}|${receipt.at}|${receipt.seq ?? ""}|${receipt.qty}|${receipt.source || ""}`;
+    if (lateReceiptKeys.has(receiptKey)) continue;
+    const matchedQty = matchedQtyByJan.get(receipt.jan) || 0;
+    matchedQtyByJan.set(receipt.jan, matchedQty + receipt.qty);
   }
 
   const issues: StockOrderCostIssue[] = [];
@@ -1610,8 +1687,28 @@ function stockOrderCostIssues(
       });
     }
   }
+  for (const receipt of lateReceipts) {
+    issues.push({
+      kind: "late-scan",
+      jan: receipt.jan,
+      itemKey: receipt.key,
+      qty: receipt.qty,
+      expectedQty: 0,
+      matchedQty: receipt.qty,
+      unitCostJpy: receipt.unitCostJpy,
+      lineCostJpy: receipt.unitCostJpy * receipt.qty,
+      scanAt: receipt.at,
+      source: receipt.source,
+    });
+  }
 
-  return issues.sort((a, b) => a.jan.localeCompare(b.jan));
+  return issues.sort(
+    (a, b) =>
+      a.jan.localeCompare(b.jan) ||
+      a.kind.localeCompare(b.kind) ||
+      (a.itemKey || "").localeCompare(b.itemKey || "") ||
+      (a.scanAt || 0) - (b.scanAt || 0),
+  );
 }
 
 function stockOrderCostRowsForIssueRefresh(

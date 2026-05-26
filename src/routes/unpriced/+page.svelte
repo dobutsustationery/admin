@@ -72,7 +72,7 @@
     ledgerIndex: number;
   };
 
-  type StockOrderMatchIssueKind = StockOrderCostIssue["kind"] | "late-scan";
+  type StockOrderMatchIssueKind = StockOrderCostIssue["kind"];
 
   type StockOrderMatchIssueRow = Omit<StockOrderCostIssue, "kind"> & {
     kind: StockOrderMatchIssueKind;
@@ -283,9 +283,11 @@
       inventory.stockOrderRegistry || {},
     )) {
       for (const issue of meta.costIssues || []) {
-        const hit = Object.entries(idToItem)
-          .filter(([, item]) => item.janCode === issue.jan)
-          .sort(([a], [b]) => a.localeCompare(b))[0];
+        const hit = issue.itemKey
+          ? ([issue.itemKey, idToItem[issue.itemKey]] as const)
+          : Object.entries(idToItem)
+              .filter(([, item]) => item.janCode === issue.jan)
+              .sort(([a], [b]) => a.localeCompare(b))[0];
         const [itemKey, item] = hit || [];
         rows.push({
           ...issue,
@@ -300,33 +302,9 @@
           firstScanAt: itemKey
             ? firstScanAtForLedger(costLedger[itemKey])
             : undefined,
+          scanAt: issue.scanAt,
+          source: issue.source,
         });
-      }
-      const scanWindow = scanWindowForOrder(orderId, inventory);
-      if (scanWindow.lateScans.length > 0) {
-        for (const scan of scanWindow.lateScans) {
-          const item = idToItem[scan.itemKey] as Item | undefined;
-          rows.push({
-            kind: "late-scan",
-            jan: item?.janCode || "",
-            qty: scan.qty,
-            expectedQty: 0,
-            matchedQty: scan.qty,
-            unitCostJpy: scan.unitCostJpy,
-            lineCostJpy: scan.qty * scan.unitCostJpy,
-            orderId,
-            orderName: meta.name || meta.supplier || "",
-            orderDate: meta.receivedAt,
-            itemKey: scan.itemKey,
-            subtype: item?.subtype || "",
-            description: item?.description || "",
-            image: item?.image || "",
-            usesZeroedQuantities: meta.usesZeroedQuantities === true,
-            firstScanAt: scanWindow.firstScanAt,
-            scanAt: scan.at,
-            source: scan.source,
-          });
-        }
       }
     }
     return rows.sort(

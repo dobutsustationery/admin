@@ -21,4 +21,8 @@
 //    lack the flag on their sale entries and would produce stale €0
 //    averages on items affected by a stock-take wipe — discard and
 //    re-derive.
-export const CURRENT_SCHEMA_VERSION = 7;
+// 8: stock-order late-scan issues are now materialised by the same
+//    reducer-side cost issue refresh as unmatched/overmatched rows.
+//    v7 browser snapshots may contain ledger/order issue combinations
+//    produced by older allocation logic and must replay from broadcast.
+export const CURRENT_SCHEMA_VERSION = 8;

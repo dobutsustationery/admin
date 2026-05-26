@@ -8,6 +8,7 @@ import {
 import {
   set_stock_order_meta,
   fix_stock_order,
+  apply_stock_order_costs,
   set_cost_ledger_entry_qty,
   reconstruct_stock_order_unmatched_receipt,
   reconstruct_stock_order_late_scan_receipt,
@@ -844,6 +845,95 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         lineCostJpy: 200,
       },
     ]);
+  });
+
+  it("materializes late stock order scans in the cost issue refresh pass", () => {
+    const orderId = "order-late-refresh";
+    const jan = "4560103149144";
+    const key = `${jan}Bear`;
+    const firstScanAt = Date.parse("2023-11-13T20:52:47Z");
+    const lateScanAt = Date.parse("2025-05-04T14:48:55Z");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        idToItem: {
+          [key]: {
+            janCode: jan,
+            subtype: "Bear",
+            description: "Mini Card Set",
+            hsCode: "49090000",
+            image: "",
+            qty: 18,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "May 4, 2025 (18)",
+            timestamp: lateScanAt,
+            cost: 100,
+          },
+        },
+        costLedger: {
+          [key]: [
+            {
+              kind: "receipt",
+              at: firstScanAt,
+              seq: 0,
+              qty: 20,
+              unitCostJpy: 100,
+              unitCostEur: 0.65,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+            {
+              kind: "receipt",
+              at: lateScanAt,
+              seq: 1,
+              qty: 18,
+              unitCostJpy: 100,
+              unitCostEur: 0.65,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+        },
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Order with late recount",
+            receivedAt: Date.parse("2023-08-23T00:00:00Z"),
+            usesZeroedQuantities: true,
+            costRows: [{ jan, unitCostJpy: 100, qty: 20 }],
+            costIssues: [],
+          },
+        },
+      },
+    } as any;
+
+    const refreshed = rootReducer(s, {
+      ...apply_stock_order_costs({
+        orderId,
+        rows: [{ jan, unitCostJpy: 100, qty: 20 }],
+        overrideExisting: false,
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(refreshed.inventory.stockOrderRegistry![orderId].costIssues).toEqual(
+      [
+        {
+          kind: "late-scan",
+          jan,
+          itemKey: key,
+          qty: 18,
+          expectedQty: 0,
+          matchedQty: 18,
+          unitCostJpy: 100,
+          lineCostJpy: 1800,
+          scanAt: lateScanAt,
+          source: "update_item",
+        },
+      ],
+    );
   });
 
   it("refreshes stock order match issues after a manual ledger qty adjustment", () => {
