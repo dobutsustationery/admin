@@ -1,5 +1,5 @@
 const DB_NAME = "dobutsu_actions_db";
-const DB_VERSION = 10; // Bumped to force clear
+const DB_VERSION = 12; // Force-clear snapshots poisoned by older local builds.
 const ACTIONS_STORE = "actions";
 const SNAPSHOT_STORE = "snapshot";
 
