@@ -25,4 +25,9 @@
 //    reducer-side cost issue refresh as unmatched/overmatched rows.
 //    v7 browser snapshots may contain ledger/order issue combinations
 //    produced by older allocation logic and must replay from broadcast.
-export const CURRENT_SCHEMA_VERSION = 8;
+// 9: late-scan stock-order receipt reconstruction now consumes a JAN's
+//    expected order quantity once and splits it across the JAN's late
+//    subtype scan receipts instead of adding the full order row to each
+//    subtype. v8 snapshots may contain duplicated reconstructed lots and
+//    must replay from broadcast.
+export const CURRENT_SCHEMA_VERSION = 9;

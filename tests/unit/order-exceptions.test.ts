@@ -1174,7 +1174,9 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     const orderId = "order-late";
     const jan = "4542804085181";
     const key = `${jan}Blue`;
+    const otherKey = "4542804000000";
     const receivedAt = Date.parse("2025-01-25T00:00:00Z");
+    const firstScanAt = Date.parse("2025-01-26T12:00:00Z");
     const lateScanAt = Date.parse("2025-04-10T12:00:00Z");
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = {
@@ -1195,6 +1197,19 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
             timestamp: lateScanAt,
             cost: 80,
           },
+          [otherKey]: {
+            janCode: "4542804000000",
+            subtype: "",
+            description: "Earlier scanned item",
+            hsCode: "39191080",
+            image: "",
+            qty: 1,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "Jan 26, 2025 (1)",
+            timestamp: firstScanAt,
+            cost: 10,
+          },
         },
         costLedger: {
           [key]: [
@@ -1205,6 +1220,18 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
               qty: 5,
               unitCostJpy: 80,
               unitCostEur: 0.5,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+          [otherKey]: [
+            {
+              kind: "receipt",
+              at: firstScanAt,
+              seq: 0,
+              qty: 1,
+              unitCostJpy: 10,
+              unitCostEur: 0.06,
               source: "update_item",
               costOrderId: orderId,
             },
@@ -1263,6 +1290,154 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         desc: expect.stringContaining("Reconstructed 5 stock order unit"),
       }),
     ]);
+  });
+
+  it("splits a reconstructed late-scan receipt across subtypes for the same JAN", () => {
+    const orderId = "order-late-subtypes";
+    const jan = "4542804085181";
+    const blueKey = `${jan}Blue`;
+    const pinkKey = `${jan}Pink`;
+    const otherKey = "4542804000000";
+    const receivedAt = Date.parse("2025-01-25T00:00:00Z");
+    const firstScanAt = Date.parse("2025-01-26T12:00:00Z");
+    const lateScanAt = Date.parse("2025-05-04T12:00:00Z");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        idToItem: {
+          [blueKey]: {
+            janCode: jan,
+            subtype: "Blue",
+            description: "Late scanned item",
+            hsCode: "39191080",
+            image: "",
+            qty: 12,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "May 4, 2025 (12)",
+            timestamp: lateScanAt,
+            cost: 65,
+          },
+          [pinkKey]: {
+            janCode: jan,
+            subtype: "Pink",
+            description: "Late scanned item",
+            hsCode: "39191080",
+            image: "",
+            qty: 12,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "May 4, 2025 (12)",
+            timestamp: lateScanAt,
+            cost: 65,
+          },
+          [otherKey]: {
+            janCode: "4542804000000",
+            subtype: "",
+            description: "Earlier scanned item",
+            hsCode: "39191080",
+            image: "",
+            qty: 1,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "Jan 26, 2025 (1)",
+            timestamp: firstScanAt,
+            cost: 10,
+          },
+        },
+        costLedger: {
+          [blueKey]: [
+            {
+              kind: "receipt",
+              at: lateScanAt,
+              seq: 0,
+              qty: 12,
+              unitCostJpy: 65,
+              unitCostEur: 0.4,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+          [pinkKey]: [
+            {
+              kind: "receipt",
+              at: lateScanAt,
+              seq: 0,
+              qty: 12,
+              unitCostJpy: 65,
+              unitCostEur: 0.4,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+          [otherKey]: [
+            {
+              kind: "receipt",
+              at: firstScanAt,
+              seq: 0,
+              qty: 1,
+              unitCostJpy: 10,
+              unitCostEur: 0.06,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+        },
+        idToHistory: { [blueKey]: [], [pinkKey]: [] },
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Late Scan Order",
+            receivedAt,
+            usesZeroedQuantities: true,
+            valueOfOrderJpy: 780,
+            totalOrderEur: 4.8,
+            costRows: [{ jan, unitCostJpy: 65, qty: 12 }],
+            costIssues: [],
+          },
+        },
+      },
+    } as any;
+
+    const next = rootReducer(s, {
+      ...reconstruct_stock_order_late_scan_receipt({
+        orderId,
+        itemKey: blueKey,
+        note: "late subtype scans should split the order row",
+      }),
+      timestamp: TS,
+    } as any);
+
+    const blueLedger = next.inventory.costLedger![blueKey] as any[];
+    const pinkLedger = next.inventory.costLedger![pinkKey] as any[];
+    expect(
+      blueLedger.find((entry) => entry.at === lateScanAt && entry.qty === 12),
+    ).toEqual(expect.objectContaining({ ignored: true }));
+    expect(
+      pinkLedger.find((entry) => entry.at === lateScanAt && entry.qty === 12),
+    ).toEqual(expect.objectContaining({ ignored: true }));
+    expect(
+      blueLedger.find((entry) => entry.source === `stockOrder:${orderId}`),
+    ).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        at: receivedAt,
+        qty: 6,
+        auditComment: expect.stringContaining("split from 12 order unit"),
+      }),
+    );
+    expect(
+      pinkLedger.find((entry) => entry.source === `stockOrder:${orderId}`),
+    ).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        at: receivedAt,
+        qty: 6,
+        auditComment: expect.stringContaining("split from 12 order unit"),
+      }),
+    );
+    expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
   });
 
   it("fixes missing COO and weight from matched TSV rows", () => {

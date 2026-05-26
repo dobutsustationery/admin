@@ -1761,6 +1761,47 @@ function stockOrderNotReceivedQtyForJan(
   );
 }
 
+function splitQuantityByWeights(
+  totalQty: number,
+  weightsByKey: Map<string, number>,
+): Map<string, number> {
+  const allocations = new Map<string, number>();
+  const totalWeight = [...weightsByKey.values()].reduce(
+    (sum, qty) => sum + qty,
+    0,
+  );
+  if (!(totalQty > 0) || !(totalWeight > 0)) return allocations;
+
+  const entries = [...weightsByKey.entries()].sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  if (!Number.isInteger(totalQty)) {
+    for (const [key, weight] of entries) {
+      allocations.set(key, (totalQty * weight) / totalWeight);
+    }
+    return allocations;
+  }
+
+  const weighted = entries.map(([key, weight]) => {
+    const exact = (totalQty * weight) / totalWeight;
+    const base = Math.floor(exact);
+    return { key, qty: base, remainder: exact - base };
+  });
+  let assigned = weighted.reduce((sum, row) => sum + row.qty, 0);
+  weighted
+    .slice()
+    .sort((a, b) => b.remainder - a.remainder || a.key.localeCompare(b.key))
+    .forEach((row) => {
+      if (assigned >= totalQty) return;
+      row.qty += 1;
+      assigned += 1;
+    });
+  for (const row of weighted) {
+    if (row.qty > 0) allocations.set(row.key, row.qty);
+  }
+  return allocations;
+}
+
 function stockOrderIdsForLedgerEntry(entry: LedgerEntry): string[] {
   if (entry.kind !== "receipt") return [];
   const orderIds = new Set<string>();
@@ -3345,35 +3386,79 @@ export const inventory = createReducer(initialState, (r) => {
     const reconstructedQty = facts.expectedQty - notReceivedQty;
     if (!(reconstructedQty > 0) || !(facts.unitCostJpy > 0)) return;
 
-    const ledger = state.costLedger?.[key];
-    if (!ledger) return;
     const source = `stockOrder:${orderId}`;
-    if (
-      ledger.some(
+    const hasExistingReconstruction = Object.entries(
+      state.costLedger || {},
+    ).some(([candidateKey, candidateLedger]) => {
+      if (state.idToItem[candidateKey]?.janCode !== item.janCode) return false;
+      return candidateLedger.some(
         (entry) =>
-          !entry.ignored && entry.kind === "receipt" && entry.source === source,
-      )
-    ) {
+          !entry.ignored &&
+          entry.kind === "receipt" &&
+          entry.source === source &&
+          entry.costOrderId === orderId,
+      );
+    });
+    if (hasExistingReconstruction) {
       return;
     }
 
-    let ignoredLateQty = 0;
-    for (const entry of ledger) {
-      if (
-        entry.kind !== "receipt" ||
-        entry.ignored ||
-        !lotMatchesOrder(entry, orderId) ||
-        entry.source === source
-      ) {
-        continue;
-      }
-      if (entry.originalQty === undefined) entry.originalQty = entry.qty;
-      entry.ignored = true;
-      entry.ignoreReason = `Ignored late scan receipt after reconstructing stock order ${orderId}. ${trimmedNote}`;
-      entry.auditComment = `Ignored late scan receipt after reconstructing stock order ${orderId}; the real receipt is the reconstructed stock order lot. ${trimmedNote}`;
-      entry.auditSeverity = "warning";
-      ignoredLateQty += Number(entry.qty) || 0;
+    const lateReceipts = lateStockOrderScanReceipts(state, orderId).filter(
+      (receipt) => receipt.jan === item.janCode,
+    );
+    const lateReceiptKeys = new Set(
+      lateReceipts.map(
+        (receipt) =>
+          `${receipt.key}|${receipt.at}|${receipt.seq ?? ""}|${receipt.qty}|${receipt.source || ""}`,
+      ),
+    );
+    if (lateReceiptKeys.size === 0) return;
+
+    const lateQtyByKey = new Map<string, number>();
+    for (const receipt of lateReceipts) {
+      lateQtyByKey.set(
+        receipt.key,
+        (lateQtyByKey.get(receipt.key) || 0) + receipt.qty,
+      );
     }
+    const reconstructedQtyByKey = splitQuantityByWeights(
+      reconstructedQty,
+      lateQtyByKey,
+    );
+    if (reconstructedQtyByKey.size === 0) return;
+
+    const ignoredLateQtyByKey = new Map<string, number>();
+    for (const [candidateKey, candidateLedger] of Object.entries(
+      state.costLedger || {},
+    )) {
+      if (state.idToItem[candidateKey]?.janCode !== item.janCode) continue;
+      for (const entry of candidateLedger) {
+        if (
+          entry.kind !== "receipt" ||
+          entry.ignored ||
+          !lotMatchesOrder(entry, orderId) ||
+          entry.source === source
+        ) {
+          continue;
+        }
+        const receiptKey = `${candidateKey}|${entry.at}|${entry.seq ?? ""}|${entry.qty}|${entry.source || ""}`;
+        if (!lateReceiptKeys.has(receiptKey)) continue;
+        if (entry.originalQty === undefined) entry.originalQty = entry.qty;
+        entry.ignored = true;
+        entry.ignoreReason = `Ignored late scan receipt after reconstructing stock order ${orderId}. ${trimmedNote}`;
+        entry.auditComment = `Ignored late scan receipt after reconstructing stock order ${orderId}; the real receipt is the reconstructed stock order lot. ${trimmedNote}`;
+        entry.auditSeverity = "warning";
+        ignoredLateQtyByKey.set(
+          candidateKey,
+          (ignoredLateQtyByKey.get(candidateKey) || 0) +
+            (Number(entry.qty) || 0),
+        );
+      }
+    }
+    const ignoredLateQty = [...ignoredLateQtyByKey.values()].reduce(
+      (sum, qty) => sum + qty,
+      0,
+    );
     if (!(ignoredLateQty > 0)) return;
 
     const receivedAt =
@@ -3391,34 +3476,45 @@ export const inventory = createReducer(initialState, (r) => {
         ? totalOrderEur / (meta.valueOfOrderJpy as number)
         : 0;
     const unitCostEur = fx > 0 ? facts.unitCostJpy * fx : 0;
-    ledger.push({
-      kind: "receipt",
-      at: receivedAt,
-      seq: ledger.length,
-      qty: reconstructedQty,
-      unitCostJpy: facts.unitCostJpy,
-      unitCostEur,
-      source,
-      costOrderId: orderId,
-      auditComment: `Reconstructed stock order receipt: added ${formatLedgerQty(reconstructedQty)} unit(s) at the order date for late scan(s) in ${orderId}. Ignored ${formatLedgerQty(ignoredLateQty)} late-scan unit(s). ${trimmedNote}`,
-      auditSeverity: "warning",
-    });
-
-    rederiveCostFromLedger(state, key);
+    const affectedKeys: string[] = [];
+    for (const [candidateKey, candidateQty] of reconstructedQtyByKey) {
+      const candidateLedger = state.costLedger?.[candidateKey];
+      if (!candidateLedger || !(candidateQty > 0)) continue;
+      const candidateIgnoredLateQty =
+        ignoredLateQtyByKey.get(candidateKey) || 0;
+      if (!(candidateIgnoredLateQty > 0)) continue;
+      candidateLedger.push({
+        kind: "receipt",
+        at: receivedAt,
+        seq: candidateLedger.length,
+        qty: candidateQty,
+        unitCostJpy: facts.unitCostJpy,
+        unitCostEur,
+        source,
+        costOrderId: orderId,
+        auditComment: `Reconstructed stock order receipt: added ${formatLedgerQty(candidateQty)} unit(s) at the order date for late scan(s) in ${orderId}, split from ${formatLedgerQty(reconstructedQty)} order unit(s) across ${reconstructedQtyByKey.size} subtype(s). Ignored ${formatLedgerQty(candidateIgnoredLateQty)} late-scan unit(s) for this subtype. ${trimmedNote}`,
+        auditSeverity: "warning",
+      });
+      affectedKeys.push(candidateKey);
+      rederiveCostFromLedger(state, candidateKey);
+    }
+    if (affectedKeys.length === 0) return;
     refreshStockOrderCostIssues(state, orderId);
 
-    if (!state.idToHistory[key]) state.idToHistory[key] = [];
     const val = getTimestampMs((action as any).timestamp);
     const date = new Date(val || Date.UTC(2026, 0, 1)).toLocaleString("en", {
       month: "short",
       day: "numeric",
       year: "numeric",
     });
-    state.idToHistory[key].push({
-      date,
-      desc: `Reconstructed ${formatLedgerQty(reconstructedQty)} stock order unit(s) at order date for ${orderId} and ignored ${formatLedgerQty(ignoredLateQty)} late-scan unit(s): ${trimmedNote}`,
-      val,
-    });
+    for (const affectedKey of affectedKeys) {
+      if (!state.idToHistory[affectedKey]) state.idToHistory[affectedKey] = [];
+      state.idToHistory[affectedKey].push({
+        date,
+        desc: `Reconstructed ${formatLedgerQty(reconstructedQtyByKey.get(affectedKey) || 0)} stock order unit(s) at order date for ${orderId}, split from ${formatLedgerQty(reconstructedQty)} order unit(s) across ${reconstructedQtyByKey.size} subtype(s), and ignored ${formatLedgerQty(ignoredLateQtyByKey.get(affectedKey) || 0)} late-scan unit(s): ${trimmedNote}`,
+        val,
+      });
+    }
   });
   r.addCase(set_stock_order_meta, (state, action) => {
     if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
