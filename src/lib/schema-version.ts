@@ -33,4 +33,8 @@
 // 10: reducer-created recount/quantity-adjustment receipts now carry
 //     `receivedQty: 0` so they preserve cost basis for stock valuation and
 //     later sales without inflating cumulative received purchase value.
-export const CURRENT_SCHEMA_VERSION = 10;
+// 11: sale ledger entries now use the order/event date, not the
+//     webhook/reconciliation/entry date. The cost walk also carries a
+//     sale with no same-day on-hand stock forward to the next receipt so
+//     replay does not drop dated sales that precede their priced receipt.
+export const CURRENT_SCHEMA_VERSION = 11;

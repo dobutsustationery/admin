@@ -83,6 +83,31 @@ describe("Etsy Order History logging", () => {
     expect(store.getState().inventory.idToItem[itemKey].shipped).toBe(2);
   });
 
+  it("records Etsy sales in the cost ledger at the receipt creation date", () => {
+    const store = setupStore();
+
+    store.dispatch({
+      ...etsy_order_reconciled({
+        raw: {
+          receipt_id: "dated-etsy-sale",
+          create_timestamp: 1_672_564_400,
+          updated_timestamp: 1_673_778_000,
+          status: "paid",
+          transactions: [{ transaction_id: "tx1", sku: itemKey, quantity: 2 }],
+        },
+        topic: "reconcile",
+      }),
+      timestamp: { seconds: 1_675_209_600, nanoseconds: 0 },
+    } as any);
+
+    const sale = store
+      .getState()
+      .inventory.costLedger![
+        itemKey
+      ].find((entry: any) => entry.kind === "sale");
+    expect(sale?.at).toBe(1_672_564_400_000);
+  });
+
   it("handles Etsy cancellations correctly", () => {
     const store = setupStore();
 

@@ -6,6 +6,7 @@ import {
   update_field,
   bulk_import_items,
   fix_jancode,
+  new_order,
   package_item,
   quantify_item,
   set_cost_ledger_entry_qty,
@@ -555,6 +556,45 @@ describe("cost-ledger materialisation in the reducer", () => {
     ]);
     expect(s.inventory.idToItem[KEY].shipped).toBe(12);
     expect(walkLedger(ledger).onHand).toBe(8);
+  });
+
+  it("records manual order package sales at the event date when present", () => {
+    const entryDate = new Date("2025-05-26T12:00:00Z");
+    const eventDate = new Date("2025-05-04T00:00:00Z");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = rootReducer(
+      s,
+      withTs(update_item({ id: KEY, item: baseItem(20) }), 100),
+    );
+    s = rootReducer(
+      s,
+      withTs(
+        new_order({
+          orderID: "event-order-1",
+          date: entryDate,
+          eventDate,
+          email: "live-event",
+          product: "Japan Festival",
+        }),
+        500,
+      ),
+    );
+    s = rootReducer(
+      s,
+      withTs(
+        package_item({
+          itemKey: KEY as any,
+          qty: 5,
+          orderID: "event-order-1",
+        }),
+        600,
+      ),
+    );
+
+    const sale = (s.inventory.costLedger![KEY] as any[]).find(
+      (entry) => entry.kind === "sale",
+    );
+    expect(sale.at).toBe(eventDate.getTime());
   });
 
   it("can mark a specific ledger entry ignored and rederive cost", () => {

@@ -133,17 +133,15 @@ export function walkLedger(
   // zero. The next receipt blends with this prior average for any
   // currency it doesn't itself price, then `carry` is consumed.
   let carry: { jpy: number; eur: number } | null = null;
+  let pendingSaleQty = 0;
 
   for (const e of sortLedger(entries)) {
     if (e.at > asOf) break;
     if (e.ignored) continue;
     if (e.kind === "receipt") {
-      const next = onHand + e.qty;
-      if (next <= 0) {
-        // Degenerate (e.g. zero/negative qty): nothing to blend.
-        onHand = next > 0 ? next : 0;
-        continue;
-      }
+      let unitCostJpy = e.unitCostJpy;
+      let unitCostEur = e.unitCostEur;
+
       if (onHand === 0 && carry) {
         // First post-archive receipt. Priced currencies override.
         // For a currency that is itself unpriced, derive it from the
@@ -157,29 +155,48 @@ export function walkLedger(
         const jpyPriced = e.unitCostJpy > 0;
         const eurPriced = e.unitCostEur > 0;
         if (jpyPriced && eurPriced) {
-          avgJpy = e.unitCostJpy;
-          avgEur = e.unitCostEur;
+          unitCostJpy = e.unitCostJpy;
+          unitCostEur = e.unitCostEur;
         } else if (jpyPriced) {
-          avgJpy = e.unitCostJpy;
-          avgEur =
+          unitCostJpy = e.unitCostJpy;
+          unitCostEur =
             carry.jpy > 0 ? (e.unitCostJpy * carry.eur) / carry.jpy : carry.eur;
         } else if (eurPriced) {
-          avgEur = e.unitCostEur;
-          avgJpy =
+          unitCostEur = e.unitCostEur;
+          unitCostJpy =
             carry.eur > 0 ? (e.unitCostEur * carry.jpy) / carry.eur : carry.jpy;
         } else {
-          avgJpy = carry.jpy;
-          avgEur = carry.eur;
+          unitCostJpy = carry.jpy;
+          unitCostEur = carry.eur;
         }
         carry = null;
-      } else {
-        avgJpy = (onHand * avgJpy + e.qty * e.unitCostJpy) / next;
-        avgEur = (onHand * avgEur + e.qty * e.unitCostEur) / next;
       }
+
+      const consumedByPending = Math.min(Math.max(e.qty, 0), pendingSaleQty);
+      pendingSaleQty -= consumedByPending;
+      const receiptQty = e.qty - consumedByPending;
+      const next = onHand + receiptQty;
+      if (next <= 0) {
+        // Degenerate (e.g. zero/negative qty): nothing to blend.
+        onHand = next > 0 ? next : 0;
+        continue;
+      }
+      avgJpy = (onHand * avgJpy + receiptQty * unitCostJpy) / next;
+      avgEur = (onHand * avgEur + receiptQty * unitCostEur) / next;
       onHand = next;
     } else {
       const prev = onHand;
-      onHand = Math.max(0, onHand - e.qty);
+      if (e.qty >= 0) {
+        const consumed = Math.min(e.qty, onHand);
+        onHand -= consumed;
+        pendingSaleQty += e.qty - consumed;
+      } else {
+        let restored = -e.qty;
+        const pendingReduction = Math.min(restored, pendingSaleQty);
+        pendingSaleQty -= pendingReduction;
+        restored -= pendingReduction;
+        onHand += restored;
+      }
       if (e.isArchive && prev > 0 && onHand === 0) {
         carry = { jpy: avgJpy, eur: avgEur };
       }

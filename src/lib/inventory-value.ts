@@ -69,6 +69,7 @@ function cumulativeLedgerValues(
   let inventoryEur = 0;
   let soldJpy = 0;
   let soldEur = 0;
+  let pendingSaleQty = 0;
 
   for (const entry of sortLedger(entries)) {
     if (entry.at > asOf) break;
@@ -111,22 +112,44 @@ function cumulativeLedgerValues(
       inventoryJpy += receivedQty * unitCostJpy;
       inventoryEur += receivedQty * unitCostEur;
 
-      if (next <= 0) {
-        onHand = next > 0 ? next : 0;
+      const consumedByPending = Math.min(
+        Math.max(entry.qty, 0),
+        pendingSaleQty,
+      );
+      pendingSaleQty -= consumedByPending;
+      soldJpy += consumedByPending * unitCostJpy;
+      soldEur += consumedByPending * unitCostEur;
+
+      const receiptQty = entry.qty - consumedByPending;
+      const nextAfterPending = onHand + receiptQty;
+
+      if (nextAfterPending <= 0) {
+        onHand = nextAfterPending > 0 ? nextAfterPending : 0;
         continue;
       }
 
-      avgJpy = (onHand * avgJpy + entry.qty * unitCostJpy) / next;
-      avgEur = (onHand * avgEur + entry.qty * unitCostEur) / next;
-      onHand = next;
+      avgJpy = (onHand * avgJpy + receiptQty * unitCostJpy) / nextAfterPending;
+      avgEur = (onHand * avgEur + receiptQty * unitCostEur) / nextAfterPending;
+      onHand = nextAfterPending;
       continue;
     }
 
     const prev = onHand;
-    const soldQty = entry.qty >= 0 ? Math.min(entry.qty, onHand) : entry.qty;
-    soldJpy += soldQty * avgJpy;
-    soldEur += soldQty * avgEur;
-    onHand = Math.max(0, onHand - entry.qty);
+    if (entry.qty >= 0) {
+      const soldQty = Math.min(entry.qty, onHand);
+      soldJpy += soldQty * avgJpy;
+      soldEur += soldQty * avgEur;
+      onHand -= soldQty;
+      pendingSaleQty += entry.qty - soldQty;
+    } else {
+      let restored = -entry.qty;
+      const pendingReduction = Math.min(restored, pendingSaleQty);
+      pendingSaleQty -= pendingReduction;
+      restored -= pendingReduction;
+      soldJpy -= restored * avgJpy;
+      soldEur -= restored * avgEur;
+      onHand += restored;
+    }
     if (entry.isArchive && prev > 0 && onHand === 0) {
       carry = { jpy: avgJpy, eur: avgEur };
     }

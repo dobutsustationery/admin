@@ -2531,6 +2531,13 @@ function getOrderFactEffectiveAtMs(rawOrder: any, actionTimestamp: number) {
   return Number.isFinite(parsed) ? parsed : actionTimestamp;
 }
 
+function getOrderSaleAtMs(order: OrderInfo, actionTimestamp: number) {
+  const orderAtMs = (order.eventDate ?? order.date)?.getTime();
+  return Number.isFinite(orderAtMs) && orderAtMs > 0
+    ? orderAtMs
+    : actionTimestamp;
+}
+
 function resolveLineItemInventoryKey(
   state: InventoryState,
   lineItem: any,
@@ -2650,6 +2657,7 @@ export const inventory = createReducer(initialState, (r) => {
     );
     const effectiveAtMs = getOrderFactEffectiveAtMs(rawOrder, actionTimestamp);
     const order = getOrCreateOrder(state, orderID, rawOrder, actionTimestamp);
+    const saleAtMs = getOrderSaleAtMs(order, actionTimestamp);
 
     const isReconciledLater =
       order.shopifyFacts!.reconciledTimestamp &&
@@ -2711,7 +2719,7 @@ export const inventory = createReducer(initialState, (r) => {
       if (state.idToItem[effectiveKey]) {
         if (!isReconciledLater && delta > 0) {
           state.idToItem[effectiveKey].shipped += delta;
-          recordSale(state, effectiveKey, delta, effectiveAtMs);
+          recordSale(state, effectiveKey, delta, saleAtMs);
         }
 
         const historyVal = actionTimestamp;
@@ -2827,6 +2835,7 @@ export const inventory = createReducer(initialState, (r) => {
     }
 
     const order = getOrCreateOrder(state, orderID, rawOrder, actionTimestamp);
+    const saleAtMs = getOrderSaleAtMs(order, actionTimestamp);
 
     const timestamp = Date.parse(rawOrder.updated_at || rawOrder.created_at);
     const effectiveAtMs = getOrderFactEffectiveAtMs(rawOrder, actionTimestamp);
@@ -2940,7 +2949,7 @@ export const inventory = createReducer(initialState, (r) => {
       if (diff !== 0) {
         if (state.idToItem[canonicalKey]) {
           state.idToItem[canonicalKey].shipped += diff;
-          recordSale(state, canonicalKey, diff, effectiveAtMs);
+          recordSale(state, canonicalKey, diff, saleAtMs);
           const historyVal = actionTimestamp;
           if (!state.idToHistory[canonicalKey])
             state.idToHistory[canonicalKey] = [];
@@ -2963,7 +2972,7 @@ export const inventory = createReducer(initialState, (r) => {
       const canonicalKey = key as InventoryItemKey;
       if (qty !== 0 && state.idToItem[canonicalKey]) {
         state.idToItem[canonicalKey].shipped -= qty;
-        recordSale(state, canonicalKey, -qty, effectiveAtMs);
+        recordSale(state, canonicalKey, -qty, saleAtMs);
         const historyVal = actionTimestamp;
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
@@ -3041,6 +3050,7 @@ export const inventory = createReducer(initialState, (r) => {
     const timestamp =
       (rawReceipt.updated_timestamp || rawReceipt.create_timestamp) * 1000;
     const effectiveAtMs = timestamp;
+    const saleAtMs = getOrderSaleAtMs(order, actionTimestamp);
 
     if (
       order.etsyFacts!.reconciledTimestamp &&
@@ -3140,7 +3150,7 @@ export const inventory = createReducer(initialState, (r) => {
     for (const [canonicalKey, diff] of Object.entries(netDiffMap)) {
       if (diff !== 0 && state.idToItem[canonicalKey] !== undefined) {
         state.idToItem[canonicalKey].shipped += diff;
-        recordSale(state, canonicalKey, diff, effectiveAtMs);
+        recordSale(state, canonicalKey, diff, saleAtMs);
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
         state.idToHistory[canonicalKey].push({
@@ -3993,14 +4003,11 @@ export const inventory = createReducer(initialState, (r) => {
       });
       //console.log(`Create item ${itemKey} to ${qty} for order ${orderID}`)
     }
+    const order = state.orderIdToOrder[orderID];
+    const saleAtMs = getOrderSaleAtMs(order, order.date.getTime());
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty;
-      recordSale(
-        state,
-        itemKey,
-        qty,
-        state.orderIdToOrder[orderID].date.getTime(),
-      );
+      recordSale(state, itemKey, qty, saleAtMs);
       if (!state.idToHistory[itemKey]) {
         console.warn(
           `[InventoryDebug] package_item: idToHistory missing for ${itemKey}. Initializing empty.`,
@@ -4008,13 +4015,13 @@ export const inventory = createReducer(initialState, (r) => {
         state.idToHistory[itemKey] = [];
       }
       state.idToHistory[itemKey].push({
-        date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
+        date: new Date(saleAtMs).toLocaleString("en", {
           year: "numeric",
           month: "short",
           day: "numeric",
         }),
         desc: `Packaged ${qty} for ${orderID}`,
-        val: state.orderIdToOrder[orderID].date.getTime(), // orderIdToOrder[orderID].date is derived from action TS above
+        val: saleAtMs,
       });
     } else {
       console.warn(
@@ -4029,6 +4036,8 @@ export const inventory = createReducer(initialState, (r) => {
       const date = new Date(0);
       state.orderIdToOrder[orderID] = { id: orderID, items: [], date };
     }
+    const order = state.orderIdToOrder[orderID];
+    const saleAtMs = getOrderSaleAtMs(order, order.date.getTime());
     const existingItem = state.orderIdToOrder[orderID].items.filter(
       (i) => i.itemKey === itemKey,
     );
@@ -4044,13 +4053,13 @@ export const inventory = createReducer(initialState, (r) => {
           state.idToHistory[itemKey] = [];
         }
         state.idToHistory[itemKey].push({
-          date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
+          date: new Date(saleAtMs).toLocaleString("en", {
             year: "numeric",
             month: "short",
             day: "numeric",
           }),
           desc: `Existing item quantified ${qty} for ${orderID}`,
-          val: state.orderIdToOrder[orderID].date.getTime(),
+          val: saleAtMs,
         });
       } else {
         state.orderIdToOrder[orderID].items = state.orderIdToOrder[
@@ -4066,12 +4075,7 @@ export const inventory = createReducer(initialState, (r) => {
     if (state.idToItem[itemKey] !== undefined) {
       const diff = qty - priorQty;
       state.idToItem[itemKey].shipped += diff;
-      recordSale(
-        state,
-        itemKey,
-        diff,
-        state.orderIdToOrder[orderID].date.getTime(),
-      );
+      recordSale(state, itemKey, diff, saleAtMs);
       if (!state.idToHistory[itemKey]) {
         console.warn(
           `[InventoryDebug] quantify_item (shipped update): idToHistory missing for ${itemKey}. Initializing empty.`,
@@ -4079,13 +4083,13 @@ export const inventory = createReducer(initialState, (r) => {
         state.idToHistory[itemKey] = [];
       }
       state.idToHistory[itemKey].push({
-        date: state.orderIdToOrder[orderID].date.toLocaleString("en", {
+        date: new Date(saleAtMs).toLocaleString("en", {
           year: "numeric",
           month: "short",
           day: "numeric",
         }),
         desc: `Quantified ${qty} for ${orderID}`,
-        val: state.orderIdToOrder[orderID].date.getTime(),
+        val: saleAtMs,
       });
     } else {
       console.warn(

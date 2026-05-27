@@ -105,6 +105,40 @@ describe("buildInventoryValueReport", () => {
     expect(current.cumulativeSoldValueJpy).toBe(300);
   });
 
+  it("values early sales against the next receipt once stock arrives", () => {
+    const ledger: Record<string, LedgerEntry[]> = {
+      A: [
+        { kind: "sale", at: D("2025-01-05"), seq: 0, qty: 1 },
+        {
+          kind: "receipt",
+          at: D("2025-01-10"),
+          seq: 1,
+          qty: 10,
+          unitCostJpy: 100,
+          unitCostEur: 1,
+        },
+      ],
+    };
+
+    expect(
+      totalCumulativeValues(Object.values(ledger), D("2025-01-06")),
+    ).toEqual({
+      inventoryJpy: 0,
+      inventoryEur: 0,
+      soldJpy: 0,
+      soldEur: 0,
+    });
+
+    expect(
+      totalCumulativeValues(Object.values(ledger), D("2025-01-11")),
+    ).toEqual({
+      inventoryJpy: 1000,
+      inventoryEur: 10,
+      soldJpy: 100,
+      soldEur: 1,
+    });
+  });
+
   it("excludes recount adjustment receipts from cumulative received value while preserving stock value", () => {
     const ledger: Record<string, LedgerEntry[]> = {
       A: [

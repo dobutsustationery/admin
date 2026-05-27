@@ -112,6 +112,13 @@ describe("cost-engine", () => {
     expect(w.avgJpy).toBe(100);
   });
 
+  it("carries an oversold sale forward to the next receipt", () => {
+    const w = walkLedger([s(1, 1), r(2, 10, 100, 1)]);
+    expect(w.onHand).toBe(9);
+    expect(w.avgJpy).toBe(100);
+    expect(valueAt([s(1, 1), r(2, 10, 100, 1)]).valueJpy).toBe(900);
+  });
+
   it("valueAt = on-hand × average; totalValuation sums items", () => {
     const itemA = [r(1, 10, 100, 1)];
     const itemB = [r(1, 4, 50, 0.4), s(2, 1)];
