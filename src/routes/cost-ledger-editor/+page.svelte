@@ -228,7 +228,12 @@
   }
 
   function fmtQty(n: number): string {
-    return Number.isInteger(n) ? String(n) : n.toFixed(2);
+    if (!Number.isFinite(n)) return "-";
+    const rounded = Math.round(n * 1000) / 1000;
+    if (Math.abs(rounded) < 0.0005) return "0";
+    return Number.isInteger(rounded)
+      ? String(rounded)
+      : rounded.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
   }
 
   function noteLabel(entry: LedgerEntry): string {
@@ -311,11 +316,11 @@
       <dl>
         <div>
           <dt>Qty</dt>
-          <dd>{selectedItem.qty}</dd>
+          <dd>{fmtQty(selectedItem.qty)}</dd>
         </div>
         <div>
           <dt>Shipped</dt>
-          <dd>{selectedItem.shipped || 0}</dd>
+          <dd>{fmtQty(selectedItem.shipped || 0)}</dd>
         </div>
         <div>
           <dt>Current Avg</dt>
@@ -362,7 +367,7 @@
             </td>
             <td class="date">{fmtDate(row.entry.at)}</td>
             <td>{entryLabel(row.entry)}</td>
-            <td class="num">{row.entry.qty}</td>
+            <td class="num">{fmtQty(row.entry.qty)}</td>
             <td>
               <button
                 type="button"
@@ -385,7 +390,7 @@
             </td>
             <td>{sourceLabel(row.entry)}</td>
             <td>{noteLabel(row.entry)}</td>
-            <td class="num">{row.running.onHand}</td>
+            <td class="num">{fmtQty(row.running.onHand)}</td>
             <td class="num">{fmtYen(row.running.avgJpy)}</td>
           </tr>
           {#if editingQtyKey === rowKey(row)}
@@ -397,7 +402,7 @@
                     <input
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="0.001"
                       bind:value={qtyDraft}
                     />
                   </label>
