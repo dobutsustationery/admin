@@ -173,7 +173,7 @@
       const item = idToItem[key] as Item | undefined;
       if (!item) continue;
 
-      const sorted = sortedLedger(ledger);
+      const sorted = sortedLedger(effectiveLedgerEntries(ledger));
       const remainingByIndex = receiptRemainingByIndex(sorted);
       const current = walkLedger(sorted);
       const receiptCount = sorted.filter((e) => e.kind === "receipt").length;
@@ -202,12 +202,7 @@
           unitCostJpy: receipt.unitCostJpy,
           unitCostEur: receipt.unitCostEur,
           remainingLotQty: remainingByIndex.get(ledgerIndex) || 0,
-          affectsAverage: issueAffectsAverage(
-            sorted,
-            ledgerIndex,
-            remainingByIndex.get(ledgerIndex) || 0,
-            kind,
-          ),
+          affectsAverage: issueAffectsAverage(sorted, ledgerIndex, kind),
           currentAvgJpy: current.avgJpy,
           currentAvgEur: current.avgEur,
           receiptCount,
@@ -1073,75 +1068,34 @@
   function issueAffectsAverage(
     ledger: readonly LedgerEntry[],
     ledgerIndex: number,
-    remainingLotQty: number,
     kind: CostLedgerIssueKind,
   ): boolean {
-    if (remainingLotQty <= 0) return false;
-    return (
-      kind === "missing-exchange" || !isArchiveCarryReceipt(ledger, ledgerIndex)
-    );
-  }
-
-  function isArchiveCarryReceipt(
-    ledger: readonly LedgerEntry[],
-    targetIndex: number,
-  ): boolean {
-    let onHand = 0;
-    let avgJpy = 0;
-    let avgEur = 0;
-    let carry: { jpy: number; eur: number } | null = null;
-
-    for (const [index, entry] of ledger.entries()) {
-      if (entry.ignored) continue;
-      if (entry.kind === "receipt") {
-        if (index === targetIndex) {
-          return !(entry.unitCostJpy > 0) && onHand === 0 && carry !== null;
-        }
-
-        const next = onHand + entry.qty;
-        if (next <= 0) {
-          onHand = next > 0 ? next : 0;
-          continue;
-        }
-        if (onHand === 0 && carry) {
-          const jpyPriced = entry.unitCostJpy > 0;
-          const eurPriced = entry.unitCostEur > 0;
-          if (jpyPriced && eurPriced) {
-            avgJpy = entry.unitCostJpy;
-            avgEur = entry.unitCostEur;
-          } else if (jpyPriced) {
-            avgJpy = entry.unitCostJpy;
-            avgEur =
-              carry.jpy > 0
-                ? (entry.unitCostJpy * carry.eur) / carry.jpy
-                : carry.eur;
-          } else if (eurPriced) {
-            avgEur = entry.unitCostEur;
-            avgJpy =
-              carry.eur > 0
-                ? (entry.unitCostEur * carry.jpy) / carry.eur
-                : carry.jpy;
-          } else {
-            avgJpy = carry.jpy;
-            avgEur = carry.eur;
-          }
-          carry = null;
-        } else {
-          avgJpy = (onHand * avgJpy + entry.qty * entry.unitCostJpy) / next;
-          avgEur = (onHand * avgEur + entry.qty * entry.unitCostEur) / next;
-        }
-        onHand = next;
-        continue;
-      }
-
-      const prev = onHand;
-      onHand = Math.max(0, onHand - entry.qty);
-      if (entry.isArchive && prev > 0 && onHand === 0) {
-        carry = { jpy: avgJpy, eur: avgEur };
-      }
+    const entry = ledger[ledgerIndex];
+    if (!entry || entry.kind !== "receipt" || entry.ignored || entry.qty <= 0) {
+      return false;
     }
 
-    return false;
+    const baseline = walkLedger(ledger);
+    if (baseline.onHand <= 0) return false;
+
+    const adjusted = ledger.map((candidate, index) =>
+      index === ledgerIndex ? { ...candidate } : candidate,
+    );
+    const adjustedEntry = adjusted[ledgerIndex];
+    if (!adjustedEntry || adjustedEntry.kind !== "receipt") return false;
+
+    if (kind === "missing-exchange") {
+      adjustedEntry.unitCostEur += 1;
+    } else {
+      adjustedEntry.unitCostJpy += 1;
+    }
+
+    const next = walkLedger(adjusted);
+    const epsilon = 0.000001;
+    if (kind === "missing-exchange") {
+      return Math.abs(next.avgEur - baseline.avgEur) > epsilon;
+    }
+    return Math.abs(next.avgJpy - baseline.avgJpy) > epsilon;
   }
 
   function ledgerEntryLabel(entry: LedgerEntry): string {
