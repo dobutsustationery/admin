@@ -115,7 +115,12 @@
   }
 
   function fmtQty(n: number): string {
-    return Number.isInteger(n) ? String(n) : n.toFixed(2);
+    if (!Number.isFinite(n)) return "-";
+    const rounded = Math.round(n * 1000) / 1000;
+    if (Math.abs(rounded) < 0.0005) return "0";
+    return Number.isInteger(rounded)
+      ? String(rounded)
+      : rounded.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
   }
 
   function ledgerNote(entry: LedgerEntry): string {
@@ -202,9 +207,9 @@
                 <span class="muted">{key}</span>
               </div>
               <div class="subtype-counts">
-                <span>Qty {item.qty || 0}</span>
-                <span>Shipped {item.shipped || 0}</span>
-                <span>On hand {onHand(item)}</span>
+                <span>Qty {fmtQty(item.qty || 0)}</span>
+                <span>Shipped {fmtQty(item.shipped || 0)}</span>
+                <span>On hand {fmtQty(onHand(item))}</span>
               </div>
             </button>
           {/each}
@@ -238,9 +243,9 @@
                   <span class="muted">{key}</span>
                 </div>
                 <div class="subtype-counts">
-                  <span>Qty {item.qty || 0}</span>
-                  <span>Shipped {item.shipped || 0}</span>
-                  <span>On hand {onHand(item)}</span>
+                  <span>Qty {fmtQty(item.qty || 0)}</span>
+                  <span>Shipped {fmtQty(item.shipped || 0)}</span>
+                  <span>On hand {fmtQty(onHand(item))}</span>
                 </div>
               </button>
             {/each}
@@ -272,7 +277,7 @@
               >
                 <td class="date-col">{fmtDate(row.entry.at)}</td>
                 <td>{ledgerKind(row.entry)}</td>
-                <td>{row.entry.qty}</td>
+                <td>{fmtQty(row.entry.qty)}</td>
                 <td>
                   {#if row.entry.kind === "receipt"}
                     <div>{fmtYen(row.entry.unitCostJpy)}</div>
@@ -290,7 +295,7 @@
                     <div class="audit-note">{ledgerNote(row.entry)}</div>
                   {/if}
                 </td>
-                <td>{row.running.onHand}</td>
+                <td>{fmtQty(row.running.onHand)}</td>
                 <td>
                   <div>{fmtYen(row.running.avgJpy)}</div>
                   <span class="muted">{fmtEur(row.running.avgEur)}</span>
