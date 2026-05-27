@@ -41,4 +41,7 @@
 //     items now record fractional cost-ledger sale quantities (qty / pieces)
 //     while leaving order/shipped quantities as entered. v11 snapshots
 //     over-deplete old loose-piece sales and must replay from broadcast.
-export const CURRENT_SCHEMA_VERSION = 12;
+// 13: fractional loose-piece sale entries also keep their operator-visible
+//     sale quantity so visible-qty receipt corrections do not reinterpret
+//     historical scans as new receipts.
+export const CURRENT_SCHEMA_VERSION = 13;

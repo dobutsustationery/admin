@@ -63,6 +63,11 @@ export type SaleEntry = {
   at: number;
   seq: number;
   qty: number;
+  // Optional sale quantity in the operator-visible stock units. This can
+  // differ from `qty` for legacy loose-piece sales where the cost ledger
+  // should consume fractional pack units but visible qty corrections still
+  // need to reason about the original piece count.
+  visibleQty?: number;
   // True when this sale was emitted by an inventory archive (a
   // stock-take wipe), not a real customer/event sale. Archives are
   // typically followed by a recount that re-adds inventory; without

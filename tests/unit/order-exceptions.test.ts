@@ -1582,6 +1582,184 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
   });
 
+  it("reconstructs only the unmatched remainder when sibling subtypes already matched the order", () => {
+    const orderId = "order-late-partial-subtypes";
+    const jan = "4542804108644";
+    const blueKey = `${jan}Blue`;
+    const brownKey = `${jan}Brown`;
+    const otherKey = "4542804000000";
+    const receivedAt = Date.parse("2024-07-02T00:00:00Z");
+    const firstScanAt = Date.parse("2024-10-09T12:00:00Z");
+    const lateScanAt = Date.parse("2025-05-05T12:00:00Z");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        idToItem: {
+          [blueKey]: {
+            janCode: jan,
+            subtype: "Blue",
+            description: "Partially matched item",
+            hsCode: "48211010",
+            image: "",
+            qty: 2,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "Oct 9, 2024 (8)",
+            timestamp: lateScanAt,
+            cost: 65,
+          },
+          [brownKey]: {
+            janCode: jan,
+            subtype: "Brown",
+            description: "Partially matched item",
+            hsCode: "48211010",
+            image: "",
+            qty: 4,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "Oct 9, 2024 (8)",
+            timestamp: lateScanAt,
+            cost: 65,
+          },
+          [otherKey]: {
+            janCode: "4542804000000",
+            subtype: "",
+            description: "Earlier scanned item",
+            hsCode: "39191080",
+            image: "",
+            qty: 1,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "Oct 9, 2024 (1)",
+            timestamp: firstScanAt,
+            cost: 10,
+          },
+        },
+        costLedger: {
+          [blueKey]: [
+            {
+              kind: "receipt",
+              at: firstScanAt,
+              seq: 0,
+              qty: 8,
+              unitCostJpy: 65,
+              unitCostEur: 0.4,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+            {
+              kind: "sale",
+              at: Date.parse("2025-05-02T12:00:00Z"),
+              seq: 1,
+              qty: 8,
+              isArchive: true,
+            },
+            {
+              kind: "receipt",
+              at: lateScanAt,
+              seq: 2,
+              qty: 2,
+              receivedQty: 0,
+              unitCostJpy: 65,
+              unitCostEur: 0.4,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+          [brownKey]: [
+            {
+              kind: "receipt",
+              at: firstScanAt + 1,
+              seq: 0,
+              qty: 8,
+              unitCostJpy: 65,
+              unitCostEur: 0.4,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+            {
+              kind: "sale",
+              at: Date.parse("2025-05-02T12:00:00Z"),
+              seq: 1,
+              qty: 8,
+              isArchive: true,
+            },
+            {
+              kind: "receipt",
+              at: lateScanAt + 1,
+              seq: 2,
+              qty: 4,
+              receivedQty: 0,
+              unitCostJpy: 65,
+              unitCostEur: 0.4,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+          [otherKey]: [
+            {
+              kind: "receipt",
+              at: firstScanAt,
+              seq: 0,
+              qty: 1,
+              unitCostJpy: 10,
+              unitCostEur: 0.06,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+        },
+        idToHistory: { [blueKey]: [], [brownKey]: [] },
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Partial Late Scan Order",
+            receivedAt,
+            usesZeroedQuantities: true,
+            valueOfOrderJpy: 1560,
+            totalOrderEur: 9.6,
+            costRows: [{ jan, unitCostJpy: 65, qty: 24 }],
+            costIssues: [],
+          },
+        },
+      },
+    } as any;
+
+    const next = rootReducer(s, {
+      ...reconstruct_stock_order_late_scan_receipt({
+        orderId,
+        itemKey: blueKey,
+        note: "late recount should only reconstruct the unmatched remainder",
+      }),
+      timestamp: TS,
+    } as any);
+
+    const blueLedger = next.inventory.costLedger![blueKey] as any[];
+    const brownLedger = next.inventory.costLedger![brownKey] as any[];
+    expect(
+      blueLedger.find((entry) => entry.at === lateScanAt && entry.qty === 2),
+    ).toEqual(expect.objectContaining({ ignored: true }));
+    expect(
+      brownLedger.find(
+        (entry) => entry.at === lateScanAt + 1 && entry.qty === 4,
+      ),
+    ).toEqual(expect.objectContaining({ ignored: true }));
+    expect(
+      blueLedger.find((entry) => entry.source === `stockOrder:${orderId}`),
+    ).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        at: receivedAt,
+        qty: 8,
+      }),
+    );
+    expect(
+      brownLedger.find((entry) => entry.source === `stockOrder:${orderId}`),
+    ).toBeUndefined();
+    expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
+  });
+
   it("fixes missing COO and weight from matched TSV rows", () => {
     const s0 = unpricedOrder();
     const key = Object.keys(s0.inventory.costLedger!).find((k) =>

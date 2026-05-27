@@ -1112,7 +1112,7 @@ function fractionalPreFestivalSale(
   item: Item,
   qty: number,
   atMs: number,
-): { qty: number; auditComment?: string } {
+): { qty: number; visibleQty?: number; auditComment?: string } {
   const pieces = Number(item.pieces) || 0;
   if (
     pieces <= 1 ||
@@ -1125,6 +1125,7 @@ function fractionalPreFestivalSale(
   const ledgerQty = qty / pieces;
   return {
     qty: ledgerQty,
+    visibleQty: qty,
     auditComment: `Loose-piece sale: ${formatLedgerQty(qty)} piece(s) / ${formatLedgerQty(pieces)} pieces per unit = ${formatLedgerQty(ledgerQty)} inventory unit(s).`,
   };
 }
@@ -1138,7 +1139,9 @@ function recordSale(
   key: string,
   qty: number,
   atMs: number,
-  options: { isArchive?: boolean; auditComment?: string } | boolean = {},
+  options:
+    | { isArchive?: boolean; visibleQty?: number; auditComment?: string }
+    | boolean = {},
 ) {
   if (!qty || !Number.isFinite(qty)) return;
   if (!state.costLedger || !state.costLedger[key]) return;
@@ -1150,6 +1153,9 @@ function recordSale(
     at: Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE,
     seq: ledger.length,
     qty,
+    ...(normalizedOptions.visibleQty !== undefined
+      ? { visibleQty: normalizedOptions.visibleQty }
+      : {}),
     ...(normalizedOptions.isArchive ? { isArchive: true } : {}),
     ...(normalizedOptions.auditComment
       ? {
@@ -1235,7 +1241,7 @@ function openReceiptLotsForLedger(
       if (qty > 0) openLots.push({ index, remaining: qty });
       continue;
     }
-    let saleQty = Math.max(0, Number(entry.qty) || 0);
+    let saleQty = Math.max(0, visibleSaleQty(entry));
     for (const lot of openLots) {
       if (saleQty <= 0) break;
       const used = Math.min(lot.remaining, saleQty);
@@ -1245,6 +1251,25 @@ function openReceiptLotsForLedger(
   }
 
   return openLots.filter((lot) => lot.remaining > 0);
+}
+
+function visibleSaleQty(entry: SaleEntry): number {
+  return Number(entry.visibleQty ?? entry.qty) || 0;
+}
+
+function walkLedgerForVisibleQty(entries: readonly LedgerEntry[]) {
+  let onHand = 0;
+
+  for (const entry of sortLedgerEntries(entries)) {
+    if (entry.ignored) continue;
+    if (entry.kind === "receipt") {
+      onHand = Math.max(0, onHand + (Number(entry.qty) || 0));
+    } else {
+      onHand = Math.max(0, onHand - visibleSaleQty(entry));
+    }
+  }
+
+  return { onHand };
 }
 
 function applyQuantityCorrectionToReceipts(
@@ -1263,7 +1288,7 @@ function applyQuantityCorrectionToReceipts(
   const visible = Math.max(0, requestedVisible);
   const requestedVisibleQty =
     requestedVisible !== visible ? requestedVisible : undefined;
-  let remainingDecrease = walkLedgerForDerivedCost(ledger).onHand - visible;
+  let remainingDecrease = walkLedgerForVisibleQty(ledger).onHand - visible;
   if (remainingDecrease <= 0) return null;
 
   const openReceipts = openReceiptLotsForLedger(ledger);
@@ -1348,7 +1373,7 @@ function increaseNewestReceiptToMatchVisibleQty(
   const visible = Number(nextVisibleQty);
   if (!Number.isFinite(visible)) return null;
   const increase =
-    Math.max(0, visible) - walkLedgerForDerivedCost(ledger).onHand;
+    Math.max(0, visible) - walkLedgerForVisibleQty(ledger).onHand;
   if (increase <= 0) return null;
 
   const receiptLot = openReceiptLotsForLedger(ledger).at(-1);
@@ -3470,8 +3495,8 @@ export const inventory = createReducer(initialState, (r) => {
     const rows = stockOrderCostRowsForIssueRefresh(meta);
     const facts = stockOrderRowFactsForJan(rows, item.janCode);
     const notReceivedQty = stockOrderNotReceivedQtyForJan(meta, item.janCode);
-    const reconstructedQty = facts.expectedQty - notReceivedQty;
-    if (!(reconstructedQty > 0) || !(facts.unitCostJpy > 0)) return;
+    const expectedReceivedQty = facts.expectedQty - notReceivedQty;
+    if (!(expectedReceivedQty > 0) || !(facts.unitCostJpy > 0)) return;
 
     const source = `stockOrder:${orderId}`;
     const hasExistingReconstruction = Object.entries(
@@ -3501,6 +3526,25 @@ export const inventory = createReducer(initialState, (r) => {
     );
     if (lateReceiptKeys.size === 0) return;
 
+    let alreadyMatchedQty = 0;
+    let siblingAlreadyMatchedQty = 0;
+    for (const receipt of stockOrderMatchedReceipts(state, orderId)) {
+      if (receipt.jan !== item.janCode) continue;
+      if (String(receipt.source || "").startsWith("stockOrder:")) continue;
+      const receiptKey = `${receipt.key}|${receipt.at}|${receipt.seq ?? ""}|${receipt.qty}|${receipt.source || ""}`;
+      if (lateReceiptKeys.has(receiptKey)) continue;
+      const qty = Number(receipt.qty) || 0;
+      alreadyMatchedQty += qty;
+      if (receipt.key !== key) {
+        siblingAlreadyMatchedQty += qty;
+      }
+    }
+    const reconstructedQty =
+      siblingAlreadyMatchedQty > 0
+        ? Math.max(0, expectedReceivedQty - alreadyMatchedQty)
+        : expectedReceivedQty;
+    if (!(reconstructedQty > 0)) return;
+
     const lateQtyByKey = new Map<string, number>();
     for (const receipt of lateReceipts) {
       lateQtyByKey.set(
@@ -3508,10 +3552,10 @@ export const inventory = createReducer(initialState, (r) => {
         (lateQtyByKey.get(receipt.key) || 0) + receipt.qty,
       );
     }
-    const reconstructedQtyByKey = splitQuantityByWeights(
-      reconstructedQty,
-      lateQtyByKey,
-    );
+    const reconstructedQtyByKey =
+      siblingAlreadyMatchedQty > 0
+        ? new Map([[key, reconstructedQty]])
+        : splitQuantityByWeights(reconstructedQty, lateQtyByKey);
     if (reconstructedQtyByKey.size === 0) return;
 
     const ignoredLateQtyByKey = new Map<string, number>();
@@ -4051,6 +4095,7 @@ export const inventory = createReducer(initialState, (r) => {
         saleAtMs,
       );
       recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+        visibleQty: ledgerSale.visibleQty,
         auditComment: ledgerSale.auditComment,
       });
       if (!state.idToHistory[itemKey]) {
@@ -4126,6 +4171,7 @@ export const inventory = createReducer(initialState, (r) => {
         saleAtMs,
       );
       recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+        visibleQty: ledgerSale.visibleQty,
         auditComment: ledgerSale.auditComment,
       });
       if (!state.idToHistory[itemKey]) {
