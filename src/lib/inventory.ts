@@ -15,6 +15,7 @@ import {
 import {
   type LedgerEntry,
   type ReceiptEntry,
+  type SaleEntry,
   UNKNOWN_RECEIPT_DATE,
   BGN_PER_EUR,
   lotMatchesOrder,
@@ -1105,6 +1106,29 @@ function moveHistoryForSubtypeResolution(
   ].sort((a, b) => (a.val || 0) - (b.val || 0));
 }
 
+const JAPAN_FESTIVAL_FRACTIONAL_SALES_CUTOFF_MS = Date.UTC(2025, 4, 2);
+
+function fractionalPreFestivalSale(
+  item: Item,
+  qty: number,
+  atMs: number,
+): { qty: number; auditComment?: string } {
+  const pieces = Number(item.pieces) || 0;
+  if (
+    pieces <= 1 ||
+    !(Number.isFinite(atMs) && atMs > 0) ||
+    atMs >= JAPAN_FESTIVAL_FRACTIONAL_SALES_CUTOFF_MS
+  ) {
+    return { qty };
+  }
+
+  const ledgerQty = qty / pieces;
+  return {
+    qty: ledgerQty,
+    auditComment: `Loose-piece sale: ${formatLedgerQty(qty)} piece(s) / ${formatLedgerQty(pieces)} pieces per unit = ${formatLedgerQty(ledgerQty)} inventory unit(s).`,
+  };
+}
+
 // Append a dated sale (outflow) to the ledger so the perpetual walk
 // reduces on-hand at the right point in time. `qty` may be negative
 // (a refund/cancel/reset restores on-hand). No-op if the item has no
@@ -1114,18 +1138,27 @@ function recordSale(
   key: string,
   qty: number,
   atMs: number,
-  isArchive = false,
+  options: { isArchive?: boolean; auditComment?: string } | boolean = {},
 ) {
   if (!qty || !Number.isFinite(qty)) return;
   if (!state.costLedger || !state.costLedger[key]) return;
+  const normalizedOptions =
+    typeof options === "boolean" ? { isArchive: options } : options;
   const ledger = state.costLedger[key];
-  ledger.push({
+  const entry: SaleEntry = {
     kind: "sale",
     at: Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE,
     seq: ledger.length,
     qty,
-    ...(isArchive ? { isArchive: true } : {}),
-  });
+    ...(normalizedOptions.isArchive ? { isArchive: true } : {}),
+    ...(normalizedOptions.auditComment
+      ? {
+          auditComment: normalizedOptions.auditComment,
+          auditSeverity: "warning" as const,
+        }
+      : {}),
+  };
+  ledger.push(entry);
   rederiveCostFromLedger(state, key);
 }
 
@@ -4012,7 +4045,14 @@ export const inventory = createReducer(initialState, (r) => {
     const saleAtMs = getOrderSaleAtMs(order, order.date.getTime());
     if (state.idToItem[itemKey] !== undefined) {
       state.idToItem[itemKey].shipped += qty;
-      recordSale(state, itemKey, qty, saleAtMs);
+      const ledgerSale = fractionalPreFestivalSale(
+        state.idToItem[itemKey],
+        qty,
+        saleAtMs,
+      );
+      recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+        auditComment: ledgerSale.auditComment,
+      });
       if (!state.idToHistory[itemKey]) {
         console.warn(
           `[InventoryDebug] package_item: idToHistory missing for ${itemKey}. Initializing empty.`,
@@ -4080,7 +4120,14 @@ export const inventory = createReducer(initialState, (r) => {
     if (state.idToItem[itemKey] !== undefined) {
       const diff = qty - priorQty;
       state.idToItem[itemKey].shipped += diff;
-      recordSale(state, itemKey, diff, saleAtMs);
+      const ledgerSale = fractionalPreFestivalSale(
+        state.idToItem[itemKey],
+        diff,
+        saleAtMs,
+      );
+      recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+        auditComment: ledgerSale.auditComment,
+      });
       if (!state.idToHistory[itemKey]) {
         console.warn(
           `[InventoryDebug] quantify_item (shipped update): idToHistory missing for ${itemKey}. Initializing empty.`,

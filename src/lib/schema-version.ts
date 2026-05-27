@@ -37,4 +37,8 @@
 //     webhook/reconciliation/entry date. The cost walk also carries a
 //     sale with no same-day on-hand stock forward to the next receipt so
 //     replay does not drop dated sales that precede their priced receipt.
-export const CURRENT_SCHEMA_VERSION = 11;
+// 12: pre-Japan-Festival package_item/quantify_item sales for multi-piece
+//     items now record fractional cost-ledger sale quantities (qty / pieces)
+//     while leaving order/shipped quantities as entered. v11 snapshots
+//     over-deplete old loose-piece sales and must replay from broadcast.
+export const CURRENT_SCHEMA_VERSION = 12;

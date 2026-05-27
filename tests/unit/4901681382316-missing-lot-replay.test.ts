@@ -76,8 +76,9 @@ describe("4901681382316 stock-order lot replay", () => {
       const ledger = state.inventory.costLedger[TARGET_JAN];
       const receipts = ledger.filter((e: any) => e.kind === "receipt");
 
-      expect(receipts.map((e: any) => e.qty)).toEqual([4, 11]);
-      expect(receipts.map((e: any) => e.unitCostJpy)).toEqual([0, 0]);
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0].qty).toBeCloseTo(13.75, 9);
+      expect(receipts.map((e: any) => e.unitCostJpy)).toEqual([0]);
 
       const order1Receipts = receipts.filter((e: any) =>
         lotMatchesOrder(e, ORDER_1),

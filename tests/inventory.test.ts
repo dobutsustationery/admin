@@ -504,6 +504,94 @@ describe("inventory reducer", () => {
 
       expect(nextState.idToHistory[id].length).toBe(initialHistoryLength + 1);
     });
+
+    it("records pre-Japan-Festival multi-piece package sales fractionally in the cost ledger", () => {
+      const item: Item = {
+        janCode: "4901234567890",
+        subtype: "Loose",
+        description: "Test Pack",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 10,
+        pieces: 10,
+        shipped: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+        cost: 100,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      const orderID = "ORDER-LOOSE";
+      let nextState = inventory(initialState, update_item({ id, item }));
+      nextState = inventory(
+        nextState,
+        new_order({
+          orderID,
+          date: new Date("2024-10-26T12:00:00Z"),
+          email: "test@example.com",
+          product: "Loose sale",
+        }),
+      );
+
+      nextState = inventory(
+        nextState,
+        package_item({ orderID, itemKey: id, qty: 3 }),
+      );
+
+      const sale = nextState.costLedger![id].find(
+        (entry) => entry.kind === "sale",
+      );
+      expect(nextState.orderIdToOrder[orderID].items[0].qty).toBe(3);
+      expect(nextState.idToItem[id].shipped).toBe(3);
+      expect(sale?.qty).toBeCloseTo(0.3, 9);
+      expect(sale).toEqual(
+        expect.objectContaining({
+          auditComment:
+            "Loose-piece sale: 3 piece(s) / 10 pieces per unit = 0.30 inventory unit(s).",
+          auditSeverity: "warning",
+        }),
+      );
+      expect(walkLedger(nextState.costLedger![id]).onHand).toBeCloseTo(9.7, 9);
+    });
+
+    it("records post-Japan-Festival multi-piece package sales as whole units", () => {
+      const item: Item = {
+        janCode: "4901234567890",
+        subtype: "Whole",
+        description: "Test Pack",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 10,
+        pieces: 10,
+        shipped: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+        cost: 100,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      const orderID = "ORDER-WHOLE";
+      let nextState = inventory(initialState, update_item({ id, item }));
+      nextState = inventory(
+        nextState,
+        new_order({
+          orderID,
+          date: new Date("2025-05-03T12:00:00Z"),
+          email: "test@example.com",
+          product: "Whole sale",
+        }),
+      );
+
+      nextState = inventory(
+        nextState,
+        package_item({ orderID, itemKey: id, qty: 3 }),
+      );
+
+      const sale = nextState.costLedger![id].find(
+        (entry) => entry.kind === "sale",
+      );
+      expect(sale?.qty).toBe(3);
+      expect(sale?.auditComment).toBeUndefined();
+      expect(walkLedger(nextState.costLedger![id]).onHand).toBe(7);
+    });
   });
 
   describe("quantify_item", () => {
@@ -645,6 +733,98 @@ describe("inventory reducer", () => {
       );
 
       expect(nextState.orderIdToOrder[orderID]).toBeDefined();
+    });
+
+    it("records pre-Japan-Festival multi-piece quantify increases fractionally in the cost ledger", () => {
+      const item: Item = {
+        janCode: "4901234567890",
+        subtype: "Loose",
+        description: "Test Pack",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 10,
+        pieces: 10,
+        shipped: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+        cost: 100,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      const orderID = "ORDER-LOOSE-QUANTIFY";
+      let nextState = inventory(initialState, update_item({ id, item }));
+      nextState = inventory(
+        nextState,
+        new_order({
+          orderID,
+          date: new Date("2024-10-26T12:00:00Z"),
+          email: "test@example.com",
+          product: "Loose sale",
+        }),
+      );
+
+      nextState = inventory(
+        nextState,
+        package_item({ orderID, itemKey: id, qty: 1 }),
+      );
+      nextState = inventory(
+        nextState,
+        quantify_item({ orderID, itemKey: id, qty: 9 }),
+      );
+
+      const sales = nextState.costLedger![id].filter(
+        (entry) => entry.kind === "sale",
+      );
+      expect(sales[0].qty).toBeCloseTo(0.1, 9);
+      expect(sales[1].qty).toBeCloseTo(0.8, 9);
+      expect(nextState.orderIdToOrder[orderID].items[0].qty).toBe(9);
+      expect(nextState.idToItem[id].shipped).toBe(9);
+      expect(walkLedger(nextState.costLedger![id]).onHand).toBeCloseTo(9.1, 9);
+    });
+
+    it("records pre-Japan-Festival multi-piece quantify decreases fractionally in the cost ledger", () => {
+      const item: Item = {
+        janCode: "4901234567890",
+        subtype: "Loose",
+        description: "Test Pack",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 10,
+        pieces: 10,
+        shipped: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+        cost: 100,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      const orderID = "ORDER-LOOSE-REMOVE";
+      let nextState = inventory(initialState, update_item({ id, item }));
+      nextState = inventory(
+        nextState,
+        new_order({
+          orderID,
+          date: new Date("2024-10-26T12:00:00Z"),
+          email: "test@example.com",
+          product: "Loose sale",
+        }),
+      );
+
+      nextState = inventory(
+        nextState,
+        package_item({ orderID, itemKey: id, qty: 1 }),
+      );
+      nextState = inventory(
+        nextState,
+        quantify_item({ orderID, itemKey: id, qty: 0 }),
+      );
+
+      const sales = nextState.costLedger![id].filter(
+        (entry) => entry.kind === "sale",
+      );
+      expect(sales[0].qty).toBeCloseTo(0.1, 9);
+      expect(sales[1].qty).toBeCloseTo(-0.1, 9);
+      expect(nextState.orderIdToOrder[orderID].items).toHaveLength(0);
+      expect(nextState.idToItem[id].shipped).toBe(0);
+      expect(walkLedger(nextState.costLedger![id]).onHand).toBe(10);
     });
   });
 
