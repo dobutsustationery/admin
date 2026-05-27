@@ -14,6 +14,7 @@ import {
   reconstruct_stock_order_unmatched_receipt,
   reconstruct_stock_order_late_scan_receipt,
   mark_stock_order_row_not_received,
+  selectStockOrderCostIssues,
   update_field,
   update_item,
   type Item,
@@ -1130,6 +1131,82 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         matchedQty: 10,
       }),
     ]);
+  });
+
+  it("derives stock order match issues from effective ledger entries", () => {
+    const orderId = "order-1";
+    const jan = "4902778185650";
+    const receiptAt = Date.parse("2023-11-16T19:16:48.833Z");
+    const s = rootReducer(undefined, { type: "@@INIT" }) as any;
+    s.inventory = {
+      ...s.inventory,
+      idToItem: {
+        [jan]: {
+          janCode: jan,
+          subtype: "",
+          description: "Mechanical Pencil",
+          hsCode: "96084000",
+          image: "",
+          qty: 0,
+          pieces: 1,
+          shipped: 0,
+          creationDate: "Nov 16, 2023 (20)",
+          timestamp: receiptAt,
+          cost: 282.7,
+        },
+      },
+      costLedger: {
+        [jan]: [
+          {
+            kind: "receipt",
+            at: receiptAt,
+            seq: 0,
+            qty: 20,
+            unitCostJpy: 282.7,
+            unitCostEur: 1.8,
+            source: "update_item",
+            costOrderId: orderId,
+          },
+          {
+            kind: "receipt",
+            at: receiptAt,
+            seq: 0.001,
+            qty: -10,
+            unitCostJpy: 0,
+            unitCostEur: 0,
+            source: "update_item",
+            originalQty: 20,
+            auditComment:
+              "Reducer qty correction reduced this receipt by 10 unit(s).",
+            adjustmentEntry: true,
+            adjustmentMode: "apply-to-target",
+            adjustmentTarget: { at: receiptAt, seq: 0 },
+            ignored: true,
+            ignoreReason: "Ignore mistaken qty correction; all inventory sold",
+          },
+        ],
+      },
+      stockOrderRegistry: {
+        [orderId]: {
+          receivedAt: Date.parse("2023-08-23T00:00:00Z"),
+          usesZeroedQuantities: true,
+          costRows: [{ jan, unitCostJpy: 282.7, qty: 20 }],
+          costIssues: [
+            {
+              kind: "unmatched-row",
+              jan,
+              qty: 10,
+              expectedQty: 20,
+              matchedQty: 10,
+              unitCostJpy: 282.7,
+              lineCostJpy: 2827,
+            },
+          ],
+        },
+      },
+    };
+
+    expect(selectStockOrderCostIssues(s.inventory, orderId)).toEqual([]);
   });
 
   it("reconstructs the full zeroed-order receipt, ignores the recount, and records a historical sale", () => {

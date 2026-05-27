@@ -18,6 +18,7 @@ import {
   type SaleEntry,
   UNKNOWN_RECEIPT_DATE,
   BGN_PER_EUR,
+  effectiveLedgerEntries,
   lotMatchesOrder,
   walkLedger,
 } from "./cost-engine";
@@ -866,9 +867,8 @@ function migrateBareJanRowToCanonical(
 }
 
 // Carry the cost ledger with the item across a key change/merge. Entries
-// from the old key are appended after the destination's and re-seq'd so
-// the deterministic (at, seq) order is preserved; the destination cost is
-// re-derived. See docs/investigations/DESIGN_INVENTORY_COST_AND_VALUATION.md
+// from the old key are appended after the destination's while preserving
+// raw audit/adjustment rows. See docs/investigations/DESIGN_INVENTORY_COST_AND_VALUATION.md
 function migrateCostLedger(
   state: InventoryState,
   oldKey: string,
@@ -876,11 +876,41 @@ function migrateCostLedger(
 ) {
   if (!state.costLedger || !state.costLedger[oldKey]) return;
   if (!state.costLedger[newKey]) state.costLedger[newKey] = [];
-  const merged = [...state.costLedger[newKey], ...state.costLedger[oldKey]];
-  merged.forEach((e, i) => (e.seq = i));
-  state.costLedger[newKey] = merged;
+  const destination = state.costLedger[newKey].map((entry) => ({ ...entry }));
+  const offset =
+    destination.length === 0
+      ? 0
+      : Math.floor(
+          destination.reduce(
+            (max, entry, index) =>
+              Math.max(max, Number.isFinite(entry.seq) ? entry.seq : index),
+            0,
+          ),
+        ) + 1;
+  const moved = state.costLedger[oldKey].map((entry) =>
+    shiftLedgerEntrySeq(entry, offset),
+  );
+  state.costLedger[newKey] = [...destination, ...moved];
   delete state.costLedger[oldKey];
   rederiveCostFromLedger(state, newKey);
+}
+
+function shiftLedgerEntrySeq(entry: LedgerEntry, offset: number): LedgerEntry {
+  if (offset === 0) return { ...entry };
+  const seq = Number.isFinite(entry.seq) ? entry.seq + offset : offset;
+  if (entry.kind !== "receipt") return { ...entry, seq };
+  return {
+    ...entry,
+    seq,
+    ...(entry.adjustmentTarget
+      ? {
+          adjustmentTarget: {
+            ...entry.adjustmentTarget,
+            seq: entry.adjustmentTarget.seq + offset,
+          },
+        }
+      : {}),
+  };
 }
 
 function reseqLedger(entries: LedgerEntry[]): LedgerEntry[] {
@@ -1234,23 +1264,153 @@ function openReceiptLotsForLedger(
     });
 
   const openLots: { index: number; remaining: number }[] = [];
+  const consumeOpenLots = (qty: number, newestFirst: boolean) => {
+    let remaining = qty;
+    const lots = newestFirst ? [...openLots].reverse() : openLots;
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const used = Math.min(lot.remaining, remaining);
+      lot.remaining -= used;
+      remaining -= used;
+    }
+  };
   for (const { entry, index } of sorted) {
     if (entry.ignored) continue;
     if (entry.kind === "receipt") {
-      const qty = Math.max(0, Number(entry.qty) || 0);
-      if (qty > 0) openLots.push({ index, remaining: qty });
+      const qty = Number(entry.qty) || 0;
+      if (entry.adjustmentEntry && entry.adjustmentMode === "apply-to-target") {
+        let targetLot = openLots.find((lot) => {
+          const target = ledger[lot.index];
+          return (
+            target?.kind === "receipt" &&
+            target.at === entry.adjustmentTarget?.at &&
+            target.seq === entry.adjustmentTarget.seq
+          );
+        });
+        if (!targetLot) {
+          const seqMatches = openLots.filter((lot) => {
+            const target = ledger[lot.index];
+            return (
+              target?.kind === "receipt" &&
+              target.seq === entry.adjustmentTarget?.seq
+            );
+          });
+          targetLot = seqMatches.length === 1 ? seqMatches[0] : undefined;
+        }
+        if (targetLot) {
+          targetLot.remaining += qty;
+          if (targetLot.remaining < 0) targetLot.remaining = 0;
+        } else if (qty < 0) {
+          consumeOpenLots(-qty, true);
+        }
+        continue;
+      }
+      if (qty > 0) {
+        openLots.push({ index, remaining: qty });
+      } else if (qty < 0) {
+        consumeOpenLots(-qty, true);
+      }
       continue;
     }
-    let saleQty = Math.max(0, visibleSaleQty(entry));
-    for (const lot of openLots) {
-      if (saleQty <= 0) break;
-      const used = Math.min(lot.remaining, saleQty);
-      lot.remaining -= used;
-      saleQty -= used;
-    }
+    consumeOpenLots(Math.max(0, visibleSaleQty(entry)), false);
   }
 
   return openLots.filter((lot) => lot.remaining > 0);
+}
+
+function receiptAdjustmentReceivedQty(
+  receipt: ReceiptEntry,
+  qty: number,
+): number | undefined {
+  return receipt.receivedQty === undefined ? undefined : 0;
+}
+
+function visibleQtyCorrectionEntry(
+  receipt: ReceiptEntry,
+  qty: number,
+  at: number,
+  seq: number,
+  correctionAt: number,
+  actionType: string,
+  actionDocId: string | undefined,
+  fromVisibleQty: unknown,
+  visibleQty: number,
+  auditComment: string,
+  reducedBy: number,
+  increasedBy: number | undefined,
+  adjustmentMode: ReceiptEntry["adjustmentMode"],
+  adjustmentTarget: ReceiptEntry["adjustmentTarget"],
+  requestedVisibleQty?: number,
+  receivedQtyOverride?: number,
+): ReceiptEntry {
+  return {
+    kind: "receipt",
+    at,
+    seq,
+    qty,
+    receivedQty:
+      receivedQtyOverride ?? receiptAdjustmentReceivedQty(receipt, qty),
+    unitCostJpy: receipt.unitCostJpy,
+    unitCostEur: receipt.unitCostEur,
+    ...(receipt.source ? { source: receipt.source } : {}),
+    ...(receipt.costOrderId ? { costOrderId: receipt.costOrderId } : {}),
+    originalQty: Number(receipt.originalQty ?? receipt.qty) || 0,
+    quantityCorrections: [
+      {
+        at: correctionAt,
+        actionType,
+        ...(actionDocId ? { actionDocId } : {}),
+        fromVisibleQty: Number(fromVisibleQty),
+        toVisibleQty: visibleQty,
+        ...(requestedVisibleQty !== undefined ? { requestedVisibleQty } : {}),
+        reducedBy,
+        ...(increasedBy !== undefined ? { increasedBy } : {}),
+      },
+    ],
+    auditComment,
+    auditSeverity: "warning",
+    adjustmentEntry: true,
+    adjustmentMode,
+    ...(adjustmentTarget ? { adjustmentTarget } : {}),
+  };
+}
+
+function manualReceiptQtyAdjustmentEntry(
+  receipt: ReceiptEntry,
+  effectiveQty: number,
+  delta: number,
+  note: string,
+): ReceiptEntry {
+  return {
+    kind: "receipt",
+    at: receipt.at,
+    seq: Number(receipt.seq || 0) + 0.001,
+    qty: delta,
+    receivedQty: receipt.receivedQty === undefined ? undefined : 0,
+    unitCostJpy: receipt.unitCostJpy,
+    unitCostEur: receipt.unitCostEur,
+    ...(receipt.source ? { source: receipt.source } : {}),
+    ...(receipt.costOrderId ? { costOrderId: receipt.costOrderId } : {}),
+    originalQty: effectiveQty,
+    auditComment: `Manual cost ledger qty adjustment: changed qty from ${formatLedgerQty(effectiveQty)} to ${formatLedgerQty(effectiveQty + delta)}. ${note}`,
+    auditSeverity: "warning",
+    adjustmentEntry: true,
+    adjustmentMode: "apply-to-target",
+    adjustmentTarget: { at: receipt.at, seq: receipt.seq },
+  };
+}
+
+function effectiveReceiptQtyForTarget(
+  ledger: LedgerEntry[],
+  receipt: ReceiptEntry,
+): number {
+  const effective = effectiveLedgerEntries(ledger).find(
+    (entry) =>
+      entry.kind === "receipt" &&
+      entry.at === receipt.at &&
+      entry.seq === receipt.seq,
+  );
+  return effective?.kind === "receipt" ? effective.qty : receipt.qty;
 }
 
 function visibleSaleQty(entry: SaleEntry): number {
@@ -1260,7 +1420,7 @@ function visibleSaleQty(entry: SaleEntry): number {
 function walkLedgerForVisibleQty(entries: readonly LedgerEntry[]) {
   let onHand = 0;
 
-  for (const entry of sortLedgerEntries(entries)) {
+  for (const entry of sortLedgerEntries(effectiveLedgerEntries(entries))) {
     if (entry.ignored) continue;
     if (entry.kind === "receipt") {
       onHand = Math.max(0, onHand + (Number(entry.qty) || 0));
@@ -1306,37 +1466,86 @@ function applyQuantityCorrectionToReceipts(
     const receipt = ledger[lot.index] as ReceiptEntry;
     const beforeQty = Number(receipt.qty) || 0;
     if (beforeQty <= 0) continue;
+    const effectiveBeforeQty = effectiveReceiptQtyForTarget(ledger, receipt);
 
-    if (receipt.originalQty === undefined) receipt.originalQty = beforeQty;
     for (const orderId of stockOrderIdsForLedgerEntry(receipt)) {
       affectedOrderIds.add(orderId);
     }
-    receipt.qty = Math.max(0, beforeQty - used);
-    if (actionType === "update_item" && lot.remaining >= beforeQty) {
-      receipt.at = correctionAt;
-    }
     const fromVisible = Number(fromVisibleQty);
-    const corrections = receipt.quantityCorrections || [];
-    corrections.push({
-      at: correctionAt,
-      actionType,
-      ...(actionDocId ? { actionDocId } : {}),
-      fromVisibleQty: fromVisible,
-      toVisibleQty: visible,
-      ...(requestedVisibleQty !== undefined ? { requestedVisibleQty } : {}),
-      reducedBy: used,
-    });
-    receipt.quantityCorrections = corrections;
-    receipt.auditComment = receiptQuantityCorrectionComment(
+    const comment = receiptQuantityCorrectionComment(
       used,
       fromVisible,
       visible,
       requestedVisibleQty,
     );
-    receipt.auditSeverity = "warning";
-    if (receipt.qty <= 0) {
-      receipt.ignored = true;
-      receipt.ignoreReason = "qty correction reduced receipt to zero";
+    const shouldMoveReceiptDate =
+      actionType === "update_item" && lot.remaining >= effectiveBeforeQty;
+    const baseSeq = Number(receipt.seq ?? lot.index);
+    const target = { at: receipt.at, seq: baseSeq };
+    if (shouldMoveReceiptDate) {
+      ledger.push(
+        visibleQtyCorrectionEntry(
+          receipt,
+          -effectiveBeforeQty,
+          receipt.at,
+          baseSeq + 0.001,
+          correctionAt,
+          actionType,
+          actionDocId,
+          fromVisible,
+          visible,
+          comment,
+          used,
+          undefined,
+          "apply-to-target",
+          target,
+          requestedVisibleQty,
+          receipt.receivedQty === undefined ? undefined : -receipt.receivedQty,
+        ),
+      );
+      const effectiveReplacementQty = Math.max(0, effectiveBeforeQty - used);
+      if (effectiveReplacementQty > 0) {
+        ledger.push(
+          visibleQtyCorrectionEntry(
+            receipt,
+            effectiveReplacementQty,
+            correctionAt,
+            baseSeq,
+            correctionAt,
+            actionType,
+            actionDocId,
+            fromVisible,
+            visible,
+            comment,
+            used,
+            undefined,
+            "standalone",
+            target,
+            requestedVisibleQty,
+            receipt.receivedQty,
+          ),
+        );
+      }
+    } else {
+      ledger.push(
+        visibleQtyCorrectionEntry(
+          receipt,
+          -used,
+          receipt.at,
+          baseSeq + 0.001,
+          correctionAt,
+          actionType,
+          actionDocId,
+          fromVisible,
+          visible,
+          comment,
+          used,
+          undefined,
+          "apply-to-target",
+          target,
+          requestedVisibleQty,
+        ),
+      );
     }
 
     adjustedLots++;
@@ -1409,42 +1618,82 @@ function increaseNewestReceiptToMatchVisibleQty(
   } else {
     const receipt = ledger[receiptIndex] as ReceiptEntry;
     const beforeQty = Number(receipt.qty) || 0;
-    if (options.audit && receipt.originalQty === undefined) {
-      receipt.originalQty = beforeQty;
-    }
+    const effectiveBeforeQty = effectiveReceiptQtyForTarget(ledger, receipt);
     for (const orderId of stockOrderIdsForLedgerEntry(receipt)) {
       affectedOrderIds.add(orderId);
     }
-    receipt.qty += increase;
-    if (
+    const shouldMoveReceiptDate =
       !options.preserveReceiptDate &&
       receiptLot &&
-      receiptLot.remaining >= receipt.qty - increase
-    ) {
-      receipt.at = correctionAt;
-    }
-    if (receipt.ignored && receipt.qty > 0) {
-      delete receipt.ignored;
-      delete receipt.ignoreReason;
-    }
-    if (options.audit) {
-      const corrections = receipt.quantityCorrections || [];
-      corrections.push({
-        at: correctionAt,
-        actionType: options.actionType || "update_field",
-        ...(options.actionDocId ? { actionDocId: options.actionDocId } : {}),
-        fromVisibleQty: Number(options.fromVisibleQty),
-        toVisibleQty: Math.max(0, visible),
-        reducedBy: 0,
-        increasedBy: increase,
-      });
-      receipt.quantityCorrections = corrections;
-      receipt.auditComment = receiptQuantityIncreaseComment(
-        increase,
-        options.fromVisibleQty,
-        Math.max(0, visible),
+      receiptLot.remaining >= effectiveBeforeQty;
+    const baseSeq = Number(receipt.seq ?? receiptIndex);
+    const comment = receiptQuantityIncreaseComment(
+      increase,
+      options.fromVisibleQty,
+      Math.max(0, visible),
+    );
+    const actionType = options.actionType || "update_field";
+    const target = { at: receipt.at, seq: baseSeq };
+    if (shouldMoveReceiptDate) {
+      ledger.push(
+        visibleQtyCorrectionEntry(
+          receipt,
+          -effectiveBeforeQty,
+          receipt.at,
+          baseSeq + 0.001,
+          correctionAt,
+          actionType,
+          options.actionDocId,
+          options.fromVisibleQty,
+          Math.max(0, visible),
+          comment,
+          0,
+          increase,
+          "apply-to-target",
+          target,
+          undefined,
+          receipt.receivedQty === undefined ? undefined : -receipt.receivedQty,
+        ),
       );
-      receipt.auditSeverity = "warning";
+      ledger.push(
+        visibleQtyCorrectionEntry(
+          receipt,
+          effectiveBeforeQty + increase,
+          correctionAt,
+          baseSeq,
+          correctionAt,
+          actionType,
+          options.actionDocId,
+          options.fromVisibleQty,
+          Math.max(0, visible),
+          comment,
+          0,
+          increase,
+          "standalone",
+          target,
+          undefined,
+          receipt.receivedQty,
+        ),
+      );
+    } else {
+      ledger.push(
+        visibleQtyCorrectionEntry(
+          receipt,
+          increase,
+          receipt.at,
+          baseSeq + 0.001,
+          correctionAt,
+          actionType,
+          options.actionDocId,
+          options.fromVisibleQty,
+          Math.max(0, visible),
+          comment,
+          0,
+          increase,
+          "apply-to-target",
+          target,
+        ),
+      );
     }
   }
 
@@ -1475,11 +1724,12 @@ function rederiveCostFromLedger(state: InventoryState, key: string) {
   const ledger = state.costLedger?.[key];
   const item = state.idToItem[key];
   if (!ledger || !item) return;
-  const hasPriced = ledger.some(
+  const effectiveLedger = effectiveLedgerEntries(ledger);
+  const hasPriced = effectiveLedger.some(
     (e) => !e.ignored && e.kind === "receipt" && e.unitCostJpy > 0,
   );
   if (hasPriced) {
-    item.cost = walkLedgerForDerivedCost(ledger).avgJpy;
+    item.cost = walkLedgerForDerivedCost(effectiveLedger).avgJpy;
   }
 }
 
@@ -1534,6 +1784,25 @@ function ledgerEntryMatchesRef(
   return true;
 }
 
+function ledgerEntryLooselyMatchesRef(
+  entry: LedgerEntry,
+  ref: CostLedgerEntryRef,
+): boolean {
+  return ledgerEntryMatchesRef(entry, { ...ref, seq: entry.seq });
+}
+
+function selectLooseLedgerRefMatch(
+  ledger: LedgerEntry[],
+  ref: CostLedgerEntryRef,
+): LedgerEntry | undefined {
+  const candidates = ledger
+    .filter((candidate) => ledgerEntryLooselyMatchesRef(candidate, ref))
+    .sort((a, b) => a.seq - b.seq);
+  if (candidates.length === 1) return candidates[0];
+  const rank = candidates.filter((candidate) => candidate.seq < ref.seq).length;
+  return candidates[rank];
+}
+
 function formatLedgerQty(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
@@ -1554,7 +1823,7 @@ function walkLedgerForDerivedCost(entries: readonly LedgerEntry[]) {
   let avgJpy = 0;
   let avgEur = 0;
 
-  for (const e of sortLedgerEntries(entries)) {
+  for (const e of sortLedgerEntries(effectiveLedgerEntries(entries))) {
     if (e.ignored) continue;
     if (e.kind === "receipt") {
       const next = onHand + e.qty;
@@ -1656,7 +1925,7 @@ function stockOrderMatchedReceipts(
   for (const [key, ledger] of Object.entries(state.costLedger || {})) {
     const jan = state.idToItem[key]?.janCode;
     if (!jan) continue;
-    for (const entry of ledger) {
+    for (const entry of effectiveLedgerEntries(ledger)) {
       if (
         entry.kind !== "receipt" ||
         entry.ignored ||
@@ -1817,12 +2086,21 @@ function stockOrderCostRowsForIssueRefresh(
   }));
 }
 
+export function selectStockOrderCostIssues(
+  state: InventoryState,
+  orderId: string,
+): StockOrderCostIssue[] {
+  const meta = state.stockOrderRegistry?.[orderId];
+  if (!meta) return [];
+  const rows = stockOrderCostRowsForIssueRefresh(meta);
+  if (rows.length === 0) return meta.costIssues || [];
+  return stockOrderCostIssues(state, orderId, rows);
+}
+
 function refreshStockOrderCostIssues(state: InventoryState, orderId: string) {
   const meta = state.stockOrderRegistry?.[orderId];
   if (!meta) return;
-  const rows = stockOrderCostRowsForIssueRefresh(meta);
-  if (rows.length === 0) return;
-  meta.costIssues = stockOrderCostIssues(state, orderId, rows);
+  meta.costIssues = selectStockOrderCostIssues(state, orderId);
 }
 
 function stockOrderRowFactsForJan(
@@ -1977,15 +2255,34 @@ function applyZeroedStockOrderAllocationGroup(
     })
     .map((input) => {
       const ledger = state.costLedger?.[input.key] || [];
+      const effectiveQtyByReceipt = new Map<string, number>();
+      for (const entry of effectiveLedgerEntries(ledger)) {
+        if (
+          entry.kind !== "receipt" ||
+          entry.ignored ||
+          entry.at < orderDate ||
+          entry.source?.startsWith("stockOrder:") ||
+          entry.costOrderId ||
+          !(entry.qty > 0)
+        ) {
+          continue;
+        }
+        effectiveQtyByReceipt.set(`${entry.at}|${entry.seq}`, entry.qty);
+      }
       const candidates = ledger
         .map((entry, index) => ({ entry, index }))
-        .filter(({ entry }) => {
+        .map(({ entry, index }) => ({
+          entry,
+          index,
+          effectiveQty: effectiveQtyByReceipt.get(`${entry.at}|${entry.seq}`),
+        }))
+        .filter(({ entry, effectiveQty }) => {
           if (entry.kind !== "receipt") return false;
           if (entry.ignored) return false;
           if (entry.at < orderDate) return false;
           if (entry.source?.startsWith("stockOrder:")) return false;
           if (entry.costOrderId) return false;
-          return entry.qty > 0;
+          return effectiveQty !== undefined && effectiveQty > 0;
         })
         .sort((a, b) => {
           if (a.entry.at !== b.entry.at) return a.entry.at - b.entry.at;
@@ -2003,20 +2300,21 @@ function applyZeroedStockOrderAllocationGroup(
       const next = queue.candidates.shift();
       if (!next) continue;
       const receipt = next.entry as ReceiptEntry;
+      const receiptQty = next.effectiveQty ?? receipt.qty;
       const beforeRemaining = remaining;
       const overConsumes =
-        Number.isFinite(remaining) && receipt.qty > beforeRemaining;
+        Number.isFinite(remaining) && receiptQty > beforeRemaining;
       let touched = applyStockOrderCostToReceipt(receipt, stockOrder);
       if (overConsumes) {
         receipt.auditComment = stockOrderOverconsumptionComment(
-          receipt.qty,
+          receiptQty,
           beforeRemaining,
           stockOrder.orderId,
         );
         receipt.auditSeverity = "danger";
         touched = true;
       }
-      remaining -= receipt.qty;
+      remaining -= receiptQty;
       consumedAny = true;
       if (touched) {
         changed = true;
@@ -2459,15 +2757,19 @@ function applyInventoryUpdate(
   }
 
   if (ledgerChanged) {
-    const hasPriced = ledger.some(
+    const effectiveLedger = effectiveLedgerEntries(ledger);
+    const hasPriced = effectiveLedger.some(
       (e) => !e.ignored && e.kind === "receipt" && e.unitCostJpy > 0,
     );
     if (hasPriced) {
-      const derived = walkLedgerForDerivedCost(ledger).avgJpy;
+      const derived = walkLedgerForDerivedCost(effectiveLedger).avgJpy;
+      const effectiveLotCount = effectiveLedger.filter(
+        (e) => !e.ignored,
+      ).length;
       state.idToItem[id].cost = derived;
       historyEntries.push({
         date: globalDate,
-        desc: `Cost derived from ${ledger.length} lot(s): ${formatYen(derived)}`,
+        desc: `Cost derived from ${effectiveLotCount} lot(s): ${formatYen(derived)}`,
         val,
       });
     }
@@ -3280,9 +3582,10 @@ export const inventory = createReducer(initialState, (r) => {
     let changed = 0;
     const affectedOrderIds = new Set<string>();
     for (const ref of refs) {
-      const entry = ledger.find((candidate) =>
+      const exact = ledger.find((candidate) =>
         ledgerEntryMatchesRef(candidate, ref),
       );
+      const entry = exact || selectLooseLedgerRefMatch(ledger, ref);
       if (!entry || Boolean(entry.ignored) === ignored) continue;
       for (const orderId of stockOrderIdsForLedgerEntry(entry)) {
         affectedOrderIds.add(orderId);
@@ -3320,17 +3623,52 @@ export const inventory = createReducer(initialState, (r) => {
     const trimmedNote = note.trim();
     if (!ledger || !Number.isFinite(qty) || qty < 0 || !trimmedNote) return;
 
-    const entry = ledger.find((candidate) =>
+    let entry = ledger.find((candidate) =>
       ledgerEntryMatchesRef(candidate, ref),
     );
-    if (!entry || entry.qty === qty) return;
+    if (!entry) {
+      entry = selectLooseLedgerRefMatch(ledger, ref);
+    }
+    let effectiveQty = entry?.qty;
+    let appendAdjustment = false;
+    if (!entry) {
+      const effectiveEntry = effectiveLedgerEntries(ledger).find((candidate) =>
+        ledgerEntryMatchesRef(candidate, ref),
+      );
+      if (effectiveEntry?.kind !== "receipt") return;
+      entry = ledger.find(
+        (candidate): candidate is ReceiptEntry =>
+          candidate.kind === "receipt" &&
+          !(
+            candidate.adjustmentEntry &&
+            candidate.adjustmentMode === "apply-to-target"
+          ) &&
+          candidate.at === effectiveEntry.at &&
+          candidate.seq === effectiveEntry.seq,
+      );
+      if (!entry) return;
+      effectiveQty = effectiveEntry.qty;
+      appendAdjustment = true;
+    }
+    if (effectiveQty === qty) return;
 
     const affectedOrderIds = stockOrderIdsForLedgerEntry(entry);
-    const oldQty = entry.qty;
-    if (entry.originalQty === undefined) entry.originalQty = oldQty;
-    entry.qty = qty;
-    entry.auditComment = `Manual cost ledger qty adjustment: changed qty from ${formatLedgerQty(oldQty)} to ${formatLedgerQty(qty)}. ${trimmedNote}`;
-    entry.auditSeverity = "warning";
+    const oldQty = effectiveQty ?? entry.qty;
+    if (appendAdjustment && entry.kind === "receipt") {
+      ledger.push(
+        manualReceiptQtyAdjustmentEntry(
+          entry,
+          oldQty,
+          qty - oldQty,
+          trimmedNote,
+        ),
+      );
+    } else {
+      if (entry.originalQty === undefined) entry.originalQty = oldQty;
+      entry.qty = qty;
+      entry.auditComment = `Manual cost ledger qty adjustment: changed qty from ${formatLedgerQty(oldQty)} to ${formatLedgerQty(qty)}. ${trimmedNote}`;
+      entry.auditSeverity = "warning";
+    }
 
     rederiveCostFromLedger(state, itemKey);
     for (const orderId of affectedOrderIds) {
@@ -4728,7 +5066,9 @@ export const inventory = createReducer(initialState, (r) => {
       );
     }
 
-    const sourceLedger = state.costLedger?.[bareKey] || [];
+    const sourceLedger = effectiveLedgerEntries(
+      state.costLedger?.[bareKey] || [],
+    );
     const distributedLedgers = distributeSubtypeResolutionLedgerEntries(
       sourceLedger,
       targetAllocations,
@@ -4972,7 +5312,9 @@ export const inventory = createReducer(initialState, (r) => {
     // 1. Update Source Item
     sourceItem.qty -= totalSplitQty;
     const sourceQtyAfterSplit = Math.max(0, Number(sourceItem.qty) || 0);
-    const sourceLedger = state.costLedger?.[sourceId] || [];
+    const sourceLedger = effectiveLedgerEntries(
+      state.costLedger?.[sourceId] || [],
+    );
     const ledgerAllocations = new Map<
       string,
       { key: string; qty: number; shipped: number }

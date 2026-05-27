@@ -27,9 +27,16 @@
   let editingQtyKey = "";
   let qtyDraft = "";
   let qtyNote = "";
+  let appliedSearchParam = "";
 
   $: paramKey = $page.url.searchParams.get("itemKey") || "";
   $: if (paramKey && paramKey !== selectedKey) selectedKey = paramKey;
+  $: paramSearch = $page.url.searchParams.get("search") || "";
+  $: if (paramSearch && paramSearch !== appliedSearchParam) {
+    selectedKey = "";
+    search = paramSearch;
+    appliedSearchParam = paramSearch;
+  }
 
   $: inventory = $store.inventory;
   $: idToItem = inventory?.idToItem || {};

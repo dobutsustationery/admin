@@ -5,6 +5,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import {
+    effectiveLedgerEntries,
     lotMatchesOrder,
     walkLedger,
     type LedgerEntry,
@@ -21,6 +22,7 @@
     mark_stock_order_row_not_received,
     reconstruct_stock_order_late_scan_receipt,
     reconstruct_stock_order_unmatched_receipt,
+    selectStockOrderCostIssues,
   } from "$lib/inventory";
 
   type CostLedgerIssueKind = "unpriced-scan" | "missing-exchange";
@@ -282,7 +284,7 @@
     for (const [orderId, meta] of Object.entries(
       inventory.stockOrderRegistry || {},
     )) {
-      for (const issue of meta.costIssues || []) {
+      for (const issue of selectStockOrderCostIssues(inventory, orderId)) {
         const hit = issue.itemKey
           ? ([issue.itemKey, idToItem[issue.itemKey]] as const)
           : Object.entries(idToItem)
@@ -353,7 +355,7 @@
     for (const [itemKey, ledger] of Object.entries(
       inventory.costLedger || {},
     )) {
-      for (const entry of ledger) {
+      for (const entry of effectiveLedgerEntries(ledger)) {
         if (
           entry.kind !== "receipt" ||
           entry.ignored ||
@@ -418,7 +420,7 @@
   ): number {
     let total = 0;
     for (const ledger of Object.values(inventory.costLedger || {})) {
-      for (const entry of ledger) {
+      for (const entry of effectiveLedgerEntries(ledger)) {
         if (
           entry.kind !== "receipt" ||
           entry.ignored ||
@@ -741,6 +743,14 @@
 
   function canMarkNotReceived(row: StockOrderMatchIssueRow): boolean {
     return row.kind === "unmatched-row" && row.qty > 0;
+  }
+
+  function canOpenCostLedger(row: StockOrderMatchIssueRow): boolean {
+    return row.kind === "overmatched-row" && Boolean(row.jan);
+  }
+
+  function costLedgerSearchUrl(row: StockOrderMatchIssueRow): string {
+    return `/cost-ledger-editor?search=${encodeURIComponent(row.jan)}`;
   }
 
   function remediationDraft(row: StockOrderMatchIssueRow) {
@@ -1516,8 +1526,16 @@
                       </span>
                     </td>
                     <td>
-                      {#if canReconstruct(row) || canReconstructLateScan(row) || canMarkNotReceived(row)}
+                      {#if canReconstruct(row) || canReconstructLateScan(row) || canMarkNotReceived(row) || canOpenCostLedger(row)}
                         <div class="remediation-form">
+                          {#if canOpenCostLedger(row)}
+                            <a
+                              class="copy-button remediation-link"
+                              href={costLedgerSearchUrl(row)}
+                            >
+                              Open cost ledger
+                            </a>
+                          {/if}
                           {#if canReconstruct(row)}
                             <label>
                               Sale date
@@ -1911,6 +1929,11 @@
     border-radius: 4px;
     padding: 0.3rem 0.4rem;
     font: inherit;
+  }
+  .remediation-link {
+    display: inline-block;
+    text-align: center;
+    text-decoration: none;
   }
   .copy-button:disabled {
     cursor: not-allowed;

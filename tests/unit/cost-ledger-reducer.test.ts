@@ -13,7 +13,11 @@ import {
   set_cost_ledger_entries_ignored,
   type Item,
 } from "$lib/inventory";
-import { walkLedger } from "$lib/cost-engine";
+import {
+  effectiveLedgerEntries,
+  walkLedger,
+  type ReceiptEntry,
+} from "$lib/cost-engine";
 
 // M2: `cost` is derived from the per-item costLedger materialised in
 // applyInventoryUpdate. Single priced lot -> cost == that lot (identical
@@ -252,18 +256,14 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
 
     expect(
-      (s.inventory.costLedger![KEY] as any[]).map((e) => [
-        e.qty,
-        e.unitCostJpy,
-        e.costOrderId,
-      ]),
+      effectiveLedgerEntries(s.inventory.costLedger![KEY] as any[])
+        .filter((e): e is ReceiptEntry => e.kind === "receipt" && !e.ignored)
+        .map((e) => [e.qty, e.unitCostJpy, e.costOrderId]),
     ).toEqual([[8, 65, "o1"]]);
     expect(
-      (s.inventory.costLedger![pinkKey] as any[]).map((e) => [
-        e.qty,
-        e.unitCostJpy,
-        e.costOrderId,
-      ]),
+      effectiveLedgerEntries(s.inventory.costLedger![pinkKey] as any[])
+        .filter((e): e is ReceiptEntry => e.kind === "receipt" && !e.ignored)
+        .map((e) => [e.qty, e.unitCostJpy, e.costOrderId]),
     ).toEqual([[10, 65, "o1"]]);
   });
 
@@ -280,10 +280,18 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
 
     expect(s.inventory.idToItem[KEY].qty).toBe(5);
-    expect(s.inventory.costLedger![KEY]).toEqual([
+    const rawLedger = s.inventory.costLedger![KEY] as any[];
+    expect(rawLedger).toEqual([
       expect.objectContaining({
         kind: "receipt",
-        qty: 5,
+        qty: 10,
+        unitCostJpy: 0,
+      }),
+      expect.objectContaining({
+        kind: "receipt",
+        adjustmentEntry: true,
+        adjustmentMode: "apply-to-target",
+        qty: -5,
         unitCostJpy: 0,
         originalQty: 10,
         quantityCorrections: [
@@ -299,6 +307,7 @@ describe("cost-ledger materialisation in the reducer", () => {
         auditSeverity: "warning",
       }),
     ]);
+    expect(walkLedger(rawLedger).onHand).toBe(5);
     expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
       "Cost ledger qty correction",
     );
@@ -326,8 +335,11 @@ describe("cost-ledger materialisation in the reducer", () => {
       ),
     );
 
-    expect(s.inventory.costLedger![KEY]).toHaveLength(1);
-    expect(s.inventory.costLedger![KEY][0]).toEqual(
+    const effectiveLedger = effectiveLedgerEntries(
+      s.inventory.costLedger![KEY] as any[],
+    );
+    expect(effectiveLedger).toHaveLength(1);
+    expect(effectiveLedger[0]).toEqual(
       expect.objectContaining({
         kind: "receipt",
         qty: 5,
@@ -369,11 +381,23 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
 
     expect(s.inventory.idToItem[KEY].qty).toBe(24);
-    expect(s.inventory.costLedger![KEY]).toEqual([
+    const rawLedger = s.inventory.costLedger![KEY] as any[];
+    expect(rawLedger).toEqual([
       expect.objectContaining({
         kind: "receipt",
         at: 100_000,
-        qty: 24,
+        qty: 12,
+        unitCostJpy: 140,
+        unitCostEur: 0,
+        source: "stockOrder:o1",
+        costOrderId: "o1",
+      }),
+      expect.objectContaining({
+        kind: "receipt",
+        adjustmentEntry: true,
+        adjustmentMode: "apply-to-target",
+        at: 100_000,
+        qty: 12,
         unitCostJpy: 140,
         unitCostEur: 0,
         source: "stockOrder:o1",
@@ -392,6 +416,7 @@ describe("cost-ledger materialisation in the reducer", () => {
         auditSeverity: "warning",
       }),
     ]);
+    expect(walkLedger(rawLedger).onHand).toBe(24);
     expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
       "Cost ledger qty correction: increased open receipt by 12 unit(s) to match visible qty 24",
     );
@@ -415,7 +440,9 @@ describe("cost-ledger materialisation in the reducer", () => {
     const ledger = s.inventory.costLedger![KEY] as any[];
     expect(s.inventory.idToItem[KEY].qty).toBe(12);
     expect(
-      ledger.map((entry) => [entry.kind, entry.qty, entry.ignored]),
+      effectiveLedgerEntries(ledger)
+        .filter((entry) => !entry.ignored)
+        .map((entry) => [entry.kind, entry.qty, entry.ignored]),
     ).toEqual([["receipt", 12, undefined]]);
   });
 
@@ -435,18 +462,23 @@ describe("cost-ledger materialisation in the reducer", () => {
     );
 
     const ledger = s.inventory.costLedger![KEY] as any[];
-    expect(ledger).toHaveLength(1);
-    expect(ledger[0]).toEqual(
+    const adjustment = ledger.find(
+      (entry) =>
+        entry.adjustmentEntry &&
+        (entry.quantityCorrections?.at(-1)?.increasedBy || 0) > 0,
+    );
+    expect(adjustment).toEqual(
       expect.objectContaining({
         kind: "receipt",
-        qty: 12,
+        adjustmentEntry: true,
+        adjustmentMode: "apply-to-target",
         originalQty: 12,
         auditComment:
           "Reducer qty correction increased this receipt by 9 unit(s), from visible qty 3 to visible qty 12.",
         auditSeverity: "warning",
       }),
     );
-    expect(ledger[0].quantityCorrections.at(-1)).toEqual(
+    expect(adjustment.quantityCorrections.at(-1)).toEqual(
       expect.objectContaining({
         actionType: "update_item",
         fromVisibleQty: 3,
@@ -454,6 +486,14 @@ describe("cost-ledger materialisation in the reducer", () => {
         increasedBy: 9,
       }),
     );
+    expect(
+      effectiveLedgerEntries(ledger).filter((entry) => !entry.ignored),
+    ).toEqual([
+      expect.objectContaining({
+        kind: "receipt",
+        qty: 12,
+      }),
+    ]);
     expect(s.inventory.idToHistory[KEY].at(-1)?.desc).toContain(
       "Cost ledger qty replacement: increased open receipt by 9 unit(s) to match visible qty 12",
     );
@@ -768,6 +808,54 @@ describe("cost-ledger materialisation in the reducer", () => {
       expect(s.inventory.costLedger![KEY]).toBeUndefined();
       expect(s.inventory.costLedger![NEWKEY]).toHaveLength(2);
       expect(s.inventory.idToItem[NEWKEY].cost).toBeCloseTo((12 * 62) / 18, 9);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("preserves raw receipt adjustment rows across a JAN re-key", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let s = rootReducer(undefined, { type: "@@INIT" });
+      s = rootReducer(
+        s,
+        withTs(update_item({ id: KEY, item: baseItem(10) }), 100),
+      );
+      s = rootReducer(
+        s,
+        withTs(
+          update_field({ id: KEY, field: "qty", from: 10, to: "12" }),
+          150,
+        ),
+      );
+
+      expect(s.inventory.costLedger![KEY]).toHaveLength(2);
+      expect(s.inventory.costLedger![KEY][1]).toEqual(
+        expect.objectContaining({
+          adjustmentEntry: true,
+          adjustmentMode: "apply-to-target",
+          qty: 2,
+        }),
+      );
+      expect(walkLedger(s.inventory.costLedger![KEY]).onHand).toBe(12);
+
+      const NEWJAN = "4542804109999";
+      const NEWKEY = `${NEWJAN}Blue`;
+      s = rootReducer(
+        s,
+        withTs(fix_jancode({ itemKey: KEY as any, newJanCode: NEWJAN }), 300),
+      );
+
+      expect(s.inventory.costLedger![KEY]).toBeUndefined();
+      expect(s.inventory.costLedger![NEWKEY]).toHaveLength(2);
+      expect(s.inventory.costLedger![NEWKEY][1]).toEqual(
+        expect.objectContaining({
+          adjustmentEntry: true,
+          adjustmentMode: "apply-to-target",
+          qty: 2,
+        }),
+      );
+      expect(walkLedger(s.inventory.costLedger![NEWKEY]).onHand).toBe(12);
     } finally {
       errorSpy.mockRestore();
     }

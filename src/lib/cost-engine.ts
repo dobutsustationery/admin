@@ -56,6 +56,12 @@ export type ReceiptEntry = {
   auditComment?: string;
   auditSeverity?: "warning" | "danger";
   ignoreReason?: string;
+  adjustmentEntry?: boolean;
+  adjustmentMode?: "apply-to-target" | "standalone";
+  adjustmentTarget?: {
+    at: number;
+    seq: number;
+  };
 };
 
 export type SaleEntry = {
@@ -122,6 +128,100 @@ function sortLedger(entries: readonly LedgerEntry[]): LedgerEntry[] {
     .map((x) => x.e);
 }
 
+function receiptMatchesAdjustmentTarget(
+  entry: LedgerEntry,
+  target: ReceiptEntry["adjustmentTarget"],
+): entry is ReceiptEntry {
+  return (
+    !!target &&
+    entry.kind === "receipt" &&
+    !(entry.adjustmentEntry && entry.adjustmentMode === "apply-to-target") &&
+    entry.at === target.at &&
+    entry.seq === target.seq
+  );
+}
+
+function findAdjustmentTarget(
+  entries: LedgerEntry[],
+  target: ReceiptEntry["adjustmentTarget"],
+): ReceiptEntry | undefined {
+  const exact = entries.find((entry): entry is ReceiptEntry =>
+    receiptMatchesAdjustmentTarget(entry, target),
+  );
+  if (exact) return exact;
+  if (!target) return undefined;
+  const seqMatches = entries.filter(
+    (entry): entry is ReceiptEntry =>
+      entry.kind === "receipt" &&
+      !(entry.adjustmentEntry && entry.adjustmentMode === "apply-to-target") &&
+      entry.seq === target.seq,
+  );
+  return seqMatches.length === 1 ? seqMatches[0] : undefined;
+}
+
+export function effectiveLedgerEntries(
+  entries: readonly LedgerEntry[],
+): LedgerEntry[] {
+  const materialized = entries.map((entry) => ({ ...entry })) as LedgerEntry[];
+
+  for (const entry of entries) {
+    if (
+      entry.kind !== "receipt" ||
+      entry.ignored ||
+      !entry.adjustmentEntry ||
+      entry.adjustmentMode !== "apply-to-target"
+    ) {
+      continue;
+    }
+
+    const target = findAdjustmentTarget(materialized, entry.adjustmentTarget);
+    if (!target) continue;
+
+    target.qty += entry.qty;
+    if (entry.receivedQty !== undefined) {
+      target.receivedQty = (target.receivedQty || 0) + entry.receivedQty;
+    }
+    if (target.qty <= 0) {
+      target.qty = 0;
+      target.ignored = true;
+      target.ignoreReason =
+        target.ignoreReason || "qty correction reduced receipt to zero";
+    }
+  }
+
+  for (const entry of materialized) {
+    if (
+      entry.kind !== "receipt" ||
+      entry.ignored ||
+      !entry.adjustmentEntry ||
+      !entry.adjustmentTarget
+    ) {
+      continue;
+    }
+    const target = findAdjustmentTarget(materialized, entry.adjustmentTarget);
+    if (!target) continue;
+    if (target.unitCostJpy > 0 || entry.unitCostJpy === 0) {
+      entry.unitCostJpy = target.unitCostJpy;
+    }
+    if (target.unitCostEur > 0 || entry.unitCostEur === 0) {
+      entry.unitCostEur = target.unitCostEur;
+    }
+    if (target.source && !entry.source) entry.source = target.source;
+    if (target.costOrderId && !entry.costOrderId) {
+      entry.costOrderId = target.costOrderId;
+    }
+  }
+
+  return materialized.filter(
+    (entry) =>
+      !(
+        entry.kind === "receipt" &&
+        entry.adjustmentEntry &&
+        entry.adjustmentMode === "apply-to-target"
+      ),
+  );
+}
+
 /**
  * Walk the ledger up to and including `asOf` (default: all entries).
  * Perpetual weighted-average: a receipt blends into the running average;
@@ -140,7 +240,7 @@ export function walkLedger(
   let carry: { jpy: number; eur: number } | null = null;
   let pendingSaleQty = 0;
 
-  for (const e of sortLedger(entries)) {
+  for (const e of sortLedger(effectiveLedgerEntries(entries))) {
     if (e.at > asOf) break;
     if (e.ignored) continue;
     if (e.kind === "receipt") {

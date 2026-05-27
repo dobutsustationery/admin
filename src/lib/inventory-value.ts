@@ -8,7 +8,11 @@
 // Pure and deterministic: `nowMs` is injected so tests don't depend on
 // the wall clock.
 
-import { totalValuation, type LedgerEntry } from "./cost-engine";
+import {
+  effectiveLedgerEntries,
+  totalValuation,
+  type LedgerEntry,
+} from "./cost-engine";
 import type { InventoryState } from "./inventory";
 
 export type InventoryValueRowKind =
@@ -71,7 +75,7 @@ function cumulativeLedgerValues(
   let soldEur = 0;
   let pendingSaleQty = 0;
 
-  for (const entry of sortLedger(entries)) {
+  for (const entry of sortLedger(effectiveLedgerEntries(entries))) {
     if (entry.at > asOf) break;
     if (entry.ignored) continue;
 

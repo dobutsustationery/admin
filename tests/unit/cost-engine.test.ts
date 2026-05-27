@@ -6,6 +6,7 @@ import {
   UNKNOWN_RECEIPT_DATE,
   lotMatchesOrder,
   type LedgerEntry,
+  type ReceiptEntry,
 } from "$lib/cost-engine";
 
 // See docs/investigations/DESIGN_INVENTORY_COST_AND_VALUATION.md
@@ -60,6 +61,29 @@ describe("cost-engine", () => {
     const ignored = { ...r(2, 10, 0, 0, 1), ignored: true };
     expect(walkLedger([r(1, 10, 100, 1), ignored])).toEqual({
       onHand: 10,
+      avgJpy: 100,
+      avgEur: 1,
+    });
+  });
+
+  it("does not apply ignored receipt adjustment rows", () => {
+    const receipt = r(1, 20, 100, 1, 0) as ReceiptEntry;
+    const adjustment: ReceiptEntry = {
+      kind: "receipt",
+      at: 1,
+      seq: 0.001,
+      qty: -10,
+      unitCostJpy: 0,
+      unitCostEur: 0,
+      adjustmentEntry: true,
+      adjustmentMode: "apply-to-target",
+      adjustmentTarget: { at: receipt.at, seq: receipt.seq },
+      ignored: true,
+      ignoreReason: "mistaken qty correction",
+    };
+
+    expect(walkLedger([receipt, adjustment])).toEqual({
+      onHand: 20,
       avgJpy: 100,
       avgEur: 1,
     });

@@ -2,7 +2,11 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it, vi } from "vitest";
 
-import { lotMatchesOrder } from "$lib/cost-engine";
+import {
+  effectiveLedgerEntries,
+  lotMatchesOrder,
+  walkLedger,
+} from "$lib/cost-engine";
 import { start_session } from "$lib/order-import-slice";
 import { rootReducer } from "$lib/root-reducer";
 
@@ -73,12 +77,18 @@ describe("4901681382316 stock-order lot replay", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const state = replayFixtureThroughKanegenImports();
-      const ledger = state.inventory.costLedger[TARGET_JAN];
-      const receipts = ledger.filter((e: any) => e.kind === "receipt");
+      const ledger = effectiveLedgerEntries(
+        state.inventory.costLedger[TARGET_JAN],
+      );
+      const receipts = ledger.filter(
+        (e: any) => e.kind === "receipt" && !e.ignored,
+      );
 
-      expect(receipts).toHaveLength(1);
-      expect(receipts[0].qty).toBeCloseTo(13.75, 9);
-      expect(receipts.map((e: any) => e.unitCostJpy)).toEqual([0]);
+      expect(
+        receipts.reduce((total: number, e: any) => total + e.qty, 0),
+      ).toBeCloseTo(15, 9);
+      expect(walkLedger(ledger).onHand).toBeCloseTo(11.25, 9);
+      expect(receipts.map((e: any) => e.unitCostJpy)).toEqual([0, 0]);
 
       const order1Receipts = receipts.filter((e: any) =>
         lotMatchesOrder(e, ORDER_1),
