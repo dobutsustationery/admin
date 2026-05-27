@@ -120,7 +120,7 @@
 
   let search = "";
   let hideZeroOnHand = false;
-  let onlyAffectsAverage = false;
+  let onlyAffectsAverage = true;
   let showCostIssues = false;
   let showAuditAdjustments = false;
   let showStockOrderIssues: Record<string, boolean> = {};
@@ -1184,26 +1184,6 @@
     </div>
   </div>
 
-  <div class="controls">
-    <label>
-      Search
-      <input bind:value={search} placeholder="JAN, key, or description" />
-    </label>
-    <label class="chk">
-      <input type="checkbox" bind:checked={hideZeroOnHand} />
-      Hide zero on-hand items
-    </label>
-    <label class="chk">
-      <input type="checkbox" bind:checked={onlyAffectsAverage} />
-      Only lots still affecting avg
-    </label>
-  </div>
-
-  <p class="hint">
-    Showing {filteredRows.length} lot(s), {filteredLotQty} unit(s). These are receipt
-    lots with zero JPY scan cost or JPY cost without EUR/exchange.
-    {affectingRows} still affect the moving average.
-  </p>
   {#if copyMsg}
     <p class="copy-status">{copyMsg}</p>
   {/if}
@@ -1285,6 +1265,27 @@
   {/if}
 
   <h2>Cost Issues</h2>
+
+  <div class="controls cost-issue-controls">
+    <label>
+      Search
+      <input bind:value={search} placeholder="JAN, key, or description" />
+    </label>
+    <label class="chk">
+      <input type="checkbox" bind:checked={hideZeroOnHand} />
+      Hide zero on-hand items
+    </label>
+    <label class="chk">
+      <input type="checkbox" bind:checked={onlyAffectsAverage} />
+      Only lots still affecting avg
+    </label>
+  </div>
+
+  <p class="hint">
+    Showing {filteredRows.length} lot(s), {filteredLotQty} unit(s). These are receipt
+    lots with zero JPY scan cost or JPY cost without EUR/exchange.
+    {affectingRows} still affect the moving average.
+  </p>
 
   <div class="table-section">
     <div class="table-summary">
