@@ -416,6 +416,11 @@ export const fix_stock_order = createAction<{
     countryColumnIndex?: number;
     weightColumnIndex?: number;
   };
+  // "auto" means costInterpretation is only an audit snapshot of what the UI
+  // saw and replay should recompute from the TSV. "manual" means replay must
+  // force the supplied columns. Missing mode is legacy: a present
+  // costInterpretation is treated as manual.
+  costInterpretationMode?: "auto" | "manual";
   overrideExisting: boolean;
   approveDiscrepancy: boolean;
   ignoreUnmatchedRows?: boolean;

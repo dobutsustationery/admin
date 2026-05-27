@@ -768,6 +768,68 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     expect(s1.inventory.costLedger![key][0].unitCostJpy).toBe(200);
   });
 
+  it("recomputes auto interpretation on replay even when an auto snapshot is stored", () => {
+    const s0 = unpricedOrder();
+    const key = Object.keys(s0.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    const ambiguousTsv = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity\tTOTAL (YEN)",
+      `${JAN}\t200\t10\t1500`,
+    ].join("\n");
+    const staleAutoSnapshot = {
+      kind: "unit" as const,
+      costColumnIndex: 1,
+      qtyColumnIndex: 2,
+    };
+
+    const s1 = rootReducer(s0, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 1500 },
+        costTsv: ambiguousTsv,
+        costInterpretation: staleAutoSnapshot,
+        costInterpretationMode: "auto",
+        overrideExisting: false,
+        approveDiscrepancy: false,
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(s1.inventory.costLedger![key][0].unitCostJpy).toBe(150);
+  });
+
+  it("forces stored interpretation on replay when marked manual", () => {
+    const s0 = unpricedOrder();
+    const key = Object.keys(s0.inventory.costLedger!).find((k) =>
+      k.startsWith(JAN),
+    )!;
+    const ambiguousTsv = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity\tTOTAL (YEN)",
+      `${JAN}\t200\t10\t1500`,
+    ].join("\n");
+    const manualUnit = {
+      kind: "unit" as const,
+      costColumnIndex: 1,
+      qtyColumnIndex: 2,
+    };
+
+    const s1 = rootReducer(s0, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 1500 },
+        costTsv: ambiguousTsv,
+        costInterpretation: manualUnit,
+        costInterpretationMode: "manual",
+        overrideExisting: false,
+        approveDiscrepancy: true,
+      }),
+      timestamp: TS,
+    } as any);
+
+    expect(s1.inventory.costLedger![key][0].unitCostJpy).toBe(200);
+  });
+
   it("blocks unmatched TSV rows unless they are explicitly ignored", () => {
     const s = unpricedOrder();
     const withExtra = [

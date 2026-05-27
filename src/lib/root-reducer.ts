@@ -1448,12 +1448,18 @@ export const rootReducer = (
       meta,
       costTsv,
       costInterpretation,
+      costInterpretationMode,
       overrideExisting,
       approveDiscrepancy,
       ignoreUnmatchedRows,
       fixCountryOfOrigin,
       fixWeights,
     } = action.payload;
+    const forcedCostInterpretation =
+      costInterpretationMode === "manual" ||
+      (costInterpretationMode == null && costInterpretation)
+        ? costInterpretation
+        : undefined;
 
     if (meta && Object.values(meta).some((v) => v !== undefined)) {
       const metaAction = inheritTimestamp({
@@ -1472,7 +1478,7 @@ export const rootReducer = (
         rawPaste: costTsv,
         orderId,
         overrideExisting,
-        interpretation: costInterpretation,
+        interpretation: forcedCostInterpretation,
         inventory: nextState.inventory, // reflects the meta just set
       });
       const r = preview.reconciliation;

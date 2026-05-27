@@ -167,6 +167,16 @@
           weightColumnIndex: manualWeightColumnIndex,
         }
       : undefined;
+  $: persistedCostInterpretation =
+    manualOverride && interpretation
+      ? interpretation
+      : costCols.auto
+        ? {
+            ...costCols.auto,
+            countryColumnIndex: manualCountryColumnIndex,
+            weightColumnIndex: manualWeightColumnIndex,
+          }
+        : undefined;
   $: fixPreview = current
     ? previewStockOrderFix($store.inventory, current.orderId, {
         meta: proposedMeta,
@@ -225,7 +235,14 @@
           orderId: current.orderId,
           meta: proposedMeta,
           costTsv: costPaste.trim() ? costPaste : undefined,
-          costInterpretation: interpretation,
+          costInterpretation: costPaste.trim()
+            ? persistedCostInterpretation
+            : undefined,
+          costInterpretationMode: costPaste.trim()
+            ? manualOverride
+              ? "manual"
+              : "auto"
+            : undefined,
           overrideExisting,
           approveDiscrepancy,
           ignoreUnmatchedRows,
