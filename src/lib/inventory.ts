@@ -1017,6 +1017,66 @@ function copyLedgerEntryForInventorySplit(
   return next;
 }
 
+function copyReceiptWithInventorySplitOpenQty(
+  entry: ReceiptEntry,
+  qty: number,
+): ReceiptEntry {
+  const next = { ...entry, qty };
+  if (entry.receivedQty !== undefined && entry.qty !== 0) {
+    next.receivedQty = Number(
+      ((entry.receivedQty * qty) / entry.qty).toFixed(6),
+    );
+  }
+  return next;
+}
+
+function openReceiptEntriesForInventorySplit(
+  entries: LedgerEntry[],
+): ReceiptEntry[] {
+  const openLots: { entry: ReceiptEntry; remaining: number }[] = [];
+  let pendingSaleQty = 0;
+
+  for (const entry of sortLedgerEntries(entries)) {
+    if (entry.ignored) continue;
+
+    if (entry.kind === "receipt") {
+      let remaining = Math.max(0, Number(entry.qty) || 0);
+      if (pendingSaleQty > 0) {
+        const consumed = Math.min(remaining, pendingSaleQty);
+        remaining -= consumed;
+        pendingSaleQty -= consumed;
+      }
+      if (remaining > 0) {
+        openLots.push({ entry, remaining });
+      }
+      continue;
+    }
+
+    if (entry.qty >= 0) {
+      let saleQty = Number(entry.qty) || 0;
+      for (const lot of openLots) {
+        if (saleQty <= 0) break;
+        const consumed = Math.min(lot.remaining, saleQty);
+        lot.remaining -= consumed;
+        saleQty -= consumed;
+      }
+      pendingSaleQty += saleQty;
+      continue;
+    }
+
+    pendingSaleQty = Math.max(0, pendingSaleQty + entry.qty);
+  }
+
+  return openLots
+    .filter((lot) => lot.remaining > 0)
+    .map((lot) =>
+      copyReceiptWithInventorySplitOpenQty(
+        lot.entry,
+        Number(lot.remaining.toFixed(6)),
+      ),
+    );
+}
+
 function distributeInventorySplitLedgerEntries(
   entries: LedgerEntry[],
   allocations: { key: string; qty: number; shipped: number }[],
@@ -1026,11 +1086,11 @@ function distributeInventorySplitLedgerEntries(
   for (const allocation of allocations) result.set(allocation.key, []);
 
   const totalQty = allocations.reduce((sum, a) => sum + a.qty, 0);
-  const totalShipped = allocations.reduce((sum, a) => sum + a.shipped, 0);
+  const entriesToDistribute = openReceiptEntriesForInventorySplit(entries);
 
-  for (const entry of entries) {
-    const basis = entry.kind === "receipt" ? totalQty : totalShipped;
-    const amount = entry.kind === "receipt" ? "qty" : "shipped";
+  for (const entry of entriesToDistribute) {
+    const basis = totalQty;
+    const amount = "qty";
     const eligible = allocations.filter((a) => a[amount] > 0);
     if (!(basis > 0) || eligible.length === 0) continue;
 

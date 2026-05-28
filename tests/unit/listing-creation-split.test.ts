@@ -16,14 +16,32 @@ import {
   add_proposals_internal,
 } from "../../src/lib/listing-creation-slice";
 import {
+  archive_inventory,
   bulk_import_items,
+  package_item,
   split_inventory_item,
   update_item,
   type Item,
 } from "../../src/lib/inventory";
+import type { LedgerEntry } from "../../src/lib/cost-engine";
 import { makeInventoryItemKey } from "../../src/lib/sku";
 
 describe("Listing Creation - Split Inventory", () => {
+  const dispatchAt = (
+    store: ReturnType<typeof configureStore>,
+    action: any,
+    ms: number,
+  ) =>
+    store.dispatch({
+      ...action,
+      timestamp: {
+        seconds: Math.floor(ms / 1000),
+        _seconds: Math.floor(ms / 1000),
+        nanoseconds: 0,
+        _nanoseconds: 0,
+      },
+    });
+
   it("should remove source item when split into variants", () => {
     const store = configureStore({ reducer: rootReducer });
     const janCode = "4542804117844";
@@ -344,5 +362,137 @@ describe("Listing Creation - Split Inventory", () => {
     expect(state.costLedger[purpleKey]).toHaveLength(1);
     expect(state.costLedger[blueKey][0].qty).toBe(5);
     expect(state.costLedger[purpleKey][0].qty).toBe(5);
+  });
+
+  it("should split only open receipt lots after historical source receipts were consumed", () => {
+    const store = configureStore({ reducer: rootReducer });
+    const janCode = "4977564680084";
+    const sourceKey = makeInventoryItemKey(janCode, "");
+    const bearKey = makeInventoryItemKey(janCode, "Bear");
+    const hedgehogKey = makeInventoryItemKey(janCode, "Hedgehog");
+    const sourceItem: Item = {
+      janCode,
+      subtype: "",
+      description: "Source Product",
+      qty: 7,
+      price: 0,
+      handle: "",
+      shipped: 0,
+      pieces: 1,
+      creationDate: "2023-11-12",
+      timestamp: Date.UTC(2023, 10, 12),
+      hsCode: "39261000",
+      image: "",
+      cost: 0,
+    };
+
+    dispatchAt(
+      store,
+      bulk_import_items({
+        items: [
+          {
+            type: "new",
+            id: sourceKey,
+            item: sourceItem,
+            stockOrder: {
+              orderId: "old-zero-cost-scan",
+              unitCostJpy: 0,
+              unitCostEur: 0,
+              receivedAt: Date.UTC(2023, 10, 12),
+              orderedQty: 7,
+            },
+          },
+        ],
+      }),
+      Date.UTC(2023, 10, 12),
+    );
+
+    dispatchAt(
+      store,
+      package_item({ orderID: "sale-1", itemKey: sourceKey, qty: 1 }),
+      Date.UTC(2024, 0, 21),
+    );
+    dispatchAt(
+      store,
+      package_item({ orderID: "sale-2", itemKey: sourceKey, qty: 1 }),
+      Date.UTC(2024, 0, 21, 1),
+    );
+    dispatchAt(
+      store,
+      package_item({ orderID: "sale-3", itemKey: sourceKey, qty: 1 }),
+      Date.UTC(2024, 9, 26),
+    );
+    dispatchAt(
+      store,
+      package_item({ orderID: "sale-4", itemKey: sourceKey, qty: 1 }),
+      Date.UTC(2024, 9, 26, 1),
+    );
+    dispatchAt(
+      store,
+      archive_inventory({ archiveName: "Japan Festival 2025" }),
+      Date.UTC(2025, 4, 2),
+    );
+
+    dispatchAt(
+      store,
+      bulk_import_items({
+        items: [
+          {
+            type: "update",
+            id: sourceKey,
+            item: { ...sourceItem, qty: 40, shipped: 0, cost: 66 },
+            stockOrder: {
+              orderId: "new-stock-order",
+              unitCostJpy: 66,
+              unitCostEur: 0.37,
+              receivedAt: Date.UTC(2025, 11, 3),
+              orderedQty: 40,
+            },
+          },
+        ],
+      }),
+      Date.UTC(2026, 2, 2),
+    );
+
+    dispatchAt(
+      store,
+      split_inventory_item({
+        sourceId: sourceKey,
+        splits: [
+          { newId: bearKey, qty: 20, subtype: "Bear" },
+          { newId: hedgehogKey, qty: 20, subtype: "Hedgehog" },
+        ],
+      }),
+      Date.UTC(2026, 2, 15),
+    );
+
+    const state = store.getState().inventory;
+    expect(state.idToItem[sourceKey]).toBeUndefined();
+    expect(state.costLedger[bearKey]).toHaveLength(1);
+    expect(state.costLedger[hedgehogKey]).toHaveLength(1);
+    expect(state.costLedger[bearKey][0]).toMatchObject({
+      kind: "receipt",
+      qty: 20,
+      unitCostJpy: 66,
+      source: "stockOrder:new-stock-order",
+    });
+    expect(state.costLedger[hedgehogKey][0]).toMatchObject({
+      kind: "receipt",
+      qty: 20,
+      unitCostJpy: 66,
+      source: "stockOrder:new-stock-order",
+    });
+    expect(
+      state.costLedger[bearKey].some(
+        (entry: LedgerEntry) =>
+          entry.kind === "receipt" && entry.unitCostJpy === 0,
+      ),
+    ).toBe(false);
+    expect(
+      state.costLedger[hedgehogKey].some(
+        (entry: LedgerEntry) =>
+          entry.kind === "receipt" && entry.unitCostJpy === 0,
+      ),
+    ).toBe(false);
   });
 });
