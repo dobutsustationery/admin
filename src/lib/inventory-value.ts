@@ -12,6 +12,7 @@ import {
   effectiveLedgerEntries,
   totalValuation,
   type LedgerEntry,
+  type ReceiptEntry,
 } from "./cost-engine";
 import type { InventoryState } from "./inventory";
 
@@ -56,6 +57,91 @@ function sortLedger(entries: readonly LedgerEntry[]): LedgerEntry[] {
     .map(({ entry }) => entry);
 }
 
+type CostLot = {
+  qty: number;
+  jpy: number;
+  eur: number;
+};
+
+function lotAverage(lots: readonly CostLot[]): { jpy: number; eur: number } {
+  let qty = 0;
+  let jpy = 0;
+  let eur = 0;
+  for (const lot of lots) {
+    if (lot.qty <= 0) continue;
+    qty += lot.qty;
+    jpy += lot.qty * lot.jpy;
+    eur += lot.qty * lot.eur;
+  }
+  if (qty <= 0) return { jpy: 0, eur: 0 };
+  return { jpy: jpy / qty, eur: eur / qty };
+}
+
+function consumeLotsFifoValue(
+  lots: CostLot[],
+  qty: number,
+): { jpy: number; eur: number } {
+  let remaining = Math.max(0, qty);
+  let jpy = 0;
+  let eur = 0;
+  while (remaining > 0 && lots.length > 0) {
+    const lot = lots[0];
+    const consumed = Math.min(lot.qty, remaining);
+    jpy += consumed * lot.jpy;
+    eur += consumed * lot.eur;
+    lot.qty -= consumed;
+    remaining -= consumed;
+    if (lot.qty <= 1e-9) lots.shift();
+  }
+  return { jpy, eur };
+}
+
+function nextStocktakeReceiptAfter(
+  entries: readonly LedgerEntry[],
+  index: number,
+  asOf: number,
+): ReceiptEntry | undefined {
+  for (let i = index + 1; i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (entry.at > asOf) break;
+    if (entry.ignored) continue;
+    if (entry.kind === "receipt" && entry.qty > 0 && entry.receivedQty === 0) {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+function applyCarryToUnitCost(
+  receipt: ReceiptEntry,
+  carry: { jpy: number; eur: number },
+): { jpy: number; eur: number } {
+  const jpyPriced = receipt.unitCostJpy > 0;
+  const eurPriced = receipt.unitCostEur > 0;
+  if (jpyPriced && eurPriced) {
+    return { jpy: receipt.unitCostJpy, eur: receipt.unitCostEur };
+  }
+  if (jpyPriced) {
+    return {
+      jpy: receipt.unitCostJpy,
+      eur:
+        carry.jpy > 0
+          ? (receipt.unitCostJpy * carry.eur) / carry.jpy
+          : carry.eur,
+    };
+  }
+  if (eurPriced) {
+    return {
+      jpy:
+        carry.eur > 0
+          ? (receipt.unitCostEur * carry.jpy) / carry.eur
+          : carry.jpy,
+      eur: receipt.unitCostEur,
+    };
+  }
+  return carry;
+}
+
 function cumulativeLedgerValues(
   entries: readonly LedgerEntry[],
   asOf: number,
@@ -68,14 +154,17 @@ function cumulativeLedgerValues(
   let onHand = 0;
   let avgJpy = 0;
   let avgEur = 0;
+  const lots: CostLot[] = [];
   let carry: { jpy: number; eur: number } | null = null;
   let inventoryJpy = 0;
   let inventoryEur = 0;
   let soldJpy = 0;
   let soldEur = 0;
   let pendingSaleQty = 0;
+  const ledger = sortLedger(effectiveLedgerEntries(entries));
 
-  for (const entry of sortLedger(effectiveLedgerEntries(entries))) {
+  for (let index = 0; index < ledger.length; index += 1) {
+    const entry = ledger[index];
     if (entry.at > asOf) break;
     if (entry.ignored) continue;
 
@@ -84,28 +173,10 @@ function cumulativeLedgerValues(
       let unitCostJpy = entry.unitCostJpy;
       let unitCostEur = entry.unitCostEur;
 
-      if (next > 0 && onHand === 0 && carry) {
-        const jpyPriced = entry.unitCostJpy > 0;
-        const eurPriced = entry.unitCostEur > 0;
-        if (jpyPriced && eurPriced) {
-          unitCostJpy = entry.unitCostJpy;
-          unitCostEur = entry.unitCostEur;
-        } else if (jpyPriced) {
-          unitCostJpy = entry.unitCostJpy;
-          unitCostEur =
-            carry.jpy > 0
-              ? (entry.unitCostJpy * carry.eur) / carry.jpy
-              : carry.eur;
-        } else if (eurPriced) {
-          unitCostEur = entry.unitCostEur;
-          unitCostJpy =
-            carry.eur > 0
-              ? (entry.unitCostEur * carry.jpy) / carry.eur
-              : carry.jpy;
-        } else {
-          unitCostJpy = carry.jpy;
-          unitCostEur = carry.eur;
-        }
+      if (next > 0 && entry.receivedQty === 0 && carry) {
+        const carried = applyCarryToUnitCost(entry, carry);
+        unitCostJpy = carried.jpy;
+        unitCostEur = carried.eur;
         carry = null;
       }
 
@@ -135,15 +206,39 @@ function cumulativeLedgerValues(
       avgJpy = (onHand * avgJpy + receiptQty * unitCostJpy) / nextAfterPending;
       avgEur = (onHand * avgEur + receiptQty * unitCostEur) / nextAfterPending;
       onHand = nextAfterPending;
+      if (receiptQty > 0) {
+        lots.push({ qty: receiptQty, jpy: unitCostJpy, eur: unitCostEur });
+      }
       continue;
     }
 
     const prev = onHand;
     if (entry.qty >= 0) {
+      if (entry.isArchive && prev > 0) {
+        const nextReceipt = nextStocktakeReceiptAfter(ledger, index, asOf);
+        if (nextReceipt) {
+          const survivorLots = lots.map((lot) => ({ ...lot }));
+          const shrinkQty = Math.max(0, prev - Math.max(0, nextReceipt.qty));
+          const shrinkValue = consumeLotsFifoValue(survivorLots, shrinkQty);
+          const survivorAverage = lotAverage(survivorLots);
+          carry =
+            survivorAverage.jpy > 0 || survivorAverage.eur > 0
+              ? survivorAverage
+              : { jpy: avgJpy, eur: avgEur };
+          if (entry.qty >= prev) {
+            soldJpy += shrinkValue.jpy;
+            soldEur += shrinkValue.eur;
+            onHand = 0;
+            lots.splice(0, lots.length);
+            continue;
+          }
+        }
+      }
       const soldQty = Math.min(entry.qty, onHand);
       soldJpy += soldQty * avgJpy;
       soldEur += soldQty * avgEur;
       onHand -= soldQty;
+      consumeLotsFifoValue(lots, soldQty);
       pendingSaleQty += entry.qty - soldQty;
     } else {
       let restored = -entry.qty;
@@ -153,6 +248,9 @@ function cumulativeLedgerValues(
       soldJpy -= restored * avgJpy;
       soldEur -= restored * avgEur;
       onHand += restored;
+      if (restored > 0) {
+        lots.push({ qty: restored, jpy: avgJpy, eur: avgEur });
+      }
     }
     if (entry.isArchive && prev > 0 && onHand === 0) {
       carry = { jpy: avgJpy, eur: avgEur };

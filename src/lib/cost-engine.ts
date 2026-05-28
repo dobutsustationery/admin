@@ -159,6 +159,83 @@ function findAdjustmentTarget(
   return seqMatches.length === 1 ? seqMatches[0] : undefined;
 }
 
+type CostLot = {
+  qty: number;
+  jpy: number;
+  eur: number;
+};
+
+function lotAverage(lots: readonly CostLot[]): { jpy: number; eur: number } {
+  let qty = 0;
+  let jpy = 0;
+  let eur = 0;
+  for (const lot of lots) {
+    if (lot.qty <= 0) continue;
+    qty += lot.qty;
+    jpy += lot.qty * lot.jpy;
+    eur += lot.qty * lot.eur;
+  }
+  if (qty <= 0) return { jpy: 0, eur: 0 };
+  return { jpy: jpy / qty, eur: eur / qty };
+}
+
+function consumeLotsFifo(lots: CostLot[], qty: number): void {
+  let remaining = Math.max(0, qty);
+  while (remaining > 0 && lots.length > 0) {
+    const lot = lots[0];
+    const consumed = Math.min(lot.qty, remaining);
+    lot.qty -= consumed;
+    remaining -= consumed;
+    if (lot.qty <= 1e-9) lots.shift();
+  }
+}
+
+function nextStocktakeReceiptAfter(
+  entries: readonly LedgerEntry[],
+  index: number,
+  asOf: number,
+): ReceiptEntry | undefined {
+  for (let i = index + 1; i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (entry.at > asOf) break;
+    if (entry.ignored) continue;
+    if (entry.kind === "receipt" && entry.qty > 0 && entry.receivedQty === 0) {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+function applyCarryToUnitCost(
+  receipt: ReceiptEntry,
+  carry: { jpy: number; eur: number },
+): { jpy: number; eur: number } {
+  const jpyPriced = receipt.unitCostJpy > 0;
+  const eurPriced = receipt.unitCostEur > 0;
+  if (jpyPriced && eurPriced) {
+    return { jpy: receipt.unitCostJpy, eur: receipt.unitCostEur };
+  }
+  if (jpyPriced) {
+    return {
+      jpy: receipt.unitCostJpy,
+      eur:
+        carry.jpy > 0
+          ? (receipt.unitCostJpy * carry.eur) / carry.jpy
+          : carry.eur,
+    };
+  }
+  if (eurPriced) {
+    return {
+      jpy:
+        carry.eur > 0
+          ? (receipt.unitCostEur * carry.jpy) / carry.eur
+          : carry.jpy,
+      eur: receipt.unitCostEur,
+    };
+  }
+  return carry;
+}
+
 export function effectiveLedgerEntries(
   entries: readonly LedgerEntry[],
 ): LedgerEntry[] {
@@ -231,49 +308,29 @@ export function walkLedger(
   entries: readonly LedgerEntry[],
   asOf: number = Number.POSITIVE_INFINITY,
 ): CostState {
+  const ledger = sortLedger(effectiveLedgerEntries(entries));
   let onHand = 0;
   let avgJpy = 0;
   let avgEur = 0;
+  const lots: CostLot[] = [];
   // Set by an archive sale (`isArchive: true`) that brought on-hand to
   // zero. The next receipt blends with this prior average for any
   // currency it doesn't itself price, then `carry` is consumed.
   let carry: { jpy: number; eur: number } | null = null;
   let pendingSaleQty = 0;
 
-  for (const e of sortLedger(effectiveLedgerEntries(entries))) {
+  for (let index = 0; index < ledger.length; index += 1) {
+    const e = ledger[index];
     if (e.at > asOf) break;
     if (e.ignored) continue;
     if (e.kind === "receipt") {
       let unitCostJpy = e.unitCostJpy;
       let unitCostEur = e.unitCostEur;
 
-      if (onHand === 0 && carry) {
-        // First post-archive receipt. Priced currencies override.
-        // For a currency that is itself unpriced, derive it from the
-        // OTHER currency on the same receipt via the fx ratio implicit
-        // in the carry (avgEur/avgJpy or its inverse). The avg ratio is
-        // dilution-invariant: even if the pre-archive blend mixed
-        // priced lots with unpriced scan lots, `carry.eur/carry.jpy`
-        // still equals the priced lot's per-unit fx. Only when the
-        // receipt is unpriced in BOTH currencies do we fall back to
-        // inheriting the carried averages directly (no anchor to scale).
-        const jpyPriced = e.unitCostJpy > 0;
-        const eurPriced = e.unitCostEur > 0;
-        if (jpyPriced && eurPriced) {
-          unitCostJpy = e.unitCostJpy;
-          unitCostEur = e.unitCostEur;
-        } else if (jpyPriced) {
-          unitCostJpy = e.unitCostJpy;
-          unitCostEur =
-            carry.jpy > 0 ? (e.unitCostJpy * carry.eur) / carry.jpy : carry.eur;
-        } else if (eurPriced) {
-          unitCostEur = e.unitCostEur;
-          unitCostJpy =
-            carry.eur > 0 ? (e.unitCostEur * carry.jpy) / carry.eur : carry.jpy;
-        } else {
-          unitCostJpy = carry.jpy;
-          unitCostEur = carry.eur;
-        }
+      if (e.receivedQty === 0 && carry) {
+        const carried = applyCarryToUnitCost(e, carry);
+        unitCostJpy = carried.jpy;
+        unitCostEur = carried.eur;
         carry = null;
       }
 
@@ -289,11 +346,33 @@ export function walkLedger(
       avgJpy = (onHand * avgJpy + receiptQty * unitCostJpy) / next;
       avgEur = (onHand * avgEur + receiptQty * unitCostEur) / next;
       onHand = next;
+      if (receiptQty > 0) {
+        lots.push({ qty: receiptQty, jpy: unitCostJpy, eur: unitCostEur });
+      }
     } else {
       const prev = onHand;
       if (e.qty >= 0) {
+        if (e.isArchive && prev > 0) {
+          const nextReceipt = nextStocktakeReceiptAfter(ledger, index, asOf);
+          if (nextReceipt) {
+            const survivorLots = lots.map((lot) => ({ ...lot }));
+            const shrinkQty = Math.max(0, prev - Math.max(0, nextReceipt.qty));
+            consumeLotsFifo(survivorLots, shrinkQty);
+            const survivorAverage = lotAverage(survivorLots);
+            carry =
+              survivorAverage.jpy > 0 || survivorAverage.eur > 0
+                ? survivorAverage
+                : { jpy: avgJpy, eur: avgEur };
+            if (e.qty >= prev) {
+              onHand = 0;
+              lots.splice(0, lots.length);
+              continue;
+            }
+          }
+        }
         const consumed = Math.min(e.qty, onHand);
         onHand -= consumed;
+        consumeLotsFifo(lots, consumed);
         pendingSaleQty += e.qty - consumed;
       } else {
         let restored = -e.qty;
@@ -301,6 +380,9 @@ export function walkLedger(
         pendingSaleQty -= pendingReduction;
         restored -= pendingReduction;
         onHand += restored;
+        if (restored > 0) {
+          lots.push({ qty: restored, jpy: avgJpy, eur: avgEur });
+        }
       }
       if (e.isArchive && prev > 0 && onHand === 0) {
         carry = { jpy: avgJpy, eur: avgEur };

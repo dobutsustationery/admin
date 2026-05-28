@@ -1819,29 +1819,7 @@ function sortLedgerEntries(entries: readonly LedgerEntry[]): LedgerEntry[] {
 }
 
 function walkLedgerForDerivedCost(entries: readonly LedgerEntry[]) {
-  let onHand = 0;
-  let avgJpy = 0;
-  let avgEur = 0;
-
-  for (const e of sortLedgerEntries(effectiveLedgerEntries(entries))) {
-    if (e.ignored) continue;
-    if (e.kind === "receipt") {
-      const next = onHand + e.qty;
-      if (next <= 0) {
-        onHand = next > 0 ? next : 0;
-        continue;
-      }
-      if (e.unitCostJpy > 0 || e.unitCostEur > 0) {
-        avgJpy = (onHand * avgJpy + e.qty * e.unitCostJpy) / next;
-        avgEur = (onHand * avgEur + e.qty * e.unitCostEur) / next;
-      }
-      onHand = next;
-    } else {
-      onHand = Math.max(0, onHand - e.qty);
-    }
-  }
-
-  return { onHand, avgJpy, avgEur };
+  return walkLedger(entries);
 }
 
 function applyStockOrderCostToReceipt(

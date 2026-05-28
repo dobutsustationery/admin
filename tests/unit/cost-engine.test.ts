@@ -31,6 +31,16 @@ const s = (at: number, qty: number, seq = 0): LedgerEntry => ({
   seq,
   qty,
 });
+const recount = (
+  at: number,
+  qty: number,
+  jpy: number,
+  eur: number,
+  seq = 0,
+): LedgerEntry => ({
+  ...(r(at, qty, jpy, eur, seq) as ReceiptEntry),
+  receivedQty: 0,
+});
 
 describe("cost-engine", () => {
   it("empty ledger -> zeros", () => {
@@ -208,7 +218,11 @@ describe("archive zero-crossing carries the running average", () => {
   it("unpriced post-archive receipt inherits pre-archive JPY and EUR", () => {
     // Pre: receipt qty 2 @ ¥282 / €1.835 → avg = 282 / 1.835.
     // Archive sale 2 → on-hand 0 (carry set). Then unpriced recount qty 10.
-    const w = walkLedger([r(1, 2, 282, 1.835), sa(2, 2, 1), r(3, 10, 0, 0, 2)]);
+    const w = walkLedger([
+      r(1, 2, 282, 1.835),
+      sa(2, 2, 1),
+      recount(3, 10, 0, 0, 2),
+    ]);
     expect(w.onHand).toBe(10);
     expect(w.avgJpy).toBeCloseTo(282, 6);
     expect(w.avgEur).toBeCloseTo(1.835, 6);
@@ -221,35 +235,33 @@ describe("archive zero-crossing carries the running average", () => {
     const w = walkLedger([
       r(1, 2, 282, 1.835),
       sa(2, 2, 1),
-      r(3, 10, 243, 0, 2),
+      recount(3, 10, 243, 0, 2),
     ]);
     expect(w.onHand).toBe(10);
     expect(w.avgJpy).toBe(243);
     expect(w.avgEur).toBeCloseTo((243 * 1.835) / 282, 6);
   });
 
-  it("fx ratio is dilution-invariant across pre-archive unpriced scan lots", () => {
-    // The 4902778028216 reality: priced lot mixed with two unpriced
-    // scan lots before the archive. avg ratio still equals priced fx.
+  it("archive recount carries the surviving FIFO lot cost, not the diluted blend", () => {
+    // The Japan Festival archive/recount is a stocktake transition:
+    // infer shrinkage from the recount, consume oldest lots first, and
+    // carry the cost of the lots that survived into the recount.
     const w = walkLedger([
-      r(1, 2, 282, 1.835), // priced (Order 1 cost-attach)
-      r(1, 20, 0, 0, 1), // unpriced scan
-      r(1, 2, 0, 0, 2), // unpriced scan
-      sa(2, 24, 3), // archive
-      r(3, 10, 243, 0, 4), // recount: JPY priced, EUR unpriced
+      r(1, 6, 0, 0),
+      r(2, 16, 65, 0.385, 1),
+      sa(3, 22, 2),
+      recount(4, 15, 0, 0, 3),
     ]);
-    expect(w.onHand).toBe(10);
-    expect(w.avgJpy).toBe(243);
-    // Pre-archive avgJpy = (2*282)/24 = 23.5, avgEur = (2*1.835)/24 = 0.1529;
-    // ratio = 0.1529/23.5 = 0.006507; 243 * ratio = 1.581.
-    expect(w.avgEur).toBeCloseTo((243 * 1.835) / 282, 6);
+    expect(w.onHand).toBe(15);
+    expect(w.avgJpy).toBe(65);
+    expect(w.avgEur).toBeCloseTo(0.385, 6);
   });
 
   it("fully priced recount overrides the carry (no fictionalisation)", () => {
     const w = walkLedger([
       r(1, 2, 282, 1.835),
       sa(2, 2, 1),
-      r(3, 10, 500, 3, 2),
+      recount(3, 10, 500, 3, 2),
     ]);
     expect(w.avgJpy).toBe(500);
     expect(w.avgEur).toBe(3);
@@ -269,7 +281,7 @@ describe("archive zero-crossing carries the running average", () => {
     const w = walkLedger([
       r(1, 2, 282, 1.835),
       sa(2, 2, 1),
-      r(3, 10, 0, 0, 2), // carry → avg 282 JPY, 1.835 EUR; on-hand 10
+      recount(3, 10, 0, 0, 2), // carry → avg 282 JPY, 1.835 EUR; on-hand 10
       r(4, 10, 100, 0.5, 3), // blend: (10*282 + 10*100)/20, (10*1.835 + 10*0.5)/20
     ]);
     expect(w.onHand).toBe(20);
