@@ -139,6 +139,7 @@
     return (
       entry.kind === "receipt" &&
       !entry.ignored &&
+      entry.receivedQty !== 0 &&
       !(entry.unitCostJpy > 0) &&
       !entry.costOrderId &&
       !String(entry.source || "").startsWith("stockOrder:")
