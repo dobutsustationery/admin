@@ -5242,15 +5242,19 @@ export const inventory = createReducer(initialState, (r) => {
       const archiveSaleQty = state.costLedger?.[itemKey]
         ? walkLedger(state.costLedger[itemKey]).onHand
         : effectiveArchiveQuantity(state.idToItem[itemKey]);
+      const archiveVisibleSaleQty = state.costLedger?.[itemKey]
+        ? walkLedgerForVisibleQty(state.costLedger[itemKey]).onHand
+        : effectiveArchiveQuantity(state.idToItem[itemKey]);
+      const archiveVisibleQtyDiffers =
+        Math.abs(archiveSaleQty - archiveVisibleSaleQty) > 1e-9;
       // The archive is the real stock-take wipe in the cost ledger. A later
       // make_sales action reports shrinkage but should not also mutate cost.
-      recordSale(
-        state,
-        itemKey,
-        archiveSaleQty,
-        getTimestampMs(timestamp),
-        true,
-      );
+      recordSale(state, itemKey, archiveSaleQty, getTimestampMs(timestamp), {
+        isArchive: true,
+        ...(archiveVisibleQtyDiffers
+          ? { visibleQty: archiveVisibleSaleQty }
+          : {}),
+      });
       const origShipped = state.idToItem[itemKey].shipped;
       state.idToItem[itemKey].shipped = 0;
       const origQty = state.idToItem[itemKey].qty;

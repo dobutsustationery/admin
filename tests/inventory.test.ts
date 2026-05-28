@@ -1578,6 +1578,97 @@ describe("inventory reducer", () => {
       expect(walkedAfterRecount.onHand).toBe(6);
       expect(nextState.idToItem[id].cost).toBeCloseTo(178.2, 9);
     });
+
+    it("archives fractional cost on-hand with whole visible on-hand before recounting", () => {
+      const item: Item = {
+        janCode: "4542804114232",
+        subtype: "Cream",
+        description: "Greeting Card Set Elegant",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 22,
+        pieces: 1,
+        shipped: 2,
+        creationDate: "2025-05-02",
+        timestamp: 0,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      const stateWithFractionalRestoration = {
+        ...initialState,
+        idToItem: { [id]: item },
+        idToHistory: { [id]: [] },
+        costLedger: {
+          [id]: [
+            {
+              kind: "receipt" as const,
+              at: Date.UTC(2024, 9, 10),
+              seq: 0,
+              qty: 12,
+              unitCostJpy: 65,
+              unitCostEur: 0,
+              source: "update_item",
+            },
+            {
+              kind: "receipt" as const,
+              at: Date.UTC(2023, 10, 12),
+              seq: 1,
+              qty: 10,
+              unitCostJpy: 0,
+              unitCostEur: 0,
+              source: "update_item",
+            },
+            {
+              kind: "sale" as const,
+              at: Date.UTC(2024, 9, 26),
+              seq: 2,
+              qty: -1 / 3,
+              visibleQty: -1,
+            },
+          ],
+        },
+      };
+
+      const archiveName = "Japan Festival April 2025";
+      let nextState = inventory(stateWithFractionalRestoration, {
+        ...archive_inventory({ archiveName }),
+        timestamp: {
+          seconds: Date.UTC(2025, 4, 2) / 1000,
+          _seconds: Date.UTC(2025, 4, 2) / 1000,
+          _nanoseconds: 0,
+        },
+      });
+
+      expect(nextState.costLedger![id].at(-1)).toEqual(
+        expect.objectContaining({
+          kind: "sale",
+          qty: 22 + 1 / 3,
+          visibleQty: 23,
+          isArchive: true,
+        }),
+      );
+
+      nextState = inventory(nextState, {
+        ...update_item({
+          id,
+          item: { ...item, qty: 9, shipped: 0, cost: undefined },
+        }),
+        timestamp: {
+          seconds: Date.UTC(2025, 4, 5) / 1000,
+          _seconds: Date.UTC(2025, 4, 5) / 1000,
+          _nanoseconds: 0,
+        },
+      });
+
+      expect(nextState.costLedger![id].at(-1)).toEqual(
+        expect.objectContaining({
+          kind: "receipt",
+          qty: 9,
+          receivedQty: 0,
+        }),
+      );
+      expect(walkLedger(nextState.costLedger![id]).onHand).toBe(9);
+      expect(walkLedger(nextState.costLedger![id]).avgJpy).toBe(65);
+    });
   });
 
   describe("hide_archive", () => {

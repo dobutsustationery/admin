@@ -163,6 +163,7 @@ type CostLot = {
   qty: number;
   jpy: number;
   eur: number;
+  source: "receipt" | "restored-sale";
 };
 
 function lotAverage(lots: readonly CostLot[]): { jpy: number; eur: number } {
@@ -188,6 +189,17 @@ function consumeLotsFifo(lots: CostLot[], qty: number): void {
     remaining -= consumed;
     if (lot.qty <= 1e-9) lots.shift();
   }
+}
+
+function stocktakeCarryAverage(lots: readonly CostLot[]): {
+  jpy: number;
+  eur: number;
+} {
+  const receiptLots = lots.filter((lot) => lot.source === "receipt");
+  const receiptAverage = lotAverage(receiptLots);
+  return receiptAverage.jpy > 0 || receiptAverage.eur > 0
+    ? receiptAverage
+    : lotAverage(lots);
 }
 
 function nextStocktakeReceiptAfter(
@@ -347,7 +359,12 @@ export function walkLedger(
       avgEur = (onHand * avgEur + receiptQty * unitCostEur) / next;
       onHand = next;
       if (receiptQty > 0) {
-        lots.push({ qty: receiptQty, jpy: unitCostJpy, eur: unitCostEur });
+        lots.push({
+          qty: receiptQty,
+          jpy: unitCostJpy,
+          eur: unitCostEur,
+          source: "receipt",
+        });
       }
     } else {
       const prev = onHand;
@@ -358,7 +375,7 @@ export function walkLedger(
             const survivorLots = lots.map((lot) => ({ ...lot }));
             const shrinkQty = Math.max(0, prev - Math.max(0, nextReceipt.qty));
             consumeLotsFifo(survivorLots, shrinkQty);
-            const survivorAverage = lotAverage(survivorLots);
+            const survivorAverage = stocktakeCarryAverage(survivorLots);
             carry =
               survivorAverage.jpy > 0 || survivorAverage.eur > 0
                 ? survivorAverage
@@ -381,7 +398,12 @@ export function walkLedger(
         restored -= pendingReduction;
         onHand += restored;
         if (restored > 0) {
-          lots.push({ qty: restored, jpy: avgJpy, eur: avgEur });
+          lots.push({
+            qty: restored,
+            jpy: avgJpy,
+            eur: avgEur,
+            source: "restored-sale",
+          });
         }
       }
       if (e.isArchive && prev > 0 && onHand === 0) {
