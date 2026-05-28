@@ -1643,7 +1643,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each filteredAuditRows as row (`audit:${row.key}:${row.at}:${row.seq}:${row.lotQty}`)}
+            {#each filteredAuditRows as row (`audit:${row.key}:${row.ledgerIndex}:${row.at}:${row.seq}:${row.lotQty}`)}
               <tr
                 class:audit-warning={row.auditSeverity === "warning"}
                 class:audit-danger={row.auditSeverity === "danger"}
