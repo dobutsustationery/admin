@@ -9,6 +9,10 @@ const shopifyWorker = require("./shared/shopify-sync-worker.cjs");
 const shopifyOrderLogic = require("./shared/shopify-order-logic.cjs");
 const etsyOrderLogic = require("./shared/etsy-order-logic.cjs");
 const photosWorker = require("./shared/photos-sync-worker.cjs");
+const {
+  etsyReconcileBroadcastDocumentId,
+  shopifyReconcileBroadcastDocumentId,
+} = require("./shared/reconcile-broadcast-id.cjs");
 
 initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -381,6 +385,26 @@ async function writeBroadcastAction({ action, creator, atMs }) {
     data.timestamp = FieldValue.serverTimestamp();
   }
   await db.collection(BROADCAST_COLLECTION).add(data);
+}
+
+async function writeBroadcastActionOnce({ action, creator, documentId }) {
+  const data = {
+    ...action,
+    creator,
+    timestamp: FieldValue.serverTimestamp(),
+  };
+
+  try {
+    await db.collection(BROADCAST_COLLECTION).doc(documentId).create(data);
+    return { written: true };
+  } catch (error) {
+    const code = error?.code || error?.status;
+    const message = String(error?.message || "").toLowerCase();
+    if (code === 6 || message.includes("already exists")) {
+      return { written: false, reason: "already_exists" };
+    }
+    throw error;
+  }
 }
 
 function logSkipped(dispatched, requestId, domain) {
@@ -1099,12 +1123,15 @@ exports.shopifyOrderWebhook = onRequest(
 
     // 1. HMAC Verification
     const config = getShopifyConfig();
-    
-    // Shopify webhooks always provide a raw body. In Firebase Functions, 
+
+    // Shopify webhooks always provide a raw body. In Firebase Functions,
     // it's available as req.rawBody. We must use it for HMAC verification
     // to avoid issues with JSON re-serialization.
     if (!req.rawBody) {
-      logger.error("Missing rawBody for HMAC verification", { topic, webhookId });
+      logger.error("Missing rawBody for HMAC verification", {
+        topic,
+        webhookId,
+      });
       return res.status(400).send("Bad Request: Missing Raw Body");
     }
 
@@ -1196,6 +1223,10 @@ exports.shopifyOrderReconcile = onSchedule(
 
     try {
       let nextCursor = lastCursor;
+      let fetchedCount = 0;
+      let writtenCount = 0;
+      let skippedDuplicateCount = 0;
+      let missingKeyFallbackCount = 0;
       const headers = await shopifyCore.buildShopifyHeaders(config);
 
       const params = new URLSearchParams({
@@ -1216,15 +1247,33 @@ exports.shopifyOrderReconcile = onSchedule(
 
         const json = await response.json();
         const orders = Array.isArray(json?.orders) ? json.orders : [];
+        fetchedCount += orders.length;
 
         for (const order of orders) {
-          await writeBroadcastAction({
-            action: {
-              type: "shopify_order_reconciled",
-              payload: { raw: order, topic: "reconcile" },
-            },
-            creator: "shopify-reconcile-poller",
-          });
+          const action = {
+            type: "shopify_order_reconciled",
+            payload: { raw: order, topic: "reconcile" },
+          };
+          const documentId = shopifyReconcileBroadcastDocumentId(order);
+          if (documentId) {
+            const result = await writeBroadcastActionOnce({
+              action,
+              creator: "shopify-reconcile-poller",
+              documentId,
+            });
+            if (result.written) {
+              writtenCount += 1;
+            } else {
+              skippedDuplicateCount += 1;
+            }
+          } else {
+            missingKeyFallbackCount += 1;
+            await writeBroadcastAction({
+              action,
+              creator: "shopify-reconcile-poller",
+            });
+            writtenCount += 1;
+          }
 
           if (order.updated_at > nextCursor) {
             nextCursor = order.updated_at;
@@ -1244,6 +1293,12 @@ exports.shopifyOrderReconcile = onSchedule(
           { merge: true },
         );
       }
+      logger.info("Shopify order reconciliation complete", {
+        fetchedCount,
+        writtenCount,
+        skippedDuplicateCount,
+        missingKeyFallbackCount,
+      });
     } catch (error) {
       logger.error("Shopify order reconciliation failed", error);
     }
@@ -1439,14 +1494,34 @@ exports.etsyOrderReconcile = onSchedule(
       );
 
       let newCursorMs = lastCursor * 1000;
+      let writtenCount = 0;
+      let skippedDuplicateCount = 0;
+      let missingKeyFallbackCount = 0;
       for (const receipt of receipts) {
-        await writeBroadcastAction({
-          action: {
-            type: "etsy_order_reconciled",
-            payload: { raw: receipt, topic: "reconcile" },
-          },
-          creator: "etsy-reconcile-poller",
-        });
+        const action = {
+          type: "etsy_order_reconciled",
+          payload: { raw: receipt, topic: "reconcile" },
+        };
+        const documentId = etsyReconcileBroadcastDocumentId(receipt);
+        if (documentId) {
+          const result = await writeBroadcastActionOnce({
+            action,
+            creator: "etsy-reconcile-poller",
+            documentId,
+          });
+          if (result.written) {
+            writtenCount += 1;
+          } else {
+            skippedDuplicateCount += 1;
+          }
+        } else {
+          missingKeyFallbackCount += 1;
+          await writeBroadcastAction({
+            action,
+            creator: "etsy-reconcile-poller",
+          });
+          writtenCount += 1;
+        }
 
         const modified = receipt.updated_timestamp || receipt.create_timestamp;
         if (modified * 1000 > newCursorMs) {
@@ -1461,6 +1536,12 @@ exports.etsyOrderReconcile = onSchedule(
         },
         { merge: true },
       );
+      logger.info("Etsy order reconciliation complete", {
+        fetchedCount: receipts.length,
+        writtenCount,
+        skippedDuplicateCount,
+        missingKeyFallbackCount,
+      });
     } catch (error) {
       logger.error("Etsy order reconciliation failed", error);
     }
