@@ -212,6 +212,80 @@ describe("cost-ledger materialisation in the reducer", () => {
     expect(s.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
   });
 
+  it("creates stock-order receipts from order dates before server timestamps resolve", () => {
+    const orderId = "pending-unmatched-order-row";
+    const receivedAt = Date.parse("2025-01-25T00:00:00Z");
+    const action = {
+      ...bulk_import_items({
+        items: [
+          {
+            type: "new" as const,
+            id: KEY,
+            item: baseItem(4, { cost: 999 }),
+            stockOrder: {
+              orderId,
+              unitCostJpy: 65,
+              unitCostEur: 0.42,
+              receivedAt,
+              orderedQty: 4,
+            },
+          },
+        ],
+      }),
+      id: "pending-stock-order-create",
+      timestamp: null,
+    };
+
+    let s = rootReducer(undefined, { type: "@@INIT" }) as any;
+    s = rootReducer(s, action);
+
+    expect(s.inventory.idToItem[KEY].qty).toBe(4);
+    expect(s.inventory.idToItem[KEY].timestamp).toBe(receivedAt);
+    expect(s.inventory.costLedger![KEY]).toEqual([
+      expect.objectContaining({
+        kind: "receipt",
+        at: receivedAt,
+        qty: 4,
+        unitCostJpy: 65,
+        unitCostEur: 0.42,
+        source: `stockOrder:${orderId}`,
+        costOrderId: orderId,
+        createdByActionId: "pending-stock-order-create",
+      }),
+    ]);
+
+    s = rootReducer(
+      s,
+      withTs(
+        {
+          ...bulk_import_items({
+            items: [
+              {
+                type: "new" as const,
+                id: KEY,
+                item: baseItem(4, { cost: 999 }),
+                stockOrder: {
+                  orderId,
+                  unitCostJpy: 65,
+                  unitCostEur: 0.42,
+                  receivedAt,
+                  orderedQty: 4,
+                },
+              },
+            ],
+          }),
+          id: "pending-stock-order-create",
+        },
+        200,
+      ),
+    );
+
+    expect(s.inventory.idToItem[KEY].qty).toBe(4);
+    expect(s.inventory.idToItem[KEY].timestamp).toBe(200_000);
+    expect(s.inventory.costLedger![KEY]).toHaveLength(1);
+    expect(s.inventory.costLedger![KEY][0].qty).toBe(4);
+  });
+
   it("keeps a same-scan receipt intact and audits stock-order over-consumption", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(

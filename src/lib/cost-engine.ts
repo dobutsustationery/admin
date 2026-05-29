@@ -31,6 +31,10 @@ export type ReceiptEntry = {
   // creating action type. Lets the exceptions UI target a given order's
   // lots. Does not affect the cost walk (not a sort key).
   source?: string;
+  // Broadcast document that created this receipt, when known. Used only to
+  // make optimistic pending writes idempotent when Firestore later confirms
+  // the same document with a resolved server timestamp.
+  createdByActionId?: string;
   // The stock order that supplied this lot's cost. Set even when a
   // "Zeroed Quantities" original order attaches cost to a pre-existing
   // scan lot (which keeps its scan `source`/`at`). Metadata only — the

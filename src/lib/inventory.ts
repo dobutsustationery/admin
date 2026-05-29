@@ -2663,8 +2663,13 @@ function applyInventoryUpdate(
 
   // Robust Timestamp Parsing
   const val = getTimestampMs(timestamp);
+  const stockOrderReceivedAt =
+    stockOrder && Number(stockOrder.receivedAt) > 0
+      ? Number(stockOrder.receivedAt)
+      : 0;
+  const effectiveVal = val > 0 ? val : stockOrderReceivedAt;
 
-  const dateObj = new Date(val);
+  const dateObj = new Date(effectiveVal);
   const globalDate = dateObj.toLocaleString("en", {
     year: "numeric",
     month: "short",
@@ -2698,6 +2703,24 @@ function applyInventoryUpdate(
 
   const existingItem = state.idToItem[id];
   const isNewItem = !existingItem;
+
+  if (
+    existingItem &&
+    stockOrder &&
+    actionDocId &&
+    actionType === bulk_import_items.type &&
+    state.costLedger?.[id]?.some(
+      (entry) =>
+        entry.kind === "receipt" && entry.createdByActionId === actionDocId,
+    )
+  ) {
+    if (val > 0) {
+      existingItem.timestamp = val;
+    }
+    bindNewInventoryEntity(state, id, effectiveVal, actionType, actionDocId);
+    return;
+  }
+
   const historyEntries: { date: string; desc: string; val: number }[] = [];
 
   // 1. Detect Changes
@@ -2854,7 +2877,7 @@ function applyInventoryUpdate(
     creationDate: currentCreationDate,
     qty: nextQty,
     shipped: nextShipped,
-    timestamp: val,
+    timestamp: effectiveVal,
   };
 
   if (state.idToItem[id].shipped === undefined) {
@@ -2862,7 +2885,7 @@ function applyInventoryUpdate(
   }
 
   // Always try to bind, it handles its own idempotency
-  bindNewInventoryEntity(state, id, val, actionType, actionDocId);
+  bindNewInventoryEntity(state, id, effectiveVal, actionType, actionDocId);
 
   // --- Cost-lot ledger materialisation -------------------------------
   // See docs/investigations/DESIGN_INVENTORY_COST_AND_VALUATION.md
@@ -2924,15 +2947,13 @@ function applyInventoryUpdate(
     }
   }
 
-  // Pending writes (atMs <= 0, e.g. an optimistic local write before the
-  // server timestamp resolves) are guarded here exactly like entity
-  // binding: defer ledger materialisation until the confirming write
-  // carries a real timestamp. deriveCreationTimestampMs stays strict —
-  // it is only reached on a resolved (val > 0) timestamp.
-  if (val > 0 && isNewItem) {
+  // Stock-order receipts are dated by order metadata, not by the broadcast
+  // server timestamp. Non-stock-order new items still require a real action
+  // timestamp because that is their only receipt date.
+  if ((val > 0 || stockOrderReceivedAt > 0) && isNewItem) {
     ledger.push({
       kind: "receipt",
-      at: stockOrder?.receivedAt || deriveCreationTimestampMs(timestamp),
+      at: stockOrderReceivedAt || deriveCreationTimestampMs(timestamp),
       seq: ledger.length,
       qty: Number.isFinite(deltaQty) ? deltaQty : 0,
       unitCostJpy:
@@ -2947,6 +2968,7 @@ function applyInventoryUpdate(
           : 0,
       source: stockOrder ? `stockOrder:${stockOrder.orderId}` : actionType,
       ...(stockOrder ? { costOrderId: stockOrder.orderId } : {}),
+      ...(actionDocId ? { createdByActionId: actionDocId } : {}),
     });
     ledgerChanged = true;
   } else if (val > 0 && stockOrder) {

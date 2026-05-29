@@ -347,21 +347,13 @@
       countryOfOrigin: row.incomingCountryOfOrigin,
       weight: row.incomingWeight,
     });
-    const now = Date.now();
     pendingReceiptKeys = new Set([...pendingReceiptKeys, pendingKey]);
-    store.dispatch({
-      ...action,
-      timestamp: {
-        seconds: Math.floor(now / 1000),
-        nanoseconds: (now % 1000) * 1_000_000,
-      },
-    } as any);
-    statusMessage = `Created stock-order receipt for ${row.key}.`;
 
     const saved = await broadcastActionAsync(action);
-    if (!saved) {
-      statusMessage =
-        "Failed to persist receipt action. Refresh cached state before relying on this local preview.";
+    if (saved) {
+      statusMessage = `Created stock-order receipt for ${row.key}.`;
+    } else {
+      statusMessage = "Failed to persist receipt action.";
       const nextPending = new Set(pendingReceiptKeys);
       nextPending.delete(pendingKey);
       pendingReceiptKeys = nextPending;
