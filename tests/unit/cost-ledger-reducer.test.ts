@@ -143,6 +143,75 @@ describe("cost-ledger materialisation in the reducer", () => {
     expect(s.inventory.idToItem[KEY].qty).toBe(18);
   });
 
+  it("creates new stock-order inventory items with order receipt facts", () => {
+    const orderId = "unmatched-order-row";
+    const receivedAt = Date.parse("2025-01-25T00:00:00Z");
+    let s = rootReducer(undefined, { type: "@@INIT" }) as any;
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Order with unmatched row",
+            receivedAt,
+            usesZeroedQuantities: true,
+            costRows: [{ jan: JAN, unitCostJpy: 65, qty: 4 }],
+            costIssues: [
+              {
+                kind: "unmatched-row",
+                jan: JAN,
+                qty: 4,
+                expectedQty: 4,
+                matchedQty: 0,
+                unitCostJpy: 65,
+                lineCostJpy: 260,
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    s = rootReducer(
+      s,
+      withTs(
+        bulk_import_items({
+          items: [
+            {
+              type: "new",
+              id: KEY,
+              item: baseItem(4, { cost: 999 }),
+              stockOrder: {
+                orderId,
+                unitCostJpy: 65,
+                unitCostEur: 0.42,
+                receivedAt,
+                orderedQty: 4,
+              },
+            },
+          ],
+        }),
+        200,
+      ),
+    );
+
+    const ledger = s.inventory.costLedger![KEY] as ReceiptEntry[];
+    expect(ledger[0]).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        at: receivedAt,
+        qty: 4,
+        unitCostJpy: 65,
+        unitCostEur: 0.42,
+        source: `stockOrder:${orderId}`,
+        costOrderId: orderId,
+      }),
+    );
+    expect(s.inventory.idToItem[KEY].cost).toBe(65);
+    expect(s.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
+  });
+
   it("keeps a same-scan receipt intact and audits stock-order over-consumption", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
     s = rootReducer(
@@ -385,10 +454,10 @@ describe("cost-ledger materialisation in the reducer", () => {
     expect(rawLedger).toEqual([
       expect.objectContaining({
         kind: "receipt",
-        at: 100_000,
+        at: 90_000,
         qty: 12,
         unitCostJpy: 140,
-        unitCostEur: 0,
+        unitCostEur: 0.82,
         source: "stockOrder:o1",
         costOrderId: "o1",
       }),
@@ -396,10 +465,10 @@ describe("cost-ledger materialisation in the reducer", () => {
         kind: "receipt",
         adjustmentEntry: true,
         adjustmentMode: "apply-to-target",
-        at: 100_000,
+        at: 90_000,
         qty: 12,
         unitCostJpy: 140,
-        unitCostEur: 0,
+        unitCostEur: 0.82,
         source: "stockOrder:o1",
         costOrderId: "o1",
         originalQty: 12,

@@ -6,6 +6,7 @@
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import {
     effectiveLedgerEntries,
+    BGN_PER_EUR,
     lotMatchesOrder,
     walkLedger,
     type LedgerEntry,
@@ -19,11 +20,13 @@
     StockOrderMeta,
   } from "$lib/inventory";
   import {
+    bulk_import_items,
     mark_stock_order_row_not_received,
     reconstruct_stock_order_late_scan_receipt,
     reconstruct_stock_order_unmatched_receipt,
     selectStockOrderCostIssues,
   } from "$lib/inventory";
+  import { makeInventoryItemKey } from "$lib/sku";
 
   type CostLedgerIssueKind = "unpriced-scan" | "missing-exchange";
 
@@ -132,6 +135,20 @@
     {};
   let notReceivedDrafts: Record<string, { note: string }> = {};
   let pendingRemediations: Record<string, true> = {};
+  let createInventoryDraft: {
+    row: StockOrderMatchIssueRow;
+    jan: string;
+    subtype: string;
+    description: string;
+    hsCode: string;
+    qty: string;
+    pieces: string;
+    price: string;
+    cost: string;
+    weight: string;
+    countryOfOrigin: string;
+    image: string;
+  } | null = null;
 
   const LATE_SCAN_GAP_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -741,6 +758,10 @@
     return row.kind === "unmatched-row" && row.qty > 0;
   }
 
+  function canCreateInventoryItem(row: StockOrderMatchIssueRow): boolean {
+    return row.kind === "unmatched-row" && row.qty > 0 && Boolean(row.jan);
+  }
+
   function canOpenCostLedger(row: StockOrderMatchIssueRow): boolean {
     return row.kind === "overmatched-row" && Boolean(row.jan);
   }
@@ -800,6 +821,139 @@
       ...notReceivedDrafts,
       [remediationKey(row)]: { note },
     };
+  }
+
+  function stockOrderMeta(row: StockOrderMatchIssueRow): StockOrderMeta {
+    return $store.inventory.stockOrderRegistry?.[row.orderId] || {};
+  }
+
+  function stockOrderUnitCostEur(
+    row: StockOrderMatchIssueRow,
+    unitCostJpy: number,
+  ): number {
+    const meta = stockOrderMeta(row);
+    const totalOrderEur =
+      meta.paidAmount != null && meta.paidCurrency
+        ? meta.paidCurrency === "BGN"
+          ? meta.paidAmount / BGN_PER_EUR
+          : meta.paidAmount
+        : meta.totalOrderEur;
+    return totalOrderEur && meta.valueOfOrderJpy && meta.valueOfOrderJpy > 0
+      ? unitCostJpy * (totalOrderEur / meta.valueOfOrderJpy)
+      : 0;
+  }
+
+  function stockOrderReceivedAt(row: StockOrderMatchIssueRow): number {
+    return row.orderDate && row.orderDate > 0 ? row.orderDate : Date.now();
+  }
+
+  function openCreateInventoryDialog(row: StockOrderMatchIssueRow): void {
+    createInventoryDraft = {
+      row,
+      jan: row.jan,
+      subtype: "",
+      description: row.description || "",
+      hsCode: "39199080",
+      qty: String(row.qty || ""),
+      pieces: "1",
+      price: "",
+      cost: String(row.unitCostJpy || ""),
+      weight: "",
+      countryOfOrigin: "",
+      image: row.image || "",
+    };
+  }
+
+  function closeCreateInventoryDialog(): void {
+    createInventoryDraft = null;
+  }
+
+  async function saveCreatedInventoryItem(): Promise<void> {
+    if (!createInventoryDraft) return;
+    const draft = createInventoryDraft;
+    const row = draft.row;
+    const key = `create:${remediationKey(row)}`;
+    const jan = draft.jan.trim();
+    const subtype = draft.subtype.trim();
+    const id = makeInventoryItemKey(jan, subtype);
+    const qty = Number(draft.qty);
+    const cost = Number(draft.cost);
+    const pieces = Number(draft.pieces);
+    const price = Number(draft.price);
+    const weight = Number(draft.weight);
+
+    if (!$user.uid) {
+      remediationStatus = "Sign in before applying a remediation.";
+      return;
+    }
+    if (!canCreateInventoryItem(row)) {
+      remediationStatus = "This row cannot create inventory from here.";
+      return;
+    }
+    if (!jan || !Number.isFinite(qty) || qty <= 0) {
+      remediationStatus =
+        "Enter a positive quantity before creating inventory.";
+      return;
+    }
+    if (!draft.description.trim()) {
+      remediationStatus = "Enter a description before creating inventory.";
+      return;
+    }
+    if ($store.inventory.idToItem[id]) {
+      remediationStatus = `${id} already exists. Choose a subtype that creates a new inventory key.`;
+      return;
+    }
+
+    pendingRemediations = { ...pendingRemediations, [key]: true };
+    remediationStatus = "";
+    try {
+      const item: Partial<Item> = {
+        janCode: jan,
+        subtype,
+        description: draft.description.trim(),
+        hsCode: draft.hsCode.trim(),
+        image: draft.image.trim(),
+        qty,
+        pieces: Number.isFinite(pieces) ? pieces : 0,
+        shipped: 0,
+        price: Number.isFinite(price) && price > 0 ? price : undefined,
+        cost: Number.isFinite(cost) && cost > 0 ? cost : undefined,
+        weight: Number.isFinite(weight) && weight > 0 ? weight : undefined,
+        countryOfOrigin: draft.countryOfOrigin.trim() || undefined,
+      };
+      await broadcast(
+        firestore,
+        $user.uid,
+        bulk_import_items({
+          items: [
+            {
+              type: "new",
+              id,
+              item: item as Item,
+              stockOrder: {
+                orderId: row.orderId,
+                unitCostJpy: Number.isFinite(cost) && cost > 0 ? cost : 0,
+                unitCostEur:
+                  Number.isFinite(cost) && cost > 0
+                    ? stockOrderUnitCostEur(row, cost)
+                    : 0,
+                receivedAt: stockOrderReceivedAt(row),
+                orderedQty: qty,
+              },
+            },
+          ],
+        }),
+      );
+      remediationStatus = `Created inventory item ${id} for unmatched order row ${jan}.`;
+      createInventoryDraft = null;
+    } catch (error) {
+      remediationStatus =
+        error instanceof Error ? error.message : "Failed to create inventory.";
+    } finally {
+      const nextPending = { ...pendingRemediations };
+      delete nextPending[key];
+      pendingRemediations = nextPending;
+    }
   }
 
   async function reconstructMissingReceipt(row: StockOrderMatchIssueRow) {
@@ -1508,7 +1662,7 @@
                       </span>
                     </td>
                     <td>
-                      {#if canReconstruct(row) || canReconstructLateScan(row) || canMarkNotReceived(row) || canOpenCostLedger(row) || hasSubtypeReplacementOption(row.jan, row.itemKey)}
+                      {#if canReconstruct(row) || canReconstructLateScan(row) || canMarkNotReceived(row) || canCreateInventoryItem(row) || canOpenCostLedger(row) || hasSubtypeReplacementOption(row.jan, row.itemKey)}
                         <div class="remediation-form">
                           {#if hasSubtypeReplacementOption(row.jan, row.itemKey)}
                             <a
@@ -1564,6 +1718,18 @@
                               {pendingRemediations[remediationKey(row)]
                                 ? "Saving..."
                                 : "Reconstruct"}
+                            </button>
+                          {/if}
+                          {#if canCreateInventoryItem(row)}
+                            <button
+                              type="button"
+                              class="copy-button"
+                              disabled={pendingRemediations[
+                                `create:${remediationKey(row)}`
+                              ]}
+                              on:click={() => openCreateInventoryDialog(row)}
+                            >
+                              Create inventory item
                             </button>
                           {/if}
                           {#if canReconstructLateScan(row)}
@@ -1719,6 +1885,74 @@
     <p class="hint">No audit adjustments match the current filters.</p>
   {/if}
 </main>
+
+{#if createInventoryDraft}
+  <div class="modal-backdrop" role="presentation">
+    <section class="modal" role="dialog" aria-modal="true">
+      <h2>Create Inventory Item</h2>
+      <p class="hint">
+        This creates a received stock-order lot for the unmatched row. The JAN
+        is taken from the order row.
+      </p>
+      <label>
+        JAN Code
+        <input readonly bind:value={createInventoryDraft.jan} />
+      </label>
+      <label>
+        Subtype
+        <input bind:value={createInventoryDraft.subtype} />
+      </label>
+      <label>
+        Description
+        <textarea bind:value={createInventoryDraft.description} rows="3" />
+      </label>
+      <label>
+        HS Code
+        <input bind:value={createInventoryDraft.hsCode} />
+      </label>
+      <label>
+        Quantity received
+        <input bind:value={createInventoryDraft.qty} />
+      </label>
+      <label>
+        Pieces
+        <input bind:value={createInventoryDraft.pieces} />
+      </label>
+      <label>
+        Cost JPY
+        <input bind:value={createInventoryDraft.cost} />
+      </label>
+      <label>
+        Price
+        <input bind:value={createInventoryDraft.price} />
+      </label>
+      <label>
+        Weight (g)
+        <input bind:value={createInventoryDraft.weight} />
+      </label>
+      <label>
+        Country of Origin
+        <input bind:value={createInventoryDraft.countryOfOrigin} />
+      </label>
+      <label>
+        Image URL
+        <input bind:value={createInventoryDraft.image} />
+      </label>
+      <div class="modal-actions">
+        <button type="button" on:click={saveCreatedInventoryItem}>
+          Create received item
+        </button>
+        <button
+          type="button"
+          class="secondary"
+          on:click={closeCreateInventoryDialog}
+        >
+          Cancel
+        </button>
+      </div>
+    </section>
+  </div>
+{/if}
 
 <style>
   main {
@@ -1928,6 +2162,49 @@
   .copy-button:disabled {
     cursor: not-allowed;
     opacity: 0.6;
+  }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    overflow: auto;
+    padding: 3rem 1rem;
+    background: rgba(33, 37, 41, 0.45);
+  }
+  .modal {
+    width: min(34rem, 100%);
+    margin: 0;
+    padding: 1rem;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.24);
+  }
+  .modal label {
+    display: grid;
+    grid-template-columns: 9rem 1fr;
+    gap: 0.75rem;
+    align-items: center;
+    margin: 0.4rem 0;
+  }
+  .modal label input,
+  .modal label textarea {
+    width: 100%;
+    box-sizing: border-box;
+    margin-left: 0;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+  }
+  .modal-actions .secondary {
+    background: #fff;
+    border: 1px solid #adb5bd;
   }
   .no-thumb {
     display: inline-flex;

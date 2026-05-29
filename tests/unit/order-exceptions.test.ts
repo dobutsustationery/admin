@@ -17,6 +17,7 @@ import {
   selectStockOrderCostIssues,
   update_field,
   update_item,
+  create_stock_order_receipt,
   type Item,
 } from "$lib/inventory";
 import {
@@ -879,6 +880,102 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         lineCostJpy: 100,
       },
     ]);
+  });
+
+  it("treats existing inventory metadata without an order lot as unmatched", () => {
+    const extraJan = "9999999999999";
+    let s = unpricedOrder();
+    s = rootReducer(s, {
+      ...update_item({
+        id: extraJan,
+        item: {
+          ...scanItem("", 1),
+          janCode: extraJan,
+          description: "Extra item",
+        },
+      }),
+      timestamp: TS,
+    } as any);
+    const withExtra = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t10`,
+      `${extraJan}\t100\t1`,
+    ].join("\n");
+
+    const blocked = previewStockOrderFix(s.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 2100 },
+      rawPaste: withExtra,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+
+    expect(blocked.unmatchedJans).toEqual([extraJan]);
+    expect(blocked.blocked).toBe(true);
+    expect(
+      blocked.matchRows
+        .filter((row) => row.jan === extraJan)
+        .map((row) => [row.key, row.status, row.isUnmatched]),
+    ).toEqual([[extraJan, "No lot in this order", true]]);
+  });
+
+  it("does not block after creating a stock-order inventory receipt", () => {
+    const extraJan = "9999999999999";
+    let s = unpricedOrder();
+    s = rootReducer(s, {
+      ...update_item({
+        id: extraJan,
+        item: {
+          ...scanItem("", 1),
+          janCode: extraJan,
+          description: "Extra item",
+        },
+      }),
+      timestamp: TS,
+    } as any);
+    const receiptAction = create_stock_order_receipt({
+      orderId: "fc",
+      itemKey: extraJan,
+      qty: 1,
+      unitCostJpy: 100,
+      unitCostEur: 1,
+      receivedAt: 150_000,
+    });
+    s = rootReducer(s, {
+      ...receiptAction,
+      timestamp: TS,
+    } as any);
+    s = rootReducer(s, {
+      ...receiptAction,
+      timestamp: TS,
+    } as any);
+
+    expect(
+      s.inventory.costLedger![extraJan].filter(
+        (entry: any) =>
+          entry.kind === "receipt" && entry.source === "stockOrder:fc",
+      ),
+    ).toHaveLength(1);
+    expect(s.inventory.idToItem[extraJan].qty).toBe(2);
+    const withExtra = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t10`,
+      `${extraJan}\t100\t1`,
+    ].join("\n");
+
+    const preview = previewStockOrderFix(s.inventory, "fc", {
+      meta: { valueOfGoodsJpy: 2100 },
+      rawPaste: withExtra,
+      overrideExisting: false,
+      approveDiscrepancy: false,
+    });
+
+    expect(preview.unmatchedJans).toEqual([]);
+    expect(preview.blocked).toBe(false);
+    expect(
+      preview.matchRows
+        .filter((row) => row.jan === extraJan)
+        .map((row) => [row.key, row.status, row.isUnmatched]),
+    ).toEqual([[extraJan, "Matched, existing cost", false]]);
   });
 
   it("records stock order overmatches when attached lots exceed row qty", () => {

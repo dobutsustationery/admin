@@ -371,6 +371,17 @@ export const mark_stock_order_row_not_received = createAction<{
   note: string;
 }>("mark_stock_order_row_not_received");
 
+export const create_stock_order_receipt = createAction<{
+  orderId: string;
+  itemKey: InventoryItemKey | string;
+  qty: number;
+  unitCostJpy: number;
+  unitCostEur: number;
+  receivedAt: number;
+  countryOfOrigin?: string;
+  weight?: number;
+}>("create_stock_order_receipt");
+
 export interface BulkImportItem {
   type: "new" | "update";
   id: InventoryItemKey | string; // janCode or itemKey
@@ -2921,11 +2932,19 @@ function applyInventoryUpdate(
   if (val > 0 && isNewItem) {
     ledger.push({
       kind: "receipt",
-      at: deriveCreationTimestampMs(timestamp),
+      at: stockOrder?.receivedAt || deriveCreationTimestampMs(timestamp),
       seq: ledger.length,
       qty: Number.isFinite(deltaQty) ? deltaQty : 0,
-      unitCostJpy: Number(item.cost) > 0 ? Number(item.cost) : 0,
-      unitCostEur: 0,
+      unitCostJpy:
+        stockOrder && Number(stockOrder.unitCostJpy) > 0
+          ? Number(stockOrder.unitCostJpy)
+          : Number(item.cost) > 0
+            ? Number(item.cost)
+            : 0,
+      unitCostEur:
+        stockOrder && Number(stockOrder.unitCostEur) > 0
+          ? Number(stockOrder.unitCostEur)
+          : 0,
       source: stockOrder ? `stockOrder:${stockOrder.orderId}` : actionType,
       ...(stockOrder ? { costOrderId: stockOrder.orderId } : {}),
     });
@@ -4051,6 +4070,74 @@ export const inventory = createReducer(initialState, (r) => {
       at: val || undefined,
     });
     refreshStockOrderCostIssues(state, orderId);
+  });
+  r.addCase(create_stock_order_receipt, (state, action) => {
+    const {
+      orderId,
+      itemKey,
+      qty,
+      unitCostJpy,
+      unitCostEur,
+      receivedAt,
+      countryOfOrigin,
+      weight,
+    } = action.payload;
+    const key = canonicalizeInventoryItemKey(itemKey);
+    const item = state.idToItem[key];
+    if (!item) return;
+    if (!orderId || !Number.isFinite(qty) || qty <= 0) return;
+    if (!Number.isFinite(receivedAt) || receivedAt <= 0) return;
+
+    if (!state.costLedger) state.costLedger = {};
+    const ledger = state.costLedger[key] || [];
+    state.costLedger[key] = ledger;
+    const source = `stockOrder:${orderId}`;
+    const alreadyHasReceipt = ledger.some(
+      (entry) =>
+        entry.kind === "receipt" &&
+        !entry.ignored &&
+        entry.source === source &&
+        entry.costOrderId === orderId,
+    );
+    if (alreadyHasReceipt) return;
+
+    const val = getTimestampMs((action as any).timestamp);
+    ledger.push({
+      kind: "receipt",
+      at: receivedAt,
+      seq: ledger.length,
+      qty,
+      unitCostJpy: Number.isFinite(unitCostJpy) ? unitCostJpy : 0,
+      unitCostEur: Number.isFinite(unitCostEur) ? unitCostEur : 0,
+      source,
+      costOrderId: orderId,
+      auditComment: `Created missing stock-order receipt for ${orderId}.`,
+      auditSeverity: "warning",
+    });
+
+    item.qty = Number(item.qty || 0) + qty;
+    item.timestamp = val || item.timestamp;
+    if (countryOfOrigin && !item.countryOfOrigin) {
+      item.countryOfOrigin = countryOfOrigin;
+    }
+    if (Number.isFinite(weight) && Number(weight) > 0 && !item.weight) {
+      item.weight = Number(weight);
+    }
+
+    rederiveCostFromLedger(state, key);
+    refreshStockOrderCostIssues(state, orderId);
+
+    if (!state.idToHistory[key]) state.idToHistory[key] = [];
+    const date = new Date(val || receivedAt).toLocaleString("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    state.idToHistory[key].push({
+      date,
+      desc: `Created missing stock-order receipt for ${orderId}: +${formatLedgerQty(qty)} unit(s) at ${formatYen(unitCostJpy)}`,
+      val: val || receivedAt,
+    });
   });
   r.addCase(reconstruct_stock_order_late_scan_receipt, (state, action) => {
     const { orderId, itemKey, note } = action.payload;
@@ -5840,6 +5927,7 @@ export const inventory = createReducer(initialState, (r) => {
     const updates = action.payload.items;
     const timestamp = (action as any).timestamp;
     const zeroedStockOrderAllocations: ZeroedStockOrderAllocationInput[] = [];
+    const affectedStockOrderIds = new Set<string>();
 
     updates.forEach((update) => {
       applyInventoryUpdate(
@@ -5857,8 +5945,14 @@ export const inventory = createReducer(initialState, (r) => {
           stockOrder: update.stockOrder,
         });
       }
+      if (update.stockOrder?.orderId) {
+        affectedStockOrderIds.add(update.stockOrder.orderId);
+      }
     });
 
     applyZeroedStockOrderAllocations(state, zeroedStockOrderAllocations);
+    for (const orderId of affectedStockOrderIds) {
+      refreshStockOrderCostIssues(state, orderId);
+    }
   });
 });

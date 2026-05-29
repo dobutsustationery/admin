@@ -1054,7 +1054,10 @@ export function computeStockOrderCostCommit(args: {
         incomingWeight != null &&
         incomingWeight > 0 &&
         Math.abs(existingWeight - incomingWeight) > weightToleranceG;
-      const kinds: StockOrderMatchKind[] = ["match"];
+      const hasNoLotInOrder = !costHit;
+      const kinds: StockOrderMatchKind[] = hasNoLotInOrder
+        ? ["unmatched"]
+        : ["match"];
       if (isCostTarget && !costIsOverride) kinds.push("fix cost");
       if (isCostTarget && costIsOverride) kinds.push("override cost");
       if (canFixCountryOfOrigin) kinds.push("fix coo");
@@ -1074,15 +1077,17 @@ export function computeStockOrderCostCommit(args: {
           weight: hit.item.weight,
           subtype: hit.item.subtype,
         },
-        status: isCostTarget
-          ? costWillApply
-            ? costIsOverride
-              ? "Override cost"
-              : "Fix cost"
-            : "Matched, existing cost"
-          : "Metadata match",
+        status: hasNoLotInOrder
+          ? "No lot in this order"
+          : isCostTarget
+            ? costWillApply
+              ? costIsOverride
+                ? "Override cost"
+                : "Fix cost"
+              : "Matched, existing cost"
+            : "Metadata match",
         kinds,
-        isUnmatched: false,
+        isUnmatched: hasNoLotInOrder,
         isOverride: isCostTarget && costIsOverride,
         costWillApply: isCostTarget && costWillApply,
         incomingCountryOfOrigin: incomingCoo,

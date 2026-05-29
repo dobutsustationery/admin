@@ -5,7 +5,15 @@
   import { user } from "$lib/user-store";
   import { firestore } from "$lib/firebase";
   import { broadcast } from "$lib/redux-firestore";
-  import { fix_stock_order, type StockOrderMeta } from "$lib/inventory";
+  import {
+    bulk_import_items,
+    create_stock_order_receipt,
+    fix_stock_order,
+    type Item,
+    type StockOrderMeta,
+  } from "$lib/inventory";
+  import { BGN_PER_EUR } from "$lib/cost-engine";
+  import { makeInventoryItemKey } from "$lib/sku";
   import { getAllCachedActions } from "$lib/action-cache";
   import { rootReducer } from "$lib/root-reducer";
   import { toTimestampMs } from "$lib/timestamped-action";
@@ -68,6 +76,21 @@
   let ignoreUnmatchedRows = false;
   let fixCountryOfOrigin = false;
   let fixWeights = false;
+  let pendingReceiptKeys = new Set<string>();
+  let createInventoryDraft: {
+    row: StockOrderCostMatchRow;
+    jan: string;
+    subtype: string;
+    description: string;
+    hsCode: string;
+    qty: string;
+    pieces: string;
+    price: string;
+    cost: string;
+    weight: string;
+    countryOfOrigin: string;
+    image: string;
+  } | null = null;
   const weightToleranceOptions = [0, 0.1, 1, 5, 10];
   let weightToleranceG = 0;
   let resolutionFilter = "all";
@@ -189,7 +212,9 @@
       })
     : null;
   $: matchRows = fixPreview?.matchRows ?? [];
-  $: hasUnmatchedRows = matchRows.some((r) => r.isUnmatched);
+  $: hasUnmatchedRows =
+    matchRows.some((r) => r.isUnmatched) ||
+    (fixPreview?.unmatchedJans.length ?? 0) > 0;
   $: hasValueDiscrepancy =
     fixPreview?.reconciliation?.discrepancy != null &&
     fixPreview.reconciliation.discrepancy !== 0;
@@ -225,6 +250,191 @@
     }
     broadcast(firestore, $user.uid, action);
     return true;
+  }
+
+  async function broadcastActionAsync(action: any): Promise<boolean> {
+    if (!$user?.uid) {
+      statusMessage = "Sign in before saving changes.";
+      return false;
+    }
+    try {
+      await broadcast(firestore, $user.uid, action);
+      return true;
+    } catch (error) {
+      statusMessage =
+        error instanceof Error
+          ? `Failed to save action: ${error.message}`
+          : "Failed to save action.";
+      return false;
+    }
+  }
+
+  function receiptPendingKey(row: StockOrderCostMatchRow): string {
+    return `${current?.orderId || ""}:${row.key || ""}:${row.rowIndex}:${row.jan}`;
+  }
+
+  function stockOrderUnitCostEur(unitCostJpy: number): number {
+    const totalOrderEur =
+      proposedMeta.paidAmount != null && proposedMeta.paidCurrency
+        ? proposedMeta.paidCurrency === "BGN"
+          ? proposedMeta.paidAmount / BGN_PER_EUR
+          : proposedMeta.paidAmount
+        : current?.totalOrderEur;
+    const valueOfOrder =
+      proposedMeta.valueOfOrderJpy ?? current?.valueOfOrderJpy;
+    return totalOrderEur && valueOfOrder && valueOfOrder > 0
+      ? unitCostJpy * (totalOrderEur / valueOfOrder)
+      : 0;
+  }
+
+  function stockOrderReceivedAt(): number {
+    return (
+      proposedMeta.receivedAt ||
+      current?.receivedAt ||
+      Date.parse(
+        `${dateStr || new Date().toISOString().slice(0, 10)}T00:00:00Z`,
+      )
+    );
+  }
+
+  function openCreateInventoryDialog(row: StockOrderCostMatchRow): void {
+    createInventoryDraft = {
+      row,
+      jan: row.jan,
+      subtype: "",
+      description: "",
+      hsCode: "39199080",
+      qty: String(row.qty || ""),
+      pieces: "1",
+      price: "",
+      cost: String(row.unitCostJpy || ""),
+      weight: row.incomingWeight != null ? String(row.incomingWeight) : "",
+      countryOfOrigin: row.incomingCountryOfOrigin || "",
+      image: "",
+    };
+  }
+
+  function closeCreateInventoryDialog(): void {
+    createInventoryDraft = null;
+  }
+
+  async function createStockOrderReceipt(
+    row: StockOrderCostMatchRow,
+  ): Promise<void> {
+    if (!current || !row.key) return;
+    const pendingKey = receiptPendingKey(row);
+    if (pendingReceiptKeys.has(pendingKey)) return;
+    const existing = $store.inventory.idToItem[row.key];
+    if (!existing) {
+      statusMessage = `${row.key} no longer exists.`;
+      return;
+    }
+    const qty = Number(row.qty);
+    const cost = Number(row.unitCostJpy);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      statusMessage = "Cannot create a receipt without a positive quantity.";
+      return;
+    }
+
+    const action = create_stock_order_receipt({
+      orderId: current.orderId,
+      itemKey: row.key,
+      qty,
+      unitCostJpy: Number.isFinite(cost) && cost > 0 ? cost : 0,
+      unitCostEur:
+        Number.isFinite(cost) && cost > 0 ? stockOrderUnitCostEur(cost) : 0,
+      receivedAt: stockOrderReceivedAt(),
+      countryOfOrigin: row.incomingCountryOfOrigin,
+      weight: row.incomingWeight,
+    });
+    const now = Date.now();
+    pendingReceiptKeys = new Set([...pendingReceiptKeys, pendingKey]);
+    store.dispatch({
+      ...action,
+      timestamp: {
+        seconds: Math.floor(now / 1000),
+        nanoseconds: (now % 1000) * 1_000_000,
+      },
+    } as any);
+    statusMessage = `Created stock-order receipt for ${row.key}.`;
+
+    const saved = await broadcastActionAsync(action);
+    if (!saved) {
+      statusMessage =
+        "Failed to persist receipt action. Refresh cached state before relying on this local preview.";
+      const nextPending = new Set(pendingReceiptKeys);
+      nextPending.delete(pendingKey);
+      pendingReceiptKeys = nextPending;
+    }
+  }
+
+  function saveCreatedInventoryItem(): void {
+    if (!current || !createInventoryDraft) return;
+    const draft = createInventoryDraft;
+    const jan = draft.jan.trim();
+    const subtype = draft.subtype.trim();
+    const id = makeInventoryItemKey(jan, subtype);
+    const qty = Number(draft.qty);
+    const cost = Number(draft.cost);
+    const pieces = Number(draft.pieces);
+    const price = Number(draft.price);
+    const weight = Number(draft.weight);
+    const receivedAt = stockOrderReceivedAt();
+
+    if (!jan || !Number.isFinite(qty) || qty <= 0) {
+      statusMessage = "Enter a positive quantity before creating inventory.";
+      return;
+    }
+    if (!draft.description.trim()) {
+      statusMessage = "Enter a description before creating inventory.";
+      return;
+    }
+    if ($store.inventory.idToItem[id]) {
+      statusMessage = `${id} already exists. Choose a subtype that creates a new inventory key.`;
+      return;
+    }
+
+    const item: Partial<Item> = {
+      janCode: jan,
+      subtype,
+      description: draft.description.trim(),
+      hsCode: draft.hsCode.trim(),
+      image: draft.image.trim(),
+      qty,
+      pieces: Number.isFinite(pieces) ? pieces : 0,
+      shipped: 0,
+      price: Number.isFinite(price) && price > 0 ? price : undefined,
+      cost: Number.isFinite(cost) && cost > 0 ? cost : undefined,
+      weight: Number.isFinite(weight) && weight > 0 ? weight : undefined,
+      countryOfOrigin: draft.countryOfOrigin.trim() || undefined,
+    };
+
+    if (
+      broadcastAction(
+        bulk_import_items({
+          items: [
+            {
+              type: "new",
+              id,
+              item: item as Item,
+              stockOrder: {
+                orderId: current.orderId,
+                unitCostJpy: Number.isFinite(cost) && cost > 0 ? cost : 0,
+                unitCostEur:
+                  Number.isFinite(cost) && cost > 0
+                    ? stockOrderUnitCostEur(cost)
+                    : 0,
+                receivedAt,
+                orderedQty: qty,
+              },
+            },
+          ],
+        }),
+      )
+    ) {
+      statusMessage = `Created inventory item ${id} for unmatched order row ${jan}.`;
+      createInventoryDraft = null;
+    }
   }
 
   function commitFix() {
@@ -1089,6 +1299,31 @@
                       {#if row.countryOfOriginMismatch || row.weightMismatch}
                         <span class="status-pill warn">Warning</span>
                       {/if}
+                      {#if row.isUnmatched}
+                        {#if row.key}
+                          {@const pendingReceipt = pendingReceiptKeys.has(
+                            receiptPendingKey(row),
+                          )}
+                          <button
+                            type="button"
+                            class="inline-action"
+                            on:click={() => createStockOrderReceipt(row)}
+                            disabled={pendingReceipt}
+                          >
+                            {pendingReceipt
+                              ? "Receipt saved"
+                              : "Create receipt"}
+                          </button>
+                        {:else}
+                          <button
+                            type="button"
+                            class="inline-action"
+                            on:click={() => openCreateInventoryDialog(row)}
+                          >
+                            Create inventory item
+                          </button>
+                        {/if}
+                      {/if}
                     </td>
                     <td>{row.qty}</td>
                     <td>{fmt(row.unitCostJpy, 0)}</td>
@@ -1198,6 +1433,11 @@
               <input type="checkbox" bind:checked={ignoreUnmatchedRows} />
               Ignore unmatched rows and allow submit
             </label>
+            <p class="hint">
+              Ignored rows will remain visible later as cost exceptions, where
+              they can still be created as received inventory items or marked
+              not accepted/received.
+            </p>
           {/if}
         {/if}
       {/if}
@@ -1246,6 +1486,74 @@
       {/if}
     </section>
   {/if}
+{/if}
+
+{#if createInventoryDraft}
+  <div class="modal-backdrop" role="presentation">
+    <section class="modal" role="dialog" aria-modal="true">
+      <h2>Create Inventory Item</h2>
+      <p class="hint">
+        This creates a received stock-order lot for the unmatched invoice row.
+        The JAN is taken from the order row.
+      </p>
+      <label>
+        JAN Code
+        <input readonly bind:value={createInventoryDraft.jan} />
+      </label>
+      <label>
+        Subtype
+        <input bind:value={createInventoryDraft.subtype} />
+      </label>
+      <label>
+        Description
+        <textarea bind:value={createInventoryDraft.description} rows="3" />
+      </label>
+      <label>
+        HS Code
+        <input bind:value={createInventoryDraft.hsCode} />
+      </label>
+      <label>
+        Quantity received
+        <input bind:value={createInventoryDraft.qty} />
+      </label>
+      <label>
+        Pieces
+        <input bind:value={createInventoryDraft.pieces} />
+      </label>
+      <label>
+        Cost JPY
+        <input bind:value={createInventoryDraft.cost} />
+      </label>
+      <label>
+        Price
+        <input bind:value={createInventoryDraft.price} />
+      </label>
+      <label>
+        Weight (g)
+        <input bind:value={createInventoryDraft.weight} />
+      </label>
+      <label>
+        Country of Origin
+        <input bind:value={createInventoryDraft.countryOfOrigin} />
+      </label>
+      <label>
+        Image URL
+        <input bind:value={createInventoryDraft.image} />
+      </label>
+      <div class="modal-actions">
+        <button type="button" on:click={saveCreatedInventoryItem}>
+          Create received item
+        </button>
+        <button
+          type="button"
+          class="secondary"
+          on:click={closeCreateInventoryDialog}
+        >
+          Cancel
+        </button>
+      </div>
+    </section>
+  </div>
 {/if}
 
 <style>
@@ -1441,6 +1749,12 @@
     background: #fff3cd;
     color: #664d03;
   }
+  .inline-action {
+    display: block;
+    margin: 0.25rem 0 0;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.78rem;
+  }
   tr.error-row td {
     background: #f8d7da;
   }
@@ -1497,5 +1811,44 @@
   }
   a {
     color: #0066cc;
+  }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    overflow: auto;
+    padding: 3rem 1rem;
+    background: rgba(33, 37, 41, 0.45);
+  }
+  .modal {
+    width: min(34rem, 100%);
+    margin: 0;
+    background: #fff;
+    box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.24);
+  }
+  .modal label {
+    display: grid;
+    grid-template-columns: 9rem 1fr;
+    gap: 0.75rem;
+    align-items: center;
+  }
+  .modal label input,
+  .modal label textarea {
+    margin-left: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+  }
+  .modal-actions .secondary {
+    background: #fff;
+    border: 1px solid #adb5bd;
   }
 </style>
