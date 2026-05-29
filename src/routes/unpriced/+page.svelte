@@ -749,6 +749,23 @@
     return `/cost-ledger-editor?search=${encodeURIComponent(row.jan)}`;
   }
 
+  function subtypeReplacementUrl(jan: string, itemKey?: string): string {
+    const params = new URLSearchParams({ jan });
+    if (itemKey) params.set("itemKey", itemKey);
+    return `/subtype-exceptions?${params.toString()}`;
+  }
+
+  function hasSubtypeReplacementOption(jan: string, itemKey?: string): boolean {
+    if (!jan || !itemKey) return false;
+    const subtypeRows = Object.entries($store.inventory.idToItem || {}).filter(
+      ([key, item]: [string, any]) =>
+        key !== jan &&
+        (item.janCode || "").trim() === jan.trim() &&
+        (item.subtype || "").trim(),
+    );
+    return subtypeRows.length >= 2;
+  }
+
   function remediationDraft(row: StockOrderMatchIssueRow) {
     const key = remediationKey(row);
     const stored = remediationDrafts[key];
@@ -1316,6 +1333,16 @@
                 {#if row.subtype}
                   <span class="hint">{row.subtype}</span>
                 {/if}
+                {#if hasSubtypeReplacementOption(row.jan, row.key)}
+                  <div>
+                    <a
+                      class="remediation-link"
+                      href={subtypeReplacementUrl(row.jan, row.key)}
+                    >
+                      Resolve subtype replacement
+                    </a>
+                  </div>
+                {/if}
               </td>
               <td>
                 <div>{uniqueDateLabels(row.issueDates)}</div>
@@ -1481,8 +1508,16 @@
                       </span>
                     </td>
                     <td>
-                      {#if canReconstruct(row) || canReconstructLateScan(row) || canMarkNotReceived(row) || canOpenCostLedger(row)}
+                      {#if canReconstruct(row) || canReconstructLateScan(row) || canMarkNotReceived(row) || canOpenCostLedger(row) || hasSubtypeReplacementOption(row.jan, row.itemKey)}
                         <div class="remediation-form">
+                          {#if hasSubtypeReplacementOption(row.jan, row.itemKey)}
+                            <a
+                              class="copy-button remediation-link"
+                              href={subtypeReplacementUrl(row.jan, row.itemKey)}
+                            >
+                              Resolve subtype replacement
+                            </a>
+                          {/if}
                           {#if canOpenCostLedger(row)}
                             <a
                               class="copy-button remediation-link"

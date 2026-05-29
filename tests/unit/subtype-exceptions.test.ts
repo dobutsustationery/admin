@@ -4,10 +4,12 @@ import {
   archive_inventory,
   new_order,
   package_item,
+  replace_subtype,
   resolve_subtype_exception,
   update_item,
   type Item,
 } from "$lib/inventory";
+import { effectiveLedgerEntries, walkLedger } from "$lib/cost-engine";
 import {
   previewSplitBareToSubtypes,
   selectSubtypeExceptions,
@@ -276,5 +278,87 @@ describe("subtype exception selection and remediation", () => {
     expect(state.inventory.orderIdToOrder["order-1"].items).toEqual([
       { itemKey: jan, qty: 2 },
     ]);
+  });
+
+  it("replaces an inactive subtype with a recounted subtype and carries the source cost basis", () => {
+    const jan = "4542804104370";
+    const brownKey = `${jan}Brown`;
+    const beigeKey = `${jan}Beige`;
+    let state: any = reduce(undefined, { type: "@@INIT" });
+
+    state = reduce(
+      state,
+      update_item({ id: brownKey, item: item(jan, "Brown", 5) }),
+      100,
+    );
+    state = {
+      ...state,
+      inventory: {
+        ...state.inventory,
+        costLedger: {
+          ...state.inventory.costLedger,
+          [brownKey]: state.inventory.costLedger[brownKey].map((entry: any) =>
+            entry.kind === "receipt"
+              ? { ...entry, unitCostJpy: 65, unitCostEur: 0.4 }
+              : entry,
+          ),
+        },
+      },
+    };
+    state = reduce(
+      state,
+      archive_inventory({ archiveName: "Japan Festival" }),
+      101,
+    );
+    state = reduce(
+      state,
+      update_item({ id: beigeKey, item: item(jan, "Beige", 5) }),
+      102,
+    );
+
+    state = reduce(
+      state,
+      replace_subtype({
+        sourceKey: brownKey as any,
+        targetKey: beigeKey as any,
+        reason: "Beige replaces Brown",
+      }),
+      103,
+    );
+
+    expect(state.inventory.idToItem[brownKey]).toBeUndefined();
+    expect(state.inventory.idToItem[beigeKey]).toMatchObject({
+      qty: 5,
+      shipped: 0,
+    });
+    expect(state.inventory.idToHistory[beigeKey]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          desc: expect.stringContaining("Subtype replacement resolved"),
+        }),
+      ]),
+    );
+
+    const ledger = state.inventory.costLedger[beigeKey];
+    expect(state.inventory.costLedger[brownKey]).toBeUndefined();
+    expect(
+      ledger.some(
+        (entry: any) =>
+          entry.kind === "sale" && entry.isArchive && entry.ignored,
+      ),
+    ).toBe(true);
+    expect(
+      ledger.some(
+        (entry: any) =>
+          entry.kind === "receipt" &&
+          entry.unitCostJpy === 0 &&
+          entry.ignored &&
+          String(entry.auditComment || "").includes("replacement/recount"),
+      ),
+    ).toBe(true);
+
+    const walked = walkLedger(effectiveLedgerEntries(ledger));
+    expect(walked.onHand).toBe(5);
+    expect(walked.avgJpy).toBe(65);
   });
 });

@@ -76,6 +76,15 @@ export type MergePreview = {
   movedOrderQty: number;
 };
 
+export type ReplaceSubtypePreview = {
+  blocked: boolean;
+  warnings: string[];
+  source?: SubtypeExceptionItem;
+  target?: SubtypeExceptionItem;
+  sourceArchiveSaleQty: number;
+  targetUnpricedReceiptQty: number;
+};
+
 function itemRow(
   inventory: InventoryState,
   key: string,
@@ -92,6 +101,68 @@ function itemRow(
     history: [...(inventory.idToHistory[key] || [])].sort(
       (a, b) => (a.val || 0) - (b.val || 0),
     ),
+  };
+}
+
+export function previewReplaceSubtype(
+  inventory: InventoryState,
+  sourceKey: string,
+  targetKey: string,
+): ReplaceSubtypePreview {
+  const warnings: string[] = [];
+  const sourceItem = inventory.idToItem?.[sourceKey];
+  const targetItem = inventory.idToItem?.[targetKey];
+  const source = sourceItem
+    ? itemRow(inventory, sourceKey, sourceItem)
+    : undefined;
+  const target = targetItem
+    ? itemRow(inventory, targetKey, targetItem)
+    : undefined;
+
+  if (!source || !target) {
+    warnings.push("Choose an existing source and replacement subtype.");
+  } else {
+    if (sourceKey === targetKey) {
+      warnings.push("Source and replacement subtype must be different.");
+    }
+    if (
+      (source.item.janCode || "").trim() !== (target.item.janCode || "").trim()
+    ) {
+      warnings.push("Source and replacement subtype must share a JAN.");
+    }
+    if (
+      Math.abs(source.qty) > 0.000001 ||
+      Math.abs(source.shipped) > 0.000001
+    ) {
+      warnings.push(
+        `Source subtype still has qty ${source.qty} and shipped ${source.shipped}; replacement is only allowed after the source row is inactive.`,
+      );
+    }
+  }
+
+  const sourceArchiveSaleQty = (inventory.costLedger?.[sourceKey] || [])
+    .filter(
+      (entry) => entry.kind === "sale" && entry.isArchive && !entry.ignored,
+    )
+    .reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+  const targetUnpricedReceiptQty = (inventory.costLedger?.[targetKey] || [])
+    .filter(
+      (entry) =>
+        entry.kind === "receipt" &&
+        !entry.ignored &&
+        !(entry.unitCostJpy > 0) &&
+        !entry.costOrderId &&
+        !String(entry.source || "").startsWith("stockOrder:"),
+    )
+    .reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+
+  return {
+    blocked: warnings.length > 0,
+    warnings,
+    source,
+    target,
+    sourceArchiveSaleQty,
+    targetUnpricedReceiptQty,
   };
 }
 
@@ -186,6 +257,23 @@ export function selectSubtypeExceptions(
       rank[a.status] - rank[b.status] || a.janCode.localeCompare(b.janCode)
     );
   });
+}
+
+export function selectSubtypeRowsForJan(
+  inventory: InventoryState,
+  janCode: string,
+): SubtypeExceptionItem[] {
+  const normalizedJan = janCode.trim();
+  if (!normalizedJan) return [];
+  return Object.entries(inventory.idToItem || {})
+    .filter(([, item]) => (item.janCode || "").trim() === normalizedJan)
+    .map(([key, item]) => itemRow(inventory, key, item))
+    .sort((a, b) => {
+      const bareKey = makeInventoryItemKey(normalizedJan, "");
+      const aBare = a.key === bareKey ? 0 : 1;
+      const bBare = b.key === bareKey ? 0 : 1;
+      return aBare - bBare || a.key.localeCompare(b.key);
+    });
 }
 
 export function previewSplitBareToSubtypes(

@@ -129,8 +129,11 @@ const getIncomingIdObservations = (
     case "quantify_item":
     case "retype_item":
     case "rename_subtype":
+    case "replace_subtype":
     case "fix_jancode":
       maybePush("payload.itemKey", p.itemKey);
+      maybePush("payload.sourceKey", p.sourceKey);
+      maybePush("payload.targetKey", p.targetKey);
       break;
     case "split_inventory_item":
       maybePush("payload.sourceId", p.sourceId);
@@ -172,33 +175,45 @@ const applyKeyAuditInstrumentation = (
   // 2) Track would-be ghost IDs when subtype rename re-keys old -> new and old key disappears
   const maybeItemRekey =
     action?.type === "rename_subtype" ||
+    action?.type === "replace_subtype" ||
     action?.type === "fix_jancode" ||
     (action?.type === "update_field" && action?.payload?.field === "subtype");
   if (maybeItemRekey) {
     const oldId =
       action?.type === "rename_subtype" || action?.type === "fix_jancode"
         ? action?.payload?.itemKey
-        : action?.payload?.id;
+        : action?.type === "replace_subtype"
+          ? action?.payload?.sourceKey
+          : action?.payload?.id;
     const oldItem = oldId ? priorInventory[oldId] : undefined;
     if (oldItem) {
       const newSubtype =
         action?.type === "rename_subtype"
           ? (action?.payload?.subtype || "").trim()
-          : action?.type === "fix_jancode"
-            ? (
-                action?.payload?.subtype ??
-                action?.payload?.newSubtype ??
-                oldItem.subtype
-              )
-                .toString()
-                .trim()
-            : (action?.payload?.to || "").trim();
+          : action?.type === "replace_subtype"
+            ? (priorInventory[action?.payload?.targetKey]?.subtype || "").trim()
+            : action?.type === "fix_jancode"
+              ? (
+                  action?.payload?.subtype ??
+                  action?.payload?.newSubtype ??
+                  oldItem.subtype
+                )
+                  .toString()
+                  .trim()
+              : (action?.payload?.to || "").trim();
       const newJanCode =
         action?.type === "fix_jancode"
           ? String(action?.payload?.newJanCode || oldItem.janCode)
               .trim()
               .replace(/\s+/g, "")
-          : oldItem.janCode;
+          : action?.type === "replace_subtype"
+            ? String(
+                priorInventory[action?.payload?.targetKey]?.janCode ||
+                  oldItem.janCode,
+              )
+                .trim()
+                .replace(/\s+/g, "")
+            : oldItem.janCode;
       const canonicalId = makeInventoryItemKey(newJanCode, newSubtype);
       const oldMissingAfter = oldId && !nextInventory[oldId];
       const newExistsAfter = !!nextInventory[canonicalId];
@@ -713,6 +728,7 @@ export const rootReducer = (
   // Synchronize Listings idToHandle and Photo Groups when item keys change
   const isRetype = action.type === "retype_item";
   const isRename = action.type === "rename_subtype";
+  const isReplaceSubtype = action.type === "replace_subtype";
   const isFixJanCode = action.type === "fix_jancode";
   const isSubtypeUpdate =
     action.type === "update_field" && action.payload.field === "subtype";
@@ -722,6 +738,7 @@ export const rootReducer = (
   if (
     isRetype ||
     isRename ||
+    isReplaceSubtype ||
     isFixJanCode ||
     isSubtypeUpdate ||
     isVariantValueUpdate
@@ -754,6 +771,18 @@ export const rootReducer = (
         newBaseJan = oldBaseJan;
         oldSubtype = oldItem.subtype;
         newItemId = makeInventoryItemKey(newBaseJan, newSubtype);
+      }
+    } else if (isReplaceSubtype) {
+      const { sourceKey, targetKey } = action.payload;
+      oldItemId = sourceKey;
+      newItemId = targetKey;
+      const oldItem = state.inventory.idToItem[oldItemId];
+      const newItem = state.inventory.idToItem[newItemId];
+      if (oldItem && newItem) {
+        oldBaseJan = oldItem.janCode;
+        oldSubtype = oldItem.subtype;
+        newBaseJan = newItem.janCode;
+        newSubtype = newItem.subtype;
       }
     } else if (isSubtypeUpdate) {
       const { id: itemKey, to: subtype } = action.payload;

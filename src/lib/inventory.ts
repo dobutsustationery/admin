@@ -267,6 +267,11 @@ export const rename_subtype = createAction<{
   itemKey: InventoryItemKey;
   subtype: string;
 }>("rename_subtype");
+export const replace_subtype = createAction<{
+  sourceKey: InventoryItemKey;
+  targetKey: InventoryItemKey;
+  reason?: string;
+}>("replace_subtype");
 export const fix_jancode = createAction<{
   itemKey: InventoryItemKey;
   newJanCode: string;
@@ -1194,6 +1199,84 @@ function moveHistoryForSubtypeResolution(
     ...state.idToHistory[newKey],
     ...oldHistory.map((h) => ({ ...h, desc: `[${oldKey}] ${h.desc}` })),
   ].sort((a, b) => (a.val || 0) - (b.val || 0));
+}
+
+function replacementAuditSuffix(reason?: string): string {
+  const trimmed = reason?.trim();
+  return trimmed ? ` ${trimmed}` : "";
+}
+
+function replacementAuditComment(
+  sourceKey: string,
+  targetKey: string,
+  reason?: string,
+): string {
+  return `Subtype replacement ${sourceKey} -> ${targetKey}.${replacementAuditSuffix(reason)}`;
+}
+
+function moveReplacementCostLedger(
+  state: InventoryState,
+  sourceKey: string,
+  targetKey: string,
+  reason: string | undefined,
+) {
+  if (!state.costLedger) state.costLedger = {};
+  const targetLedger = state.costLedger[targetKey] || [];
+  const sourceLedger = state.costLedger[sourceKey] || [];
+  const comment = replacementAuditComment(sourceKey, targetKey, reason);
+
+  const auditedTargetLedger = targetLedger.map((entry) => {
+    if (
+      entry.kind === "receipt" &&
+      !entry.ignored &&
+      !(entry.unitCostJpy > 0) &&
+      !entry.costOrderId &&
+      !String(entry.source || "").startsWith("stockOrder:")
+    ) {
+      return {
+        ...entry,
+        ignored: true,
+        ignoreReason:
+          entry.ignoreReason ||
+          `replacement recount receipt ignored; ${sourceKey} carries the original cost basis`,
+        auditComment: `${comment} Ignored zero-cost replacement/recount receipt; the source subtype ledger carries the physical stock.`,
+        auditSeverity: "warning" as const,
+      };
+    }
+    return { ...entry };
+  });
+
+  const auditedSourceLedger = sourceLedger.map((entry) => {
+    if (entry.kind === "sale" && entry.isArchive && !entry.ignored) {
+      return {
+        ...entry,
+        ignored: true,
+        ignoreReason:
+          entry.ignoreReason ||
+          `archive sale ignored because ${sourceKey} was replaced by ${targetKey}`,
+        auditComment: `${comment} Ignored archive sale; the later target subtype scan was a replacement/recount of this stock, not a new receipt.`,
+        auditSeverity: "warning" as const,
+      };
+    }
+    return {
+      ...entry,
+      auditComment:
+        entry.auditComment ||
+        (entry.kind === "receipt"
+          ? `${comment} Moved receipt from replaced subtype.`
+          : undefined),
+      ...(entry.kind === "receipt" && !entry.auditSeverity
+        ? { auditSeverity: "warning" as const }
+        : {}),
+    };
+  });
+
+  state.costLedger[targetKey] = reseqLedger([
+    ...auditedTargetLedger,
+    ...auditedSourceLedger,
+  ]);
+  delete state.costLedger[sourceKey];
+  rederiveCostFromLedger(state, targetKey);
 }
 
 const JAPAN_FESTIVAL_FRACTIONAL_SALES_CUTOFF_MS = Date.UTC(2025, 4, 2);
@@ -4895,6 +4978,69 @@ export const inventory = createReducer(initialState, (r) => {
 
     delete state.idToItem[oldKey];
     delete state.idToHistory[oldKey];
+  });
+  r.addCase(replace_subtype, (state, action) => {
+    const sourceKey = canonicalizeInventoryItemKey(action.payload.sourceKey);
+    const targetKey = canonicalizeInventoryItemKey(action.payload.targetKey);
+    const val = getTimestampMs((action as any).timestamp);
+    const source = state.idToItem[sourceKey];
+    const target = state.idToItem[targetKey];
+    const reason = action.payload.reason?.trim();
+
+    if (!source || !target || sourceKey === targetKey) {
+      const historyKey = targetKey || sourceKey;
+      appendSubtypeResolutionHistory(
+        state,
+        historyKey,
+        `Subtype replacement blocked: source ${sourceKey} and target ${targetKey} must both exist and differ.`,
+        val,
+      );
+      return;
+    }
+
+    if ((source.janCode || "").trim() !== (target.janCode || "").trim()) {
+      appendSubtypeResolutionHistory(
+        state,
+        targetKey,
+        `Subtype replacement blocked: ${sourceKey} and ${targetKey} do not share a JAN.`,
+        val,
+      );
+      return;
+    }
+
+    const sourceQty = Number(source.qty) || 0;
+    const sourceShipped = Number(source.shipped) || 0;
+    if (Math.abs(sourceQty) > 0.000001 || Math.abs(sourceShipped) > 0.000001) {
+      appendSubtypeResolutionHistory(
+        state,
+        targetKey,
+        `Subtype replacement blocked: source ${sourceKey} still has qty ${sourceQty} and shipped ${sourceShipped}.`,
+        val,
+      );
+      return;
+    }
+
+    rewriteOrderItemKeyReferences(
+      state,
+      sourceKey as InventoryItemKey,
+      targetKey as InventoryItemKey,
+    );
+    renameInventoryEntityKey(state, sourceKey, targetKey, val, action.type);
+    moveHistoryForSubtypeResolution(state, sourceKey, targetKey);
+    moveReplacementCostLedger(state, sourceKey, targetKey, reason);
+
+    const sourceSubtype = source.subtype || sourceKey;
+    const targetSubtype = target.subtype || targetKey;
+    appendSubtypeResolutionHistory(
+      state,
+      targetKey,
+      `Subtype replacement resolved: ${sourceSubtype} was replaced by ${targetSubtype}${reason ? ` (${reason})` : ""}. Source history and cost ledger moved to ${targetKey}; replacement recount receipts were audited.`,
+      val,
+    );
+
+    closeInventoryEntityKey(state, sourceKey, val, action.type);
+    delete state.idToItem[sourceKey];
+    delete state.idToHistory[sourceKey];
   });
   r.addCase(resolve_subtype_exception, (state, action) => {
     const janCode = action.payload.janCode.trim();

@@ -2,14 +2,16 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { firestore } from "$lib/firebase";
-  import { resolve_subtype_exception } from "$lib/inventory";
+  import { replace_subtype, resolve_subtype_exception } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
   import { store } from "$lib/store";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import {
     previewMergeSubtypesToBare,
+    previewReplaceSubtype,
     previewSplitBareToSubtypes,
     selectSubtypeExceptions,
+    selectSubtypeRowsForJan,
     type SubtypeException,
   } from "$lib/subtype-exceptions";
   import { user } from "$lib/user-store";
@@ -20,14 +22,29 @@
   let lastJan = "";
   let allocations: AllocationDraft[] = [];
   let orderMoveTargets: Record<string, string> = {};
+  let replaceSourceKey = "";
+  let replaceTargetKey = "";
+  let replaceReason = "";
 
   $: exceptions = selectSubtypeExceptions($store.inventory);
   $: selectedJan = $page.url.searchParams.get("jan") || "";
   $: current = selectedJan
     ? exceptions.find((exception) => exception.janCode === selectedJan)
     : undefined;
+  $: selectedJanRows = selectedJan
+    ? selectSubtypeRowsForJan($store.inventory, selectedJan)
+    : [];
+  $: currentRows = current
+    ? [current.bare, ...current.subtyped]
+    : selectedJanRows;
+  $: subtypeRows = currentRows.filter(
+    (row) => row.key !== makeBareKey(selectedJan || current?.janCode || ""),
+  );
+  $: selectedItemKey = $page.url.searchParams.get("itemKey") || "";
   $: if (current && current.janCode !== lastJan) {
-    resetDraft(current);
+    resetDraft(current, selectedItemKey);
+  } else if (!current && selectedJan && selectedJan !== lastJan) {
+    resetReplacementDraft(selectedJanRows, selectedItemKey);
   }
   $: bareOrderLines = current
     ? current.orders.filter((line) => line.itemKey === current.bare.key)
@@ -52,6 +69,14 @@
     ? previewSplitBareToSubtypes(current, splitAllocations, splitOrderMoves)
     : null;
   $: mergePreview = current ? previewMergeSubtypesToBare(current) : null;
+  $: replacePreview =
+    replaceSourceKey && replaceTargetKey
+      ? previewReplaceSubtype(
+          $store.inventory,
+          replaceSourceKey,
+          replaceTargetKey,
+        )
+      : null;
   $: summary = {
     total: exceptions.length,
     active: exceptions.filter((e) => e.status === "active-conflict").length,
@@ -61,7 +86,7 @@
     residue: exceptions.filter((e) => e.status === "zero-residue").length,
   };
 
-  function resetDraft(exception: SubtypeException) {
+  function resetDraft(exception: SubtypeException, preferredTargetKey = "") {
     lastJan = exception.janCode;
     statusMessage = "";
     const subtypeNames = exception.subtyped.map(
@@ -78,6 +103,41 @@
         orderMoveTargets[orderLineKey(line.orderID, index)] =
           subtypeNames[0] || "";
       });
+    resetReplacementDraft(
+      [exception.bare, ...exception.subtyped],
+      preferredTargetKey,
+      false,
+    );
+  }
+
+  function makeBareKey(janCode: string): string {
+    return janCode.trim();
+  }
+
+  function resetReplacementDraft(
+    rows: { key: string; qty: number; shipped: number; onHand: number }[],
+    preferredTargetKey = "",
+    clearStatus = true,
+  ) {
+    lastJan = selectedJan;
+    if (clearStatus) statusMessage = "";
+    const candidates = rows.filter(
+      (row) => row.key !== makeBareKey(selectedJan),
+    );
+    const target =
+      candidates.find((row) => row.key === preferredTargetKey) ||
+      candidates.find((row) => row.onHand > 0) ||
+      candidates[0];
+    const source =
+      candidates.find(
+        (row) =>
+          row.key !== target?.key &&
+          Math.abs(row.qty) <= 0.000001 &&
+          Math.abs(row.shipped) <= 0.000001,
+      ) || candidates.find((row) => row.key !== target?.key);
+    replaceTargetKey = target?.key || "";
+    replaceSourceKey = source?.key || "";
+    replaceReason = "";
   }
 
   function orderLineKey(orderID: string, index: number): string {
@@ -151,6 +211,23 @@
       statusMessage = "Merge remediation committed.";
     }
   }
+
+  function commitReplaceSubtype() {
+    if (!replacePreview || replacePreview.blocked) return;
+    if (
+      broadcastAction(
+        replace_subtype({
+          sourceKey: replaceSourceKey as any,
+          targetKey: replaceTargetKey as any,
+          reason:
+            replaceReason.trim() ||
+            "Subtype exception screen replaced one subtype with another",
+        }),
+      )
+    ) {
+      statusMessage = "Subtype replacement committed.";
+    }
+  }
 </script>
 
 <svelte:head>
@@ -205,14 +282,19 @@
       </table>
     </section>
 
-    {#if current}
+    {#if selectedJan && currentRows.length > 0}
       <section class="detail-panel" aria-label="Subtype exception detail">
         <header class="detail-header">
           <div>
-            <h2>{current.janCode}</h2>
-            <p>{statusLabel(current.status)}</p>
+            <h2>{selectedJan}</h2>
+            <p>
+              {current ? statusLabel(current.status) : "Subtype replacement"}
+            </p>
           </div>
-          <a href={`/itemhistory?itemKey=${current.bare.key}`}>Item history</a>
+          {#if current}
+            <a href={`/itemhistory?itemKey=${current.bare.key}`}>Item history</a
+            >
+          {/if}
         </header>
 
         {#if statusMessage}
@@ -234,30 +316,33 @@
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>
-                  <div class="row-image">
-                    {#if current.bare.item.image}
-                      <ImageThumbnail
-                        src={current.bare.item.image}
-                        alt={current.bare.item.description || current.bare.key}
-                        width="64px"
-                        height="64px"
-                        fit="contain"
-                      />
-                    {:else}
-                      <span class="image-empty">No image</span>
-                    {/if}
-                  </div>
-                </td>
-                <td class="mono">{current.bare.key}</td>
-                <td>Bare</td>
-                <td>{current.bare.qty}</td>
-                <td>{current.bare.shipped}</td>
-                <td>{current.bare.onHand}</td>
-                <td>{current.bare.item.description}</td>
-              </tr>
-              {#each current.subtyped as row}
+              {#if current}
+                <tr>
+                  <td>
+                    <div class="row-image">
+                      {#if current.bare.item.image}
+                        <ImageThumbnail
+                          src={current.bare.item.image}
+                          alt={current.bare.item.description ||
+                            current.bare.key}
+                          width="64px"
+                          height="64px"
+                          fit="contain"
+                        />
+                      {:else}
+                        <span class="image-empty">No image</span>
+                      {/if}
+                    </div>
+                  </td>
+                  <td class="mono">{current.bare.key}</td>
+                  <td>Bare</td>
+                  <td>{current.bare.qty}</td>
+                  <td>{current.bare.shipped}</td>
+                  <td>{current.bare.onHand}</td>
+                  <td>{current.bare.item.description}</td>
+                </tr>
+              {/if}
+              {#each current ? current.subtyped : selectedJanRows as row}
                 <tr>
                   <td>
                     <div class="row-image">
@@ -289,7 +374,9 @@
         <section class="block">
           <h3>History</h3>
           <div class="history">
-            {#each [...current.bare.history.map( (entry) => ({ ...entry, key: current.bare.key }), ), ...current.subtyped.flatMap( (row) => row.history.map( (entry) => ({ ...entry, key: row.key }), ), )].sort((a, b) => (a.val || 0) - (b.val || 0)) as entry}
+            {#each currentRows
+              .flatMap( (row) => row.history.map( (entry) => ({ ...entry, key: row.key }), ), )
+              .sort((a, b) => (a.val || 0) - (b.val || 0)) as entry}
               <div class="history-row">
                 <span>{entry.date}</span>
                 <span class="mono">{entry.key}</span>
@@ -299,139 +386,208 @@
           </div>
         </section>
 
-        <section class="block">
-          <h3>Bare Order Lines</h3>
-          {#if bareOrderLines.length === 0}
-            <p>No order lines currently point at the bare JAN.</p>
-          {:else}
-            <table>
-              <thead>
-                <tr>
-                  <th>Order</th>
-                  <th>Date</th>
-                  <th>Qty</th>
-                  <th>Move to subtype</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each bareOrderLines as line, index}
-                  {@const key = orderLineKey(line.orderID, index)}
-                  <tr>
-                    <td class="mono">{line.orderID}</td>
-                    <td>{fmtDate(line.date)}</td>
-                    <td>{line.qty}</td>
-                    <td>
-                      <select
-                        value={orderMoveTargets[key] ||
-                          splitAllocations[0]?.subtype ||
-                          ""}
-                        on:change={(event) =>
-                          updateOrderTarget(key, event.currentTarget.value)}
-                      >
-                        {#each splitAllocations as allocation}
-                          <option value={allocation.subtype}>
-                            {allocation.subtype || "(blank)"}
-                          </option>
-                        {/each}
-                      </select>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-        </section>
-
-        <section class="decision-grid">
-          <div class="decision">
-            <h3>Split Bare Into Subtypes</h3>
-            <div class="allocations">
-              {#each allocations as allocation, index}
-                <div class="allocation">
-                  <input
-                    aria-label="Subtype"
-                    placeholder="Subtype"
-                    bind:value={allocation.subtype}
-                  />
-                  <input
-                    aria-label="Quantity"
-                    type="number"
-                    step="1"
-                    bind:value={allocation.qty}
-                  />
-                  <button
-                    type="button"
-                    on:click={() => removeAllocation(index)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              {/each}
-              <button type="button" on:click={addAllocation}>Add subtype</button
-              >
-            </div>
-
-            {#if splitPreview}
-              {#if splitPreview.warnings.length}
-                <div class="warnings">
-                  {#each splitPreview.warnings as warning}
-                    <div>{warning}</div>
-                  {/each}
-                </div>
-              {/if}
+        {#if current}
+          <section class="block">
+            <h3>Bare Order Lines</h3>
+            {#if bareOrderLines.length === 0}
+              <p>No order lines currently point at the bare JAN.</p>
+            {:else}
               <table>
                 <thead>
                   <tr>
-                    <th>Target</th>
-                    <th>Add qty</th>
-                    <th>Add shipped</th>
-                    <th>Final</th>
+                    <th>Order</th>
+                    <th>Date</th>
+                    <th>Qty</th>
+                    <th>Move to subtype</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {#each splitPreview.targets as target}
+                  {#each bareOrderLines as line, index}
+                    {@const key = orderLineKey(line.orderID, index)}
                     <tr>
-                      <td class="mono">{target.key}</td>
-                      <td>{target.addQty}</td>
-                      <td>{target.addShipped}</td>
-                      <td>{target.finalQty} / {target.finalShipped}</td>
+                      <td class="mono">{line.orderID}</td>
+                      <td>{fmtDate(line.date)}</td>
+                      <td>{line.qty}</td>
+                      <td>
+                        <select
+                          value={orderMoveTargets[key] ||
+                            splitAllocations[0]?.subtype ||
+                            ""}
+                          on:change={(event) =>
+                            updateOrderTarget(key, event.currentTarget.value)}
+                        >
+                          {#each splitAllocations as allocation}
+                            <option value={allocation.subtype}>
+                              {allocation.subtype || "(blank)"}
+                            </option>
+                          {/each}
+                        </select>
+                      </td>
                     </tr>
                   {/each}
                 </tbody>
               </table>
-              <button
-                class="primary"
-                type="button"
-                disabled={splitPreview.blocked}
-                on:click={commitSplit}
-              >
-                Commit split
-              </button>
             {/if}
-          </div>
+          </section>
+        {/if}
 
-          <div class="decision">
-            <h3>Merge Subtypes Back To Bare JAN</h3>
-            {#if mergePreview}
-              <p>
-                Final bare row: {mergePreview.finalQty} qty,
-                {mergePreview.finalShipped} shipped,
-                {mergePreview.finalOnHand} on hand.
-              </p>
-              <p>
-                Deletes {mergePreview.deletedKeys.length} subtype row(s) and moves
-                {mergePreview.movedOrderQty} ordered unit(s) to the bare JAN.
-              </p>
-              <ul>
-                {#each mergePreview.deletedKeys as key}
-                  <li class="mono">{key}</li>
+        <section class="decision-grid">
+          {#if current}
+            <div class="decision">
+              <h3>Split Bare Into Subtypes</h3>
+              <div class="allocations">
+                {#each allocations as allocation, index}
+                  <div class="allocation">
+                    <input
+                      aria-label="Subtype"
+                      placeholder="Subtype"
+                      bind:value={allocation.subtype}
+                    />
+                    <input
+                      aria-label="Quantity"
+                      type="number"
+                      step="1"
+                      bind:value={allocation.qty}
+                    />
+                    <button
+                      type="button"
+                      on:click={() => removeAllocation(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 {/each}
-              </ul>
-              <button class="secondary" type="button" on:click={commitMerge}>
-                Commit merge
-              </button>
-            {/if}
-          </div>
+                <button type="button" on:click={addAllocation}
+                  >Add subtype</button
+                >
+              </div>
+
+              {#if splitPreview}
+                {#if splitPreview.warnings.length}
+                  <div class="warnings">
+                    {#each splitPreview.warnings as warning}
+                      <div>{warning}</div>
+                    {/each}
+                  </div>
+                {/if}
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Target</th>
+                      <th>Add qty</th>
+                      <th>Add shipped</th>
+                      <th>Final</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each splitPreview.targets as target}
+                      <tr>
+                        <td class="mono">{target.key}</td>
+                        <td>{target.addQty}</td>
+                        <td>{target.addShipped}</td>
+                        <td>{target.finalQty} / {target.finalShipped}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+                <button
+                  class="primary"
+                  type="button"
+                  disabled={splitPreview.blocked}
+                  on:click={commitSplit}
+                >
+                  Commit split
+                </button>
+              {/if}
+            </div>
+
+            <div class="decision">
+              <h3>Merge Subtypes Back To Bare JAN</h3>
+              {#if mergePreview}
+                <p>
+                  Final bare row: {mergePreview.finalQty} qty,
+                  {mergePreview.finalShipped} shipped,
+                  {mergePreview.finalOnHand} on hand.
+                </p>
+                <p>
+                  Deletes {mergePreview.deletedKeys.length} subtype row(s) and moves
+                  {mergePreview.movedOrderQty} ordered unit(s) to the bare JAN.
+                </p>
+                <ul>
+                  {#each mergePreview.deletedKeys as key}
+                    <li class="mono">{key}</li>
+                  {/each}
+                </ul>
+                <button class="secondary" type="button" on:click={commitMerge}>
+                  Commit merge
+                </button>
+              {/if}
+            </div>
+          {/if}
+
+          {#if subtypeRows.length >= 2}
+            <div class="decision">
+              <h3>Replace One Subtype With Another</h3>
+              <div class="replacement-controls">
+                <label>
+                  Source subtype
+                  <select bind:value={replaceSourceKey}>
+                    {#each subtypeRows as row}
+                      <option value={row.key}
+                        >{row.item.subtype || row.key}</option
+                      >
+                    {/each}
+                  </select>
+                </label>
+                <label>
+                  Replacement subtype
+                  <select bind:value={replaceTargetKey}>
+                    {#each subtypeRows as row}
+                      <option value={row.key}
+                        >{row.item.subtype || row.key}</option
+                      >
+                    {/each}
+                  </select>
+                </label>
+                <label>
+                  Reason
+                  <input
+                    value={replaceReason}
+                    placeholder="e.g. Beige replaces Brown"
+                    on:input={(event) =>
+                      (replaceReason = event.currentTarget.value)}
+                  />
+                </label>
+              </div>
+
+              {#if replacePreview}
+                {#if replacePreview.warnings.length}
+                  <div class="warnings">
+                    {#each replacePreview.warnings as warning}
+                      <div>{warning}</div>
+                    {/each}
+                  </div>
+                {/if}
+                <p>
+                  Retires {replacePreview.source?.key || "source"} and keeps
+                  {replacePreview.target?.key || "target"} as the active row.
+                </p>
+                <p>
+                  Ignores {replacePreview.sourceArchiveSaleQty} archived sale unit(s)
+                  on the source and {replacePreview.targetUnpricedReceiptQty}
+                  zero-cost recount unit(s) on the replacement.
+                </p>
+                <button
+                  class="secondary"
+                  type="button"
+                  disabled={replacePreview.blocked}
+                  on:click={commitReplaceSubtype}
+                >
+                  Commit replacement
+                </button>
+              {/if}
+            </div>
+          {/if}
         </section>
       </section>
     {:else}
@@ -590,6 +746,19 @@
     display: grid;
     gap: 0.5rem;
     margin-bottom: 0.75rem;
+  }
+
+  .replacement-controls {
+    display: grid;
+    gap: 0.65rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .replacement-controls label {
+    display: grid;
+    gap: 0.25rem;
+    color: #334155;
+    font-size: 0.85rem;
   }
 
   .allocation {
