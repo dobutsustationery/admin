@@ -87,6 +87,12 @@ export type SaleEntry = {
   originalQty?: number;
   auditComment?: string;
   auditSeverity?: "warning" | "danger";
+  adjustmentEntry?: boolean;
+  adjustmentMode?: "apply-to-target" | "standalone";
+  adjustmentTarget?: {
+    at: number;
+    seq: number;
+  };
 };
 
 export type LedgerEntry = ReceiptEntry | SaleEntry;

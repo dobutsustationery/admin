@@ -3718,6 +3718,24 @@ export const inventory = createReducer(initialState, (r) => {
         delete entry.ignoreReason;
       }
       changed++;
+      for (const paired of ledger) {
+        if (
+          paired === entry ||
+          !paired.adjustmentEntry ||
+          paired.adjustmentTarget?.at !== entry.at ||
+          paired.adjustmentTarget?.seq !== entry.seq ||
+          Boolean(paired.ignored) === ignored
+        ) {
+          continue;
+        }
+        paired.ignored = ignored;
+        if (ignored) {
+          if (reason?.trim()) paired.ignoreReason = reason.trim();
+        } else {
+          delete paired.ignoreReason;
+        }
+        changed++;
+      }
     }
 
     if (changed === 0) return;
@@ -4017,7 +4035,25 @@ export const inventory = createReducer(initialState, (r) => {
         : splitQuantityByWeights(reconstructedQty, lateQtyByKey);
     if (reconstructedQtyByKey.size === 0) return;
 
+    const receivedAt =
+      meta.receivedAt && meta.receivedAt > 0
+        ? meta.receivedAt
+        : UNKNOWN_RECEIPT_DATE;
+    const totalOrderEur =
+      meta.paidAmount != null && meta.paidCurrency
+        ? meta.paidCurrency === "BGN"
+          ? meta.paidAmount / BGN_PER_EUR
+          : meta.paidAmount
+        : meta.totalOrderEur;
+    const fx =
+      totalOrderEur && (meta.valueOfOrderJpy || 0) > 0
+        ? totalOrderEur / (meta.valueOfOrderJpy as number)
+        : 0;
+    const unitCostEur = fx > 0 ? facts.unitCostJpy * fx : 0;
+
     const ignoredLateQtyByKey = new Map<string, number>();
+    const convertedRecountQtyByKey = new Map<string, number>();
+    const convertedRecountAtByKey = new Map<string, number>();
     for (const [candidateKey, candidateLedger] of Object.entries(
       state.costLedger || {},
     )) {
@@ -4034,49 +4070,70 @@ export const inventory = createReducer(initialState, (r) => {
         const receiptKey = `${candidateKey}|${entry.at}|${entry.seq ?? ""}|${entry.qty}|${entry.source || ""}`;
         if (!lateReceiptKeys.has(receiptKey)) continue;
         if (entry.originalQty === undefined) entry.originalQty = entry.qty;
-        entry.ignored = true;
-        entry.ignoreReason = `Ignored late scan receipt after reconstructing stock order ${orderId}. ${trimmedNote}`;
-        entry.auditComment = `Ignored late scan receipt after reconstructing stock order ${orderId}; the real receipt is the reconstructed stock order lot. ${trimmedNote}`;
-        entry.auditSeverity = "warning";
-        ignoredLateQtyByKey.set(
-          candidateKey,
-          (ignoredLateQtyByKey.get(candidateKey) || 0) +
-            (Number(entry.qty) || 0),
-        );
+        const isStocktakeRecount =
+          entry.receivedQty === 0 ||
+          candidateLedger.some(
+            (other) =>
+              other.kind === "sale" &&
+              other.isArchive &&
+              !other.ignored &&
+              other.at < entry.at,
+          );
+        if (isStocktakeRecount) {
+          entry.receivedQty = 0;
+          entry.unitCostJpy = facts.unitCostJpy;
+          entry.unitCostEur = unitCostEur;
+          delete entry.costOrderId;
+          entry.auditComment = `Reclassified late scan receipt as a post-reconstruction stocktake recount for stock order ${orderId}; it carries value but no longer matches the order row. ${trimmedNote}`;
+          entry.auditSeverity = "warning";
+          const qty = Number(entry.qty) || 0;
+          convertedRecountQtyByKey.set(
+            candidateKey,
+            (convertedRecountQtyByKey.get(candidateKey) || 0) + qty,
+          );
+          const firstAt = convertedRecountAtByKey.get(candidateKey);
+          convertedRecountAtByKey.set(
+            candidateKey,
+            firstAt == null ? entry.at : Math.min(firstAt, entry.at),
+          );
+        } else {
+          entry.ignored = true;
+          entry.ignoreReason = `Ignored late scan receipt after reconstructing stock order ${orderId}. ${trimmedNote}`;
+          entry.auditComment = `Ignored late scan receipt after reconstructing stock order ${orderId}; the real receipt is the reconstructed stock order lot. ${trimmedNote}`;
+          entry.auditSeverity = "warning";
+          ignoredLateQtyByKey.set(
+            candidateKey,
+            (ignoredLateQtyByKey.get(candidateKey) || 0) +
+              (Number(entry.qty) || 0),
+          );
+        }
       }
     }
     const ignoredLateQty = [...ignoredLateQtyByKey.values()].reduce(
       (sum, qty) => sum + qty,
       0,
     );
-    if (!(ignoredLateQty > 0)) return;
+    const convertedRecountQty = [...convertedRecountQtyByKey.values()].reduce(
+      (sum, qty) => sum + qty,
+      0,
+    );
+    if (!(ignoredLateQty + convertedRecountQty > 0)) return;
 
-    const receivedAt =
-      meta.receivedAt && meta.receivedAt > 0
-        ? meta.receivedAt
-        : UNKNOWN_RECEIPT_DATE;
-    const totalOrderEur =
-      meta.paidAmount != null && meta.paidCurrency
-        ? meta.paidCurrency === "BGN"
-          ? meta.paidAmount / BGN_PER_EUR
-          : meta.paidAmount
-        : meta.totalOrderEur;
-    const fx =
-      totalOrderEur && (meta.valueOfOrderJpy || 0) > 0
-        ? totalOrderEur / (meta.valueOfOrderJpy as number)
-        : 0;
-    const unitCostEur = fx > 0 ? facts.unitCostJpy * fx : 0;
-    const affectedKeys: string[] = [];
+    const affectedKeys = new Set<string>();
     for (const [candidateKey, candidateQty] of reconstructedQtyByKey) {
       const candidateLedger = state.costLedger?.[candidateKey];
       if (!candidateLedger || !(candidateQty > 0)) continue;
       const candidateIgnoredLateQty =
         ignoredLateQtyByKey.get(candidateKey) || 0;
-      if (!(candidateIgnoredLateQty > 0)) continue;
+      const candidateConvertedRecountQty =
+        convertedRecountQtyByKey.get(candidateKey) || 0;
+      if (!(candidateIgnoredLateQty + candidateConvertedRecountQty > 0))
+        continue;
+      const reconstructedSeq = candidateLedger.length;
       candidateLedger.push({
         kind: "receipt",
         at: receivedAt,
-        seq: candidateLedger.length,
+        seq: reconstructedSeq,
         qty: candidateQty,
         unitCostJpy: facts.unitCostJpy,
         unitCostEur,
@@ -4085,10 +4142,44 @@ export const inventory = createReducer(initialState, (r) => {
         auditComment: `Reconstructed stock order receipt: added ${formatLedgerQty(candidateQty)} unit(s) at the order date for late scan(s) in ${orderId}, split from ${formatLedgerQty(reconstructedQty)} order unit(s) across ${reconstructedQtyByKey.size} subtype(s). Ignored ${formatLedgerQty(candidateIgnoredLateQty)} late-scan unit(s) for this subtype. ${trimmedNote}`,
         auditSeverity: "warning",
       });
-      affectedKeys.push(candidateKey);
+      if (candidateConvertedRecountQty > 0) {
+        const firstRecountAt = convertedRecountAtByKey.get(candidateKey);
+        const archiveSale = candidateLedger
+          .filter(
+            (entry): entry is SaleEntry =>
+              entry.kind === "sale" &&
+              entry.isArchive === true &&
+              !entry.ignored &&
+              firstRecountAt != null &&
+              entry.at < firstRecountAt,
+          )
+          .sort((a, b) => b.at - a.at || b.seq - a.seq)[0];
+        if (archiveSale) {
+          candidateLedger.push({
+            kind: "sale",
+            at: archiveSale.at,
+            seq: candidateLedger.length,
+            qty: candidateQty,
+            isArchive: true,
+            adjustmentEntry: true,
+            adjustmentMode: "standalone",
+            adjustmentTarget: {
+              at: receivedAt,
+              seq: reconstructedSeq,
+            },
+            auditComment: `Stocktake adjustment consumed ${formatLedgerQty(candidateQty)} reconstructed stock-order unit(s) before the late recount for ${orderId}. ${trimmedNote}`,
+            auditSeverity: "warning",
+          });
+        }
+      }
+      affectedKeys.add(candidateKey);
       rederiveCostFromLedger(state, candidateKey);
     }
-    if (affectedKeys.length === 0) return;
+    for (const candidateKey of convertedRecountQtyByKey.keys()) {
+      affectedKeys.add(candidateKey);
+      rederiveCostFromLedger(state, candidateKey);
+    }
+    if (affectedKeys.size === 0) return;
     refreshStockOrderCostIssues(state, orderId);
 
     const val = getTimestampMs((action as any).timestamp);
@@ -4099,9 +4190,12 @@ export const inventory = createReducer(initialState, (r) => {
     });
     for (const affectedKey of affectedKeys) {
       if (!state.idToHistory[affectedKey]) state.idToHistory[affectedKey] = [];
+      const reconstructedForKey = reconstructedQtyByKey.get(affectedKey) || 0;
+      const ignoredForKey = ignoredLateQtyByKey.get(affectedKey) || 0;
+      const convertedForKey = convertedRecountQtyByKey.get(affectedKey) || 0;
       state.idToHistory[affectedKey].push({
         date,
-        desc: `Reconstructed ${formatLedgerQty(reconstructedQtyByKey.get(affectedKey) || 0)} stock order unit(s) at order date for ${orderId}, split from ${formatLedgerQty(reconstructedQty)} order unit(s) across ${reconstructedQtyByKey.size} subtype(s), and ignored ${formatLedgerQty(ignoredLateQtyByKey.get(affectedKey) || 0)} late-scan unit(s): ${trimmedNote}`,
+        desc: `Reconstructed ${formatLedgerQty(reconstructedForKey)} stock order unit(s) at order date for ${orderId}, split from ${formatLedgerQty(reconstructedQty)} order unit(s) across ${reconstructedQtyByKey.size} subtype(s), ignored ${formatLedgerQty(ignoredForKey)} late-scan unit(s), and reclassified ${formatLedgerQty(convertedForKey)} recount unit(s): ${trimmedNote}`,
         val,
       });
     }

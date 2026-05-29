@@ -1816,12 +1816,35 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     const brownLedger = next.inventory.costLedger![brownKey] as any[];
     expect(
       blueLedger.find((entry) => entry.at === lateScanAt && entry.qty === 2),
-    ).toEqual(expect.objectContaining({ ignored: true }));
+    ).toEqual(
+      expect.objectContaining({
+        receivedQty: 0,
+        auditComment: expect.stringContaining(
+          "post-reconstruction stocktake recount",
+        ),
+      }),
+    );
+    expect(
+      blueLedger.find((entry) => entry.at === lateScanAt && entry.qty === 2)
+        ?.costOrderId,
+    ).toBeUndefined();
     expect(
       brownLedger.find(
         (entry) => entry.at === lateScanAt + 1 && entry.qty === 4,
       ),
-    ).toEqual(expect.objectContaining({ ignored: true }));
+    ).toEqual(
+      expect.objectContaining({
+        receivedQty: 0,
+        auditComment: expect.stringContaining(
+          "post-reconstruction stocktake recount",
+        ),
+      }),
+    );
+    expect(
+      brownLedger.find(
+        (entry) => entry.at === lateScanAt + 1 && entry.qty === 4,
+      )?.costOrderId,
+    ).toBeUndefined();
     expect(
       blueLedger.find((entry) => entry.source === `stockOrder:${orderId}`),
     ).toEqual(
@@ -1832,9 +1855,51 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       }),
     );
     expect(
+      blueLedger.find(
+        (entry) =>
+          entry.kind === "sale" &&
+          entry.isArchive &&
+          entry.qty === 8 &&
+          entry.auditComment?.includes("Stocktake adjustment consumed"),
+      ),
+    ).toBeTruthy();
+    expect(
       brownLedger.find((entry) => entry.source === `stockOrder:${orderId}`),
     ).toBeUndefined();
     expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
+
+    const reconstructed = blueLedger.find(
+      (entry) => entry.source === `stockOrder:${orderId}`,
+    )!;
+    const ignored = rootReducer(next, {
+      ...set_cost_ledger_entries_ignored({
+        itemKey: blueKey,
+        refs: [
+          {
+            kind: reconstructed.kind,
+            at: reconstructed.at,
+            seq: reconstructed.seq,
+            qty: reconstructed.qty,
+            unitCostJpy: reconstructed.unitCostJpy,
+            unitCostEur: reconstructed.unitCostEur,
+            source: reconstructed.source,
+            costOrderId: reconstructed.costOrderId,
+          },
+        ],
+        ignored: true,
+        reason: "already corrected manually",
+      }),
+      timestamp: TS,
+    } as any);
+    const ignoredLedger = ignored.inventory.costLedger![blueKey] as any[];
+    expect(
+      ignoredLedger.find((entry) => entry.source === `stockOrder:${orderId}`),
+    ).toEqual(expect.objectContaining({ ignored: true }));
+    expect(
+      ignoredLedger.find((entry) =>
+        entry.auditComment?.includes("Stocktake adjustment consumed"),
+      ),
+    ).toEqual(expect.objectContaining({ ignored: true }));
   });
 
   it("fixes missing COO and weight from matched TSV rows", () => {
