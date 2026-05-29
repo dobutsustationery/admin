@@ -280,6 +280,86 @@ describe("subtype exception selection and remediation", () => {
     ]);
   });
 
+  it("merges subtype ledgers into a later bare recount without leaving the recount at zero cost", () => {
+    const jan = "4542804115291";
+    const beigeKey = `${jan}Beige`;
+    const pinkKey = `${jan}Pink`;
+    let state: any = reduce(undefined, { type: "@@INIT" });
+
+    state = reduce(
+      state,
+      update_item({ id: beigeKey, item: item(jan, "Beige", 12) }),
+      100,
+    );
+    state = reduce(
+      state,
+      update_item({ id: pinkKey, item: item(jan, "Pink", 12) }),
+      101,
+    );
+    state = {
+      ...state,
+      inventory: {
+        ...state.inventory,
+        costLedger: {
+          ...state.inventory.costLedger,
+          [beigeKey]: state.inventory.costLedger[beigeKey].map((entry: any) =>
+            entry.kind === "receipt"
+              ? { ...entry, unitCostJpy: 65, unitCostEur: 0.4 }
+              : entry,
+          ),
+          [pinkKey]: state.inventory.costLedger[pinkKey].map((entry: any) =>
+            entry.kind === "receipt"
+              ? { ...entry, unitCostJpy: 65, unitCostEur: 0.4 }
+              : entry,
+          ),
+        },
+      },
+    };
+    state = reduce(
+      state,
+      archive_inventory({ archiveName: "Japan Festival" }),
+      102,
+    );
+    state = reduce(
+      state,
+      update_item({ id: jan, item: item(jan, "", 24) }),
+      103,
+    );
+
+    state = reduce(
+      state,
+      resolve_subtype_exception({
+        janCode: jan,
+        mode: "merge_subtypes_to_bare",
+        reason: "subtypes were a mistaken split",
+      }),
+      104,
+    );
+
+    expect(state.inventory.idToItem[beigeKey]).toBeUndefined();
+    expect(state.inventory.idToItem[pinkKey]).toBeUndefined();
+    const ledger = state.inventory.costLedger[jan];
+    expect(
+      ledger.some(
+        (entry: any) =>
+          entry.kind === "receipt" &&
+          entry.unitCostJpy === 0 &&
+          entry.ignored &&
+          String(entry.auditComment || "").includes("bare recount"),
+      ),
+    ).toBe(true);
+    expect(
+      ledger.filter(
+        (entry: any) =>
+          entry.kind === "sale" && entry.isArchive && entry.ignored,
+      ),
+    ).toHaveLength(2);
+
+    const walked = walkLedger(effectiveLedgerEntries(ledger));
+    expect(walked.onHand).toBe(24);
+    expect(walked.avgJpy).toBe(65);
+  });
+
   it("replaces an inactive subtype with a recounted subtype and carries the source cost basis", () => {
     const jan = "4542804104370";
     const brownKey = `${jan}Brown`;

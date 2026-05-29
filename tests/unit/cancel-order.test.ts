@@ -9,6 +9,7 @@ import {
   prepareCancelOrder,
   update_item,
 } from "../../src/lib/inventory";
+import { effectiveLedgerEntries, walkLedger } from "../../src/lib/cost-engine";
 
 const itemKey = "1234567890123Cat";
 
@@ -68,6 +69,51 @@ describe("cancel_order", () => {
     expect(state.idToItem[itemKey].shipped).toBe(0);
     expect(state.orderIdToOrder[orderID].status).toBe("Canceled");
     expect(state.orderIdToOrder[orderID].items).toEqual([]);
+  });
+
+  it("reverses the cost ledger sale when canceling an order", () => {
+    const store = setupStore();
+    const orderID = "PAY-LEDGER";
+
+    store.dispatch({
+      ...new_order({
+        orderID,
+        date: new Date("2026-01-01"),
+        email: "buyer@example.com",
+        product: "Some Product",
+      }),
+      timestamp: { seconds: 1000, nanoseconds: 0 },
+      id: "new-order",
+    } as any);
+    store.dispatch({
+      ...package_item({ orderID, itemKey: itemKey as any, qty: 3 }),
+      timestamp: { seconds: 1100, nanoseconds: 0 },
+      id: "pkg",
+    } as any);
+
+    expect(
+      walkLedger(
+        effectiveLedgerEntries(store.getState().inventory.costLedger![itemKey]),
+      ).onHand,
+    ).toBe(17);
+
+    store.dispatch({
+      ...cancel_order({ orderID }),
+      timestamp: { seconds: 1200, nanoseconds: 0 },
+      id: "cancel",
+    } as any);
+
+    const ledger = store.getState().inventory.costLedger![itemKey];
+    expect(ledger).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "sale",
+          qty: -3,
+          auditComment: expect.stringContaining(`Canceled order ${orderID}`),
+        }),
+      ]),
+    );
+    expect(walkLedger(effectiveLedgerEntries(ledger)).onHand).toBe(20);
   });
 
   it("zeros etsyFacts impact and re-derives items for marketplace orders", () => {

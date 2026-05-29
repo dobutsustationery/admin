@@ -1279,6 +1279,98 @@ function moveReplacementCostLedger(
   rederiveCostFromLedger(state, targetKey);
 }
 
+function moveSubtypeMergeCostLedger(
+  state: InventoryState,
+  sourceKey: string,
+  targetKey: string,
+  reason: string | undefined,
+) {
+  if (!state.costLedger || !state.costLedger[sourceKey]) return;
+  if (!state.costLedger[targetKey]) state.costLedger[targetKey] = [];
+
+  const sourceLedger = state.costLedger[sourceKey];
+  const archiveSales = sourceLedger.filter(
+    (entry) => entry.kind === "sale" && entry.isArchive && !entry.ignored,
+  );
+  const hasBareRecountAfterArchive = (entry: LedgerEntry) =>
+    archiveSales.some((archive) => Number(archive.at) <= Number(entry.at));
+  const comment = `Subtype merge ${sourceKey} -> ${targetKey}.${replacementAuditSuffix(reason)}`;
+
+  const destination = state.costLedger[targetKey].map((entry) => {
+    if (
+      entry.kind === "receipt" &&
+      !entry.ignored &&
+      !(entry.unitCostJpy > 0) &&
+      !entry.costOrderId &&
+      !String(entry.source || "").startsWith("stockOrder:") &&
+      hasBareRecountAfterArchive(entry)
+    ) {
+      return {
+        ...entry,
+        ignored: true,
+        ignoreReason:
+          entry.ignoreReason ||
+          `bare recount receipt ignored; migrated subtype ledger carries the original cost basis`,
+        auditComment: `${comment} Ignored zero-cost bare recount receipt; the migrated subtype ledger carries the physical stock.`,
+        auditSeverity: "warning" as const,
+      };
+    }
+    return { ...entry };
+  });
+
+  const hasIgnoredBareRecount = destination.some(
+    (entry) =>
+      entry.kind === "receipt" &&
+      entry.ignored &&
+      hasBareRecountAfterArchive(entry),
+  );
+  const sourceArchiveShouldBeIgnored = (entry: LedgerEntry) =>
+    hasIgnoredBareRecount &&
+    entry.kind === "sale" &&
+    entry.isArchive &&
+    !entry.ignored;
+
+  const offset =
+    destination.length === 0
+      ? 0
+      : Math.floor(
+          destination.reduce(
+            (max, entry, index) =>
+              Math.max(max, Number.isFinite(entry.seq) ? entry.seq : index),
+            0,
+          ),
+        ) + 1;
+  const moved = sourceLedger.map((entry) => {
+    const shifted = shiftLedgerEntrySeq(entry, offset);
+    if (sourceArchiveShouldBeIgnored(entry)) {
+      return {
+        ...shifted,
+        ignored: true,
+        ignoreReason:
+          shifted.ignoreReason ||
+          `archive sale ignored because ${sourceKey} was merged into ${targetKey}`,
+        auditComment: `${comment} Ignored archive sale; the later bare JAN scan was a recount of this stock, not a new receipt.`,
+        auditSeverity: "warning" as const,
+      };
+    }
+    return {
+      ...shifted,
+      auditComment:
+        shifted.auditComment ||
+        (shifted.kind === "receipt"
+          ? `${comment} Moved receipt from merged subtype.`
+          : undefined),
+      ...(shifted.kind === "receipt" && !shifted.auditSeverity
+        ? { auditSeverity: "warning" as const }
+        : {}),
+    };
+  });
+
+  state.costLedger[targetKey] = [...destination, ...moved];
+  delete state.costLedger[sourceKey];
+  rederiveCostFromLedger(state, targetKey);
+}
+
 const JAPAN_FESTIVAL_FRACTIONAL_SALES_CUTOFF_MS = Date.UTC(2025, 4, 2);
 
 function fractionalPreFestivalSale(
@@ -5173,7 +5265,12 @@ export const inventory = createReducer(initialState, (r) => {
           bareKey as InventoryItemKey,
         );
         renameInventoryEntityKey(state, subtypeKey, bareKey, val, action.type);
-        migrateCostLedger(state, subtypeKey, bareKey);
+        moveSubtypeMergeCostLedger(
+          state,
+          subtypeKey,
+          bareKey,
+          action.payload.reason,
+        );
         moveHistoryForSubtypeResolution(state, subtypeKey, bareKey);
         delete state.idToItem[subtypeKey];
         delete state.idToHistory[subtypeKey];
@@ -5412,14 +5509,31 @@ export const inventory = createReducer(initialState, (r) => {
     const orderID = action.payload.orderID;
     const order = state.orderIdToOrder[orderID];
     if (!order) return;
+    const saleAtMs = getOrderSaleAtMs(order, order.date.getTime());
+    const actionAt = getTimestampMs((action as any).timestamp);
 
     // 1. Reverse shipped impact for every line currently attributed to
-    //    this order in idToItem.shipped.
+    //    this order in idToItem.shipped and costLedger sale rows.
     for (const line of order.items) {
       const itemKey = canonicalizeInventoryItemKey(line.itemKey);
       const item = state.idToItem[itemKey];
       if (item !== undefined && line.qty) {
         item.shipped -= line.qty;
+        const ledgerSale = fractionalPreFestivalSale(item, -line.qty, saleAtMs);
+        recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+          visibleQty: ledgerSale.visibleQty,
+          auditComment: `Canceled order ${orderID}: reversed ${formatLedgerQty(line.qty)} shipped unit(s) in the cost ledger.${ledgerSale.auditComment ? ` ${ledgerSale.auditComment}` : ""}`,
+        });
+        if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
+        state.idToHistory[itemKey].push({
+          date: new Date(actionAt || saleAtMs).toLocaleString("en", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          }),
+          desc: `Canceled order ${orderID}: reversed shipped qty ${formatLedgerQty(line.qty)} and cost ledger sale`,
+          val: actionAt || saleAtMs,
+        });
       }
     }
 
