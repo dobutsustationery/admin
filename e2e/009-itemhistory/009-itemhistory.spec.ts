@@ -193,12 +193,19 @@ test.describe("Item History Page", () => {
       {
         description: "Validated history table (if visible)",
         check: async () => {
-          const table = page.locator("table");
-          if (await table.isVisible()) {
+          const tables = page.locator("table");
+          const tableCount = await tables.count();
+          let foundHistoryTable = false;
+          for (let i = 0; i < tableCount; i += 1) {
+            const table = tables.nth(i);
+            if (!(await table.isVisible())) continue;
             const headers = await table.locator("thead th").allTextContents();
-            expect(headers).toContain("Date");
-            expect(headers).toContain("Action");
+            if (headers.includes("Date") && headers.includes("Action")) {
+              foundHistoryTable = true;
+              break;
+            }
           }
+          expect(foundHistoryTable).toBe(true);
         },
       },
       {
