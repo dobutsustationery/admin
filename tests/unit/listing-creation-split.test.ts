@@ -495,4 +495,94 @@ describe("Listing Creation - Split Inventory", () => {
       ),
     ).toBe(false);
   });
+
+  it("should preserve the source ledger when a split moves zero quantity", () => {
+    const store = configureStore({ reducer: rootReducer });
+    const janCode = "4542804050851";
+    const catKey = makeInventoryItemKey(janCode, "Cat");
+    const dogKey = makeInventoryItemKey(janCode, "dog");
+    const item: Item = {
+      janCode,
+      subtype: "Cat",
+      description: "Source Product",
+      qty: 24,
+      price: 0,
+      handle: "",
+      shipped: 0,
+      pieces: 1,
+      creationDate: "2024-10-09",
+      timestamp: Date.UTC(2024, 9, 9),
+      hsCode: "48211010",
+      image: "",
+      cost: 65,
+    };
+
+    dispatchAt(
+      store,
+      bulk_import_items({
+        items: [
+          {
+            type: "new",
+            id: catKey,
+            item: { ...item, qty: 12 },
+            stockOrder: {
+              orderId: "old-stock-order",
+              unitCostJpy: 65,
+              unitCostEur: 0,
+              receivedAt: Date.UTC(2024, 9, 9),
+              orderedQty: 12,
+            },
+          },
+        ],
+      }),
+      Date.UTC(2024, 9, 9),
+    );
+
+    dispatchAt(
+      store,
+      bulk_import_items({
+        items: [
+          {
+            type: "update",
+            id: catKey,
+            item: { ...item, qty: 24, cost: 62 },
+            stockOrder: {
+              orderId: "new-stock-order",
+              unitCostJpy: 62,
+              unitCostEur: 0,
+              receivedAt: Date.UTC(2025, 8, 25),
+              orderedQty: 24,
+            },
+          },
+        ],
+      }),
+      Date.UTC(2025, 8, 25),
+    );
+
+    dispatchAt(
+      store,
+      package_item({ orderID: "sale-1", itemKey: catKey, qty: 1 }),
+      Date.UTC(2025, 11, 7),
+    );
+
+    const beforeLedger = structuredClone(
+      store.getState().inventory.costLedger[catKey],
+    );
+    const beforeQty = store.getState().inventory.idToItem[catKey].qty;
+
+    dispatchAt(
+      store,
+      split_inventory_item({
+        sourceId: catKey,
+        splits: [{ newId: dogKey, qty: 0, subtype: "dog" }],
+      }),
+      Date.UTC(2026, 2, 19),
+    );
+
+    const state = store.getState().inventory;
+    expect(state.idToItem[catKey].qty).toBe(beforeQty);
+    expect(state.idToItem[dogKey].qty).toBe(0);
+    expect(state.costLedger[catKey]).toEqual(beforeLedger);
+    expect(state.costLedger[dogKey]).toBeUndefined();
+  });
 });

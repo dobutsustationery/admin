@@ -5380,15 +5380,18 @@ export const inventory = createReducer(initialState, (r) => {
       addLedgerAllocation(split.newId, Number(split.qty) || 0, 0);
     }
 
-    const distributedLedgers = distributeInventorySplitLedgerEntries(
-      sourceLedger,
-      [...ledgerAllocations.values()].filter(
-        (allocation) => allocation.qty > 0 || allocation.shipped > 0,
-      ),
-      sourceId,
-    );
+    const shouldRedistributeLedger = totalSplitQty > 0;
+    const distributedLedgers = shouldRedistributeLedger
+      ? distributeInventorySplitLedgerEntries(
+          sourceLedger,
+          [...ledgerAllocations.values()].filter(
+            (allocation) => allocation.qty > 0 || allocation.shipped > 0,
+          ),
+          sourceId,
+        )
+      : new Map<string, LedgerEntry[]>();
 
-    if (state.costLedger?.[sourceId]) {
+    if (shouldRedistributeLedger && state.costLedger?.[sourceId]) {
       const remainingSourceLedger = distributedLedgers.get(sourceId) || [];
       if (remainingSourceLedger.length > 0) {
         state.costLedger[sourceId] = reseqLedger(remainingSourceLedger);
