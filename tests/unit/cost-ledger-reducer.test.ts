@@ -11,6 +11,7 @@ import {
   quantify_item,
   set_cost_ledger_entry_qty,
   set_cost_ledger_entries_ignored,
+  set_stock_order_meta,
   type Item,
 } from "$lib/inventory";
 import {
@@ -46,6 +47,31 @@ const baseItem = (qty: number, extra: Partial<Item> = {}): Item => ({
   ...extra,
 });
 
+function withStockOrderMeta(
+  state: ReturnType<typeof rootReducer>,
+  orderId: string,
+  unitCostJpy: number,
+  qty: number,
+  receivedAt = 90_000,
+  unitCostEur = 0,
+) {
+  return rootReducer(
+    state,
+    withTs(
+      set_stock_order_meta({
+        orderId,
+        meta: {
+          receivedAt,
+          valueOfOrderJpy: unitCostJpy * qty,
+          totalOrderEur: unitCostEur * qty,
+          costRows: [{ jan: JAN, unitCostJpy, qty }],
+        },
+      }),
+      Math.floor(receivedAt / 1000),
+    ),
+  );
+}
+
 describe("cost-ledger materialisation in the reducer", () => {
   it("single priced lot derives the attached cost (unchanged vs last-write)", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
@@ -58,6 +84,7 @@ describe("cost-ledger materialisation in the reducer", () => {
     expect(s.inventory.costLedger![KEY]).toHaveLength(1);
 
     // Original order (qty 0) attaches landed cost ¥65.
+    s = withStockOrderMeta(s, "order-1", 65, 6);
     s = rootReducer(
       s,
       withTs(
@@ -69,9 +96,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(0),
               stockOrder: {
                 orderId: "order-1",
-                unitCostJpy: 65,
-                unitCostEur: 0,
-                receivedAt: 90_000,
               },
             },
           ],
@@ -89,6 +113,7 @@ describe("cost-ledger materialisation in the reducer", () => {
       s,
       withTs(update_item({ id: KEY, item: baseItem(6) }), 100),
     );
+    s = withStockOrderMeta(s, "o1", 65, 6);
     s = rootReducer(
       s,
       withTs(
@@ -100,9 +125,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(0),
               stockOrder: {
                 orderId: "o1",
-                unitCostJpy: 65,
-                unitCostEur: 0,
-                receivedAt: 90_000,
               },
             },
           ],
@@ -111,6 +133,7 @@ describe("cost-ledger materialisation in the reducer", () => {
       ),
     );
     // Re-order: +12 units @ ¥62.
+    s = withStockOrderMeta(s, "o2", 62, 12);
     s = rootReducer(
       s,
       withTs(
@@ -122,9 +145,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(12),
               stockOrder: {
                 orderId: "o2",
-                unitCostJpy: 62,
-                unitCostEur: 0,
-                receivedAt: Date.parse("Mar 2, 2026"),
               },
             },
           ],
@@ -164,7 +184,6 @@ describe("cost-ledger materialisation in the reducer", () => {
                 qty: 4,
                 expectedQty: 4,
                 matchedQty: 0,
-                unitCostJpy: 65,
                 lineCostJpy: 260,
               },
             ],
@@ -184,9 +203,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(4, { cost: 999 }),
               stockOrder: {
                 orderId,
-                unitCostJpy: 65,
-                unitCostEur: 0.42,
-                receivedAt,
                 orderedQty: 4,
               },
             },
@@ -202,8 +218,6 @@ describe("cost-ledger materialisation in the reducer", () => {
         kind: "receipt",
         at: receivedAt,
         qty: 4,
-        unitCostJpy: 65,
-        unitCostEur: 0.42,
         source: `stockOrder:${orderId}`,
         costOrderId: orderId,
       }),
@@ -224,9 +238,6 @@ describe("cost-ledger materialisation in the reducer", () => {
             item: baseItem(4, { cost: 999 }),
             stockOrder: {
               orderId,
-              unitCostJpy: 65,
-              unitCostEur: 0.42,
-              receivedAt,
               orderedQty: 4,
             },
           },
@@ -237,6 +248,7 @@ describe("cost-ledger materialisation in the reducer", () => {
     };
 
     let s = rootReducer(undefined, { type: "@@INIT" }) as any;
+    s = withStockOrderMeta(s, orderId, 65, 4, receivedAt, 0.42);
     s = rootReducer(s, action);
 
     expect(s.inventory.idToItem[KEY].qty).toBe(4);
@@ -246,8 +258,6 @@ describe("cost-ledger materialisation in the reducer", () => {
         kind: "receipt",
         at: receivedAt,
         qty: 4,
-        unitCostJpy: 65,
-        unitCostEur: 0.42,
         source: `stockOrder:${orderId}`,
         costOrderId: orderId,
         createdByActionId: "pending-stock-order-create",
@@ -266,9 +276,6 @@ describe("cost-ledger materialisation in the reducer", () => {
                 item: baseItem(4, { cost: 999 }),
                 stockOrder: {
                   orderId,
-                  unitCostJpy: 65,
-                  unitCostEur: 0.42,
-                  receivedAt,
                   orderedQty: 4,
                 },
               },
@@ -292,6 +299,7 @@ describe("cost-ledger materialisation in the reducer", () => {
       s,
       withTs(update_item({ id: KEY, item: baseItem(20) }), 100),
     );
+    s = withStockOrderMeta(s, "o1", 282.7, 10, 90_000, 1.8);
 
     s = rootReducer(
       s,
@@ -304,9 +312,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(0),
               stockOrder: {
                 orderId: "o1",
-                unitCostJpy: 282.7,
-                unitCostEur: 1.8,
-                receivedAt: 90_000,
                 orderedQty: 10,
               },
             },
@@ -323,11 +328,11 @@ describe("cost-ledger materialisation in the reducer", () => {
         e.kind,
         e.qty,
         e.unitCostJpy,
-        e.unitCostEur,
         e.costOrderId,
         e.auditSeverity,
       ]),
-    ).toEqual([["receipt", 20, 282.7, 1.8, "o1", "danger"]]);
+    ).toEqual([["receipt", 20, 282.7, "o1", "danger"]]);
+    expect((led[0] as any).unitCostEur).toBeCloseTo(1.8, 9);
     expect((led[0] as any).auditComment).toContain("over-consumed by 10");
     expect(s.inventory.idToItem[KEY].cost).toBeCloseTo(282.7, 9);
   });
@@ -370,11 +375,9 @@ describe("cost-ledger materialisation in the reducer", () => {
 
     const stockOrder = {
       orderId: "o1",
-      unitCostJpy: 65,
-      unitCostEur: 0.38,
-      receivedAt: 150_000,
       orderedQty: 24,
     };
+    s = withStockOrderMeta(s, "o1", 65, 24, 150_000);
     s = rootReducer(
       s,
       withTs(
@@ -428,14 +431,12 @@ describe("cost-ledger materialisation in the reducer", () => {
       expect.objectContaining({
         kind: "receipt",
         qty: 10,
-        unitCostJpy: 0,
       }),
       expect.objectContaining({
         kind: "receipt",
         adjustmentEntry: true,
         adjustmentMode: "apply-to-target",
         qty: -5,
-        unitCostJpy: 0,
         originalQty: 10,
         quantityCorrections: [
           expect.objectContaining({
@@ -455,6 +456,7 @@ describe("cost-ledger materialisation in the reducer", () => {
       "Cost ledger qty correction",
     );
 
+    s = withStockOrderMeta(s, "o1", 65, 5);
     s = rootReducer(
       s,
       withTs(
@@ -466,9 +468,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(0),
               stockOrder: {
                 orderId: "o1",
-                unitCostJpy: 65,
-                unitCostEur: 0.38,
-                receivedAt: 90_000,
                 orderedQty: 5,
               },
             },
@@ -486,8 +485,6 @@ describe("cost-ledger materialisation in the reducer", () => {
       expect.objectContaining({
         kind: "receipt",
         qty: 5,
-        unitCostJpy: 65,
-        unitCostEur: 0.38,
         costOrderId: "o1",
       }),
     );
@@ -495,6 +492,7 @@ describe("cost-ledger materialisation in the reducer", () => {
 
   it("increases the open receipt when a qty correction raises inventory", () => {
     let s = rootReducer(undefined, { type: "@@INIT" });
+    s = withStockOrderMeta(s, "o1", 140, 24, 90_000, 0.82);
     s = rootReducer(
       s,
       withTs(
@@ -506,9 +504,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(12, { cost: 140 }),
               stockOrder: {
                 orderId: "o1",
-                unitCostJpy: 140,
-                unitCostEur: 0.82,
-                receivedAt: 90_000,
                 orderedQty: 24,
               },
             },
@@ -530,8 +525,6 @@ describe("cost-ledger materialisation in the reducer", () => {
         kind: "receipt",
         at: 90_000,
         qty: 12,
-        unitCostJpy: 140,
-        unitCostEur: 0.82,
         source: "stockOrder:o1",
         costOrderId: "o1",
       }),
@@ -541,8 +534,6 @@ describe("cost-ledger materialisation in the reducer", () => {
         adjustmentMode: "apply-to-target",
         at: 90_000,
         qty: 12,
-        unitCostJpy: 140,
-        unitCostEur: 0.82,
         source: "stockOrder:o1",
         costOrderId: "o1",
         originalQty: 12,
@@ -786,6 +777,7 @@ describe("cost-ledger materialisation in the reducer", () => {
       s,
       withTs(update_item({ id: KEY, item: baseItem(10, { cost: 100 }) }), 100),
     );
+    s = withStockOrderMeta(s, "o2", 50, 10);
     s = rootReducer(
       s,
       withTs(
@@ -797,9 +789,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(10),
               stockOrder: {
                 orderId: "o2",
-                unitCostJpy: 50,
-                unitCostEur: 0,
-                receivedAt: 200_000,
                 orderedQty: 10,
               },
             },
@@ -822,9 +811,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               kind: "receipt",
               at: entry.at,
               seq: entry.seq,
-              qty: entry.qty,
-              unitCostJpy: entry.unitCostJpy,
-              unitCostEur: entry.unitCostEur,
               source: entry.source || "",
               costOrderId: entry.costOrderId || "",
             },
@@ -849,6 +835,7 @@ describe("cost-ledger materialisation in the reducer", () => {
       s,
       withTs(update_item({ id: KEY, item: baseItem(10, { cost: 100 }) }), 100),
     );
+    s = withStockOrderMeta(s, "o2", 50, 10);
     s = rootReducer(
       s,
       withTs(
@@ -860,9 +847,6 @@ describe("cost-ledger materialisation in the reducer", () => {
               item: baseItem(10),
               stockOrder: {
                 orderId: "o2",
-                unitCostJpy: 50,
-                unitCostEur: 0,
-                receivedAt: 200_000,
                 orderedQty: 10,
               },
             },
@@ -882,9 +866,6 @@ describe("cost-ledger materialisation in the reducer", () => {
             kind: "receipt",
             at: entry.at,
             seq: entry.seq,
-            qty: entry.qty,
-            unitCostJpy: entry.unitCostJpy,
-            unitCostEur: entry.unitCostEur,
             source: entry.source || "",
             costOrderId: entry.costOrderId || "",
           },
@@ -917,6 +898,7 @@ describe("cost-ledger materialisation in the reducer", () => {
         s,
         withTs(update_item({ id: KEY, item: baseItem(6) }), 100),
       );
+      s = withStockOrderMeta(s, "o2", 62, 12);
       s = rootReducer(
         s,
         withTs(
@@ -928,9 +910,6 @@ describe("cost-ledger materialisation in the reducer", () => {
                 item: baseItem(12, { cost: undefined }),
                 stockOrder: {
                   orderId: "o2",
-                  unitCostJpy: 62,
-                  unitCostEur: 0,
-                  receivedAt: Date.parse("Mar 2, 2026"),
                 },
               },
             ],

@@ -47,8 +47,12 @@ describe("reconcile broadcast document ids", () => {
     ).toBe("etsy_order_reconciled:4000428781:1773000000");
   });
 
-  it("returns an empty id when required version fields are missing", () => {
-    expect(shopifyReconcileBroadcastDocumentId({ id: 1 })).toBe("");
-    expect(etsyReconcileBroadcastDocumentId({ receipt_id: 1 })).toBe("");
+  it("uses a deterministic payload hash when version fields are missing", () => {
+    expect(shopifyReconcileBroadcastDocumentId({ id: 1 })).toMatch(
+      /^shopify_order_reconciled:1:payload:[a-f0-9]{24}$/,
+    );
+    expect(etsyReconcileBroadcastDocumentId({ receipt_id: 1 })).toMatch(
+      /^etsy_order_reconciled:1:payload:[a-f0-9]{24}$/,
+    );
   });
 });

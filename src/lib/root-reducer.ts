@@ -14,7 +14,6 @@ import {
   set_stock_order_meta,
   apply_stock_order_costs,
 } from "./inventory";
-import { UNKNOWN_RECEIPT_DATE } from "./cost-engine";
 import { names } from "./names";
 import { photos, rename_jan_group } from "./photos-slice";
 import {
@@ -1154,28 +1153,14 @@ export const rootReducer = (
       };
       logger(registerAction, nextState, action._timestamp);
     }
-    const meta = nextState.inventory.stockOrderRegistry?.[orderId];
-    const receivedAt =
-      meta?.receivedAt && Number.isFinite(meta.receivedAt)
-        ? meta.receivedAt
-        : UNKNOWN_RECEIPT_DATE;
-    const fx =
-      meta?.totalOrderJpy && meta?.totalOrderEur && meta.totalOrderJpy > 0
-        ? meta.totalOrderEur / meta.totalOrderJpy
-        : 0;
-
     const bulkUpdates: BulkImportItem[] = updates.map((u) => {
       const item = u.type === "new" ? mapOrderToInventory(u.item) : u.item;
-      const unitCostJpy = Number(item.cost) > 0 ? Number(item.cost) : 0;
       return {
         type: u.type,
         id: u.id,
         item,
         stockOrder: {
           orderId,
-          unitCostJpy,
-          unitCostEur: fx > 0 ? unitCostJpy * fx : 0,
-          receivedAt,
           orderedQty:
             Number((u as any).orderedQty ?? (u.item as any).orderedQty) > 0
               ? Number((u as any).orderedQty ?? (u.item as any).orderedQty)
@@ -1477,18 +1462,12 @@ export const rootReducer = (
       meta,
       costTsv,
       costInterpretation,
-      costInterpretationMode,
       overrideExisting,
       approveDiscrepancy,
       ignoreUnmatchedRows,
       fixCountryOfOrigin,
       fixWeights,
     } = action.payload;
-    const forcedCostInterpretation =
-      costInterpretationMode === "manual" ||
-      (costInterpretationMode == null && costInterpretation)
-        ? costInterpretation
-        : undefined;
 
     if (meta && Object.values(meta).some((v) => v !== undefined)) {
       const metaAction = inheritTimestamp({
@@ -1507,7 +1486,7 @@ export const rootReducer = (
         rawPaste: costTsv,
         orderId,
         overrideExisting,
-        interpretation: forcedCostInterpretation,
+        interpretation: costInterpretation,
         inventory: nextState.inventory, // reflects the meta just set
       });
       const r = preview.reconciliation;

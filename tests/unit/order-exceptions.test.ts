@@ -770,7 +770,7 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     expect(s1.inventory.costLedger![key][0].unitCostJpy).toBe(200);
   });
 
-  it("recomputes auto interpretation on replay even when an auto snapshot is stored", () => {
+  it("recomputes auto interpretation on replay when no manual override is stored", () => {
     const s0 = unpricedOrder();
     const key = Object.keys(s0.inventory.costLedger!).find((k) =>
       k.startsWith(JAN),
@@ -779,19 +779,11 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       "JAN code\tUNIT PRICE (YEN)\tQuantity\tTOTAL (YEN)",
       `${JAN}\t200\t10\t1500`,
     ].join("\n");
-    const staleAutoSnapshot = {
-      kind: "unit" as const,
-      costColumnIndex: 1,
-      qtyColumnIndex: 2,
-    };
-
     const s1 = rootReducer(s0, {
       ...fix_stock_order({
         orderId: "fc",
         meta: { valueOfGoodsJpy: 1500 },
         costTsv: ambiguousTsv,
-        costInterpretation: staleAutoSnapshot,
-        costInterpretationMode: "auto",
         overrideExisting: false,
         approveDiscrepancy: false,
       }),
@@ -822,7 +814,6 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         meta: { valueOfGoodsJpy: 1500 },
         costTsv: ambiguousTsv,
         costInterpretation: manualUnit,
-        costInterpretationMode: "manual",
         overrideExisting: false,
         approveDiscrepancy: true,
       }),
@@ -932,13 +923,25 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       }),
       timestamp: TS,
     } as any);
+    const withExtra = [
+      "JAN code\tUNIT PRICE (YEN)\tQuantity",
+      `${JAN}\t200\t10`,
+      `${extraJan}\t100\t1`,
+    ].join("\n");
+    s = rootReducer(s, {
+      ...fix_stock_order({
+        orderId: "fc",
+        meta: { valueOfGoodsJpy: 2100 },
+        costTsv: withExtra,
+        overrideExisting: false,
+        approveDiscrepancy: false,
+        ignoreUnmatchedRows: true,
+      }),
+      timestamp: TS,
+    } as any);
     const receiptAction = create_stock_order_receipt({
       orderId: "fc",
       itemKey: extraJan,
-      qty: 1,
-      unitCostJpy: 100,
-      unitCostEur: 1,
-      receivedAt: 150_000,
     });
     s = rootReducer(s, {
       ...receiptAction,
@@ -956,12 +959,6 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       ),
     ).toHaveLength(1);
     expect(s.inventory.idToItem[extraJan].qty).toBe(2);
-    const withExtra = [
-      "JAN code\tUNIT PRICE (YEN)\tQuantity",
-      `${JAN}\t200\t10`,
-      `${extraJan}\t100\t1`,
-    ].join("\n");
-
     const preview = previewStockOrderFix(s.inventory, "fc", {
       meta: { valueOfGoodsJpy: 2100 },
       rawPaste: withExtra,
@@ -1384,7 +1381,6 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       ...reconstruct_stock_order_unmatched_receipt({
         orderId,
         itemKey: key,
-        qty: 1,
         saleAt,
         note: "operator confirmed one unit was sold at Japan Festival 2025",
         saleNote: "sold at Japan Festival 2025",
@@ -1467,7 +1463,6 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       ...mark_stock_order_row_not_received({
         orderId,
         jan,
-        qty: 4,
         note: "Rejected from inventory on receipt inspection",
       }),
       timestamp: TS,

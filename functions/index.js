@@ -1226,7 +1226,6 @@ exports.shopifyOrderReconcile = onSchedule(
       let fetchedCount = 0;
       let writtenCount = 0;
       let skippedDuplicateCount = 0;
-      let missingKeyFallbackCount = 0;
       const headers = await shopifyCore.buildShopifyHeaders(config);
 
       const params = new URLSearchParams({
@@ -1255,24 +1254,15 @@ exports.shopifyOrderReconcile = onSchedule(
             payload: { raw: order, topic: "reconcile" },
           };
           const documentId = shopifyReconcileBroadcastDocumentId(order);
-          if (documentId) {
-            const result = await writeBroadcastActionOnce({
-              action,
-              creator: "shopify-reconcile-poller",
-              documentId,
-            });
-            if (result.written) {
-              writtenCount += 1;
-            } else {
-              skippedDuplicateCount += 1;
-            }
-          } else {
-            missingKeyFallbackCount += 1;
-            await writeBroadcastAction({
-              action,
-              creator: "shopify-reconcile-poller",
-            });
+          const result = await writeBroadcastActionOnce({
+            action,
+            creator: "shopify-reconcile-poller",
+            documentId,
+          });
+          if (result.written) {
             writtenCount += 1;
+          } else {
+            skippedDuplicateCount += 1;
           }
 
           if (order.updated_at > nextCursor) {
@@ -1297,7 +1287,6 @@ exports.shopifyOrderReconcile = onSchedule(
         fetchedCount,
         writtenCount,
         skippedDuplicateCount,
-        missingKeyFallbackCount,
       });
     } catch (error) {
       logger.error("Shopify order reconciliation failed", error);
@@ -1496,31 +1485,21 @@ exports.etsyOrderReconcile = onSchedule(
       let newCursorMs = lastCursor * 1000;
       let writtenCount = 0;
       let skippedDuplicateCount = 0;
-      let missingKeyFallbackCount = 0;
       for (const receipt of receipts) {
         const action = {
           type: "etsy_order_reconciled",
           payload: { raw: receipt, topic: "reconcile" },
         };
         const documentId = etsyReconcileBroadcastDocumentId(receipt);
-        if (documentId) {
-          const result = await writeBroadcastActionOnce({
-            action,
-            creator: "etsy-reconcile-poller",
-            documentId,
-          });
-          if (result.written) {
-            writtenCount += 1;
-          } else {
-            skippedDuplicateCount += 1;
-          }
-        } else {
-          missingKeyFallbackCount += 1;
-          await writeBroadcastAction({
-            action,
-            creator: "etsy-reconcile-poller",
-          });
+        const result = await writeBroadcastActionOnce({
+          action,
+          creator: "etsy-reconcile-poller",
+          documentId,
+        });
+        if (result.written) {
           writtenCount += 1;
+        } else {
+          skippedDuplicateCount += 1;
         }
 
         const modified = receipt.updated_timestamp || receipt.create_timestamp;
@@ -1540,7 +1519,6 @@ exports.etsyOrderReconcile = onSchedule(
         fetchedCount: receipts.length,
         writtenCount,
         skippedDuplicateCount,
-        missingKeyFallbackCount,
       });
     } catch (error) {
       logger.error("Etsy order reconciliation failed", error);

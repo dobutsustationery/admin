@@ -19,6 +19,7 @@ import {
   archive_inventory,
   bulk_import_items,
   package_item,
+  set_stock_order_meta,
   split_inventory_item,
   update_item,
   type Item,
@@ -41,6 +42,27 @@ describe("Listing Creation - Split Inventory", () => {
         _nanoseconds: 0,
       },
     });
+
+  const setStockOrderCost = (
+    store: ReturnType<typeof configureStore>,
+    orderId: string,
+    jan: string,
+    unitCostJpy: number,
+    qty: number,
+    receivedAt: number,
+  ) =>
+    dispatchAt(
+      store,
+      set_stock_order_meta({
+        orderId,
+        meta: {
+          receivedAt,
+          valueOfOrderJpy: unitCostJpy * qty,
+          costRows: [{ jan, unitCostJpy, qty }],
+        },
+      }),
+      receivedAt,
+    );
 
   it("should remove source item when split into variants", () => {
     const store = configureStore({ reducer: rootReducer });
@@ -182,6 +204,7 @@ describe("Listing Creation - Split Inventory", () => {
       cost: 74,
     };
 
+    setStockOrderCost(store, "stock-order-1", janCode, 74, 24, item.timestamp);
     store.dispatch(
       bulk_import_items({
         items: [
@@ -191,9 +214,6 @@ describe("Listing Creation - Split Inventory", () => {
             item,
             stockOrder: {
               orderId: "stock-order-1",
-              unitCostJpy: 74,
-              unitCostEur: 0,
-              receivedAt: 1772483113814,
               orderedQty: 24,
             },
           },
@@ -258,6 +278,14 @@ describe("Listing Creation - Split Inventory", () => {
       cost: 65,
     };
 
+    setStockOrderCost(
+      store,
+      "stock-order-1",
+      item.janCode,
+      65,
+      10,
+      item.timestamp,
+    );
     store.dispatch(
       bulk_import_items({
         items: [
@@ -267,9 +295,6 @@ describe("Listing Creation - Split Inventory", () => {
             item,
             stockOrder: {
               orderId: "stock-order-1",
-              unitCostJpy: 65,
-              unitCostEur: 0,
-              receivedAt: 1772483113814,
               orderedQty: 10,
             },
           },
@@ -318,6 +343,14 @@ describe("Listing Creation - Split Inventory", () => {
       cost: 65,
     };
 
+    setStockOrderCost(
+      store,
+      "stock-order-1",
+      item.janCode,
+      65,
+      10,
+      item.timestamp,
+    );
     store.dispatch(
       bulk_import_items({
         items: [
@@ -327,9 +360,6 @@ describe("Listing Creation - Split Inventory", () => {
             item,
             stockOrder: {
               orderId: "stock-order-1",
-              unitCostJpy: 65,
-              unitCostEur: 0,
-              receivedAt: 1772483113814,
               orderedQty: 10,
             },
           },
@@ -386,6 +416,14 @@ describe("Listing Creation - Split Inventory", () => {
       cost: 0,
     };
 
+    setStockOrderCost(
+      store,
+      "old-zero-cost-scan",
+      janCode,
+      0,
+      7,
+      Date.UTC(2023, 10, 12),
+    );
     dispatchAt(
       store,
       bulk_import_items({
@@ -396,9 +434,6 @@ describe("Listing Creation - Split Inventory", () => {
             item: sourceItem,
             stockOrder: {
               orderId: "old-zero-cost-scan",
-              unitCostJpy: 0,
-              unitCostEur: 0,
-              receivedAt: Date.UTC(2023, 10, 12),
               orderedQty: 7,
             },
           },
@@ -433,6 +468,14 @@ describe("Listing Creation - Split Inventory", () => {
       Date.UTC(2025, 4, 2),
     );
 
+    setStockOrderCost(
+      store,
+      "new-stock-order",
+      janCode,
+      66,
+      40,
+      Date.UTC(2026, 2, 2),
+    );
     dispatchAt(
       store,
       bulk_import_items({
@@ -443,9 +486,6 @@ describe("Listing Creation - Split Inventory", () => {
             item: { ...sourceItem, qty: 40, shipped: 0, cost: 66 },
             stockOrder: {
               orderId: "new-stock-order",
-              unitCostJpy: 66,
-              unitCostEur: 0.37,
-              receivedAt: Date.UTC(2025, 11, 3),
               orderedQty: 40,
             },
           },
@@ -473,13 +513,11 @@ describe("Listing Creation - Split Inventory", () => {
     expect(state.costLedger[bearKey][0]).toMatchObject({
       kind: "receipt",
       qty: 20,
-      unitCostJpy: 66,
       source: "stockOrder:new-stock-order",
     });
     expect(state.costLedger[hedgehogKey][0]).toMatchObject({
       kind: "receipt",
       qty: 20,
-      unitCostJpy: 66,
       source: "stockOrder:new-stock-order",
     });
     expect(
@@ -517,6 +555,14 @@ describe("Listing Creation - Split Inventory", () => {
       cost: 65,
     };
 
+    setStockOrderCost(
+      store,
+      "old-stock-order",
+      janCode,
+      65,
+      12,
+      Date.UTC(2024, 9, 9),
+    );
     dispatchAt(
       store,
       bulk_import_items({
@@ -527,9 +573,6 @@ describe("Listing Creation - Split Inventory", () => {
             item: { ...item, qty: 12 },
             stockOrder: {
               orderId: "old-stock-order",
-              unitCostJpy: 65,
-              unitCostEur: 0,
-              receivedAt: Date.UTC(2024, 9, 9),
               orderedQty: 12,
             },
           },
@@ -538,6 +581,14 @@ describe("Listing Creation - Split Inventory", () => {
       Date.UTC(2024, 9, 9),
     );
 
+    setStockOrderCost(
+      store,
+      "new-stock-order",
+      janCode,
+      62,
+      24,
+      Date.UTC(2025, 8, 25),
+    );
     dispatchAt(
       store,
       bulk_import_items({
@@ -548,9 +599,6 @@ describe("Listing Creation - Split Inventory", () => {
             item: { ...item, qty: 24, cost: 62 },
             stockOrder: {
               orderId: "new-stock-order",
-              unitCostJpy: 62,
-              unitCostEur: 0,
-              receivedAt: Date.UTC(2025, 8, 25),
               orderedQty: 24,
             },
           },

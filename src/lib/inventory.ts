@@ -327,7 +327,7 @@ export type CostLedgerEntryRef = {
   kind: "receipt" | "sale";
   at: number;
   seq: number;
-  qty: number;
+  qty?: number;
   unitCostJpy?: number;
   unitCostEur?: number;
   source?: string;
@@ -352,7 +352,6 @@ export const set_cost_ledger_entry_qty = createAction<{
 export const reconstruct_stock_order_unmatched_receipt = createAction<{
   orderId: string;
   itemKey: InventoryItemKey | string;
-  qty: number;
   note: string;
   saleAt?: number;
   saleNote?: string;
@@ -367,19 +366,12 @@ export const reconstruct_stock_order_late_scan_receipt = createAction<{
 export const mark_stock_order_row_not_received = createAction<{
   orderId: string;
   jan: string;
-  qty: number;
   note: string;
 }>("mark_stock_order_row_not_received");
 
 export const create_stock_order_receipt = createAction<{
   orderId: string;
   itemKey: InventoryItemKey | string;
-  qty: number;
-  unitCostJpy: number;
-  unitCostEur: number;
-  receivedAt: number;
-  countryOfOrigin?: string;
-  weight?: number;
 }>("create_stock_order_receipt");
 
 export interface BulkImportItem {
@@ -388,12 +380,10 @@ export interface BulkImportItem {
   item: Item; // The full item object or partial update
   // Present when this row originates from a stock-order import. Marks the
   // qty delta as a genuine receipt (vs. archive-restore / manual / live)
-  // and carries the per-unit cost + receipt date for the ledger.
+  // and identifies the source order. The reducer derives costs and dates
+  // from stockOrderRegistry rather than from broadcast payloads.
   stockOrder?: {
     orderId: string;
-    unitCostJpy: number;
-    unitCostEur: number;
-    receivedAt: number;
     orderedQty?: number;
   };
 }
@@ -426,7 +416,7 @@ export const fix_stock_order = createAction<{
   orderId: string;
   meta: StockOrderMeta;
   costTsv?: string;
-  // Optional manual column override; absent = auto-reconcile.
+  // Optional manual column override; absent = auto-reconcile on replay.
   costInterpretation?: {
     kind: "unit" | "total";
     costColumnIndex: number;
@@ -434,11 +424,6 @@ export const fix_stock_order = createAction<{
     countryColumnIndex?: number;
     weightColumnIndex?: number;
   };
-  // "auto" means costInterpretation is only an audit snapshot of what the UI
-  // saw and replay should recompute from the TSV. "manual" means replay must
-  // force the supplied columns. Missing mode is legacy: a present
-  // costInterpretation is treated as manual.
-  costInterpretationMode?: "auto" | "manual";
   overrideExisting: boolean;
   approveDiscrepancy: boolean;
   ignoreUnmatchedRows?: boolean;
@@ -1986,7 +1971,7 @@ function ledgerEntryMatchesRef(
   if (entry.kind !== ref.kind) return false;
   if (entry.at !== ref.at) return false;
   if (entry.seq !== ref.seq) return false;
-  if (entry.qty !== ref.qty) return false;
+  if (ref.qty !== undefined && entry.qty !== ref.qty) return false;
   if (
     ref.kind === "receipt" &&
     entry.kind === "receipt" &&
@@ -2070,7 +2055,11 @@ function walkLedgerForDerivedCost(entries: readonly LedgerEntry[]) {
 
 function applyStockOrderCostToReceipt(
   receipt: ReceiptEntry,
-  stockOrder: NonNullable<BulkImportItem["stockOrder"]>,
+  stockOrder: {
+    orderId: string;
+    unitCostJpy: number;
+    unitCostEur: number;
+  },
 ): boolean {
   let changed = false;
   if (receipt.costOrderId !== stockOrder.orderId) {
@@ -2348,6 +2337,52 @@ function stockOrderRowFactsForJan(
   };
 }
 
+function stockOrderFx(meta: StockOrderMeta | undefined): number {
+  const totalOrderEur =
+    meta?.paidAmount != null && meta?.paidCurrency
+      ? meta.paidCurrency === "BGN"
+        ? meta.paidAmount / BGN_PER_EUR
+        : meta.paidAmount
+      : meta?.totalOrderEur;
+  return totalOrderEur && (meta?.valueOfOrderJpy || 0) > 0
+    ? totalOrderEur / (meta!.valueOfOrderJpy as number)
+    : 0;
+}
+
+function stockOrderLedgerFactsForJan(
+  state: InventoryState,
+  orderId: string,
+  jan: string,
+  fallbackUnitCostJpy = 0,
+): {
+  orderId: string;
+  receivedAt: number;
+  unitCostJpy: number;
+  unitCostEur: number;
+  expectedQty: number;
+} | null {
+  const meta = state.stockOrderRegistry?.[orderId];
+  if (!meta) return null;
+  const rowFacts = stockOrderRowFactsForJan(
+    stockOrderCostRowsForIssueRefresh(meta),
+    jan,
+  );
+  const unitCostJpy =
+    rowFacts.unitCostJpy > 0 ? rowFacts.unitCostJpy : fallbackUnitCostJpy;
+  const fx = stockOrderFx(meta);
+  return {
+    orderId,
+    receivedAt:
+      meta.receivedAt && meta.receivedAt > 0
+        ? meta.receivedAt
+        : UNKNOWN_RECEIPT_DATE,
+    unitCostJpy:
+      Number.isFinite(unitCostJpy) && unitCostJpy > 0 ? unitCostJpy : 0,
+    unitCostEur: fx > 0 && unitCostJpy > 0 ? unitCostJpy * fx : 0,
+    expectedQty: rowFacts.expectedQty,
+  };
+}
+
 function stockOrderNotReceivedQtyForJan(
   meta: StockOrderMeta | undefined,
   jan: string,
@@ -2420,14 +2455,7 @@ function zeroedAllocationGroupKey(
 ): string {
   const item = input.key ? input.key.match(/^(\d+)/)?.[1] || "" : "";
   const order = input.stockOrder;
-  return [
-    order.orderId,
-    item,
-    order.unitCostJpy,
-    order.unitCostEur,
-    order.orderedQty || "",
-    order.receivedAt || "",
-  ].join("|");
+  return [order.orderId, item, order.orderedQty || ""].join("|");
 }
 
 function applyZeroedStockOrderAllocations(
@@ -2455,11 +2483,16 @@ function applyZeroedStockOrderAllocationGroup(
 ): boolean {
   const stockOrder = inputs[0]?.stockOrder;
   if (!stockOrder || !state.costLedger) return false;
+  const jan = inputs[0]?.key
+    ? state.idToItem[inputs[0].key]?.janCode ||
+      inputs[0].key.match(/^(\d+)/)?.[1] ||
+      ""
+    : "";
+  const facts = stockOrderLedgerFactsForJan(state, stockOrder.orderId, jan);
+  if (!facts || !(facts.unitCostJpy > 0)) return false;
   const orderDate =
-    stockOrder.receivedAt &&
-    stockOrder.receivedAt > 0 &&
-    stockOrder.receivedAt !== UNKNOWN_RECEIPT_DATE
-      ? stockOrder.receivedAt
+    facts.receivedAt > 0 && facts.receivedAt !== UNKNOWN_RECEIPT_DATE
+      ? facts.receivedAt
       : 0;
   if (!orderDate) return false;
 
@@ -2528,7 +2561,7 @@ function applyZeroedStockOrderAllocationGroup(
       const beforeRemaining = remaining;
       const overConsumes =
         Number.isFinite(remaining) && receiptQty > beforeRemaining;
-      let touched = applyStockOrderCostToReceipt(receipt, stockOrder);
+      let touched = applyStockOrderCostToReceipt(receipt, facts);
       if (overConsumes) {
         receipt.auditComment = stockOrderOverconsumptionComment(
           receiptQty,
@@ -2663,10 +2696,16 @@ function applyInventoryUpdate(
 
   // Robust Timestamp Parsing
   const val = getTimestampMs(timestamp);
-  const stockOrderReceivedAt =
-    stockOrder && Number(stockOrder.receivedAt) > 0
-      ? Number(stockOrder.receivedAt)
-      : 0;
+  const stockOrderFacts =
+    stockOrder && item.janCode
+      ? stockOrderLedgerFactsForJan(
+          state,
+          stockOrder.orderId,
+          item.janCode,
+          Number(item.cost) > 0 ? Number(item.cost) : 0,
+        )
+      : null;
+  const stockOrderReceivedAt = stockOrderFacts?.receivedAt || 0;
   const effectiveVal = val > 0 ? val : stockOrderReceivedAt;
 
   const dateObj = new Date(effectiveVal);
@@ -2956,16 +2995,12 @@ function applyInventoryUpdate(
       at: stockOrderReceivedAt || deriveCreationTimestampMs(timestamp),
       seq: ledger.length,
       qty: Number.isFinite(deltaQty) ? deltaQty : 0,
-      unitCostJpy:
-        stockOrder && Number(stockOrder.unitCostJpy) > 0
-          ? Number(stockOrder.unitCostJpy)
-          : Number(item.cost) > 0
-            ? Number(item.cost)
-            : 0,
-      unitCostEur:
-        stockOrder && Number(stockOrder.unitCostEur) > 0
-          ? Number(stockOrder.unitCostEur)
+      unitCostJpy: stockOrderFacts
+        ? stockOrderFacts.unitCostJpy
+        : Number(item.cost) > 0
+          ? Number(item.cost)
           : 0,
+      unitCostEur: stockOrderFacts ? stockOrderFacts.unitCostEur : 0,
       source: stockOrder ? `stockOrder:${stockOrder.orderId}` : actionType,
       ...(stockOrder ? { costOrderId: stockOrder.orderId } : {}),
       ...(actionDocId ? { createdByActionId: actionDocId } : {}),
@@ -2976,11 +3011,11 @@ function applyInventoryUpdate(
       // Genuine re-order: a new dated receipt at the re-order price.
       ledger.push({
         kind: "receipt",
-        at: stockOrder.receivedAt || UNKNOWN_RECEIPT_DATE,
+        at: stockOrderReceivedAt || UNKNOWN_RECEIPT_DATE,
         seq: ledger.length,
         qty: deltaQty,
-        unitCostJpy: stockOrder.unitCostJpy,
-        unitCostEur: stockOrder.unitCostEur,
+        unitCostJpy: stockOrderFacts?.unitCostJpy || 0,
+        unitCostEur: stockOrderFacts?.unitCostEur || 0,
         source: `stockOrder:${stockOrder.orderId}`,
         costOrderId: stockOrder.orderId,
       });
@@ -3960,10 +3995,10 @@ export const inventory = createReducer(initialState, (r) => {
     });
   });
   r.addCase(reconstruct_stock_order_unmatched_receipt, (state, action) => {
-    const { orderId, itemKey, qty, note, saleAt, saleNote } = action.payload;
+    const { orderId, itemKey, note, saleAt, saleNote } = action.payload;
     const trimmedNote = note.trim();
     const trimmedSaleNote = saleNote?.trim() || "";
-    if (!trimmedNote || !Number.isFinite(qty) || qty <= 0) return;
+    if (!trimmedNote) return;
 
     const key = canonicalizeInventoryItemKey(itemKey);
     const item = state.idToItem[key];
@@ -3981,7 +4016,8 @@ export const inventory = createReducer(initialState, (r) => {
     const unmatched = issues.find(
       (issue) => issue.kind === "unmatched-row" && issue.jan === item.janCode,
     );
-    if (!unmatched || qty > unmatched.qty) return;
+    const qty = unmatched?.qty || 0;
+    if (!(qty > 0)) return;
     const reconstructedQty = facts.expectedQty;
 
     const totalOrderEur =
@@ -4058,11 +4094,10 @@ export const inventory = createReducer(initialState, (r) => {
     });
   });
   r.addCase(mark_stock_order_row_not_received, (state, action) => {
-    const { orderId, jan, qty, note } = action.payload;
+    const { orderId, jan, note } = action.payload;
     const trimmedJan = String(jan || "").trim();
     const trimmedNote = note.trim();
-    if (!trimmedJan || !trimmedNote || !Number.isFinite(qty) || qty <= 0)
-      return;
+    if (!trimmedJan || !trimmedNote) return;
 
     const meta = state.stockOrderRegistry?.[orderId];
     if (!meta) return;
@@ -4074,7 +4109,9 @@ export const inventory = createReducer(initialState, (r) => {
     const unmatched = issues.find(
       (issue) => issue.kind === "unmatched-row" && issue.jan === trimmedJan,
     );
-    if (!unmatched || qty > unmatched.qty) return;
+    if (!unmatched) return;
+    const qty = unmatched.qty || 0;
+    if (!(qty > 0)) return;
 
     const previouslyNotReceived = stockOrderNotReceivedQtyForJan(
       meta,
@@ -4094,21 +4131,30 @@ export const inventory = createReducer(initialState, (r) => {
     refreshStockOrderCostIssues(state, orderId);
   });
   r.addCase(create_stock_order_receipt, (state, action) => {
-    const {
-      orderId,
-      itemKey,
-      qty,
-      unitCostJpy,
-      unitCostEur,
-      receivedAt,
-      countryOfOrigin,
-      weight,
-    } = action.payload;
+    const { orderId, itemKey } = action.payload;
     const key = canonicalizeInventoryItemKey(itemKey);
     const item = state.idToItem[key];
     if (!item) return;
-    if (!orderId || !Number.isFinite(qty) || qty <= 0) return;
-    if (!Number.isFinite(receivedAt) || receivedAt <= 0) return;
+    if (!orderId) return;
+
+    const meta = state.stockOrderRegistry?.[orderId];
+    if (!meta) return;
+    const rows = stockOrderCostRowsForIssueRefresh(meta);
+    const facts = stockOrderRowFactsForJan(rows, item.janCode);
+    if (!(facts.unitCostJpy > 0)) return;
+    const issues = stockOrderCostIssues(state, orderId, rows);
+    const unmatched = issues.find(
+      (issue) => issue.kind === "unmatched-row" && issue.jan === item.janCode,
+    );
+    const qty = unmatched?.qty ?? facts.expectedQty;
+    if (!(qty > 0)) return;
+
+    const ledgerFacts = stockOrderLedgerFactsForJan(
+      state,
+      orderId,
+      item.janCode,
+    );
+    if (!ledgerFacts) return;
 
     if (!state.costLedger) state.costLedger = {};
     const ledger = state.costLedger[key] || [];
@@ -4126,11 +4172,11 @@ export const inventory = createReducer(initialState, (r) => {
     const val = getTimestampMs((action as any).timestamp);
     ledger.push({
       kind: "receipt",
-      at: receivedAt,
+      at: ledgerFacts.receivedAt,
       seq: ledger.length,
       qty,
-      unitCostJpy: Number.isFinite(unitCostJpy) ? unitCostJpy : 0,
-      unitCostEur: Number.isFinite(unitCostEur) ? unitCostEur : 0,
+      unitCostJpy: ledgerFacts.unitCostJpy,
+      unitCostEur: ledgerFacts.unitCostEur,
       source,
       costOrderId: orderId,
       auditComment: `Created missing stock-order receipt for ${orderId}.`,
@@ -4139,26 +4185,20 @@ export const inventory = createReducer(initialState, (r) => {
 
     item.qty = Number(item.qty || 0) + qty;
     item.timestamp = val || item.timestamp;
-    if (countryOfOrigin && !item.countryOfOrigin) {
-      item.countryOfOrigin = countryOfOrigin;
-    }
-    if (Number.isFinite(weight) && Number(weight) > 0 && !item.weight) {
-      item.weight = Number(weight);
-    }
 
     rederiveCostFromLedger(state, key);
     refreshStockOrderCostIssues(state, orderId);
 
     if (!state.idToHistory[key]) state.idToHistory[key] = [];
-    const date = new Date(val || receivedAt).toLocaleString("en", {
+    const date = new Date(val || ledgerFacts.receivedAt).toLocaleString("en", {
       month: "short",
       day: "numeric",
       year: "numeric",
     });
     state.idToHistory[key].push({
       date,
-      desc: `Created missing stock-order receipt for ${orderId}: +${formatLedgerQty(qty)} unit(s) at ${formatYen(unitCostJpy)}`,
-      val: val || receivedAt,
+      desc: `Created missing stock-order receipt for ${orderId}: +${formatLedgerQty(qty)} unit(s) at ${formatYen(ledgerFacts.unitCostJpy)}`,
+      val: val || ledgerFacts.receivedAt,
     });
   });
   r.addCase(reconstruct_stock_order_late_scan_receipt, (state, action) => {
@@ -4445,17 +4485,13 @@ export const inventory = createReducer(initialState, (r) => {
   r.addCase(apply_stock_order_costs, (state, action) => {
     const { orderId, rows, overrideExisting } = action.payload;
     if (!state.costLedger) state.costLedger = {};
-    const reg = state.stockOrderRegistry?.[orderId];
-    const totalOrderEur =
-      reg?.paidAmount != null && reg?.paidCurrency
-        ? reg.paidCurrency === "BGN"
-          ? reg.paidAmount / BGN_PER_EUR
-          : reg.paidAmount
-        : reg?.totalOrderEur;
-    const fx =
-      totalOrderEur && (reg?.valueOfOrderJpy || 0) > 0
-        ? totalOrderEur / (reg!.valueOfOrderJpy as number)
-        : 0;
+    if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
+    state.stockOrderRegistry[orderId] = {
+      ...state.stockOrderRegistry[orderId],
+      costRows: rows.map((row) => ({ ...row })),
+    };
+    const reg = state.stockOrderRegistry[orderId];
+    const fx = stockOrderFx(reg);
     const allocationInputs: ZeroedStockOrderAllocationInput[] = [];
     for (const row of aggregateStockOrderAllocationRows(rows)) {
       if (hasSourceTaggedStockOrderReceipt(state, orderId, row.jan)) continue;
@@ -4465,9 +4501,6 @@ export const inventory = createReducer(initialState, (r) => {
           key,
           stockOrder: {
             orderId,
-            unitCostJpy: row.unitCostJpy,
-            unitCostEur: fx > 0 ? row.unitCostJpy * fx : 0,
-            receivedAt: reg?.receivedAt || UNKNOWN_RECEIPT_DATE,
             orderedQty: row.qty,
           },
         });
@@ -4494,10 +4527,8 @@ export const inventory = createReducer(initialState, (r) => {
       if (touched) rederiveCostFromLedger(state, key);
     }
 
-    if (!state.stockOrderRegistry) state.stockOrderRegistry = {};
     state.stockOrderRegistry[orderId] = {
       ...state.stockOrderRegistry[orderId],
-      costRows: rows.map((row) => ({ ...row })),
       costIssues: stockOrderCostIssues(state, orderId, rows),
     };
   });

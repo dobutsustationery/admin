@@ -101,9 +101,6 @@
         kind: "receipt",
         at: entry.at,
         seq: entry.seq,
-        qty: entry.qty,
-        unitCostJpy: entry.unitCostJpy,
-        unitCostEur: entry.unitCostEur,
         source: entry.source || "",
         costOrderId: entry.costOrderId || "",
       };
@@ -112,7 +109,6 @@
       kind: "sale",
       at: entry.at,
       seq: entry.seq,
-      qty: entry.qty,
       isArchive: Boolean(entry.isArchive),
     };
   }

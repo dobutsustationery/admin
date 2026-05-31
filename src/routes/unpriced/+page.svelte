@@ -6,7 +6,6 @@
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import {
     effectiveLedgerEntries,
-    BGN_PER_EUR,
     lotMatchesOrder,
     walkLedger,
     type LedgerEntry,
@@ -823,30 +822,6 @@
     };
   }
 
-  function stockOrderMeta(row: StockOrderMatchIssueRow): StockOrderMeta {
-    return $store.inventory.stockOrderRegistry?.[row.orderId] || {};
-  }
-
-  function stockOrderUnitCostEur(
-    row: StockOrderMatchIssueRow,
-    unitCostJpy: number,
-  ): number {
-    const meta = stockOrderMeta(row);
-    const totalOrderEur =
-      meta.paidAmount != null && meta.paidCurrency
-        ? meta.paidCurrency === "BGN"
-          ? meta.paidAmount / BGN_PER_EUR
-          : meta.paidAmount
-        : meta.totalOrderEur;
-    return totalOrderEur && meta.valueOfOrderJpy && meta.valueOfOrderJpy > 0
-      ? unitCostJpy * (totalOrderEur / meta.valueOfOrderJpy)
-      : 0;
-  }
-
-  function stockOrderReceivedAt(row: StockOrderMatchIssueRow): number {
-    return row.orderDate && row.orderDate > 0 ? row.orderDate : Date.now();
-  }
-
   function openCreateInventoryDialog(row: StockOrderMatchIssueRow): void {
     createInventoryDraft = {
       row,
@@ -877,7 +852,6 @@
     const subtype = draft.subtype.trim();
     const id = makeInventoryItemKey(jan, subtype);
     const qty = Number(draft.qty);
-    const cost = Number(draft.cost);
     const pieces = Number(draft.pieces);
     const price = Number(draft.price);
     const weight = Number(draft.weight);
@@ -917,7 +891,6 @@
         pieces: Number.isFinite(pieces) ? pieces : 0,
         shipped: 0,
         price: Number.isFinite(price) && price > 0 ? price : undefined,
-        cost: Number.isFinite(cost) && cost > 0 ? cost : undefined,
         weight: Number.isFinite(weight) && weight > 0 ? weight : undefined,
         countryOfOrigin: draft.countryOfOrigin.trim() || undefined,
       };
@@ -932,12 +905,6 @@
               item: item as Item,
               stockOrder: {
                 orderId: row.orderId,
-                unitCostJpy: Number.isFinite(cost) && cost > 0 ? cost : 0,
-                unitCostEur:
-                  Number.isFinite(cost) && cost > 0
-                    ? stockOrderUnitCostEur(row, cost)
-                    : 0,
-                receivedAt: stockOrderReceivedAt(row),
                 orderedQty: qty,
               },
             },
@@ -989,7 +956,6 @@
         reconstruct_stock_order_unmatched_receipt({
           orderId: row.orderId,
           itemKey: row.itemKey,
-          qty: row.qty,
           note,
           saleAt,
           saleNote: note,
@@ -1034,7 +1000,6 @@
         mark_stock_order_row_not_received({
           orderId: row.orderId,
           jan: row.jan,
-          qty: row.qty,
           note,
         }),
       );

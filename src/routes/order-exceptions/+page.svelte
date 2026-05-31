@@ -12,7 +12,6 @@
     type Item,
     type StockOrderMeta,
   } from "$lib/inventory";
-  import { BGN_PER_EUR } from "$lib/cost-engine";
   import { makeInventoryItemKey } from "$lib/sku";
   import { getAllCachedActions } from "$lib/action-cache";
   import { rootReducer } from "$lib/root-reducer";
@@ -243,15 +242,6 @@
   $: nothingToDo = !hasMeta && !costPaste.trim();
   $: commitDisabled = !fixPreview || nothingToDo || fixPreview.blocked;
 
-  function broadcastAction(action: any): boolean {
-    if (!$user?.uid) {
-      statusMessage = "Sign in before saving changes.";
-      return false;
-    }
-    broadcast(firestore, $user.uid, action);
-    return true;
-  }
-
   async function broadcastActionAsync(action: any): Promise<boolean> {
     if (!$user?.uid) {
       statusMessage = "Sign in before saving changes.";
@@ -271,30 +261,6 @@
 
   function receiptPendingKey(row: StockOrderCostMatchRow): string {
     return `${current?.orderId || ""}:${row.key || ""}:${row.rowIndex}:${row.jan}`;
-  }
-
-  function stockOrderUnitCostEur(unitCostJpy: number): number {
-    const totalOrderEur =
-      proposedMeta.paidAmount != null && proposedMeta.paidCurrency
-        ? proposedMeta.paidCurrency === "BGN"
-          ? proposedMeta.paidAmount / BGN_PER_EUR
-          : proposedMeta.paidAmount
-        : current?.totalOrderEur;
-    const valueOfOrder =
-      proposedMeta.valueOfOrderJpy ?? current?.valueOfOrderJpy;
-    return totalOrderEur && valueOfOrder && valueOfOrder > 0
-      ? unitCostJpy * (totalOrderEur / valueOfOrder)
-      : 0;
-  }
-
-  function stockOrderReceivedAt(): number {
-    return (
-      proposedMeta.receivedAt ||
-      current?.receivedAt ||
-      Date.parse(
-        `${dateStr || new Date().toISOString().slice(0, 10)}T00:00:00Z`,
-      )
-    );
   }
 
   function openCreateInventoryDialog(row: StockOrderCostMatchRow): void {
@@ -329,9 +295,7 @@
       statusMessage = `${row.key} no longer exists.`;
       return;
     }
-    const qty = Number(row.qty);
-    const cost = Number(row.unitCostJpy);
-    if (!Number.isFinite(qty) || qty <= 0) {
+    if (!(Number(row.qty) > 0)) {
       statusMessage = "Cannot create a receipt without a positive quantity.";
       return;
     }
@@ -339,13 +303,6 @@
     const action = create_stock_order_receipt({
       orderId: current.orderId,
       itemKey: row.key,
-      qty,
-      unitCostJpy: Number.isFinite(cost) && cost > 0 ? cost : 0,
-      unitCostEur:
-        Number.isFinite(cost) && cost > 0 ? stockOrderUnitCostEur(cost) : 0,
-      receivedAt: stockOrderReceivedAt(),
-      countryOfOrigin: row.incomingCountryOfOrigin,
-      weight: row.incomingWeight,
     });
     pendingReceiptKeys = new Set([...pendingReceiptKeys, pendingKey]);
 
@@ -360,18 +317,16 @@
     }
   }
 
-  function saveCreatedInventoryItem(): void {
+  async function saveCreatedInventoryItem(): Promise<void> {
     if (!current || !createInventoryDraft) return;
     const draft = createInventoryDraft;
     const jan = draft.jan.trim();
     const subtype = draft.subtype.trim();
     const id = makeInventoryItemKey(jan, subtype);
     const qty = Number(draft.qty);
-    const cost = Number(draft.cost);
     const pieces = Number(draft.pieces);
     const price = Number(draft.price);
     const weight = Number(draft.weight);
-    const receivedAt = stockOrderReceivedAt();
 
     if (!jan || !Number.isFinite(qty) || qty <= 0) {
       statusMessage = "Enter a positive quantity before creating inventory.";
@@ -396,13 +351,12 @@
       pieces: Number.isFinite(pieces) ? pieces : 0,
       shipped: 0,
       price: Number.isFinite(price) && price > 0 ? price : undefined,
-      cost: Number.isFinite(cost) && cost > 0 ? cost : undefined,
       weight: Number.isFinite(weight) && weight > 0 ? weight : undefined,
       countryOfOrigin: draft.countryOfOrigin.trim() || undefined,
     };
 
     if (
-      broadcastAction(
+      await broadcastActionAsync(
         bulk_import_items({
           items: [
             {
@@ -411,12 +365,6 @@
               item: item as Item,
               stockOrder: {
                 orderId: current.orderId,
-                unitCostJpy: Number.isFinite(cost) && cost > 0 ? cost : 0,
-                unitCostEur:
-                  Number.isFinite(cost) && cost > 0
-                    ? stockOrderUnitCostEur(cost)
-                    : 0,
-                receivedAt,
                 orderedQty: qty,
               },
             },
@@ -429,22 +377,18 @@
     }
   }
 
-  function commitFix() {
+  async function commitFix() {
     if (!current || commitDisabled) return;
     if (
-      broadcastAction(
+      await broadcastActionAsync(
         fix_stock_order({
           orderId: current.orderId,
           meta: proposedMeta,
           costTsv: costPaste.trim() ? costPaste : undefined,
-          costInterpretation: costPaste.trim()
-            ? persistedCostInterpretation
-            : undefined,
-          costInterpretationMode: costPaste.trim()
-            ? manualOverride
-              ? "manual"
-              : "auto"
-            : undefined,
+          costInterpretation:
+            costPaste.trim() && manualOverride
+              ? persistedCostInterpretation
+              : undefined,
           overrideExisting,
           approveDiscrepancy,
           ignoreUnmatchedRows,
