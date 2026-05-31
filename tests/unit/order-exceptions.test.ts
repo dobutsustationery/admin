@@ -1128,14 +1128,7 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
       ...set_cost_ledger_entry_qty({
         itemKey: key,
         ref: {
-          kind: "receipt",
-          at: entry.at,
-          seq: entry.seq,
-          qty: entry.qty,
-          unitCostJpy: entry.unitCostJpy,
-          unitCostEur: entry.unitCostEur,
-          source: entry.source || "",
-          costOrderId: entry.costOrderId || "",
+          id: entry.id,
         },
         qty: 9,
         note: "operator confirmed one less unit",
@@ -1179,14 +1172,7 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     )!;
     const entry = committed.inventory.costLedger![key][0] as any;
     const ref = {
-      kind: "receipt" as const,
-      at: entry.at,
-      seq: entry.seq,
-      qty: entry.qty,
-      unitCostJpy: entry.unitCostJpy,
-      unitCostEur: entry.unitCostEur,
-      source: entry.source || "",
-      costOrderId: entry.costOrderId || "",
+      id: entry.id,
     };
 
     committed = rootReducer(committed, {
@@ -1968,14 +1954,7 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
         itemKey: blueKey,
         refs: [
           {
-            kind: reconstructed.kind,
-            at: reconstructed.at,
-            seq: reconstructed.seq,
-            qty: reconstructed.qty,
-            unitCostJpy: reconstructed.unitCostJpy,
-            unitCostEur: reconstructed.unitCostEur,
-            source: reconstructed.source,
-            costOrderId: reconstructed.costOrderId,
+            id: reconstructed.id,
           },
         ],
         ignored: true,

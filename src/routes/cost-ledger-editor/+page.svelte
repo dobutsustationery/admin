@@ -96,21 +96,10 @@
   }
 
   function entryRef(entry: LedgerEntry): CostLedgerEntryRef {
-    if (entry.kind === "receipt") {
-      return {
-        kind: "receipt",
-        at: entry.at,
-        seq: entry.seq,
-        source: entry.source || "",
-        costOrderId: entry.costOrderId || "",
-      };
+    if (!entry.id) {
+      throw new Error("Cost ledger row is missing a stable entry id.");
     }
-    return {
-      kind: "sale",
-      at: entry.at,
-      seq: entry.seq,
-      isArchive: Boolean(entry.isArchive),
-    };
+    return { id: entry.id };
   }
 
   function selectKey(key: string) {

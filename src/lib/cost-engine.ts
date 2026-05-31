@@ -16,6 +16,7 @@ export const UNKNOWN_RECEIPT_DATE = Date.UTC(2026, 0, 1); // 2026-01-01
 export const BGN_PER_EUR = 1.95583; // 1 EUR = 1.95583 BGN (fixed)
 
 export type ReceiptEntry = {
+  id?: string;
   kind: "receipt";
   at: number; // epoch ms; always a real date (UNKNOWN_RECEIPT_DATE if not known)
   seq: number; // deterministic tiebreak within equal `at`
@@ -63,12 +64,14 @@ export type ReceiptEntry = {
   adjustmentEntry?: boolean;
   adjustmentMode?: "apply-to-target" | "standalone";
   adjustmentTarget?: {
+    id?: string;
     at: number;
     seq: number;
   };
 };
 
 export type SaleEntry = {
+  id?: string;
   kind: "sale";
   at: number;
   seq: number;
@@ -94,6 +97,7 @@ export type SaleEntry = {
   adjustmentEntry?: boolean;
   adjustmentMode?: "apply-to-target" | "standalone";
   adjustmentTarget?: {
+    id?: string;
     at: number;
     seq: number;
   };
@@ -143,11 +147,10 @@ function receiptMatchesAdjustmentTarget(
   target: ReceiptEntry["adjustmentTarget"],
 ): entry is ReceiptEntry {
   return (
-    !!target &&
+    !!target?.id &&
     entry.kind === "receipt" &&
     !(entry.adjustmentEntry && entry.adjustmentMode === "apply-to-target") &&
-    entry.at === target.at &&
-    entry.seq === target.seq
+    entry.id === target.id
   );
 }
 
@@ -158,15 +161,7 @@ function findAdjustmentTarget(
   const exact = entries.find((entry): entry is ReceiptEntry =>
     receiptMatchesAdjustmentTarget(entry, target),
   );
-  if (exact) return exact;
-  if (!target) return undefined;
-  const seqMatches = entries.filter(
-    (entry): entry is ReceiptEntry =>
-      entry.kind === "receipt" &&
-      !(entry.adjustmentEntry && entry.adjustmentMode === "apply-to-target") &&
-      entry.seq === target.seq,
-  );
-  return seqMatches.length === 1 ? seqMatches[0] : undefined;
+  return exact;
 }
 
 type CostLot = {

@@ -324,15 +324,7 @@ export const make_sales = createAction<{
 }>("make_sales");
 
 export type CostLedgerEntryRef = {
-  kind: "receipt" | "sale";
-  at: number;
-  seq: number;
-  qty?: number;
-  unitCostJpy?: number;
-  unitCostEur?: number;
-  source?: string;
-  costOrderId?: string;
-  isArchive?: boolean;
+  id: string;
 };
 
 export const set_cost_ledger_entries_ignored = createAction<{
@@ -526,6 +518,36 @@ const makeInventoryEntityId = (
   creatingActionDocId: string,
   originalInventoryKey: InventoryItemKey,
 ): InventoryEntityId => `${creatingActionDocId}:${originalInventoryKey}`;
+
+function ledgerEntryId(
+  ...parts: Array<string | number | boolean | null | undefined>
+): string {
+  return `ledger:${parts
+    .map((part) => encodeURIComponent(String(part ?? "")))
+    .join(":")}`;
+}
+
+function nextLedgerEntryId(
+  ledger: readonly LedgerEntry[],
+  ...parts: Array<string | number | boolean | null | undefined>
+): string {
+  const base = ledgerEntryId(...parts);
+  const used = new Set(ledger.map((entry) => entry.id).filter(Boolean));
+  if (!used.has(base)) return base;
+  let suffix = 2;
+  while (used.has(`${base}:${suffix}`)) suffix++;
+  return `${base}:${suffix}`;
+}
+
+function ledgerEntryTarget(
+  entry: LedgerEntry,
+): ReceiptEntry["adjustmentTarget"] {
+  return {
+    ...(entry.id ? { id: entry.id } : {}),
+    at: entry.at,
+    seq: entry.seq,
+  };
+}
 
 const findBindingIntervalAt = (
   intervals: KeyBindingInterval[] | undefined,
@@ -1401,7 +1423,12 @@ function recordSale(
   qty: number,
   atMs: number,
   options:
-    | { isArchive?: boolean; visibleQty?: number; auditComment?: string }
+    | {
+        isArchive?: boolean;
+        visibleQty?: number;
+        auditComment?: string;
+        idParts?: Array<string | number | boolean | null | undefined>;
+      }
     | boolean = {},
 ) {
   if (!qty || !Number.isFinite(qty)) return;
@@ -1410,6 +1437,14 @@ function recordSale(
     typeof options === "boolean" ? { isArchive: options } : options;
   const ledger = state.costLedger[key];
   const entry: SaleEntry = {
+    id: nextLedgerEntryId(
+      ledger,
+      "sale",
+      key,
+      ...(normalizedOptions.idParts || []),
+      atMs,
+      qty,
+    ),
     kind: "sale",
     at: Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE,
     seq: ledger.length,
@@ -1514,20 +1549,10 @@ function openReceiptLotsForLedger(
           const target = ledger[lot.index];
           return (
             target?.kind === "receipt" &&
-            target.at === entry.adjustmentTarget?.at &&
-            target.seq === entry.adjustmentTarget.seq
+            !!entry.adjustmentTarget?.id &&
+            target.id === entry.adjustmentTarget.id
           );
         });
-        if (!targetLot) {
-          const seqMatches = openLots.filter((lot) => {
-            const target = ledger[lot.index];
-            return (
-              target?.kind === "receipt" &&
-              target.seq === entry.adjustmentTarget?.seq
-            );
-          });
-          targetLot = seqMatches.length === 1 ? seqMatches[0] : undefined;
-        }
         if (targetLot) {
           targetLot.remaining += qty;
           if (targetLot.remaining < 0) targetLot.remaining = 0;
@@ -1575,6 +1600,15 @@ function visibleQtyCorrectionEntry(
   receivedQtyOverride?: number,
 ): ReceiptEntry {
   return {
+    id: ledgerEntryId(
+      "qty-correction",
+      actionDocId || actionType,
+      receipt.id || `${receipt.at}:${receipt.seq}`,
+      at,
+      seq,
+      qty,
+      adjustmentMode,
+    ),
     kind: "receipt",
     at,
     seq,
@@ -1611,8 +1645,15 @@ function manualReceiptQtyAdjustmentEntry(
   effectiveQty: number,
   delta: number,
   note: string,
+  actionId: string,
 ): ReceiptEntry {
   return {
+    id: ledgerEntryId(
+      "manual-ledger-qty",
+      actionId,
+      receipt.id || `${receipt.at}:${receipt.seq}`,
+      effectiveQty + delta,
+    ),
     kind: "receipt",
     at: receipt.at,
     seq: Number(receipt.seq || 0) + 0.001,
@@ -1627,7 +1668,7 @@ function manualReceiptQtyAdjustmentEntry(
     auditSeverity: "warning",
     adjustmentEntry: true,
     adjustmentMode: "apply-to-target",
-    adjustmentTarget: { at: receipt.at, seq: receipt.seq },
+    adjustmentTarget: ledgerEntryTarget(receipt),
   };
 }
 
@@ -1712,7 +1753,7 @@ function applyQuantityCorrectionToReceipts(
     const shouldMoveReceiptDate =
       actionType === "update_item" && lot.remaining >= effectiveBeforeQty;
     const baseSeq = Number(receipt.seq ?? lot.index);
-    const target = { at: receipt.at, seq: baseSeq };
+    const target = ledgerEntryTarget(receipt);
     if (shouldMoveReceiptDate) {
       ledger.push(
         visibleQtyCorrectionEntry(
@@ -1827,6 +1868,14 @@ function increaseNewestReceiptToMatchVisibleQty(
     const isPostArchiveRecount = hasPriorArchiveSale(ledger, correctionAt);
     appendedReceipt = true;
     ledger.push({
+      id: nextLedgerEntryId(
+        ledger,
+        "visible-qty-increase",
+        key,
+        options.actionDocId || options.actionType || "update_item",
+        correctionAt,
+        increase,
+      ),
       kind: "receipt",
       at: correctionAt,
       seq: ledger.length,
@@ -1864,7 +1913,7 @@ function increaseNewestReceiptToMatchVisibleQty(
       Math.max(0, visible),
     );
     const actionType = options.actionType || "update_field";
-    const target = { at: receipt.at, seq: baseSeq };
+    const target = ledgerEntryTarget(receipt);
     if (shouldMoveReceiptDate) {
       ledger.push(
         visibleQtyCorrectionEntry(
@@ -1964,74 +2013,18 @@ function rederiveCostFromLedger(state: InventoryState, key: string) {
   }
 }
 
-function ledgerEntryMatchesRef(
-  entry: LedgerEntry,
-  ref: CostLedgerEntryRef,
-): boolean {
-  if (entry.kind !== ref.kind) return false;
-  if (entry.at !== ref.at) return false;
-  if (entry.seq !== ref.seq) return false;
-  if (ref.qty !== undefined && entry.qty !== ref.qty) return false;
-  if (
-    ref.kind === "receipt" &&
-    entry.kind === "receipt" &&
-    ref.unitCostJpy !== undefined &&
-    entry.unitCostJpy !== ref.unitCostJpy
-  ) {
-    return false;
-  }
-  if (
-    ref.kind === "receipt" &&
-    entry.kind === "receipt" &&
-    ref.unitCostEur !== undefined &&
-    entry.unitCostEur !== ref.unitCostEur
-  ) {
-    return false;
-  }
-  if (
-    ref.kind === "receipt" &&
-    entry.kind === "receipt" &&
-    ref.source !== undefined &&
-    (entry.source || "") !== ref.source
-  ) {
-    return false;
-  }
-  if (
-    ref.kind === "receipt" &&
-    entry.kind === "receipt" &&
-    ref.costOrderId !== undefined &&
-    (entry.costOrderId || "") !== ref.costOrderId
-  ) {
-    return false;
-  }
-  if (
-    ref.kind === "sale" &&
-    entry.kind === "sale" &&
-    ref.isArchive !== undefined &&
-    Boolean(entry.isArchive) !== ref.isArchive
-  ) {
-    return false;
-  }
-  return true;
+function ledgerEntryMatchesRef(entry: LedgerEntry, ref: CostLedgerEntryRef) {
+  return !!ref.id && entry.id === ref.id;
 }
 
-function ledgerEntryLooselyMatchesRef(
-  entry: LedgerEntry,
-  ref: CostLedgerEntryRef,
-): boolean {
-  return ledgerEntryMatchesRef(entry, { ...ref, seq: entry.seq });
-}
-
-function selectLooseLedgerRefMatch(
-  ledger: LedgerEntry[],
-  ref: CostLedgerEntryRef,
-): LedgerEntry | undefined {
-  const candidates = ledger
-    .filter((candidate) => ledgerEntryLooselyMatchesRef(candidate, ref))
-    .sort((a, b) => a.seq - b.seq);
-  if (candidates.length === 1) return candidates[0];
-  const rank = candidates.filter((candidate) => candidate.seq < ref.seq).length;
-  return candidates[rank];
+function adjustmentTargetsEntry(entry: LedgerEntry, target: LedgerEntry) {
+  return (
+    entry.adjustmentEntry &&
+    entry.adjustmentTarget &&
+    (entry.adjustmentTarget.id
+      ? entry.adjustmentTarget.id === target.id
+      : false)
+  );
 }
 
 function formatLedgerQty(n: number): string {
@@ -2991,6 +2984,14 @@ function applyInventoryUpdate(
   // timestamp because that is their only receipt date.
   if ((val > 0 || stockOrderReceivedAt > 0) && isNewItem) {
     ledger.push({
+      id: nextLedgerEntryId(
+        ledger,
+        "receipt",
+        actionDocId || actionType,
+        id,
+        stockOrder?.orderId || "",
+        stockOrderReceivedAt || deriveCreationTimestampMs(timestamp),
+      ),
       kind: "receipt",
       at: stockOrderReceivedAt || deriveCreationTimestampMs(timestamp),
       seq: ledger.length,
@@ -3010,6 +3011,15 @@ function applyInventoryUpdate(
     if (Number.isFinite(deltaQty) && deltaQty > 0) {
       // Genuine re-order: a new dated receipt at the re-order price.
       ledger.push({
+        id: nextLedgerEntryId(
+          ledger,
+          "receipt",
+          actionDocId || actionType,
+          id,
+          stockOrder.orderId,
+          stockOrderReceivedAt || UNKNOWN_RECEIPT_DATE,
+          deltaQty,
+        ),
         kind: "receipt",
         at: stockOrderReceivedAt || UNKNOWN_RECEIPT_DATE,
         seq: ledger.length,
@@ -3034,6 +3044,14 @@ function applyInventoryUpdate(
     deltaQty > 0
   ) {
     ledger.push({
+      id: nextLedgerEntryId(
+        ledger,
+        "receipt",
+        actionDocId || actionType,
+        id,
+        deriveCreationTimestampMs(timestamp),
+        deltaQty,
+      ),
       kind: "receipt",
       at: deriveCreationTimestampMs(timestamp),
       seq: ledger.length,
@@ -3373,7 +3391,14 @@ export const inventory = createReducer(initialState, (r) => {
       if (state.idToItem[effectiveKey]) {
         if (!isReconciledLater && delta > 0) {
           state.idToItem[effectiveKey].shipped += delta;
-          recordSale(state, effectiveKey, delta, saleAtMs);
+          recordSale(state, effectiveKey, delta, saleAtMs, {
+            idParts: [
+              (action as any).id || "local",
+              "shopify",
+              orderID,
+              lineItemID,
+            ],
+          });
         }
 
         const historyVal = actionTimestamp;
@@ -3490,6 +3515,7 @@ export const inventory = createReducer(initialState, (r) => {
 
     const order = getOrCreateOrder(state, orderID, rawOrder, actionTimestamp);
     const saleAtMs = getOrderSaleAtMs(order, actionTimestamp);
+    const reconcileId = `shopify-reconcile:${rawOrder.id}:${actionTimestamp}`;
 
     const timestamp = Date.parse(rawOrder.updated_at || rawOrder.created_at);
     const effectiveAtMs = getOrderFactEffectiveAtMs(rawOrder, actionTimestamp);
@@ -3603,7 +3629,9 @@ export const inventory = createReducer(initialState, (r) => {
       if (diff !== 0) {
         if (state.idToItem[canonicalKey]) {
           state.idToItem[canonicalKey].shipped += diff;
-          recordSale(state, canonicalKey, diff, saleAtMs);
+          recordSale(state, canonicalKey, diff, saleAtMs, {
+            idParts: [reconcileId, "shopify-reconcile", orderID, canonicalKey],
+          });
           const historyVal = actionTimestamp;
           if (!state.idToHistory[canonicalKey])
             state.idToHistory[canonicalKey] = [];
@@ -3626,7 +3654,14 @@ export const inventory = createReducer(initialState, (r) => {
       const canonicalKey = key as InventoryItemKey;
       if (qty !== 0 && state.idToItem[canonicalKey]) {
         state.idToItem[canonicalKey].shipped -= qty;
-        recordSale(state, canonicalKey, -qty, saleAtMs);
+        recordSale(state, canonicalKey, -qty, saleAtMs, {
+          idParts: [
+            reconcileId,
+            "shopify-reconcile-reverse",
+            orderID,
+            canonicalKey,
+          ],
+        });
         const historyVal = actionTimestamp;
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
@@ -3701,6 +3736,7 @@ export const inventory = createReducer(initialState, (r) => {
     }
 
     const order = getOrCreateOrder(state, orderID, rawReceipt, actionTimestamp);
+    const reconcileId = `etsy-reconcile:${rawReceipt.receipt_id}:${actionTimestamp}`;
     const timestamp =
       (rawReceipt.updated_timestamp || rawReceipt.create_timestamp) * 1000;
     const effectiveAtMs = timestamp;
@@ -3804,7 +3840,9 @@ export const inventory = createReducer(initialState, (r) => {
     for (const [canonicalKey, diff] of Object.entries(netDiffMap)) {
       if (diff !== 0 && state.idToItem[canonicalKey] !== undefined) {
         state.idToItem[canonicalKey].shipped += diff;
-        recordSale(state, canonicalKey, diff, saleAtMs);
+        recordSale(state, canonicalKey, diff, saleAtMs, {
+          idParts: [reconcileId, "etsy-reconcile", orderID, canonicalKey],
+        });
         if (!state.idToHistory[canonicalKey])
           state.idToHistory[canonicalKey] = [];
         state.idToHistory[canonicalKey].push({
@@ -3871,10 +3909,9 @@ export const inventory = createReducer(initialState, (r) => {
     let changed = 0;
     const affectedOrderIds = new Set<string>();
     for (const ref of refs) {
-      const exact = ledger.find((candidate) =>
+      const entry = ledger.find((candidate) =>
         ledgerEntryMatchesRef(candidate, ref),
       );
-      const entry = exact || selectLooseLedgerRefMatch(ledger, ref);
       if (!entry || Boolean(entry.ignored) === ignored) continue;
       for (const orderId of stockOrderIdsForLedgerEntry(entry)) {
         affectedOrderIds.add(orderId);
@@ -3889,9 +3926,7 @@ export const inventory = createReducer(initialState, (r) => {
       for (const paired of ledger) {
         if (
           paired === entry ||
-          !paired.adjustmentEntry ||
-          paired.adjustmentTarget?.at !== entry.at ||
-          paired.adjustmentTarget?.seq !== entry.seq ||
+          !adjustmentTargetsEntry(paired, entry) ||
           Boolean(paired.ignored) === ignored
         ) {
           continue;
@@ -3929,13 +3964,11 @@ export const inventory = createReducer(initialState, (r) => {
     const ledger = state.costLedger?.[itemKey];
     const trimmedNote = note.trim();
     if (!ledger || !Number.isFinite(qty) || qty < 0 || !trimmedNote) return;
+    const val = getTimestampMs((action as any).timestamp);
 
     let entry = ledger.find((candidate) =>
       ledgerEntryMatchesRef(candidate, ref),
     );
-    if (!entry) {
-      entry = selectLooseLedgerRefMatch(ledger, ref);
-    }
     let effectiveQty = entry?.qty;
     let appendAdjustment = false;
     if (!entry) {
@@ -3950,8 +3983,7 @@ export const inventory = createReducer(initialState, (r) => {
             candidate.adjustmentEntry &&
             candidate.adjustmentMode === "apply-to-target"
           ) &&
-          candidate.at === effectiveEntry.at &&
-          candidate.seq === effectiveEntry.seq,
+          candidate.id === effectiveEntry.id,
       );
       if (!entry) return;
       effectiveQty = effectiveEntry.qty;
@@ -3968,6 +4000,7 @@ export const inventory = createReducer(initialState, (r) => {
           oldQty,
           qty - oldQty,
           trimmedNote,
+          String((action as any).id || val || "local"),
         ),
       );
     } else {
@@ -3982,7 +4015,6 @@ export const inventory = createReducer(initialState, (r) => {
       refreshStockOrderCostIssues(state, orderId);
     }
     if (!state.idToHistory[itemKey]) state.idToHistory[itemKey] = [];
-    const val = getTimestampMs((action as any).timestamp);
     const date = new Date(val || Date.UTC(2026, 0, 1)).toLocaleString("en", {
       month: "short",
       day: "numeric",
@@ -4055,6 +4087,14 @@ export const inventory = createReducer(initialState, (r) => {
       ignoredRecountQty += Number(entry.qty) || 0;
     }
     ledger.push({
+      id: nextLedgerEntryId(
+        ledger,
+        "reconstruct-stock-order-unmatched",
+        String((action as any).id || "local"),
+        orderId,
+        key,
+        "receipt",
+      ),
       kind: "receipt",
       at: receivedAt,
       seq: ledger.length,
@@ -4069,6 +4109,14 @@ export const inventory = createReducer(initialState, (r) => {
 
     if (saleAt && Number.isFinite(saleAt) && saleAt > 0) {
       ledger.push({
+        id: nextLedgerEntryId(
+          ledger,
+          "reconstruct-stock-order-unmatched",
+          String((action as any).id || "local"),
+          orderId,
+          key,
+          "sale",
+        ),
         kind: "sale",
         at: saleAt,
         seq: ledger.length,
@@ -4171,6 +4219,13 @@ export const inventory = createReducer(initialState, (r) => {
 
     const val = getTimestampMs((action as any).timestamp);
     ledger.push({
+      id: nextLedgerEntryId(
+        ledger,
+        "create-stock-order-receipt",
+        String((action as any).id || "local"),
+        orderId,
+        key,
+      ),
       kind: "receipt",
       at: ledgerFacts.receivedAt,
       seq: ledger.length,
@@ -4371,7 +4426,16 @@ export const inventory = createReducer(initialState, (r) => {
       if (!(candidateIgnoredLateQty + candidateConvertedRecountQty > 0))
         continue;
       const reconstructedSeq = candidateLedger.length;
+      const reconstructedEntryId = nextLedgerEntryId(
+        candidateLedger,
+        "reconstruct-stock-order-late-scan",
+        String((action as any).id || "local"),
+        orderId,
+        candidateKey,
+        "receipt",
+      );
       candidateLedger.push({
+        id: reconstructedEntryId,
         kind: "receipt",
         at: receivedAt,
         seq: reconstructedSeq,
@@ -4397,6 +4461,14 @@ export const inventory = createReducer(initialState, (r) => {
           .sort((a, b) => b.at - a.at || b.seq - a.seq)[0];
         if (archiveSale) {
           candidateLedger.push({
+            id: nextLedgerEntryId(
+              candidateLedger,
+              "reconstruct-stock-order-late-scan",
+              String((action as any).id || "local"),
+              orderId,
+              candidateKey,
+              "archive-sale",
+            ),
             kind: "sale",
             at: archiveSale.at,
             seq: candidateLedger.length,
@@ -4405,6 +4477,7 @@ export const inventory = createReducer(initialState, (r) => {
             adjustmentEntry: true,
             adjustmentMode: "standalone",
             adjustmentTarget: {
+              id: reconstructedEntryId,
               at: receivedAt,
               seq: reconstructedSeq,
             },
@@ -4880,6 +4953,7 @@ export const inventory = createReducer(initialState, (r) => {
         saleAtMs,
       );
       recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+        idParts: [(action as any).id || "local", "package_item", orderID],
         visibleQty: ledgerSale.visibleQty,
         auditComment: ledgerSale.auditComment,
       });
@@ -4956,6 +5030,7 @@ export const inventory = createReducer(initialState, (r) => {
         saleAtMs,
       );
       recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+        idParts: [(action as any).id || "local", "quantify_item", orderID],
         visibleQty: ledgerSale.visibleQty,
         auditComment: ledgerSale.auditComment,
       });
@@ -5661,6 +5736,12 @@ export const inventory = createReducer(initialState, (r) => {
         item.shipped -= line.qty;
         const ledgerSale = fractionalPreFestivalSale(item, -line.qty, saleAtMs);
         recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+          idParts: [
+            (action as any).id || "local",
+            "cancel_order",
+            orderID,
+            itemKey,
+          ],
           visibleQty: ledgerSale.visibleQty,
           auditComment: `Canceled order ${orderID}: reversed ${formatLedgerQty(line.qty)} shipped unit(s) in the cost ledger.${ledgerSale.auditComment ? ` ${ledgerSale.auditComment}` : ""}`,
         });
@@ -5744,6 +5825,7 @@ export const inventory = createReducer(initialState, (r) => {
       // The archive is the real stock-take wipe in the cost ledger. A later
       // make_sales action reports shrinkage but should not also mutate cost.
       recordSale(state, itemKey, archiveSaleQty, getTimestampMs(timestamp), {
+        idParts: [(action as any).id || "local", "archive_inventory", itemKey],
         isArchive: true,
         ...(archiveVisibleQtyDiffers
           ? { visibleQty: archiveVisibleSaleQty }

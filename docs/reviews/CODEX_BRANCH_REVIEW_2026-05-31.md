@@ -6,149 +6,151 @@ Branch reviewed: `wip/fractional-sales-order-summary-attempt`
 
 Compared against: `main` (`92a1c74`)
 
-Head reviewed: `774d500`
+Head reviewed: current commit containing this review.
 
-Scope: reviewed the full branch diff at a code-review level, with extra attention on actions written to `broadcast`, replay determinism, `Date.now()` usage, and whether remediation actions persist computed values instead of source facts.
+Scope: reviewed the branch diff at a code-review level, with extra attention on actions written to `broadcast`, replay determinism, `Date.now()` usage, and whether remediation actions persist computed values instead of source facts.
 
-## Findings
+This branch has not shipped to production. The action contracts in this review intentionally assume no legacy/backward-compatibility support is required for newly introduced action shapes.
 
-### P1: Stock-order receipt remediation actions persist computed unit costs
+## Broadcast Re-check
 
-Several user-facing remediation flows write `unitCostJpy` and `unitCostEur` directly into broadcast actions, and the reducer treats those values as authoritative ledger facts on replay.
+Rechecked the branch-specific broadcast paths after the stable cost-ledger entry ref changes.
 
-Examples:
+Cleaned and verified:
 
-- `src/routes/order-exceptions/+page.svelte:339-349` broadcasts `create_stock_order_receipt` with `unitCostJpy`, computed `unitCostEur`, `receivedAt`, COO, and weight.
-- `src/routes/order-exceptions/+page.svelte:404-424` broadcasts `bulk_import_items` for a newly-created unmatched inventory row with a nested `stockOrder` object containing `unitCostJpy`, computed `unitCostEur`, `receivedAt`, and `orderedQty`.
-- `src/routes/unpriced/+page.svelte:924-945` has the same `bulk_import_items` stock-order payload for after-the-fact inventory creation.
-- `src/lib/inventory.ts:374-383` defines `create_stock_order_receipt` as requiring `unitCostJpy` and `unitCostEur`.
-- `src/lib/inventory.ts:4096-4138` writes those payload values directly into the cost ledger.
-- `src/lib/inventory.ts:2953-2972` and `src/lib/inventory.ts:2974-2986` write nested `bulk_import_items.stockOrder.unitCostJpy/unitCostEur` directly into receipt lots.
+- `create_stock_order_receipt` now broadcasts only `orderId` and `itemKey`; the reducer derives qty, date, JPY cost, and EUR cost from stock-order registry facts.
+- Stock-order inventory creation from `/order-exceptions` and `/unpriced` now broadcasts `bulk_import_items` with `stockOrder: { orderId, orderedQty }`; it no longer persists computed `unitCostJpy`, computed `unitCostEur`, or `receivedAt`.
+- `reconstruct_stock_order_unmatched_receipt`, `reconstruct_stock_order_late_scan_receipt`, and `mark_stock_order_row_not_received` now identify the order/item/JAN plus the operator note; qty and cost facts are derived at replay time.
+- `fix_stock_order` now omits `costInterpretation` for auto column selection. A present `costInterpretation` means the user made a manual override.
+- `costInterpretationMode` has been removed from the new action contract.
+- `set_cost_ledger_entries_ignored` and `set_cost_ledger_entry_qty` now target stable ledger-entry IDs. They no longer persist materialized `at`/`seq`, row qty, or unit costs inside the row reference.
+- Shopify/Etsy reconciliation pollers no longer fall back to appending non-idempotent broadcast documents when external version fields are missing; they use deterministic payload-hash document IDs.
 
-This violates the rule that broadcast should contain source facts and user choices, not computed results. The EUR value is especially fragile because it is derived from order payment metadata (`paidAmount`, `paidCurrency`, `valueOfOrderJpy`). If that metadata is later corrected, replayed receipt-remediation actions keep stale EUR values instead of following the corrected order. The JPY value can also go stale if the stock-order cost interpretation changes.
+Commands run during the re-check:
 
-Recommended fix:
+- `git diff --unified=80 main...HEAD -- 'src/**/*.svelte' 'src/**/*.ts' 'functions/**/*.js' 'functions/**/*.cjs'`
+- Targeted searches for `broadcast(`, `writeBroadcastAction`, `writeBroadcastActionOnce`, `Date.now()`, `unitCostJpy`, `unitCostEur`, `receivedAt`, `costInterpretation`, and `costInterpretationMode`.
+- `npm run check`
+- `npx vitest run tests/unit/cost-ledger-reducer.test.ts tests/unit/order-exceptions.test.ts tests/unit/cost-engine.test.ts tests/unit/inventory-value.test.ts`
+- Pre-commit hook for the current commit: `npm run ci`, `npm run check`, and `CI=1 vitest run --coverage` passed.
 
-- Change these actions to carry only the durable user decision and stable identifiers: `orderId`, `itemKey` or JAN/subtype, qty, note, and optionally explicit metadata fields that the user actually typed.
-- In the reducer, derive `unitCostJpy`, `unitCostEur`, and received date from `stockOrderRegistry` and the order's cost rows at replay time.
-- If a user truly overrides cost manually, make that an explicit manual override action/mode rather than reusing the auto-remediation path.
+## Remaining Findings
 
-### P1: Broadcast receipt dates still have current-time fallbacks
+### P2: Subtype remediation broadcasts are fire-and-forget
 
-Two stock-order remediation paths still fall back to wall-clock time for receipt dates that become persisted broadcast payload:
+The subtype exception payloads are source-fact oriented and do not persist computed cost values, but the route still reports success immediately after calling `broadcast(...)`:
 
-- `src/routes/order-exceptions/+page.svelte:290-297` falls back to `new Date().toISOString().slice(0, 10)` when neither proposed nor current stock-order date is available.
-- `src/routes/unpriced/+page.svelte:846-848` returns `Date.now()` when `row.orderDate` is missing.
+- `src/routes/subtype-exceptions/+page.svelte:174-180` has an unawaited `broadcastAction`.
+- `src/routes/subtype-exceptions/+page.svelte:183-229` uses it for split, merge, and subtype replacement remediations.
 
-These are not just UI timestamps. They feed `receivedAt` in broadcasted stock-order receipt creation (`src/routes/order-exceptions/+page.svelte:339-349`, `src/routes/unpriced/+page.svelte:924-945`). That means the same user decision can replay differently depending on the day it was committed.
-
-Recommended fix:
-
-- Do not permit these remediations without a deterministic order date.
-- Derive receipt date in the reducer from stock-order metadata where possible.
-- If the date is genuinely missing, require an explicit user-entered date and store that as a source fact.
-
-### P1: Subtype replacement/merge moves order references and ledgers, but sale ledger identity remains implicit
-
-Subtype resolution rewrites order line item keys:
-
-- `src/lib/inventory.ts:3187-3227` rewrites `order.items`, Shopify facts, and Etsy facts from old key to new key.
-- `src/lib/inventory.ts:5277-5338` uses that rewrite for `replace_subtype`.
-- `src/lib/inventory.ts:5340-5395` uses it for subtype merge.
-
-Cost ledger sale rows, however, are only plain rows on the source item's ledger (`recordSale` at `src/lib/inventory.ts:1413-1445`). They do not carry an order id, order line id, or source action id that would let a later subtype resolution prove which sale should move. The new replacement/merge code compensates by moving whole ledgers and ignoring some archive/recount rows (`src/lib/inventory.ts:1228-1291`, `src/lib/inventory.ts:1293-1325`), but that is still a heuristic.
-
-The risk is that after a subtype correction, the order now points at the replacement key while historical sale ledger entries may have been generated under the pre-correction key. If old and new subtypes have different cost basis, inventory value and cost issues can diverge from the visible order history.
+This is the same reliability issue that was fixed on `/order-exceptions`: a failed Firestore write can still show a success message.
 
 Recommended fix:
 
-- Sale ledger entries should carry stable provenance: order id, platform line id where available, source action id, and original item key.
-- Subtype replacement/merge should migrate or re-resolve sale ledger entries by provenance rather than by whole-ledger heuristics.
-- Add replay tests for a subtype replacement after a sale, with different source/target costs, verifying both visible order items and cost ledger value move together.
-
-### P2: Manual cost-ledger edit actions identify rows using materialized ledger coordinates
-
-The cost-ledger editor writes refs built from materialized ledger row data:
-
-- `src/routes/cost-ledger-editor/+page.svelte:98-118` builds refs from `kind`, `at`, `seq`, qty, costs, source, and order id.
-- `src/routes/cost-ledger-editor/+page.svelte:138-147` persists those refs in `set_cost_ledger_entries_ignored`.
-- `src/routes/cost-ledger-editor/+page.svelte:191-199` persists one ref in `set_cost_ledger_entry_qty`.
-- `src/lib/inventory.ts:3831-3891` and `src/lib/inventory.ts:3892-3961` apply the refs on replay, with a loose fallback if exact matching fails.
-
-This is understandable as an editor implementation, but it is still replay-fragile. `seq`, cost, and even effective qty can change when upstream reducer behavior changes. The loose fallback reduces failure risk but increases the risk of applying the manual edit to the wrong row after replay changes.
-
-Recommended fix:
-
-- Give receipt rows a stable ledger-entry id when they are first created, preferably based on source action id plus a source-local row id.
-- For derived ledger rows, include enough provenance to recreate the id deterministically.
-- Store manual edits against that stable id. Treat materialized refs as display/debug context only.
-
-### P2: `fix_stock_order` persists an auto cost interpretation snapshot
-
-The stock-order commit action includes the pasted TSV and may also include `costInterpretation`:
-
-- `src/routes/order-exceptions/+page.svelte:432-453`
-- `src/lib/inventory.ts:425-456`
-
-The reducer currently protects the intended behavior:
-
-- `src/lib/root-reducer.ts:1474-1491` uses the supplied interpretation only when `costInterpretationMode === "manual"` or for legacy actions without a mode.
-- `src/lib/root-reducer.ts:1505-1535` recomputes the stock-order rows from TSV and current metadata before applying ephemeral `apply_stock_order_costs`.
-
-That means the current code is mostly aligned with the desired model. The risk is naming/shape: an `auto` action still stores a field named `costInterpretation`, which looks authoritative and could easily be misused later.
-
-Recommended fix:
-
-- Prefer omitting `costInterpretation` entirely for auto mode, or rename it to something clearly non-authoritative such as `observedCostInterpretation`.
-- Keep a regression test asserting that changing auto column-selection code changes replay results for auto actions but not for manual override actions.
-
-### P2: Some important order-exception broadcasts are fire-and-forget
-
-`order-exceptions` has both awaited and unawaited broadcast helpers:
-
-- `src/routes/order-exceptions/+page.svelte:246-253` calls `broadcast(...)` without awaiting or catching failures.
-- `src/routes/order-exceptions/+page.svelte:255-270` has the safer awaited helper.
-- `src/routes/order-exceptions/+page.svelte:404-430` uses the unawaited helper for create-inventory.
-- `src/routes/order-exceptions/+page.svelte:432-455` uses the unawaited helper for committing a stock-order fix.
-
-These flows report success immediately even if the Firestore write later fails. For low-risk UI toggles this is tolerable; for irreversible remediation actions it is a shortcut that can mislead the operator.
-
-Recommended fix:
-
-- Use the awaited helper for all stock-order, cost, subtype, and inventory remediation actions.
+- Make the subtype remediation helper async and await `broadcast`.
 - Keep pending UI state until the write resolves.
+- Report the Firestore error in `statusMessage` on failure.
 
-### P3: Idempotent polling has a non-idempotent fallback for missing external version keys
+### P2: Sale ledger rows still lack durable sale provenance
 
-The branch adds deterministic broadcast document ids for reconcile pollers:
+Subtype replacement and merge actions now move order references and cost ledgers together. Sale ledger rows now receive deterministic IDs whose source parts include order/action context where available, but those rows still do not carry structured sale provenance fields:
 
-- `functions/shared/reconcile-broadcast-id.cjs:7-23`
-- `functions/index.js:390-405`
-- `functions/index.js:1252-1276`
-- `functions/index.js:1500-1524`
+- `src/lib/inventory.ts:1420-1462` creates sale ledger rows with date, seq, qty, archive flag, optional audit fields, and a deterministic ID, but no separate order id, platform line id, source action id, or original item key fields.
+- `src/lib/inventory.ts:5383-5445` handles `replace_subtype` by moving whole ledger state from source to target.
 
-This is the right direction and should stop most no-op broadcast growth. However, if Shopify or Etsy data lacks the required id/version timestamp, the code falls back to `writeBroadcastAction(...)`, which appends a new broadcast document.
-
-That fallback may be rare, but it is the exact failure mode that makes `broadcast` grow without bound.
+The reducer behavior is coherent for the cases covered so far, but the data model still makes subtype correction rely on whole-ledger movement rather than sale-row provenance.
 
 Recommended fix:
 
-- Track and alert on `missingKeyFallbackCount`.
-- Prefer skipping and logging malformed reconcile rows over appending non-idempotent actions.
-- If skipping is too aggressive, derive a deterministic fallback id from the full raw payload hash.
+- Add sale provenance to newly generated sale rows: source action id, order id, platform line id where available, and original item key.
+- Make subtype correction use that provenance when moving or reconciling sales.
+- Because this branch has not shipped, define the clean sale-row shape directly instead of adding legacy compatibility.
 
-## Positive Notes
+## Resolved Findings From Previous Review
 
-- The central `fix_stock_order` reducer path does not persist `apply_stock_order_costs`; it recomputes from raw TSV and order metadata, then dispatches the computed apply action only ephemerally (`src/lib/root-reducer.ts:1505-1540`). That is the right shape.
-- `reconstruct_stock_order_unmatched_receipt` and `reconstruct_stock_order_late_scan_receipt` are closer to the desired model: their broadcast payloads identify the order/item and user note, while the reducer derives costs from `stockOrderRegistry` (`src/lib/inventory.ts:3962-4059`, `src/lib/inventory.ts:4164-4265`).
-- The branch has substantial focused test coverage around cost ledger behavior, stock-order parsing, subtype exceptions, and order exceptions.
-- Reducer-side `Date.now()` usage is guarded by the existing `check-no-date-now-in-reducers` script; the remaining date concerns above are UI broadcast payload construction, not reducer calls.
+### Resolved: Stock-order receipt remediation persisted computed unit costs
+
+Previous issue: stock-order receipt remediation wrote `unitCostJpy`, computed `unitCostEur`, `receivedAt`, COO, and weight into broadcast actions.
+
+Current state:
+
+- `src/lib/inventory.ts:372-375` defines `create_stock_order_receipt` as `{ orderId, itemKey }`.
+- `src/routes/order-exceptions/+page.svelte:303-306` broadcasts only that shape.
+- `src/lib/inventory.ts:4133-4184` derives qty, cost, EUR cost, and receipt date from stock-order registry facts during replay.
+
+### Resolved: Stock-order create-inventory actions persisted computed costs/dates
+
+Previous issue: creating inventory from unmatched order rows persisted computed stock-order costs and dates in nested `bulk_import_items.stockOrder`.
+
+Current state:
+
+- `src/lib/inventory.ts:377-389` defines nested `stockOrder` as `{ orderId, orderedQty? }`.
+- `src/routes/order-exceptions/+page.svelte:358-373` broadcasts only item source fields plus `orderId` and `orderedQty`.
+- `src/routes/unpriced/+page.svelte:897-913` does the same for after-the-fact remediation.
+
+### Resolved: Broadcast receipt dates had current-time fallbacks
+
+Previous issue: stock-order remediation paths used current-date or `Date.now()` fallbacks that became persisted receipt dates.
+
+Current state:
+
+- The UI no longer sends `receivedAt` in stock-order receipt remediation actions.
+- The reducer derives stock-order receipt dates from `stockOrderRegistry`.
+- The remaining `Date.now()` in `src/routes/order-exceptions/+page.svelte:570` is for the local scan-batch audit cache timestamp, not a broadcast action.
+
+### Resolved: Auto `fix_stock_order` persisted a cost interpretation snapshot
+
+Previous issue: auto column selection could persist `costInterpretation`, making a computed UI guess look authoritative.
+
+Current state:
+
+- `src/routes/order-exceptions/+page.svelte:384-395` only includes `costInterpretation` when `manualOverride` is true.
+- `src/lib/inventory.ts:415-430` documents that absent `costInterpretation` means auto-reconcile on replay.
+- `src/lib/root-reducer.ts:1484-1490` passes the interpretation directly; absent means recompute.
+- `costInterpretationMode` has been removed rather than supported as a legacy mode.
+
+### Resolved: Order-exception remediation broadcasts were fire-and-forget
+
+Previous issue: critical `/order-exceptions` actions used an unawaited broadcast helper.
+
+Current state:
+
+- `src/routes/order-exceptions/+page.svelte:245-260` awaits `broadcast`.
+- `src/routes/order-exceptions/+page.svelte:309`, `src/routes/order-exceptions/+page.svelte:359`, and `src/routes/order-exceptions/+page.svelte:383` use the awaited helper for receipt creation, inventory creation, and stock-order fix commit.
+
+### Resolved: Cost-ledger editor actions identified rows by materialized coordinates
+
+Previous issue: cost-ledger editor actions identified rows by materialized `kind`/`at`/`seq` plus optional cost metadata. Replaying after reducer changes could make a manual edit miss its row or attach to the wrong equivalent-looking row.
+
+Current state:
+
+- Ledger rows now get deterministic `id` values at creation time.
+- `src/routes/cost-ledger-editor/+page.svelte:98-103` builds refs containing only `{ id }`.
+- `src/routes/cost-ledger-editor/+page.svelte:123-131` persists only that ref in `set_cost_ledger_entries_ignored`.
+- `src/routes/cost-ledger-editor/+page.svelte:176-184` persists only that ref in `set_cost_ledger_entry_qty`.
+- `src/lib/inventory.ts:326-328` defines `CostLedgerEntryRef` as `{ id: string }`.
+- `src/lib/inventory.ts:2016-2018` matches refs only by `entry.id`.
+- Adjustment rows now target receipts by stable entry ID instead of by `at`/`seq`.
+
+### Resolved: Reconciliation pollers had a non-idempotent fallback
+
+Previous issue: Shopify/Etsy reconcile pollers fell back to `writeBroadcastAction(...)` when required external version fields were missing.
+
+Current state:
+
+- `functions/shared/reconcile-broadcast-id.cjs:9-14` provides a deterministic payload hash.
+- `functions/shared/reconcile-broadcast-id.cjs:17-40` always returns a deterministic document ID.
+- `functions/index.js:1251-1266` and `functions/index.js:1488-1502` always use `writeBroadcastActionOnce`.
+
+## Notes Outside The Branch Re-check
+
+A broad repository search still finds older broadcast paths that use wall-clock timestamps or fire-and-forget writes, for example live/archive/photo/sync request flows. Those are outside the branch-specific stock-order remediation changes reviewed here. The branch-specific bad payloads identified in the previous review have been removed.
 
 ## Suggested Acceptance Gates Before Merge
 
-1. Replace stock-order remediation payload costs with reducer-derived costs.
-2. Remove `Date.now()` / current-date fallbacks from any broadcasted stock-order receipt date.
-3. Add tests showing auto `fix_stock_order` actions replay from raw TSV and current parsing logic, while manual overrides remain fixed.
-4. Add tests for created inventory from unmatched rows proving replay derives cost from order facts rather than persisted computed values.
-5. Add subtype replacement/merge tests that include sales before and after replacement and verify order rows, shipped qty, sale ledger rows, and inventory value stay aligned.
-6. Make critical remediation broadcasts awaited.
+1. Await subtype exception remediation broadcasts and surface failures.
+2. Add sale provenance to new sale ledger entries so subtype corrections do not depend on whole-ledger movement.
+3. Run the full pre-merge suite:
+   - `npm run check`
+   - `npm run ci`
+   - `npm run test`

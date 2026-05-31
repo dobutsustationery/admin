@@ -808,11 +808,7 @@ describe("cost-ledger materialisation in the reducer", () => {
           ignored: true,
           refs: [
             {
-              kind: "receipt",
-              at: entry.at,
-              seq: entry.seq,
-              source: entry.source || "",
-              costOrderId: entry.costOrderId || "",
+              id: entry.id,
             },
           ],
           reason: "duplicate scan",
@@ -863,11 +859,7 @@ describe("cost-ledger materialisation in the reducer", () => {
         set_cost_ledger_entry_qty({
           itemKey: KEY,
           ref: {
-            kind: "receipt",
-            at: entry.at,
-            seq: entry.seq,
-            source: entry.source || "",
-            costOrderId: entry.costOrderId || "",
+            id: entry.id,
           },
           qty: 4,
           note: "matched operator recount",
