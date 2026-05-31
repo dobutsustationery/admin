@@ -762,7 +762,7 @@
   }
 
   function canOpenCostLedger(row: StockOrderMatchIssueRow): boolean {
-    return row.kind === "overmatched-row" && Boolean(row.jan);
+    return Boolean(row.jan);
   }
 
   function costLedgerSearchUrl(row: StockOrderMatchIssueRow): string {
@@ -1642,7 +1642,7 @@
                               class="copy-button remediation-link"
                               href={costLedgerSearchUrl(row)}
                             >
-                              Open cost ledger
+                              Open Cost Ledger
                             </a>
                           {/if}
                           {#if canReconstruct(row)}
