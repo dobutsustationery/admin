@@ -44,4 +44,7 @@
 // 13: fractional loose-piece sale entries also keep their operator-visible
 //     sale quantity so visible-qty receipt corrections do not reinterpret
 //     historical scans as new receipts.
-export const CURRENT_SCHEMA_VERSION = 13;
+// 14: Shopify order replay now materialises unresolved active line items on
+//     `order.unmatchedLines` so `/orders` and `/order` can expose missing
+//     Shopify lines instead of silently displaying only matched facts.
+export const CURRENT_SCHEMA_VERSION = 14;

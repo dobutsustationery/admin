@@ -7,6 +7,7 @@
     getOrderDisplayStatus,
     type LineItem,
     type OrderDisplayStatus,
+    type UnmatchedOrderLine,
     package_item,
     prepareCancelOrder,
     quantify_item,
@@ -24,6 +25,7 @@
   $: product = $page.url.searchParams.get("product");
 
   let orderItems: LineItem[] = [];
+  let unmatchedOrderLines: UnmatchedOrderLine[] = [];
   let orderStatusRaw = "";
   let displayStatus: OrderDisplayStatus = "ok";
   $: if ($store) {
@@ -34,8 +36,14 @@
     ) {
       const order = state.inventory.orderIdToOrder[orderID];
       orderItems = order.items;
+      unmatchedOrderLines = order.unmatchedLines || [];
       orderStatusRaw = order.status || "";
       displayStatus = getOrderDisplayStatus(order);
+    } else {
+      orderItems = [];
+      unmatchedOrderLines = [];
+      orderStatusRaw = "";
+      displayStatus = "ok";
     }
   }
 
@@ -184,6 +192,36 @@
   {/each}
 </table>
 
+{#if unmatchedOrderLines.length > 0}
+  <section class="unmatched-order-lines" aria-labelledby="unmatched-title">
+    <h2 id="unmatched-title">Unmatched Items</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Description</th>
+          <th>SKU</th>
+          <th>Reason</th>
+          <th>Quantity</th>
+          <th>Line Item</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each unmatchedOrderLines as line (`${line.source}:${line.lineId}:${line.sku}`)}
+          <tr class="unmatched-row">
+            <td>Missing</td>
+            <td>{line.title || "(no title)"}</td>
+            <td class="mono">{line.sku || "-"}</td>
+            <td>{line.reason}</td>
+            <td>{line.quantity}</td>
+            <td class="mono">{line.lineId || "-"}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </section>
+{/if}
+
 <button
   on:click={cancelOrder}
   disabled={displayStatus === "canceled" || cancelPending}
@@ -240,6 +278,37 @@
   }
   .status-hint {
     font-weight: 400;
+  }
+
+  .unmatched-order-lines {
+    margin: 1em 0;
+    padding: 0.75em;
+    border: 1px solid #e1b866;
+    background: #fff8e5;
+    border-radius: 6px;
+  }
+  .unmatched-order-lines h2 {
+    margin: 0 0 0.6em;
+    font-size: 1.05rem;
+  }
+  .unmatched-order-lines table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fffdf7;
+  }
+  .unmatched-order-lines th,
+  .unmatched-order-lines td {
+    padding: 0.45em 0.55em;
+    border-bottom: 1px solid #f0dfb5;
+    text-align: left;
+    vertical-align: top;
+  }
+  .unmatched-row {
+    color: #684100;
+  }
+  .mono {
+    font-family: ui-monospace, monospace;
+    font-size: 0.9em;
   }
 
   .cancel-button {

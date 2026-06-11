@@ -6,6 +6,7 @@
     getOrderDisplayStatus,
     new_order,
     type OrderDisplayStatus,
+    type UnmatchedOrderLine,
   } from "$lib/inventory";
   import { store } from "$lib/store";
 
@@ -17,6 +18,8 @@
     eventDate?: Date;
     status?: string;
     displayStatus: OrderDisplayStatus;
+    exceptionCount: number;
+    exceptionSummary: string;
   }
 
   function updateOrderInfo() {
@@ -31,6 +34,18 @@
       const eventDate = order.eventDate;
       const status = order.status;
       const displayStatus = getOrderDisplayStatus(order);
+      const unmatchedLines: UnmatchedOrderLine[] = order.unmatchedLines || [];
+      const exceptionMessages = [
+        ...(state.inventory.shopifyExceptions?.[id] || []),
+        ...(state.inventory.etsyExceptions?.[id] || []),
+      ];
+      const exceptionSummary = [
+        ...unmatchedLines.map(
+          (line) =>
+            `${line.reason}: ${line.sku || "(blank SKU)"} x${line.quantity}`,
+        ),
+        ...exceptionMessages,
+      ].join("\n");
       orderInfo.push({
         id,
         email,
@@ -39,6 +54,8 @@
         eventDate,
         status,
         displayStatus,
+        exceptionCount: unmatchedLines.length + exceptionMessages.length,
+        exceptionSummary,
       });
     }
     orderInfo.sort((a, b) => {
@@ -117,6 +134,7 @@
       class:row-refunded={order.displayStatus === "refunded" ||
         order.displayStatus === "partial_refund"}
       class:row-unpaid={order.displayStatus === "unpaid"}
+      class:row-exception={order.exceptionCount > 0}
       on:click={packOrder(order.id, order.email, order.item)}
     >
       <td>{formatDate(order.eventDate ?? order.date)}</td>
@@ -126,6 +144,11 @@
         {#if order.displayStatus !== "ok"}
           <span class="badge {order.displayStatus}"
             >{STATUS_LABEL[order.displayStatus]}</span
+          >
+        {/if}
+        {#if order.exceptionCount > 0}
+          <span class="badge exception" title={order.exceptionSummary}
+            >{order.exceptionCount} Missing</span
           >
         {/if}
       </td>
@@ -162,6 +185,9 @@
   .row-unpaid td {
     color: #4a3a8b;
   }
+  .row-exception td {
+    background: #fff8e5;
+  }
 
   .badge {
     display: inline-block;
@@ -188,5 +214,10 @@
     background: #ecebfd;
     color: #4a3a8b;
     border: 1px solid #c3bff0;
+  }
+  .badge.exception {
+    background: #fdecec;
+    color: #8b1a1a;
+    border: 1px solid #f1b9b9;
   }
 </style>
