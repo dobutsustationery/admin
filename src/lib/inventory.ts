@@ -49,6 +49,14 @@ export interface LineItem {
   itemKey: InventoryItemKey;
   qty: number;
 }
+export interface UnmatchedOrderLine {
+  source: "shopify" | "etsy";
+  lineId: string;
+  sku: string;
+  title: string;
+  quantity: number;
+  reason: string;
+}
 export interface ShopifyLineFact {
   itemKey: InventoryItemKey;
   placed: number;
@@ -90,6 +98,7 @@ export interface OrderInfo {
   product?: string;
   id: string;
   items: LineItem[];
+  unmatchedLines?: UnmatchedOrderLine[];
   // Verbatim status string from the upstream marketplace (e.g. Etsy's
   // "Canceled", "Paid", "Completed", "Fully Refunded").  Used by the UI
   // to flag non-normal orders; compare case-insensitively.
@@ -3150,6 +3159,24 @@ function syncOrderItemsFromFacts(order: OrderInfo) {
   }));
 }
 
+function addShopifyUnmatchedLine(
+  order: OrderInfo,
+  lineItem: any,
+  reason: string,
+  quantity: number = Number(lineItem?.quantity || 0),
+) {
+  if (quantity <= 0) return;
+  if (!order.unmatchedLines) order.unmatchedLines = [];
+  order.unmatchedLines.push({
+    source: "shopify",
+    lineId: String(lineItem?.id || ""),
+    sku: String(lineItem?.sku || ""),
+    title: String(lineItem?.title || lineItem?.name || ""),
+    quantity,
+    reason,
+  });
+}
+
 function mapSkuToItemKey(
   sku: string | undefined | null,
   lineItem: any,
@@ -3335,11 +3362,22 @@ export const inventory = createReducer(initialState, (r) => {
       order.shopifyFacts!.reconciledTimestamp &&
       order.shopifyFacts!.reconciledTimestamp > shopifyTimestamp;
 
+    if (!isReconciledLater) {
+      order.unmatchedLines = [];
+    }
+
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
       const { itemKey, rawSku, entityId, outcome } =
         resolveLineItemInventoryKey(state, li, effectiveAtMs);
       if (!itemKey || outcome === "missing_historical_binding") {
+        if (!isReconciledLater) {
+          addShopifyUnmatchedLine(
+            order,
+            li,
+            !itemKey ? "Unknown SKU" : "Missing historical binding",
+          );
+        }
         if (!state.shopifyExceptions) state.shopifyExceptions = {};
         if (!state.shopifyExceptions[orderID])
           state.shopifyExceptions[orderID] = [];
@@ -3537,6 +3575,7 @@ export const inventory = createReducer(initialState, (r) => {
     const oldFacts = order.shopifyFacts!.lines;
     const newFacts: Record<string, ShopifyLineFact> = {};
     const itemQtyMap: Record<string, number> = {};
+    order.unmatchedLines = [];
 
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
@@ -3549,6 +3588,9 @@ export const inventory = createReducer(initialState, (r) => {
 
       const lineItemID = String(li.id);
       const oldFact = oldFacts[lineItemID];
+      const currentQty = rawOrder.cancelled_at
+        ? 0
+        : Number(li.quantity || 0) - Number(li.refund_quantity || 0);
 
       if (resolvedKey && outcome !== "missing_historical_binding") {
         const isManualRetype =
@@ -3569,9 +3611,6 @@ export const inventory = createReducer(initialState, (r) => {
           );
         }
 
-        const currentQty = rawOrder.cancelled_at
-          ? 0
-          : li.quantity - (li.refund_quantity || 0);
         itemQtyMap[canonicalKey] = (itemQtyMap[canonicalKey] || 0) + currentQty;
 
         // Authoritative Fact Update (Finding 1)
@@ -3586,6 +3625,12 @@ export const inventory = createReducer(initialState, (r) => {
         };
       } else {
         // resolution failed
+        addShopifyUnmatchedLine(
+          order,
+          li,
+          !resolvedKey ? "Unknown SKU" : "Missing historical binding",
+          currentQty,
+        );
         if (oldFact) {
           // §3.1 carry forward
           newFacts[lineItemID] = oldFact;
