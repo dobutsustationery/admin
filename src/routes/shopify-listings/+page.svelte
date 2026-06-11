@@ -1,7 +1,13 @@
 <script lang="ts">
   import { firestore } from "$lib/firebase";
   import { formatLogTimestamp } from "$lib/format-log-timestamp";
-  import { diffLocalListingAgainstShopifyCatalog } from "$lib/shopify-deep-diff";
+  import {
+    diffLocalListingAgainstShopifyCatalogDetailed,
+    type DetailedShopifyDiffResult,
+    type VariantDiffDetail,
+    type VariantDiffField,
+  } from "$lib/shopify-deep-diff";
+  import ShopifyListingIssueDetail from "$lib/components/ShopifyListingIssueDetail.svelte";
   import type { ShopifyCatalogListing } from "$lib/shopify-catalog-slice";
   import { store } from "$lib/store";
   import { SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION } from "$lib/sync-events";
@@ -10,14 +16,23 @@
 
   type RowStatus = "admin_only" | "shopify_only" | "both";
   type DriftStatus = "unknown" | "in_sync" | "local_ahead" | "shopify_ahead";
-  type ViewFilter =
-    | "ALL"
-    | "ADMIN_ONLY"
-    | "SHOPIFY_ONLY"
-    | "ADMIN_AHEAD"
-    | "SHOPIFY_AHEAD"
-    | "DEEP_DIFF"
-    | "SYNCED";
+  type IssueKey =
+    | "presence"
+    | "bare_sku"
+    | "quantity"
+    | "variant_image"
+    | "gallery"
+    | "status"
+    | "category"
+    | "price"
+    | "weight"
+    | "variant_structure"
+    | "variant_identity"
+    | "single_jan_subtype"
+    | "metadata"
+    | "timestamp_only"
+    | "synced";
+  type IssueFilter = "ACTIONABLE" | "ALL" | IssueKey;
   interface ListingPresenceRow {
     handle: string;
     status: RowStatus;
@@ -29,6 +44,9 @@
     drift: DriftStatus;
     deepDiff: boolean;
     mismatchKeys: string[];
+    diffDetails: DetailedShopifyDiffResult | null;
+    issueKeys: IssueKey[];
+    primaryIssue: IssueKey;
   }
   type TableStatus =
     | "admin_only"
@@ -39,6 +57,61 @@
 
   const SKEW_MS = 3 * 60_000;
   let lastDecisionFingerprint = "";
+  const ISSUE_PRIORITY: IssueKey[] = [
+    "presence",
+    "bare_sku",
+    "quantity",
+    "variant_image",
+    "gallery",
+    "status",
+    "category",
+    "price",
+    "weight",
+    "variant_structure",
+    "variant_identity",
+    "single_jan_subtype",
+    "metadata",
+    "timestamp_only",
+    "synced",
+  ];
+
+  const ISSUE_LABELS: Record<IssueKey, string> = {
+    presence: "Presence",
+    bare_sku: "Bare Shopify SKU",
+    quantity: "Inventory Quantity",
+    variant_image: "Variant Image",
+    gallery: "Gallery Images",
+    status: "Status",
+    category: "Category",
+    price: "Price",
+    weight: "Weight",
+    variant_structure: "Variant Count",
+    variant_identity: "Variant Identity",
+    single_jan_subtype: "Single JAN Subtype",
+    metadata: "Metadata",
+    timestamp_only: "Timestamp Only",
+    synced: "Synced",
+  };
+
+  const ISSUE_DESCRIPTIONS: Record<IssueKey, string> = {
+    presence: "Listing exists only in one system.",
+    bare_sku: "Shopify has bare JAN SKUs while admin expects JAN plus subtype.",
+    quantity: "Shopify on-hand quantity differs from admin on-hand inventory.",
+    variant_image: "A variant image differs or is missing.",
+    gallery: "Gallery images differ in count, order, URL, or alt text.",
+    status: "Shopify listing status differs from admin status.",
+    category: "Product category or product type differs.",
+    price: "Variant price differs.",
+    weight: "Variant weight differs.",
+    variant_structure: "A variant is present only locally or only on Shopify.",
+    variant_identity: "Variant subtype, JAN, or non-bare SKU differs.",
+    single_jan_subtype:
+      "Variant matched by a unique JAN while subtype/SKU details differ.",
+    metadata: "Title, body, option name, or other listing metadata differs.",
+    timestamp_only:
+      "Updated timestamps differ but normalized listing data currently matches.",
+    synced: "Normalized admin and Shopify data match.",
+  };
 
   const STATUS_PRIORITY: Record<RowStatus, number> = {
     admin_only: 0,
@@ -48,7 +121,7 @@
 
   let isLoading = false;
   let error = "";
-  let activeFilter: ViewFilter = "ALL";
+  let activeFilter: IssueFilter = "ACTIONABLE";
   let requestedAtLabel = "";
   let activeRequestId = "";
   let hasRequestedInitial = false;
@@ -200,6 +273,166 @@
       .filter(Boolean);
   }
 
+  function variantHasField(
+    detail: VariantDiffDetail,
+    field: VariantDiffField,
+  ): boolean {
+    return detail.fields.includes(field);
+  }
+
+  function isBareShopifySku(detail: VariantDiffDetail): boolean {
+    const localSku = String(detail.local?.sku || "").trim();
+    const localJan = String(detail.local?.janCode || "").trim();
+    const remoteSku = String(detail.remote?.sku || "").trim();
+    return (
+      variantHasField(detail, "sku") &&
+      !!localSku &&
+      !!remoteSku &&
+      /^\d+$/.test(remoteSku) &&
+      (remoteSku === localJan || localSku.startsWith(remoteSku)) &&
+      localSku !== remoteSku
+    );
+  }
+
+  function variantDiffCount(
+    row: ListingPresenceRow,
+    field: VariantDiffField,
+  ): number {
+    return (row.diffDetails?.variantDiffs || []).filter((detail) =>
+      variantHasField(detail, field),
+    ).length;
+  }
+
+  function bareSkuCount(row: ListingPresenceRow): number {
+    return bareSkuRows(row).length;
+  }
+
+  function bareSkuRows(row: ListingPresenceRow): VariantDiffDetail[] {
+    return (row.diffDetails?.variantDiffs || []).filter(
+      (detail) => detail.matchType !== "singleJan" && isBareShopifySku(detail),
+    );
+  }
+
+  function missingVariantCount(row: ListingPresenceRow): number {
+    return (row.diffDetails?.variantDiffs || []).filter(
+      (detail) =>
+        detail.matchType === "missingLocal" ||
+        detail.matchType === "missingRemote",
+    ).length;
+  }
+
+  function fieldDiffKeys(row: ListingPresenceRow): string[] {
+    return (row.diffDetails?.fieldDiffs || []).map((detail) => detail.key);
+  }
+
+  function singleJanRows(row: ListingPresenceRow): VariantDiffDetail[] {
+    return (row.diffDetails?.variantDiffs || []).filter(
+      (detail) => detail.matchType === "singleJan",
+    );
+  }
+
+  function classifyIssueKeys(
+    status: RowStatus,
+    drift: DriftStatus,
+    diffDetails: DetailedShopifyDiffResult | null,
+  ): IssueKey[] {
+    if (status !== "both") return ["presence"];
+    if (!diffDetails || diffDetails.matches) {
+      return drift === "in_sync" || drift === "unknown"
+        ? ["synced"]
+        : ["timestamp_only"];
+    }
+
+    const keys = new Set<IssueKey>();
+    const fieldKeys = new Set(diffDetails.fieldDiffs.map((diff) => diff.key));
+    const variantDiffs = diffDetails.variantDiffs || [];
+
+    if (
+      variantDiffs.some(
+        (diff) => diff.matchType !== "singleJan" && isBareShopifySku(diff),
+      )
+    ) {
+      keys.add("bare_sku");
+    }
+    if (variantDiffs.some((diff) => variantHasField(diff, "inventoryQuantity")))
+      keys.add("quantity");
+    if (variantDiffs.some((diff) => variantHasField(diff, "image"))) {
+      keys.add("variant_image");
+    }
+    if (diffDetails.galleryImageDiffs.length > 0) keys.add("gallery");
+    if (fieldKeys.has("status")) keys.add("status");
+    if (fieldKeys.has("productCategory") || fieldKeys.has("productType")) {
+      keys.add("category");
+    }
+    if (variantDiffs.some((diff) => variantHasField(diff, "price"))) {
+      keys.add("price");
+    }
+    if (variantDiffs.some((diff) => variantHasField(diff, "weight"))) {
+      keys.add("weight");
+    }
+    if (
+      variantDiffs.some(
+        (diff) =>
+          diff.matchType === "missingLocal" ||
+          diff.matchType === "missingRemote",
+      )
+    ) {
+      keys.add("variant_structure");
+    }
+    if (
+      variantDiffs.some(
+        (diff) =>
+          diff.matchType !== "singleJan" &&
+          (variantHasField(diff, "subtype") ||
+            variantHasField(diff, "janCode") ||
+            (variantHasField(diff, "sku") && !isBareShopifySku(diff))),
+      )
+    ) {
+      keys.add("variant_identity");
+    }
+    if (variantDiffs.some((diff) => diff.matchType === "singleJan")) {
+      keys.add("single_jan_subtype");
+    }
+    if (
+      ["handle", "title", "bodyHtml", "option1Name"].some((key) =>
+        fieldKeys.has(key as any),
+      )
+    ) {
+      keys.add("metadata");
+    }
+
+    const sorted = ISSUE_PRIORITY.filter((key) => keys.has(key));
+    return sorted.length > 0 ? sorted : ["metadata"];
+  }
+
+  function issueChipText(row: ListingPresenceRow, issue: IssueKey): string {
+    if (issue === "bare_sku") return `${bareSkuCount(row)} bare SKU`;
+    if (issue === "quantity")
+      return `${variantDiffCount(row, "inventoryQuantity")} qty`;
+    if (issue === "variant_image")
+      return `${variantDiffCount(row, "image")} variant image`;
+    if (issue === "gallery")
+      return `${row.diffDetails?.galleryImageDiffs.length || 0} gallery`;
+    if (issue === "price") return `${variantDiffCount(row, "price")} price`;
+    if (issue === "weight") return `${variantDiffCount(row, "weight")} weight`;
+    if (issue === "variant_structure")
+      return `${missingVariantCount(row)} variant count`;
+    if (issue === "single_jan_subtype")
+      return `${singleJanRows(row).length} single JAN`;
+    if (issue === "status") return "status";
+    if (issue === "category") return "category";
+    if (issue === "variant_identity") return "variant identity";
+    if (issue === "metadata")
+      return fieldDiffKeys(row).join(", ") || "metadata";
+    return ISSUE_LABELS[issue].toLowerCase();
+  }
+
+  function issueSummary(row: ListingPresenceRow): string {
+    if (row.status === "admin_only") return "Only in admin";
+    if (row.status === "shopify_only") return "Only in Shopify";
+    return row.issueKeys.map((issue) => issueChipText(row, issue)).join(", ");
+  }
+
   function buildRows(
     state: any,
     adminHandles: string[],
@@ -253,8 +486,9 @@
 
         let deepDiff = false;
         let mismatchKeys: string[] = [];
+        let diffDetails: DetailedShopifyDiffResult | null = null;
         if (status === "both" && listing && remoteListing) {
-          const result = diffLocalListingAgainstShopifyCatalog({
+          const result = diffLocalListingAgainstShopifyCatalogDetailed({
             handle,
             listing,
             items: getItemsForHandle(state, handle),
@@ -262,7 +496,10 @@
           });
           deepDiff = !result.matches;
           mismatchKeys = result.mismatchKeys;
+          diffDetails = result;
         }
+
+        const issueKeys = classifyIssueKeys(status, drift, diffDetails);
 
         return {
           handle,
@@ -275,6 +512,9 @@
           drift,
           deepDiff,
           mismatchKeys,
+          diffDetails,
+          issueKeys,
+          primaryIssue: issueKeys[0],
         };
       })
       .sort((a, b) => {
@@ -340,6 +580,17 @@
   $: remoteHandles = getRemoteHandles(currentState);
   $: rows = buildRows(currentState, adminHandles, remoteHandles);
   $: logDriftDecisions(rows);
+  $: issueCounts = ISSUE_PRIORITY.reduce(
+    (acc, issue) => {
+      acc[issue] = rows.filter((row) => row.issueKeys.includes(issue)).length;
+      return acc;
+    },
+    {} as Record<IssueKey, number>,
+  );
+  $: actionableRows = rows.filter(
+    (row) =>
+      row.primaryIssue !== "synced" && row.primaryIssue !== "timestamp_only",
+  );
   $: summary = {
     adminOnly: rows.filter((r) => r.status === "admin_only").length,
     shopifyOnly: rows.filter((r) => r.status === "shopify_only").length,
@@ -356,24 +607,29 @@
         !r.deepDiff &&
         (r.drift === "in_sync" || r.drift === "unknown"),
     ).length,
+    actionable: actionableRows.length,
+    timestampOnly: rows.filter((r) => r.primaryIssue === "timestamp_only")
+      .length,
   };
-  $: visibleRows = rows.filter((row) => {
-    if (activeFilter === "ALL") return true;
-    if (activeFilter === "ADMIN_ONLY") return row.status === "admin_only";
-    if (activeFilter === "SHOPIFY_ONLY") return row.status === "shopify_only";
-    if (activeFilter === "ADMIN_AHEAD")
-      return row.status === "both" && row.drift === "local_ahead";
-    if (activeFilter === "SHOPIFY_AHEAD")
-      return row.status === "both" && row.drift === "shopify_ahead";
-    if (activeFilter === "DEEP_DIFF") return row.deepDiff;
-    if (activeFilter === "SYNCED")
+  $: sectionIssueKeys = ISSUE_PRIORITY.filter((issue) => {
+    if (activeFilter === "ALL") return (issueCounts[issue] || 0) > 0;
+    if (activeFilter === "ACTIONABLE") {
       return (
-        row.status === "both" &&
-        !row.deepDiff &&
-        (row.drift === "in_sync" || row.drift === "unknown")
+        issue !== "synced" &&
+        issue !== "timestamp_only" &&
+        (issueCounts[issue] || 0) > 0
       );
-    return true;
+    }
+    return issue === activeFilter && (issueCounts[issue] || 0) > 0;
   });
+  $: issueSections = sectionIssueKeys.map((issue) => ({
+    issue,
+    rows: rows.filter((row) =>
+      activeFilter === issue
+        ? row.issueKeys.includes(issue)
+        : row.primaryIssue === issue,
+    ),
+  }));
   $: lastCompletedAtLabel =
     catalogState.lastSyncCompletedAtMs > 0
       ? formatLogTimestamp(catalogState.lastSyncCompletedAtMs)
@@ -451,59 +707,91 @@
     <div class="summary-dashboard">
       <button
         class="summary-card all"
-        class:active={activeFilter === "ALL"}
-        on:click={() => (activeFilter = "ALL")}
+        class:active={activeFilter === "ACTIONABLE"}
+        on:click={() => (activeFilter = "ACTIONABLE")}
       >
-        <span class="label">All</span>
-        <span class="value">{rows.length}</span>
+        <span class="label">Actionable</span>
+        <span class="value">{summary.actionable}</span>
+      </button>
+      <button
+        class="summary-card issue"
+        class:active={activeFilter === "bare_sku"}
+        on:click={() => (activeFilter = "bare_sku")}
+      >
+        <span class="label">Bare SKU</span>
+        <span class="value">{issueCounts.bare_sku || 0}</span>
+      </button>
+      <button
+        class="summary-card issue"
+        class:active={activeFilter === "quantity"}
+        on:click={() => (activeFilter = "quantity")}
+      >
+        <span class="label">Quantity</span>
+        <span class="value">{issueCounts.quantity || 0}</span>
+      </button>
+      <button
+        class="summary-card issue"
+        class:active={activeFilter === "variant_image"}
+        on:click={() => (activeFilter = "variant_image")}
+      >
+        <span class="label">Variant Image</span>
+        <span class="value">{issueCounts.variant_image || 0}</span>
+      </button>
+      <button
+        class="summary-card issue"
+        class:active={activeFilter === "gallery"}
+        on:click={() => (activeFilter = "gallery")}
+      >
+        <span class="label">Gallery</span>
+        <span class="value">{issueCounts.gallery || 0}</span>
+      </button>
+      <button
+        class="summary-card issue"
+        class:active={activeFilter === "status"}
+        on:click={() => (activeFilter = "status")}
+      >
+        <span class="label">Status</span>
+        <span class="value">{issueCounts.status || 0}</span>
       </button>
       <button
         class="summary-card admin"
-        class:active={activeFilter === "ADMIN_ONLY"}
-        on:click={() => (activeFilter = "ADMIN_ONLY")}
+        class:active={activeFilter === "presence"}
+        on:click={() => (activeFilter = "presence")}
       >
-        <span class="label">Admin Only</span>
-        <span class="value">{summary.adminOnly}</span>
+        <span class="label">Presence</span>
+        <span class="value">{issueCounts.presence || 0}</span>
       </button>
       <button
-        class="summary-card shopify"
-        class:active={activeFilter === "SHOPIFY_ONLY"}
-        on:click={() => (activeFilter = "SHOPIFY_ONLY")}
+        class="summary-card low-priority"
+        class:active={activeFilter === "single_jan_subtype"}
+        on:click={() => (activeFilter = "single_jan_subtype")}
       >
-        <span class="label">Shopify Only</span>
-        <span class="value">{summary.shopifyOnly}</span>
-      </button>
-      <button
-        class="summary-card admin-ahead"
-        class:active={activeFilter === "ADMIN_AHEAD"}
-        on:click={() => (activeFilter = "ADMIN_AHEAD")}
-      >
-        <span class="label">Admin Ahead</span>
-        <span class="value">{summary.adminAhead}</span>
-      </button>
-      <button
-        class="summary-card shopify-ahead"
-        class:active={activeFilter === "SHOPIFY_AHEAD"}
-        on:click={() => (activeFilter = "SHOPIFY_AHEAD")}
-      >
-        <span class="label">Shopify Ahead</span>
-        <span class="value">{summary.shopifyAhead}</span>
-      </button>
-      <button
-        class="summary-card deep-diff"
-        class:active={activeFilter === "DEEP_DIFF"}
-        on:click={() => (activeFilter = "DEEP_DIFF")}
-      >
-        <span class="label">Deep Diff</span>
-        <span class="value">{summary.deepDiff}</span>
+        <span class="label">Single JAN</span>
+        <span class="value">{issueCounts.single_jan_subtype || 0}</span>
       </button>
       <button
         class="summary-card synced"
-        class:active={activeFilter === "SYNCED"}
-        on:click={() => (activeFilter = "SYNCED")}
+        class:active={activeFilter === "timestamp_only"}
+        on:click={() => (activeFilter = "timestamp_only")}
+      >
+        <span class="label">Timestamp Only</span>
+        <span class="value">{summary.timestampOnly}</span>
+      </button>
+      <button
+        class="summary-card synced"
+        class:active={activeFilter === "synced"}
+        on:click={() => (activeFilter = "synced")}
       >
         <span class="label">Synced</span>
         <span class="value">{summary.synced}</span>
+      </button>
+      <button
+        class="summary-card all"
+        class:active={activeFilter === "ALL"}
+        on:click={() => (activeFilter = "ALL")}
+      >
+        <span class="label">All Rows</span>
+        <span class="value">{rows.length}</span>
       </button>
     </div>
 
@@ -520,72 +808,96 @@
       <div class="error">{effectiveError}</div>
     {/if}
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Handle</th>
-            <th>Status</th>
-            <th>Deep Diff</th>
-            <th>Admin Updated</th>
-            <th>Shopify Updated</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#if visibleRows.length === 0}
-            <tr>
-              <td colspan="5" class="empty">No rows for current filter.</td>
-            </tr>
-          {:else}
-            {#each visibleRows as row}
-              <tr>
-                <td class="mono">
-                  <a
-                    class="handle-link"
-                    href={`/listing-detail?handle=${encodeURIComponent(row.handle)}`}
-                  >
-                    {row.handle}
-                  </a>
-                </td>
-                <td>
-                  <span class="badge {getTableStatus(row)}">
-                    {formatTableStatus(getTableStatus(row))}
-                  </span>
-                </td>
-                <td>
-                  {#if row.deepDiff}
-                    <a
-                      class="badge deep_diff diff-link"
-                      href={`/shopify-listings/diff?handle=${encodeURIComponent(row.handle)}`}
-                      title={row.mismatchKeys.join(", ")}
-                    >
-                      {row.mismatchKeys.length} mismatch{row.mismatchKeys
-                        .length === 1
-                        ? ""
-                        : "es"}
-                    </a>
-                  {:else if row.status === "both"}
-                    <span class="badge match">match</span>
-                  {:else}
-                    -
-                  {/if}
-                </td>
-                <td>
-                  {row.adminLastUpdatedMs > 0
-                    ? formatLogTimestamp(row.adminLastUpdatedMs)
-                    : "-"}
-                </td>
-                <td>
-                  {row.shopifyLastUpdatedMs > 0
-                    ? formatLogTimestamp(row.shopifyLastUpdatedMs)
-                    : "-"}
-                </td>
-              </tr>
-            {/each}
-          {/if}
-        </tbody>
-      </table>
-    </div>
+    {#if issueSections.length === 0}
+      <div class="empty-state">No rows for current filter.</div>
+    {:else}
+      <div class="issue-sections">
+        {#each issueSections as section}
+          <details class="issue-section" open>
+            <summary>
+              <span>
+                <strong>{ISSUE_LABELS[section.issue]}</strong>
+                <span class="section-description">
+                  {ISSUE_DESCRIPTIONS[section.issue]}
+                </span>
+              </span>
+              <span class="section-count">{section.rows.length}</span>
+            </summary>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Handle</th>
+                    <th>Issue</th>
+                    <th>Status</th>
+                    <th>Admin Updated</th>
+                    <th>Shopify Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each section.rows as row}
+                    <tr>
+                      <td class="mono handle-cell">
+                        <a
+                          class="handle-link"
+                          href={`/shopify-listings/diff?handle=${encodeURIComponent(row.handle)}`}
+                        >
+                          {row.handle}
+                        </a>
+                        <a
+                          class="secondary-link"
+                          href={`/listing-detail?handle=${encodeURIComponent(row.handle)}`}
+                        >
+                          local
+                        </a>
+                      </td>
+                      <td>
+                        <div class="issue-summary">{issueSummary(row)}</div>
+                        <div class="issue-chips">
+                          {#each row.issueKeys as issue}
+                            <button
+                              class="issue-chip {issue}"
+                              type="button"
+                              on:click={() => (activeFilter = issue)}
+                              title={ISSUE_DESCRIPTIONS[issue]}
+                            >
+                              {issueChipText(row, issue)}
+                            </button>
+                          {/each}
+                        </div>
+                      </td>
+                      <td>
+                        <span class="badge {getTableStatus(row)}">
+                          {formatTableStatus(getTableStatus(row))}
+                        </span>
+                      </td>
+                      <td>
+                        {row.adminLastUpdatedMs > 0
+                          ? formatLogTimestamp(row.adminLastUpdatedMs)
+                          : "-"}
+                      </td>
+                      <td>
+                        {row.shopifyLastUpdatedMs > 0
+                          ? formatLogTimestamp(row.shopifyLastUpdatedMs)
+                          : "-"}
+                      </td>
+                    </tr>
+                    <tr class="issue-detail-row">
+                      <td colspan="5">
+                        <ShopifyListingIssueDetail
+                          issue={section.issue}
+                          {row}
+                        />
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -703,6 +1015,11 @@
     color: #1d4ed8;
   }
 
+  .summary-card.issue {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
   .summary-card.admin-ahead {
     background: #dcfce7;
     color: #166534;
@@ -711,6 +1028,11 @@
   .summary-card.shopify-ahead {
     background: #ecfdf5;
     color: #065f46;
+  }
+
+  .summary-card.low-priority {
+    background: #eef2ff;
+    color: #3730a3;
   }
 
   .summary-card.deep-diff {
@@ -753,10 +1075,57 @@
     background: white;
   }
 
+  .issue-sections {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .issue-section {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .issue-section > summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 0.9rem;
+    background: #f9fafb;
+    cursor: pointer;
+  }
+
+  .section-description {
+    display: block;
+    margin-top: 0.15rem;
+    color: #6b7280;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+
+  .section-count {
+    min-width: 2rem;
+    border-radius: 999px;
+    background: #111827;
+    color: white;
+    text-align: center;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.8rem;
+    font-weight: 800;
+  }
+
+  .issue-section .table-wrap {
+    border: 0;
+    border-top: 1px solid #e5e7eb;
+    border-radius: 0;
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 760px;
+    min-width: 920px;
   }
 
   th,
@@ -765,6 +1134,7 @@
     border-bottom: 1px solid #f3f4f6;
     padding: 0.6rem 0.75rem;
     font-size: 0.92rem;
+    vertical-align: top;
   }
 
   th {
@@ -786,6 +1156,88 @@
 
   .handle-link:hover {
     text-decoration: underline;
+  }
+
+  .handle-cell {
+    max-width: 360px;
+  }
+
+  .secondary-link {
+    display: inline-block;
+    margin-left: 0.4rem;
+    color: #6b7280;
+    font-size: 0.78rem;
+    text-decoration: none;
+  }
+
+  .secondary-link:hover {
+    text-decoration: underline;
+  }
+
+  .issue-summary {
+    color: #111827;
+    font-weight: 650;
+    margin-bottom: 0.25rem;
+  }
+
+  .issue-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .issue-detail-row td {
+    padding: 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .issue-detail-row + tr td {
+    border-top: 0;
+  }
+
+  .issue-chip {
+    border: 0;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: #374151;
+    padding: 0.18rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .issue-chip:hover {
+    filter: brightness(0.96);
+  }
+
+  .issue-chip.bare_sku,
+  .issue-chip.quantity,
+  .issue-chip.variant_image,
+  .issue-chip.gallery {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .issue-chip.presence,
+  .issue-chip.status {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .issue-chip.price,
+  .issue-chip.weight,
+  .issue-chip.category {
+    background: #e0f2fe;
+    color: #075985;
+  }
+
+  .empty-state {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: white;
+    color: #6b7280;
+    padding: 1rem;
+    text-align: center;
   }
 
   .badge {
