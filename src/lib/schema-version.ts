@@ -47,4 +47,7 @@
 // 14: Shopify order replay now materialises unresolved active line items on
 //     `order.unmatchedLines` so `/orders` and `/order` can expose missing
 //     Shopify lines instead of silently displaying only matched facts.
-export const CURRENT_SCHEMA_VERSION = 14;
+// 15: bare numeric Shopify JANs with no historical binding now resolve to the
+//     single current subtyped inventory item for that JAN when unambiguous.
+//     v14 snapshots preserve the old unmatched order projection.
+export const CURRENT_SCHEMA_VERSION = 15;

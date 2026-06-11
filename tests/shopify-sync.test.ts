@@ -801,6 +801,120 @@ describe("Shopify Sync Reducer", () => {
     );
   });
 
+  it("matches a bare Shopify JAN to the only current subtyped inventory item", () => {
+    const jan = "4901681413713";
+    const key = makeInventoryItemKey(jan, "White");
+    const t10 = Date.parse("2024-04-01T00:00:10Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: key,
+          item: { ...testItem, janCode: jan, subtype: "White" },
+        }),
+        "create-subtyped-item",
+        t10,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_reconciled({
+          raw: {
+            id: "single-subtype-order",
+            created_at: "2024-04-01T00:00:00Z",
+            updated_at: "2024-04-01T00:00:20Z",
+            line_items: [{ id: "li1", sku: jan, quantity: 2 }],
+          },
+          topic: "reconcile",
+        }),
+        "shopify-reconcile",
+        t10 + 1000,
+      ),
+    );
+
+    expect(state.idToItem[key].shipped).toBe(2);
+    expect(state.orderIdToOrder["shopify:single-subtype-order"].items).toEqual([
+      { itemKey: key, qty: 2 },
+    ]);
+    expect(
+      state.orderIdToOrder["shopify:single-subtype-order"].unmatchedLines,
+    ).toEqual([]);
+    expect(
+      state.shopifyExceptions?.["shopify:single-subtype-order"],
+    ).toBeUndefined();
+  });
+
+  it("keeps bare Shopify JAN unresolved when current subtype match is ambiguous", () => {
+    const jan = "4902505660450";
+    const violetKey = makeInventoryItemKey(jan, "Violet");
+    const blueKey = makeInventoryItemKey(jan, "Blue");
+    const t10 = Date.parse("2024-04-01T00:00:10Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: violetKey,
+          item: { ...testItem, janCode: jan, subtype: "Violet" },
+        }),
+        "create-violet",
+        t10,
+      ),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        update_item({
+          id: blueKey,
+          item: { ...testItem, janCode: jan, subtype: "Blue" },
+        }),
+        "create-blue",
+        t10 + 1,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_reconciled({
+          raw: {
+            id: "ambiguous-subtype-order",
+            created_at: "2024-04-01T00:00:00Z",
+            updated_at: "2024-04-01T00:00:20Z",
+            line_items: [{ id: "li1", sku: jan, quantity: 2 }],
+          },
+          topic: "reconcile",
+        }),
+        "shopify-reconcile",
+        t10 + 1000,
+      ),
+    );
+
+    expect(state.idToItem[violetKey].shipped).toBe(0);
+    expect(state.idToItem[blueKey].shipped).toBe(0);
+    expect(
+      state.orderIdToOrder["shopify:ambiguous-subtype-order"].items,
+    ).toEqual([]);
+    expect(
+      state.orderIdToOrder["shopify:ambiguous-subtype-order"].unmatchedLines,
+    ).toEqual([
+      {
+        source: "shopify",
+        lineId: "li1",
+        sku: jan,
+        title: "",
+        quantity: 2,
+        reason: "Missing historical binding",
+      },
+    ]);
+    expect(
+      state.shopifyExceptions?.["shopify:ambiguous-subtype-order"]?.[0],
+    ).toContain("Missing historical binding");
+  });
+
   it("applies refund to the correct current key after a rename", () => {
     const keyA = makeInventoryItemKey("JAN-REFUND", "");
     const keyB = makeInventoryItemKey("JAN-REFUND", "Renamed");

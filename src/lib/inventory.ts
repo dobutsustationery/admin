@@ -2,6 +2,7 @@ import { createAction, createReducer } from "@reduxjs/toolkit";
 import { formatYen } from "./formatters";
 import {
   type InventoryItemKey,
+  canonicalizeJanCode,
   canonicalizeInventoryItemKey,
   canonicalizeSubtype,
   makeInventoryItemKey,
@@ -3237,6 +3238,39 @@ function getOrderSaleAtMs(order: OrderInfo, actionTimestamp: number) {
     : actionTimestamp;
 }
 
+function resolveBareJanToSingleCurrentSubtype(
+  state: InventoryState,
+  rawItemKey: string,
+): HistoricalSkuResolution | null {
+  const janCode = canonicalizeInventoryItemKey(rawItemKey);
+  if (!/^\d+$/.test(janCode)) return null;
+
+  const matchingKeys = [
+    ...new Set(
+      Object.entries(state.idToItem)
+        .filter(([, item]) => canonicalizeJanCode(item.janCode) === janCode)
+        .map(([itemKey]) => canonicalizeInventoryItemKey(itemKey)),
+    ),
+  ];
+  if (matchingKeys.length !== 1) return null;
+
+  const itemKey = matchingKeys[0];
+  const item = state.idToItem[itemKey];
+  if (
+    !item ||
+    itemKey === janCode ||
+    !canonicalizeSubtype(item.subtype || "")
+  ) {
+    return null;
+  }
+
+  return {
+    itemKey,
+    entityId: state.keyIdentity?.entityIdByCurrentKey?.[itemKey],
+    outcome: "resolved",
+  };
+}
+
 function resolveLineItemInventoryKey(
   state: InventoryState,
   lineItem: any,
@@ -3256,11 +3290,15 @@ function resolveLineItemInventoryKey(
     rawItemKey,
     effectiveAtMs,
   );
+  const effectiveResolution =
+    resolved.outcome === "missing_historical_binding"
+      ? resolveBareJanToSingleCurrentSubtype(state, rawItemKey) || resolved
+      : resolved;
   return {
-    itemKey: resolved.itemKey,
+    itemKey: effectiveResolution.itemKey,
     rawSku: String(lineItem.sku || rawItemKey),
-    entityId: resolved.entityId,
-    outcome: resolved.outcome,
+    entityId: effectiveResolution.entityId,
+    outcome: effectiveResolution.outcome,
   };
 }
 
