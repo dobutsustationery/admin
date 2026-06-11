@@ -40,6 +40,60 @@ export interface DeepDiffResult {
   mismatchKeys: string[];
 }
 
+export type ShopifyDiffKey =
+  | "handle"
+  | "title"
+  | "bodyHtml"
+  | "productType"
+  | "productCategory"
+  | "status"
+  | "option1Name"
+  | "galleryImages"
+  | "variants";
+
+export type VariantDiffField =
+  | "sku"
+  | "subtype"
+  | "price"
+  | "janCode"
+  | "weight"
+  | "inventoryQuantity"
+  | "image";
+
+export interface VariantDiffDetail {
+  matchType:
+    | "sku"
+    | "janSubtype"
+    | "singleJan"
+    | "subtype"
+    | "missingLocal"
+    | "missingRemote";
+  local: ComparableVariant | null;
+  remote: ComparableVariant | null;
+  fields: VariantDiffField[];
+}
+
+export type GalleryImageDiffField = "url" | "altText";
+
+export interface GalleryImageDiffDetail {
+  local: ComparableImage | null;
+  remote: ComparableImage | null;
+  fields: GalleryImageDiffField[];
+}
+
+export interface FieldDiffDetail {
+  key: Exclude<ShopifyDiffKey, "galleryImages" | "variants">;
+  local: unknown;
+  remote: unknown;
+}
+
+export interface DetailedShopifyDiffResult extends DeepDiffResult {
+  mismatchKeys: ShopifyDiffKey[];
+  fieldDiffs: FieldDiffDetail[];
+  variantDiffs: VariantDiffDetail[];
+  galleryImageDiffs: GalleryImageDiffDetail[];
+}
+
 function trimString(value: unknown): string {
   return String(value || "").trim();
 }
@@ -249,6 +303,164 @@ function imagesEqual(
   return true;
 }
 
+function variantJanSubtypeKey(variant: ComparableVariant): string {
+  return `${trimString(variant.janCode)}|${trimString(
+    variant.subtype,
+  )}`.toLowerCase();
+}
+
+function variantSubtypeKey(variant: ComparableVariant): string {
+  return trimString(variant.subtype).toLowerCase();
+}
+
+function variantJanCodeKey(variant: ComparableVariant): string {
+  return trimString(variant.janCode).toLowerCase();
+}
+
+function findUnusedVariantIndex(
+  variants: ComparableVariant[],
+  usedIndexes: Set<number>,
+  predicate: (variant: ComparableVariant) => boolean,
+): number {
+  return variants.findIndex(
+    (variant, index) => !usedIndexes.has(index) && predicate(variant),
+  );
+}
+
+function compareVariantFields(
+  local: ComparableVariant,
+  remote: ComparableVariant,
+): VariantDiffField[] {
+  const fields: VariantDiffField[] = [];
+  if (local.sku !== remote.sku) fields.push("sku");
+  if (local.subtype !== remote.subtype) fields.push("subtype");
+  if (local.price !== remote.price) fields.push("price");
+  if (local.janCode !== remote.janCode) fields.push("janCode");
+  if (local.weight !== remote.weight) fields.push("weight");
+  if (local.inventoryQuantity !== remote.inventoryQuantity) {
+    fields.push("inventoryQuantity");
+  }
+  if (
+    local.image !== remote.image &&
+    !isEquivalentHostedImage(local.image, remote.image)
+  ) {
+    fields.push("image");
+  }
+  return fields;
+}
+
+function diffVariants(
+  localVariants: ComparableVariant[],
+  remoteVariants: ComparableVariant[],
+): VariantDiffDetail[] {
+  const remoteUsed = new Set<number>();
+  const details: VariantDiffDetail[] = [];
+
+  for (const local of localVariants) {
+    let matchType: VariantDiffDetail["matchType"] = "sku";
+    let remoteIndex = findUnusedVariantIndex(
+      remoteVariants,
+      remoteUsed,
+      (remote) => remote.sku === local.sku,
+    );
+
+    if (remoteIndex < 0) {
+      const localJan = variantJanCodeKey(local);
+      if (localJan) {
+        const localSameJanCount = localVariants.filter(
+          (variant) => variantJanCodeKey(variant) === localJan,
+        ).length;
+        const remoteSameJanIndexes = remoteVariants
+          .map((remote, index) => ({ remote, index }))
+          .filter(
+            ({ remote, index }) =>
+              !remoteUsed.has(index) && variantJanCodeKey(remote) === localJan,
+          );
+        if (localSameJanCount === 1 && remoteSameJanIndexes.length === 1) {
+          matchType = "singleJan";
+          remoteIndex = remoteSameJanIndexes[0].index;
+        }
+      }
+    }
+
+    if (remoteIndex < 0) {
+      matchType = "janSubtype";
+      const localKey = variantJanSubtypeKey(local);
+      remoteIndex = findUnusedVariantIndex(
+        remoteVariants,
+        remoteUsed,
+        (remote) => variantJanSubtypeKey(remote) === localKey,
+      );
+    }
+
+    if (remoteIndex < 0) {
+      matchType = "subtype";
+      const localKey = variantSubtypeKey(local);
+      remoteIndex = findUnusedVariantIndex(
+        remoteVariants,
+        remoteUsed,
+        (remote) => variantSubtypeKey(remote) === localKey,
+      );
+    }
+
+    if (remoteIndex < 0) {
+      details.push({
+        matchType: "missingRemote",
+        local,
+        remote: null,
+        fields: [],
+      });
+      continue;
+    }
+
+    remoteUsed.add(remoteIndex);
+    const remote = remoteVariants[remoteIndex];
+    const fields = compareVariantFields(local, remote);
+    if (fields.length > 0) {
+      details.push({ matchType, local, remote, fields });
+    }
+  }
+
+  remoteVariants.forEach((remote, index) => {
+    if (remoteUsed.has(index)) return;
+    details.push({
+      matchType: "missingLocal",
+      local: null,
+      remote,
+      fields: [],
+    });
+  });
+
+  return details;
+}
+
+function diffGalleryImages(
+  localImages: ComparableImage[],
+  remoteImages: ComparableImage[],
+): GalleryImageDiffDetail[] {
+  const details: GalleryImageDiffDetail[] = [];
+  const max = Math.max(localImages.length, remoteImages.length);
+  for (let index = 0; index < max; index += 1) {
+    const local = localImages[index] || null;
+    const remote = remoteImages[index] || null;
+    if (!local || !remote) {
+      details.push({ local, remote, fields: [] });
+      continue;
+    }
+
+    const fields: GalleryImageDiffField[] = [];
+    if (
+      local.url !== remote.url &&
+      !isEquivalentHostedImage(local.url, remote.url)
+    ) {
+      fields.push("url");
+    }
+    if (local.altText !== remote.altText) fields.push("altText");
+    if (fields.length > 0) details.push({ local, remote, fields });
+  }
+  return details;
+}
+
 export function buildComparableLocalListing(params: {
   handle: string;
   listing: Listing;
@@ -261,7 +473,9 @@ export function buildComparableLocalListing(params: {
       price: normalizeNumber(item.price),
       janCode: trimString(item.janCode),
       weight: normalizeNumber(item.weight),
-      inventoryQuantity: normalizeNumber(item.qty),
+      inventoryQuantity: normalizeNumber(
+        Number(item.qty || 0) - Number(item.shipped || 0),
+      ),
       image: trimString(item.image),
     }))
     .sort((a, b) => a.sku.localeCompare(b.sku));
@@ -350,6 +564,77 @@ export function diffComparableShopifyListings(
   };
 }
 
+export function diffComparableShopifyListingsDetailed(
+  localListing: ComparableShopifyListing,
+  remoteListing: ComparableShopifyListing,
+): DetailedShopifyDiffResult {
+  const mismatchKeys: ShopifyDiffKey[] = [];
+  const fieldDiffs: FieldDiffDetail[] = [];
+
+  const addFieldDiff = (
+    key: FieldDiffDetail["key"],
+    local: unknown,
+    remote: unknown,
+  ) => {
+    mismatchKeys.push(key);
+    fieldDiffs.push({ key, local, remote });
+  };
+
+  if (localListing.handle !== remoteListing.handle) {
+    addFieldDiff("handle", localListing.handle, remoteListing.handle);
+  }
+  if (localListing.title !== remoteListing.title) {
+    addFieldDiff("title", localListing.title, remoteListing.title);
+  }
+  if (localListing.bodyHtml !== remoteListing.bodyHtml) {
+    addFieldDiff("bodyHtml", localListing.bodyHtml, remoteListing.bodyHtml);
+  }
+  if (localListing.productType !== remoteListing.productType) {
+    addFieldDiff(
+      "productType",
+      localListing.productType,
+      remoteListing.productType,
+    );
+  }
+  if (localListing.productCategory !== remoteListing.productCategory) {
+    addFieldDiff(
+      "productCategory",
+      localListing.productCategory,
+      remoteListing.productCategory,
+    );
+  }
+  if (localListing.status !== remoteListing.status) {
+    addFieldDiff("status", localListing.status, remoteListing.status);
+  }
+  if (localListing.option1Name !== remoteListing.option1Name) {
+    addFieldDiff(
+      "option1Name",
+      localListing.option1Name,
+      remoteListing.option1Name,
+    );
+  }
+
+  const galleryImageDiffs = diffGalleryImages(
+    localListing.galleryImages,
+    remoteListing.galleryImages,
+  );
+  if (galleryImageDiffs.length > 0) mismatchKeys.push("galleryImages");
+
+  const variantDiffs = diffVariants(
+    localListing.variants,
+    remoteListing.variants,
+  );
+  if (variantDiffs.length > 0) mismatchKeys.push("variants");
+
+  return {
+    matches: mismatchKeys.length === 0,
+    mismatchKeys,
+    fieldDiffs,
+    variantDiffs,
+    galleryImageDiffs,
+  };
+}
+
 export function diffLocalListingAgainstShopifyCatalog(params: {
   handle: string;
   listing: Listing;
@@ -357,6 +642,18 @@ export function diffLocalListingAgainstShopifyCatalog(params: {
   remoteListing: ShopifyCatalogListing;
 }): DeepDiffResult {
   return diffComparableShopifyListings(
+    buildComparableLocalListing(params),
+    buildComparableRemoteListing(params.remoteListing),
+  );
+}
+
+export function diffLocalListingAgainstShopifyCatalogDetailed(params: {
+  handle: string;
+  listing: Listing;
+  items: Item[];
+  remoteListing: ShopifyCatalogListing;
+}): DetailedShopifyDiffResult {
+  return diffComparableShopifyListingsDetailed(
     buildComparableLocalListing(params),
     buildComparableRemoteListing(params.remoteListing),
   );

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Listing } from "$lib/listings-slice";
-import { diffLocalListingAgainstShopifyCatalog } from "$lib/shopify-deep-diff";
+import {
+  diffLocalListingAgainstShopifyCatalog,
+  diffLocalListingAgainstShopifyCatalogDetailed,
+} from "$lib/shopify-deep-diff";
 import type { ShopifyCatalogListing } from "$lib/shopify-catalog-slice";
 
 describe("shopify deep diff", () => {
@@ -134,6 +137,71 @@ describe("shopify deep diff", () => {
     expect(result.mismatchKeys).toEqual([]);
   });
 
+  it("compares Shopify inventory quantity against local on-hand quantity", () => {
+    const listing: Listing = {
+      handle: "quantity-test",
+      title: "Quantity Test",
+      bodyHtml: "",
+      productCategory: "",
+      productType: "",
+      vendor: "SPNSS Ltd.",
+      tags: [],
+      status: "active",
+      option1Name: "Subtype",
+      images: [],
+      lastUpdated: 123,
+    };
+
+    const remoteListing: ShopifyCatalogListing = {
+      productId: "99",
+      handle: "quantity-test",
+      title: "Quantity Test",
+      bodyHtml: "",
+      vendor: "SPNSS Ltd.",
+      productType: "",
+      productCategory: "",
+      tags: [],
+      status: "active",
+      option1Name: "Subtype",
+      updatedAtIso: "2026-03-29T12:00:00.000Z",
+      updatedAtMs: 1000,
+      images: [],
+      variants: [
+        {
+          id: "20",
+          sku: "4542804105827Red",
+          subtype: "Red",
+          price: 8.5,
+          janCode: "4542804105827",
+          weight: 12,
+          inventoryQuantity: 2,
+          image: "",
+        },
+      ],
+    };
+
+    const result = diffLocalListingAgainstShopifyCatalogDetailed({
+      handle: "quantity-test",
+      listing,
+      items: [
+        {
+          janCode: "4542804105827",
+          subtype: "Red",
+          description: "Quantity Test",
+          qty: 3,
+          shipped: 1,
+          price: 8.5,
+          weight: 12,
+          timestamp: 0,
+        } as any,
+      ],
+      remoteListing,
+    });
+
+    expect(result.matches).toBe(true);
+    expect(result.variantDiffs).toEqual([]);
+  });
+
   it("reports variant mismatches when Shopify data diverges", () => {
     const listing: Listing = {
       handle: "test-product",
@@ -197,6 +265,139 @@ describe("shopify deep diff", () => {
 
     expect(result.matches).toBe(false);
     expect(result.mismatchKeys).toContain("variants");
+  });
+
+  it("classifies bare SKU and inventory quantity variant differences", () => {
+    const listing: Listing = {
+      handle: "variant-detail-test",
+      title: "Variant Detail Test",
+      bodyHtml: "",
+      productCategory: "",
+      productType: "",
+      vendor: "SPNSS Ltd.",
+      tags: [],
+      status: "active",
+      option1Name: "Subtype",
+      images: [],
+      lastUpdated: 123,
+    };
+
+    const remoteListing: ShopifyCatalogListing = {
+      productId: "10",
+      handle: "variant-detail-test",
+      title: "Variant Detail Test",
+      bodyHtml: "",
+      vendor: "SPNSS Ltd.",
+      productType: "",
+      productCategory: "",
+      tags: [],
+      status: "active",
+      option1Name: "Subtype",
+      updatedAtIso: "2026-03-29T12:00:00.000Z",
+      updatedAtMs: 1000,
+      images: [],
+      variants: [
+        {
+          id: "20",
+          sku: "4542804105827",
+          subtype: "Red",
+          price: 8.5,
+          janCode: "4542804105827",
+          weight: 12,
+          inventoryQuantity: 2,
+          image: "",
+        },
+      ],
+    };
+
+    const result = diffLocalListingAgainstShopifyCatalogDetailed({
+      handle: "variant-detail-test",
+      listing,
+      items: [
+        {
+          janCode: "4542804105827",
+          subtype: "Red",
+          description: "Variant Detail Test",
+          qty: 3,
+          price: 8.5,
+          weight: 12,
+          timestamp: 0,
+          shipped: 0,
+        } as any,
+      ],
+      remoteListing,
+    });
+
+    expect(result.mismatchKeys).toEqual(["variants"]);
+    expect(result.variantDiffs).toHaveLength(1);
+    expect(result.variantDiffs[0].matchType).toBe("singleJan");
+    expect(result.variantDiffs[0].fields).toEqual(["sku", "inventoryQuantity"]);
+  });
+
+  it("matches variants by unique JAN when subtype differs", () => {
+    const listing: Listing = {
+      handle: "single-jan-test",
+      title: "Single JAN Test",
+      bodyHtml: "",
+      productCategory: "",
+      productType: "",
+      vendor: "SPNSS Ltd.",
+      tags: [],
+      status: "active",
+      option1Name: "Subtype",
+      images: [],
+      lastUpdated: 123,
+    };
+
+    const remoteListing: ShopifyCatalogListing = {
+      productId: "10",
+      handle: "single-jan-test",
+      title: "Single JAN Test",
+      bodyHtml: "",
+      vendor: "SPNSS Ltd.",
+      productType: "",
+      productCategory: "",
+      tags: [],
+      status: "active",
+      option1Name: "Subtype",
+      updatedAtIso: "2026-03-29T12:00:00.000Z",
+      updatedAtMs: 1000,
+      images: [],
+      variants: [
+        {
+          id: "20",
+          sku: "4542804105827",
+          subtype: "Default Title",
+          price: 8.5,
+          janCode: "4542804105827",
+          weight: 12,
+          inventoryQuantity: 3,
+          image: "",
+        },
+      ],
+    };
+
+    const result = diffLocalListingAgainstShopifyCatalogDetailed({
+      handle: "single-jan-test",
+      listing,
+      items: [
+        {
+          janCode: "4542804105827",
+          subtype: "Blue",
+          description: "Single JAN Test",
+          qty: 3,
+          price: 8.5,
+          weight: 12,
+          timestamp: 0,
+          shipped: 0,
+        } as any,
+      ],
+      remoteListing,
+    });
+
+    expect(result.variantDiffs).toHaveLength(1);
+    expect(result.variantDiffs[0].matchType).toBe("singleJan");
+    expect(result.variantDiffs[0].fields).toEqual(["sku", "subtype"]);
   });
 
   it("ignores vendor and tags differences in deep diff", () => {

@@ -1,11 +1,15 @@
 <script lang="ts">
   import { page } from "$app/stores";
   import JsonTree from "$lib/components/JsonTree.svelte";
+  import ItemHistoryValue from "$lib/components/ItemHistoryValue.svelte";
   import { formatLogTimestamp } from "$lib/format-log-timestamp";
   import {
     buildComparableLocalListing,
     buildComparableRemoteListing,
-    diffComparableShopifyListings,
+    diffComparableShopifyListingsDetailed,
+    type GalleryImageDiffDetail,
+    type VariantDiffDetail,
+    type VariantDiffField,
   } from "$lib/shopify-deep-diff";
   import { store } from "$lib/store";
 
@@ -51,6 +55,53 @@
     return record?.[key];
   }
 
+  function variantValue(
+    detail: VariantDiffDetail,
+    side: "local" | "remote",
+    field: VariantDiffField,
+  ) {
+    const variant = detail?.[side];
+    if (!variant) return "-";
+    return variant[field] === "" ? "(blank)" : variant[field];
+  }
+
+  function variantLabel(detail: VariantDiffDetail): string {
+    const local = detail.local;
+    const remote = detail.remote;
+    return (
+      local?.sku ||
+      remote?.sku ||
+      local?.subtype ||
+      remote?.subtype ||
+      "(variant)"
+    );
+  }
+
+  function imageValue(
+    detail: GalleryImageDiffDetail,
+    side: "local" | "remote",
+    field: "url" | "altText",
+  ) {
+    const image = detail?.[side];
+    if (!image) return "-";
+    return image[field] === "" ? "(blank)" : image[field];
+  }
+
+  function fieldLabel(field: string): string {
+    const labels: Record<string, string> = {
+      sku: "SKU",
+      subtype: "Subtype",
+      price: "Price",
+      janCode: "JAN",
+      weight: "Weight",
+      inventoryQuantity: "On Hand",
+      image: "Image",
+      url: "URL",
+      altText: "Alt Text",
+    };
+    return labels[field] || field;
+  }
+
   $: handle = $page.url.searchParams.get("handle") || "";
   $: currentState = $store;
   $: localListingRaw = handle
@@ -74,7 +125,7 @@
       : null;
   $: diffResult =
     localComparable && remoteComparable
-      ? diffComparableShopifyListings(localComparable, remoteComparable)
+      ? diffComparableShopifyListingsDetailed(localComparable, remoteComparable)
       : null;
   $: mismatchKeys = (diffResult?.mismatchKeys || []) as DiffKey[];
 </script>
@@ -139,7 +190,141 @@
     {#if diffResult && mismatchKeys.length > 0}
       <div class="section">
         <h2>Mismatches</h2>
-        <div class="diff-list">
+        <div class="mismatch-chips">
+          {#each mismatchKeys as key}
+            <span class="mismatch-chip">{LABELS[key]}</span>
+          {/each}
+        </div>
+
+        {#if diffResult.fieldDiffs.length > 0}
+          <div class="diff-card">
+            <div class="diff-card-header">
+              <span class="diff-key">Listing Fields</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    <th>Local</th>
+                    <th>Shopify</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each diffResult.fieldDiffs as diff}
+                    <tr>
+                      <td>{LABELS[diff.key]}</td>
+                      <td>{String(diff.local || "(blank)")}</td>
+                      <td>{String(diff.remote || "(blank)")}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {/if}
+
+        {#if diffResult.variantDiffs.length > 0}
+          <div class="diff-card">
+            <div class="diff-card-header">
+              <span class="diff-key">Variants</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Variant</th>
+                    <th>Matched By</th>
+                    <th>Field</th>
+                    <th>Local</th>
+                    <th>Shopify</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each diffResult.variantDiffs as diff}
+                    {#if diff.fields.length === 0}
+                      <tr>
+                        <td><ItemHistoryValue value={variantLabel(diff)} /></td>
+                        <td>{diff.matchType}</td>
+                        <td>presence</td>
+                        <td>{diff.local ? "present" : "-"}</td>
+                        <td>{diff.remote ? "present" : "-"}</td>
+                      </tr>
+                    {:else}
+                      {#each diff.fields as field}
+                        <tr>
+                          <td
+                            ><ItemHistoryValue value={variantLabel(diff)} /></td
+                          >
+                          <td>{diff.matchType}</td>
+                          <td>{fieldLabel(field)}</td>
+                          <td
+                            ><ItemHistoryValue
+                              value={variantValue(diff, "local", field)}
+                            /></td
+                          >
+                          <td
+                            ><ItemHistoryValue
+                              value={variantValue(diff, "remote", field)}
+                            /></td
+                          >
+                        </tr>
+                      {/each}
+                    {/if}
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {/if}
+
+        {#if diffResult.galleryImageDiffs.length > 0}
+          <div class="diff-card">
+            <div class="diff-card-header">
+              <span class="diff-key">Gallery Images</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Image</th>
+                    <th>Field</th>
+                    <th>Local</th>
+                    <th>Shopify</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each diffResult.galleryImageDiffs as diff, index}
+                    {#if diff.fields.length === 0}
+                      <tr>
+                        <td>#{index + 1}</td>
+                        <td>presence</td>
+                        <td>{diff.local ? "present" : "-"}</td>
+                        <td>{diff.remote ? "present" : "-"}</td>
+                      </tr>
+                    {:else}
+                      {#each diff.fields as field}
+                        <tr>
+                          <td>#{index + 1}</td>
+                          <td>{fieldLabel(field)}</td>
+                          <td>{imageValue(diff, "local", field)}</td>
+                          <td>{imageValue(diff, "remote", field)}</td>
+                        </tr>
+                      {/each}
+                    {/if}
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    {#if diffResult && mismatchKeys.length > 0}
+      <details class="section">
+        <summary>Raw normalized field diffs</summary>
+        <div class="diff-list raw-diff-list">
           {#each mismatchKeys as key}
             <div class="diff-card">
               <div class="diff-card-header">
@@ -170,46 +355,56 @@
             </div>
           {/each}
         </div>
-      </div>
+      </details>
     {/if}
 
-    <div class="two-up">
-      <div class="section">
-        <h2>Normalized Local</h2>
-        <div class="tree-wrap">
-          <JsonTree value={localComparable} label="local" expanded={true} />
+    <details class="section raw-full">
+      <summary>Raw normalized listings</summary>
+      <div class="two-up">
+        <div>
+          <h2>Normalized Local</h2>
+          <div class="tree-wrap">
+            <JsonTree value={localComparable} label="local" expanded={true} />
+          </div>
+        </div>
+        <div>
+          <h2>Normalized Shopify</h2>
+          <div class="tree-wrap">
+            <JsonTree
+              value={remoteComparable}
+              label="shopify"
+              expanded={true}
+            />
+          </div>
         </div>
       </div>
-      <div class="section">
-        <h2>Normalized Shopify</h2>
-        <div class="tree-wrap">
-          <JsonTree value={remoteComparable} label="shopify" expanded={true} />
-        </div>
-      </div>
-    </div>
+    </details>
 
-    <div class="two-up">
-      <div class="section">
-        <h2>Raw Local Listing</h2>
-        <div class="tree-wrap">
-          <JsonTree
-            value={localListingRaw}
-            label="localListing"
-            expanded={true}
-          />
+    <details class="section raw-full">
+      <summary>Raw source records</summary>
+      <div class="two-up">
+        <div>
+          <h2>Raw Local Listing</h2>
+          <div class="tree-wrap">
+            <JsonTree
+              value={localListingRaw}
+              label="localListing"
+              expanded={true}
+            />
+          </div>
+        </div>
+        <div>
+          <h2>Raw Shopify Shadow</h2>
+          <div class="tree-wrap">
+            <JsonTree
+              value={remoteListingRaw}
+              label="shopifyShadow"
+              expanded={true}
+            />
+          </div>
         </div>
       </div>
-      <div class="section">
-        <h2>Raw Shopify Shadow</h2>
-        <div class="tree-wrap">
-          <JsonTree
-            value={remoteListingRaw}
-            label="shopifyShadow"
-            expanded={true}
-          />
-        </div>
-      </div>
-    </div>
+    </details>
   {/if}
 </div>
 
@@ -325,8 +520,13 @@
     gap: 0.75rem;
   }
 
+  .raw-diff-list {
+    margin-top: 0.75rem;
+  }
+
   .diff-card {
     overflow: hidden;
+    margin-top: 0.75rem;
   }
 
   .diff-card-header {
@@ -338,6 +538,50 @@
   .diff-key {
     font-weight: 800;
     color: #9a3412;
+  }
+
+  .mismatch-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .mismatch-chip {
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+
+  .table-wrap {
+    overflow: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 720px;
+  }
+
+  th,
+  td {
+    text-align: left;
+    border-bottom: 1px solid #f3f4f6;
+    padding: 0.5rem 0.65rem;
+    vertical-align: top;
+    font-size: 0.9rem;
+  }
+
+  th {
+    background: #f9fafb;
+    color: #374151;
+  }
+
+  td {
+    overflow-wrap: anywhere;
   }
 
   .diff-columns,
@@ -371,6 +615,16 @@
     border: 1px solid #f3f4f6;
     border-radius: 8px;
     padding: 0.75rem;
+  }
+
+  details.section > summary {
+    cursor: pointer;
+    font-weight: 800;
+    color: #111827;
+  }
+
+  .raw-full .two-up {
+    margin-top: 0.75rem;
   }
 
   @media (max-width: 900px) {
