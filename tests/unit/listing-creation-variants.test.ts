@@ -13,6 +13,7 @@ const rootReducer = (s: any, a: any) =>
       : a,
   );
 import {
+  approve_proposal_thunk,
   set_proposal_handle_thunk,
   add_proposals_internal,
   add_variant_requested,
@@ -198,6 +199,98 @@ describe("Listing Creation - Variants & Merging", () => {
   });
 
   describe("Intent Actions (Add/Remove Requested)", () => {
+    it("does not rewrite inventory subtype when approving distinct JAN variants with listing labels", () => {
+      const store = configureStore({ reducer: rootReducer });
+      const janA = "1111111111111";
+      const janB = "2222222222222";
+
+      store.dispatch(
+        bulk_import_items({
+          items: [
+            {
+              type: "new",
+              id: janA,
+              item: {
+                janCode: janA,
+                subtype: "",
+                qty: 5,
+                description: "A",
+                hsCode: "123",
+                shipped: 0,
+                pieces: 1,
+                image: "",
+                creationDate: "",
+                timestamp: 0,
+              },
+            },
+            {
+              type: "new",
+              id: janB,
+              item: {
+                janCode: janB,
+                subtype: "",
+                qty: 8,
+                description: "B",
+                hsCode: "123",
+                shipped: 0,
+                pieces: 1,
+                image: "",
+                creationDate: "",
+                timestamp: 0,
+              },
+            },
+          ],
+        }),
+      );
+
+      store.dispatch(
+        add_proposals_internal([
+          {
+            janCode: janA,
+            inventoryItemIds: [janA, janB],
+            photoGroupIds: [janA, janB],
+            title: "Grouped Product",
+            handle: "grouped-product",
+            variants: [
+              { id: "v-a", itemId: janA, option1Value: "Memo Pad", qty: 5 },
+              {
+                id: "v-b",
+                itemId: janB,
+                option1Value: "Flake Stickers",
+                qty: 8,
+              },
+            ],
+            status: "draft",
+            bodyHtml: "",
+            productCategory: "",
+            vendor: "",
+            tags: [],
+            option1Name: "Style",
+          },
+        ]),
+      );
+
+      store.dispatch(approve_proposal_thunk(janA) as any);
+
+      const inventoryState = store.getState().inventory;
+      expect(inventoryState.idToItem[janA]).toBeDefined();
+      expect(inventoryState.idToItem[janA].subtype).toBe("");
+      expect(inventoryState.idToItem[janB]).toBeDefined();
+      expect(inventoryState.idToItem[janB].subtype).toBe("");
+      expect(inventoryState.idToItem[`${janA}Memo Pad`]).toBeUndefined();
+      expect(inventoryState.idToItem[`${janB}Flake Stickers`]).toBeUndefined();
+      expect(inventoryState.idToItem[janA].handle).toBe("grouped-product");
+      expect(inventoryState.idToItem[janB].handle).toBe("grouped-product");
+
+      expect(
+        store.getState().listings.handleToListing["grouped-product"]
+          .variantOptionsByItemId,
+      ).toEqual({
+        [janA]: "Memo Pad",
+        [janB]: "Flake Stickers",
+      });
+    });
+
     it("should add a new variant to the same JAN (splitting)", () => {
       const store = configureStore({ reducer: rootReducer });
       const jan = "jan_a";

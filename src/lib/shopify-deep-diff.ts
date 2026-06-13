@@ -469,7 +469,10 @@ export function buildComparableLocalListing(params: {
   const items = (Array.isArray(params.items) ? params.items : [])
     .map((item) => ({
       sku: generateSku(item.janCode, item.subtype),
-      subtype: trimString(item.subtype),
+      subtype: trimString(
+        params.listing?.variantOptionsByItemId?.[(item as any).id] ??
+          item.subtype,
+      ),
       price: normalizeNumber(item.price),
       janCode: trimString(item.janCode),
       weight: normalizeNumber(item.weight),

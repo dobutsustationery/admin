@@ -124,6 +124,68 @@ describe("Shopify Import Logic", () => {
 
     expect(result.updates.length).toBe(0);
   });
+
+  it("stores Shopify option labels as listing metadata without changing inventory subtype", () => {
+    const jan = "4902505451409";
+    const handle = "single-variant-listing";
+    const existing = {
+      janCode: jan,
+      subtype: "",
+      image: "",
+      description: "Single variant product",
+      qty: 5,
+      shipped: 0,
+      handle,
+    };
+    const state = {
+      rows: [
+        {
+          processed: false,
+          parsed: {
+            ...existing,
+            option1Name: "Color",
+            option1Value: "Pastel",
+          },
+        },
+      ],
+      resolutions: {},
+      activeFile: null,
+      step: "review",
+      headerRow: null,
+      lastSeenProduct: null,
+    } as any;
+
+    const result = computeShopifyImportBatch(
+      state,
+      { [jan]: existing },
+      {
+        [handle]: {
+          handle,
+          title: "Single variant product",
+          option1Name: "Title",
+          images: [],
+          lastUpdated: 0,
+        },
+      },
+      "MATCH",
+      { ignoreShopifyQty: true },
+    );
+
+    expect(result.updates).toHaveLength(1);
+    expect(result.updates[0].id).toBe(jan);
+    expect(result.updates[0].item.subtype).toBe("");
+    expect(result.listingUpdates).toEqual(
+      expect.arrayContaining([
+        {
+          type: "set_variant_option",
+          handle,
+          itemKey: jan,
+          option1Name: "Color",
+          option1Value: "Pastel",
+        },
+      ]),
+    );
+  });
 });
 
 describe("Shopify Parsing Logic", () => {

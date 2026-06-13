@@ -254,7 +254,17 @@
           .filter(([id, h]) => h === handle)
           .map(([id]) => {
             const item = $store.inventory.idToItem[id];
-            return item ? { ...item, id } : null;
+            const listingOption1Value =
+              liveListing.variantOptionsByItemId?.[id] || "";
+            return item
+              ? {
+                  ...item,
+                  id,
+                  inventorySubtype: item.subtype || "",
+                  listingOption1Value,
+                  subtype: listingOption1Value || item.subtype,
+                }
+              : null;
           })
           .filter((item): item is NonNullable<typeof item> => !!item)
           .sort((a, b) => {
@@ -598,8 +608,13 @@
     const variantsSnapshot = (associatedItems || [])
       .map((item: any) => {
         const janCode = String(item?.janCode || "").trim();
-        const subtype = String(item?.subtype || "").trim();
-        const sku = generateSku(janCode, subtype);
+        const inventorySubtype = String(
+          item?.inventorySubtype ?? item?.subtype ?? "",
+        ).trim();
+        const subtype = String(
+          item?.listingOption1Value || item?.subtype || "",
+        ).trim();
+        const sku = generateSku(janCode, inventorySubtype);
         const qty = Number(item?.qty || 0);
         const shipped = Number(item?.shipped || 0);
         const available = Math.max(0, qty - shipped);

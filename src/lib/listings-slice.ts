@@ -27,6 +27,7 @@ export interface Listing {
   tags: string[];
   status: "active" | "archived" | "draft";
   option1Name: string; // e.g., "Color" or "Style"
+  variantOptionsByItemId?: Record<string, string>;
   images: ListingImage[];
   lastUpdated: number;
 }
@@ -383,10 +384,23 @@ function applyHandleUpdate(
   timestampMs = 0,
 ) {
   const priorHandle = previousHandle || state.idToHandle[id];
-  if (priorHandle === newHandle) return;
+  const priorListing = priorHandle
+    ? state.handleToListing[priorHandle]
+    : undefined;
+  const defaultHandle =
+    !newHandle && priorListing
+      ? generateHandle(
+          priorListing.title,
+          (priorListing as any).janCode ||
+            String(id).match(/^\d{8,14}/)?.[0] ||
+            "",
+        )
+      : "";
+  const targetHandle = newHandle || defaultHandle;
+  if (priorHandle === targetHandle) return;
 
-  if (newHandle) {
-    state.idToHandle[id] = newHandle;
+  if (targetHandle) {
+    state.idToHandle[id] = targetHandle;
   } else {
     delete state.idToHandle[id];
   }
@@ -395,38 +409,36 @@ function applyHandleUpdate(
 
   // Check if priorHandle is still in use by ANY other ID
   const isStillUsed = Object.values(state.idToHandle).includes(priorHandle);
-
-  const priorListing = state.handleToListing[priorHandle];
-
-  if (!newHandle) {
-    // Un-listing logic: if no one else uses the old handle, delete the listing
+  if (!targetHandle) {
+    // Un-listing logic: if no one else uses the old handle and no default
+    // handle can be generated, delete the listing.
     if (!isStillUsed && priorListing) {
       delete state.handleToListing[priorHandle];
     }
     return;
   }
 
-  // Move/Split logic (only if newHandle is truthy)
-  const targetListing = state.handleToListing[newHandle];
+  // Move/Split logic (only if targetHandle is truthy)
+  const targetListing = state.handleToListing[targetHandle];
 
   if (priorListing && !targetListing) {
     if (!isStillUsed) {
       // Move (Rename) - No one else uses old handle, so we move the listing entity
       const movedListing = {
         ...priorListing,
-        handle: newHandle,
+        handle: targetHandle,
         lastUpdated: keepLatestTimestamp(priorListing.lastUpdated, timestampMs),
       };
       delete state.handleToListing[priorHandle];
-      state.handleToListing[newHandle] = movedListing;
+      state.handleToListing[targetHandle] = movedListing;
     } else {
       // Split (Clone) - Old handle still used, so we create a NEW listing for this item, cloning context
       const newListing = {
         ...priorListing,
-        handle: newHandle,
+        handle: targetHandle,
         lastUpdated: keepLatestTimestamp(priorListing.lastUpdated, timestampMs),
       };
-      state.handleToListing[newHandle] = newListing;
+      state.handleToListing[targetHandle] = newListing;
     }
     return;
   }

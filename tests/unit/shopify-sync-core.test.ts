@@ -159,6 +159,68 @@ describe("shopify-sync-core buildProductPayload", () => {
     expect(payload.variants[0].sku).toBe("123");
   });
 
+  it("matches a local JAN+label SKU to the only existing bare-JAN Shopify variant", () => {
+    const janCode = "4952270291328";
+    const payload = buildProductPayload(
+      {
+        handle: "test-handle",
+        listing: {
+          handle: "test-handle",
+          title: "Test Product",
+          option1Name: "Style",
+        },
+        variants: [
+          {
+            sku: `${janCode}Flake Stickers`,
+            subtype: "Flake Stickers",
+            janCode,
+          },
+        ],
+      },
+      {
+        id: 1,
+        handle: "test-handle",
+        status: "active",
+        variants: [{ id: 456, sku: janCode, barcode: janCode }],
+      },
+    );
+
+    expect(payload.variants[0].id).toBe(456);
+    expect(payload.variants[0].sku).toBe(`${janCode}Flake Stickers`);
+  });
+
+  it("does not match a local JAN+label SKU to ambiguous existing Shopify variants", () => {
+    const janCode = "4952270291328";
+    const payload = buildProductPayload(
+      {
+        handle: "test-handle",
+        listing: {
+          handle: "test-handle",
+          title: "Test Product",
+          option1Name: "Style",
+        },
+        variants: [
+          {
+            sku: `${janCode}Flake Stickers`,
+            subtype: "Flake Stickers",
+            janCode,
+          },
+        ],
+      },
+      {
+        id: 1,
+        handle: "test-handle",
+        status: "active",
+        variants: [
+          { id: 456, sku: janCode, barcode: janCode },
+          { id: 789, sku: `${janCode}Memo`, barcode: janCode },
+        ],
+      },
+    );
+
+    expect(payload.variants[0].id).toBeUndefined();
+  });
+
   it("includes options for products with multiple variants even if some are 'Default'", () => {
     const payload = buildProductPayload(
       {
