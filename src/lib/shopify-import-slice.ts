@@ -203,6 +203,14 @@ export interface ImportBatchOptions {
   useShopifyWeights?: boolean;
 }
 
+const normalizeShopifyOptionValue = (value: unknown): string => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  if (lower === "default" || lower === "default title") return "";
+  return trimmed;
+};
+
 export const computeShopifyImportBatch = (
   state: ShopifyImportState,
   inventoryIdToItem: Record<string, any>,
@@ -248,6 +256,40 @@ export const computeShopifyImportBatch = (
       if (inv && inv.handle) return inv.handle;
     }
     return csvHandle;
+  };
+
+  const optionValuesByListingItem = new Map<string, Set<string>>();
+  state.rows.forEach((r) => {
+    const item = r.parsed;
+    if (!item?.janCode) return;
+    const storeHandle = getStoreHandle(item.handle || "");
+    const optionValue = normalizeShopifyOptionValue(item.option1Value);
+    if (!storeHandle || !optionValue) return;
+    const key = `${storeHandle}\n${item.janCode}`;
+    if (!optionValuesByListingItem.has(key)) {
+      optionValuesByListingItem.set(key, new Set<string>());
+    }
+    optionValuesByListingItem.get(key)!.add(optionValue);
+  });
+
+  const queueVariantOptionUpdate = (
+    storeHandle: string,
+    itemKey: string,
+    item: ShopifyImportItem,
+  ) => {
+    const optionValue = normalizeShopifyOptionValue(item.option1Value);
+    if (!storeHandle || !itemKey || !optionValue) return;
+    const values = optionValuesByListingItem.get(
+      `${storeHandle}\n${item.janCode}`,
+    );
+    if (!values || values.size !== 1) return;
+    listingUpdates.push({
+      type: "set_variant_option",
+      handle: storeHandle,
+      itemKey,
+      option1Name: String(item.option1Name || "").trim() || "Title",
+      option1Value: optionValue,
+    });
   };
 
   const useDesc = options?.useShopifyDescription ?? false;
@@ -410,7 +452,7 @@ export const computeShopifyImportBatch = (
             : {}),
           bodyHtml: item.bodyHtml,
           productCategory: item.productCategory,
-          subtype: item.option1Value || baseItem.subtype, // Update Subtype
+          subtype: baseItem.subtype,
         };
 
         updates.push({
@@ -418,6 +460,7 @@ export const computeShopifyImportBatch = (
           id: key,
           item: newItem,
         });
+        queueVariantOptionUpdate(storeHandle, key, item);
       });
 
       indices.push(index);
@@ -482,17 +525,17 @@ export const computeShopifyImportBatch = (
     } else if (filter === "NEW" && !exists) {
       if (item.janCode) {
         // Real New Item
-        // Map option1Value to subtype
-        const itemWithSubtype = {
+        const itemWithoutShopifySubtype = {
           ...item,
-          subtype: item.option1Value || "",
+          subtype: "",
           listingImage: sanitizedListingImage,
         };
         updates.push({
           type: "new",
           id: item.janCode,
-          item: itemWithSubtype,
+          item: itemWithoutShopifySubtype,
         });
+        queueVariantOptionUpdate(storeHandle, item.janCode, item);
         if (storeHandle) createdHandles.add(storeHandle);
         indices.push(index);
       } else if (storeHandle) {

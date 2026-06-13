@@ -17,6 +17,47 @@ function normalizeDefaultSku(rawSku) {
   return value;
 }
 
+function buildVariantIdentityLookup(variants) {
+  const bySku = new Map();
+  const byJan = new Map();
+  if (!Array.isArray(variants)) return { bySku, byJan };
+
+  variants.forEach((variant) => {
+    const sku = normalizeString(variant?.sku);
+    const normalizedSku = normalizeDefaultSku(sku);
+    const barcode = normalizeString(variant?.barcode);
+
+    if (sku) bySku.set(sku, variant);
+    if (normalizedSku) bySku.set(normalizedSku, variant);
+
+    const janKeys = new Set([barcode, normalizedSku].filter(Boolean));
+    janKeys.forEach((jan) => {
+      const current = byJan.get(jan);
+      if (current === undefined) {
+        byJan.set(jan, variant);
+      } else if (current !== variant) {
+        byJan.set(jan, null);
+      }
+    });
+  });
+
+  return { bySku, byJan };
+}
+
+function findVariantByRequestVariant(lookup, requestVariant) {
+  if (!lookup) return null;
+  const sku = normalizeString(requestVariant?.sku);
+  const normalizedSku = normalizeDefaultSku(sku);
+  const janCode = normalizeString(requestVariant?.janCode);
+
+  return (
+    (sku && lookup.bySku.get(sku)) ||
+    (normalizedSku && lookup.bySku.get(normalizedSku)) ||
+    (janCode && lookup.byJan.get(janCode)) ||
+    null
+  );
+}
+
 function extractGoogleDriveFileId(rawUrl) {
   const value = normalizeString(rawUrl);
   if (!value) return "";
@@ -586,17 +627,9 @@ function buildProductPayload(requestPayload, existingProduct) {
   if (!handle) throw new Error("Missing request payload handle");
   if (variants.length === 0) throw new Error("Request payload has no variants");
 
-  const existingVariantIdBySku = new Map();
-  if (existingProduct && Array.isArray(existingProduct.variants)) {
-    existingProduct.variants.forEach((v) => {
-      const sku = String(v?.sku || "").trim();
-      const id = toNumberOrNull(v?.id);
-      if (sku && id) {
-        existingVariantIdBySku.set(sku, id);
-        existingVariantIdBySku.set(normalizeDefaultSku(sku), id);
-      }
-    });
-  }
+  const existingVariantLookup = buildVariantIdentityLookup(
+    existingProduct?.variants || [],
+  );
 
   const imagesPayload = buildGalleryImageEntries(requestPayload).map((img) => ({
     src: img.src,
@@ -612,7 +645,9 @@ function buildProductPayload(requestPayload, existingProduct) {
   const variantsPayload = variants.map((variant, idx) => {
     const sku = String(variant?.sku || "").trim();
     const subtype = String(variant?.subtype || "").trim();
-    const existingId = existingVariantIdBySku.get(sku);
+    const existingId = toNumberOrNull(
+      findVariantByRequestVariant(existingVariantLookup, variant)?.id,
+    );
     const payload = {
       sku,
       option1: isSingleDefaultVariant ? "Default Title" : subtype || "Default",
@@ -1130,6 +1165,8 @@ async function fetchAllVariantsBySku(config) {
 
 module.exports = {
   normalizeStoreUrl,
+  buildVariantIdentityLookup,
+  findVariantByRequestVariant,
   extractGoogleDriveFileId,
   toGoogleDrivePublicImageUrl,
   toNumberOrNull,

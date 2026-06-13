@@ -59,7 +59,11 @@ import { ui } from "./ui-slice";
 import { logAction } from "./devtools-middleware";
 import { generateHandle } from "./handle-utils";
 import { buildDraftListingImages } from "./listing-image-logic";
-import { canonicalizeInventoryItemKey, makeInventoryItemKey } from "./sku";
+import {
+  canonicalizeInventoryItemKey,
+  canonicalizeSubtype,
+  makeInventoryItemKey,
+} from "./sku";
 import { CURRENT_SCHEMA_VERSION } from "./schema-version";
 import {
   keyAudit,
@@ -93,6 +97,11 @@ const reducerObject = {
   schemaVersion: (state: number = CURRENT_SCHEMA_VERSION) =>
     state || CURRENT_SCHEMA_VERSION,
 };
+
+function nonDefaultOptionLabel(value: unknown): string {
+  const option = String(value || "").trim();
+  return canonicalizeSubtype(option) ? option : "";
+}
 const combinedReducer = combineReducers(reducerObject);
 
 export { toTimestampMs };
@@ -1368,6 +1377,27 @@ export const rootReducer = (
           nextListings = listings(nextListings, internalAction);
           const intermediateState = { ...nextState, listings: nextListings };
           logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
+        } else if (u.type === "set_variant_option") {
+          const existing = nextListings.handleToListing[u.handle];
+          if (!existing) return;
+          const currentOptions = existing.variantOptionsByItemId || {};
+          if (currentOptions[u.itemKey] === u.option1Value) return;
+          const internalAction = inheritTimestamp({
+            ...update_listing({
+              handle: u.handle,
+              changes: {
+                option1Name: u.option1Name || existing.option1Name || "Title",
+                variantOptionsByItemId: {
+                  ...currentOptions,
+                  [u.itemKey]: u.option1Value,
+                },
+              },
+            }),
+            _ephemeral: true,
+          });
+          nextListings = listings(nextListings, internalAction);
+          const intermediateState = { ...nextState, listings: nextListings };
+          logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
         }
       });
       nextState = { ...nextState, listings: nextListings };
@@ -1674,11 +1704,17 @@ export const rootReducer = (
       let nextJanCodeToPhotos = { ...photosState.janCodeToPhotos };
       let photosUpdated = false;
 
-      matchedItems.forEach(({ item }) => {
+      const existingListing = nextState.listings.handleToListing[handle];
+      const existingVariantOptions =
+        existingListing?.variantOptionsByItemId || {};
+
+      matchedItems.forEach(({ id, item }) => {
         if (!item.image) return;
 
-        const photoKey = item.subtype
-          ? `${item.janCode}:${item.subtype}`
+        const optionLabel =
+          existingVariantOptions[id] || nonDefaultOptionLabel(item.subtype);
+        const photoKey = optionLabel
+          ? `${item.janCode}:${optionLabel}`
           : item.janCode;
         const group = nextJanCodeToPhotos[photoKey] || [];
 
@@ -1741,13 +1777,17 @@ export const rootReducer = (
         console.log(
           `[RootReducer] Mapping existing item ${id}. Image: ${item.image}`,
         );
-        const photoGroupKey = item.subtype
-          ? `${item.janCode}:${item.subtype}`
+        const optionLabel =
+          existingVariantOptions[id] ||
+          nonDefaultOptionLabel(item.subtype) ||
+          "Default";
+        const photoGroupKey = nonDefaultOptionLabel(optionLabel)
+          ? `${item.janCode}:${optionLabel}`
           : item.janCode;
         return {
-          id: `${item.janCode}:${item.subtype || "Default"}:${crypto.randomUUID().slice(0, 8)}`,
+          id: `${item.janCode}:${optionLabel}:${crypto.randomUUID().slice(0, 8)}`,
           itemId: id,
-          option1Value: item.subtype || "Default",
+          option1Value: optionLabel,
           image: item.image, // Preserve existing photo
           photoGroupKey, // Link to photo group
           qty: item.qty, // Initialize allocation to match current inventory
@@ -2152,7 +2192,7 @@ export const rootReducer = (
         }
       });
 
-      // 4. Inventory Updates (Price, Handle, Subtype, Image, Position)
+      // 4. Inventory Updates (Price, Handle, Image, Position)
       const processedItemIds = new Set<string>();
 
       allVariants.forEach((v: any, i: number) => {
@@ -2183,11 +2223,6 @@ export const rootReducer = (
         if (imageUrl) fields.push({ field: "image", value: imageUrl });
         fields.push({ field: "imagePosition", value: i + 1 });
 
-        // Update Subtype LAST because it triggers a rename (retype_item logic in update_field reducer),
-        // which invalidates the currentItemId. All other updates must happen on the old ID first.
-        if (v.option1Value)
-          fields.push({ field: "subtype", value: v.option1Value });
-
         // Collapse the per-(variant×field) reducer fan-out (the dominant
         // approve_proposal cost — see docs/investigations/
         // REPLAY_PERFORMANCE.md): apply all non-subtype fields in ONE
@@ -2195,9 +2230,10 @@ export const rootReducer = (
         // consumes handle/description (all other fields are no-ops there),
         // so dispatch just those to listings, in original field order, to
         // preserve applyHandleUpdate / title-sync behaviour exactly.
-        // subtype stays a separate, last update_field because it re-keys.
+        // Listing option labels are not inventory subtypes. True subtype
+        // creation happens above via split_inventory_item when one inventory
+        // item is explicitly split into multiple variants.
         const nonSubtype = fields.filter((f) => f.field !== "subtype");
-        const subtypeField = fields.find((f) => f.field === "subtype");
 
         if (nonSubtype.length > 0) {
           const batchAction = inheritTimestamp({
@@ -2233,60 +2269,6 @@ export const rootReducer = (
               listings: listings(nextState.listings, listingAction),
             };
             logger(listingAction, nextState, action._timestamp);
-          }
-        }
-
-        if (subtypeField) {
-          const f = subtypeField;
-          const itemBeforeUpdate = nextState.inventory.idToItem[currentItemId];
-          const janBeforeUpdate =
-            itemBeforeUpdate?.janCode ||
-            String(currentItemId).match(/^\d+/)?.[0] ||
-            proposal.janCode;
-          const updateAction = inheritTimestamp({
-            ...update_field({
-              id: currentItemId,
-              field: f.field,
-              from: "",
-              to: f.value,
-            }),
-            _ephemeral: true,
-          });
-
-          nextState = {
-            ...nextState,
-            inventory: inventory(nextState.inventory, updateAction),
-            listings: listings(nextState.listings, updateAction),
-          };
-          logger(updateAction, nextState, action._timestamp);
-
-          // Subtype updates re-key inventory IDs (jan+subtype). Keep local
-          // references in sync so downstream idToHandle aggregation
-          // includes renamed keys (required for subtype pills).
-          const subtype = (f.value as string)?.trim() || "";
-          const baseJan = janBeforeUpdate;
-          const renamedItemId = makeInventoryItemKey(baseJan, subtype);
-          if (
-            renamedItemId &&
-            renamedItemId !== currentItemId &&
-            nextState.inventory.idToItem[renamedItemId]
-          ) {
-            const listingState = nextState.listings;
-            const nextIdToHandle = { ...listingState.idToHandle };
-            const mappedHandle = nextIdToHandle[currentItemId] || finalHandle;
-            nextIdToHandle[renamedItemId] = mappedHandle;
-            delete nextIdToHandle[currentItemId];
-
-            nextState = {
-              ...nextState,
-              listings: {
-                ...listingState,
-                idToHandle: nextIdToHandle,
-              },
-            };
-
-            currentItemId = renamedItemId;
-            variantIdToItemId.set(v.id, renamedItemId);
           }
         }
       });
@@ -2344,6 +2326,19 @@ export const rootReducer = (
         nextState.photos,
         nextState.inventory,
       );
+      const existingListing = nextState.listings.handleToListing[finalHandle];
+      const variantOptionsByItemId = {
+        ...(existingListing?.variantOptionsByItemId || {}),
+      };
+      for (const v of allVariants) {
+        const itemId = variantIdToItemId.get(v.id) || v.itemId;
+        const option1Value =
+          nonDefaultOptionLabel(v.option1Value) ||
+          variantOptionsByItemId[itemId];
+        if (itemId && option1Value) {
+          variantOptionsByItemId[itemId] = option1Value;
+        }
+      }
 
       const listingData = {
         handle: finalHandle,
@@ -2353,6 +2348,7 @@ export const rootReducer = (
         vendor: proposal.vendor,
         tags: proposal.tags,
         option1Name: proposal.option1Name || "Subtype",
+        variantOptionsByItemId,
         images: mergedImages,
         productType: "",
         status: "active" as const,
@@ -2362,7 +2358,6 @@ export const rootReducer = (
         ),
       };
 
-      const existingListing = nextState.listings.handleToListing[finalHandle];
       let finalListing = listingData;
       if (existingListing) {
         finalListing = { ...existingListing, ...listingData };

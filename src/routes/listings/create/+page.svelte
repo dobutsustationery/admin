@@ -185,8 +185,9 @@
       // Prioritize draft variant image override, then inventory image
       const variantThumb = v.image || inventoryItem?.image || null;
 
-      // Construct Display SKU
-      const variantSku = generateSku(p.janCode, v.option1Value);
+      const displayJanCode = inventoryItem?.janCode || p.janCode;
+      const displaySubtype = inventoryItem?.subtype || "";
+      const variantSku = generateSku(displayJanCode, displaySubtype);
 
       return {
         ...p, // Spread Shared Listing Props (Title, Handle, Price, Body, etc.)
@@ -199,7 +200,8 @@
         rowId: v.id || v.itemId, // Unique ID for the grid row (variant instance ID preferred)
         id: v.itemId, // For Image Picker compatibility (Inventory ID)
         sku: variantSku, // For Display
-        janCode: p.janCode, // Reference to parent Proposal
+        janCode: displayJanCode,
+        proposalJanCode: p.janCode,
 
         // Variant Specifics
         variantId: v.id,

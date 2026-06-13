@@ -269,7 +269,7 @@
       .filter(
         ([_, listingHandle]) => String(listingHandle || "").trim() === handle,
       )
-      .map(([id]) => idToItem[id])
+      .map(([id]) => (idToItem[id] ? { ...idToItem[id], id } : null))
       .filter(Boolean);
   }
 

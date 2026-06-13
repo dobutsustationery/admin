@@ -3271,10 +3271,54 @@ function resolveBareJanToSingleCurrentSubtype(
   };
 }
 
+function resolveLabeledSkuToSingleCurrentBareJan(
+  state: InventoryState,
+  rawItemKey: string,
+): HistoricalSkuResolution | null {
+  const normalizedSku = canonicalizeInventoryItemKey(rawItemKey);
+  const match = String(normalizedSku).match(/^(\d{8,14})(.+)$/);
+  if (!match) return null;
+
+  const janCode = canonicalizeJanCode(match[1]);
+  const matchingKeys = [
+    ...new Set(
+      Object.entries(state.idToItem)
+        .filter(([, item]) => canonicalizeJanCode(item.janCode) === janCode)
+        .map(([itemKey]) => canonicalizeInventoryItemKey(itemKey)),
+    ),
+  ];
+  if (matchingKeys.length !== 1) return null;
+
+  const itemKey = matchingKeys[0];
+  const item = state.idToItem[itemKey];
+  if (!item || itemKey !== janCode || canonicalizeSubtype(item.subtype || "")) {
+    return null;
+  }
+
+  return {
+    itemKey,
+    entityId: state.keyIdentity?.entityIdByCurrentKey?.[itemKey],
+    outcome: "resolved",
+  };
+}
+
+function resolveCurrentInventoryKeyForNonSubtypeMutation(
+  state: InventoryState,
+  rawItemKey: string,
+): InventoryItemKey {
+  const itemKey = canonicalizeInventoryItemKey(rawItemKey);
+  if (state.idToItem[itemKey]) return itemKey;
+  return (
+    resolveLabeledSkuToSingleCurrentBareJan(state, rawItemKey)?.itemKey ||
+    itemKey
+  );
+}
+
 function resolveLineItemInventoryKey(
   state: InventoryState,
   lineItem: any,
   effectiveAtMs: number,
+  options: { allowLabeledSkuToBareJan?: boolean } = {},
 ): {
   itemKey: InventoryItemKey | null;
   rawSku: string;
@@ -3292,7 +3336,11 @@ function resolveLineItemInventoryKey(
   );
   const effectiveResolution =
     resolved.outcome === "missing_historical_binding"
-      ? resolveBareJanToSingleCurrentSubtype(state, rawItemKey) || resolved
+      ? resolveBareJanToSingleCurrentSubtype(state, rawItemKey) ||
+        (options.allowLabeledSkuToBareJan === false
+          ? null
+          : resolveLabeledSkuToSingleCurrentBareJan(state, rawItemKey)) ||
+        resolved
       : resolved;
   return {
     itemKey: effectiveResolution.itemKey,
@@ -3842,7 +3890,9 @@ export const inventory = createReducer(initialState, (r) => {
         rawSku,
         entityId,
         outcome,
-      } = resolveLineItemInventoryKey(state, tx, effectiveAtMs);
+      } = resolveLineItemInventoryKey(state, tx, effectiveAtMs, {
+        allowLabeledSkuToBareJan: false,
+      });
 
       const lineItemID = String(tx.transaction_id);
       const oldFact = oldFacts[lineItemID];
@@ -4115,7 +4165,7 @@ export const inventory = createReducer(initialState, (r) => {
     const trimmedSaleNote = saleNote?.trim() || "";
     if (!trimmedNote) return;
 
-    const key = canonicalizeInventoryItemKey(itemKey);
+    const key = resolveCurrentInventoryKeyForNonSubtypeMutation(state, itemKey);
     const item = state.idToItem[key];
     const meta = state.stockOrderRegistry?.[orderId];
     if (!item || !meta || meta.usesZeroedQuantities !== true) return;
@@ -4263,7 +4313,7 @@ export const inventory = createReducer(initialState, (r) => {
   });
   r.addCase(create_stock_order_receipt, (state, action) => {
     const { orderId, itemKey } = action.payload;
-    const key = canonicalizeInventoryItemKey(itemKey);
+    const key = resolveCurrentInventoryKeyForNonSubtypeMutation(state, itemKey);
     const item = state.idToItem[key];
     if (!item) return;
     if (!orderId) return;
@@ -4344,7 +4394,7 @@ export const inventory = createReducer(initialState, (r) => {
     const trimmedNote = note.trim();
     if (!trimmedNote) return;
 
-    const key = canonicalizeInventoryItemKey(itemKey);
+    const key = resolveCurrentInventoryKeyForNonSubtypeMutation(state, itemKey);
     const item = state.idToItem[key];
     const meta = state.stockOrderRegistry?.[orderId];
     if (!item || !meta) return;
@@ -4700,7 +4750,13 @@ export const inventory = createReducer(initialState, (r) => {
   });
   r.addCase(update_field, (state, action) => {
     const { field, to: incomingValue, from } = action.payload;
-    const itemKey = canonicalizeInventoryItemKey(action.payload.id);
+    const itemKey =
+      field === "subtype"
+        ? canonicalizeInventoryItemKey(action.payload.id)
+        : resolveCurrentInventoryKeyForNonSubtypeMutation(
+            state,
+            action.payload.id,
+          );
     if (state.idToItem[itemKey]) {
       if (field === "subtype") {
         const subtype = (incomingValue as string)?.trim() || "";
@@ -4887,7 +4943,15 @@ export const inventory = createReducer(initialState, (r) => {
     }
   });
   r.addCase(update_fields, (state, action) => {
-    const itemKey = canonicalizeInventoryItemKey(action.payload.id);
+    const hasSubtypeField = action.payload.fields.some(
+      ({ field }) => field === "subtype",
+    );
+    const itemKey = hasSubtypeField
+      ? canonicalizeInventoryItemKey(action.payload.id)
+      : resolveCurrentInventoryKeyForNonSubtypeMutation(
+          state,
+          action.payload.id,
+        );
     if (state.idToItem[itemKey]) {
       const timestamp = (action as any).timestamp;
       let val = 0;

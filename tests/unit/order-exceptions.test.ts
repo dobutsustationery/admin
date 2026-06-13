@@ -1589,6 +1589,118 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     ]);
   });
 
+  it("reconstructs a late-scan receipt when the old action key resolves to a current bare JAN", () => {
+    const orderId = "order-late-bare-resolution";
+    const jan = "4902505451409";
+    const oldShopifyKey = `${jan}Pastel`;
+    const bareKey = jan;
+    const otherKey = "4542804000000";
+    const receivedAt = Date.parse("2025-01-25T00:00:00Z");
+    const firstScanAt = Date.parse("2025-01-26T12:00:00Z");
+    const lateScanAt = Date.parse("2025-05-04T12:00:00Z");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        idToItem: {
+          [bareKey]: {
+            janCode: jan,
+            subtype: "",
+            description: "Single variant item",
+            hsCode: "39191080",
+            image: "",
+            qty: 10,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "May 4, 2025 (10)",
+            timestamp: lateScanAt,
+            cost: 64,
+          },
+          [otherKey]: {
+            janCode: "4542804000000",
+            subtype: "",
+            description: "Earlier scanned item",
+            hsCode: "39191080",
+            image: "",
+            qty: 1,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "Jan 26, 2025 (1)",
+            timestamp: firstScanAt,
+            cost: 10,
+          },
+        },
+        costLedger: {
+          [bareKey]: [
+            {
+              kind: "receipt",
+              at: lateScanAt,
+              seq: 0,
+              qty: 10,
+              unitCostJpy: 64,
+              unitCostEur: 0.4,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+          [otherKey]: [
+            {
+              kind: "receipt",
+              at: firstScanAt,
+              seq: 0,
+              qty: 1,
+              unitCostJpy: 10,
+              unitCostEur: 0.06,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+        },
+        idToHistory: { [bareKey]: [] },
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Late Scan Order",
+            receivedAt,
+            usesZeroedQuantities: true,
+            valueOfOrderJpy: 640,
+            totalOrderEur: 4,
+            costRows: [{ jan, unitCostJpy: 64, qty: 10 }],
+            costIssues: [],
+          },
+        },
+      },
+    } as any;
+
+    const next = rootReducer(s, {
+      ...reconstruct_stock_order_late_scan_receipt({
+        orderId,
+        itemKey: oldShopifyKey,
+        note: "old Shopify subtype key should still resolve",
+      }),
+      timestamp: TS,
+    } as any);
+
+    const ledger = next.inventory.costLedger![bareKey] as any[];
+    expect(ledger[0]).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        qty: 10,
+        ignored: true,
+      }),
+    );
+    expect(
+      ledger.find((entry) => entry.source === `stockOrder:${orderId}`),
+    ).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        at: receivedAt,
+        qty: 10,
+      }),
+    );
+    expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
+  });
+
   it("splits a reconstructed late-scan receipt across subtypes for the same JAN", () => {
     const orderId = "order-late-subtypes";
     const jan = "4542804085181";

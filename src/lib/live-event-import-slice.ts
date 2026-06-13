@@ -1,6 +1,11 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import Papa from "papaparse";
-import { canonicalizeSubtype, makeInventoryItemKey } from "./sku";
+import {
+  canonicalizeJanCode,
+  canonicalizeInventoryItemKey,
+  canonicalizeSubtype,
+  makeInventoryItemKey,
+} from "./sku";
 
 export interface LiveEventImportItem {
   janCode: string;
@@ -294,12 +299,13 @@ export const findLiveEventInventoryMatch = (
   const exact = inventoryIdToItem[exactKey];
   if (exact) return { key: exactKey, item: exact, matchType: "exact" };
 
+  const incomingJan = canonicalizeJanCode(item.janCode);
   const incomingSubtypeCanon = canonicalizeSubtype(item.subtype);
 
   const janMatches = Object.entries(inventoryIdToItem)
     .filter(([, inventoryItem]: [string, any]) => {
       return (
-        String(inventoryItem?.janCode || "").trim() === item.janCode &&
+        canonicalizeJanCode(inventoryItem?.janCode || "") === incomingJan &&
         canonicalizeSubtype(inventoryItem?.subtype) === incomingSubtypeCanon
       );
     })
@@ -307,6 +313,24 @@ export const findLiveEventInventoryMatch = (
 
   if (janMatches.length === 1) {
     return { ...janMatches[0], matchType: "jan" };
+  }
+
+  if (incomingSubtypeCanon) {
+    const bareJanMatches = Object.entries(inventoryIdToItem)
+      .filter(([, inventoryItem]: [string, any]) => {
+        return (
+          canonicalizeJanCode(inventoryItem?.janCode || "") === incomingJan &&
+          !canonicalizeSubtype(inventoryItem?.subtype || "")
+        );
+      })
+      .map(([key, inventoryItem]) => ({ key, item: inventoryItem }));
+
+    if (
+      bareJanMatches.length === 1 &&
+      canonicalizeInventoryItemKey(bareJanMatches[0].key) === incomingJan
+    ) {
+      return { ...bareJanMatches[0], matchType: "jan" };
+    }
   }
 
   return null;

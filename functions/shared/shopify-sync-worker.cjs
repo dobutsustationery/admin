@@ -294,12 +294,8 @@ async function executeClaimedRequest({
     const variants = Array.isArray(requestData?.variants)
       ? requestData.variants
       : [];
-    const responseVariantBySku = new Map();
-    (Array.isArray(product.variants) ? product.variants : []).forEach(
-      (variant) => {
-        const sku = String(variant?.sku || "").trim();
-        if (sku) responseVariantBySku.set(sku, variant);
-      },
+    const responseVariantLookup = core.buildVariantIdentityLookup(
+      Array.isArray(product.variants) ? product.variants : [],
     );
 
     for (const variant of variants) {
@@ -307,7 +303,10 @@ async function executeClaimedRequest({
       const targetQty = Math.max(0, Number(variant?.available || 0));
       if (!sku) continue;
 
-      const responseVariant = responseVariantBySku.get(sku);
+      const responseVariant = core.findVariantByRequestVariant(
+        responseVariantLookup,
+        variant,
+      );
       const inventoryItemId = core.toNumberOrNull(
         responseVariant?.inventory_item_id,
       );

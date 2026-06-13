@@ -4,7 +4,7 @@ import { waitForAppReady } from "./helpers/loading-helper";
 // Remove createTestUser as we don't need auth for direct store manipulation
 const createTestUser = async (page: any) => {}; // Mock if needed or remove usage
 
-test("Publishing a proposal saves Draft Subtype to Inventory", async ({
+test("Publishing a proposal stores draft option label on the listing", async ({
   page,
 }) => {
   await createTestUser(page);
@@ -80,22 +80,32 @@ test("Publishing a proposal saves Draft Subtype to Inventory", async ({
     const result = await page.evaluate(
       ({ itemId, janCode }) => {
         const { store } = (window as any).testHelpers;
-        const inventory = store.getState().inventory.idToItem || {};
+        const state = store.getState();
+        const inventory = state.inventory.idToItem || {};
         const itemsForJan = Object.entries(inventory)
           .filter(([_, item]: any) => item?.janCode === janCode)
           .map(([id, item]: any) => ({ id, subtype: item?.subtype }));
+        const matchingListing = Object.values(
+          state.listings.handleToListing || {},
+        ).find(
+          (listing: any) =>
+            listing?.title === "Pub Draft" &&
+            listing?.variantOptionsByItemId?.[itemId] === "New",
+        ) as any;
         return {
           oldKeySubtype: inventory[itemId]?.subtype,
           itemsForJan,
+          listingOption: matchingListing?.variantOptionsByItemId?.[itemId],
         };
       },
       { itemId, janCode },
     );
 
-    // Current approve flow re-keys the inventory item when subtype is set.
-    expect(result.oldKeySubtype).toBeUndefined();
-    expect(result.itemsForJan).toContainEqual(
+    // Shopify option labels belong to the listing, not inventory subtype.
+    expect(result.oldKeySubtype).toBe("Old");
+    expect(result.itemsForJan).not.toContainEqual(
       expect.objectContaining({ subtype: "New" }),
     );
+    expect(result.listingOption).toBe("New");
   }).toPass({ timeout: 5000 });
 });
