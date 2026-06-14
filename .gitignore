@@ -44,6 +44,9 @@ ui-debug.log
 # Keep static/test-images symlink out of git (it's created at test time)
 static/test-images
 
+# Reproducible replay/blast-radius worktrees and artifacts
+.blastradius/
+
 # output file from running svelte check
 check_output.txt
 check_errors.txt

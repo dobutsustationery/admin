@@ -197,6 +197,78 @@ function historyEntryLabel(entry: any): string {
   return `${entry.date || ""}: ${entry.desc || ""}`;
 }
 
+function asNumber(value: any): number {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function roundQty(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function ledgerSort(a: any, b: any): number {
+  return (
+    asNumber(a?.at) - asNumber(b?.at) ||
+    asNumber(a?.seq) - asNumber(b?.seq) ||
+    String(a?.id || "").localeCompare(String(b?.id || ""))
+  );
+}
+
+function materializeLedger(entries: any[] = []) {
+  const lots: Array<{ qty: number; unitCostJpy: number; unitCostEur: number }> =
+    [];
+
+  for (const entry of [...entries].sort(ledgerSort)) {
+    if (entry?.ignored) continue;
+
+    if (entry?.kind === "receipt") {
+      lots.push({
+        qty: asNumber(entry.qty),
+        unitCostJpy: asNumber(entry.unitCostJpy),
+        unitCostEur: asNumber(entry.unitCostEur),
+      });
+    } else if (entry?.kind === "sale") {
+      let remaining = asNumber(entry.qty);
+      for (const lot of lots) {
+        if (remaining <= 0) break;
+        const take = Math.min(lot.qty, remaining);
+        lot.qty = roundQty(lot.qty - take);
+        remaining = roundQty(remaining - take);
+      }
+    }
+  }
+
+  const qty = lots.reduce((sum, lot) => sum + asNumber(lot.qty), 0);
+  const valueJpy = lots.reduce(
+    (sum, lot) => sum + asNumber(lot.qty) * asNumber(lot.unitCostJpy),
+    0,
+  );
+  const valueEur = lots.reduce(
+    (sum, lot) => sum + asNumber(lot.qty) * asNumber(lot.unitCostEur),
+    0,
+  );
+
+  return {
+    openQty: roundQty(qty),
+    valueJpy: roundMoney(valueJpy),
+    valueEur: Math.round((valueEur + Number.EPSILON) * 10000) / 10000,
+    avgJpy: qty ? roundMoney(valueJpy / qty) : 0,
+  };
+}
+
+function materializedLedgerChanged(before: any, after: any): boolean {
+  return (
+    before.openQty !== after.openQty ||
+    before.valueJpy !== after.valueJpy ||
+    before.valueEur !== after.valueEur ||
+    before.avgJpy !== after.avgJpy
+  );
+}
+
 async function capture(args: string[]) {
   const backupInput =
     argValue(args, "--backup") || "../production-backup-may-16";
@@ -347,6 +419,50 @@ function diff(args: string[]) {
     push("");
   }
 
+  const visibleCountChanged = changed
+    .map((row) => {
+      const beforeOnHand =
+        asNumber(row.before?.qty) - asNumber(row.before?.shipped);
+      const afterOnHand =
+        asNumber(row.after?.qty) - asNumber(row.after?.shipped);
+      return {
+        key: row.key,
+        before: row.before,
+        after: row.after,
+        beforeOnHand: roundQty(beforeOnHand),
+        afterOnHand: roundQty(afterOnHand),
+        delta: roundQty(afterOnHand - beforeOnHand),
+      };
+    })
+    .filter(
+      (row) =>
+        asNumber(row.before?.qty) !== asNumber(row.after?.qty) ||
+        asNumber(row.before?.shipped) !== asNumber(row.after?.shipped) ||
+        row.beforeOnHand !== row.afterOnHand,
+    )
+    .sort(
+      (a, b) =>
+        Math.abs(b.delta) - Math.abs(a.delta) || a.key.localeCompare(b.key),
+    );
+
+  if (visibleCountChanged.length > 0) {
+    push("### Visible On-Hand Changes");
+    push("");
+    push(
+      "| Key | Qty before -> after | Shipped before -> after | On hand before -> after | Delta |",
+    );
+    push("|---|---:|---:|---:|---:|");
+    for (const row of visibleCountChanged.slice(0, 100)) {
+      push(
+        `| \`${itemLabel(row.key, row.after || row.before)}\` | ${asNumber(row.before?.qty)} -> ${asNumber(row.after?.qty)} | ${asNumber(row.before?.shipped)} -> ${asNumber(row.after?.shipped)} | ${row.beforeOnHand} -> ${row.afterOnHand} | ${row.delta >= 0 ? "+" : ""}${row.delta} |`,
+      );
+    }
+    if (visibleCountChanged.length > 100) {
+      push(`| ... | ${visibleCountChanged.length - 100} more | | | |`);
+    }
+    push("");
+  }
+
   if (changed.length > 0) {
     push("| Key | Fields | Before | After |");
     push("|---|---|---|---|");
@@ -363,6 +479,91 @@ function diff(args: string[]) {
     }
     if (changed.length > 200)
       push(`| ... | ${changed.length - 200} more | | |`);
+    push("");
+  }
+
+  const beforeLedger = before.inventory?.costLedger || {};
+  const afterLedger = after.inventory?.costLedger || {};
+  const ledgerKeys = new Set([
+    ...Object.keys(beforeLedger),
+    ...Object.keys(afterLedger),
+  ]);
+  const ledgerAddedKeys: string[] = [];
+  const ledgerRemovedKeys: string[] = [];
+  const ledgerChanged: Array<{
+    key: string;
+    added: any[];
+    removed: any[];
+    beforeOpen: ReturnType<typeof materializeLedger>;
+    afterOpen: ReturnType<typeof materializeLedger>;
+  }> = [];
+  let ledgerAddedEntries = 0;
+  let ledgerRemovedEntries = 0;
+  let ledgerMaterializedChanged = 0;
+
+  for (const key of [...ledgerKeys].sort()) {
+    if (beforeLedger[key] === undefined) {
+      ledgerAddedKeys.push(key);
+      ledgerAddedEntries += Array.isArray(afterLedger[key])
+        ? afterLedger[key].length
+        : 0;
+      continue;
+    }
+    if (afterLedger[key] === undefined) {
+      ledgerRemovedKeys.push(key);
+      ledgerRemovedEntries += Array.isArray(beforeLedger[key])
+        ? beforeLedger[key].length
+        : 0;
+      continue;
+    }
+
+    const delta = multisetDiff(beforeLedger[key] || [], afterLedger[key] || []);
+    const beforeOpen = materializeLedger(beforeLedger[key] || []);
+    const afterOpen = materializeLedger(afterLedger[key] || []);
+    const openChanged = materializedLedgerChanged(beforeOpen, afterOpen);
+    if (openChanged) ledgerMaterializedChanged++;
+    if (delta.added.length || delta.removed.length || openChanged) {
+      ledgerAddedEntries += delta.added.length;
+      ledgerRemovedEntries += delta.removed.length;
+      ledgerChanged.push({ key, ...delta, beforeOpen, afterOpen });
+    }
+  }
+
+  ledgerChanged.sort((a, b) => {
+    const aMaterialized = materializedLedgerChanged(a.beforeOpen, a.afterOpen);
+    const bMaterialized = materializedLedgerChanged(b.beforeOpen, b.afterOpen);
+    if (aMaterialized !== bMaterialized) return aMaterialized ? -1 : 1;
+    const aValueDelta = Math.abs(a.afterOpen.valueJpy - a.beforeOpen.valueJpy);
+    const bValueDelta = Math.abs(b.afterOpen.valueJpy - b.beforeOpen.valueJpy);
+    if (aValueDelta !== bValueDelta) return bValueDelta - aValueDelta;
+    const aEntryDelta = a.added.length + a.removed.length;
+    const bEntryDelta = b.added.length + b.removed.length;
+    return bEntryDelta - aEntryDelta || a.key.localeCompare(b.key);
+  });
+
+  push("## inventory.costLedger");
+  push(
+    `Keys added: ${ledgerAddedKeys.length}; removed: ${ledgerRemovedKeys.length}; changed: ${ledgerChanged.length}`,
+  );
+  push(
+    `Entry deltas: +${ledgerAddedEntries} / -${ledgerRemovedEntries}; materialized open value changed: ${ledgerMaterializedChanged}`,
+  );
+  push("");
+
+  if (ledgerChanged.length > 0) {
+    push(
+      "| Key | Entry delta | Open qty before -> after | Open value JPY before -> after | Avg JPY before -> after |",
+    );
+    push("|---|---:|---:|---:|---:|");
+    for (const row of ledgerChanged.slice(0, 100)) {
+      const item = afterItems[row.key] || beforeItems[row.key] || {};
+      push(
+        `| \`${itemLabel(row.key, item)}\` | +${row.added.length} / -${row.removed.length} | ${row.beforeOpen.openQty} -> ${row.afterOpen.openQty} | ${row.beforeOpen.valueJpy} -> ${row.afterOpen.valueJpy} | ${row.beforeOpen.avgJpy} -> ${row.afterOpen.avgJpy} |`,
+      );
+    }
+    if (ledgerChanged.length > 100) {
+      push(`| ... | ${ledgerChanged.length - 100} more | | | |`);
+    }
     push("");
   }
 
