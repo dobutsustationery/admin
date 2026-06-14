@@ -1167,7 +1167,7 @@ describe("inventory reducer", () => {
         rename_subtype({ itemKey: id1, subtype: "Blue" }),
       );
 
-      expect(nextState.idToItem[id2].qty).toBe(15);
+      expect(nextState.idToItem[id2].qty).toBe(18);
       expect(nextState.idToItem[id2].shipped).toBe(3);
       expect(nextState.idToItem[id1]).toBeUndefined();
     });

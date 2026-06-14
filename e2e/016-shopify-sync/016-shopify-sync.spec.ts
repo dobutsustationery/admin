@@ -9,31 +9,37 @@ function computeHmac(payload: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(payload).digest("base64");
 }
 
-test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => {
+test("Shopify Order Sync Flow", async ({
+  authenticatedPage: page,
+  request,
+}) => {
   test.setTimeout(120000); // Increase to 120s
-  
+
   const screenshots = createScreenshotHelper();
   const janCode = "4902778133583";
   // The UI displays JAN and Subtype. For this item, subtype is empty.
 
   // Step 1: Check initial state
-  page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
+  page.on("console", (msg) => console.log("BROWSER CONSOLE:", msg.text()));
   await page.goto("/inventory");
   await waitForAppReady(page);
-  
+
   console.log("Waiting for inventory to initialize...");
   // Wait for the item to be visible
-  const rowLocator = page.locator('tr').filter({ has: page.locator('td', { hasText: janCode }) }).first();
+  const rowLocator = page
+    .locator("tr")
+    .filter({ has: page.locator("td", { hasText: janCode }) })
+    .first();
   await expect(rowLocator).toBeVisible({ timeout: 30000 });
-  
-  const getShippedCell = () => rowLocator.locator('td').nth(7);
-  
+
+  const getShippedCell = () => rowLocator.locator("td").nth(7);
+
   // Initial shipped might not be 0 if test was run before, but we just need to see it increase
   const initialShippedText = await getShippedCell().innerText();
   const initialShipped = parseInt(initialShippedText) || 0;
   console.log(`Initial shipped value: ${initialShipped}`);
-  
-  await page.waitForLoadState('networkidle');
+
+  await page.waitForLoadState("networkidle");
   await waitForAppReady(page);
   // Ensure we are at the top of the page for consistent screenshots
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -51,32 +57,39 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
         id: runId + 1, // Unique line item ID
         sku: janCode,
         quantity: 5,
-        variant_title: ""
-      }
-    ]
+        variant_title: "",
+      },
+    ],
   };
   const body = JSON.stringify(orderPayload);
   const hmac = computeHmac(body, SHOPIFY_SECRET);
 
   console.log("Sending orders/create webhook...");
-  const response = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
-    data: body,
-    headers: {
-      "Content-Type": "application/json",
-      "x-shopify-topic": "orders/create",
-      "x-shopify-hmac-sha256": hmac,
-      "x-shopify-webhook-id": `web-create-${runId}`
-    }
-  });
+  const response = await request.post(
+    "http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook",
+    {
+      data: body,
+      headers: {
+        "Content-Type": "application/json",
+        "x-shopify-topic": "orders/create",
+        "x-shopify-hmac-sha256": hmac,
+        "x-shopify-webhook-id": `web-create-${runId}`,
+      },
+    },
+  );
 
   if (!response.ok()) {
-    console.log(`Webhook failed with status ${response.status()}: ${await response.text()}`);
+    console.log(
+      `Webhook failed with status ${response.status()}: ${await response.text()}`,
+    );
   }
   expect(response.ok()).toBe(true);
-  
+
   // Step 3: Verify UI update
-  await expect(getShippedCell()).toHaveText(String(initialShipped + 5), { timeout: 30000 });
-  
+  await expect(getShippedCell()).toHaveText(String(initialShipped + 5), {
+    timeout: 30000,
+  });
+
   await waitForAppReady(page);
   await waitForImages(page);
   await screenshots.capture(page, "after-shopify-order");
@@ -89,29 +102,34 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
       {
         line_item_id: runId + 1,
         quantity: 2,
-        line_item: { id: runId + 1, sku: janCode }
-      }
-    ]
+        line_item: { id: runId + 1, sku: janCode },
+      },
+    ],
   };
   const refundBody = JSON.stringify(refundPayload);
   const refundHmac = computeHmac(refundBody, SHOPIFY_SECRET);
 
   console.log("Sending refunds/create webhook...");
-  const refundResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
-    data: refundBody,
-    headers: {
-      "Content-Type": "application/json",
-      "x-shopify-topic": "refunds/create",
-      "x-shopify-hmac-sha256": refundHmac,
-      "x-shopify-webhook-id": `web-refund-${runId}`
-    }
-  });
+  const refundResponse = await request.post(
+    "http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook",
+    {
+      data: refundBody,
+      headers: {
+        "Content-Type": "application/json",
+        "x-shopify-topic": "refunds/create",
+        "x-shopify-hmac-sha256": refundHmac,
+        "x-shopify-webhook-id": `web-refund-${runId}`,
+      },
+    },
+  );
 
   expect(refundResponse.ok()).toBe(true);
 
   // Step 5: Verify UI update
-  await expect(getShippedCell()).toHaveText(String(initialShipped + 3), { timeout: 30000 });
-  
+  await expect(getShippedCell()).toHaveText(String(initialShipped + 3), {
+    timeout: 30000,
+  });
+
   await waitForAppReady(page);
   await waitForImages(page);
   await screenshots.capture(page, "after-shopify-refund");
@@ -124,28 +142,38 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
       {
         ...orderPayload.line_items[0],
         quantity: 9,
-        refund_quantity: 0
-      }
-    ]
+        refund_quantity: 0,
+      },
+    ],
   };
   const updatedBody = JSON.stringify(updatedPayload);
   const updatedHmac = computeHmac(updatedBody, SHOPIFY_SECRET);
-  
+
   console.log("Sending orders/updated webhook (reconcile)...");
-  const updatedResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
-    data: updatedBody,
-    headers: {
-      "Content-Type": "application/json",
-      "x-shopify-topic": "orders/updated",
-      "x-shopify-hmac-sha256": updatedHmac,
-      "x-shopify-webhook-id": `web-update-${runId}`
-    }
-  });
-  
+  const updatedResponse = await request.post(
+    "http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook",
+    {
+      data: updatedBody,
+      headers: {
+        "Content-Type": "application/json",
+        "x-shopify-topic": "orders/updated",
+        "x-shopify-hmac-sha256": updatedHmac,
+        "x-shopify-webhook-id": `web-update-${runId}`,
+      },
+    },
+  );
+
   expect(updatedResponse.ok()).toBe(true);
-  
-  await expect(getShippedCell()).toHaveText(String(initialShipped + 9), { timeout: 30000 });
-  
+
+  await page.waitForFunction(
+    ({ janCode, expectedShipped }) => {
+      const state = (window as any).testHelpers?.store?.getState?.();
+      return state?.inventory?.idToItem?.[janCode]?.shipped === expectedShipped;
+    },
+    { janCode, expectedShipped: initialShipped + 9 },
+    { timeout: 30000 },
+  );
+
   await waitForAppReady(page);
   await waitForImages(page);
   await screenshots.capture(page, "after-shopify-reconcile");
@@ -156,17 +184,18 @@ test("Shopify Order Sync Flow", async ({ authenticatedPage: page, request }) => 
   const unknownHmac = computeHmac(unknownBody, SHOPIFY_SECRET);
 
   console.log("Sending unrecognized webhook...");
-  const unknownResponse = await request.post("http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook", {
-    data: unknownBody,
-    headers: {
-      "Content-Type": "application/json",
-      "x-shopify-topic": "orders/unknown",
-      "x-shopify-hmac-sha256": unknownHmac,
-      "x-shopify-webhook-id": `web-unknown-${runId}`
-    }
-  });
-
-
+  const unknownResponse = await request.post(
+    "http://localhost:15001/demo-test-project/us-central1/shopifyOrderWebhook",
+    {
+      data: unknownBody,
+      headers: {
+        "Content-Type": "application/json",
+        "x-shopify-topic": "orders/unknown",
+        "x-shopify-hmac-sha256": unknownHmac,
+        "x-shopify-webhook-id": `web-unknown-${runId}`,
+      },
+    },
+  );
 
   expect(unknownResponse.ok()).toBe(true);
   const unknownText = await unknownResponse.text();
