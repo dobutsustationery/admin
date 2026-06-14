@@ -1714,6 +1714,18 @@ function walkLedgerForVisibleQty(entries: readonly LedgerEntry[]) {
   return { onHand };
 }
 
+function reconcileItemQtyFromCostLedger(state: InventoryState, key: string) {
+  const ledger = state.costLedger?.[key];
+  const item = state.idToItem[key];
+  if (!ledger || !item) return;
+
+  const ledgerOnHand = walkLedgerForVisibleQty(ledger).onHand;
+  const nextQty = (Number(item.shipped) || 0) + ledgerOnHand;
+  if (Math.abs((Number(item.qty) || 0) - nextQty) < 1e-9) return;
+
+  item.qty = nextQty;
+}
+
 function applyQuantityCorrectionToReceipts(
   state: InventoryState,
   key: string,
@@ -2014,6 +2026,9 @@ function rederiveCostFromLedger(state: InventoryState, key: string) {
   const ledger = state.costLedger?.[key];
   const item = state.idToItem[key];
   if (!ledger || !item) return;
+
+  reconcileItemQtyFromCostLedger(state, key);
+
   const effectiveLedger = effectiveLedgerEntries(ledger);
   const hasPriced = effectiveLedger.some(
     (e) => !e.ignored && e.kind === "receipt" && e.unitCostJpy > 0,
@@ -5119,6 +5134,7 @@ export const inventory = createReducer(initialState, (r) => {
         desc: `Packaged ${qty} for ${orderID}`,
         val: saleAtMs,
       });
+      reconcileItemQtyFromCostLedger(state, itemKey);
     } else {
       console.warn(
         `Skipping package_item for missing item: ${itemKey}`,
@@ -5196,6 +5212,7 @@ export const inventory = createReducer(initialState, (r) => {
         desc: `Quantified ${qty} for ${orderID}`,
         val: saleAtMs,
       });
+      reconcileItemQtyFromCostLedger(state, itemKey);
     } else {
       console.warn(
         `Skipping quantify_item for missing item: ${itemKey}`,
@@ -5323,6 +5340,8 @@ export const inventory = createReducer(initialState, (r) => {
       desc: `Retyped from ${itemKey} to ${newItemKey} for ${orderID} (qty: ${state.idToItem[newItemKey]?.qty || "?"})`,
       val: state.orderIdToOrder[orderID].date.getTime(),
     });
+    reconcileItemQtyFromCostLedger(state, itemKey);
+    reconcileItemQtyFromCostLedger(state, newItemKey);
   });
   r.addCase(rename_subtype, (state, action) => {
     const { itemKey } = action.payload;
@@ -5902,6 +5921,7 @@ export const inventory = createReducer(initialState, (r) => {
           desc: `Canceled order ${orderID}: reversed shipped qty ${formatLedgerQty(line.qty)} and cost ledger sale`,
           val: actionAt || saleAtMs,
         });
+        reconcileItemQtyFromCostLedger(state, itemKey);
       }
     }
 
@@ -5990,6 +6010,7 @@ export const inventory = createReducer(initialState, (r) => {
         desc: `Archived ${archiveName} (Qty: ${origQty}, Shipped: ${origShipped})`,
         val: timestamp ? new Date(timestamp.seconds * 1000).getTime() : 0,
       });
+      reconcileItemQtyFromCostLedger(state, itemKey);
     }
   });
   r.addCase(hide_archive, (state, action) => {
@@ -6114,11 +6135,12 @@ export const inventory = createReducer(initialState, (r) => {
         )
       : new Map<string, LedgerEntry[]>();
 
+    let sourceLedgerTouched = false;
     if (shouldRedistributeLedger && state.costLedger?.[sourceId]) {
       const remainingSourceLedger = distributedLedgers.get(sourceId) || [];
       if (remainingSourceLedger.length > 0) {
         state.costLedger[sourceId] = reseqLedger(remainingSourceLedger);
-        rederiveCostFromLedger(state, sourceId);
+        sourceLedgerTouched = true;
       } else {
         delete state.costLedger[sourceId];
       }
@@ -6196,6 +6218,10 @@ export const inventory = createReducer(initialState, (r) => {
         (action as any).id,
       );
     });
+
+    if (sourceLedgerTouched && state.idToItem[sourceId]) {
+      rederiveCostFromLedger(state, sourceId);
+    }
 
     // 3. Cleanup Source Item if empty
     if (sourceItem.qty <= 0) {
