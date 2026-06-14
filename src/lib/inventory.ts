@@ -5236,6 +5236,7 @@ export const inventory = createReducer(initialState, (r) => {
       // Surgical move for idempotency and correctness (§3.2)
       const oldItemIdx = order.items.findIndex((i) => i.itemKey === itemKey);
       if (oldItemIdx !== -1) {
+        const saleAtMs = getOrderSaleAtMs(order, order.date.getTime());
         const moveQty = Math.min(order.items[oldItemIdx].qty, qty);
         order.items[oldItemIdx].qty -= moveQty;
         if (order.items[oldItemIdx].qty === 0) {
@@ -5257,10 +5258,44 @@ export const inventory = createReducer(initialState, (r) => {
         // was a renamed-away ghost, leaving inventory.shipped behind the
         // order's view (see docs/investigations/GHOST_MISSING_15_AUDIT.md).
         if (state.idToItem[itemKey] !== undefined) {
-          state.idToItem[itemKey].shipped -= moveQty;
+          const oldItem = state.idToItem[itemKey];
+          oldItem.shipped -= moveQty;
+          const ledgerSale = fractionalPreFestivalSale(
+            oldItem,
+            -moveQty,
+            saleAtMs,
+          );
+          recordSale(state, itemKey, ledgerSale.qty, saleAtMs, {
+            idParts: [
+              (action as any).id || "local",
+              "retype_item",
+              "reverse",
+              orderID,
+              newItemKey,
+            ],
+            visibleQty: ledgerSale.visibleQty,
+            auditComment: ledgerSale.auditComment,
+          });
         }
         if (state.idToItem[newItemKey] !== undefined) {
-          state.idToItem[newItemKey].shipped += moveQty;
+          const newItem = state.idToItem[newItemKey];
+          newItem.shipped += moveQty;
+          const ledgerSale = fractionalPreFestivalSale(
+            newItem,
+            moveQty,
+            saleAtMs,
+          );
+          recordSale(state, newItemKey, ledgerSale.qty, saleAtMs, {
+            idParts: [
+              (action as any).id || "local",
+              "retype_item",
+              "apply",
+              orderID,
+              itemKey,
+            ],
+            visibleQty: ledgerSale.visibleQty,
+            auditComment: ledgerSale.auditComment,
+          });
         } else {
           console.warn(
             `Skipping retype_item shipped update for missing new item: ${newItemKey}`,

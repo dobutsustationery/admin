@@ -1220,6 +1220,99 @@ describe("Shopify Sync Reducer", () => {
     expect(state.idToItem[keyC].shipped).toBe(0);
     expect(state.idToItem[keyA].shipped).toBe(0);
   });
+
+  it("moves cost ledger sale impact when retyping an order line", () => {
+    const jan = "4542804108644";
+    const oldKey = makeInventoryItemKey(jan, "Brown");
+    const newKey = makeInventoryItemKey(jan, "Purple");
+    const orderID = "manual-order";
+    const orderDate = new Date("2024-02-01T12:00:00Z");
+    const t10 = Date.parse("2024-01-01T00:00:10Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: oldKey,
+          item: {
+            ...testItem,
+            janCode: jan,
+            subtype: "Brown",
+            qty: 5,
+            cost: 100,
+          },
+        }),
+        "create-old",
+        t10,
+      ),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        update_item({
+          id: newKey,
+          item: {
+            ...testItem,
+            janCode: jan,
+            subtype: "Purple",
+            qty: 5,
+            cost: 100,
+          },
+        }),
+        "create-new",
+        t10 + 1,
+      ),
+    );
+    state = inventory(
+      state,
+      new_order({
+        orderID,
+        email: "customer@example.com",
+        date: orderDate,
+        product: "",
+      }),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        package_item({ orderID, itemKey: oldKey, qty: 1 }),
+        "package-old",
+        t10 + 2,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        retype_item({
+          orderID,
+          itemKey: oldKey,
+          janCode: jan,
+          subtype: "Purple",
+          qty: 1,
+        }),
+        "retype-old-to-new",
+        t10 + 3,
+      ),
+    );
+
+    expect(state.orderIdToOrder[orderID].items).toEqual([
+      { itemKey: newKey, qty: 1 },
+    ]);
+    expect(state.idToItem[oldKey].shipped).toBe(0);
+    expect(state.idToItem[newKey].shipped).toBe(1);
+    expect(
+      state.costLedger?.[oldKey]
+        ?.filter((entry) => entry.kind === "sale")
+        .map((entry) => entry.qty),
+    ).toEqual([1, -1]);
+    expect(
+      state.costLedger?.[newKey]
+        ?.filter((entry) => entry.kind === "sale")
+        .map((entry) => entry.qty),
+    ).toEqual([1]);
+  });
+
   it("updates stored line facts when an item is renamed (§3.5)", () => {
     const janA = "1111111111111";
     const keyA = makeInventoryItemKey(janA, "");
