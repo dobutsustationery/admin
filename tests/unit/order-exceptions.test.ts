@@ -1589,6 +1589,137 @@ describe("order-exceptions M3.4 — TSV cost commit", () => {
     ]);
   });
 
+  it("treats a post-archive late scan as a stocktake recount even without an existing archive sale", () => {
+    const orderId = "order-late-post-archive";
+    const jan = "4542804112917";
+    const key = jan;
+    const otherKey = "4542804000000";
+    const receivedAt = Date.parse("2024-07-02T00:00:00Z");
+    const firstScanAt = Date.parse("2024-10-09T12:00:00Z");
+    const archiveAt = Date.parse("2025-05-02T00:00:00Z");
+    const lateScanAt = Date.parse("2025-05-04T12:00:00Z");
+    let s = rootReducer(undefined, { type: "@@INIT" });
+    s = {
+      ...s,
+      inventory: {
+        ...s.inventory,
+        archivedInventoryDate: {
+          "Japan Festival April 2025": "May 2, 2025",
+        },
+        idToItem: {
+          [key]: {
+            janCode: jan,
+            subtype: "",
+            description: "Post-archive discovered item",
+            hsCode: "49090000",
+            image: "",
+            qty: 13,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "May 4, 2025 (13)",
+            timestamp: lateScanAt,
+            cost: 65,
+          },
+          [otherKey]: {
+            janCode: "4542804000000",
+            subtype: "",
+            description: "Earlier scanned item",
+            hsCode: "39191080",
+            image: "",
+            qty: 1,
+            pieces: 1,
+            shipped: 0,
+            creationDate: "Oct 9, 2024 (1)",
+            timestamp: firstScanAt,
+            cost: 10,
+          },
+        },
+        costLedger: {
+          [key]: [
+            {
+              kind: "receipt",
+              at: lateScanAt,
+              seq: 0,
+              qty: 13,
+              unitCostJpy: 0,
+              unitCostEur: 0,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+          [otherKey]: [
+            {
+              kind: "receipt",
+              at: firstScanAt,
+              seq: 0,
+              qty: 1,
+              unitCostJpy: 10,
+              unitCostEur: 0.06,
+              source: "update_item",
+              costOrderId: orderId,
+            },
+          ],
+        },
+        idToHistory: { [key]: [] },
+        stockOrderRegistry: {
+          [orderId]: {
+            name: "Late Scan Order",
+            receivedAt,
+            usesZeroedQuantities: true,
+            valueOfOrderJpy: 1560,
+            totalOrderEur: 9.6,
+            costRows: [{ jan, unitCostJpy: 65, qty: 24 }],
+            costIssues: [],
+          },
+        },
+      },
+    } as any;
+
+    const next = rootReducer(s, {
+      ...reconstruct_stock_order_late_scan_receipt({
+        orderId,
+        itemKey: key,
+        note: "missing scan was discovered during post-festival recount",
+      }),
+      timestamp: TS,
+    } as any);
+
+    const ledger = next.inventory.costLedger![key] as any[];
+    expect(ledger[0]).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        qty: 13,
+        receivedQty: 0,
+        auditComment: expect.stringContaining(
+          "post-reconstruction stocktake recount",
+        ),
+      }),
+    );
+    expect(ledger[0].ignored).toBeUndefined();
+    expect(
+      ledger.find((entry) => entry.source === `stockOrder:${orderId}`),
+    ).toEqual(
+      expect.objectContaining({
+        kind: "receipt",
+        at: receivedAt,
+        qty: 24,
+        unitCostJpy: 65,
+      }),
+    );
+    expect(
+      ledger.find(
+        (entry) =>
+          entry.kind === "sale" &&
+          entry.isArchive &&
+          entry.at === archiveAt &&
+          entry.qty === 24 &&
+          entry.auditComment?.includes("Stocktake adjustment consumed"),
+      ),
+    ).toBeTruthy();
+    expect(next.inventory.idToItem[key].qty).toBe(13);
+    expect(next.inventory.stockOrderRegistry![orderId].costIssues).toEqual([]);
+  });
+
   it("reconstructs a late-scan receipt when the old action key resolves to a current bare JAN", () => {
     const orderId = "order-late-bare-resolution";
     const jan = "4902505451409";

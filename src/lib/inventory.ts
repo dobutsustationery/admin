@@ -962,6 +962,49 @@ function hasPriorArchiveSale(
   );
 }
 
+function parseArchiveDateMs(value: string): number | undefined {
+  const match =
+    /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{4})$/.exec(
+      value.trim(),
+    );
+  if (match) {
+    const month = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ].indexOf(match[1]);
+    if (month >= 0) {
+      return Date.UTC(Number(match[3]), month, Number(match[2]));
+    }
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function latestArchiveDateBetween(
+  state: InventoryState,
+  fromMs: number,
+  toMs: number,
+): number | undefined {
+  let latest: number | undefined;
+  for (const value of Object.values(state.archivedInventoryDate || {})) {
+    const at = parseArchiveDateMs(value);
+    if (at === undefined || at < fromMs || at >= toMs) continue;
+    latest = latest === undefined ? at : Math.max(latest, at);
+  }
+  return latest;
+}
+
 function copyLedgerEntryForSubtypeResolution(
   entry: LedgerEntry,
   qty: number,
@@ -4184,10 +4227,6 @@ export const inventory = createReducer(initialState, (r) => {
     const item = state.idToItem[key];
     const meta = state.stockOrderRegistry?.[orderId];
     if (!item || !meta || meta.usesZeroedQuantities !== true) return;
-    const receivedAt =
-      meta.receivedAt && meta.receivedAt > 0
-        ? meta.receivedAt
-        : UNKNOWN_RECEIPT_DATE;
     const rows = stockOrderCostRowsForIssueRefresh(meta);
     const facts = stockOrderRowFactsForJan(rows, item.janCode);
     if (!(facts.expectedQty > 0) || !(facts.unitCostJpy > 0)) return;
@@ -4200,6 +4239,10 @@ export const inventory = createReducer(initialState, (r) => {
     if (!(qty > 0)) return;
     const reconstructedQty = facts.expectedQty;
 
+    const receivedAt =
+      meta.receivedAt && meta.receivedAt > 0
+        ? meta.receivedAt
+        : UNKNOWN_RECEIPT_DATE;
     const totalOrderEur =
       meta.paidAmount != null && meta.paidCurrency
         ? meta.paidCurrency === "BGN"
@@ -4498,6 +4541,7 @@ export const inventory = createReducer(initialState, (r) => {
     const ignoredLateQtyByKey = new Map<string, number>();
     const convertedRecountQtyByKey = new Map<string, number>();
     const convertedRecountAtByKey = new Map<string, number>();
+    const convertedRecountArchiveAtByKey = new Map<string, number>();
     for (const [candidateKey, candidateLedger] of Object.entries(
       state.costLedger || {},
     )) {
@@ -4514,6 +4558,11 @@ export const inventory = createReducer(initialState, (r) => {
         const receiptKey = `${candidateKey}|${entry.at}|${entry.seq ?? ""}|${entry.qty}|${entry.source || ""}`;
         if (!lateReceiptKeys.has(receiptKey)) continue;
         if (entry.originalQty === undefined) entry.originalQty = entry.qty;
+        const inferredArchiveAt = latestArchiveDateBetween(
+          state,
+          receivedAt,
+          entry.at,
+        );
         const isStocktakeRecount =
           entry.receivedQty === 0 ||
           candidateLedger.some(
@@ -4522,7 +4571,8 @@ export const inventory = createReducer(initialState, (r) => {
               other.isArchive &&
               !other.ignored &&
               other.at < entry.at,
-          );
+          ) ||
+          inferredArchiveAt !== undefined;
         if (isStocktakeRecount) {
           entry.receivedQty = 0;
           entry.unitCostJpy = facts.unitCostJpy;
@@ -4540,6 +4590,15 @@ export const inventory = createReducer(initialState, (r) => {
             candidateKey,
             firstAt == null ? entry.at : Math.min(firstAt, entry.at),
           );
+          if (inferredArchiveAt !== undefined) {
+            const archiveAt = convertedRecountArchiveAtByKey.get(candidateKey);
+            convertedRecountArchiveAtByKey.set(
+              candidateKey,
+              archiveAt == null
+                ? inferredArchiveAt
+                : Math.max(archiveAt, inferredArchiveAt),
+            );
+          }
         } else {
           entry.ignored = true;
           entry.ignoreReason = `Ignored late scan receipt after reconstructing stock order ${orderId}. ${trimmedNote}`;
@@ -4562,7 +4621,6 @@ export const inventory = createReducer(initialState, (r) => {
       0,
     );
     if (!(ignoredLateQty + convertedRecountQty > 0)) return;
-
     const affectedKeys = new Set<string>();
     for (const [candidateKey, candidateQty] of reconstructedQtyByKey) {
       const candidateLedger = state.costLedger?.[candidateKey];
@@ -4607,7 +4665,9 @@ export const inventory = createReducer(initialState, (r) => {
               entry.at < firstRecountAt,
           )
           .sort((a, b) => b.at - a.at || b.seq - a.seq)[0];
-        if (archiveSale) {
+        const archiveSaleAt =
+          archiveSale?.at ?? convertedRecountArchiveAtByKey.get(candidateKey);
+        if (archiveSaleAt !== undefined) {
           candidateLedger.push({
             id: nextLedgerEntryId(
               candidateLedger,
@@ -4618,7 +4678,7 @@ export const inventory = createReducer(initialState, (r) => {
               "archive-sale",
             ),
             kind: "sale",
-            at: archiveSale.at,
+            at: archiveSaleAt,
             seq: candidateLedger.length,
             qty: candidateQty,
             isArchive: true,
