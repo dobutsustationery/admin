@@ -55,6 +55,7 @@
     "data:import": "node scripts/transfer-data.js",
     "data:transfer": "node scripts/transfer-data.js",
     "broadcast:jail": "node scripts/jail-broadcast-since.mjs",
+    "blast-radius": "bun scripts/blast-radius.ts",
     "shopify:sync": "bun scripts/shopify-sync.ts",
     "shopify:sync:request": "bun scripts/shopify-sync-request.ts",
     "shopify:sync:worker": "bun scripts/shopify-sync-worker.ts",
