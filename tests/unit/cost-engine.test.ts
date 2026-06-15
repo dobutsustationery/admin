@@ -414,6 +414,29 @@ describe("ledgerOversold", () => {
     expect(ledgerOversold(ledger)).toBeNull();
   });
 
+  it("does not flag a loose-piece item whose same-day sales sort before the receipt, then archive", () => {
+    // 7 packs received; two same-day loose-piece sales sort ahead of the
+    // receipt (lower seq), then an archive sweeps the remainder. The cost
+    // sweep must carry the leading deficit into the receipt (sweep 6.7), so
+    // the item nets to exactly 0 and is not flagged. (A mid-walk clamp would
+    // sweep 6.9 and surface a phantom 0.2 oversold.)
+    const ledger: LedgerEntry[] = [
+      { kind: "sale", at: 1, seq: 0, qty: 0.1, visibleQty: 1, id: "s0" },
+      { kind: "sale", at: 1, seq: 1, qty: 0.2, visibleQty: 2, id: "s1" },
+      r(1, 7, 0, 0, 2),
+      {
+        kind: "sale",
+        at: 2,
+        seq: 3,
+        qty: 6.7,
+        visibleQty: 4,
+        isArchive: true,
+        id: "a",
+      },
+    ];
+    expect(ledgerOversold(ledger)).toBeNull();
+  });
+
   it("orderIdFromSaleId decodes the package_item order segment", () => {
     expect(
       orderIdFromSaleId(

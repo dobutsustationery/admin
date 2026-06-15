@@ -323,25 +323,41 @@ export function effectiveLedgerEntries(
 // with archives sweeping their own pre-archive on-hand. `saleQty` selects the
 // unit a sale consumes (cost qty vs. operator-visible qty). Used to derive how
 // much an archive sells.
+//
+// `clampMidWalk` selects which walk's semantics to match, because the two
+// differ for a sale ordered before its covering receipt (e.g. a same-day
+// loose-piece sale that sorts ahead of the pack receipt):
+//   - cost sweep (clampMidWalk=false): carry the deficit into the receipt,
+//     like walkLedger's pending-sale carry. Clamping here would forget those
+//     units and over-state the sweep, surfacing as a phantom oversold.
+//   - visible sweep (clampMidWalk=true): clamp at zero each step, like
+//     walkLedgerForVisibleQty, so the swept visibleQty matches the visible
+//     on-hand the item count reconciles against.
+// Either way the final result is clamped at zero (an archive cannot sell
+// negative stock).
 function preArchiveOnHand(
   result: readonly LedgerEntry[],
   beforeSeq: number,
   saleQty: (e: LedgerEntry) => number,
+  clampMidWalk: boolean,
 ): number {
   const sorted = [...result].sort((a, b) => a.at - b.at || a.seq - b.seq);
   let onHand = 0;
+  const step = (next: number) => (clampMidWalk ? Math.max(0, next) : next);
   for (const e of sorted) {
     if (e.seq >= beforeSeq || e.ignored) continue;
     if (e.kind === "receipt") {
-      onHand = Math.max(0, onHand + (Number(e.qty) || 0));
+      onHand = step(onHand + (Number(e.qty) || 0));
     } else if (e.isArchive) {
       // Nested archive: recompute its sweep rather than trust its stored qty.
-      onHand = Math.max(0, onHand - preArchiveOnHand(result, e.seq, saleQty));
+      onHand = step(
+        onHand - preArchiveOnHand(result, e.seq, saleQty, clampMidWalk),
+      );
     } else {
-      onHand = Math.max(0, onHand - saleQty(e));
+      onHand = step(onHand - saleQty(e));
     }
   }
-  return onHand;
+  return Math.max(0, onHand);
 }
 
 // An archive is a stock-take wipe: it sells the on-hand that exists just before
@@ -360,11 +376,13 @@ function applyArchiveSweepQuantities(result: LedgerEntry[]): void {
       result,
       e.seq,
       (s) => Number(s.qty) || 0,
+      false,
     );
     const visSweep = preArchiveOnHand(
       result,
       e.seq,
       (s) => Number((s as SaleEntry).visibleQty ?? s.qty) || 0,
+      true,
     );
     e.qty = costSweep;
     if (e.visibleQty !== undefined || Math.abs(costSweep - visSweep) > 1e-9) {
