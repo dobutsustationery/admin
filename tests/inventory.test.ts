@@ -13,6 +13,7 @@ import {
   quantify_item,
   rename_subtype,
   retype_item,
+  set_cost_ledger_entries_ignored,
   update_field,
   update_item,
   type Item,
@@ -1577,6 +1578,62 @@ describe("inventory reducer", () => {
       const walkedAfterRecount = walkLedger(nextState.costLedger![id]);
       expect(walkedAfterRecount.onHand).toBe(6);
       expect(nextState.idToItem[id].cost).toBeCloseTo(178.2, 9);
+    });
+
+    it("re-sweeps an item whose pre-archive on-hand is restored by a later audit action", () => {
+      const item: Item = {
+        janCode: "4900000000001",
+        subtype: "",
+        description: "Edge Case Item",
+        hsCode: "49090000",
+        image: "http://example.com/image.jpg",
+        qty: 10,
+        pieces: 1,
+        shipped: 0,
+        creationDate: "2024-01-01",
+        timestamp: 0,
+        cost: 100,
+      };
+      const id = makeInventoryItemKey(item.janCode, item.subtype);
+      let nextState = inventory(initialState, update_item({ id, item }));
+
+      // Correct the count down to 0 before the archive (a -10 qty correction).
+      nextState = inventory(
+        nextState,
+        update_field({ id, field: "qty", from: 10, to: 0 }),
+      );
+      expect(walkLedger(nextState.costLedger![id]).onHand).toBe(0);
+
+      // Archive while empty: still records a sweep marker so the intent
+      // ("zero out as of this date") survives a later pre-archive change.
+      nextState = inventory(
+        nextState,
+        archive_inventory({ archiveName: "Festival" }),
+      );
+      const archiveEntry = nextState.costLedger![id].find(
+        (entry) => entry.kind === "sale" && entry.isArchive,
+      );
+      expect(archiveEntry).toBeDefined();
+
+      // A later audit action decides the down-correction was an error and
+      // ignores it, restoring 10 pre-archive units. The archive must sweep
+      // them, not leak them as phantom on-hand.
+      const correction = nextState.costLedger![id].find(
+        (entry) => entry.kind === "receipt" && entry.adjustmentEntry,
+      );
+      expect(correction?.id).toBeDefined();
+      nextState = inventory(
+        nextState,
+        set_cost_ledger_entries_ignored({
+          itemKey: id,
+          refs: [{ id: correction!.id! }],
+          ignored: true,
+          reason: "count adjusted down in error",
+        }),
+      );
+
+      expect(walkLedger(nextState.costLedger![id]).onHand).toBe(0);
+      expect(nextState.idToItem[id].qty).toBe(0);
     });
 
     it("archives fractional cost on-hand with whole visible on-hand before recounting", () => {

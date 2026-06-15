@@ -958,6 +958,10 @@ function hasPriorArchiveSale(
     (entry) =>
       entry.kind === "sale" &&
       entry.isArchive === true &&
+      // Ignore zero-quantity archive markers (recorded for items that were
+      // already empty at archive time): they did not wipe any stock, so a
+      // later quantity increase is fresh stock, not a stock-take recount.
+      Number(entry.qty) > 0 &&
       Number(entry.at) <= atMs,
   );
 }
@@ -1484,10 +1488,15 @@ function recordSale(
       }
     | boolean = {},
 ) {
-  if (!qty || !Number.isFinite(qty)) return;
-  if (!state.costLedger || !state.costLedger[key]) return;
   const normalizedOptions =
     typeof options === "boolean" ? { isArchive: options } : options;
+  if (!Number.isFinite(qty)) return;
+  // Archives always record a sweep marker, even at qty 0: the marker is what a
+  // later audit action that raises this item's pre-archive on-hand re-derives
+  // its sweep from (see applyArchiveSweepQuantities). Non-archive zero sales
+  // are still skipped as no-ops.
+  if (!qty && !normalizedOptions.isArchive) return;
+  if (!state.costLedger || !state.costLedger[key]) return;
   const ledger = state.costLedger[key];
   const entry: SaleEntry = {
     id: nextLedgerEntryId(
