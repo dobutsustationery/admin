@@ -72,13 +72,30 @@ on-hand at the walk position". This preserves correctness when a sale is dated
 after the archive (e.g. a mis-dated shipment): only the units that existed as of
 the archive are swept, exactly as the original reducer intended.
 
+### Archive of an already-empty item
+
+For re-derivation to work, an archive must leave a marker even when the item is
+already empty at archive time — otherwise a later audit action that raises the
+item's pre-archive on-hand has nothing to sweep against and the units leak as
+phantom on-hand. `recordSale` therefore now records a **zero-quantity archive
+marker** for archived items (the non-archive zero-sale no-op skip is preserved).
+`applyArchiveSweepQuantities` later re-derives that marker's quantity, so the
+archive's "zero everything as of this date" intent survives any later
+pre-archive change.
+
+`hasPriorArchiveSale` (which classifies a later quantity increase as a
+post-archive stock-take recount) is guarded to ignore these zero-quantity
+markers: an archive that wiped no stock should not turn a subsequent restock
+into a recount. This keeps recount classification identical to its prior
+behaviour.
+
 ## Blast radius
 
 Reproducer:
 
 ```sh
-npm run blast-radius -- compare --base HEAD --head working-tree \
-  --backup ../production-backup-jun-11 --name archive-sweep-rederive
+npm run blast-radius -- compare --base 646105b --head working-tree \
+  --backup ../production-backup-jun-11 --name archive-sweep-with-edge-fix
 ```
 
 Both replays used the same action log (`41771 -> 41771`, 0 replay errors).
@@ -86,35 +103,46 @@ Both replays used the same action log (`41771 -> 41771`, 0 replay errors).
 | Metric | Before | After | Delta |
 |---|---:|---:|---:|
 | inventoryItems | 1306 | 1306 | +0 |
-| costLedgerKeys | 1305 | 1305 | +0 |
 | orders / orderLines | 99 / 2072 | 99 / 2072 | +0 |
-| historyKeys | 1487 | 1487 | +0 |
-| **idToItem keys changed** | – | **1** | **+1** |
+| **idToItem keys changed (qty)** | – | **10** | **+10** |
+| costLedger keys changed | – | 777 | (entry churn, see below) |
+| costLedger entry deltas | – | +1800 / -939 | zero-qty markers |
+| costLedger open **value** changed | – | **0** | +0 |
 
-Exactly one item changed; nothing else moved.
+Ten items have their visible on-hand corrected to **0**; no order, no open
+**value**, and no cost-basis changes.
 
-| Key | On hand before -> after | Delta |
-|---|---:|---:|
-| `4902778185650` | 10 -> 0 | -10 |
+| Key | On hand before -> after |
+|---|---:|
+| `4902778185650` Mitsubishi Kurotoga 0.7mm Blue | 10 -> 0 |
+| `4969757159187Blue` Mini Card set Fleurage | 2 -> 0 |
+| `4542804119923Pink` Masking Take 30mm | 1 -> 0 |
+| `4562136651236Green` Fabric Pouch 23x23cm | 1 -> 0 |
+| `4562136651557Grey` Fabric Pouch 19x15.5cm | 1 -> 0 |
+| `4580424665277` Letter set | 1 -> 0 |
+| `4968583237502Marie` Plastic Clip Aristocats | 1 -> 0 |
+| `4974052670381 / 404 / 619` Shachihata Iromoyo Mini Ink Pad | 1 -> 0 each |
 
-Stored `costLedger` entries are byte-identical before and after (the change is
-in the derived walk, not in persisted data), so `costLedger` shows 0 changed
-keys and 0 entry deltas. The item's re-walked valuation correctly drops to 0:
-before the fix it contributed ~2,827 JPY (10 × ¥282.70) of phantom on-hand
-value.
+**Cross-check against `main`.** All ten of these are exactly the items
+[BRANCH_IMPACT_JUN_14_2026.md](./BRANCH_IMPACT_JUN_14_2026.md) recorded as
+`0 -> 1/2` (and `4902778185650` as `0 -> 10`) — i.e. `main` had every one of
+them at **0**, and the branch's cost-ledger-authoritative change had inflated
+them. The nine `0 -> 1` items each carry a second `Discard Partial Inventory`
+archive (May 3 2025) that was meant to zero the remainder; their frozen sweep
+left it behind. This fix restores all ten to `main`'s correct **0**.
 
-## Edge case left as-is
-
-If an item had exactly 0 on hand when its archive replayed, `recordSale` skips
-writing a zero-quantity archive entry, so there is no archive marker to sweep a
-later-restored pre-archive receipt. This is rare (it requires a post-archive
-audit action to raise a previously-zero item's pre-archive on-hand) and is noted
-here rather than fixed, to keep the change surgical.
+The `costLedger` entry churn (`+1800 / -939`) is the zero-quantity archive
+markers now recorded for items that were already empty at the two archives;
+`materialized open value changed: 0` confirms no item's cost basis or valuation
+moved. The cost ledger is derived state re-materialised on every replay, so the
+extra markers are not persisted to Firestore.
 
 ## Verification
 
 - `tests/unit/cost-engine.test.ts`: re-derived sweep, divergence reporting, and
   ignored-archive handling; the existing recount/carry tests are unchanged.
+- `tests/inventory.test.ts`: an item emptied by a pre-archive correction,
+  archived, then restored by a later ignore is re-swept to 0 (the edge case).
 - Full unit suite + `bun run check` pass.
 - `scripts/trace-cost-ledger.ts <backup> 4902778185650` shows `qty=0` after the
   fix and `archiveSweepDivergences` reports `recordedQty 3 -> sweptQty 13`.
