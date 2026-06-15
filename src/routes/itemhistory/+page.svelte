@@ -9,7 +9,12 @@
   import { store } from "$lib/store";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import ItemCard from "$lib/components/ItemCard.svelte";
-  import { walkLedger, type LedgerEntry } from "$lib/cost-engine";
+  import {
+    walkLedger,
+    archiveSweepDivergences,
+    type ArchiveSweepDivergence,
+    type LedgerEntry,
+  } from "$lib/cost-engine";
 
   let me: User = { signedIn: false };
   let searchQuery = "";
@@ -28,6 +33,13 @@
     entry,
     running: walkLedger(ledger.slice(0, index + 1)),
   }));
+  $: archiveDivergenceById = new Map<string, ArchiveSweepDivergence>(
+    archiveSweepDivergences(currentLedger)
+      .filter((d): d is ArchiveSweepDivergence & { id: string } =>
+        Boolean(d.id),
+      )
+      .map((d) => [d.id, d]),
+  );
   $: janMatches = findJanMatches(normalizedItemKey);
   $: subtypeMatches = currentItem ? [] : janMatches;
   $: relatedSubtypeMatches =
@@ -105,8 +117,22 @@
   }
 
   function ledgerKind(entry: LedgerEntry): string {
-    if (entry.kind === "sale" && entry.isArchive) return "archive sale";
-    return entry.kind;
+    if (entry.kind === "sale") {
+      if (entry.auditComment) {
+        return entry.isArchive ? "adjusted archive sale" : "adjusted sale";
+      }
+      return entry.isArchive ? "archive sale" : "sale";
+    }
+    if (entry.auditComment || entry.quantityCorrections?.length) {
+      return "adjusted receipt";
+    }
+    return "receipt";
+  }
+
+  function archiveDivergenceFor(
+    entry: LedgerEntry,
+  ): ArchiveSweepDivergence | undefined {
+    return entry.id ? archiveDivergenceById.get(entry.id) : undefined;
   }
 
   function ledgerSource(entry: LedgerEntry): string {
@@ -125,12 +151,28 @@
 
   function ledgerNote(entry: LedgerEntry): string {
     const notes: string[] = [];
-    if (entry.auditComment) notes.push(entry.auditComment);
-    if (entry.originalQty !== undefined) {
-      notes.push(`Original qty ${fmtQty(entry.originalQty)}`);
+    if (entry.kind === "receipt" && entry.quantityCorrections?.length) {
+      const reduced = entry.quantityCorrections.reduce(
+        (sum, correction) => sum + correction.reducedBy,
+        0,
+      );
+      notes.push(`qty correction -${fmtQty(reduced)}`);
+      const requested = entry.quantityCorrections.find(
+        (correction) => correction.requestedVisibleQty !== undefined,
+      );
+      if (requested?.requestedVisibleQty !== undefined) {
+        notes.push(
+          `requested visible ${fmtQty(requested.requestedVisibleQty)}`,
+        );
+      }
     }
+    if (entry.originalQty !== undefined) {
+      notes.push(`original qty ${fmtQty(entry.originalQty)}`);
+    }
+    if (entry.auditComment) notes.push(entry.auditComment);
     if (entry.ignoreReason) notes.push(entry.ignoreReason);
-    return notes.join(" ");
+    if (entry.ignored && !entry.ignoreReason) notes.push("ignored");
+    return notes.join("; ");
   }
 
   function subtypeLabel(item: any, key: string): string {
@@ -269,11 +311,12 @@
           </thead>
           <tbody>
             {#each ledgerRows as row}
+              {@const divergence = archiveDivergenceFor(row.entry)}
               <tr
-                class:audit-warning={row.entry.kind === "receipt" &&
-                  row.entry.auditSeverity === "warning"}
-                class:audit-danger={row.entry.kind === "receipt" &&
-                  row.entry.auditSeverity === "danger"}
+                class:ignored={row.entry.ignored}
+                class:audit-warning={row.entry.auditSeverity === "warning" ||
+                  Boolean(divergence)}
+                class:audit-danger={row.entry.auditSeverity === "danger"}
               >
                 <td class="date-col">{fmtDate(row.entry.at)}</td>
                 <td>{ledgerKind(row.entry)}</td>
@@ -293,6 +336,14 @@
                   {/if}
                   {#if ledgerNote(row.entry)}
                     <div class="audit-note">{ledgerNote(row.entry)}</div>
+                  {/if}
+                  {#if divergence}
+                    <div class="audit-note">
+                      Swept {fmtQty(divergence.sweptQty)} unit(s); {fmtQty(
+                        divergence.recordedQty,
+                      )} recorded at archive time. The swept quantity changed because
+                      of a later audit action.
+                    </div>
                   {/if}
                 </td>
                 <td>{fmtQty(row.running.onHand)}</td>
@@ -460,6 +511,15 @@
 
   tr.audit-danger {
     background: #ffe8ee;
+  }
+
+  tr.ignored {
+    color: #6b7280;
+    text-decoration: line-through;
+  }
+
+  tr.ignored .audit-note {
+    text-decoration: none;
   }
 
   .audit-note {

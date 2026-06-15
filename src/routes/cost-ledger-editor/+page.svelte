@@ -11,7 +11,12 @@
   import { broadcast } from "$lib/redux-firestore";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
-  import { walkLedger, type LedgerEntry } from "$lib/cost-engine";
+  import {
+    walkLedger,
+    archiveSweepDivergences,
+    type ArchiveSweepDivergence,
+    type LedgerEntry,
+  } from "$lib/cost-engine";
 
   type LedgerRow = {
     entry: LedgerEntry;
@@ -50,6 +55,13 @@
     index,
     running: walkLedger(ledger.slice(0, index + 1)),
   }));
+  $: archiveDivergenceById = new Map<string, ArchiveSweepDivergence>(
+    archiveSweepDivergences(selectedLedger)
+      .filter((d): d is ArchiveSweepDivergence & { id: string } =>
+        Boolean(d.id),
+      )
+      .map((d) => [d.id, d]),
+  );
   $: current = walkLedger(selectedLedger);
   $: unignored = walkLedger(
     selectedLedger.map((entry) => ({ ...entry, ignored: false })),
@@ -244,7 +256,21 @@
     if (entry.auditComment) notes.push(entry.auditComment);
     if (entry.ignoreReason) notes.push(entry.ignoreReason);
     if (entry.ignored && !entry.ignoreReason) notes.push("ignored");
+    const divergence = archiveDivergenceFor(entry);
+    if (divergence) {
+      notes.push(
+        `swept ${fmtQty(divergence.sweptQty)} (recorded ${fmtQty(
+          divergence.recordedQty,
+        )}); swept qty changed by a later audit action`,
+      );
+    }
     return notes.length ? notes.join("; ") : "-";
+  }
+
+  function archiveDivergenceFor(
+    entry: LedgerEntry,
+  ): ArchiveSweepDivergence | undefined {
+    return entry.id ? archiveDivergenceById.get(entry.id) : undefined;
   }
 </script>
 
@@ -338,7 +364,8 @@
         {#each ledgerRows as row (rowKey(row))}
           <tr
             class:ignored={row.entry.ignored}
-            class:audit-warning={row.entry.auditSeverity === "warning"}
+            class:audit-warning={row.entry.auditSeverity === "warning" ||
+              Boolean(archiveDivergenceFor(row.entry))}
             class:audit-danger={row.entry.auditSeverity === "danger"}
           >
             <td>
