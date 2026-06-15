@@ -391,6 +391,29 @@ describe("ledgerOversold", () => {
     ]);
   });
 
+  it("does not flag a fully-sold loose-piece item (qty balances; visibleQty is pieces)", () => {
+    // 4 packs received; sold as loose pieces. Cost-ledger qty is the
+    // pack-fraction (1 piece = 1/22), summing to exactly 4; visibleQty is the
+    // piece count (88) and must not be balanced against pack-unit receipts.
+    const loosePiece = (
+      at: number,
+      pieces: number,
+      seq: number,
+    ): LedgerEntry => ({
+      kind: "sale",
+      at,
+      seq,
+      qty: pieces / 22,
+      visibleQty: pieces,
+    });
+    const ledger: LedgerEntry[] = [
+      r(1, 4, 0, 0),
+      loosePiece(2, 44, 1),
+      loosePiece(3, 44, 2),
+    ];
+    expect(ledgerOversold(ledger)).toBeNull();
+  });
+
   it("orderIdFromSaleId decodes the package_item order segment", () => {
     expect(
       orderIdFromSaleId(

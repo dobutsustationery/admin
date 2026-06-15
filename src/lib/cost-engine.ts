@@ -566,7 +566,11 @@ export function ledgerOversold(
       onHand += Number(e.qty) || 0;
       continue;
     }
-    onHand -= Number(e.visibleQty ?? e.qty) || 0;
+    // Balance in the ledger's native unit (`qty`), which is consistent for
+    // receipts and sales. `visibleQty` is a piece-count annotation for
+    // loose-piece items (e.g. 1 piece = 1/22 of a pack) and must NOT be mixed
+    // with pack-unit receipts, or fully-sold loose-piece items look oversold.
+    onHand -= Number(e.qty) || 0;
     if (onHand < -1e-6) {
       if (!firstNegativeAt) firstNegativeAt = e.at;
       const order = orderIdFromSaleId(e.id);
