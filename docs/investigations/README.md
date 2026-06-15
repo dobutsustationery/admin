@@ -12,3 +12,4 @@ Records of technical investigations.
 - [SKU Review COST exceptions — supplier-CSV categorization](./COST_EXCEPTIONS.md)
 - [Inventory cost must be a weighted moving average (not last-write)](./COST_SHOULD_BE_MOVING_AVERAGE.md)
 - [Design: Received Inventory + weighted moving-average cost](./DESIGN_RECEIVED_INVENTORY_AND_MOVING_AVERAGE_COST.md)
+- [Archive sale sweep is re-derived from the current ledger](./ARCHIVE_SWEEP_REDERIVE.md)
