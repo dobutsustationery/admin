@@ -414,6 +414,19 @@ describe("ledgerOversold", () => {
     expect(ledgerOversold(ledger)).toBeNull();
   });
 
+  it("does not flag an item that still has visible stock, even if the cost balance is negative", () => {
+    // An archive that sweeps a post-dated receipt can drive the cost balance
+    // negative while real stock remains. Positive visible on-hand wins.
+    const ledger: LedgerEntry[] = [
+      r(1, 10, 100, 1, 0),
+      { kind: "sale", at: 2, seq: 1, qty: 20, isArchive: true, id: "a" }, // over-swept
+      r(3, 10, 100, 1, 2),
+    ];
+    // qty walk: 10 - 20 + 10 = 0 cost; visible walk clamps 10 -> 0 -> 10 = 10
+    // on hand, so the item is not oversold.
+    expect(ledgerOversold(ledger)).toBeNull();
+  });
+
   it("does not flag a loose-piece item whose same-day sales sort before the receipt, then archive", () => {
     // 7 packs received; two same-day loose-piece sales sort ahead of the
     // receipt (lower seq), then an archive sweeps the remainder. The cost
