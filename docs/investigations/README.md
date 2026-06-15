@@ -13,3 +13,4 @@ Records of technical investigations.
 - [Inventory cost must be a weighted moving average (not last-write)](./COST_SHOULD_BE_MOVING_AVERAGE.md)
 - [Design: Received Inventory + weighted moving-average cost](./DESIGN_RECEIVED_INVENTORY_AND_MOVING_AVERAGE_COST.md)
 - [Archive sale sweep is re-derived from the current ledger](./ARCHIVE_SWEEP_REDERIVE.md)
+- [Live-event over-takes: taking more to a show than remained after the last one](./LIVE_EVENT_OVERTAKES.md)
