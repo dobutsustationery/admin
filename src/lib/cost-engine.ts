@@ -563,18 +563,45 @@ export function orderIdFromSaleId(id: string | undefined): string | undefined {
   }
 }
 
+// Operator-visible on-hand: the same clamped walk that drives item.qty
+// (walkLedgerForVisibleQty in inventory.ts). Used as an oversold guard.
+function visibleOnHand(ledger: readonly LedgerEntry[]): number {
+  let onHand = 0;
+  for (const e of ledger) {
+    if (e.ignored) continue;
+    if (e.kind === "receipt") {
+      onHand = Math.max(0, onHand + (Number(e.qty) || 0));
+    } else {
+      onHand = Math.max(0, onHand - (Number(e.visibleQty ?? e.qty) || 0));
+    }
+  }
+  return onHand;
+}
+
 /**
- * An item is "oversold" when its sales exceed everything ever received: the
- * date-ordered running on-hand ends below zero. This is the data-error signal
- * the visible walk discards by clamping at zero (see walkLedgerForVisibleQty),
- * e.g. a live event whose count sold more units than were in stock. Returns the
- * net oversold quantity, when the deficit first appeared, and the orders whose
- * sales drove on-hand negative — or null when the item is not oversold.
+ * An item is "oversold" when it has NO stock left yet its sales still exceed
+ * everything ever received — a deficit the clamped visible walk hides at zero
+ * (e.g. a live event whose count sold more units than were in stock).
+ *
+ * Two guards keep this honest:
+ *  - If the operator-visible on-hand is positive the item plainly has stock and
+ *    cannot be oversold, whatever the cost walk says. (A stock-take archive that
+ *    sweeps a post-dated receipt can drive the cost balance negative while real
+ *    stock remains; that is not an oversell.)
+ *  - The deficit is measured in the ledger's native `qty` unit, consistent for
+ *    receipts and sales. `visibleQty` is a piece-count annotation for
+ *    loose-piece items (1 piece = 1/22 of a pack) and must not be mixed with
+ *    pack-unit receipts, or fully-sold loose-piece items look oversold.
+ *
+ * Returns the net oversold quantity, when the deficit first appeared, and the
+ * orders whose sales drove on-hand negative — or null when not oversold.
  */
 export function ledgerOversold(
   entries: readonly LedgerEntry[],
 ): LedgerOversold | null {
   const ledger = sortLedger(effectiveLedgerEntries(entries));
+  if (visibleOnHand(ledger) > 1e-6) return null;
+
   let onHand = 0;
   let firstNegativeAt = 0;
   const offendingOrders = new Set<string>();
@@ -584,10 +611,6 @@ export function ledgerOversold(
       onHand += Number(e.qty) || 0;
       continue;
     }
-    // Balance in the ledger's native unit (`qty`), which is consistent for
-    // receipts and sales. `visibleQty` is a piece-count annotation for
-    // loose-piece items (e.g. 1 piece = 1/22 of a pack) and must NOT be mixed
-    // with pack-unit receipts, or fully-sold loose-piece items look oversold.
     onHand -= Number(e.qty) || 0;
     if (onHand < -1e-6) {
       if (!firstNegativeAt) firstNegativeAt = e.at;
