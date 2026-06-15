@@ -306,7 +306,7 @@ export function effectiveLedgerEntries(
     }
   }
 
-  return materialized.filter(
+  const result = materialized.filter(
     (entry) =>
       !(
         entry.kind === "receipt" &&
@@ -314,6 +314,63 @@ export function effectiveLedgerEntries(
         entry.adjustmentMode === "apply-to-target"
       ),
   );
+
+  applyArchiveSweepQuantities(result);
+  return result;
+}
+
+// On-hand of every (effective, non-ignored) entry created before `beforeSeq`,
+// with archives sweeping their own pre-archive on-hand. `saleQty` selects the
+// unit a sale consumes (cost qty vs. operator-visible qty). Used to derive how
+// much an archive sells.
+function preArchiveOnHand(
+  result: readonly LedgerEntry[],
+  beforeSeq: number,
+  saleQty: (e: LedgerEntry) => number,
+): number {
+  const sorted = [...result].sort((a, b) => a.at - b.at || a.seq - b.seq);
+  let onHand = 0;
+  for (const e of sorted) {
+    if (e.seq >= beforeSeq || e.ignored) continue;
+    if (e.kind === "receipt") {
+      onHand = Math.max(0, onHand + (Number(e.qty) || 0));
+    } else if (e.isArchive) {
+      // Nested archive: recompute its sweep rather than trust its stored qty.
+      onHand = Math.max(0, onHand - preArchiveOnHand(result, e.seq, saleQty));
+    } else {
+      onHand = Math.max(0, onHand - saleQty(e));
+    }
+  }
+  return onHand;
+}
+
+// An archive is a stock-take wipe: it sells the on-hand that exists just before
+// it. That quantity is re-derived here from the current (post-audit) entries
+// rather than read from the snapshot recorded when the archive first replayed,
+// so ignoring a row or correcting a quantity earlier in the ledger correctly
+// flows through the archive. archiveSweepDivergences compares the two so the UI
+// can warn when an audit action changed the swept quantity.
+function applyArchiveSweepQuantities(result: LedgerEntry[]): void {
+  if (!result.some((e) => e.kind === "sale" && e.isArchive && !e.ignored)) {
+    return;
+  }
+  for (const e of result) {
+    if (e.kind !== "sale" || !e.isArchive || e.ignored) continue;
+    const costSweep = preArchiveOnHand(
+      result,
+      e.seq,
+      (s) => Number(s.qty) || 0,
+    );
+    const visSweep = preArchiveOnHand(
+      result,
+      e.seq,
+      (s) => Number((s as SaleEntry).visibleQty ?? s.qty) || 0,
+    );
+    e.qty = costSweep;
+    if (e.visibleQty !== undefined || Math.abs(costSweep - visSweep) > 1e-9) {
+      e.visibleQty = visSweep;
+    }
+  }
 }
 
 /**
@@ -418,6 +475,48 @@ export function walkLedger(
   }
 
   return { onHand, avgJpy, avgEur };
+}
+
+export interface ArchiveSweepDivergence {
+  id?: string;
+  at: number;
+  seq: number;
+  recordedQty: number;
+  sweptQty: number;
+}
+
+/**
+ * Archive sales sweep all on-hand stock to zero at walk time (see walkLedger).
+ * The quantity recorded on the archive entry is a snapshot taken when the
+ * archive action first replayed; a later audit action (ignoring a row or
+ * adjusting a quantity) can change the pre-archive on-hand, so the quantity
+ * actually swept can differ from what was recorded. This lists every archive
+ * entry whose re-derived sweep quantity differs from its recorded quantity, so
+ * the UI can warn that the swept quantity changed because of an audit action.
+ *
+ * On-hand is accumulated the same way the operator-visible walk does (receipts
+ * add, sales subtract their visible quantity), so divergences are reported in
+ * the visible stock units shown in the ledger table.
+ */
+export function archiveSweepDivergences(
+  entries: readonly LedgerEntry[],
+): ArchiveSweepDivergence[] {
+  const effectiveById = new Map<string, SaleEntry>();
+  for (const e of effectiveLedgerEntries(entries)) {
+    if (e.kind === "sale" && e.isArchive && e.id) effectiveById.set(e.id, e);
+  }
+  const out: ArchiveSweepDivergence[] = [];
+  for (const e of entries) {
+    if (e.kind !== "sale" || !e.isArchive || e.ignored || !e.id) continue;
+    const effective = effectiveById.get(e.id);
+    if (!effective) continue;
+    const recordedQty = Number(e.visibleQty ?? e.qty) || 0;
+    const sweptQty = Number(effective.visibleQty ?? effective.qty) || 0;
+    if (Math.abs(recordedQty - sweptQty) > 1e-9) {
+      out.push({ id: e.id, at: e.at, seq: e.seq, recordedQty, sweptQty });
+    }
+  }
+  return out;
 }
 
 /** Value of the item as of `asOf` = on-hand × weighted-average cost. */

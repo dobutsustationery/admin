@@ -6084,8 +6084,12 @@ export const inventory = createReducer(initialState, (r) => {
         : effectiveArchiveQuantity(state.idToItem[itemKey]);
       const archiveVisibleQtyDiffers =
         Math.abs(archiveSaleQty - archiveVisibleSaleQty) > 1e-9;
-      // The archive is the real stock-take wipe in the cost ledger. A later
-      // make_sales action reports shrinkage but should not also mutate cost.
+      // The archive is the real stock-take wipe in the cost ledger: it sells
+      // the on-hand quantity. The qty recorded here is the on-hand as of this
+      // replay step; the cost-engine archive sweep re-derives the actual swept
+      // quantity at walk time so a later audit action that changes pre-archive
+      // on-hand stays balanced (the divergence is surfaced as a warning). A
+      // later make_sales action reports shrinkage but must not also mutate cost.
       recordSale(state, itemKey, archiveSaleQty, getTimestampMs(timestamp), {
         idParts: [(action as any).id || "local", "archive_inventory", itemKey],
         isArchive: true,

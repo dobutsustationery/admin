@@ -3,6 +3,7 @@ import {
   walkLedger,
   valueAt,
   totalValuation,
+  archiveSweepDivergences,
   UNKNOWN_RECEIPT_DATE,
   lotMatchesOrder,
   type LedgerEntry,
@@ -287,5 +288,58 @@ describe("archive zero-crossing carries the running average", () => {
     expect(w.onHand).toBe(20);
     expect(w.avgJpy).toBe((10 * 282 + 10 * 100) / 20);
     expect(w.avgEur).toBeCloseTo((10 * 1.835 + 10 * 0.5) / 20, 6);
+  });
+
+  it("sweeps ALL on-hand even when the recorded archive qty is stale and too low", () => {
+    // The 4902778185650 shape: 20 received, 7 sold, then an archive whose
+    // recorded qty (3) is a snapshot from before a later audit action restored
+    // 10 units. The archive must still sweep the full re-derived on-hand (13)
+    // to zero rather than only the stale recorded 3.
+    const w = walkLedger([
+      r(1, 20, 282.7, 1.836),
+      s(2, 7, 1),
+      sa(3, 3, 2), // recorded 3, but on-hand here is 13
+    ]);
+    expect(w.onHand).toBe(0);
+  });
+});
+
+describe("archiveSweepDivergences", () => {
+  const sa = (at: number, qty: number, seq = 0, id?: string): LedgerEntry => ({
+    kind: "sale",
+    at,
+    seq,
+    qty,
+    isArchive: true,
+    id,
+  });
+
+  it("reports nothing when the recorded archive qty matches the swept qty", () => {
+    const out = archiveSweepDivergences([
+      r(1, 20, 282.7, 1.836),
+      s(2, 7, 1),
+      sa(3, 13, 2), // on-hand at archive is 13, recorded 13
+    ]);
+    expect(out).toEqual([]);
+  });
+
+  it("reports the divergence when an audit action changed pre-archive on-hand", () => {
+    const out = archiveSweepDivergences([
+      r(1, 20, 282.7, 1.836),
+      s(2, 7, 1),
+      sa(3, 3, 2, "archive-1"), // recorded 3, but on-hand is 13
+    ]);
+    expect(out).toEqual([
+      { id: "archive-1", at: 3, seq: 2, recordedQty: 3, sweptQty: 13 },
+    ]);
+  });
+
+  it("ignores ignored archive rows", () => {
+    const out = archiveSweepDivergences([
+      r(1, 20, 282.7, 1.836),
+      s(2, 7, 1),
+      { kind: "sale", at: 3, seq: 2, qty: 3, isArchive: true, ignored: true },
+    ]);
+    expect(out).toEqual([]);
   });
 });
