@@ -141,6 +141,10 @@
   let onlyAffectsAverage = true;
   let showCostIssues = false;
   let showAuditAdjustments = false;
+  let showOversold: Record<string, boolean> = {
+    active: false,
+    historical: false,
+  };
   let showStockOrderIssues: Record<string, boolean> = {};
   let copyMsg = "";
   let remediationStatus = "";
@@ -619,7 +623,7 @@
       );
     },
   );
-  $: filteredOversoldRows = oversoldRows.filter((row) => {
+  function matchesOversoldQuery(row: OversoldRow): boolean {
     if (!query) return true;
     return (
       row.key.toLowerCase().includes(query) ||
@@ -628,11 +632,33 @@
       row.subtype.toLowerCase().includes(query) ||
       row.offendingOrders.some((o) => o.toLowerCase().includes(query))
     );
-  });
-  $: oversoldUnits = oversoldRows.reduce(
-    (sum, row) => sum + row.oversoldQty,
-    0,
-  );
+  }
+  // Split oversold by whether any stock count remains on the item now.
+  // "active" (on-hand 0 / qty N): N units shipped beyond what was received — a
+  // live discrepancy to solve. "historical" (0 / 0): the item is fully gone and
+  // archived, an old accounting error the operator may choose to ignore.
+  $: oversoldActiveRows = oversoldRows.filter((row) => row.itemQty > 1e-6);
+  $: oversoldHistoricalRows = oversoldRows.filter((row) => row.itemQty <= 1e-6);
+  $: filteredOversoldActiveRows =
+    oversoldActiveRows.filter(matchesOversoldQuery);
+  $: filteredOversoldHistoricalRows =
+    oversoldHistoricalRows.filter(matchesOversoldQuery);
+  $: oversoldGroups = [
+    {
+      key: "active",
+      title: "Needs attention (still has a count)",
+      hint: "On-hand 0 of N: more was shipped than ever received, and the item still carries stock now — a live discrepancy. Likely a live-event miscount or an unrecorded receipt; fix with a stock adjustment or an order-quantity correction.",
+      total: oversoldActiveRows.length,
+      rows: filteredOversoldActiveRows,
+    },
+    {
+      key: "historical",
+      title: "Historical — fully depleted (0 of 0)",
+      hint: "The item is completely gone now and was archived long ago. The deficit is an old accounting error with no live stock impact; the operator may choose to ignore it.",
+      total: oversoldHistoricalRows.length,
+      rows: filteredOversoldHistoricalRows,
+    },
+  ];
   $: stockOrderMatchIssueGroups = groupStockOrderMatchIssueRows(
     filteredStockOrderMatchIssueRows,
   );
@@ -1339,12 +1365,12 @@
       <span>audit adjustment(s)</span>
     </div>
     <div>
-      <strong>{oversoldRows.length}</strong>
-      <span>oversold item(s)</span>
+      <strong>{oversoldActiveRows.length}</strong>
+      <span>oversold — needs attention</span>
     </div>
     <div>
-      <strong>{oversoldUnits}</strong>
-      <span>oversold unit(s)</span>
+      <strong>{oversoldHistoricalRows.length}</strong>
+      <span>oversold — historical</span>
     </div>
   </div>
 
@@ -1573,64 +1599,87 @@
   <h2>Oversold Items</h2>
   <p class="hint">
     More units have been sold than were ever received — the cost ledger's
-    on-hand goes negative. The visible count clamps these at zero, hiding a
-    likely data-entry error (e.g. a live event counted more sold than were in
-    stock). Each row needs a real fix: a stock adjustment for found inventory,
-    or a correction to the offending order's quantities.
+    on-hand goes negative and the visible count clamps it at zero, hiding the
+    discrepancy. Split by whether the item still carries a count today.
   </p>
-  {#if filteredOversoldRows.length > 0}
+  {#each oversoldGroups as group (group.key)}
     <div class="table-section">
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Oversold</th>
-            <th>On hand / qty</th>
-            <th>First negative</th>
-            <th>Involved order(s)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each filteredOversoldRows as row (row.key)}
-            <tr class="audit-danger">
-              <td>
-                <div class="item-cell">
-                  {#if row.image}
-                    <ImageThumbnail
-                      src={row.image}
-                      alt={row.description}
-                      width="32px"
-                      height="32px"
-                    />
-                  {/if}
-                  <div>
-                    <a
-                      href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}
-                    >
-                      {row.jan}{row.subtype ? ` / ${row.subtype}` : ""}
-                    </a>
-                    <div class="hint">{row.description}</div>
-                  </div>
-                </div>
-              </td>
-              <td><strong>{fmtQty(row.oversoldQty)}</strong></td>
-              <td>{Math.max(0, row.itemQty - row.shipped)} / {row.itemQty}</td>
-              <td>{fmtDate(row.firstNegativeAt)}</td>
-              <td>
-                {#each row.offendingOrders as orderId}
-                  <div class="hint">{orderId}</div>
-                {:else}
-                  <span class="hint">-</span>
-                {/each}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <div class="table-summary">
+        <div>
+          <strong>{group.title}</strong>
+          <span>{group.total} item(s)</span>
+        </div>
+        <button
+          type="button"
+          class="copy-button twisty-button"
+          on:click={() =>
+            (showOversold = {
+              ...showOversold,
+              [group.key]: !showOversold[group.key],
+            })}
+        >
+          {showOversold[group.key] ? "v Hide" : "> Show"}
+        </button>
+      </div>
+
+      <div class:hidden={!showOversold[group.key]}>
+        <p class="hint">{group.hint}</p>
+        {#if group.rows.length > 0}
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Oversold</th>
+                <th>On hand / qty</th>
+                <th>First negative</th>
+                <th>Involved order(s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each group.rows as row (row.key)}
+                <tr class="audit-danger">
+                  <td>
+                    <div class="item-cell">
+                      {#if row.image}
+                        <ImageThumbnail
+                          src={row.image}
+                          alt={row.description}
+                          width="32px"
+                          height="32px"
+                        />
+                      {/if}
+                      <div>
+                        <a
+                          href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}
+                        >
+                          {row.jan}{row.subtype ? ` / ${row.subtype}` : ""}
+                        </a>
+                        <div class="hint">{row.description}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><strong>{fmtQty(row.oversoldQty)}</strong></td>
+                  <td>
+                    {Math.max(0, row.itemQty - row.shipped)} / {row.itemQty}
+                  </td>
+                  <td>{fmtDate(row.firstNegativeAt)}</td>
+                  <td>
+                    {#each row.offendingOrders as orderId}
+                      <div class="hint">{orderId}</div>
+                    {:else}
+                      <span class="hint">-</span>
+                    {/each}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <p class="hint">No items in this category match the filters.</p>
+        {/if}
+      </div>
     </div>
-  {:else}
-    <p class="hint">No oversold items match the current filters.</p>
-  {/if}
+  {/each}
 
   <h2>Stock Order Match Issues</h2>
   {#if remediationStatus}
