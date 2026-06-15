@@ -6,6 +6,7 @@
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import {
     effectiveLedgerEntries,
+    ledgerOversold,
     lotMatchesOrder,
     walkLedger,
     type LedgerEntry,
@@ -102,6 +103,19 @@
     overmatchedRows: number;
     lateRows: number;
     differenceQty: number;
+  };
+
+  type OversoldRow = {
+    key: string;
+    jan: string;
+    subtype: string;
+    description: string;
+    image: string;
+    itemQty: number;
+    shipped: number;
+    oversoldQty: number;
+    firstNegativeAt: number;
+    offendingOrders: string[];
   };
 
   type StockOrderValueSummaryRow = {
@@ -537,8 +551,35 @@
     });
   }
 
+  function buildOversoldRows(inventory: InventoryState): OversoldRow[] {
+    const idToItem = inventory.idToItem || {};
+    const costLedger = inventory.costLedger || {};
+    const rows: OversoldRow[] = [];
+    for (const [key, ledger] of Object.entries(costLedger)) {
+      const oversold = ledgerOversold(ledger);
+      if (!oversold) continue;
+      const item = idToItem[key];
+      rows.push({
+        key,
+        jan: item?.janCode || key,
+        subtype: item?.subtype || "",
+        description: item?.description || "",
+        image: item?.image || "",
+        itemQty: Number(item?.qty) || 0,
+        shipped: Number(item?.shipped) || 0,
+        oversoldQty: oversold.oversoldQty,
+        firstNegativeAt: oversold.firstNegativeAt,
+        offendingOrders: oversold.offendingOrders,
+      });
+    }
+    return rows.sort(
+      (a, b) => b.oversoldQty - a.oversoldQty || a.key.localeCompare(b.key),
+    );
+  }
+
   $: rows = buildRows($store.inventory);
   $: auditRows = buildAuditRows($store.inventory);
+  $: oversoldRows = buildOversoldRows($store.inventory);
   $: stockOrderMatchIssueRows = buildStockOrderMatchIssueRows($store.inventory);
   $: stockOrderValueSummaryRows = buildStockOrderValueSummaryRows(
     $store.inventory,
@@ -577,6 +618,20 @@
         row.subtype.toLowerCase().includes(query)
       );
     },
+  );
+  $: filteredOversoldRows = oversoldRows.filter((row) => {
+    if (!query) return true;
+    return (
+      row.key.toLowerCase().includes(query) ||
+      row.jan.includes(query) ||
+      row.description.toLowerCase().includes(query) ||
+      row.subtype.toLowerCase().includes(query) ||
+      row.offendingOrders.some((o) => o.toLowerCase().includes(query))
+    );
+  });
+  $: oversoldUnits = oversoldRows.reduce(
+    (sum, row) => sum + row.oversoldQty,
+    0,
   );
   $: stockOrderMatchIssueGroups = groupStockOrderMatchIssueRows(
     filteredStockOrderMatchIssueRows,
@@ -1283,6 +1338,14 @@
       <strong>{auditRows.length}</strong>
       <span>audit adjustment(s)</span>
     </div>
+    <div>
+      <strong>{oversoldRows.length}</strong>
+      <span>oversold item(s)</span>
+    </div>
+    <div>
+      <strong>{oversoldUnits}</strong>
+      <span>oversold unit(s)</span>
+    </div>
   </div>
 
   {#if copyMsg}
@@ -1506,6 +1569,68 @@
       </table>
     </div>
   </div>
+
+  <h2>Oversold Items</h2>
+  <p class="hint">
+    More units have been sold than were ever received — the cost ledger's
+    on-hand goes negative. The visible count clamps these at zero, hiding a
+    likely data-entry error (e.g. a live event counted more sold than were in
+    stock). Each row needs a real fix: a stock adjustment for found inventory,
+    or a correction to the offending order's quantities.
+  </p>
+  {#if filteredOversoldRows.length > 0}
+    <div class="table-section">
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Oversold</th>
+            <th>On hand / qty</th>
+            <th>First negative</th>
+            <th>Involved order(s)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each filteredOversoldRows as row (row.key)}
+            <tr class="audit-danger">
+              <td>
+                <div class="item-cell">
+                  {#if row.image}
+                    <ImageThumbnail
+                      src={row.image}
+                      alt={row.description}
+                      width="32px"
+                      height="32px"
+                    />
+                  {/if}
+                  <div>
+                    <a
+                      href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}
+                    >
+                      {row.jan}{row.subtype ? ` / ${row.subtype}` : ""}
+                    </a>
+                    <div class="hint">{row.description}</div>
+                  </div>
+                </div>
+              </td>
+              <td><strong>{fmtQty(row.oversoldQty)}</strong></td>
+              <td>{Math.max(0, row.itemQty - row.shipped)} / {row.itemQty}</td>
+              <td>{fmtDate(row.firstNegativeAt)}</td>
+              <td>
+                {#each row.offendingOrders as orderId}
+                  <div class="hint">{orderId}</div>
+                {:else}
+                  <span class="hint">-</span>
+                {/each}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {:else}
+    <p class="hint">No oversold items match the current filters.</p>
+  {/if}
 
   <h2>Stock Order Match Issues</h2>
   {#if remediationStatus}
@@ -2044,6 +2169,11 @@
   }
   tr.audit-danger {
     background: #ffe8ee;
+  }
+  .item-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
   tr.order-value-mismatch {
     background: #fff8db;
