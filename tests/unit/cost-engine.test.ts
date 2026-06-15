@@ -4,6 +4,8 @@ import {
   valueAt,
   totalValuation,
   archiveSweepDivergences,
+  ledgerOversold,
+  orderIdFromSaleId,
   UNKNOWN_RECEIPT_DATE,
   lotMatchesOrder,
   type LedgerEntry,
@@ -341,5 +343,62 @@ describe("archiveSweepDivergences", () => {
       { kind: "sale", at: 3, seq: 2, qty: 3, isArchive: true, ignored: true },
     ]);
     expect(out).toEqual([]);
+  });
+});
+
+describe("ledgerOversold", () => {
+  const saleFrom = (
+    at: number,
+    qty: number,
+    seq: number,
+    orderId: string,
+  ): LedgerEntry => ({
+    kind: "sale",
+    at,
+    seq,
+    qty,
+    id: `ledger:sale:KEY:act${seq}:package_item:${encodeURIComponent(orderId)}:${at}:${qty}`,
+  });
+
+  it("returns null when sales never exceed receipts", () => {
+    expect(ledgerOversold([r(1, 10, 100, 1), s(2, 9, 1)])).toBeNull();
+  });
+
+  it("returns null for a transient deficit a later receipt covers", () => {
+    // Oversold mid-stream, then restocked: net on-hand is non-negative.
+    expect(
+      ledgerOversold([r(1, 5, 100, 1), s(2, 8, 1), r(3, 10, 100, 2)]),
+    ).toBeNull();
+  });
+
+  it("reports the net oversold quantity and the offending order", () => {
+    // 10 received; one event sells 9 (leaves 1), a later event sells 8.
+    const out = ledgerOversold([
+      r(1, 10, 145, 0.82),
+      saleFrom(2, 9, 1, "live-event:japan-festival:AAA"),
+      saleFrom(
+        4,
+        8,
+        2,
+        "live-event:thessaloniki-comic-con:3FxZC2TXnuSvFfe11nt3",
+      ),
+    ]);
+    expect(out).not.toBeNull();
+    expect(out!.oversoldQty).toBe(7);
+    expect(out!.firstNegativeAt).toBe(4);
+    expect(out!.offendingOrders).toEqual([
+      "live-event:thessaloniki-comic-con:3FxZC2TXnuSvFfe11nt3",
+    ]);
+  });
+
+  it("orderIdFromSaleId decodes the package_item order segment", () => {
+    expect(
+      orderIdFromSaleId(
+        "ledger:sale:KEY:abc:package_item:live-event%3Athessaloniki%3AXYZ:123:8",
+      ),
+    ).toBe("live-event:thessaloniki:XYZ");
+    expect(
+      orderIdFromSaleId("ledger:sale:KEY:abc:archive_inventory:KEY:1:2"),
+    ).toBe(undefined);
   });
 });

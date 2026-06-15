@@ -519,6 +519,68 @@ export function archiveSweepDivergences(
   return out;
 }
 
+export interface LedgerOversold {
+  oversoldQty: number;
+  firstNegativeAt: number;
+  offendingOrders: string[];
+}
+
+/**
+ * Decode the order/source id embedded in a sale ledger entry id of the shape
+ * `ledger:sale:<key>:<actionId>:<actionType>:<orderId>:<atMs>:<qty>` (each part
+ * is URL-encoded, so splitting on ":" is safe). Returns the decoded orderId for
+ * sales recorded by package_item / quantify_item, else undefined.
+ */
+export function orderIdFromSaleId(id: string | undefined): string | undefined {
+  if (!id) return undefined;
+  const parts = id.split(":");
+  const idx = parts.findIndex(
+    (p) => p === "package_item" || p === "quantify_item",
+  );
+  if (idx < 0 || idx + 1 >= parts.length) return undefined;
+  try {
+    return decodeURIComponent(parts[idx + 1]);
+  } catch {
+    return parts[idx + 1];
+  }
+}
+
+/**
+ * An item is "oversold" when its sales exceed everything ever received: the
+ * date-ordered running on-hand ends below zero. This is the data-error signal
+ * the visible walk discards by clamping at zero (see walkLedgerForVisibleQty),
+ * e.g. a live event whose count sold more units than were in stock. Returns the
+ * net oversold quantity, when the deficit first appeared, and the orders whose
+ * sales drove on-hand negative — or null when the item is not oversold.
+ */
+export function ledgerOversold(
+  entries: readonly LedgerEntry[],
+): LedgerOversold | null {
+  const ledger = sortLedger(effectiveLedgerEntries(entries));
+  let onHand = 0;
+  let firstNegativeAt = 0;
+  const offendingOrders = new Set<string>();
+  for (const e of ledger) {
+    if (e.ignored) continue;
+    if (e.kind === "receipt") {
+      onHand += Number(e.qty) || 0;
+      continue;
+    }
+    onHand -= Number(e.visibleQty ?? e.qty) || 0;
+    if (onHand < -1e-6) {
+      if (!firstNegativeAt) firstNegativeAt = e.at;
+      const order = orderIdFromSaleId(e.id);
+      if (order) offendingOrders.add(order);
+    }
+  }
+  if (onHand >= -1e-6) return null;
+  return {
+    oversoldQty: -onHand,
+    firstNegativeAt,
+    offendingOrders: [...offendingOrders],
+  };
+}
+
 /** Value of the item as of `asOf` = on-hand × weighted-average cost. */
 export function valueAt(
   entries: readonly LedgerEntry[],
