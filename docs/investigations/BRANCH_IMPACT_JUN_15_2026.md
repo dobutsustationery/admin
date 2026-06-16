@@ -1,19 +1,21 @@
 # Branch Impact Report: `analysis/jun-04-broadcast-cleanup` vs `main`
 
-Generated 2026-06-15 from the June 11 production backup. Supersedes
+Generated 2026-06-15, re-generated 2026-06-16 from the June 11 production
+backup. Supersedes
 [BRANCH_IMPACT_JUN_14_2026.md](./BRANCH_IMPACT_JUN_14_2026.md) — the branch has
-since gained the archive-sweep re-derivation, its empty-item edge fix, and the
-read-only oversold surface.
+since gained the archive-sweep re-derivation, its empty-item edge fix, the
+read-only oversold surface, and the zero-cost-merge re-pricing (see
+[the dedicated section](#zero-cost-merge-re-pricing)).
 
 Command:
 
 ```sh
 npm run blast-radius -- compare --base main --head working-tree \
-  --backup ../production-backup-jun-11 --name main-vs-branch-jun-15
+  --backup ../production-backup-jun-11 --name main-vs-branch-jun-16
 ```
 
 Both replays used the same action log (`41771 -> 41771`, 0 replay errors).
-Artifacts: `.blastradius/runs/main-vs-branch-jun-15/`.
+Artifacts: `.blastradius/runs/main-vs-branch-jun-16/`.
 
 ## Totals
 
@@ -43,7 +45,7 @@ to bare `JAN` where the JAN is unambiguous: **143 keys added, 143 removed**
 keys also let previously-unmatched Shopify order lines bind, which is the source
 of the `orderLines +15` and `shopifyExceptions 2 -> 0`.
 
-## Visible on-hand changes (9 existing keys, 7 qty)
+## Visible on-hand changes (11 existing keys, 7 qty)
 
 | Key | Qty m -> b | Shipped | On hand m -> b | Delta |
 |---|---:|---:|---:|---:|
@@ -55,9 +57,10 @@ of the `orderLines +15` and `shopifyExceptions 2 -> 0`.
 | `4991685201126White` Iwako Lucky Cat Eraser | 5 -> 10 | 8 | -3 -> 2 | +5 |
 | `4542804149982Yellow` Amifa Chinoiserie A5 Notebook | 2 -> 4 | 4 | -2 -> 0 | +2 |
 
-Plus two non-qty field changes: `4542804109153Red` cost rounds
-`64.99999999999999 -> 65`, and `4542804113471` is the single-variant cleanup
-(handle/subtype blanked).
+Plus four non-qty field changes: `4542804080872Blue` cost `45.88 -> 65` and
+`4542804080872Red` cost `48.75 -> 65` (both from the zero-cost-merge re-pricing,
+below), `4542804109153Red` cost rounds `64.99999999999999 -> 65`, and
+`4542804113471` is the single-variant cleanup (handle/subtype blanked).
 
 **Reading:** every one of these was **negative on hand on `main`** (the old
 last-write count let shipped exceed qty). The branch makes the cost ledger
@@ -136,6 +139,39 @@ move between bare-JAN and subtyped keys and whose recount lots get costed
 differently). All 143 single-variant key migrations carried their cost across
 intact (0 changes on either metric).
 
+## Zero Cost Merge re-pricing
+
+The cost engine no longer dilutes a priced receipt against uncosted stock. When
+a priced receipt lands on on-hand whose running average is ¥0 (uncosted opening
+stock, created via `update_item` before any cost was known), the whole position
+now **adopts the incoming cost** instead of averaging down toward ¥0 — the
+uncosted goods are the same item, so the now-known cost is their basis. The
+opposite case (a ¥0 receipt diluting priced on-hand) keeps its old averaging but
+warns "Incoming stock costed at ¥0 blended?"; it does not occur on this data.
+
+Root cause: these items were created at ¥0, and when Amifa Order 2
+(`1efWnQHQ...`) later supplied the real ¥65 cost, the new costed lot blended
+with the still-¥0 creation lot. The re-pricing is the fix.
+
+Impact against `main` is small and contains no valuation movement:
+
+- **2 items' displayed cost corrected** to the true basis:
+  `4542804080872Blue` `¥45.88 -> ¥65` and `4542804080872Red` `¥48.75 -> ¥65`.
+  These are the only affected items whose final average still carried the
+  diluted blend (both archived/depleted, so the cost is residual).
+- **Inventory value unchanged** (0 JPY / 0 EUR delta vs the pre-re-pricing
+  branch): every other affected item is at 0 on-hand, so re-pricing its basis
+  moves no on-hand value. The branch's `-4,712.60 JPY` total is entirely the
+  quantity corrections described above, not this change.
+- **5 history "Cost derived from N lot(s)" lines rise** to the corrected basis
+  (e.g. Taiyaki Neko Cat Envelope `¥57 -> ¥62`, PLUS Twiggy Pocket Scissors
+  `¥268 -> ¥402`).
+- **No** cost-ledger entry, quantity, order, or exception changes.
+
+Surfaced in the item-history and cost-ledger-editor tables (per-kind notes) and
+as a new "Zero Cost Merge" category on `/unpriced` (collapsed by default), which
+also flags any "diluted (review)" case — currently none.
+
 ## History churn
 
 `historyKeys 1542 -> 1487` (-55); 1399 keys changed, +2415 / -3409 entries. The
@@ -168,6 +204,9 @@ New on the branch since then, and reflected here:
   does **not** change replayed state, so it contributes nothing to this diff.
 - **Over-take detection** — `scripts/find-live-event-overtakes.ts` and its
   investigation doc; analysis only.
+- **Zero-cost-merge re-pricing** — priced receipts landing on uncosted on-hand
+  adopt the incoming cost instead of diluting toward ¥0 (see the dedicated
+  section). Corrects two displayed costs to ¥65; no valuation change.
 
 ## Review notes
 
@@ -186,5 +225,9 @@ Worth a reviewer's eye:
   key migration). Only **1** item's final on-hand average cost moves
   (`4542804109153Green`, 65 -> 0), but **5** items' within-ledger received cost
   basis moves (the Amifa Order 2 family) — see Average cost changes.
+- Three `idToItem.cost` fields change: `4542804080872` Blue and Red rise to ¥65
+  from the zero-cost-merge re-pricing (correcting a ¥0-lot dilution), and
+  `4542804109153Red` is a `64.999.. -> 65` rounding tidy-up. None move inventory
+  value (all are depleted / on-hand 0).
 - The Amifa Order 2 stock-order cost exceptions remain the one open stock-order
   review item carried over from the Jun 14 report.
