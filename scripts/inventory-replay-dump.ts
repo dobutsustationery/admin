@@ -10,6 +10,11 @@
 
 import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
+import {
+  valueAt,
+  effectiveLedgerEntries,
+  type LedgerEntry,
+} from "../src/lib/cost-engine";
 import { performance } from "perf_hooks";
 
 type JsonObject = Record<string, any>;
@@ -210,53 +215,47 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function ledgerSort(a: any, b: any): number {
-  return (
-    asNumber(a?.at) - asNumber(b?.at) ||
-    asNumber(a?.seq) - asNumber(b?.seq) ||
-    String(a?.id || "").localeCompare(String(b?.id || ""))
-  );
+function round4(value: number): number {
+  return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
+// Authoritative valuation via the cost engine (perpetual weighted-average with
+// archive carry) — the same walk the app uses for item cost and inventory
+// value. Returns on-hand, value, and average cost in both currencies.
 function materializeLedger(entries: any[] = []) {
-  const lots: Array<{ qty: number; unitCostJpy: number; unitCostEur: number }> =
-    [];
-
-  for (const entry of [...entries].sort(ledgerSort)) {
-    if (entry?.ignored) continue;
-
-    if (entry?.kind === "receipt") {
-      lots.push({
-        qty: asNumber(entry.qty),
-        unitCostJpy: asNumber(entry.unitCostJpy),
-        unitCostEur: asNumber(entry.unitCostEur),
-      });
-    } else if (entry?.kind === "sale") {
-      let remaining = asNumber(entry.qty);
-      for (const lot of lots) {
-        if (remaining <= 0) break;
-        const take = Math.min(lot.qty, remaining);
-        lot.qty = roundQty(lot.qty - take);
-        remaining = roundQty(remaining - take);
-      }
-    }
-  }
-
-  const qty = lots.reduce((sum, lot) => sum + asNumber(lot.qty), 0);
-  const valueJpy = lots.reduce(
-    (sum, lot) => sum + asNumber(lot.qty) * asNumber(lot.unitCostJpy),
-    0,
-  );
-  const valueEur = lots.reduce(
-    (sum, lot) => sum + asNumber(lot.qty) * asNumber(lot.unitCostEur),
-    0,
-  );
-
+  const v = valueAt(entries as LedgerEntry[]);
   return {
-    openQty: roundQty(qty),
-    valueJpy: roundMoney(valueJpy),
-    valueEur: Math.round((valueEur + Number.EPSILON) * 10000) / 10000,
-    avgJpy: qty ? roundMoney(valueJpy / qty) : 0,
+    openQty: roundQty(v.onHand),
+    valueJpy: roundMoney(v.valueJpy),
+    valueEur: round4(v.valueEur),
+    avgJpy: roundMoney(v.avgJpy),
+    avgEur: round4(v.avgEur),
+  };
+}
+
+// Cost basis of everything received into the ledger (the within-ledger average
+// cost), independent of what is currently on hand. Walks the effective entries
+// (qty corrections applied, adjustment rows folded in) and weights each priced
+// receipt lot by its quantity. Catches per-lot unit-cost changes (e.g. a
+// recount lot going ¥0 -> ¥65) that the final on-hand average can mask when the
+// open position happens to blend to the same number.
+function receiptBasis(entries: any[] = []) {
+  let qty = 0;
+  let valueJpy = 0;
+  let valueEur = 0;
+  for (const e of effectiveLedgerEntries(entries as LedgerEntry[])) {
+    if (e.kind !== "receipt" || e.ignored) continue;
+    const q = asNumber(e.qty);
+    if (q <= 0) continue;
+    qty += q;
+    valueJpy += q * asNumber(e.unitCostJpy);
+    valueEur += q * asNumber(e.unitCostEur);
+  }
+  return {
+    recvQty: roundQty(qty),
+    recvValueJpy: roundMoney(valueJpy),
+    avgRecvJpy: qty ? roundMoney(valueJpy / qty) : 0,
+    avgRecvEur: qty ? round4(valueEur / qty) : 0,
   };
 }
 
@@ -265,7 +264,8 @@ function materializedLedgerChanged(before: any, after: any): boolean {
     before.openQty !== after.openQty ||
     before.valueJpy !== after.valueJpy ||
     before.valueEur !== after.valueEur ||
-    before.avgJpy !== after.avgJpy
+    before.avgJpy !== after.avgJpy ||
+    before.avgEur !== after.avgEur
   );
 }
 
@@ -500,6 +500,32 @@ function diff(args: string[]) {
   let ledgerAddedEntries = 0;
   let ledgerRemovedEntries = 0;
   let ledgerMaterializedChanged = 0;
+  const avgChanged: Array<{
+    key: string;
+    beforeOpen: ReturnType<typeof materializeLedger>;
+    afterOpen: ReturnType<typeof materializeLedger>;
+  }> = [];
+  const basisChanged: Array<{
+    key: string;
+    before: ReturnType<typeof receiptBasis>;
+    after: ReturnType<typeof receiptBasis>;
+  }> = [];
+  // Total inventory value across every cost-ledger key (incl. added/removed),
+  // valued with the authoritative cost engine on each side's stored ledger.
+  let beforeValueJpy = 0;
+  let beforeValueEur = 0;
+  let afterValueJpy = 0;
+  let afterValueEur = 0;
+  for (const entries of Object.values(beforeLedger)) {
+    const v = materializeLedger((entries as any[]) || []);
+    beforeValueJpy += v.valueJpy;
+    beforeValueEur += v.valueEur;
+  }
+  for (const entries of Object.values(afterLedger)) {
+    const v = materializeLedger((entries as any[]) || []);
+    afterValueJpy += v.valueJpy;
+    afterValueEur += v.valueEur;
+  }
 
   for (const key of [...ledgerKeys].sort()) {
     if (beforeLedger[key] === undefined) {
@@ -522,6 +548,20 @@ function diff(args: string[]) {
     const afterOpen = materializeLedger(afterLedger[key] || []);
     const openChanged = materializedLedgerChanged(beforeOpen, afterOpen);
     if (openChanged) ledgerMaterializedChanged++;
+    if (
+      beforeOpen.avgJpy !== afterOpen.avgJpy ||
+      beforeOpen.avgEur !== afterOpen.avgEur
+    ) {
+      avgChanged.push({ key, beforeOpen, afterOpen });
+    }
+    const beforeBasis = receiptBasis(beforeLedger[key] || []);
+    const afterBasis = receiptBasis(afterLedger[key] || []);
+    if (
+      beforeBasis.avgRecvJpy !== afterBasis.avgRecvJpy ||
+      beforeBasis.avgRecvEur !== afterBasis.avgRecvEur
+    ) {
+      basisChanged.push({ key, before: beforeBasis, after: afterBasis });
+    }
     if (delta.added.length || delta.removed.length || openChanged) {
       ledgerAddedEntries += delta.added.length;
       ledgerRemovedEntries += delta.removed.length;
@@ -563,6 +603,82 @@ function diff(args: string[]) {
     }
     if (ledgerChanged.length > 100) {
       push(`| ... | ${ledgerChanged.length - 100} more | | | |`);
+    }
+    push("");
+  }
+
+  push("## Inventory Value");
+  const valueJpyDelta = roundMoney(afterValueJpy - beforeValueJpy);
+  const valueEurDelta = round4(afterValueEur - beforeValueEur);
+  push("Total on-hand inventory value (cost engine, all items):");
+  push("");
+  push("| Currency | Before | After | Delta |");
+  push("|---|---:|---:|---:|");
+  push(
+    `| JPY | ${roundMoney(beforeValueJpy)} | ${roundMoney(afterValueJpy)} | ${valueJpyDelta} |`,
+  );
+  push(
+    `| EUR | ${round4(beforeValueEur)} | ${round4(afterValueEur)} | ${valueEurDelta} |`,
+  );
+  push("");
+
+  push("## Average Cost Changes");
+  push(
+    `Items whose weighted-average cost changed: ${avgChanged.length} (key present in both; added/removed keys are listed under cost ledger).`,
+  );
+  push("");
+  if (avgChanged.length > 0) {
+    avgChanged.sort(
+      (a, b) =>
+        Math.abs(b.afterOpen.avgJpy - b.beforeOpen.avgJpy) -
+          Math.abs(a.afterOpen.avgJpy - a.beforeOpen.avgJpy) ||
+        a.key.localeCompare(b.key),
+    );
+    push(
+      "| Key | On hand before -> after | Avg JPY before -> after | Avg EUR before -> after |",
+    );
+    push("|---|---:|---:|---:|");
+    const LIMIT = 300;
+    for (const row of avgChanged.slice(0, LIMIT)) {
+      const item = afterItems[row.key] || beforeItems[row.key] || {};
+      push(
+        `| \`${itemLabel(row.key, item)}\` | ${row.beforeOpen.openQty} -> ${row.afterOpen.openQty} | ${row.beforeOpen.avgJpy} -> ${row.afterOpen.avgJpy} | ${row.beforeOpen.avgEur} -> ${row.afterOpen.avgEur} |`,
+      );
+    }
+    if (avgChanged.length > LIMIT) {
+      push(`| ... | ${avgChanged.length - LIMIT} more | | |`);
+    }
+    push("");
+  }
+
+  push("## Received Cost-Basis Changes");
+  push(
+    `Items whose weighted-average cost of received lots changed: ${basisChanged.length}. ` +
+      `This is the within-ledger cost basis (all priced receipts, qty-weighted), ` +
+      `independent of the current on-hand position — it catches per-lot unit-cost ` +
+      `changes (e.g. a recount lot going ¥0 -> ¥65) that the open average can mask.`,
+  );
+  push("");
+  if (basisChanged.length > 0) {
+    basisChanged.sort(
+      (a, b) =>
+        Math.abs(b.after.avgRecvJpy - b.before.avgRecvJpy) -
+          Math.abs(a.after.avgRecvJpy - a.before.avgRecvJpy) ||
+        a.key.localeCompare(b.key),
+    );
+    push(
+      "| Key | Recv qty before -> after | Avg recv JPY before -> after | Avg recv EUR before -> after |",
+    );
+    push("|---|---:|---:|---:|");
+    const BASIS_LIMIT = 300;
+    for (const row of basisChanged.slice(0, BASIS_LIMIT)) {
+      const item = afterItems[row.key] || beforeItems[row.key] || {};
+      push(
+        `| \`${itemLabel(row.key, item)}\` | ${row.before.recvQty} -> ${row.after.recvQty} | ${row.before.avgRecvJpy} -> ${row.after.avgRecvJpy} | ${row.before.avgRecvEur} -> ${row.after.avgRecvEur} |`,
+      );
+    }
+    if (basisChanged.length > BASIS_LIMIT) {
+      push(`| ... | ${basisChanged.length - BASIS_LIMIT} more | | |`);
     }
     push("");
   }
