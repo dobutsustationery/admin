@@ -14,7 +14,9 @@
   import {
     walkLedger,
     archiveSweepDivergences,
+    zeroCostBlendWarnings,
     type ArchiveSweepDivergence,
+    type ZeroCostBlend,
     type LedgerEntry,
   } from "$lib/cost-engine";
 
@@ -61,6 +63,11 @@
         Boolean(d.id),
       )
       .map((d) => [d.id, d]),
+  );
+  $: zeroCostBlendById = new Map<string, ZeroCostBlend>(
+    zeroCostBlendWarnings(selectedLedger)
+      .filter((b): b is ZeroCostBlend & { id: string } => Boolean(b.id))
+      .map((b) => [b.id, b]),
   );
   $: current = walkLedger(selectedLedger);
   $: unignored = walkLedger(
@@ -264,6 +271,16 @@
         )}); swept qty changed by a later audit action`,
       );
     }
+    const zeroBlend = zeroCostBlendFor(entry);
+    if (zeroBlend) {
+      notes.push(
+        `zero-cost blend: ${fmtQty(zeroBlend.existingQty)} @ ${fmtYen(
+          zeroBlend.existingAvgJpy,
+        )} averaged with ${fmtQty(zeroBlend.receiptQty)} @ ${fmtYen(
+          zeroBlend.receiptUnitJpy,
+        )} — a ¥0 lot dilutes the cost basis`,
+      );
+    }
     return notes.length ? notes.join("; ") : "-";
   }
 
@@ -271,6 +288,10 @@
     entry: LedgerEntry,
   ): ArchiveSweepDivergence | undefined {
     return entry.id ? archiveDivergenceById.get(entry.id) : undefined;
+  }
+
+  function zeroCostBlendFor(entry: LedgerEntry): ZeroCostBlend | undefined {
+    return entry.id ? zeroCostBlendById.get(entry.id) : undefined;
   }
 </script>
 
@@ -365,7 +386,8 @@
           <tr
             class:ignored={row.entry.ignored}
             class:audit-warning={row.entry.auditSeverity === "warning" ||
-              Boolean(archiveDivergenceFor(row.entry))}
+              Boolean(archiveDivergenceFor(row.entry)) ||
+              Boolean(zeroCostBlendFor(row.entry))}
             class:audit-danger={row.entry.auditSeverity === "danger"}
           >
             <td>

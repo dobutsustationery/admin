@@ -6,6 +6,7 @@ import {
   archiveSweepDivergences,
   ledgerOversold,
   orderIdFromSaleId,
+  zeroCostBlendWarnings,
   UNKNOWN_RECEIPT_DATE,
   lotMatchesOrder,
   type LedgerEntry,
@@ -459,5 +460,54 @@ describe("ledgerOversold", () => {
     expect(
       orderIdFromSaleId("ledger:sale:KEY:abc:archive_inventory:KEY:1:2"),
     ).toBe(undefined);
+  });
+});
+
+describe("zeroCostBlendWarnings", () => {
+  const sa = (at: number, qty: number, seq = 0): LedgerEntry => ({
+    kind: "sale",
+    at,
+    seq,
+    qty,
+    isArchive: true,
+  });
+
+  it("warns when a ¥0 receipt blends into priced on-hand", () => {
+    const w = zeroCostBlendWarnings([r(1, 10, 100, 1), r(2, 5, 0, 0, 1)]);
+    expect(w.length).toBe(1);
+    expect(w[0]).toMatchObject({
+      existingQty: 10,
+      existingAvgJpy: 100,
+      receiptQty: 5,
+      receiptUnitJpy: 0,
+    });
+  });
+
+  it("warns when a priced receipt blends into ¥0 on-hand", () => {
+    const w = zeroCostBlendWarnings([r(1, 5, 0, 0), r(2, 10, 100, 1, 1)]);
+    expect(w.length).toBe(1);
+    expect(w[0]).toMatchObject({ existingAvgJpy: 0, receiptUnitJpy: 100 });
+  });
+
+  it("does not warn when both lots are priced", () => {
+    expect(
+      zeroCostBlendWarnings([r(1, 10, 100, 1), r(2, 5, 80, 0.5, 1)]),
+    ).toEqual([]);
+  });
+
+  it("does not warn on the first receipt establishing the basis (no blend)", () => {
+    expect(zeroCostBlendWarnings([r(1, 5, 0, 0)])).toEqual([]);
+    expect(zeroCostBlendWarnings([r(1, 5, 100, 1)])).toEqual([]);
+  });
+
+  it("does not warn for a carry-rescued post-archive recount", () => {
+    // ¥0 recount after an archive inherits the pre-archive average via carry,
+    // and on-hand is 0 at that point, so it establishes a basis, not a blend.
+    const w = zeroCostBlendWarnings([
+      r(1, 2, 282, 1.835),
+      sa(2, 2, 1),
+      recount(3, 10, 0, 0, 2),
+    ]);
+    expect(w).toEqual([]);
   });
 });
