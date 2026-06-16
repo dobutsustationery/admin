@@ -399,6 +399,7 @@ function applyArchiveSweepQuantities(result: LedgerEntry[]): void {
 export function walkLedger(
   entries: readonly LedgerEntry[],
   asOf: number = Number.POSITIVE_INFINITY,
+  blendWarnings?: ZeroCostBlend[],
 ): CostState {
   const ledger = sortLedger(effectiveLedgerEntries(entries));
   let onHand = 0;
@@ -434,6 +435,26 @@ export function walkLedger(
         // Degenerate (e.g. zero/negative qty): nothing to blend.
         onHand = next > 0 ? next : 0;
         continue;
+      }
+      // Warn when a new average blends a ¥0 lot with a priced one (one side
+      // costed, the other not) — uncosted goods dilute (or are diluted into) a
+      // real cost. Establishing the basis on the first receipt (onHand 0) is
+      // not a blend and never warns.
+      if (
+        blendWarnings &&
+        onHand > 0 &&
+        receiptQty > 0 &&
+        avgJpy > 1e-9 !== unitCostJpy > 1e-9
+      ) {
+        blendWarnings.push({
+          id: e.id,
+          at: e.at,
+          seq: e.seq,
+          existingQty: onHand,
+          existingAvgJpy: avgJpy,
+          receiptQty,
+          receiptUnitJpy: unitCostJpy,
+        });
       }
       avgJpy = (onHand * avgJpy + receiptQty * unitCostJpy) / next;
       avgEur = (onHand * avgEur + receiptQty * unitCostEur) / next;
@@ -541,6 +562,32 @@ export interface LedgerOversold {
   oversoldQty: number;
   firstNegativeAt: number;
   offendingOrders: string[];
+}
+
+export interface ZeroCostBlend {
+  id?: string;
+  at: number;
+  seq: number;
+  existingQty: number;
+  existingAvgJpy: number;
+  receiptQty: number;
+  receiptUnitJpy: number;
+}
+
+/**
+ * Every point where the running average is recomputed by blending a ¥0 lot with
+ * a priced one — i.e. a receipt with no cost averaged into priced on-hand, or a
+ * priced receipt averaged into uncosted on-hand. These dilute the cost basis
+ * with zero-cost goods and are surfaced as cost-ledger warnings. Carry-rescued
+ * recounts (a ¥0 stocktake receipt that inherits the pre-archive average) are
+ * already priced by the time they blend and so do not warn.
+ */
+export function zeroCostBlendWarnings(
+  entries: readonly LedgerEntry[],
+): ZeroCostBlend[] {
+  const out: ZeroCostBlend[] = [];
+  walkLedger(entries, Number.POSITIVE_INFINITY, out);
+  return out;
 }
 
 /**

@@ -12,7 +12,9 @@
   import {
     walkLedger,
     archiveSweepDivergences,
+    zeroCostBlendWarnings,
     type ArchiveSweepDivergence,
+    type ZeroCostBlend,
     type LedgerEntry,
   } from "$lib/cost-engine";
 
@@ -39,6 +41,11 @@
         Boolean(d.id),
       )
       .map((d) => [d.id, d]),
+  );
+  $: zeroCostBlendById = new Map<string, ZeroCostBlend>(
+    zeroCostBlendWarnings(currentLedger)
+      .filter((b): b is ZeroCostBlend & { id: string } => Boolean(b.id))
+      .map((b) => [b.id, b]),
   );
   $: janMatches = findJanMatches(normalizedItemKey);
   $: subtypeMatches = currentItem ? [] : janMatches;
@@ -133,6 +140,10 @@
     entry: LedgerEntry,
   ): ArchiveSweepDivergence | undefined {
     return entry.id ? archiveDivergenceById.get(entry.id) : undefined;
+  }
+
+  function zeroCostBlendFor(entry: LedgerEntry): ZeroCostBlend | undefined {
+    return entry.id ? zeroCostBlendById.get(entry.id) : undefined;
   }
 
   function ledgerSource(entry: LedgerEntry): string {
@@ -312,10 +323,12 @@
           <tbody>
             {#each ledgerRows as row}
               {@const divergence = archiveDivergenceFor(row.entry)}
+              {@const zeroBlend = zeroCostBlendFor(row.entry)}
               <tr
                 class:ignored={row.entry.ignored}
                 class:audit-warning={row.entry.auditSeverity === "warning" ||
-                  Boolean(divergence)}
+                  Boolean(divergence) ||
+                  Boolean(zeroBlend)}
                 class:audit-danger={row.entry.auditSeverity === "danger"}
               >
                 <td class="date-col">{fmtDate(row.entry.at)}</td>
@@ -343,6 +356,16 @@
                         divergence.recordedQty,
                       )} recorded at archive time. The swept quantity changed because
                       of a later audit action.
+                    </div>
+                  {/if}
+                  {#if zeroBlend}
+                    <div class="audit-note">
+                      Zero-cost blend: {fmtQty(zeroBlend.existingQty)} unit(s) @ {fmtYen(
+                        zeroBlend.existingAvgJpy,
+                      )} averaged with {fmtQty(zeroBlend.receiptQty)} @ {fmtYen(
+                        zeroBlend.receiptUnitJpy,
+                      )} — a ¥0 lot dilutes the cost basis. Set a cost for the uncosted
+                      lot.
                     </div>
                   {/if}
                 </td>
