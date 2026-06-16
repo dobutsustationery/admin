@@ -9,6 +9,7 @@
     ledgerOversold,
     lotMatchesOrder,
     walkLedger,
+    zeroCostBlendWarnings,
     type LedgerEntry,
     type ReceiptEntry,
   } from "$lib/cost-engine";
@@ -118,6 +119,20 @@
     offendingOrders: string[];
   };
 
+  type ZeroCostMergeRow = {
+    key: string;
+    jan: string;
+    subtype: string;
+    description: string;
+    image: string;
+    itemQty: number;
+    shipped: number;
+    mergeCount: number;
+    uncostedOnHandCount: number;
+    zeroIncomingCount: number;
+    firstMergeAt: number;
+  };
+
   type StockOrderValueSummaryRow = {
     orderId: string;
     orderName: string;
@@ -145,6 +160,7 @@
     active: false,
     historical: false,
   };
+  let showZeroCostMerge = false;
   let showStockOrderIssues: Record<string, boolean> = {};
   let copyMsg = "";
   let remediationStatus = "";
@@ -581,9 +597,47 @@
     );
   }
 
+  function buildZeroCostMergeRows(
+    inventory: InventoryState,
+  ): ZeroCostMergeRow[] {
+    const idToItem = inventory.idToItem || {};
+    const costLedger = inventory.costLedger || {};
+    const rows: ZeroCostMergeRow[] = [];
+    for (const [key, ledger] of Object.entries(costLedger)) {
+      const warnings = zeroCostBlendWarnings(ledger);
+      if (warnings.length === 0) continue;
+      const item = idToItem[key];
+      rows.push({
+        key,
+        jan: item?.janCode || key,
+        subtype: item?.subtype || "",
+        description: item?.description || "",
+        image: item?.image || "",
+        itemQty: Number(item?.qty) || 0,
+        shipped: Number(item?.shipped) || 0,
+        mergeCount: warnings.length,
+        uncostedOnHandCount: warnings.filter(
+          (w) => w.kind === "uncosted-onhand",
+        ).length,
+        zeroIncomingCount: warnings.filter((w) => w.kind === "zero-incoming")
+          .length,
+        firstMergeAt: Math.min(...warnings.map((w) => w.at)),
+      });
+    }
+    // "Diluted (review)" cases first — those should never happen — then by how
+    // many merge points the item has.
+    return rows.sort(
+      (a, b) =>
+        b.zeroIncomingCount - a.zeroIncomingCount ||
+        b.mergeCount - a.mergeCount ||
+        a.key.localeCompare(b.key),
+    );
+  }
+
   $: rows = buildRows($store.inventory);
   $: auditRows = buildAuditRows($store.inventory);
   $: oversoldRows = buildOversoldRows($store.inventory);
+  $: zeroCostMergeRows = buildZeroCostMergeRows($store.inventory);
   $: stockOrderMatchIssueRows = buildStockOrderMatchIssueRows($store.inventory);
   $: stockOrderValueSummaryRows = buildStockOrderValueSummaryRows(
     $store.inventory,
@@ -633,6 +687,15 @@
       row.offendingOrders.some((o) => o.toLowerCase().includes(query))
     );
   }
+  $: filteredZeroCostMergeRows = zeroCostMergeRows.filter((row) => {
+    if (!query) return true;
+    return (
+      row.key.toLowerCase().includes(query) ||
+      row.jan.includes(query) ||
+      row.description.toLowerCase().includes(query) ||
+      row.subtype.toLowerCase().includes(query)
+    );
+  });
   // Split oversold by whether any stock count remains on the item now.
   // "active" (on-hand 0 / qty N): N units shipped beyond what was received — a
   // live discrepancy to solve. "historical" (0 / 0): the item is fully gone and
@@ -1593,6 +1656,82 @@
           {/each}
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <h3>Zero Cost Merge</h3>
+  <p class="hint">
+    Items where the perpetual-average walk hit a ¥0 lot meeting a priced one.
+    <strong>Adopted price</strong>: uncosted on-hand stock took on a later
+    receipt's cost instead of diluting the basis toward ¥0 (no averaging).
+    <strong>Diluted (review)</strong>: an uncosted receipt was averaged into
+    priced stock — that should never happen and means a receipt is missing its
+    cost.
+  </p>
+  <div class="table-section">
+    <div class="table-summary">
+      <div>
+        <strong>Zero Cost Merge</strong>
+        <span>{zeroCostMergeRows.length} item(s)</span>
+      </div>
+      <label class="chk">
+        <input type="checkbox" bind:checked={showZeroCostMerge} />
+        Show
+      </label>
+    </div>
+
+    <div class:hidden={!showZeroCostMerge}>
+      {#if filteredZeroCostMergeRows.length > 0}
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Merge points</th>
+              <th>Adopted price</th>
+              <th>Diluted (review)</th>
+              <th>On hand / qty</th>
+              <th>First merge</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each filteredZeroCostMergeRows as row (row.key)}
+              <tr class:audit-danger={row.zeroIncomingCount > 0}>
+                <td>
+                  <div class="item-cell">
+                    {#if row.image}
+                      <ImageThumbnail
+                        src={row.image}
+                        alt={row.description}
+                        width="32px"
+                        height="32px"
+                      />
+                    {/if}
+                    <div>
+                      <a
+                        href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}
+                      >
+                        {row.jan}{row.subtype ? ` / ${row.subtype}` : ""}
+                      </a>
+                      <div class="hint">{row.description}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>{row.mergeCount}</td>
+                <td>{row.uncostedOnHandCount}</td>
+                <td>
+                  {row.zeroIncomingCount > 0 ? row.zeroIncomingCount : "-"}
+                </td>
+                <td>
+                  {Math.max(0, row.itemQty - row.shipped)} / {row.itemQty}
+                </td>
+                <td>{fmtDate(row.firstMergeAt)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="hint">No items match the filters.</p>
+      {/if}
     </div>
   </div>
 

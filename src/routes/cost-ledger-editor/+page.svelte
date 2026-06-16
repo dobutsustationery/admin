@@ -272,13 +272,19 @@
       );
     }
     const zeroBlend = zeroCostBlendFor(entry);
-    if (zeroBlend) {
+    if (zeroBlend?.kind === "uncosted-onhand") {
       notes.push(
-        `zero-cost blend: ${fmtQty(zeroBlend.existingQty)} @ ${fmtYen(
+        `blended with uncosted stock without averaging: ${fmtQty(
+          zeroBlend.existingQty,
+        )} uncosted unit(s) adopt ${fmtYen(zeroBlend.receiptUnitJpy)}`,
+      );
+    } else if (zeroBlend) {
+      notes.push(
+        `incoming stock costed at ¥0 blended? ${fmtQty(
+          zeroBlend.receiptQty,
+        )} uncosted into ${fmtQty(zeroBlend.existingQty)} @ ${fmtYen(
           zeroBlend.existingAvgJpy,
-        )} averaged with ${fmtQty(zeroBlend.receiptQty)} @ ${fmtYen(
-          zeroBlend.receiptUnitJpy,
-        )} — a ¥0 lot dilutes the cost basis`,
+        )} — should not happen`,
       );
     }
     return notes.length ? notes.join("; ") : "-";
