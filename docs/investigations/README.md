@@ -14,3 +14,4 @@ Records of technical investigations.
 - [Design: Received Inventory + weighted moving-average cost](./DESIGN_RECEIVED_INVENTORY_AND_MOVING_AVERAGE_COST.md)
 - [Archive sale sweep is re-derived from the current ledger](./ARCHIVE_SWEEP_REDERIVE.md)
 - [Live-event over-takes: taking more to a show than remained after the last one](./LIVE_EVENT_OVERTAKES.md)
+- [Branch impact (Jun 15 2026): `analysis/jun-04-broadcast-cleanup` vs `main`](./BRANCH_IMPACT_JUN_15_2026.md)
