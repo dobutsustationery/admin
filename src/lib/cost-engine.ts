@@ -436,28 +436,51 @@ export function walkLedger(
         onHand = next > 0 ? next : 0;
         continue;
       }
-      // Warn when a new average blends a ¥0 lot with a priced one (one side
-      // costed, the other not) — uncosted goods dilute (or are diluted into) a
-      // real cost. Establishing the basis on the first receipt (onHand 0) is
-      // not a blend and never warns.
-      if (
-        blendWarnings &&
-        onHand > 0 &&
-        receiptQty > 0 &&
-        avgJpy > 1e-9 !== unitCostJpy > 1e-9
-      ) {
-        blendWarnings.push({
-          id: e.id,
-          at: e.at,
-          seq: e.seq,
-          existingQty: onHand,
-          existingAvgJpy: avgJpy,
-          receiptQty,
-          receiptUnitJpy: unitCostJpy,
-        });
+      // A ¥0 lot meeting a priced one: one side is costed and the other is not.
+      // Establishing the basis on the first receipt (onHand 0) is not a blend.
+      const existingPriced = avgJpy > 1e-9;
+      const incomingPriced = unitCostJpy > 1e-9;
+      const zeroBoundary =
+        onHand > 0 && receiptQty > 0 && existingPriced !== incomingPriced;
+      if (zeroBoundary && !existingPriced) {
+        // Priced receipt landing on uncosted on-hand. Treat the now-known cost
+        // as the basis for the whole position (the uncosted goods are the same
+        // item) instead of diluting it toward ¥0 — re-price, do not average.
+        if (blendWarnings) {
+          blendWarnings.push({
+            id: e.id,
+            at: e.at,
+            seq: e.seq,
+            existingQty: onHand,
+            existingAvgJpy: avgJpy,
+            receiptQty,
+            receiptUnitJpy: unitCostJpy,
+            kind: "uncosted-onhand",
+          });
+        }
+        for (const lot of lots) {
+          if (!(lot.jpy > 1e-9)) lot.jpy = unitCostJpy;
+          if (!(lot.eur > 1e-9)) lot.eur = unitCostEur;
+        }
+        avgJpy = unitCostJpy;
+        avgEur = unitCostEur;
+      } else {
+        if (zeroBoundary && blendWarnings) {
+          // Uncosted receipt diluting priced on-hand — should never happen.
+          blendWarnings.push({
+            id: e.id,
+            at: e.at,
+            seq: e.seq,
+            existingQty: onHand,
+            existingAvgJpy: avgJpy,
+            receiptQty,
+            receiptUnitJpy: unitCostJpy,
+            kind: "zero-incoming",
+          });
+        }
+        avgJpy = (onHand * avgJpy + receiptQty * unitCostJpy) / next;
+        avgEur = (onHand * avgEur + receiptQty * unitCostEur) / next;
       }
-      avgJpy = (onHand * avgJpy + receiptQty * unitCostJpy) / next;
-      avgEur = (onHand * avgEur + receiptQty * unitCostEur) / next;
       onHand = next;
       if (receiptQty > 0) {
         lots.push({
@@ -572,15 +595,24 @@ export interface ZeroCostBlend {
   existingAvgJpy: number;
   receiptQty: number;
   receiptUnitJpy: number;
+  /**
+   * `uncosted-onhand`: a priced receipt met uncosted (¥0) on-hand. Rather than
+   * diluting toward ¥0, the on-hand adopts the incoming price (no averaging).
+   * `zero-incoming`: an uncosted (¥0) receipt was averaged into priced on-hand,
+   * diluting the cost basis. This should never happen and indicates a missing
+   * receipt cost.
+   */
+  kind: "uncosted-onhand" | "zero-incoming";
 }
 
 /**
- * Every point where the running average is recomputed by blending a ¥0 lot with
- * a priced one — i.e. a receipt with no cost averaged into priced on-hand, or a
- * priced receipt averaged into uncosted on-hand. These dilute the cost basis
- * with zero-cost goods and are surfaced as cost-ledger warnings. Carry-rescued
- * recounts (a ¥0 stocktake receipt that inherits the pre-archive average) are
- * already priced by the time they blend and so do not warn.
+ * Every point where a ¥0 lot meets a priced one in the perpetual-average walk —
+ * either a priced receipt landing on uncosted on-hand (`uncosted-onhand`, which
+ * adopts the incoming price instead of averaging) or an uncosted receipt being
+ * averaged into priced on-hand (`zero-incoming`, which dilutes the basis and
+ * should never occur). Carry-rescued recounts (a ¥0 stocktake receipt that
+ * inherits the pre-archive average) are already priced by the time they blend
+ * and so do not warn.
  */
 export function zeroCostBlendWarnings(
   entries: readonly LedgerEntry[],

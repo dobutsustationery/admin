@@ -472,21 +472,35 @@ describe("zeroCostBlendWarnings", () => {
     isArchive: true,
   });
 
-  it("warns when a ¥0 receipt blends into priced on-hand", () => {
-    const w = zeroCostBlendWarnings([r(1, 10, 100, 1), r(2, 5, 0, 0, 1)]);
+  it("flags a ¥0 receipt diluting priced on-hand as zero-incoming (still blends)", () => {
+    const entries = [r(1, 10, 100, 1), r(2, 5, 0, 0, 1)];
+    const w = zeroCostBlendWarnings(entries);
     expect(w.length).toBe(1);
     expect(w[0]).toMatchObject({
       existingQty: 10,
       existingAvgJpy: 100,
       receiptQty: 5,
       receiptUnitJpy: 0,
+      kind: "zero-incoming",
     });
+    // This case should never happen, but if it does we keep the old dilution.
+    expect(walkLedger(entries).avgJpy).toBeCloseTo((10 * 100) / 15);
   });
 
-  it("warns when a priced receipt blends into ¥0 on-hand", () => {
-    const w = zeroCostBlendWarnings([r(1, 5, 0, 0), r(2, 10, 100, 1, 1)]);
+  it("re-prices uncosted on-hand to a priced receipt without averaging", () => {
+    const entries = [r(1, 5, 0, 0), r(2, 10, 100, 1, 1)];
+    const w = zeroCostBlendWarnings(entries);
     expect(w.length).toBe(1);
-    expect(w[0]).toMatchObject({ existingAvgJpy: 0, receiptUnitJpy: 100 });
+    expect(w[0]).toMatchObject({
+      existingAvgJpy: 0,
+      receiptUnitJpy: 100,
+      kind: "uncosted-onhand",
+    });
+    // All 15 units adopt the incoming ¥100 cost, not the diluted ¥66.67.
+    const state = walkLedger(entries);
+    expect(state.onHand).toBe(15);
+    expect(state.avgJpy).toBe(100);
+    expect(state.avgEur).toBe(1);
   });
 
   it("does not warn when both lots are priced", () => {

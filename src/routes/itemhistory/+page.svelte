@@ -358,14 +358,22 @@
                       of a later audit action.
                     </div>
                   {/if}
-                  {#if zeroBlend}
+                  {#if zeroBlend && zeroBlend.kind === "uncosted-onhand"}
                     <div class="audit-note">
-                      Zero-cost blend: {fmtQty(zeroBlend.existingQty)} unit(s) @ {fmtYen(
-                        zeroBlend.existingAvgJpy,
-                      )} averaged with {fmtQty(zeroBlend.receiptQty)} @ {fmtYen(
+                      Blended with uncosted stock without averaging: {fmtQty(
+                        zeroBlend.existingQty,
+                      )} uncosted unit(s) on hand adopt this receipt's {fmtYen(
                         zeroBlend.receiptUnitJpy,
-                      )} — a ¥0 lot dilutes the cost basis. Set a cost for the uncosted
-                      lot.
+                      )} cost instead of diluting toward ¥0.
+                    </div>
+                  {:else if zeroBlend}
+                    <div class="audit-note">
+                      Incoming stock costed at ¥0 blended? {fmtQty(
+                        zeroBlend.receiptQty,
+                      )} uncosted unit(s) averaged into {fmtQty(
+                        zeroBlend.existingQty,
+                      )} @ {fmtYen(zeroBlend.existingAvgJpy)} — this dilutes the cost
+                      basis and should not happen. Set a cost for the receipt.
                     </div>
                   {/if}
                 </td>
