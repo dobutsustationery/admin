@@ -15,3 +15,5 @@ Records of technical investigations.
 - [Archive sale sweep is re-derived from the current ledger](./ARCHIVE_SWEEP_REDERIVE.md)
 - [Live-event over-takes: taking more to a show than remained after the last one](./LIVE_EVENT_OVERTAKES.md)
 - [Branch impact (Jun 15 2026): `analysis/jun-04-broadcast-cleanup` vs `main`](./BRANCH_IMPACT_JUN_15_2026.md)
+- [Inventory-value timeline: staging (`a402baa`) vs `55a6c84`, date-by-date](./INVENTORY_VALUE_DELTA_VS_55A6C84.md)
+- [Inventory-value timeline: `main` vs `55a6c84` (early Shopify-listing commits only)](./INVENTORY_VALUE_DELTA_MAIN_VS_55A6C84.md)
