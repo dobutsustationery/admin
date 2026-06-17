@@ -1931,7 +1931,8 @@ function increaseNewestReceiptToMatchVisibleQty(
     Math.max(0, visible) - walkLedgerForVisibleQty(ledger).onHand;
   if (increase <= 0) return null;
 
-  const receiptLot = openReceiptLotsForLedger(ledger).at(-1);
+  const openLots = openReceiptLotsForLedger(ledger);
+  const receiptLot = openLots.at(-1);
   const receiptIndex = receiptLot?.index;
   let appendedReceipt = false;
   const affectedOrderIds = new Set<string>();
@@ -1980,6 +1981,25 @@ function increaseNewestReceiptToMatchVisibleQty(
       !options.preserveReceiptDate &&
       receiptLot &&
       receiptLot.remaining >= effectiveBeforeQty;
+    // A restock landing on a partially-consumed *uncosted* lot would otherwise
+    // grow that lot in place, stranding the new units on the lot's original
+    // (pre-order, creation-time) date where stock-order cost matching can never
+    // see them — leaving residual ¥0 stock and an unmatched order. When the
+    // whole open position is uncosted (running average ¥0, so there is no
+    // priced stock for the moved units to land after and dilute), move the open
+    // remainder forward to the correction date instead, so a stock order can
+    // match and price it. This is a move (remove + re-add), not an append, so
+    // it adds no net stock.
+    const positionIsUncosted = openLots.every(
+      (lot) => !((ledger[lot.index] as ReceiptEntry).unitCostJpy > 0),
+    );
+    const shouldMoveUncostedRemainder =
+      !shouldMoveReceiptDate &&
+      !options.preserveReceiptDate &&
+      !!receiptLot &&
+      receiptLot.remaining > 0 &&
+      positionIsUncosted &&
+      !(receipt.unitCostJpy > 0);
     const baseSeq = Number(receipt.seq ?? receiptIndex);
     const comment = receiptQuantityIncreaseComment(
       increase,
@@ -2013,6 +2033,48 @@ function increaseNewestReceiptToMatchVisibleQty(
         visibleQtyCorrectionEntry(
           receipt,
           effectiveBeforeQty + increase,
+          correctionAt,
+          baseSeq,
+          correctionAt,
+          actionType,
+          options.actionDocId,
+          options.fromVisibleQty,
+          Math.max(0, visible),
+          comment,
+          0,
+          increase,
+          "standalone",
+          target,
+          undefined,
+          receipt.receivedQty,
+        ),
+      );
+    } else if (shouldMoveUncostedRemainder) {
+      const moveQty = receiptLot.remaining;
+      ledger.push(
+        visibleQtyCorrectionEntry(
+          receipt,
+          -moveQty,
+          receipt.at,
+          baseSeq + 0.001,
+          correctionAt,
+          actionType,
+          options.actionDocId,
+          options.fromVisibleQty,
+          Math.max(0, visible),
+          comment,
+          0,
+          increase,
+          "apply-to-target",
+          target,
+          undefined,
+          receipt.receivedQty === undefined ? undefined : -receipt.receivedQty,
+        ),
+      );
+      ledger.push(
+        visibleQtyCorrectionEntry(
+          receipt,
+          moveQty + increase,
           correctionAt,
           baseSeq,
           correctionAt,
