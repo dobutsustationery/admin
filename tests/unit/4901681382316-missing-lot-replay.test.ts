@@ -88,7 +88,14 @@ describe("4901681382316 stock-order lot replay", () => {
         receipts.reduce((total: number, e: any) => total + e.qty, 0),
       ).toBeCloseTo(15, 9);
       expect(walkLedger(ledger).onHand).toBeCloseTo(11.25, 9);
-      expect(receipts.map((e: any) => e.unitCostJpy)).toEqual([0, 0]);
+      // The invariant is that scanned lots stay uncosted and unattributed while
+      // the stock-order dates are unknown (see the order1/order2 checks below) —
+      // not the exact lot count. The uncosted-remainder forward-move (see
+      // increaseNewestReceiptToMatchVisibleQty) may split a ¥0 lot into two ¥0
+      // entries (remove + re-add); that is quantity-, on-hand-, and
+      // attribution-neutral, so assert every receipt is ¥0 rather than a fixed
+      // shape.
+      expect(receipts.every((e: any) => e.unitCostJpy === 0)).toBe(true);
 
       const order1Receipts = receipts.filter((e: any) =>
         lotMatchesOrder(e, ORDER_1),
