@@ -1358,6 +1358,29 @@
 
     const baseline = walkLedger(ledger);
     if (baseline.onHand <= 0) return false;
+    const epsilon = 0.000001;
+
+    // A ¥0 scan whose item already carries a correct nonzero average — because
+    // the zero-cost-merge re-pricing *or* the uncosted-remainder move resolved
+    // its uncosted stock to a real basis — is not diluting; its ¥0-ness is the
+    // trigger for that resolution. The naive "+1" perturbation below would still
+    // flag it (bumping the cost breaks the trigger and swings the average), so
+    // detect the resolved case directly: price the lot *at the current average*
+    // and, if that leaves the average unchanged, the lot is consistent with the
+    // resolved basis and needs no pricing. A genuinely diluting ¥0 lot, priced
+    // at the (depressed) average, instead pulls the average up — so it stays
+    // flagged. Items with no priced basis at all (average ¥0) skip this and fall
+    // through to the perturbation test, which correctly flags them.
+    if (kind === "unpriced-scan" && baseline.avgJpy > 1e-9) {
+      const atAvg = ledger.map((candidate, index) =>
+        index === ledgerIndex
+          ? { ...(candidate as ReceiptEntry), unitCostJpy: baseline.avgJpy }
+          : candidate,
+      );
+      if (Math.abs(walkLedger(atAvg).avgJpy - baseline.avgJpy) <= epsilon) {
+        return false;
+      }
+    }
 
     const adjusted = ledger.map((candidate, index) =>
       index === ledgerIndex ? { ...candidate } : candidate,
@@ -1372,7 +1395,6 @@
     }
 
     const next = walkLedger(adjusted);
-    const epsilon = 0.000001;
     if (kind === "missing-exchange") {
       return Math.abs(next.avgEur - baseline.avgEur) > epsilon;
     }
