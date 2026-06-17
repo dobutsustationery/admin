@@ -17,3 +17,4 @@ Records of technical investigations.
 - [Branch impact (Jun 15 2026): `analysis/jun-04-broadcast-cleanup` vs `main`](./BRANCH_IMPACT_JUN_15_2026.md)
 - [Inventory-value timeline: staging (`a402baa`) vs `55a6c84`, date-by-date](./INVENTORY_VALUE_DELTA_VS_55A6C84.md)
 - [Inventory-value timeline: `main` vs `55a6c84` (early Shopify-listing commits only)](./INVENTORY_VALUE_DELTA_MAIN_VS_55A6C84.md)
+- [Branch impact (Jun 17 2026): `analysis/jun-04-broadcast-cleanup` vs `main` (all 32 commits)](./BRANCH_IMPACT_JUN_17_2026.md)
