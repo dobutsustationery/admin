@@ -115,6 +115,59 @@ const keepLatestTimestamp = (
 ): number =>
   Math.max(Number(currentTimestampMs || 0), Number(nextTimestampMs || 0));
 
+const migrateListingItemReference = (
+  nextState: any,
+  oldItemId: string,
+  newItemId: string,
+  fallbackOptionLabel?: string,
+): any => {
+  if (!oldItemId || !newItemId || oldItemId === newItemId) return nextState;
+
+  const listingState = nextState.listings;
+  const handle = listingState?.idToHandle?.[oldItemId];
+  if (!handle) return nextState;
+
+  const nextIdToHandle = {
+    ...listingState.idToHandle,
+    [newItemId]: handle,
+  };
+  delete nextIdToHandle[oldItemId];
+
+  let nextHandleToListing = listingState.handleToListing;
+  const listing = listingState.handleToListing?.[handle];
+  if (listing) {
+    const currentOptions = listing.variantOptionsByItemId || {};
+    const oldOption = nonDefaultOptionLabel(currentOptions[oldItemId]);
+    const newOption = nonDefaultOptionLabel(currentOptions[newItemId]);
+    const fallbackOption = nonDefaultOptionLabel(fallbackOptionLabel);
+    const optionLabel = newOption || oldOption || fallbackOption;
+
+    if (optionLabel || oldItemId in currentOptions) {
+      const nextOptions = { ...currentOptions };
+      delete nextOptions[oldItemId];
+      if (optionLabel) {
+        nextOptions[newItemId] = optionLabel;
+      }
+      nextHandleToListing = {
+        ...listingState.handleToListing,
+        [handle]: {
+          ...listing,
+          variantOptionsByItemId: nextOptions,
+        },
+      };
+    }
+  }
+
+  return {
+    ...nextState,
+    listings: {
+      ...listingState,
+      idToHandle: nextIdToHandle,
+      handleToListing: nextHandleToListing,
+    },
+  };
+};
+
 const getIncomingIdObservations = (
   action: any,
 ): Array<{
@@ -315,17 +368,8 @@ const reconcileImportItemRekeys = (
     const newKey = makeInventoryItemKey(jan, subtype);
     if (rawId === newKey) continue;
 
-    // 1. listings.idToHandle
-    const handle = nextState.listings?.idToHandle?.[rawId];
-    if (handle) {
-      const listingState = nextState.listings;
-      const nextIdToHandle = { ...listingState.idToHandle, [newKey]: handle };
-      delete nextIdToHandle[rawId];
-      nextState = {
-        ...nextState,
-        listings: { ...listingState, idToHandle: nextIdToHandle },
-      };
-    }
+    // 1. listings.idToHandle + listing option labels
+    nextState = migrateListingItemReference(nextState, rawId, newKey, subtype);
 
     // 2. photos.janCodeToPhotos
     const photoCandidates = [rawId, `${jan}:`, jan];
@@ -819,20 +863,14 @@ export const rootReducer = (
     }
 
     if (oldItemId && newItemId && oldItemId !== newItemId) {
-      // 1. Sync idToHandle (Listings)
-      const handle = state.listings.idToHandle[oldItemId];
-      if (handle) {
-        const listingState = nextState.listings;
-        const nextIdToHandle = {
-          ...listingState.idToHandle,
-          [newItemId]: handle,
-        };
-        delete nextIdToHandle[oldItemId];
-        nextState = {
-          ...nextState,
-          listings: { ...listingState, idToHandle: nextIdToHandle },
-        };
-      }
+      // 1. Sync idToHandle and listing option labels (Listings)
+      const fallbackOptionLabel = newSubtype || oldSubtype;
+      nextState = migrateListingItemReference(
+        nextState,
+        oldItemId,
+        newItemId,
+        fallbackOptionLabel,
+      );
 
       // 2. Sync Photo Groups (Photos)
       // Try OldItemID first, then OldBaseJan:OldSubtype
@@ -1358,7 +1396,8 @@ export const rootReducer = (
 
     if (listingUpdates && listingUpdates.length > 0) {
       let nextListings = nextState.listings;
-      listingUpdates.forEach((u: any) => {
+      const deferredVariantOptions: any[] = [];
+      const applyListingUpdate = (u: any, allowDefer = true) => {
         if (u.type === "add_image") {
           const internalAction = inheritTimestamp({
             ...add_listing_image({ handle: u.handle, image: u.image }),
@@ -1370,8 +1409,19 @@ export const rootReducer = (
           const intermediateState = { ...nextState, listings: nextListings };
           logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
         } else if (u.type === "create_listing") {
+          const existing = nextListings.handleToListing[u.listing.handle];
+          const listingPayload = existing
+            ? {
+                ...existing,
+                ...u.listing,
+                variantOptionsByItemId: {
+                  ...(existing.variantOptionsByItemId || {}),
+                  ...(u.listing.variantOptionsByItemId || {}),
+                },
+              }
+            : u.listing;
           const internalAction = inheritTimestamp({
-            ...create_listing({ listing: u.listing }),
+            ...create_listing({ listing: listingPayload }),
             _ephemeral: true,
           });
           nextListings = listings(nextListings, internalAction);
@@ -1379,7 +1429,10 @@ export const rootReducer = (
           logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
         } else if (u.type === "set_variant_option") {
           const existing = nextListings.handleToListing[u.handle];
-          if (!existing) return;
+          if (!existing) {
+            if (allowDefer) deferredVariantOptions.push(u);
+            return;
+          }
           const currentOptions = existing.variantOptionsByItemId || {};
           if (currentOptions[u.itemKey] === u.option1Value) return;
           const internalAction = inheritTimestamp({
@@ -1399,7 +1452,10 @@ export const rootReducer = (
           const intermediateState = { ...nextState, listings: nextListings };
           logger(internalAction, intermediateState, action._timestamp); // LOG SUB-ACTION
         }
-      });
+      };
+
+      listingUpdates.forEach((u: any) => applyListingUpdate(u));
+      deferredVariantOptions.forEach((u: any) => applyListingUpdate(u, false));
       nextState = { ...nextState, listings: nextListings };
     }
 

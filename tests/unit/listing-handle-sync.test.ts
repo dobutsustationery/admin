@@ -103,4 +103,51 @@ describe("inventory handle updates sync to listings", () => {
     expect(state.listings.handleToListing["handle-b"]).toBeDefined();
     expect(state.listings.handleToListing["handle-a"]).toBeUndefined();
   });
+
+  it("preserves a listing option label when a listed subtyped item normalizes to bare JAN", () => {
+    const handle = "seal-do-washi-tape-neko-cats-kawaii-4582608265532";
+    const item: Item = {
+      janCode: "4582608265532",
+      subtype: "Pink",
+      description: "Seal Do Washi Tape",
+      hsCode: "48114190",
+      image: "http://example.com/pink.jpg",
+      qty: 10,
+      pieces: 1,
+      shipped: 0,
+      creationDate: "2025-01-25",
+      timestamp: 0,
+      handle,
+    };
+    const oldId = `${item.janCode}${item.subtype}`;
+
+    let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(state, update_item({ id: oldId, item }));
+
+    expect(state.listings.idToHandle[oldId]).toBe(handle);
+    expect(
+      state.listings.handleToListing[handle].variantOptionsByItemId,
+    ).toBeUndefined();
+
+    state = rootReducer(
+      state,
+      update_field({
+        id: oldId,
+        field: "subtype",
+        from: "Pink",
+        to: "",
+      }),
+    );
+
+    const bareId = item.janCode;
+    expect(state.inventory.idToItem[oldId]).toBeUndefined();
+    expect(state.inventory.idToItem[bareId].subtype).toBe("");
+    expect(state.listings.idToHandle[oldId]).toBeUndefined();
+    expect(state.listings.idToHandle[bareId]).toBe(handle);
+    expect(
+      state.listings.handleToListing[handle].variantOptionsByItemId,
+    ).toEqual({
+      [bareId]: "Pink",
+    });
+  });
 });

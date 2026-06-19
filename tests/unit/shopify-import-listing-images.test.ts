@@ -16,6 +16,7 @@ import {
   set_header,
   start_session,
 } from "../../src/lib/shopify-import-slice";
+import { update_item, type Item } from "../../src/lib/inventory";
 
 const HEADER =
   "Handle,Title,Body (HTML),Vendor,Standard Product Type,Custom Product Type,Tags,Published,Option1 Name,Option1 Value,Option2 Name,Option2 Value,Option3 Name,Option3 Value,Variant SKU,Variant Grams,Variant Inventory Tracker,Variant Inventory Qty,Variant Inventory Policy,Variant Fulfillment Service,Variant Price,Variant Compare At Price,Variant Requires Shipping,Variant Taxable,Image Src,Image Position,Image Alt Text,Gift Card,SEO Title,SEO Description,Google Shopping / Google Product Category,Google Shopping / Gender,Google Shopping / Age Group,Google Shopping / MPN,Google Shopping / AdWords Grouping,Google Shopping / AdWords Labels,Google Shopping / Condition,Google Shopping / Custom Product,Google Shopping / Custom Label 0,Google Shopping / Custom Label 1,Google Shopping / Custom Label 2,Google Shopping / Custom Label 3,Google Shopping / Custom Label 4,Variant Image,Variant Weight Unit,Variant Tax Code,Cost per item,Price / International,Compare At Price / International,Status";
@@ -168,5 +169,90 @@ describe("Shopify import image linking", () => {
     expect(state.inventory.idToItem["4542804108606Cat"].image).toBe(
       "https://cdn.shopify.com/s/files/1/files/IMG_5190_b8b49ed3-cc21-456b-87f7-25870d3d0e73.png?v=1759222577",
     );
+  });
+
+  it("keeps the first variant option when the import creates the listing later in the same batch", () => {
+    const handle = "seal-do-washi-tape-neko-cats-kawaii-4582608265532";
+    const pinkItem: Item = {
+      janCode: "4582608265532",
+      subtype: "",
+      description: "Masking Tape Seal Do Cats Pink",
+      hsCode: "48114190",
+      image: "https://example.com/pink-old.jpg",
+      qty: 10,
+      pieces: 1,
+      shipped: 0,
+      creationDate: "2025-01-25",
+      timestamp: 0,
+    };
+    const goldItem: Item = {
+      ...pinkItem,
+      janCode: "4582608265501",
+      description: "Masking Tape Seal Do Cats Gold",
+      image: "https://example.com/gold-old.jpg",
+    };
+
+    let state: any = rootReducer(undefined, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      update_item({ id: pinkItem.janCode, item: pinkItem }),
+    );
+    state = rootReducer(
+      state,
+      update_item({ id: goldItem.janCode, item: goldItem }),
+    );
+    state = rootReducer(state, start_session({ id: "file-1", name: "x.csv" }));
+    state = rootReducer(state, set_header(HEADER));
+    state = rootReducer(
+      state,
+      append_raw_rows({
+        rawRows: [
+          row({
+            Handle: handle,
+            Title: "Seal Do Washi Masking Tape Neko Cats Kawaii (15mm)",
+            "Option1 Name": "Subtype",
+            "Option1 Value": "Pink",
+            "Variant SKU": "4582608265532",
+            "Variant Grams": "7.9",
+            "Variant Inventory Qty": "10",
+            "Variant Price": "3.95",
+            "Image Src": "https://example.com/listing-pink.jpg",
+            "Variant Image": "https://example.com/pink.jpg",
+          }),
+          row({
+            Handle: handle,
+            "Option1 Value": "Gold",
+            "Variant SKU": "4582608265501",
+            "Variant Grams": "7.9",
+            "Variant Inventory Qty": "8",
+            "Variant Price": "3.95",
+            "Image Src": "https://example.com/listing-gold.jpg",
+            "Variant Image": "https://example.com/gold.jpg",
+          }),
+        ],
+        done: true,
+      }),
+    );
+
+    state = rootReducer(
+      state,
+      import_batch({
+        filter: "MATCH",
+        options: {
+          useShopifyImages: true,
+          useShopifyDescription: true,
+          useShopifyHandles: true,
+          useShopifyWeights: true,
+          ignoreShopifyQty: true,
+        },
+      }),
+    );
+
+    expect(
+      state.listings.handleToListing[handle].variantOptionsByItemId,
+    ).toEqual({
+      "4582608265532": "Pink",
+      "4582608265501": "Gold",
+    });
   });
 });
