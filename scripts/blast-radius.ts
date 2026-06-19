@@ -172,16 +172,18 @@ function captureState(options: {
     });
   }
 
-  const relScript = "scripts/inventory-replay-dump.ts";
+  const replayDumpScript = join(repoRoot, "scripts/inventory-replay-dump.ts");
   run(
     "bun",
     [
-      relScript,
+      replayDumpScript,
       "capture",
       "--backup",
       options.backupPath,
       "--out",
       options.outPath,
+      "--app-root",
+      options.target.worktreePath,
     ],
     { cwd: options.target.worktreePath },
   );
