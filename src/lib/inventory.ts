@@ -1771,7 +1771,7 @@ function reconcileItemQtyFromCostLedger(state: InventoryState, key: string) {
   const item = state.idToItem[key];
   if (!ledger || !item) return;
 
-  const ledgerOnHand = walkLedgerForVisibleQty(ledger).onHand;
+  const ledgerOnHand = walkLedger(ledger).onHand;
   const nextQty = (Number(item.shipped) || 0) + ledgerOnHand;
   if (Math.abs((Number(item.qty) || 0) - nextQty) < 1e-9) return;
 

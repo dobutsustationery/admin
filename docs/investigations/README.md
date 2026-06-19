@@ -18,3 +18,4 @@ Records of technical investigations.
 - [Inventory-value timeline: staging (`a402baa`) vs `55a6c84`, date-by-date](./INVENTORY_VALUE_DELTA_VS_55A6C84.md)
 - [Inventory-value timeline: `main` vs `55a6c84` (early Shopify-listing commits only)](./INVENTORY_VALUE_DELTA_MAIN_VS_55A6C84.md)
 - [Branch impact (Jun 17 2026): `analysis/jun-04-broadcast-cleanup` vs `main` (all 32 commits)](./BRANCH_IMPACT_JUN_17_2026.md)
+- [Item history: summary-card vs cost-ledger-bottom on-hand mismatch (+ how to run the report)](./COST_LEDGER_VS_ONHAND_MISMATCH.md)
