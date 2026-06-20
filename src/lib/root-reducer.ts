@@ -120,6 +120,7 @@ const migrateListingItemReference = (
   oldItemId: string,
   newItemId: string,
   fallbackOptionLabel?: string,
+  oldSubtypeLabel?: string,
 ): any => {
   if (!oldItemId || !newItemId || oldItemId === newItemId) return nextState;
 
@@ -140,7 +141,15 @@ const migrateListingItemReference = (
     const oldOption = nonDefaultOptionLabel(currentOptions[oldItemId]);
     const newOption = nonDefaultOptionLabel(currentOptions[newItemId]);
     const fallbackOption = nonDefaultOptionLabel(fallbackOptionLabel);
-    const optionLabel = newOption || oldOption || fallbackOption;
+    const oldSubtypeOption = nonDefaultOptionLabel(oldSubtypeLabel);
+    const oldOptionWasSubtype =
+      oldOption &&
+      oldSubtypeOption &&
+      oldOption.trim().toLowerCase() === oldSubtypeOption.trim().toLowerCase();
+    const optionLabel =
+      newOption ||
+      (oldOptionWasSubtype ? fallbackOption : oldOption) ||
+      fallbackOption;
 
     if (optionLabel || oldItemId in currentOptions) {
       const nextOptions = { ...currentOptions };
@@ -870,6 +879,7 @@ export const rootReducer = (
         oldItemId,
         newItemId,
         fallbackOptionLabel,
+        oldSubtype,
       );
 
       // 2. Sync Photo Groups (Photos)

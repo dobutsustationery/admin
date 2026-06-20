@@ -13,6 +13,58 @@ const rootReducer = (s: any, a: any) =>
 import { update_item, update_field, type Item } from "$lib/inventory";
 
 describe("listing handle update logic", () => {
+  it("keeps an explicit handle stable when the item description changes", () => {
+    const baseItem: Item = {
+      janCode: "4542804116380",
+      subtype: "Blue",
+      description: "Sticky Notes Film Round",
+      handle: "amifa-aurora-clear-sticky-notes-4542804116380",
+      qty: 1,
+      price: 100,
+      shipped: 0,
+      pieces: 1,
+      creationDate: "",
+      timestamp: 0,
+      hsCode: "",
+      image: "",
+    };
+    const idBlue = "4542804116380Blue";
+    const idPurple = "4542804116380Purple";
+
+    let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(state, update_item({ id: idBlue, item: baseItem }));
+    state = rootReducer(
+      state,
+      update_item({
+        id: idPurple,
+        item: { ...baseItem, subtype: "Purple" },
+      }),
+    );
+
+    state = rootReducer(
+      state,
+      update_field({
+        id: idPurple,
+        field: "description",
+        from: "Sticky Notes Film Round",
+        to: "Amifa Aurora Clear Sticky Notes (75)",
+      }),
+    );
+
+    const handle = "amifa-aurora-clear-sticky-notes-4542804116380";
+    expect(state.listings.handleToListing[handle]).toBeDefined();
+    expect(
+      state.listings.handleToListing[
+        "amifa-aurora-clear-sticky-notes-75-4542804116380"
+      ],
+    ).toBeUndefined();
+    expect(state.listings.idToHandle[idBlue]).toBe(handle);
+    expect(state.listings.idToHandle[idPurple]).toBe(handle);
+    expect(state.listings.handleToListing[handle].title).toBe(
+      "Amifa Aurora Clear Sticky Notes (75)",
+    );
+  });
+
   it("does not delete listing if other items still reference the old handle", () => {
     const itemA: Item = {
       janCode: "123",
