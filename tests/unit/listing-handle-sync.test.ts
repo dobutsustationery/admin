@@ -150,4 +150,59 @@ describe("inventory handle updates sync to listings", () => {
       [bareId]: "Pink",
     });
   });
+
+  it("updates a listing option label when it only reflected the old subtype", () => {
+    const handle = "amifa-animal-flake-stickers-100-4542804141160";
+    const item: Item = {
+      janCode: "4542804141160",
+      subtype: "Bunny",
+      description: "Amifa Kawaii Mini Animal Flake Stickers (100)",
+      hsCode: "48211010",
+      image: "http://example.com/bunny.jpg",
+      qty: 12,
+      pieces: 1,
+      shipped: 0,
+      creationDate: "2026-03-10",
+      timestamp: 0,
+      handle,
+    };
+    const oldId = `${item.janCode}${item.subtype}`;
+
+    let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(state, update_item({ id: oldId, item }));
+    state = {
+      ...state,
+      listings: {
+        ...state.listings,
+        handleToListing: {
+          ...state.listings.handleToListing,
+          [handle]: {
+            ...state.listings.handleToListing[handle],
+            variantOptionsByItemId: {
+              [oldId]: "Bunny",
+            },
+          },
+        },
+      },
+    };
+
+    state = rootReducer(
+      state,
+      update_field({
+        id: oldId,
+        field: "subtype",
+        from: "Bunny",
+        to: "Rabbit",
+      }),
+    );
+
+    const newId = "4542804141160Rabbit";
+    expect(state.inventory.idToItem[oldId]).toBeUndefined();
+    expect(state.inventory.idToItem[newId].subtype).toBe("Rabbit");
+    expect(
+      state.listings.handleToListing[handle].variantOptionsByItemId,
+    ).toEqual({
+      [newId]: "Rabbit",
+    });
+  });
 });

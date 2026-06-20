@@ -203,26 +203,7 @@ export const listings = createReducer(initialState, (builder) => {
         if (!listing) return;
 
         if (fieldKey === "description") {
-          // Rename logic similar to above
-          const newTitle = String(to);
-          const janCode = (listing as any).janCode;
-          if (janCode) {
-            const newHandle = generateHandle(newTitle, janCode);
-            if (newHandle !== handle) {
-              const movedListing = {
-                ...listing,
-                handle: newHandle,
-                title: newTitle,
-              };
-              delete state.handleToListing[handle];
-              state.handleToListing[newHandle] = movedListing;
-              state.idToHandle[id] = newHandle;
-            } else {
-              listing.title = newTitle;
-            }
-          } else {
-            listing.title = newTitle;
-          }
+          listing.title = String(to);
         } else if (fieldKey === "bodyHtml") {
           // Legacy field support
           listing.bodyHtml = String(to);
