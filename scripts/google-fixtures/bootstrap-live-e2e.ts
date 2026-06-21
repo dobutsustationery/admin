@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { execSync, spawnSync } from "child_process";
 import http from "http";
+import type { Socket } from "net";
 import readline from "readline/promises";
 import { stdin as input, stdout as output } from "process";
 
@@ -297,30 +298,59 @@ async function getRefreshToken(
   }
 
   const code = await new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const sockets = new Set<Socket>();
     const server = http.createServer((req, res) => {
       try {
         const url = new URL(req.url || "", `http://127.0.0.1:${REDIRECT_PORT}`);
-        if (url.pathname !== "/oauth2callback") return;
-        const incomingCode = url.searchParams.get("code");
-        if (!incomingCode) {
-          res.writeHead(400);
-          res.end("Missing code");
-          reject(new Error(`No authorization code received for ${label}.`));
-          server.close();
+        res.setHeader("Connection", "close");
+        if (url.pathname !== "/oauth2callback") {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Not found");
           return;
         }
+        if (settled) {
+          res.writeHead(409, { "Content-Type": "text/plain" });
+          res.end("Authorization already received. You can close this tab.");
+          return;
+        }
+        const incomingCode = url.searchParams.get("code");
+        if (!incomingCode) {
+          settled = true;
+          res.writeHead(400);
+          res.end("Missing code");
+          closeServer();
+          reject(new Error(`No authorization code received for ${label}.`));
+          return;
+        }
+        settled = true;
         res.writeHead(200, { "Content-Type": "text/plain" });
         res.end("Authorization received. You can close this tab.");
+        closeServer();
         resolve(incomingCode);
-        server.close();
       } catch (e) {
+        settled = true;
+        closeServer();
         reject(e);
-        server.close();
       }
     });
+    server.keepAliveTimeout = 1;
+    server.headersTimeout = 5000;
+    server.on("connection", (socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+    });
+    const closeServer = () => {
+      server.close();
+      sockets.forEach((socket) => socket.destroy());
+      sockets.clear();
+    };
     server.listen(REDIRECT_PORT, "127.0.0.1");
   });
 
+  console.log(
+    `[${label}] Authorization code received; exchanging for token...`,
+  );
   const tokenResponse = await oauth2Client.getToken(code);
   const refreshToken = tokenResponse.tokens.refresh_token;
   if (!refreshToken) {
@@ -710,20 +740,20 @@ async function main() {
       }
     }
 
-  const driveRefreshToken = await getRefreshToken(
-    clientId,
-    clientSecret,
-    DRIVE_SCOPES,
-    "Drive",
-    args.autoOpenAuthUrl,
-  );
-  const photosRefreshToken = await getRefreshToken(
-    clientId,
-    clientSecret,
-    PHOTOS_SCOPES,
-    "Photos",
-    args.autoOpenAuthUrl,
-  );
+    const driveRefreshToken = await getRefreshToken(
+      clientId,
+      clientSecret,
+      DRIVE_SCOPES,
+      "Drive",
+      args.autoOpenAuthUrl,
+    );
+    const photosRefreshToken = await getRefreshToken(
+      clientId,
+      clientSecret,
+      PHOTOS_SCOPES,
+      "Photos",
+      args.autoOpenAuthUrl,
+    );
 
     const driveFolderId = await createOrFindDriveFolder(
       clientId,
