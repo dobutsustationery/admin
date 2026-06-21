@@ -139,7 +139,7 @@ describe("buildInventoryValueReport", () => {
     });
   });
 
-  it("excludes recount adjustment receipts from cumulative received value while preserving stock value", () => {
+  it("does not count recount receipts as cumulative inventory value increases", () => {
     const ledger: Record<string, LedgerEntry[]> = {
       A: [
         {
@@ -155,6 +155,93 @@ describe("buildInventoryValueReport", () => {
           kind: "receipt",
           at: D("2025-01-25"),
           seq: 2,
+          qty: 2,
+          receivedQty: 0,
+          unitCostJpy: 0,
+          unitCostEur: 0,
+        },
+      ],
+    };
+
+    const rows = buildInventoryValueReport(inv(ledger), D("2025-01-31"));
+    const current = rows.at(-1)!;
+    const cumulative = totalCumulativeValues(
+      Object.values(ledger),
+      D("2025-01-31"),
+    );
+
+    expect(current.valueJpy).toBe(200);
+    expect(current.cumulativeInventoryValueJpy).toBe(200);
+    expect(current.cumulativeSoldValueJpy).toBe(0);
+    expect(cumulative.inventoryJpy).toBe(200);
+  });
+
+  it("counts repricing existing zero-cost on-hand as a cumulative inventory value increase", () => {
+    const ledger: Record<string, LedgerEntry[]> = {
+      A: [
+        {
+          kind: "receipt",
+          at: D("2024-01-10"),
+          seq: 0,
+          qty: 4,
+          unitCostJpy: 0,
+          unitCostEur: 0,
+        },
+        {
+          kind: "receipt",
+          at: D("2024-07-02"),
+          seq: 1,
+          qty: 4,
+          unitCostJpy: 65,
+          unitCostEur: 0.4,
+        },
+      ],
+    };
+    const rows = buildInventoryValueReport(inv(ledger), D("2024-07-02"));
+    const current = rows.at(-1)!;
+    const cumulative = totalCumulativeValues(
+      Object.values(ledger),
+      D("2024-07-02"),
+    );
+
+    expect(current.valueJpy).toBe(520);
+    expect(current.cumulativeInventoryValueJpy).toBe(520);
+    expect(current.cumulativeSoldValueJpy).toBe(0);
+    expect(cumulative.inventoryJpy).toBe(520);
+  });
+
+  it("accounts stocktake recount value decreases as sold inventory value", () => {
+    const ledger: Record<string, LedgerEntry[]> = {
+      A: [
+        {
+          kind: "receipt",
+          at: D("2025-01-01"),
+          seq: 0,
+          qty: 4,
+          unitCostJpy: 100,
+          unitCostEur: 1,
+        },
+        { kind: "sale", at: D("2025-01-02"), seq: 1, qty: 3 },
+        {
+          kind: "receipt",
+          at: D("2025-01-03"),
+          seq: 2,
+          qty: 10,
+          unitCostJpy: 50,
+          unitCostEur: 0.5,
+        },
+        { kind: "sale", at: D("2025-01-04"), seq: 3, qty: 1 },
+        {
+          kind: "sale",
+          at: D("2025-01-05"),
+          seq: 4,
+          qty: 10,
+          isArchive: true,
+        },
+        {
+          kind: "receipt",
+          at: D("2025-01-06"),
+          seq: 5,
           qty: 10,
           receivedQty: 0,
           unitCostJpy: 0,
@@ -170,9 +257,14 @@ describe("buildInventoryValueReport", () => {
       D("2025-01-31"),
     );
 
-    expect(current.valueJpy).toBe(1000);
-    expect(current.cumulativeInventoryValueJpy).toBe(200);
-    expect(cumulative.inventoryJpy).toBe(200);
+    expect(current.valueJpy).toBe(500);
+    expect(current.cumulativeInventoryValueJpy).toBe(900);
+    expect(current.cumulativeSoldValueJpy).toBe(400);
+    expect(current.valueJpy + current.cumulativeSoldValueJpy).toBe(
+      current.cumulativeInventoryValueJpy,
+    );
+    expect(cumulative.inventoryJpy).toBe(900);
+    expect(cumulative.soldJpy).toBeCloseTo(400);
   });
 
   it("exports a TSV with header and one line per row", () => {
