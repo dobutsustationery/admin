@@ -8,6 +8,7 @@
     effectiveLedgerEntries,
     ledgerOversold,
     lotMatchesOrder,
+    totalValuation,
     walkLedger,
     zeroCostBlendWarnings,
     type LedgerEntry,
@@ -133,6 +134,30 @@
     firstMergeAt: number;
   };
 
+  type RecountFoundStockRow = {
+    key: string;
+    jan: string;
+    subtype: string;
+    description: string;
+    image: string;
+    itemQty: number;
+    shipped: number;
+    archiveAt?: number;
+    recountAt?: number;
+    sweptQty?: number;
+    recountQty?: number;
+    foundQty?: number;
+    valueJpy: number;
+    soldJpy: number;
+    cumulativeInventoryJpy: number;
+    accountingImpactJpy: number;
+    valueEur: number;
+    soldEur: number;
+    cumulativeInventoryEur: number;
+    accountingImpactEur: number;
+    auditComment: string;
+  };
+
   type StockOrderValueSummaryRow = {
     orderId: string;
     orderName: string;
@@ -161,6 +186,7 @@
     historical: false,
   };
   let showZeroCostMerge = false;
+  let showRecountFoundStock = false;
   let showStockOrderIssues: Record<string, boolean> = {};
   let copyMsg = "";
   let remediationStatus = "";
@@ -634,10 +660,97 @@
     );
   }
 
+  function buildRecountFoundStockRows(
+    inventory: InventoryState,
+  ): RecountFoundStockRow[] {
+    const idToItem = inventory.idToItem || {};
+    const costLedger = inventory.costLedger || {};
+    const rows: RecountFoundStockRow[] = [];
+
+    for (const [key, ledger] of Object.entries(costLedger)) {
+      const item = idToItem[key];
+      if (!item) continue;
+      const sorted = sortedLedger(effectiveLedgerEntries(ledger));
+      const valuation = totalValuation([ledger]);
+      const cumulative = totalCumulativeValues(
+        [ledger],
+        Number.POSITIVE_INFINITY,
+      );
+      const accountingImpactJpy =
+        valuation.valueJpy + cumulative.soldJpy - cumulative.inventoryJpy;
+      const accountingImpactEur =
+        valuation.valueEur + cumulative.soldEur - cumulative.inventoryEur;
+      if (
+        Math.abs(accountingImpactJpy) <= 1e-6 &&
+        Math.abs(accountingImpactEur) <= 1e-6
+      ) {
+        continue;
+      }
+
+      let lastPositiveArchive: { at: number; qty: number } | undefined;
+      let lastRecount:
+        | { at: number; qty: number; auditComment?: string }
+        | undefined;
+      for (const entry of sorted) {
+        if (entry.ignored) continue;
+        if (entry.kind === "sale" && entry.isArchive && entry.qty > 0) {
+          lastPositiveArchive = { at: entry.at, qty: entry.qty };
+          continue;
+        }
+        if (
+          entry.kind === "receipt" &&
+          entry.receivedQty === 0 &&
+          entry.qty > 0
+        ) {
+          lastRecount = {
+            at: entry.at,
+            qty: entry.qty,
+            auditComment: entry.auditComment,
+          };
+        }
+      }
+
+      const foundQty =
+        lastPositiveArchive && lastRecount
+          ? lastRecount.qty - lastPositiveArchive.qty
+          : undefined;
+      rows.push({
+        key,
+        jan: item.janCode || key,
+        subtype: item.subtype || "",
+        description: item.description || "",
+        image: item.image || "",
+        itemQty: Number(item.qty) || 0,
+        shipped: Number(item.shipped) || 0,
+        archiveAt: lastPositiveArchive?.at,
+        recountAt: lastRecount?.at,
+        sweptQty: lastPositiveArchive?.qty,
+        recountQty: lastRecount?.qty,
+        foundQty,
+        valueJpy: valuation.valueJpy,
+        soldJpy: cumulative.soldJpy,
+        cumulativeInventoryJpy: cumulative.inventoryJpy,
+        accountingImpactJpy,
+        valueEur: valuation.valueEur,
+        soldEur: cumulative.soldEur,
+        cumulativeInventoryEur: cumulative.inventoryEur,
+        accountingImpactEur,
+        auditComment: lastRecount?.auditComment || "",
+      });
+    }
+
+    return rows.sort(
+      (a, b) =>
+        Math.abs(b.accountingImpactJpy) - Math.abs(a.accountingImpactJpy) ||
+        a.key.localeCompare(b.key),
+    );
+  }
+
   $: rows = buildRows($store.inventory);
   $: auditRows = buildAuditRows($store.inventory);
   $: oversoldRows = buildOversoldRows($store.inventory);
   $: zeroCostMergeRows = buildZeroCostMergeRows($store.inventory);
+  $: recountFoundStockRows = buildRecountFoundStockRows($store.inventory);
   $: stockOrderMatchIssueRows = buildStockOrderMatchIssueRows($store.inventory);
   $: stockOrderValueSummaryRows = buildStockOrderValueSummaryRows(
     $store.inventory,
@@ -696,6 +809,20 @@
       row.subtype.toLowerCase().includes(query)
     );
   });
+  $: filteredRecountFoundStockRows = recountFoundStockRows.filter((row) => {
+    if (!query) return true;
+    return (
+      row.key.toLowerCase().includes(query) ||
+      row.jan.includes(query) ||
+      row.description.toLowerCase().includes(query) ||
+      row.subtype.toLowerCase().includes(query) ||
+      row.auditComment.toLowerCase().includes(query)
+    );
+  });
+  $: filteredRecountAccountingImpactJpy = filteredRecountFoundStockRows.reduce(
+    (sum, row) => sum + row.accountingImpactJpy,
+    0,
+  );
   // Split oversold by whether any stock count remains on the item now.
   // "active" (on-hand 0 / qty N): N units shipped beyond what was received — a
   // live discrepancy to solve. "historical" (0 / 0): the item is fully gone and
@@ -1244,6 +1371,55 @@
     );
   }
 
+  function recountFoundStockTsv(rows: RecountFoundStockRow[]): string {
+    return toTsv(
+      [
+        "Key",
+        "JAN",
+        "Subtype",
+        "Description",
+        "Archive date",
+        "Recount date",
+        "Swept qty",
+        "Recount qty",
+        "Found qty",
+        "Value JPY",
+        "Sold JPY",
+        "Cumulative inventory JPY",
+        "Accounting impact JPY",
+        "Value EUR",
+        "Sold EUR",
+        "Cumulative inventory EUR",
+        "Accounting impact EUR",
+        "On hand",
+        "Item qty",
+        "Audit comment",
+      ],
+      rows.map((row) => [
+        row.key,
+        row.jan,
+        row.subtype,
+        row.description,
+        row.archiveAt ? fmtDate(row.archiveAt) : "",
+        row.recountAt ? fmtDate(row.recountAt) : "",
+        row.sweptQty == null ? "" : fmtQty(row.sweptQty),
+        row.recountQty == null ? "" : fmtQty(row.recountQty),
+        row.foundQty == null ? "" : fmtQty(row.foundQty),
+        row.valueJpy,
+        row.soldJpy,
+        row.cumulativeInventoryJpy,
+        row.accountingImpactJpy,
+        row.valueEur,
+        row.soldEur,
+        row.cumulativeInventoryEur,
+        row.accountingImpactEur,
+        fmtQty(Math.max(0, row.itemQty - row.shipped)),
+        fmtQty(row.itemQty),
+        row.auditComment,
+      ]),
+    );
+  }
+
   function stockOrderGroupTsv(group: StockOrderMatchIssueGroup): string {
     return toTsv(
       [
@@ -1747,6 +1923,121 @@
                   {Math.max(0, row.itemQty - row.shipped)} / {row.itemQty}
                 </td>
                 <td>{fmtDate(row.firstMergeAt)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="hint">No items match the filters.</p>
+      {/if}
+    </div>
+  </div>
+
+  <h3>Recount Found Stock</h3>
+  <p class="hint">
+    Items whose cost ledger does not satisfy Value + Cumulative Sold =
+    Cumulative Inventory. These rows are usually caused by post-archive recounts
+    finding stock or restating stock value without a normal supplier receipt.
+  </p>
+  <div class="table-section">
+    <div class="table-summary">
+      <div>
+        <strong>Recount Found Stock</strong>
+        <span>
+          {filteredRecountFoundStockRows.length} item(s), {fmtYen(
+            filteredRecountAccountingImpactJpy,
+          )}
+          impact
+        </span>
+      </div>
+      <button
+        type="button"
+        class="copy-button"
+        on:click={() =>
+          copyTsv(
+            "Recount Found Stock TSV",
+            recountFoundStockTsv(filteredRecountFoundStockRows),
+          )}
+      >
+        Copy TSV
+      </button>
+      <label class="chk">
+        <input type="checkbox" bind:checked={showRecountFoundStock} />
+        Show
+      </label>
+    </div>
+
+    <div class:hidden={!showRecountFoundStock}>
+      {#if filteredRecountFoundStockRows.length > 0}
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Swept</th>
+              <th>Recount</th>
+              <th>Found</th>
+              <th>Value</th>
+              <th>Sold</th>
+              <th>Cumulative</th>
+              <th>Accounting impact</th>
+              <th>Archive date</th>
+              <th>Recount date</th>
+              <th>On hand / qty</th>
+              <th>Comment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each filteredRecountFoundStockRows as row (`${row.key}:${row.recountAt}:${row.recountQty}`)}
+              <tr class="audit-warning">
+                <td>
+                  <div class="item-cell">
+                    {#if row.image}
+                      <ImageThumbnail
+                        src={row.image}
+                        alt={row.description}
+                        width="32px"
+                        height="32px"
+                      />
+                    {/if}
+                    <div>
+                      <a
+                        href={`/itemhistory?itemKey=${encodeURIComponent(row.key)}`}
+                      >
+                        {row.jan}{row.subtype ? ` / ${row.subtype}` : ""}
+                      </a>
+                      <div class="hint">{row.description}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>{row.sweptQty == null ? "-" : fmtQty(row.sweptQty)}</td>
+                <td>{row.recountQty == null ? "-" : fmtQty(row.recountQty)}</td>
+                <td>
+                  {row.foundQty == null ? "-" : fmtQty(row.foundQty)}
+                </td>
+                <td>
+                  <div>{fmtYen(row.valueJpy)}</div>
+                  <span class="hint">{fmtEur(row.valueEur)}</span>
+                </td>
+                <td>
+                  <div>{fmtYen(row.soldJpy)}</div>
+                  <span class="hint">{fmtEur(row.soldEur)}</span>
+                </td>
+                <td>
+                  <div>{fmtYen(row.cumulativeInventoryJpy)}</div>
+                  <span class="hint">{fmtEur(row.cumulativeInventoryEur)}</span>
+                </td>
+                <td>
+                  <strong>{fmtYen(row.accountingImpactJpy)}</strong>
+                  <span class="hint">{fmtEur(row.accountingImpactEur)}</span>
+                </td>
+                <td>{row.archiveAt ? fmtDate(row.archiveAt) : "-"}</td>
+                <td>{row.recountAt ? fmtDate(row.recountAt) : "-"}</td>
+                <td>
+                  {fmtQty(Math.max(0, row.itemQty - row.shipped))} / {fmtQty(
+                    row.itemQty,
+                  )}
+                </td>
+                <td>{row.auditComment || "-"}</td>
               </tr>
             {/each}
           </tbody>
