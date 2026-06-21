@@ -1495,7 +1495,10 @@ describe("inventory reducer", () => {
       let nextState = inventory(initialState, update_item({ id, item }));
 
       const archiveName = "Japan Festival April 2025";
-      nextState = inventory(nextState, archive_inventory({ archiveName }));
+      nextState = inventory(nextState, {
+        ...archive_inventory({ archiveName }),
+        timestamp: { seconds: Date.UTC(2025, 4, 2) / 1000, nanoseconds: 0 },
+      });
       expect(nextState.costLedger![id]).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1506,13 +1509,13 @@ describe("inventory reducer", () => {
         ]),
       );
 
-      nextState = inventory(
-        nextState,
-        update_item({
+      nextState = inventory(nextState, {
+        ...update_item({
           id,
           item: { ...item, qty: 7, cost: undefined },
         }),
-      );
+        timestamp: { seconds: Date.UTC(2025, 4, 3) / 1000, nanoseconds: 0 },
+      });
 
       const beforeMakeSalesLedger = nextState.costLedger![id].length;
       const walkedAfterRecount = walkLedger(nextState.costLedger![id]);
@@ -1548,6 +1551,15 @@ describe("inventory reducer", () => {
       };
       const id = makeInventoryItemKey(item.janCode, item.subtype);
       let nextState = inventory(initialState, update_item({ id, item }));
+      nextState = inventory(
+        nextState,
+        new_order({
+          orderID: "ORDER-1",
+          date: new Date("2025-04-01"),
+          email: "test@example.com",
+          product: "Test Product",
+        }),
+      );
 
       nextState = inventory(
         nextState,
@@ -1556,7 +1568,10 @@ describe("inventory reducer", () => {
       expect(nextState.idToItem[id].shipped).toBe(4);
 
       const archiveName = "Japan Festival April 2025";
-      nextState = inventory(nextState, archive_inventory({ archiveName }));
+      nextState = inventory(nextState, {
+        ...archive_inventory({ archiveName }),
+        timestamp: { seconds: Date.UTC(2025, 4, 2) / 1000, nanoseconds: 0 },
+      });
       expect(nextState.costLedger![id]).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1567,13 +1582,13 @@ describe("inventory reducer", () => {
         ]),
       );
 
-      nextState = inventory(
-        nextState,
-        update_item({
+      nextState = inventory(nextState, {
+        ...update_item({
           id,
           item: { ...item, qty: 6, cost: undefined, shipped: 0 },
         }),
-      );
+        timestamp: { seconds: Date.UTC(2025, 4, 3) / 1000, nanoseconds: 0 },
+      });
 
       const walkedAfterRecount = walkLedger(nextState.costLedger![id]);
       expect(walkedAfterRecount.onHand).toBe(6);

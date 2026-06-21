@@ -337,7 +337,7 @@ export function effectiveLedgerEntries(
 // negative stock).
 function preArchiveOnHand(
   result: readonly LedgerEntry[],
-  beforeSeq: number,
+  before: Pick<LedgerEntry, "at" | "seq">,
   saleQty: (e: LedgerEntry) => number,
   clampMidWalk: boolean,
 ): number {
@@ -345,13 +345,16 @@ function preArchiveOnHand(
   let onHand = 0;
   const step = (next: number) => (clampMidWalk ? Math.max(0, next) : next);
   for (const e of sorted) {
-    if (e.seq >= beforeSeq || e.ignored) continue;
+    if (e.ignored) continue;
+    if (e.at > before.at || (e.at === before.at && e.seq >= before.seq)) {
+      continue;
+    }
     if (e.kind === "receipt") {
       onHand = step(onHand + (Number(e.qty) || 0));
     } else if (e.isArchive) {
       // Nested archive: recompute its sweep rather than trust its stored qty.
       onHand = step(
-        onHand - preArchiveOnHand(result, e.seq, saleQty, clampMidWalk),
+        onHand - preArchiveOnHand(result, e, saleQty, clampMidWalk),
       );
     } else {
       onHand = step(onHand - saleQty(e));
@@ -374,13 +377,13 @@ function applyArchiveSweepQuantities(result: LedgerEntry[]): void {
     if (e.kind !== "sale" || !e.isArchive || e.ignored) continue;
     const costSweep = preArchiveOnHand(
       result,
-      e.seq,
+      e,
       (s) => Number(s.qty) || 0,
       false,
     );
     const visSweep = preArchiveOnHand(
       result,
-      e.seq,
+      e,
       (s) => Number((s as SaleEntry).visibleQty ?? s.qty) || 0,
       true,
     );
