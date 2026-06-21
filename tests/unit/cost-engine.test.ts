@@ -305,6 +305,20 @@ describe("archive zero-crossing carries the running average", () => {
     ]);
     expect(w.onHand).toBe(0);
   });
+
+  it("sweeps backdated receipts that were appended after the archive", () => {
+    // Reconstructing an old stock-order receipt appends a ledger row with a
+    // newer seq but an older date. The archive boundary is ledger time, so the
+    // backdated receipt belongs in the pre-archive on-hand.
+    const w = walkLedger([
+      r(10, 8, 65, 0.4, 1),
+      sa(30, 8, 2),
+      recount(32, 6, 0, 0, 3),
+      r(20, 4, 65, 0.4, 4),
+    ]);
+    expect(w.onHand).toBe(6);
+    expect(w.avgJpy).toBe(65);
+  });
 });
 
 describe("archiveSweepDivergences", () => {
