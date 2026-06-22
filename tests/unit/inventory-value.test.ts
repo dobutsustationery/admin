@@ -176,7 +176,7 @@ describe("buildInventoryValueReport", () => {
     expect(cumulative.inventoryJpy).toBe(200);
   });
 
-  it("counts repricing existing zero-cost on-hand as a cumulative inventory value increase", () => {
+  it("does not count repricing existing zero-cost on-hand as newly received inventory value", () => {
     const ledger: Record<string, LedgerEntry[]> = {
       A: [
         {
@@ -205,9 +205,9 @@ describe("buildInventoryValueReport", () => {
     );
 
     expect(current.valueJpy).toBe(520);
-    expect(current.cumulativeInventoryValueJpy).toBe(520);
+    expect(current.cumulativeInventoryValueJpy).toBe(260);
     expect(current.cumulativeSoldValueJpy).toBe(0);
-    expect(cumulative.inventoryJpy).toBe(520);
+    expect(cumulative.inventoryJpy).toBe(260);
   });
 
   it("accounts stocktake recount value decreases as sold inventory value", () => {
@@ -265,6 +265,68 @@ describe("buildInventoryValueReport", () => {
     );
     expect(cumulative.inventoryJpy).toBe(900);
     expect(cumulative.soldJpy).toBeCloseTo(400);
+  });
+
+  it("keeps restored zero-cost lots at zero for FIFO sold-value accounting", () => {
+    const ledger: Record<string, LedgerEntry[]> = {
+      A: [
+        {
+          kind: "receipt",
+          at: D("2023-11-12"),
+          seq: 0,
+          qty: 3,
+          unitCostJpy: 0,
+          unitCostEur: 0,
+        },
+        {
+          kind: "receipt",
+          at: D("2024-10-09"),
+          seq: 1,
+          qty: 16,
+          unitCostJpy: 65,
+          unitCostEur: 0.4,
+        },
+        { kind: "sale", at: D("2024-10-26"), seq: 2, qty: 1 },
+        { kind: "sale", at: D("2024-10-26"), seq: 3, qty: -1 },
+        { kind: "sale", at: D("2024-10-26"), seq: 4, qty: 1 },
+        { kind: "sale", at: D("2024-10-26"), seq: 5, qty: 1 },
+        { kind: "sale", at: D("2024-10-26"), seq: 6, qty: 1 },
+        { kind: "sale", at: D("2024-10-26"), seq: 7, qty: 1 },
+        {
+          kind: "sale",
+          at: D("2025-05-02"),
+          seq: 8,
+          qty: 15,
+          isArchive: true,
+        },
+        {
+          kind: "receipt",
+          at: D("2025-05-05"),
+          seq: 9,
+          qty: 13,
+          receivedQty: 0,
+          unitCostJpy: 0,
+          unitCostEur: 0,
+        },
+      ],
+    };
+
+    const rows = buildInventoryValueReport(inv(ledger), D("2025-05-31"));
+    const current = rows.at(-1)!;
+    const cumulative = totalCumulativeValues(
+      Object.values(ledger),
+      D("2025-05-31"),
+    );
+
+    expect(current.valueJpy).toBe(845);
+    expect(current.cumulativeInventoryValueJpy).toBe(1040);
+    expect(current.cumulativeSoldValueJpy).toBe(195);
+    expect(
+      current.cumulativeInventoryValueJpy -
+        current.valueJpy -
+        current.cumulativeSoldValueJpy,
+    ).toBe(0);
+    expect(cumulative.soldJpy).toBe(195);
   });
 
   it("exports a TSV with header and one line per row", () => {

@@ -27,7 +27,10 @@ interface BackupDoc {
 }
 
 interface Dump {
-  schema: "inventory-replay-dump/v1" | "inventory-replay-dump/v2";
+  schema:
+    | "inventory-replay-dump/v1"
+    | "inventory-replay-dump/v2"
+    | "inventory-replay-dump/v3";
   meta: {
     backupPath: string;
     capturedAt: string;
@@ -40,6 +43,8 @@ interface Dump {
   stateTotals?: JsonObject;
   state?: JsonObject;
   inventory: JsonObject;
+  orderValueSummary?: OrderValueSummaryRow[];
+  inventoryValueReport?: InventoryValueReportRow[];
 }
 
 type StateDiffKind = "added" | "removed" | "changed";
@@ -64,6 +69,63 @@ interface ListingVariantDisplayDiff {
   before: ListingVariantDisplayRow[];
   after: ListingVariantDisplayRow[];
   defaultRegression: boolean;
+}
+
+interface OrderValueSummaryRow {
+  orderId: string;
+  orderName: string;
+  orderDate?: number;
+  firstScanAt?: number;
+  lastScanAt?: number;
+  valuationAt?: number;
+  valuationReason: string;
+  orderValueJpy: number;
+  notReceivedValueJpy: number;
+  receivedOrderValueJpy: number;
+  cumulativeOrderValueJpy: number;
+  cumulativeInventoryValueJpy: number;
+  mismatchJpy: number;
+  matchedOrderValueJpy: number;
+  notReceivedCount: number;
+}
+
+interface InventoryValueReportRow {
+  asOf: number;
+  dateIso: string;
+  kind: string;
+  label: string;
+  valueJpy: number;
+  valueEur: number;
+  cumulativeInventoryValueJpy: number;
+  cumulativeInventoryValueEur: number;
+  cumulativeSoldValueJpy: number;
+  cumulativeSoldValueEur: number;
+  residualJpy?: number;
+}
+
+type CostEngineModule = {
+  effectiveLedgerEntries?: (entries: any[]) => any[];
+  lotMatchesOrder: (entry: any, orderId: string) => boolean;
+};
+
+type InventoryValueModule = {
+  totalCumulativeValues: (
+    ledgers: any[][],
+    asOf: number,
+  ) => { inventoryJpy: number; inventoryEur: number };
+  buildInventoryValueReport?: (
+    inventory: JsonObject,
+    nowMs: number,
+  ) => InventoryValueReportRow[];
+};
+
+function targetLedgerEntries(
+  costEngine: CostEngineModule,
+  entries: any[] = [],
+): any[] {
+  return costEngine.effectiveLedgerEntries
+    ? costEngine.effectiveLedgerEntries(entries)
+    : entries;
 }
 
 const usage = () => {
@@ -139,6 +201,25 @@ function timestampKey(action: any): bigint {
     return BigInt(action._timestamp) * 1_000_000n;
   }
   return 0n;
+}
+
+function timestampMillis(action: any): number {
+  const ts = action?.timestamp;
+  if (typeof ts?._seconds === "number") {
+    return (
+      ts._seconds * 1000 + Math.floor((Number(ts._nanoseconds) || 0) / 1e6)
+    );
+  }
+  if (typeof ts?.seconds === "number") {
+    return ts.seconds * 1000 + Math.floor((Number(ts.nanoseconds) || 0) / 1e6);
+  }
+  if (typeof action?._timestamp_millis === "number") {
+    return action._timestamp_millis;
+  }
+  if (typeof action?._timestamp === "number") {
+    return action._timestamp;
+  }
+  return 0;
 }
 
 function loadActions(backupPath: string): JsonObject[] {
@@ -257,25 +338,41 @@ function collectLeaves(
   out: StateLeafDiff[],
 ) {
   if (!isPlainDiffObject(value)) {
-    out.push(kind === "added" ? { path, kind, after: value } : { path, kind, before: value });
+    out.push(
+      kind === "added"
+        ? { path, kind, after: value }
+        : { path, kind, before: value },
+    );
     return;
   }
 
   if (Array.isArray(value)) {
     if (value.length === 0) {
-      out.push(kind === "added" ? { path, kind, after: value } : { path, kind, before: value });
+      out.push(
+        kind === "added"
+          ? { path, kind, after: value }
+          : { path, kind, before: value },
+      );
       return;
     }
-    value.forEach((entry, index) => collectLeaves(entry, joinPath(path, index), kind, out));
+    value.forEach((entry, index) =>
+      collectLeaves(entry, joinPath(path, index), kind, out),
+    );
     return;
   }
 
   const keys = Object.keys(value).sort();
   if (keys.length === 0) {
-    out.push(kind === "added" ? { path, kind, after: value } : { path, kind, before: value });
+    out.push(
+      kind === "added"
+        ? { path, kind, after: value }
+        : { path, kind, before: value },
+    );
     return;
   }
-  keys.forEach((key) => collectLeaves(value[key], joinPath(path, key), kind, out));
+  keys.forEach((key) =>
+    collectLeaves(value[key], joinPath(path, key), kind, out),
+  );
 }
 
 function collectStateLeafDiffs(
@@ -302,7 +399,8 @@ function collectStateLeafDiffs(
     for (let i = 0; i < max; i++) {
       const nextPath = joinPath(path, i);
       if (i >= before.length) collectLeaves(after[i], nextPath, "added", out);
-      else if (i >= after.length) collectLeaves(before[i], nextPath, "removed", out);
+      else if (i >= after.length)
+        collectLeaves(before[i], nextPath, "removed", out);
       else collectStateLeafDiffs(before[i], after[i], nextPath, out);
     }
     return out;
@@ -312,14 +410,18 @@ function collectStateLeafDiffs(
   for (const key of [...keys].sort()) {
     const nextPath = joinPath(path, key);
     if (!(key in before)) collectLeaves(after[key], nextPath, "added", out);
-    else if (!(key in after)) collectLeaves(before[key], nextPath, "removed", out);
+    else if (!(key in after))
+      collectLeaves(before[key], nextPath, "removed", out);
     else collectStateLeafDiffs(before[key], after[key], nextPath, out);
   }
   return out;
 }
 
 function stateSliceFromPath(path: string): string {
-  const match = /^state(?:\.([A-Za-z_$][A-Za-z0-9_$]*)|\[("[^"]+"|'[^']+'|[^\]]+)\])/.exec(path);
+  const match =
+    /^state(?:\.([A-Za-z_$][A-Za-z0-9_$]*)|\[("[^"]+"|'[^']+'|[^\]]+)\])/.exec(
+      path,
+    );
   if (!match) return "(unknown)";
   if (match[1]) return match[1];
   const raw = match[2] || "";
@@ -348,8 +450,12 @@ function summarizeStateDiffs(diffs: StateLeafDiff[]) {
   const byPrefix = new Map<string, number>();
   for (const diff of diffs) {
     const slice = stateSliceFromPath(diff.path);
-    const row =
-      bySlice.get(slice) || { added: 0, removed: 0, changed: 0, total: 0 };
+    const row = bySlice.get(slice) || {
+      added: 0,
+      removed: 0,
+      changed: 0,
+      total: 0,
+    };
     row[diff.kind]++;
     row.total++;
     bySlice.set(slice, row);
@@ -358,8 +464,12 @@ function summarizeStateDiffs(diffs: StateLeafDiff[]) {
     byPrefix.set(prefix, (byPrefix.get(prefix) || 0) + 1);
   }
   return {
-    bySlice: [...bySlice.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0])),
-    byPrefix: [...byPrefix.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+    bySlice: [...bySlice.entries()].sort(
+      (a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]),
+    ),
+    byPrefix: [...byPrefix.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    ),
   };
 }
 
@@ -556,6 +666,208 @@ function round4(value: number): number {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
+const LATE_SCAN_GAP_MS = 30 * 24 * 60 * 60 * 1000;
+
+function orderCostRowsValue(meta: any): number {
+  const costRowsValue = ((meta?.costRows || []) as any[]).reduce((sum, row) => {
+    const qty = Number(row?.qty);
+    const unitCostJpy = Number(row?.unitCostJpy);
+    return sum + (qty > 0 && unitCostJpy > 0 ? qty * unitCostJpy : 0);
+  }, 0);
+  return costRowsValue || meta?.valueOfGoodsJpy || meta?.valueOfOrderJpy || 0;
+}
+
+function orderNotReceivedValue(meta: any): number {
+  return ((meta?.notReceivedRows || []) as any[]).reduce((sum, row) => {
+    const qty = Number(row?.qty);
+    const unitCostJpy = Number(row?.unitCostJpy);
+    return sum + (qty > 0 && unitCostJpy > 0 ? qty * unitCostJpy : 0);
+  }, 0);
+}
+
+function monthEndMs(ms: number): number {
+  const date = new Date(ms);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1) - 1;
+}
+
+function orderScanReceipts(
+  inventory: JsonObject,
+  orderId: string,
+  costEngine: CostEngineModule,
+) {
+  const scans: Array<{ itemKey: string; at: number; qty: number }> = [];
+  for (const [itemKey, ledger] of Object.entries(inventory?.costLedger || {})) {
+    for (const entry of targetLedgerEntries(
+      costEngine,
+      (ledger as any[]) || [],
+    )) {
+      if (
+        entry?.kind !== "receipt" ||
+        entry?.ignored ||
+        !costEngine.lotMatchesOrder(entry, orderId) ||
+        String(entry?.source || "").startsWith("stockOrder:") ||
+        !Number.isFinite(entry?.at) ||
+        entry.at <= 0
+      ) {
+        continue;
+      }
+      scans.push({
+        itemKey,
+        at: entry.at,
+        qty: Number(entry.qty) || 0,
+      });
+    }
+  }
+  return scans.sort(
+    (a, b) => a.at - b.at || a.itemKey.localeCompare(b.itemKey),
+  );
+}
+
+function scanWindowForOrder(
+  inventory: JsonObject,
+  orderId: string,
+  costEngine: CostEngineModule,
+) {
+  const scans = orderScanReceipts(inventory, orderId, costEngine);
+  const firstScanAt = scans[0]?.at;
+  const lastScanAt = scans.at(-1)?.at;
+  const hasLargeGap =
+    firstScanAt != null &&
+    lastScanAt != null &&
+    lastScanAt - firstScanAt > LATE_SCAN_GAP_MS;
+  const valuationAt =
+    hasLargeGap && firstScanAt != null ? monthEndMs(firstScanAt) : lastScanAt;
+  return {
+    firstScanAt,
+    lastScanAt,
+    valuationAt,
+    hasLargeGap,
+  };
+}
+
+function cumulativeInventoryValueJpyAsOf(
+  inventory: JsonObject,
+  asOf: number,
+  inventoryValue: InventoryValueModule,
+): number {
+  return inventoryValue.totalCumulativeValues(
+    Object.values(inventory?.costLedger || {}) as any[][],
+    asOf,
+  ).inventoryJpy;
+}
+
+function matchedOrderReceiptValueJpy(
+  inventory: JsonObject,
+  orderId: string,
+  costEngine: CostEngineModule,
+): number {
+  let total = 0;
+  for (const ledger of Object.values(inventory?.costLedger || {})) {
+    for (const entry of targetLedgerEntries(
+      costEngine,
+      (ledger as any[]) || [],
+    )) {
+      if (
+        entry?.kind !== "receipt" ||
+        entry?.ignored ||
+        !costEngine.lotMatchesOrder(entry, orderId)
+      ) {
+        continue;
+      }
+      total += (Number(entry.qty) || 0) * (Number(entry.unitCostJpy) || 0);
+    }
+  }
+  return total;
+}
+
+function buildOrderValueSummary(
+  inventory: JsonObject,
+  costEngine: CostEngineModule,
+  inventoryValue: InventoryValueModule,
+): OrderValueSummaryRow[] {
+  const rows = Object.entries(inventory?.stockOrderRegistry || {})
+    .map(([orderId, meta]) => {
+      const orderValueJpy = orderCostRowsValue(meta);
+      const notReceivedValueJpy = orderNotReceivedValue(meta);
+      const receivedOrderValueJpy = Math.max(
+        0,
+        orderValueJpy - notReceivedValueJpy,
+      );
+      const scanWindow = scanWindowForOrder(inventory, orderId, costEngine);
+      const valuationAt = scanWindow.valuationAt || (meta as any)?.receivedAt;
+      const valuationReason = scanWindow.hasLargeGap
+        ? "month end after first scan"
+        : scanWindow.lastScanAt
+          ? "last scan"
+          : "order date";
+      return {
+        orderId,
+        orderName: (meta as any)?.name || (meta as any)?.supplier || "",
+        orderDate: (meta as any)?.receivedAt,
+        firstScanAt: scanWindow.firstScanAt,
+        lastScanAt: scanWindow.lastScanAt,
+        valuationAt,
+        valuationReason,
+        orderValueJpy,
+        notReceivedValueJpy,
+        receivedOrderValueJpy,
+        cumulativeOrderValueJpy: 0,
+        cumulativeInventoryValueJpy: 0,
+        mismatchJpy: 0,
+        matchedOrderValueJpy: matchedOrderReceiptValueJpy(
+          inventory,
+          orderId,
+          costEngine,
+        ),
+        notReceivedCount: ((meta as any)?.notReceivedRows || []).length,
+      };
+    })
+    .sort((a, b) => {
+      const aDate = a.orderDate || Number.MAX_SAFE_INTEGER;
+      const bDate = b.orderDate || Number.MAX_SAFE_INTEGER;
+      return aDate - bDate || a.orderId.localeCompare(b.orderId);
+    });
+
+  let cumulativeOrderValueJpy = 0;
+  for (const row of rows) {
+    const asOf = row.valuationAt || 0;
+    cumulativeOrderValueJpy += row.receivedOrderValueJpy;
+    row.cumulativeOrderValueJpy = Math.round(cumulativeOrderValueJpy);
+    row.cumulativeInventoryValueJpy =
+      asOf > 0
+        ? Math.round(
+            cumulativeInventoryValueJpyAsOf(inventory, asOf, inventoryValue),
+          )
+        : 0;
+    row.mismatchJpy =
+      row.cumulativeInventoryValueJpy - row.cumulativeOrderValueJpy;
+  }
+
+  return rows;
+}
+
+function buildInventoryValueReportRows(
+  inventory: JsonObject,
+  inventoryValue: InventoryValueModule,
+  nowMs: number,
+): InventoryValueReportRow[] {
+  if (!inventoryValue.buildInventoryValueReport) return [];
+  return inventoryValue
+    .buildInventoryValueReport(inventory, nowMs)
+    .map((row) => ({
+      ...row,
+      residualJpy:
+        row.cumulativeInventoryValueJpy -
+        row.valueJpy -
+        row.cumulativeSoldValueJpy,
+    }));
+}
+
+function formatDate(ms?: number): string {
+  if (!ms) return "-";
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 // Authoritative valuation via the cost engine (perpetual weighted-average with
 // archive carry) — the same walk the app uses for item cost and inventory
 // value. Returns on-hand, value, and average cost in both currencies.
@@ -618,10 +930,25 @@ async function capture(args: string[]) {
 
   const backupPath = resolveBackupPath(backupInput);
   const actions = loadActions(backupPath);
+  const reportNowMs =
+    actions.reduce(
+      (max, action) => Math.max(max, timestampMillis(action)),
+      0,
+    ) || Date.now();
   const reducerUrl = pathToFileURL(
     resolve(appRoot, "src/lib/root-reducer.ts"),
   ).href;
-  const { rootReducer } = await import(reducerUrl);
+  const costEngineUrl = pathToFileURL(
+    resolve(appRoot, "src/lib/cost-engine.ts"),
+  ).href;
+  const inventoryValueUrl = pathToFileURL(
+    resolve(appRoot, "src/lib/inventory-value.ts"),
+  ).href;
+  const [{ rootReducer }, costEngine, inventoryValue] = await Promise.all([
+    import(reducerUrl),
+    import(costEngineUrl) as Promise<CostEngineModule>,
+    import(inventoryValueUrl) as Promise<InventoryValueModule>,
+  ]);
 
   const realLog = console.log.bind(console);
   const realWarn = console.warn.bind(console);
@@ -658,7 +985,7 @@ async function capture(args: string[]) {
 
   const inventory = state?.inventory || {};
   const dump: Dump = {
-    schema: "inventory-replay-dump/v2",
+    schema: "inventory-replay-dump/v3",
     meta: {
       backupPath,
       capturedAt: new Date().toISOString(),
@@ -671,6 +998,16 @@ async function capture(args: string[]) {
     stateTotals: buildStateTotals(state || {}),
     state,
     inventory,
+    orderValueSummary: buildOrderValueSummary(
+      inventory,
+      costEngine,
+      inventoryValue,
+    ),
+    inventoryValueReport: buildInventoryValueReportRows(
+      inventory,
+      inventoryValue,
+      reportNowMs,
+    ),
   };
 
   writeFileSync(resolve(outPath), JSON.stringify(dump, null, 2));
@@ -720,7 +1057,9 @@ function diff(args: string[]) {
   }
   if (detailLimit > 0) {
     push(`- Detail limit: ${detailLimit} rows per broad table.`);
-    push(`- Full Markdown detail: \`${fullDetailCommand(beforePath, afterPath, outPath)}\``);
+    push(
+      `- Full Markdown detail: \`${fullDetailCommand(beforePath, afterPath, outPath)}\``,
+    );
   } else {
     push("- Detail limit: full report.");
   }
@@ -747,7 +1086,10 @@ function diff(args: string[]) {
     push("");
     push("| Prefix | Leaf diffs |");
     push("|---|---:|");
-    for (const [prefix, count] of limitedRows(fullStateSummary.byPrefix, detailLimit)) {
+    for (const [prefix, count] of limitedRows(
+      fullStateSummary.byPrefix,
+      detailLimit,
+    )) {
       push(`| \`${prefix}\` | ${count} |`);
     }
     const omitted = omittedCount(fullStateSummary.byPrefix.length, detailLimit);
@@ -830,6 +1172,142 @@ function diff(args: string[]) {
     push(`| ${key} | ${b} | ${a} | ${a - b >= 0 ? "+" : ""}${a - b} |`);
   }
   push("");
+
+  const beforeOrderSummary = before.orderValueSummary || [];
+  const afterOrderSummary = after.orderValueSummary || [];
+  const beforeOrderById = new Map(
+    beforeOrderSummary.map((row) => [row.orderId, row]),
+  );
+  const afterOrderById = new Map(
+    afterOrderSummary.map((row) => [row.orderId, row]),
+  );
+  const orderIds = new Set([
+    ...beforeOrderById.keys(),
+    ...afterOrderById.keys(),
+  ]);
+  const changedOrderRows = [...orderIds]
+    .map((orderId) => ({
+      orderId,
+      before: beforeOrderById.get(orderId),
+      after: afterOrderById.get(orderId),
+    }))
+    .filter((row) => stable(row.before) !== stable(row.after))
+    .sort((a, b) => {
+      const aDate =
+        a.before?.orderDate || a.after?.orderDate || Number.MAX_SAFE_INTEGER;
+      const bDate =
+        b.before?.orderDate || b.after?.orderDate || Number.MAX_SAFE_INTEGER;
+      return aDate - bDate || a.orderId.localeCompare(b.orderId);
+    });
+
+  push("## Order Value Summary");
+  push("");
+  push(
+    `Rows changed: **${changedOrderRows.length}**. Mismatch vector before: ` +
+      `\`${beforeOrderSummary.map((row) => row.mismatchJpy).join(", ")}\`; ` +
+      `after: \`${afterOrderSummary.map((row) => row.mismatchJpy).join(", ")}\`.`,
+  );
+  push("");
+  if (changedOrderRows.length > 0) {
+    const omitted = omittedCount(changedOrderRows.length, detailLimit);
+    if (omitted > 0) {
+      push(
+        `Showing ${detailLimit} rows. Generate the full detail report with: ` +
+          `\`${fullDetailCommand(beforePath, afterPath, outPath)}\`.`,
+      );
+      push("");
+    }
+    push(
+      "| Order date | Order | Valuation date | Cumulative order JPY | Cumulative inventory JPY | Mismatch JPY | Matched receipt JPY | Reason |",
+    );
+    push("|---|---|---|---:|---:|---:|---:|---|");
+    for (const row of limitedRows(changedOrderRows, detailLimit)) {
+      const beforeRow = row.before;
+      const afterRow = row.after;
+      const label = afterRow?.orderName || beforeRow?.orderName || row.orderId;
+      const beforeMismatch = beforeRow?.mismatchJpy ?? "missing";
+      const afterMismatch = afterRow?.mismatchJpy ?? "missing";
+      push(
+        `| ${formatDate(afterRow?.orderDate || beforeRow?.orderDate)} | \`${label}\` | ${formatDate(beforeRow?.valuationAt)} -> ${formatDate(afterRow?.valuationAt)} | ${beforeRow?.cumulativeOrderValueJpy ?? "missing"} -> ${afterRow?.cumulativeOrderValueJpy ?? "missing"} | ${beforeRow?.cumulativeInventoryValueJpy ?? "missing"} -> ${afterRow?.cumulativeInventoryValueJpy ?? "missing"} | ${beforeMismatch} -> ${afterMismatch} | ${roundMoney(beforeRow?.matchedOrderValueJpy || 0)} -> ${roundMoney(afterRow?.matchedOrderValueJpy || 0)} | ${beforeRow?.valuationReason || "missing"} -> ${afterRow?.valuationReason || "missing"} |`,
+      );
+    }
+    if (omitted > 0) {
+      push(`| ... | ${omitted} more | | | | | | |`);
+    }
+    push("");
+  }
+
+  const beforeInventoryValue = before.inventoryValueReport || [];
+  const afterInventoryValue = after.inventoryValueReport || [];
+  const inventoryValueKey = (row: InventoryValueReportRow) =>
+    `${row.asOf}:${row.kind}:${row.label}`;
+  const beforeInventoryValueByKey = new Map(
+    beforeInventoryValue.map((row) => [inventoryValueKey(row), row]),
+  );
+  const afterInventoryValueByKey = new Map(
+    afterInventoryValue.map((row) => [inventoryValueKey(row), row]),
+  );
+  const inventoryValueKeys = new Set([
+    ...beforeInventoryValueByKey.keys(),
+    ...afterInventoryValueByKey.keys(),
+  ]);
+  const changedInventoryValueRows = [...inventoryValueKeys]
+    .map((key) => ({
+      key,
+      before: beforeInventoryValueByKey.get(key),
+      after: afterInventoryValueByKey.get(key),
+    }))
+    .filter((row) => stable(row.before) !== stable(row.after))
+    .sort((a, b) => {
+      const aDate = a.before?.asOf || a.after?.asOf || Number.MAX_SAFE_INTEGER;
+      const bDate = b.before?.asOf || b.after?.asOf || Number.MAX_SAFE_INTEGER;
+      return aDate - bDate || a.key.localeCompare(b.key);
+    });
+
+  push("## Inventory Value Report");
+  push("");
+  if (beforeInventoryValue.length === 0 && afterInventoryValue.length === 0) {
+    push("Inventory-value rows were not captured in either dump.");
+    push("");
+  } else {
+    const beforeCurrent = beforeInventoryValue.at(-1);
+    const afterCurrent = afterInventoryValue.at(-1);
+    push(
+      `Rows changed: **${changedInventoryValueRows.length}**. Current residual JPY before: ` +
+        `\`${beforeCurrent?.residualJpy ?? "missing"}\`; after: ` +
+        `\`${afterCurrent?.residualJpy ?? "missing"}\`.`,
+    );
+    push("");
+    if (changedInventoryValueRows.length > 0) {
+      const omitted = omittedCount(
+        changedInventoryValueRows.length,
+        detailLimit,
+      );
+      if (omitted > 0) {
+        push(
+          `Showing ${detailLimit} rows. Generate the full detail report with: ` +
+            `\`${fullDetailCommand(beforePath, afterPath, outPath)}\`.`,
+        );
+        push("");
+      }
+      push(
+        "| Date | Type | Event | Value JPY | Cumulative inventory JPY | Cumulative sold JPY | Residual JPY |",
+      );
+      push("|---|---|---|---:|---:|---:|---:|");
+      for (const row of limitedRows(changedInventoryValueRows, detailLimit)) {
+        const beforeRow = row.before;
+        const afterRow = row.after;
+        const label = afterRow?.label || beforeRow?.label || row.key;
+        push(
+          `| ${afterRow?.dateIso || beforeRow?.dateIso || "-"} | ${afterRow?.kind || beforeRow?.kind || "-"} | \`${label}\` | ${beforeRow?.valueJpy ?? "missing"} -> ${afterRow?.valueJpy ?? "missing"} | ${beforeRow?.cumulativeInventoryValueJpy ?? "missing"} -> ${afterRow?.cumulativeInventoryValueJpy ?? "missing"} | ${beforeRow?.cumulativeSoldValueJpy ?? "missing"} -> ${afterRow?.cumulativeSoldValueJpy ?? "missing"} | ${beforeRow?.residualJpy ?? "missing"} -> ${afterRow?.residualJpy ?? "missing"} |`,
+        );
+      }
+      if (omitted > 0) {
+        push(`| ... | ${omitted} more | | | | | |`);
+      }
+      push("");
+    }
+  }
 
   const beforeItems = before.inventory?.idToItem || {};
   const afterItems = after.inventory?.idToItem || {};
