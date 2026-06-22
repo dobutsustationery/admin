@@ -3307,6 +3307,45 @@ function addShopifyUnmatchedLine(
   });
 }
 
+function getShopifyRefundQuantityByLineItem(
+  rawOrder: any,
+): Record<string, number> {
+  const refundedByLineItem: Record<string, number> = {};
+  for (const refund of rawOrder.refunds || []) {
+    for (const refundLine of refund.refund_line_items || []) {
+      const lineItemID = String(refundLine.line_item_id);
+      refundedByLineItem[lineItemID] =
+        (refundedByLineItem[lineItemID] || 0) +
+        Number(refundLine.quantity || 0);
+    }
+  }
+  return refundedByLineItem;
+}
+
+function getShopifyLineRefundedQuantity(
+  lineItem: any,
+  refundedByLineItem: Record<string, number>,
+): number {
+  const explicitRefundQuantity = Number(lineItem.refund_quantity);
+  if (Number.isFinite(explicitRefundQuantity)) {
+    return explicitRefundQuantity;
+  }
+
+  const lineItemID = String(lineItem.id);
+  const orderRefundQuantity = refundedByLineItem[lineItemID];
+  if (orderRefundQuantity !== undefined) {
+    return orderRefundQuantity;
+  }
+
+  const orderedQuantity = Number(lineItem.quantity || 0);
+  const currentQuantity = Number(lineItem.current_quantity);
+  if (Number.isFinite(currentQuantity)) {
+    return Math.max(0, orderedQuantity - currentQuantity);
+  }
+
+  return 0;
+}
+
 function mapSkuToItemKey(
   sku: string | undefined | null,
   lineItem: any,
@@ -3791,6 +3830,7 @@ export const inventory = createReducer(initialState, (r) => {
     const newFacts: Record<string, ShopifyLineFact> = {};
     const itemQtyMap: Record<string, number> = {};
     order.unmatchedLines = [];
+    const refundedByLineItem = getShopifyRefundQuantityByLineItem(rawOrder);
 
     const lineItems = rawOrder.line_items || [];
     for (const li of lineItems) {
@@ -3803,9 +3843,13 @@ export const inventory = createReducer(initialState, (r) => {
 
       const lineItemID = String(li.id);
       const oldFact = oldFacts[lineItemID];
+      const refundedQuantity = getShopifyLineRefundedQuantity(
+        li,
+        refundedByLineItem,
+      );
       const currentQty = rawOrder.cancelled_at
         ? 0
-        : Number(li.quantity || 0) - Number(li.refund_quantity || 0);
+        : Number(li.quantity || 0) - refundedQuantity;
 
       if (resolvedKey && outcome !== "missing_historical_binding") {
         const isManualRetype =
@@ -3833,7 +3877,7 @@ export const inventory = createReducer(initialState, (r) => {
           itemKey: canonicalKey,
           placed: li.quantity,
           cancelled: rawOrder.cancelled_at ? li.quantity : 0,
-          refunded: li.refund_quantity || 0,
+          refunded: refundedQuantity,
           rawSku,
           entityId,
           manualEntityId: oldFact?.manualEntityId,
