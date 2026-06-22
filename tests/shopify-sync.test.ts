@@ -1671,6 +1671,119 @@ describe("Shopify Sync Reducer", () => {
     expect(state.idToItem[keyA].shipped).toBe(3);
   });
 
+  it("keeps Shopify order-level refunds during order reconciliation", () => {
+    const beigeKey = makeInventoryItemKey("4542804113679", "Beige");
+    const blackKey = makeInventoryItemKey("4542804113679", "Black");
+    const t10 = Date.parse("2026-06-17T10:28:10Z");
+
+    let state = inventory(
+      initialState,
+      withBroadcastMeta(
+        update_item({
+          id: beigeKey,
+          item: { ...testItem, janCode: "4542804113679", subtype: "Beige" },
+        }),
+        "create-beige",
+        t10 - 10_000,
+      ),
+    );
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        update_item({
+          id: blackKey,
+          item: { ...testItem, janCode: "4542804113679", subtype: "Black" },
+        }),
+        "create-black",
+        t10 - 9_000,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_created({
+          raw: {
+            id: "13424764911998",
+            created_at: "2026-06-17T13:28:09+03:00",
+            updated_at: "2026-06-17T13:28:11+03:00",
+            line_items: [
+              { id: 38174049370494, sku: beigeKey, quantity: 1 },
+              { id: 38174049403262, sku: blackKey, quantity: 1 },
+            ],
+          },
+          topic: "orders/create",
+        }),
+        "order-created",
+        t10 + 1000,
+      ),
+    );
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_refund_created({
+          raw: {
+            id: 1210093830526,
+            order_id: "13424764911998",
+            created_at: "2026-06-18T22:29:23+03:00",
+            refund_line_items: [{ line_item_id: 38174049403262, quantity: 1 }],
+          },
+          topic: "refunds/create",
+        }),
+        "refund-created",
+        Date.parse("2026-06-18T19:29:30Z"),
+      ),
+    );
+
+    expect(state.idToItem[beigeKey].shipped).toBe(1);
+    expect(state.idToItem[blackKey].shipped).toBe(0);
+
+    state = inventory(
+      state,
+      withBroadcastMeta(
+        shopify_order_updated({
+          raw: {
+            id: "13424764911998",
+            created_at: "2026-06-17T13:28:09+03:00",
+            updated_at: "2026-06-18T22:29:23+03:00",
+            refunds: [
+              {
+                id: 1210093830526,
+                refund_line_items: [
+                  { line_item_id: 38174049403262, quantity: 1 },
+                ],
+              },
+            ],
+            line_items: [
+              {
+                id: 38174049370494,
+                sku: beigeKey,
+                quantity: 1,
+                current_quantity: 1,
+              },
+              {
+                id: 38174049403262,
+                sku: blackKey,
+                quantity: 1,
+                current_quantity: 0,
+              },
+            ],
+          },
+          topic: "orders/updated",
+        }),
+        "order-updated",
+        Date.parse("2026-06-18T19:29:31Z"),
+      ),
+    );
+
+    const order = state.orderIdToOrder["shopify:13424764911998"];
+    expect(state.idToItem[beigeKey].shipped).toBe(1);
+    expect(state.idToItem[blackKey].shipped).toBe(0);
+    expect(order.items).toEqual([{ itemKey: beigeKey, qty: 1 }]);
+    expect(order.shopifyFacts?.lines["38174049403262"].refunded).toBe(1);
+  });
+
   it("regression: resolves non-numeric SKUs correctly for Shopify", () => {
     const key = "JAN123Letters" as InventoryItemKey;
     const item = {
