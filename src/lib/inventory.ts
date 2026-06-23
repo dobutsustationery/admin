@@ -1299,9 +1299,13 @@ function moveReplacementCostLedger(
   const targetLedger = state.costLedger[targetKey] || [];
   const sourceLedger = state.costLedger[sourceKey] || [];
   const comment = replacementAuditComment(sourceKey, targetKey, reason);
+  const targetHadArchivedStock = targetLedger.some(
+    (entry) => entry.kind === "sale" && entry.isArchive,
+  );
 
   const auditedTargetLedger = targetLedger.map((entry) => {
     if (
+      !targetHadArchivedStock &&
       entry.kind === "receipt" &&
       !entry.ignored &&
       !(entry.unitCostJpy > 0) &&
