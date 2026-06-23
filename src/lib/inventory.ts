@@ -3753,6 +3753,7 @@ export const inventory = createReducer(initialState, (r) => {
     const isReconciledLater =
       order.shopifyFacts.reconciledTimestamp &&
       order.shopifyFacts.reconciledTimestamp > shopifyTimestamp;
+    const saleAtMs = getOrderSaleAtMs(order, actionTimestamp);
 
     const refundLines = rawRefund.refund_line_items || [];
     for (const rli of refundLines) {
@@ -3767,8 +3768,25 @@ export const inventory = createReducer(initialState, (r) => {
 
       fact.refunded += qty;
       if (state.idToItem[canonicalKey]) {
+        const item = state.idToItem[canonicalKey];
         if (!isReconciledLater && amountToSubtract > 0) {
-          state.idToItem[canonicalKey].shipped -= amountToSubtract;
+          item.shipped -= amountToSubtract;
+          const ledgerSale = fractionalPreFestivalSale(
+            item,
+            -amountToSubtract,
+            saleAtMs,
+          );
+          recordSale(state, canonicalKey, ledgerSale.qty, saleAtMs, {
+            idParts: [
+              (action as any).id || "local",
+              "shopify-refund",
+              orderID,
+              refundID,
+              lineItemID,
+            ],
+            visibleQty: ledgerSale.visibleQty,
+            auditComment: `Shopify refund ${refundID}: reversed ${formatLedgerQty(amountToSubtract)} shipped unit(s) in the cost ledger.${ledgerSale.auditComment ? ` ${ledgerSale.auditComment}` : ""}`,
+          });
         }
 
         const historyVal = actionTimestamp;

@@ -27,6 +27,14 @@ const inventory = (s: any, a: any) =>
       ? { ...a, timestamp: { _seconds: 1_700_000_000, _nanoseconds: 0 } }
       : a,
   );
+const ledgerSaleQty = (state: any, key: string) =>
+  (state.costLedger?.[key] || [])
+    .filter((entry: any) => entry.kind === "sale" && !entry.ignored)
+    .reduce(
+      (sum: number, entry: any) =>
+        sum + Number(entry.visibleQty ?? entry.qty ?? 0),
+      0,
+    );
 describe("Shopify Sync Reducer", () => {
   const withBroadcastMeta = <T extends { type: string }>(
     action: T,
@@ -1738,6 +1746,8 @@ describe("Shopify Sync Reducer", () => {
 
     expect(state.idToItem[beigeKey].shipped).toBe(1);
     expect(state.idToItem[blackKey].shipped).toBe(0);
+    expect(ledgerSaleQty(state, beigeKey)).toBe(1);
+    expect(ledgerSaleQty(state, blackKey)).toBe(0);
 
     state = inventory(
       state,
