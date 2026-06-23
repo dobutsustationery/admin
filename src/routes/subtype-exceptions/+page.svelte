@@ -2,7 +2,11 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { firestore } from "$lib/firebase";
-  import { replace_subtype, resolve_subtype_exception } from "$lib/inventory";
+  import {
+    replace_subtype,
+    resolve_subtype_exception,
+    type Item,
+  } from "$lib/inventory";
   import { broadcast } from "$lib/redux-firestore";
   import { store } from "$lib/store";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
@@ -25,8 +29,10 @@
   let replaceSourceKey = "";
   let replaceTargetKey = "";
   let replaceReason = "";
+  let search = "";
 
   $: exceptions = selectSubtypeExceptions($store.inventory);
+  $: idToItem = $store.inventory?.idToItem || {};
   $: selectedJan = $page.url.searchParams.get("jan") || "";
   $: current = selectedJan
     ? exceptions.find((exception) => exception.janCode === selectedJan)
@@ -85,6 +91,25 @@
       .length,
     residue: exceptions.filter((e) => e.status === "zero-residue").length,
   };
+  $: query = search.trim().toLowerCase();
+  $: matches = (
+    query.length > 1
+      ? Object.entries(idToItem)
+          .filter(([key, item]: [string, any]) => {
+            return (
+              key.toLowerCase().includes(query) ||
+              String(item?.janCode || "").includes(query) ||
+              String(item?.description || "")
+                .toLowerCase()
+                .includes(query) ||
+              String(item?.subtype || "")
+                .toLowerCase()
+                .includes(query)
+            );
+          })
+          .slice(0, 50)
+      : []
+  ) as [string, Item][];
 
   function resetDraft(exception: SubtypeException, preferredTargetKey = "") {
     lastJan = exception.janCode;
@@ -157,6 +182,27 @@
 
   function selectException(janCode: string) {
     goto(`/subtype-exceptions?jan=${encodeURIComponent(janCode)}`);
+  }
+
+  function selectItemJan(item: Item) {
+    const janCode = String(item?.janCode || "").trim();
+    if (!janCode) return;
+    search = "";
+    selectException(janCode);
+  }
+
+  function openSearchJan() {
+    const janCode = search.trim();
+    if (!janCode) return;
+    search = "";
+    selectException(janCode);
+  }
+
+  function onSearchKeydown(event: KeyboardEvent) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      openSearchJan();
+    }
   }
 
   function addAllocation() {
@@ -246,6 +292,31 @@
       <div><strong>{summary.residue}</strong><span>Residue</span></div>
     </div>
   </header>
+
+  <section class="toolbar">
+    <label>
+      Search item
+      <input
+        bind:value={search}
+        placeholder="JAN, key, subtype, or description"
+        on:keydown={onSearchKeydown}
+      />
+    </label>
+    <button type="button" class="secondary" on:click={openSearchJan}>
+      Open JAN
+    </button>
+  </section>
+
+  {#if matches.length > 0}
+    <div class="matches">
+      {#each matches as [key, item]}
+        <button type="button" on:click={() => selectItemJan(item)}>
+          <strong>{key}</strong>
+          <span>{item.description}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   <div class="layout">
     <section class="list-panel" aria-label="Subtype exception list">
@@ -605,6 +676,7 @@
 
   .page-header,
   .detail-header,
+  .toolbar,
   .layout,
   .decision-grid,
   .allocation,
@@ -618,6 +690,50 @@
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 1rem;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 0.75rem;
+  }
+
+  .toolbar label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    color: #334155;
+    font-size: 0.85rem;
+  }
+
+  .toolbar input {
+    min-width: 22rem;
+  }
+
+  .matches {
+    max-width: 56rem;
+    border: 1px solid #d7dde5;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+  }
+
+  .matches button {
+    display: flex;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.45rem 0.6rem;
+    border: 0;
+    border-bottom: 1px solid #e4e8ee;
+    border-radius: 0;
+    background: #fff;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .matches button:hover {
+    background: #f6f8fa;
   }
 
   h1,
