@@ -10,7 +10,12 @@ const rootReducer = (s: any, a: any) =>
       ? { ...a, timestamp: { _seconds: 1_700_000_000, _nanoseconds: 0 } }
       : a,
   );
-import { update_field, update_item, type Item } from "$lib/inventory";
+import {
+  replace_subtype,
+  update_field,
+  update_item,
+  type Item,
+} from "$lib/inventory";
 
 describe("inventory handle updates sync to listings", () => {
   it("keeps listings.idToHandle and handleToListing aligned when handle changes via update_field", () => {
@@ -203,6 +208,82 @@ describe("inventory handle updates sync to listings", () => {
       state.listings.handleToListing[handle].variantOptionsByItemId,
     ).toEqual({
       [newId]: "Rabbit",
+    });
+  });
+
+  it("does not overwrite the target listing handle when replacing one subtype with another existing subtype", () => {
+    const janCode = "4542804155181";
+    const sourceHandle = "stale-a5-zipper-case-4542804155181";
+    const targetHandle = "canonical-a5-zipper-case-4542804155181";
+    const sourceId = `${janCode}Blue`;
+    const targetId = `${janCode}Green`;
+
+    const sourceItem: Item = {
+      janCode,
+      subtype: "Blue",
+      description: "A5 Two Zipper Case",
+      hsCode: "42023290",
+      image: "http://example.com/blue.jpg",
+      qty: 0,
+      pieces: 1,
+      shipped: 0,
+      creationDate: "2026-06-01",
+      timestamp: 0,
+      handle: sourceHandle,
+    };
+    const targetItem: Item = {
+      ...sourceItem,
+      subtype: "Green",
+      image: "http://example.com/green.jpg",
+      qty: 6,
+      handle: targetHandle,
+    };
+
+    let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(state, update_item({ id: sourceId, item: sourceItem }));
+    state = rootReducer(state, update_item({ id: targetId, item: targetItem }));
+    state = {
+      ...state,
+      listings: {
+        ...state.listings,
+        handleToListing: {
+          ...state.listings.handleToListing,
+          [sourceHandle]: {
+            ...state.listings.handleToListing[sourceHandle],
+            variantOptionsByItemId: {
+              [sourceId]: "Blue",
+            },
+          },
+          [targetHandle]: {
+            ...state.listings.handleToListing[targetHandle],
+            variantOptionsByItemId: {
+              [targetId]: "Green",
+            },
+          },
+        },
+      },
+    };
+
+    state = rootReducer(
+      state,
+      replace_subtype({
+        sourceKey: sourceId as any,
+        targetKey: targetId as any,
+        reason: "Blue was created by mistake; Green is correct",
+      }),
+    );
+
+    expect(state.inventory.idToItem[sourceId]).toBeUndefined();
+    expect(state.inventory.idToItem[targetId]).toBeDefined();
+    expect(state.listings.idToHandle[sourceId]).toBeUndefined();
+    expect(state.listings.idToHandle[targetId]).toBe(targetHandle);
+    expect(
+      state.listings.handleToListing[sourceHandle].variantOptionsByItemId,
+    ).toEqual({});
+    expect(
+      state.listings.handleToListing[targetHandle].variantOptionsByItemId,
+    ).toEqual({
+      [targetId]: "Green",
     });
   });
 });
