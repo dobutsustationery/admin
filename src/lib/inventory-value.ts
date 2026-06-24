@@ -78,6 +78,17 @@ function lotAverage(lots: readonly CostLot[]): { jpy: number; eur: number } {
   return { jpy: jpy / qty, eur: eur / qty };
 }
 
+function lotValue(lots: readonly CostLot[]): { jpy: number; eur: number } {
+  let jpy = 0;
+  let eur = 0;
+  for (const lot of lots) {
+    if (lot.qty <= 0) continue;
+    jpy += lot.qty * lot.jpy;
+    eur += lot.qty * lot.eur;
+  }
+  return { jpy, eur };
+}
+
 function consumeLotsFifoValue(
   lots: CostLot[],
   qty: number,
@@ -102,6 +113,94 @@ function consumeLotsFifoValue(
     if (lot.qty <= 1e-9) lots.shift();
   }
   return { jpy, eur, lots: consumedLots };
+}
+
+function isZeroCostLot(lot: CostLot): boolean {
+  return Math.abs(lot.jpy) <= 1e-9 && Math.abs(lot.eur) <= 1e-9;
+}
+
+function consumeZeroCostLots(
+  lots: CostLot[],
+  qty: number,
+): { consumedQty: number; lots: CostLot[] } {
+  let remaining = Math.max(0, qty);
+  let consumedQty = 0;
+  const consumedLots: CostLot[] = [];
+  for (let index = 0; index < lots.length && remaining > 0; ) {
+    const lot = lots[index];
+    if (!isZeroCostLot(lot)) {
+      index += 1;
+      continue;
+    }
+    const consumed = Math.min(lot.qty, remaining);
+    consumedQty += consumed;
+    consumedLots.push({
+      qty: consumed,
+      jpy: 0,
+      eur: 0,
+      source: lot.source,
+    });
+    lot.qty -= consumed;
+    remaining -= consumed;
+    if (lot.qty <= 1e-9) lots.splice(index, 1);
+    else index += 1;
+  }
+  return { consumedQty, lots: consumedLots };
+}
+
+function consumeNormalSaleValue(
+  lots: CostLot[],
+  qty: number,
+  avgJpy: number,
+  avgEur: number,
+): { jpy: number; eur: number; lots: CostLot[] } {
+  let remaining = Math.max(0, qty);
+  let jpy = 0;
+  let eur = 0;
+  const consumedLots: CostLot[] = [];
+  while (remaining > 0 && lots.length > 0) {
+    const lot = lots[0];
+    const consumed = Math.min(lot.qty, remaining);
+    const zeroCost = isZeroCostLot(lot);
+    const soldJpy = zeroCost ? 0 : avgJpy;
+    const soldEur = zeroCost ? 0 : avgEur;
+    jpy += consumed * soldJpy;
+    eur += consumed * soldEur;
+    consumedLots.push({
+      qty: consumed,
+      jpy: soldJpy,
+      eur: soldEur,
+      source: lot.source,
+    });
+    lot.qty -= consumed;
+    remaining -= consumed;
+    if (lot.qty <= 1e-9) lots.shift();
+  }
+  if (remaining > 0) {
+    jpy += remaining * avgJpy;
+    eur += remaining * avgEur;
+    consumedLots.push({
+      qty: remaining,
+      jpy: avgJpy,
+      eur: avgEur,
+      source: "receipt",
+    });
+  }
+  return { jpy, eur, lots: consumedLots };
+}
+
+function consumeStocktakeShrinkValue(
+  lots: CostLot[],
+  qty: number,
+): { jpy: number; eur: number; lots: CostLot[] } {
+  const zero = consumeZeroCostLots(lots, qty);
+  const remaining = Math.max(0, qty - zero.consumedQty);
+  const priced = consumeLotsFifoValue(lots, remaining);
+  return {
+    jpy: priced.jpy,
+    eur: priced.eur,
+    lots: [...zero.lots, ...priced.lots],
+  };
 }
 
 function stocktakeCarryAverage(lots: readonly CostLot[]): {
@@ -257,19 +356,39 @@ function cumulativeLedgerValues(
         if (nextReceipt) {
           const survivorLots = lots.map((lot) => ({ ...lot }));
           const shrinkQty = Math.max(0, prev - Math.max(0, nextReceipt.qty));
-          consumeLotsFifoValue(survivorLots, shrinkQty);
+          const hasZeroCostStock = survivorLots.some(isZeroCostLot);
+          const beforeStocktakeValue = hasZeroCostStock
+            ? lotValue(survivorLots)
+            : { jpy: prev * avgJpy, eur: prev * avgEur };
+          const survivorShrinkValue = consumeStocktakeShrinkValue(
+            survivorLots,
+            shrinkQty,
+          );
           const survivorAverage = stocktakeCarryAverage(survivorLots);
           carry =
             survivorAverage.jpy > 0 || survivorAverage.eur > 0
               ? survivorAverage
               : { jpy: avgJpy, eur: avgEur };
           if (entry.qty >= prev) {
-            const shrinkValue = consumeLotsFifoValue(
+            const recountUnitCost = applyCarryToUnitCost(nextReceipt, carry);
+            const survivorBookValue = {
+              jpy: beforeStocktakeValue.jpy - survivorShrinkValue.jpy,
+              eur: beforeStocktakeValue.eur - survivorShrinkValue.eur,
+            };
+            const recountValue = {
+              jpy: Math.max(0, nextReceipt.qty) * recountUnitCost.jpy,
+              eur: Math.max(0, nextReceipt.qty) * recountUnitCost.eur,
+            };
+            const shrinkValue = consumeStocktakeShrinkValue(
               lots,
               Math.max(0, prev - Math.max(0, nextReceipt.qty)),
             );
-            soldJpy += shrinkValue.jpy;
-            soldEur += shrinkValue.eur;
+            soldJpy +=
+              shrinkValue.jpy +
+              Math.max(0, survivorBookValue.jpy - recountValue.jpy);
+            soldEur +=
+              shrinkValue.eur +
+              Math.max(0, survivorBookValue.eur - recountValue.eur);
             onHand = 0;
             lots.splice(0, lots.length);
             continue;
@@ -277,14 +396,11 @@ function cumulativeLedgerValues(
         }
       }
       const soldQty = Math.min(entry.qty, onHand);
-      const soldValue = consumeLotsFifoValue(lots, soldQty);
+      const soldValue = consumeNormalSaleValue(lots, soldQty, avgJpy, avgEur);
       soldJpy += soldValue.jpy;
       soldEur += soldValue.eur;
       soldLots.push(...soldValue.lots);
       onHand -= soldQty;
-      const remainingAverage = lotAverage(lots);
-      avgJpy = remainingAverage.jpy;
-      avgEur = remainingAverage.eur;
       pendingSaleQty += entry.qty - soldQty;
     } else {
       let restored = -entry.qty;
@@ -321,9 +437,6 @@ function cumulativeLedgerValues(
       onHand += restored;
       if (restoredLots.length > 0) {
         lots.unshift(...restoredLots);
-        const restoredAverage = lotAverage(lots);
-        avgJpy = restoredAverage.jpy;
-        avgEur = restoredAverage.eur;
       }
     }
     if (entry.isArchive && prev > 0 && onHand === 0) {
