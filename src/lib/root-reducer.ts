@@ -121,6 +121,7 @@ const migrateListingItemReference = (
   newItemId: string,
   fallbackOptionLabel?: string,
   oldSubtypeLabel?: string,
+  preserveExistingTargetHandle = false,
 ): any => {
   if (!oldItemId || !newItemId || oldItemId === newItemId) return nextState;
 
@@ -128,10 +129,16 @@ const migrateListingItemReference = (
   const handle = listingState?.idToHandle?.[oldItemId];
   if (!handle) return nextState;
 
-  const nextIdToHandle = {
-    ...listingState.idToHandle,
-    [newItemId]: handle,
-  };
+  const existingTargetHandle = listingState?.idToHandle?.[newItemId];
+  const keepTargetHandle =
+    preserveExistingTargetHandle &&
+    existingTargetHandle &&
+    existingTargetHandle !== handle;
+
+  const nextIdToHandle = { ...listingState.idToHandle };
+  if (!keepTargetHandle) {
+    nextIdToHandle[newItemId] = handle;
+  }
   delete nextIdToHandle[oldItemId];
 
   let nextHandleToListing = listingState.handleToListing;
@@ -154,7 +161,7 @@ const migrateListingItemReference = (
     if (optionLabel || oldItemId in currentOptions) {
       const nextOptions = { ...currentOptions };
       delete nextOptions[oldItemId];
-      if (optionLabel) {
+      if (optionLabel && !keepTargetHandle) {
         nextOptions[newItemId] = optionLabel;
       }
       nextHandleToListing = {
@@ -880,6 +887,7 @@ export const rootReducer = (
         newItemId,
         fallbackOptionLabel,
         oldSubtype,
+        isReplaceSubtype,
       );
 
       // 2. Sync Photo Groups (Photos)
