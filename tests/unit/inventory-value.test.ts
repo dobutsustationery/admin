@@ -329,6 +329,56 @@ describe("buildInventoryValueReport", () => {
     expect(cumulative.soldJpy).toBe(195);
   });
 
+  it("balances normal post-restock sales with weighted-average inventory value", () => {
+    const ledger: Record<string, LedgerEntry[]> = {
+      A: [
+        {
+          kind: "receipt",
+          at: D("2024-10-08"),
+          seq: 0,
+          qty: 6,
+          unitCostJpy: 65,
+          unitCostEur: 0.4,
+        },
+        {
+          kind: "sale",
+          at: D("2025-05-02"),
+          seq: 1,
+          qty: 6,
+          isArchive: true,
+        },
+        {
+          kind: "receipt",
+          at: D("2025-05-04"),
+          seq: 2,
+          qty: 1,
+          receivedQty: 0,
+          unitCostJpy: 0,
+          unitCostEur: 0,
+        },
+        {
+          kind: "receipt",
+          at: D("2025-09-25"),
+          seq: 3,
+          qty: 12,
+          unitCostJpy: 62,
+          unitCostEur: 0.38,
+        },
+        { kind: "sale", at: D("2025-11-23"), seq: 4, qty: 1 },
+      ],
+    };
+
+    const rows = buildInventoryValueReport(inv(ledger), D("2025-11-30"));
+    const current = rows.at(-1)!;
+    const residual =
+      current.cumulativeInventoryValueJpy -
+      current.valueJpy -
+      current.cumulativeSoldValueJpy;
+
+    expect(current.cumulativeInventoryValueJpy).toBe(1134);
+    expect(residual).toBeCloseTo(0, 6);
+  });
+
   it("exports a TSV with header and one line per row", () => {
     const ledger = {
       A: [

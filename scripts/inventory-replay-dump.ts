@@ -15,6 +15,7 @@ import { pathToFileURL } from "url";
 import {
   valueAt,
   effectiveLedgerEntries,
+  totalValuation,
   type LedgerEntry,
 } from "../src/lib/cost-engine";
 import { performance } from "perf_hooks";
@@ -45,6 +46,7 @@ interface Dump {
   inventory: JsonObject;
   orderValueSummary?: OrderValueSummaryRow[];
   inventoryValueReport?: InventoryValueReportRow[];
+  recountFoundStockRows?: RecountFoundStockRow[];
 }
 
 type StateDiffKind = "added" | "removed" | "changed";
@@ -103,6 +105,29 @@ interface InventoryValueReportRow {
   residualJpy?: number;
 }
 
+interface RecountFoundStockRow {
+  key: string;
+  jan: string;
+  subtype: string;
+  description: string;
+  itemQty: number;
+  shipped: number;
+  archiveAt?: number;
+  recountAt?: number;
+  sweptQty?: number;
+  recountQty?: number;
+  foundQty?: number;
+  valueJpy: number;
+  soldJpy: number;
+  cumulativeInventoryJpy: number;
+  accountingImpactJpy: number;
+  valueEur: number;
+  soldEur: number;
+  cumulativeInventoryEur: number;
+  accountingImpactEur: number;
+  auditComment: string;
+}
+
 type CostEngineModule = {
   effectiveLedgerEntries?: (entries: any[]) => any[];
   lotMatchesOrder: (entry: any, orderId: string) => boolean;
@@ -112,7 +137,12 @@ type InventoryValueModule = {
   totalCumulativeValues: (
     ledgers: any[][],
     asOf: number,
-  ) => { inventoryJpy: number; inventoryEur: number };
+  ) => {
+    inventoryJpy: number;
+    inventoryEur: number;
+    soldJpy: number;
+    soldEur: number;
+  };
   buildInventoryValueReport?: (
     inventory: JsonObject,
     nowMs: number,
@@ -863,6 +893,102 @@ function buildInventoryValueReportRows(
     }));
 }
 
+function sortedLedger(ledger: readonly any[]): any[] {
+  return [...ledger].sort(
+    (a, b) =>
+      (Number(a?.at) || 0) - (Number(b?.at) || 0) ||
+      (Number(a?.seq) || 0) - (Number(b?.seq) || 0),
+  );
+}
+
+function buildRecountFoundStockRows(
+  inventory: JsonObject,
+  inventoryValue: InventoryValueModule,
+): RecountFoundStockRow[] {
+  const idToItem = inventory?.idToItem || {};
+  const costLedger = inventory?.costLedger || {};
+  const rows: RecountFoundStockRow[] = [];
+
+  for (const [key, ledger] of Object.entries(costLedger)) {
+    const item = idToItem[key];
+    if (!item) continue;
+    const entries = (ledger as any[]) || [];
+    const sorted = sortedLedger(effectiveLedgerEntries(entries));
+    const valuation = totalValuation([entries as LedgerEntry[]]);
+    const cumulative = inventoryValue.totalCumulativeValues(
+      [entries],
+      Number.POSITIVE_INFINITY,
+    );
+    const accountingImpactJpy =
+      valuation.valueJpy + cumulative.soldJpy - cumulative.inventoryJpy;
+    const accountingImpactEur =
+      valuation.valueEur + cumulative.soldEur - cumulative.inventoryEur;
+    if (
+      Math.abs(accountingImpactJpy) <= 1e-6 &&
+      Math.abs(accountingImpactEur) <= 1e-6
+    ) {
+      continue;
+    }
+
+    let lastPositiveArchive: { at: number; qty: number } | undefined;
+    let lastRecount:
+      | { at: number; qty: number; auditComment?: string }
+      | undefined;
+    for (const entry of sorted) {
+      if (entry?.ignored) continue;
+      if (entry?.kind === "sale" && entry?.isArchive && entry.qty > 0) {
+        lastPositiveArchive = { at: entry.at, qty: entry.qty };
+        continue;
+      }
+      if (
+        entry?.kind === "receipt" &&
+        entry.receivedQty === 0 &&
+        entry.qty > 0
+      ) {
+        lastRecount = {
+          at: entry.at,
+          qty: entry.qty,
+          auditComment: entry.auditComment,
+        };
+      }
+    }
+
+    const foundQty =
+      lastPositiveArchive && lastRecount
+        ? lastRecount.qty - lastPositiveArchive.qty
+        : undefined;
+
+    rows.push({
+      key,
+      jan: item.janCode || key,
+      subtype: item.subtype || "",
+      description: item.description || "",
+      itemQty: Number(item.qty) || 0,
+      shipped: Number(item.shipped) || 0,
+      archiveAt: lastPositiveArchive?.at,
+      recountAt: lastRecount?.at,
+      sweptQty: lastPositiveArchive?.qty,
+      recountQty: lastRecount?.qty,
+      foundQty,
+      valueJpy: valuation.valueJpy,
+      soldJpy: cumulative.soldJpy,
+      cumulativeInventoryJpy: cumulative.inventoryJpy,
+      accountingImpactJpy,
+      valueEur: valuation.valueEur,
+      soldEur: cumulative.soldEur,
+      cumulativeInventoryEur: cumulative.inventoryEur,
+      accountingImpactEur,
+      auditComment: lastRecount?.auditComment || "",
+    });
+  }
+
+  return rows.sort(
+    (a, b) =>
+      Math.abs(b.accountingImpactJpy) - Math.abs(a.accountingImpactJpy) ||
+      a.key.localeCompare(b.key),
+  );
+}
+
 function formatDate(ms?: number): string {
   if (!ms) return "-";
   return new Date(ms).toISOString().slice(0, 10);
@@ -1007,6 +1133,10 @@ async function capture(args: string[]) {
       inventory,
       inventoryValue,
       reportNowMs,
+    ),
+    recountFoundStockRows: buildRecountFoundStockRows(
+      inventory,
+      inventoryValue,
     ),
   };
 
@@ -1307,6 +1437,79 @@ function diff(args: string[]) {
       }
       push("");
     }
+  }
+
+  const beforeRecountRows = before.recountFoundStockRows || [];
+  const afterRecountRows = after.recountFoundStockRows || [];
+  const recountRowKey = (row: RecountFoundStockRow) =>
+    `${row.key}:${row.recountAt ?? ""}:${row.recountQty ?? ""}`;
+  const beforeRecountByKey = new Map(
+    beforeRecountRows.map((row) => [recountRowKey(row), row]),
+  );
+  const afterRecountByKey = new Map(
+    afterRecountRows.map((row) => [recountRowKey(row), row]),
+  );
+  const recountKeys = new Set([
+    ...beforeRecountByKey.keys(),
+    ...afterRecountByKey.keys(),
+  ]);
+  const changedRecountRows = [...recountKeys]
+    .map((key) => ({
+      key,
+      before: beforeRecountByKey.get(key),
+      after: afterRecountByKey.get(key),
+    }))
+    .filter((row) => stable(row.before) !== stable(row.after))
+    .sort((a, b) => {
+      const aImpact = Math.abs(
+        a.after?.accountingImpactJpy ?? a.before?.accountingImpactJpy ?? 0,
+      );
+      const bImpact = Math.abs(
+        b.after?.accountingImpactJpy ?? b.before?.accountingImpactJpy ?? 0,
+      );
+      return bImpact - aImpact || a.key.localeCompare(b.key);
+    });
+
+  push("## Recount Found Stock");
+  push("");
+  push(
+    `Rows changed: **${changedRecountRows.length}**. Count before: ` +
+      `\`${beforeRecountRows.length}\`; after: \`${afterRecountRows.length}\`. ` +
+      `Accounting impact JPY before: \`${roundMoney(
+        beforeRecountRows.reduce(
+          (sum, row) => sum + row.accountingImpactJpy,
+          0,
+        ),
+      )}\`; after: \`${roundMoney(
+        afterRecountRows.reduce((sum, row) => sum + row.accountingImpactJpy, 0),
+      )}\`.`,
+  );
+  push("");
+  if (changedRecountRows.length > 0) {
+    const omitted = omittedCount(changedRecountRows.length, detailLimit);
+    if (omitted > 0) {
+      push(
+        `Showing ${detailLimit} rows. Generate the full detail report with: ` +
+          `\`${fullDetailCommand(beforePath, afterPath, outPath)}\`.`,
+      );
+      push("");
+    }
+    push(
+      "| Key | Archive date | Recount date | Swept qty | Recount qty | Found qty | Value JPY | Sold JPY | Cumulative inventory JPY | Accounting impact JPY | Comment |",
+    );
+    push("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|");
+    for (const row of limitedRows(changedRecountRows, detailLimit)) {
+      const b = row.before;
+      const a = row.after;
+      const display = a || b;
+      push(
+        `| \`${display?.key || row.key}\` | ${formatDate(display?.archiveAt)} | ${formatDate(display?.recountAt)} | ${b?.sweptQty ?? "missing"} -> ${a?.sweptQty ?? "missing"} | ${b?.recountQty ?? "missing"} -> ${a?.recountQty ?? "missing"} | ${b?.foundQty ?? "missing"} -> ${a?.foundQty ?? "missing"} | ${roundMoney(b?.valueJpy ?? 0)} -> ${roundMoney(a?.valueJpy ?? 0)} | ${roundMoney(b?.soldJpy ?? 0)} -> ${roundMoney(a?.soldJpy ?? 0)} | ${roundMoney(b?.cumulativeInventoryJpy ?? 0)} -> ${roundMoney(a?.cumulativeInventoryJpy ?? 0)} | ${roundMoney(b?.accountingImpactJpy ?? 0)} -> ${roundMoney(a?.accountingImpactJpy ?? 0)} | ${valueForDiffReport(display?.auditComment || "")} |`,
+      );
+    }
+    if (omitted > 0) {
+      push(`| ... | ${omitted} more | | | | | | | | | |`);
+    }
+    push("");
   }
 
   const beforeItems = before.inventory?.idToItem || {};
