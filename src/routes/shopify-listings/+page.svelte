@@ -8,9 +8,15 @@
     type VariantDiffField,
   } from "$lib/shopify-deep-diff";
   import ShopifyListingIssueDetail from "$lib/components/ShopifyListingIssueDetail.svelte";
+  import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
+  import { generateSku } from "$lib/sku";
   import type { ShopifyCatalogListing } from "$lib/shopify-catalog-slice";
   import { store } from "$lib/store";
-  import { SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION } from "$lib/sync-events";
+  import {
+    SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION,
+    SHOPIFY_REQUEST_COLLECTION,
+    SHOPIFY_SYNC_REQUEST_EVENT,
+  } from "$lib/sync-events";
   import { user } from "$lib/user-store";
   import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
@@ -47,6 +53,16 @@
     diffDetails: DetailedShopifyDiffResult | null;
     issueKeys: IssueKey[];
     primaryIssue: IssueKey;
+  }
+  interface ListingSyncVariant {
+    itemId: string;
+    sku: string;
+    janCode: string;
+    subtype: string;
+    available: number;
+    price: number;
+    weight: number;
+    image: string;
   }
   type TableStatus =
     | "admin_only"
@@ -125,6 +141,8 @@
   let requestedAtLabel = "";
   let activeRequestId = "";
   let hasRequestedInitial = false;
+  let bulkSyncIssue: IssueKey | null = null;
+  let bulkSyncMessage = "";
 
   function normalizeHandle(value: string): string {
     return String(value || "")
@@ -574,6 +592,135 @@
     }
   }
 
+  function buildListingSyncRequest(
+    state: any,
+    handle: string,
+    uid: string,
+  ): Record<string, any> | null {
+    const listing = state.listings?.handleToListing?.[handle];
+    if (!listing) return null;
+
+    const idToHandle = state.listings?.idToHandle || {};
+    const idToItem = state.inventory?.idToItem || {};
+    const requestId = `listing-sync-${Date.now()}-${uid}`;
+
+    const variants = Object.entries(idToHandle)
+      .filter(
+        ([_, listingHandle]) => String(listingHandle || "").trim() === handle,
+      )
+      .map(([id]): ListingSyncVariant | null => {
+        const item: any = idToItem[id];
+        if (!item) return null;
+
+        const janCode = String(item?.janCode || "").trim();
+        const inventorySubtype = String(item?.subtype || "").trim();
+        const subtype = String(
+          listing.variantOptionsByItemId?.[id] || item?.subtype || "",
+        ).trim();
+        const qty = Number(item?.qty || 0);
+        const shipped = Number(item?.shipped || 0);
+
+        return {
+          itemId: id,
+          sku: generateSku(janCode, inventorySubtype),
+          janCode,
+          subtype,
+          available: Math.max(0, qty - shipped),
+          price: Number(item?.price || 0),
+          weight: Number(item?.weight || 0),
+          image: toGoogleDrivePublicImageUrl(String(item?.image || "")),
+        };
+      })
+      .filter((variant): variant is ListingSyncVariant => {
+        return !!variant?.itemId && !!variant?.sku && !!variant?.janCode;
+      });
+
+    if (variants.length === 0) return null;
+
+    return {
+      eventType: SHOPIFY_SYNC_REQUEST_EVENT,
+      requestId,
+      handle,
+      listing: {
+        handle,
+        title: String(listing.title || ""),
+        bodyHtml: String(listing.bodyHtml || ""),
+        productCategory: String(listing.productCategory || ""),
+        option1Name: String(listing.option1Name || "Subtype"),
+        productType: String(listing.productType || ""),
+        vendor: String(listing.vendor || "SPNSS Ltd."),
+        tags: Array.isArray(listing.tags) ? listing.tags : [],
+        status: String(listing.status || "active"),
+        images: (Array.isArray(listing.images) ? listing.images : []).map(
+          (img: any, idx: number) => ({
+            id: String(img?.id || ""),
+            url: toGoogleDrivePublicImageUrl(String(img?.url || "")),
+            position: Number.isFinite(Number(img?.position))
+              ? Number(img.position)
+              : idx + 1,
+            altText: String(img?.altText || ""),
+          }),
+        ),
+      },
+      variants,
+      source: "shopify-listings-page",
+      creator: uid,
+      requestedBy: uid,
+      requestedAt: Date.now(),
+      payloadVersion: 1,
+      createdAtMs: Date.now(),
+      createdAt: serverTimestamp(),
+      timestamp: serverTimestamp(),
+    };
+  }
+
+  function syncableRows(
+    sectionRows: ListingPresenceRow[],
+  ): ListingPresenceRow[] {
+    return sectionRows.filter((row) => row.inAdmin);
+  }
+
+  async function syncListingsForSection(
+    issue: IssueKey,
+    sectionRows: ListingPresenceRow[],
+  ) {
+    if (!$user?.uid || bulkSyncIssue) return;
+
+    const rowsToSync = syncableRows(sectionRows);
+    if (rowsToSync.length === 0) {
+      bulkSyncMessage = `No admin listings to sync in ${ISSUE_LABELS[issue]}.`;
+      return;
+    }
+
+    bulkSyncIssue = issue;
+    bulkSyncMessage = "";
+
+    let queued = 0;
+    let skipped = 0;
+    try {
+      const state = store.getState();
+      for (const row of rowsToSync) {
+        const request = buildListingSyncRequest(state, row.handle, $user.uid);
+        if (!request) {
+          skipped += 1;
+          continue;
+        }
+        await addDoc(
+          collection(firestore, SHOPIFY_REQUEST_COLLECTION),
+          request,
+        );
+        queued += 1;
+      }
+      bulkSyncMessage = `Queued ${queued} Shopify sync request${queued === 1 ? "" : "s"} for ${ISSUE_LABELS[issue]}${skipped ? `; skipped ${skipped}` : ""}.`;
+    } catch (e: any) {
+      bulkSyncMessage =
+        e?.message ||
+        `Failed to queue sync requests for ${ISSUE_LABELS[issue]}.`;
+    } finally {
+      bulkSyncIssue = null;
+    }
+  }
+
   $: currentState = $store;
   $: catalogState = currentState.shopifyCatalog || {};
   $: adminHandles = getAdminHandles(currentState);
@@ -807,13 +954,16 @@
     {#if effectiveError}
       <div class="error">{effectiveError}</div>
     {/if}
+    {#if bulkSyncMessage}
+      <div class="bulk-sync-message">{bulkSyncMessage}</div>
+    {/if}
 
     {#if issueSections.length === 0}
       <div class="empty-state">No rows for current filter.</div>
     {:else}
       <div class="issue-sections">
         {#each issueSections as section}
-          <details class="issue-section" open>
+          <details class="issue-section">
             <summary>
               <span>
                 <strong>{ISSUE_LABELS[section.issue]}</strong>
@@ -823,6 +973,23 @@
               </span>
               <span class="section-count">{section.rows.length}</span>
             </summary>
+            <div class="section-toolbar">
+              <button
+                class="btn-sync-section"
+                type="button"
+                on:click={() =>
+                  syncListingsForSection(section.issue, section.rows)}
+                disabled={!$user ||
+                  bulkSyncIssue !== null ||
+                  syncableRows(section.rows).length === 0}
+              >
+                {#if bulkSyncIssue === section.issue}
+                  Queueing…
+                {:else}
+                  Sync all ({syncableRows(section.rows).length})
+                {/if}
+              </button>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -1068,6 +1235,17 @@
     padding: 0.65rem 0.75rem;
   }
 
+  .bulk-sync-message {
+    margin-bottom: 0.75rem;
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 650;
+  }
+
   .table-wrap {
     overflow: auto;
     border: 1px solid #e5e7eb;
@@ -1120,6 +1298,30 @@
     border: 0;
     border-top: 1px solid #e5e7eb;
     border-radius: 0;
+  }
+
+  .section-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.65rem 0.9rem;
+    border-top: 1px solid #e5e7eb;
+    background: #fff;
+  }
+
+  .btn-sync-section {
+    border: 0;
+    border-radius: 8px;
+    background: #0b57d0;
+    color: white;
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 750;
+    padding: 0.45rem 0.75rem;
+  }
+
+  .btn-sync-section:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 
   table {
