@@ -160,7 +160,25 @@ function extractGoogleDriveFileId(rawUrl: string): string {
   if (imageMatch?.[1]) return imageMatch[1];
   const queryMatch = /[?&]id=([a-zA-Z0-9_-]+)/.exec(value);
   if (queryMatch?.[1]) return queryMatch[1];
+  const shopifyDriveMatch = extractShopifyGeneratedDriveFileId(value);
+  if (shopifyDriveMatch) return shopifyDriveMatch;
   return "";
+}
+
+function extractShopifyGeneratedDriveFileId(rawUrl: string): string {
+  let pathname = "";
+  try {
+    const url = new URL(rawUrl);
+    if (url.hostname !== "cdn.shopify.com") return "";
+    pathname = url.pathname;
+  } catch {
+    return "";
+  }
+
+  const filename = decodeURIComponent(pathname.split("/").pop() || "");
+  const match = /^(.+?)_s\d+(?:_[0-9a-f-]{8,})?\.[A-Za-z0-9]+$/i.exec(filename);
+  const candidate = match?.[1] || "";
+  return /^[A-Za-z0-9_-]{10,}$/.test(candidate) ? candidate : "";
 }
 
 function normalizeImageUrl(rawUrl: unknown): string {
@@ -207,7 +225,9 @@ function toComparableSubtype(
 
 function normalizeGalleryImages(
   images: Array<{ url?: unknown; altText?: unknown; position?: unknown }>,
+  options: { excludeImageKeys?: Set<string> } = {},
 ): ComparableImage[] {
+  const excludeImageKeys = options.excludeImageKeys || new Set<string>();
   const ordered = (Array.isArray(images) ? images : [])
     .slice()
     .sort((a, b) => Number(a?.position || 0) - Number(b?.position || 0));
@@ -216,7 +236,7 @@ function normalizeGalleryImages(
 
   ordered.forEach((image) => {
     const url = normalizeImageUrl(image?.url);
-    if (!url || seen.has(url)) return;
+    if (!url || excludeImageKeys.has(url) || seen.has(url)) return;
     seen.add(url);
     result.push({
       url,
@@ -225,6 +245,14 @@ function normalizeGalleryImages(
   });
 
   return result;
+}
+
+function variantImageKeys(variants: Array<{ image?: unknown }>): Set<string> {
+  return new Set(
+    (Array.isArray(variants) ? variants : [])
+      .map((variant) => normalizeImageUrl(variant?.image))
+      .filter(Boolean),
+  );
 }
 
 function toComparableVariant(
@@ -295,7 +323,6 @@ function imagesEqual(
   for (let i = 0; i < left.length; i += 1) {
     const l = left[i];
     const r = right[i];
-    if (l.altText !== r.altText) return false;
     if (l.url !== r.url && !isEquivalentHostedImage(l.url, r.url)) {
       return false;
     }
@@ -327,6 +354,34 @@ function findUnusedVariantIndex(
   );
 }
 
+function canSyncVariantImageByCurrentSku(
+  local: ComparableVariant,
+  remote: ComparableVariant,
+): boolean {
+  return trimString(local.sku) === trimString(remote.sku);
+}
+
+function shouldReportVariantImageDiff(
+  local: ComparableVariant,
+  remote: ComparableVariant,
+): boolean {
+  if (
+    local.image === remote.image ||
+    isEquivalentHostedImage(local.image, remote.image)
+  ) {
+    return false;
+  }
+
+  if (
+    !trimString(remote.image) &&
+    !canSyncVariantImageByCurrentSku(local, remote)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function compareVariantFields(
   local: ComparableVariant,
   remote: ComparableVariant,
@@ -340,10 +395,7 @@ function compareVariantFields(
   if (local.inventoryQuantity !== remote.inventoryQuantity) {
     fields.push("inventoryQuantity");
   }
-  if (
-    local.image !== remote.image &&
-    !isEquivalentHostedImage(local.image, remote.image)
-  ) {
+  if (shouldReportVariantImageDiff(local, remote)) {
     fields.push("image");
   }
   return fields;
@@ -455,7 +507,6 @@ function diffGalleryImages(
     ) {
       fields.push("url");
     }
-    if (local.altText !== remote.altText) fields.push("altText");
     if (fields.length > 0) details.push({ local, remote, fields });
   }
   return details;
@@ -493,7 +544,9 @@ export function buildComparableLocalListing(params: {
     tags: normalizeTags(params.listing?.tags),
     status: normalizeStatus(params.listing?.status),
     option1Name: toComparableOption1Name(params.listing?.option1Name, items),
-    galleryImages: normalizeGalleryImages(params.listing?.images || []),
+    galleryImages: normalizeGalleryImages(params.listing?.images || [], {
+      excludeImageKeys: variantImageKeys(items),
+    }),
     variants: items.map((item) => toComparableVariant(item, items)),
   };
 }
@@ -513,16 +566,9 @@ export function buildComparableRemoteListing(
     }))
     .sort((a, b) => a.sku.localeCompare(b.sku));
 
-  const variantImageKeys = new Set(
-    variants.map((variant) => normalizeImageUrl(variant.image)).filter(Boolean),
-  );
-
-  const galleryImages = normalizeGalleryImages(
-    (listing?.images || []).filter((image) => {
-      const key = normalizeImageUrl(image?.url);
-      return !key || !variantImageKeys.has(key);
-    }),
-  );
+  const galleryImages = normalizeGalleryImages(listing?.images || [], {
+    excludeImageKeys: variantImageKeys(variants),
+  });
 
   return {
     handle: trimString(listing?.handle),

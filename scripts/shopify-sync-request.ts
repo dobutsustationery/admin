@@ -5,10 +5,12 @@ import { resolve } from "node:path";
 import { initializeApp, cert } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { rootReducer } from "../src/lib/root-reducer";
-import { generateSku } from "../src/lib/sku";
+import {
+  buildAdminShopifyListingProjectionFromState,
+  buildShopifySyncRequestEvent,
+} from "../src/lib/shopify-listing-projection";
 
 const SYNC_COLLECTION = "sync";
-const SHOPIFY_SYNC_REQUEST_EVENT = "shopify/sync_requested";
 
 type Args = Record<string, string | boolean>;
 
@@ -99,66 +101,21 @@ function buildRequestPayload(
   requestedBy: string,
   source: string,
 ) {
-  const listing = state?.listings?.handleToListing?.[handle];
-  if (!listing) {
+  const projection = buildAdminShopifyListingProjectionFromState(state, handle);
+  if (!projection) {
     throw new Error(`Listing not found for handle: ${handle}`);
   }
 
-  const inventory = state?.inventory?.idToItem || {};
-  const idToHandle = state?.listings?.idToHandle || {};
-
-  const variants = Object.entries(inventory)
-    .filter(([id]) => idToHandle[id] === handle)
-    .map(([id, item]: [string, any]) => {
-      const janCode = String(item?.janCode || "").trim();
-      const subtype = String(item?.subtype || "").trim();
-      const qty = Number(item?.qty || 0);
-      const shipped = Number(item?.shipped || 0);
-      return {
-        itemId: id,
-        sku: generateSku(janCode, subtype),
-        janCode,
-        subtype,
-        available: Math.max(0, qty - shipped),
-        price: Number(item?.price || 0),
-        weight: Number(item?.weight || 0),
-        image: String(item?.image || ""),
-      };
-    })
-    .filter((v) => !!v.itemId && !!v.sku && !!v.janCode);
-
-  if (variants.length === 0) {
-    throw new Error(`No variants found for handle: ${handle}`);
-  }
-
   const requestId = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
-  return {
-    eventType: SHOPIFY_SYNC_REQUEST_EVENT,
+  const nowMs = Date.now();
+  return buildShopifySyncRequestEvent({
+    projection,
     requestId,
-    handle,
-    listing: {
-      handle,
-      title: String(listing.title || ""),
-      bodyHtml: String(listing.bodyHtml || ""),
-      productCategory: String(listing.productCategory || ""),
-      option1Name: String(listing.option1Name || "Subtype"),
-      productType: String(listing.productType || ""),
-      vendor: String(listing.vendor || "SPNSS Ltd."),
-      tags: Array.isArray(listing.tags) ? listing.tags : [],
-      status: String(listing.status || "active"),
-      images: Array.isArray(listing.images) ? listing.images : [],
-    },
-    variants,
+    uid: requestedBy,
     source,
-    creator: requestedBy,
-    requestedBy,
-    requestedAt: Date.now(),
-    payloadVersion: 1,
-    createdAtMs: Date.now(),
-    createdAt: FieldValue.serverTimestamp(),
-    timestamp: FieldValue.serverTimestamp(),
-  };
+    nowMs,
+    serverTimestamp: FieldValue.serverTimestamp(),
+  });
 }
 
 async function main() {
