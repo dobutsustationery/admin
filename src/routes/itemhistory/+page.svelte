@@ -123,6 +123,10 @@
       : "-";
   }
 
+  function fmtPriceEur(n: number | undefined): string {
+    return Number.isFinite(n) ? `€${(n as number).toFixed(2)}` : "-";
+  }
+
   function ledgerKind(entry: LedgerEntry): string {
     if (entry.kind === "sale") {
       if (entry.auditComment) {
@@ -220,6 +224,14 @@
             <div class="result-info">
               <span class="result-jan">{item.janCode}</span>
               <span class="result-desc">{item.description}</span>
+            </div>
+            <div class="result-meta">
+              <span class="result-stock">Stock: {fmtQty(onHand(item))}</span>
+              <span class="result-cost-price"
+                >Cost: {fmtYen(item.cost)}, Price: {fmtPriceEur(
+                  item.price,
+                )}</span
+              >
             </div>
           </button>
         {/each}
@@ -483,6 +495,8 @@
   .result-info {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    flex: 1;
   }
   .result-jan {
     font-weight: bold;
@@ -495,6 +509,25 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 300px;
+  }
+  .result-meta {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-left: auto;
+    min-width: 150px;
+    text-align: right;
+  }
+  .result-stock {
+    font-weight: bold;
+    font-size: 0.85rem;
+    color: #222;
+  }
+  .result-cost-price {
+    font-size: 0.8rem;
+    color: #666;
+    white-space: nowrap;
   }
 
   .page-title {
