@@ -30,7 +30,7 @@
     remove_variant_requested,
   } from "$lib/listing-creation-slice";
   import { update_field, split_inventory_item } from "$lib/inventory";
-  import { generateSku, makeInventoryItemKey } from "$lib/sku";
+  import { makeInventoryItemKey } from "$lib/sku";
   import { uncategorize_photo } from "$lib/photos-slice";
   import { goto } from "$app/navigation";
   import { broadcast } from "$lib/redux-firestore";
@@ -54,9 +54,10 @@
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
   import type { ShopifySyncRequestView } from "$lib/shopify-sync-model";
   import {
-    SHOPIFY_SYNC_REQUEST_EVENT,
-    SHOPIFY_REQUEST_COLLECTION,
-  } from "$lib/sync-events";
+    buildAdminShopifyListingProjection,
+    buildShopifySyncRequestEvent,
+  } from "$lib/shopify-listing-projection";
+  import { SHOPIFY_REQUEST_COLLECTION } from "$lib/sync-events";
 
   // --- State ---
   $: mode = $page.url.searchParams.get("mode");
@@ -588,51 +589,17 @@
       return;
     }
 
-    const requestId = `listing-sync-${Date.now()}-${uid}`;
-    const listingSnapshot = {
+    const projection = buildAdminShopifyListingProjection({
       handle,
-      title: listingData?.title || "",
-      bodyHtml: listingData?.bodyHtml || "",
-      productCategory: listingData?.productCategory || "",
-      option1Name: listingData?.option1Name || "Subtype",
-      images: (listingImages || []).map((img, idx) => ({
-        id: String(img?.id || ""),
-        url: toGoogleDrivePublicImageUrl(String(img?.url || "")),
-        position: Number.isFinite(Number(img?.position))
-          ? Number(img.position)
-          : idx + 1,
-        altText: String(img?.altText || ""),
-      })),
-    };
+      listing: {
+        ...(listingData || {}),
+        handle,
+        images: listingImages || [],
+      },
+      items: associatedItems || [],
+    });
 
-    const variantsSnapshot = (associatedItems || [])
-      .map((item: any) => {
-        const janCode = String(item?.janCode || "").trim();
-        const inventorySubtype = String(
-          item?.inventorySubtype ?? item?.subtype ?? "",
-        ).trim();
-        const subtype = String(
-          item?.listingOption1Value || item?.subtype || "",
-        ).trim();
-        const sku = generateSku(janCode, inventorySubtype);
-        const qty = Number(item?.qty || 0);
-        const shipped = Number(item?.shipped || 0);
-        const available = Math.max(0, qty - shipped);
-
-        return {
-          itemId: item?.id || "",
-          sku,
-          janCode,
-          subtype,
-          available,
-          price: Number(item?.price || 0),
-          weight: Number(item?.weight || 0),
-          image: toGoogleDrivePublicImageUrl(String(item?.image || "")),
-        };
-      })
-      .filter((v) => !!v.itemId && !!v.sku && !!v.janCode);
-
-    if (variantsSnapshot.length === 0) {
+    if (!projection) {
       syncMessage = "Cannot sync: listing has no inventory variants.";
       return;
     }
@@ -643,21 +610,16 @@
     dismissedSuccessRequestId = null;
     clearSuccessMessageTimer();
 
-    const syncRequestEvent = {
-      eventType: SHOPIFY_SYNC_REQUEST_EVENT,
+    const requestId = `listing-sync-${Date.now()}-${uid}`;
+    const nowMs = Date.now();
+    const syncRequestEvent = buildShopifySyncRequestEvent({
+      projection,
       requestId,
-      handle,
-      listing: listingSnapshot,
-      variants: variantsSnapshot,
+      uid,
       source: "listing-detail",
-      creator: uid,
-      requestedBy: uid,
-      requestedAt: Date.now(),
-      payloadVersion: 1,
-      createdAtMs: Date.now(),
-      createdAt: serverTimestamp(),
-      timestamp: serverTimestamp(),
-    };
+      nowMs,
+      serverTimestamp: serverTimestamp(),
+    });
 
     try {
       const undefinedPaths = findUndefinedPaths(syncRequestEvent);

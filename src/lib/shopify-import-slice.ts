@@ -227,19 +227,9 @@ export const computeShopifyImportBatch = (
   // Pre-scan to map CSV Handles and JANs
   const csvHandleToJan = new Map<string, string>();
   const janToRow = new Map<string, any>();
-  const variantImagesByHandle = new Map<string, Set<string>>();
-
   state.rows.forEach((r) => {
     if (r.parsed && r.parsed.janCode) {
       janToRow.set(r.parsed.janCode, r.parsed);
-      const h = String(r.parsed.handle || "").trim();
-      const variantImage = String(r.parsed.image || "").trim();
-      if (h && variantImage) {
-        if (!variantImagesByHandle.has(h)) {
-          variantImagesByHandle.set(h, new Set<string>());
-        }
-        variantImagesByHandle.get(h)!.add(variantImage);
-      }
     }
     if (r.parsed && r.parsed.handle && r.parsed.janCode) {
       csvHandleToJan.set(r.parsed.handle, r.parsed.janCode);
@@ -308,18 +298,10 @@ export const computeShopifyImportBatch = (
 
     // Resolve the handle we should strictly use for Listings
     const storeHandle = getStoreHandle(item.handle || "");
-    const variantImageSet = variantImagesByHandle.get(storeHandle);
-    const includeListingImage = (url: string) => {
-      const candidate = String(url || "").trim();
-      if (!candidate) return false;
-      return !(variantImageSet && variantImageSet.has(candidate));
-    };
     const candidateListingImage = String(
       item.listingImage || item.image || "",
     ).trim();
-    const sanitizedListingImage = includeListingImage(candidateListingImage)
-      ? candidateListingImage
-      : undefined;
+    const sanitizedListingImage = candidateListingImage || undefined;
 
     // RESOLVED Handling
     if (filter === "RESOLVED") {

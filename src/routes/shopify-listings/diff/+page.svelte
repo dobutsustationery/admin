@@ -4,13 +4,16 @@
   import ItemHistoryValue from "$lib/components/ItemHistoryValue.svelte";
   import { formatLogTimestamp } from "$lib/format-log-timestamp";
   import {
-    buildComparableLocalListing,
     buildComparableRemoteListing,
     diffComparableShopifyListingsDetailed,
     type GalleryImageDiffDetail,
     type VariantDiffDetail,
     type VariantDiffField,
   } from "$lib/shopify-deep-diff";
+  import {
+    buildAdminShopifyListingProjectionFromState,
+    buildComparableAdminShopifySyncProjection,
+  } from "$lib/shopify-listing-projection";
   import { store } from "$lib/store";
 
   type DiffKey =
@@ -36,20 +39,9 @@
     status: "Status",
     option1Name: "Option 1 Name",
     tags: "Tags",
-    galleryImages: "Gallery Images",
+    galleryImages: "Product Images",
     variants: "Variants",
   };
-
-  function getItemsForHandle(state: any, handle: string) {
-    const idToHandle = state.listings?.idToHandle || {};
-    const idToItem = state.inventory?.idToItem || {};
-    return Object.entries(idToHandle)
-      .filter(
-        ([_, listingHandle]) => String(listingHandle || "").trim() === handle,
-      )
-      .map(([id]) => (idToItem[id] ? { ...idToItem[id], id } : null))
-      .filter(Boolean);
-  }
 
   function getFieldValue(record: any, key: DiffKey) {
     return record?.[key];
@@ -110,14 +102,12 @@
   $: remoteListingRaw = handle
     ? currentState.shopifyCatalog?.handleToListing?.[handle] || null
     : null;
-  $: associatedItems = handle ? getItemsForHandle(currentState, handle) : [];
+  $: adminProjection = handle
+    ? buildAdminShopifyListingProjectionFromState(currentState, handle)
+    : null;
   $: localComparable =
-    handle && localListingRaw
-      ? buildComparableLocalListing({
-          handle,
-          listing: localListingRaw,
-          items: associatedItems,
-        })
+    handle && adminProjection
+      ? buildComparableAdminShopifySyncProjection(adminProjection)
       : null;
   $: remoteComparable =
     handle && remoteListingRaw
@@ -174,8 +164,10 @@
         >
       </div>
       <div class="summary-card">
-        <span class="summary-label">Local variants</span>
-        <span class="summary-value">{associatedItems.length}</span>
+        <span class="summary-label">Sync variants</span>
+        <span class="summary-value"
+          >{adminProjection?.variants.length || 0}</span
+        >
       </div>
       <div class="summary-card">
         <span class="summary-label">Mismatch fields</span>
@@ -184,7 +176,9 @@
     </div>
 
     {#if diffResult && mismatchKeys.length === 0}
-      <div class="match-banner">Normalized local and Shopify data match.</div>
+      <div class="match-banner">
+        Admin sync projection and Shopify data match.
+      </div>
     {/if}
 
     {#if diffResult && mismatchKeys.length > 0}
@@ -281,7 +275,7 @@
         {#if diffResult.galleryImageDiffs.length > 0}
           <div class="diff-card">
             <div class="diff-card-header">
-              <span class="diff-key">Gallery Images</span>
+              <span class="diff-key">Product Images</span>
             </div>
             <div class="table-wrap">
               <table>
@@ -332,7 +326,7 @@
               </div>
               <div class="diff-columns">
                 <div class="diff-column">
-                  <div class="column-label">Local</div>
+                  <div class="column-label">Admin sync projection</div>
                   <div class="tree-wrap">
                     <JsonTree
                       value={getFieldValue(localComparable, key)}

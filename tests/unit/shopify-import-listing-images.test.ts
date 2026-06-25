@@ -35,6 +35,62 @@ function row(data: Record<string, string>) {
 }
 
 describe("Shopify import image linking", () => {
+  it("uses Image Src as both inventory image and listing gallery image when Variant Image is blank", () => {
+    const handle = "amifa-masterpiece-collection-masking-sheets-4542804122688";
+    const primaryImage =
+      "https://cdn.shopify.com/s/files/1/files/IMG_5328_395d6115-691e-495b-91da-1ffd83e65186.png?v=1759222462";
+    const secondaryImage =
+      "https://cdn.shopify.com/s/files/1/files/IMG_5329_f6de3502-456b-494f-b503-afc3e4531b19.png?v=1759222461";
+
+    let state: any = rootReducer(undefined, { type: "@@INIT" });
+    state = rootReducer(state, start_session({ id: "file-1", name: "x.csv" }));
+    state = rootReducer(state, set_header(HEADER));
+    state = rootReducer(
+      state,
+      append_raw_rows({
+        rawRows: [
+          row({
+            Handle: handle,
+            Title: "Amifa Masterpiece Collection Masking Sheet Stickers (8)",
+            "Option1 Name": "Title",
+            "Option1 Value": "Default Title",
+            "Variant SKU": "4542804122688",
+            "Variant Grams": "26.8",
+            "Variant Inventory Qty": "38",
+            "Variant Price": "4.00",
+            "Image Src": primaryImage,
+            "Image Position": "1",
+            "Image Alt Text": "Masterpiece Collection Masking Sheets Stickers",
+          }),
+          row({
+            Handle: handle,
+            "Image Src": secondaryImage,
+            "Image Position": "2",
+          }),
+        ],
+        done: true,
+      }),
+    );
+    state = rootReducer(
+      state,
+      import_batch({
+        filter: "NEW",
+        options: {
+          useShopifyImages: true,
+          useShopifyDescription: true,
+          useShopifyHandles: true,
+          useShopifyWeights: true,
+          ignoreShopifyQty: false,
+        },
+      }),
+    );
+
+    expect(state.inventory.idToItem["4542804122688"].image).toBe(primaryImage);
+    expect(
+      state.listings.handleToListing[handle].images.map((img: any) => img.url),
+    ).toEqual([primaryImage, secondaryImage]);
+  });
+
   it("keeps variant images while preserving listing images from the same CSV fragment", () => {
     const handle = "amifa-animal-family-flake-stickers-4542804108606";
     const rows = [
@@ -147,15 +203,18 @@ describe("Shopify import image linking", () => {
     expect(listing).toBeDefined();
 
     const listingUrls = listing.images.map((img: any) => img.url);
-    expect(listingUrls).toHaveLength(6);
-    expect(new Set(listingUrls).size).toBe(6);
+    expect(listingUrls).toHaveLength(9);
+    expect(new Set(listingUrls).size).toBe(9);
     expect(listingUrls).toEqual(
       expect.arrayContaining([
         "https://cdn.shopify.com/s/files/1/files/IMG_5186_502f921f-3591-4743-a544-1b6f36ebdff4.png?v=1759222577",
+        "https://cdn.shopify.com/s/files/1/files/IMG_5186_083da038-af51-4180-868e-801af39b382e.png?v=1759222579",
         "https://cdn.shopify.com/s/files/1/files/IMG_5187_99351e0b-fde2-4942-9947-6556175931f8.png?v=1759222577",
         "https://cdn.shopify.com/s/files/1/files/IMG_5188.png?v=1759222577",
+        "https://cdn.shopify.com/s/files/1/files/IMG_5188_729d1526-9f2d-4a5b-ba26-b9d50a35f552.png?v=1759222577",
         "https://cdn.shopify.com/s/files/1/files/IMG_5189_f8d57323-db48-47ed-9e89-eb1142f2eabc.png?v=1759222577",
         "https://cdn.shopify.com/s/files/1/files/IMG_5190.png?v=1759222577",
+        "https://cdn.shopify.com/s/files/1/files/IMG_5190_b8b49ed3-cc21-456b-87f7-25870d3d0e73.png?v=1759222577",
         "https://cdn.shopify.com/s/files/1/files/IMG_5191_c03b545b-3a65-47fe-bfc6-808c3bbf7136.png?v=1759222577",
       ]),
     );

@@ -2,20 +2,23 @@
   import { firestore } from "$lib/firebase";
   import { formatLogTimestamp } from "$lib/format-log-timestamp";
   import {
-    diffLocalListingAgainstShopifyCatalogDetailed,
+    buildComparableRemoteListing,
+    diffComparableShopifyListingsDetailed,
     type DetailedShopifyDiffResult,
     type VariantDiffDetail,
     type VariantDiffField,
   } from "$lib/shopify-deep-diff";
+  import {
+    buildAdminShopifyListingProjectionFromState,
+    buildComparableAdminShopifySyncProjection,
+    buildShopifySyncRequestEvent,
+  } from "$lib/shopify-listing-projection";
   import ShopifyListingIssueDetail from "$lib/components/ShopifyListingIssueDetail.svelte";
-  import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
-  import { generateSku } from "$lib/sku";
   import type { ShopifyCatalogListing } from "$lib/shopify-catalog-slice";
   import { store } from "$lib/store";
   import {
     SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION,
     SHOPIFY_REQUEST_COLLECTION,
-    SHOPIFY_SYNC_REQUEST_EVENT,
   } from "$lib/sync-events";
   import { user } from "$lib/user-store";
   import { addDoc, collection, serverTimestamp } from "firebase/firestore";
@@ -54,22 +57,11 @@
     issueKeys: IssueKey[];
     primaryIssue: IssueKey;
   }
-  interface ListingSyncVariant {
-    itemId: string;
-    sku: string;
-    janCode: string;
-    subtype: string;
-    available: number;
-    price: number;
-    weight: number;
-    image: string;
-  }
   type TableStatus =
-    | "admin_only"
+    | "would_create"
     | "shopify_only"
-    | "admin_ahead"
-    | "shopify_ahead"
-    | "synced";
+    | "would_update"
+    | "no_edit";
 
   const SKEW_MS = 3 * 60_000;
   let lastDecisionFingerprint = "";
@@ -96,7 +88,7 @@
     bare_sku: "Bare Shopify SKU",
     quantity: "Inventory Quantity",
     variant_image: "Variant Image",
-    gallery: "Gallery Images",
+    gallery: "Product Images",
     status: "Status",
     category: "Category",
     price: "Price",
@@ -106,27 +98,28 @@
     single_jan_subtype: "Single JAN Subtype",
     metadata: "Metadata",
     timestamp_only: "Timestamp Only",
-    synced: "Synced",
+    synced: "No Sync Edits",
   };
 
   const ISSUE_DESCRIPTIONS: Record<IssueKey, string> = {
-    presence: "Listing exists only in one system.",
+    presence:
+      "A sync would create the listing, or Shopify has no admin source.",
     bare_sku: "Shopify has bare JAN SKUs while admin expects JAN plus subtype.",
     quantity: "Shopify on-hand quantity differs from admin on-hand inventory.",
-    variant_image: "A variant image differs or is missing.",
-    gallery: "Gallery images differ in count, order, URL, or alt text.",
-    status: "Shopify listing status differs from admin status.",
-    category: "Product category or product type differs.",
-    price: "Variant price differs.",
-    weight: "Variant weight differs.",
-    variant_structure: "A variant is present only locally or only on Shopify.",
+    variant_image: "A sync would change a variant image assignment.",
+    gallery: "A sync would change Shopify product images.",
+    status: "A sync would change Shopify listing status.",
+    category: "A sync would change product category or product type.",
+    price: "A sync would change variant price.",
+    weight: "A sync would change variant weight.",
+    variant_structure: "A sync would add or remove Shopify variants.",
     variant_identity: "Variant subtype, JAN, or non-bare SKU differs.",
     single_jan_subtype:
       "Variant matched by a unique JAN while subtype/SKU details differ.",
     metadata: "Title, body, option name, or other listing metadata differs.",
     timestamp_only:
-      "Updated timestamps differ but normalized listing data currently matches.",
-    synced: "Normalized admin and Shopify data match.",
+      "Updated timestamps differ, but a sync would not change listing data.",
+    synced: "Sync projection and Shopify data match.",
   };
 
   const STATUS_PRIORITY: Record<RowStatus, number> = {
@@ -278,17 +271,6 @@
       });
     });
     console.groupEnd();
-  }
-
-  function getItemsForHandle(state: any, handle: string) {
-    const idToHandle = state.listings?.idToHandle || {};
-    const idToItem = state.inventory?.idToItem || {};
-    return Object.entries(idToHandle)
-      .filter(
-        ([_, listingHandle]) => String(listingHandle || "").trim() === handle,
-      )
-      .map(([id]) => (idToItem[id] ? { ...idToItem[id], id } : null))
-      .filter(Boolean);
   }
 
   function variantHasField(
@@ -446,7 +428,7 @@
   }
 
   function issueSummary(row: ListingPresenceRow): string {
-    if (row.status === "admin_only") return "Only in admin";
+    if (row.status === "admin_only") return "Sync would create on Shopify";
     if (row.status === "shopify_only") return "Only in Shopify";
     return row.issueKeys.map((issue) => issueChipText(row, issue)).join(", ");
   }
@@ -506,15 +488,19 @@
         let mismatchKeys: string[] = [];
         let diffDetails: DetailedShopifyDiffResult | null = null;
         if (status === "both" && listing && remoteListing) {
-          const result = diffLocalListingAgainstShopifyCatalogDetailed({
+          const projection = buildAdminShopifyListingProjectionFromState(
+            state,
             handle,
-            listing,
-            items: getItemsForHandle(state, handle),
-            remoteListing,
-          });
-          deepDiff = !result.matches;
-          mismatchKeys = result.mismatchKeys;
-          diffDetails = result;
+          );
+          if (projection) {
+            const result = diffComparableShopifyListingsDetailed(
+              buildComparableAdminShopifySyncProjection(projection),
+              buildComparableRemoteListing(remoteListing),
+            );
+            deepDiff = !result.matches;
+            mismatchKeys = result.mismatchKeys;
+            diffDetails = result;
+          }
         }
 
         const issueKeys = classifyIssueKeys(status, drift, diffDetails);
@@ -550,15 +536,17 @@
   }
 
   function getTableStatus(row: ListingPresenceRow): TableStatus {
-    if (row.status === "admin_only") return "admin_only";
+    if (row.status === "admin_only") return "would_create";
     if (row.status === "shopify_only") return "shopify_only";
-    if (row.drift === "local_ahead") return "admin_ahead";
-    if (row.drift === "shopify_ahead") return "shopify_ahead";
-    return "synced";
+    if (row.deepDiff) return "would_update";
+    return "no_edit";
   }
 
   function formatTableStatus(status: TableStatus): string {
-    return status.replace("_", " ");
+    if (status === "would_create") return "would create";
+    if (status === "would_update") return "would update";
+    if (status === "no_edit") return "no edit";
+    return "only in Shopify";
   }
 
   async function requestCatalogSync(forceFull = false) {
@@ -597,81 +585,22 @@
     handle: string,
     uid: string,
   ): Record<string, any> | null {
-    const listing = state.listings?.handleToListing?.[handle];
-    if (!listing) return null;
-
-    const idToHandle = state.listings?.idToHandle || {};
-    const idToItem = state.inventory?.idToItem || {};
-    const requestId = `listing-sync-${Date.now()}-${uid}`;
-
-    const variants = Object.entries(idToHandle)
-      .filter(
-        ([_, listingHandle]) => String(listingHandle || "").trim() === handle,
-      )
-      .map(([id]): ListingSyncVariant | null => {
-        const item: any = idToItem[id];
-        if (!item) return null;
-
-        const janCode = String(item?.janCode || "").trim();
-        const inventorySubtype = String(item?.subtype || "").trim();
-        const subtype = String(
-          listing.variantOptionsByItemId?.[id] || item?.subtype || "",
-        ).trim();
-        const qty = Number(item?.qty || 0);
-        const shipped = Number(item?.shipped || 0);
-
-        return {
-          itemId: id,
-          sku: generateSku(janCode, inventorySubtype),
-          janCode,
-          subtype,
-          available: Math.max(0, qty - shipped),
-          price: Number(item?.price || 0),
-          weight: Number(item?.weight || 0),
-          image: toGoogleDrivePublicImageUrl(String(item?.image || "")),
-        };
-      })
-      .filter((variant): variant is ListingSyncVariant => {
-        return !!variant?.itemId && !!variant?.sku && !!variant?.janCode;
-      });
-
-    if (variants.length === 0) return null;
-
-    return {
-      eventType: SHOPIFY_SYNC_REQUEST_EVENT,
-      requestId,
+    const projection = buildAdminShopifyListingProjectionFromState(
+      state,
       handle,
-      listing: {
-        handle,
-        title: String(listing.title || ""),
-        bodyHtml: String(listing.bodyHtml || ""),
-        productCategory: String(listing.productCategory || ""),
-        option1Name: String(listing.option1Name || "Subtype"),
-        productType: String(listing.productType || ""),
-        vendor: String(listing.vendor || "SPNSS Ltd."),
-        tags: Array.isArray(listing.tags) ? listing.tags : [],
-        status: String(listing.status || "active"),
-        images: (Array.isArray(listing.images) ? listing.images : []).map(
-          (img: any, idx: number) => ({
-            id: String(img?.id || ""),
-            url: toGoogleDrivePublicImageUrl(String(img?.url || "")),
-            position: Number.isFinite(Number(img?.position))
-              ? Number(img.position)
-              : idx + 1,
-            altText: String(img?.altText || ""),
-          }),
-        ),
-      },
-      variants,
+    );
+    if (!projection) return null;
+
+    const requestId = `listing-sync-${Date.now()}-${uid}`;
+    const nowMs = Date.now();
+    return buildShopifySyncRequestEvent({
+      projection,
+      requestId,
+      uid,
       source: "shopify-listings-page",
-      creator: uid,
-      requestedBy: uid,
-      requestedAt: Date.now(),
-      payloadVersion: 1,
-      createdAtMs: Date.now(),
-      createdAt: serverTimestamp(),
-      timestamp: serverTimestamp(),
-    };
+      nowMs,
+      serverTimestamp: serverTimestamp(),
+    });
   }
 
   function syncableRows(
@@ -741,12 +670,6 @@
   $: summary = {
     adminOnly: rows.filter((r) => r.status === "admin_only").length,
     shopifyOnly: rows.filter((r) => r.status === "shopify_only").length,
-    adminAhead: rows.filter(
-      (r) => r.status === "both" && r.drift === "local_ahead",
-    ).length,
-    shopifyAhead: rows.filter(
-      (r) => r.status === "both" && r.drift === "shopify_ahead",
-    ).length,
     deepDiff: rows.filter((r) => r.deepDiff).length,
     synced: rows.filter(
       (r) =>
@@ -822,8 +745,8 @@
     <div>
       <h1>Shopify Listings</h1>
       <p class="subtext">
-        Replay-backed Shopify shadow catalog with incremental sync and deep diff
-        badges. Full refresh is still needed to reconcile deletions.
+        Preview what an admin-to-Shopify listing sync would create or update.
+        Full refresh is still needed to reconcile deletions.
       </p>
     </div>
     <div class="actions">
@@ -857,7 +780,7 @@
         class:active={activeFilter === "ACTIONABLE"}
         on:click={() => (activeFilter = "ACTIONABLE")}
       >
-        <span class="label">Actionable</span>
+        <span class="label">Would Edit</span>
         <span class="value">{summary.actionable}</span>
       </button>
       <button
@@ -889,7 +812,7 @@
         class:active={activeFilter === "gallery"}
         on:click={() => (activeFilter = "gallery")}
       >
-        <span class="label">Gallery</span>
+        <span class="label">Product Images</span>
         <span class="value">{issueCounts.gallery || 0}</span>
       </button>
       <button
@@ -929,7 +852,7 @@
         class:active={activeFilter === "synced"}
         on:click={() => (activeFilter = "synced")}
       >
-        <span class="label">Synced</span>
+        <span class="label">No Edit</span>
         <span class="value">{summary.synced}</span>
       </button>
       <button
@@ -1452,7 +1375,7 @@
     letter-spacing: 0.01em;
   }
 
-  .badge.admin_only {
+  .badge.would_create {
     background: #fee2e2;
     color: #991b1b;
   }
@@ -1462,29 +1385,14 @@
     color: #1d4ed8;
   }
 
-  .badge.admin_ahead {
-    background: #dcfce7;
-    color: #166534;
-  }
-
-  .badge.shopify_ahead {
-    background: #ecfdf5;
-    color: #065f46;
-  }
-
-  .badge.synced {
-    background: #fff7ed;
-    color: #9a3412;
-  }
-
-  .badge.deep_diff {
+  .badge.would_update {
     background: #fef3c7;
     color: #92400e;
   }
 
-  .badge.match {
-    background: #e0f2fe;
-    color: #075985;
+  .badge.no_edit {
+    background: #dcfce7;
+    color: #166534;
   }
 
   .diff-link {
