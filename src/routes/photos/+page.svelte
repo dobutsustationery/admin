@@ -48,6 +48,10 @@
     setFilePermissions,
   } from "$lib/google-drive";
   import { shouldProcessPhotoFromHistory } from "$lib/photos-processing-eligibility";
+  import {
+    buildCompletedPhotoGroupIndexes,
+    isCompletedPhotoGroupKey,
+  } from "$lib/photos-completion";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ProcessingConfigModal from "$lib/components/ProcessingConfigModal.svelte";
   import { store } from "$lib/store";
@@ -1242,38 +1246,18 @@
     return `/photo-history?${params.toString()}`;
   }
 
-  // Compute Listed JANs
-  $: listedJans = (() => {
-    const listed = new Set<string>();
-    const idToHandle = $store.listings.idToHandle || {};
-    const idToItem = $store.inventory.idToItem || {};
-    const handleToListing = $store.listings.handleToListing || {};
-
-    // Iterate all items in inventory
-    for (const itemId in idToItem) {
-      const item = idToItem[itemId];
-      // Check if this item is linked to a listing
-      const handle = idToHandle[itemId];
-      const listing = handle ? handleToListing[handle] : null;
-
-      if (item && item.janCode && listing) {
-        // Only consider "Listed" if it has a bodyHtml (implying description generated/listing created)
-        if (listing.bodyHtml) {
-          // Add base JAN
-          listed.add(item.janCode);
-          // Add subtype-specific key if applicable
-          if (item.subtype) {
-            listed.add(`${item.janCode}:${item.subtype}`);
-          }
-        }
-      }
-    }
-    return listed;
-  })();
+  $: completedPhotoGroupIndexes = buildCompletedPhotoGroupIndexes(
+    $store.inventory,
+    $store.listings,
+  );
 
   $: categorizedEntries = (
     Object.entries(janCodeToPhotos) as [string, MediaItem[]][]
-  ).filter(([jan, _]) => showCompleted || !listedJans.has(jan));
+  ).filter(
+    ([jan, _]) =>
+      showCompleted ||
+      !isCompletedPhotoGroupKey(jan, completedPhotoGroupIndexes),
+  );
 
   // JAN Validation (EAN-13 Checksum)
   function isValidJan(code: string): boolean {
