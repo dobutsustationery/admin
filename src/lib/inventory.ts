@@ -3474,7 +3474,7 @@ function resolveLabeledSkuToSingleCurrentBareJan(
   };
 }
 
-function resolveCurrentInventoryKeyForNonSubtypeMutation(
+function resolveCurrentInventoryKeyForMutation(
   state: InventoryState,
   rawItemKey: string,
 ): InventoryItemKey {
@@ -3484,6 +3484,20 @@ function resolveCurrentInventoryKeyForNonSubtypeMutation(
     resolveLabeledSkuToSingleCurrentBareJan(state, rawItemKey)?.itemKey ||
     itemKey
   );
+}
+
+export function resolveCurrentInventoryKeyForSubtypeMutation(
+  state: InventoryState,
+  rawItemKey: string,
+): InventoryItemKey {
+  return resolveCurrentInventoryKeyForMutation(state, rawItemKey);
+}
+
+function resolveCurrentInventoryKeyForNonSubtypeMutation(
+  state: InventoryState,
+  rawItemKey: string,
+): InventoryItemKey {
+  return resolveCurrentInventoryKeyForMutation(state, rawItemKey);
 }
 
 function resolveLineItemInventoryKey(
@@ -4964,7 +4978,7 @@ export const inventory = createReducer(initialState, (r) => {
     const { field, to: incomingValue, from } = action.payload;
     const itemKey =
       field === "subtype"
-        ? canonicalizeInventoryItemKey(action.payload.id)
+        ? resolveCurrentInventoryKeyForSubtypeMutation(state, action.payload.id)
         : resolveCurrentInventoryKeyForNonSubtypeMutation(
             state,
             action.payload.id,
@@ -5159,7 +5173,7 @@ export const inventory = createReducer(initialState, (r) => {
       ({ field }) => field === "subtype",
     );
     const itemKey = hasSubtypeField
-      ? canonicalizeInventoryItemKey(action.payload.id)
+      ? resolveCurrentInventoryKeyForSubtypeMutation(state, action.payload.id)
       : resolveCurrentInventoryKeyForNonSubtypeMutation(
           state,
           action.payload.id,

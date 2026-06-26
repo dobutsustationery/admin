@@ -13,6 +13,7 @@ import {
   fix_jancode,
   set_stock_order_meta,
   apply_stock_order_costs,
+  resolveCurrentInventoryKeyForSubtypeMutation,
 } from "./inventory";
 import { names } from "./names";
 import { photos, rename_jan_group } from "./photos-slice";
@@ -854,7 +855,10 @@ export const rootReducer = (
       }
     } else if (isSubtypeUpdate) {
       const { id: itemKey, to: subtype } = action.payload;
-      oldItemId = itemKey;
+      oldItemId = resolveCurrentInventoryKeyForSubtypeMutation(
+        state.inventory,
+        itemKey,
+      );
       newSubtype = (subtype as string)?.trim() || "";
       const oldItem = state.inventory.idToItem[oldItemId];
       if (oldItem) {
