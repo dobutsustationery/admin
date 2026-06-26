@@ -21,7 +21,7 @@ function loadReplayActions() {
 }
 
 describe("Replay 4542804151626 subtype creation", () => {
-  it("ends with Blue and Green subtype items for the JAN", () => {
+  it("ends with Blue and Green subtype items attached to the listing", () => {
     const actions = loadReplayActions();
     let state = rootReducer(undefined, { type: "@@INIT" });
 
@@ -48,5 +48,10 @@ describe("Replay 4542804151626 subtype creation", () => {
       `Expected Green subtype at ${greenKey}. Existing keys for JAN: ${subtypeKeysForJan.join(", ") || "(none)"}`,
     ).toBeDefined();
     expect(items[greenKey].subtype).toBe("Green");
+
+    const handle = "amifa-arctic-animals-sparkle-stickers-20-4542804151626";
+    expect(state.listings.idToHandle[blueKey]).toBe(handle);
+    expect(state.listings.idToHandle[greenKey]).toBe(handle);
+    expect(state.listings.idToHandle[JAN]).toBeUndefined();
   });
 });
