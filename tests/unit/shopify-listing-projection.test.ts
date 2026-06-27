@@ -81,6 +81,28 @@ describe("Shopify listing projection", () => {
     });
   });
 
+  it("does not build a Shopify projection for No Sync listings", () => {
+    const projection = buildAdminShopifyListingProjection({
+      handle: "no-sync-listing",
+      listing: {
+        handle: "no-sync-listing",
+        title: "No Sync Listing",
+        status: "no_sync",
+      },
+      items: [
+        {
+          id: "4542804105827Red",
+          janCode: "4542804105827",
+          subtype: "Red",
+          qty: 4,
+          shipped: 1,
+        } as any,
+      ],
+    });
+
+    expect(projection).toBeNull();
+  });
+
   it("projects the post-sync Shopify product image shape", () => {
     const projection = buildAdminShopifyListingProjection({
       handle: "image-listing",
