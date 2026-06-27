@@ -103,6 +103,17 @@ function nonDefaultOptionLabel(value: unknown): string {
   const option = String(value || "").trim();
   return canonicalizeSubtype(option) ? option : "";
 }
+
+function optionLabelMatchesSubtype(
+  optionLabel: string,
+  subtypeLabel: string,
+): boolean {
+  return (
+    !!optionLabel &&
+    !!subtypeLabel &&
+    optionLabel.trim().toLowerCase() === subtypeLabel.trim().toLowerCase()
+  );
+}
 const combinedReducer = combineReducers(reducerObject);
 
 export { toTimestampMs };
@@ -150,14 +161,18 @@ const migrateListingItemReference = (
     const newOption = nonDefaultOptionLabel(currentOptions[newItemId]);
     const fallbackOption = nonDefaultOptionLabel(fallbackOptionLabel);
     const oldSubtypeOption = nonDefaultOptionLabel(oldSubtypeLabel);
-    const oldOptionWasSubtype =
-      oldOption &&
-      oldSubtypeOption &&
-      oldOption.trim().toLowerCase() === oldSubtypeOption.trim().toLowerCase();
+    const oldOptionWasSubtype = optionLabelMatchesSubtype(
+      oldOption,
+      oldSubtypeOption,
+    );
+    const newOptionWasOldSubtype = optionLabelMatchesSubtype(
+      newOption,
+      oldSubtypeOption,
+    );
     const optionLabel =
-      newOption ||
-      (oldOptionWasSubtype ? fallbackOption : oldOption) ||
-      fallbackOption;
+      oldOptionWasSubtype || newOptionWasOldSubtype
+        ? fallbackOption || newOption || oldOption
+        : newOption || oldOption || fallbackOption;
 
     if (optionLabel || oldItemId in currentOptions) {
       const nextOptions = { ...currentOptions };
@@ -854,7 +869,7 @@ export const rootReducer = (
         newSubtype = newItem.subtype;
       }
     } else if (isSubtypeUpdate) {
-      const { id: itemKey, to: subtype } = action.payload;
+      const { id: itemKey, from, to: subtype } = action.payload;
       oldItemId = resolveCurrentInventoryKeyForSubtypeMutation(
         state.inventory,
         itemKey,
@@ -864,7 +879,7 @@ export const rootReducer = (
       if (oldItem) {
         oldBaseJan = oldItem.janCode;
         newBaseJan = oldBaseJan;
-        oldSubtype = oldItem.subtype;
+        oldSubtype = ((from as string) ?? oldItem.subtype ?? "").trim();
         newItemId = makeInventoryItemKey(newBaseJan, newSubtype);
       }
     } else if (isFixJanCode) {
