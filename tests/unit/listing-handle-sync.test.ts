@@ -211,6 +211,65 @@ describe("inventory handle updates sync to listings", () => {
     });
   });
 
+  it("updates a stale target-key listing option when it still reflected the old subtype", () => {
+    const handle = "furukawa-mini-washi-paper-letter-set";
+    const item: Item = {
+      janCode: "4952270302420",
+      subtype: "Cat/Flower",
+      description: "Furukawa Mini Washi Paper Letter Set",
+      hsCode: "48173000",
+      image: "http://example.com/cat-flower.jpg",
+      qty: 10,
+      pieces: 1,
+      shipped: 0,
+      creationDate: "2026-03-17",
+      timestamp: 0,
+      handle,
+    };
+    const oldId = `${item.janCode}${item.subtype}`;
+    const newId = `${item.janCode}Cat`;
+
+    let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(state, update_item({ id: oldId, item }));
+    state = {
+      ...state,
+      listings: {
+        ...state.listings,
+        idToHandle: {
+          ...state.listings.idToHandle,
+          [newId]: handle,
+        },
+        handleToListing: {
+          ...state.listings.handleToListing,
+          [handle]: {
+            ...state.listings.handleToListing[handle],
+            variantOptionsByItemId: {
+              [newId]: "Cat/Flower",
+            },
+          },
+        },
+      },
+    };
+
+    state = rootReducer(
+      state,
+      update_field({
+        id: oldId,
+        field: "subtype",
+        from: "Cat/Flower",
+        to: "Cat",
+      }),
+    );
+
+    expect(state.inventory.idToItem[oldId]).toBeUndefined();
+    expect(state.inventory.idToItem[newId].subtype).toBe("Cat");
+    expect(
+      state.listings.handleToListing[handle].variantOptionsByItemId,
+    ).toEqual({
+      [newId]: "Cat",
+    });
+  });
+
   it("does not overwrite the target listing handle when replacing one subtype with another existing subtype", () => {
     const janCode = "4542804155181";
     const sourceHandle = "stale-a5-zipper-case-4542804155181";
