@@ -658,6 +658,28 @@ const toNonDeletedShopifyPathVariant = memoizeStringFn(
   },
 );
 
+const stableHash = (value: string): string => {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const makeStableSyntheticPhotoId = (
+  photoKey: string,
+  imageUrl: string,
+): string =>
+  `synthetic-${stableHash(
+    `${photoKey}\n${canonicalizeShopifyCdnUrl(imageUrl)}`,
+  )}`;
+
+const syntheticPhotoCreationTime = (timestampMs: number): string =>
+  timestampMs > 0
+    ? new Date(timestampMs).toISOString()
+    : "1970-01-01T00:00:00.000Z";
+
 // Root reducer to handle full state hydration and Event Sourcing Orchestration
 export const rootReducer = (
   state: any,
@@ -1928,13 +1950,13 @@ export const rootReducer = (
             nextJanCodeToPhotos[photoKey] = [];
 
           const syntheticPhoto = {
-            id: `synthetic-${crypto.randomUUID()}`,
+            id: makeStableSyntheticPhotoId(photoKey, item.image),
             baseUrl: item.image,
             productUrl: item.image,
             mimeType: "image/jpeg",
             filename: "imported.jpg",
             mediaMetadata: {
-              creationTime: new Date().toISOString(),
+              creationTime: syntheticPhotoCreationTime(action._timestamp),
               width: "0",
               height: "0",
             },
