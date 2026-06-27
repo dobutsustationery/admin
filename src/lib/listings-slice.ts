@@ -71,6 +71,10 @@ export const update_listing = createAction<{
   handle: string;
   changes: Partial<Listing>;
 }>("update_listing");
+export const rename_listing_handle = createAction<{
+  from: string;
+  to: string;
+}>("rename_listing_handle");
 export const delete_listing = createAction<{ handle: string }>(
   "delete_listing",
 );
@@ -107,6 +111,34 @@ export const listings = createReducer(initialState, (builder) => {
           };
           if (changes.productCategory)
             ensureCategory(state, changes.productCategory);
+        }
+      }),
+    )
+    .addCase(
+      rename_listing_handle,
+      withTimestamp((state, action) => {
+        const from = String(action.payload.from || "").trim();
+        const to = String(action.payload.to || "").trim();
+        if (!from || !to || from === to) return;
+
+        const existing = state.handleToListing[from];
+        if (!existing) return;
+
+        // A handle rename should not implicitly merge or overwrite listings.
+        if (state.handleToListing[to]) return;
+
+        delete state.handleToListing[from];
+        state.handleToListing[to] = {
+          ...existing,
+          handle: to,
+          lastUpdated: keepLatestTimestamp(
+            existing.lastUpdated,
+            actionTimestampMs(action),
+          ),
+        };
+
+        for (const [id, handle] of Object.entries(state.idToHandle)) {
+          if (handle === from) state.idToHandle[id] = to;
         }
       }),
     )

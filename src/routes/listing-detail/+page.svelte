@@ -5,6 +5,7 @@
   import { store } from "$lib/store";
   import {
     update_listing,
+    rename_listing_handle,
     add_listing_image,
     remove_listing_image,
     type ListingImage,
@@ -36,7 +37,7 @@
   import { broadcast } from "$lib/redux-firestore";
   import { firestore } from "$lib/firebase";
   import { user } from "$lib/user-store";
-  import { generateHandle } from "$lib/handle-utils";
+  import { canonicalizeHandle, generateHandle } from "$lib/handle-utils";
   import {
     ensureFolderStructure,
     uploadImageToDrive,
@@ -87,6 +88,9 @@
   let searchTerm = "";
   let matchingHandles: string[] = [];
   let fileInput: HTMLInputElement;
+  let handleEditValue = "";
+  let isEditingHandle = false;
+  let handleEditError = "";
 
   onMount(() => {
     // Safety: Force reset stuck AI flags on load to prevent deadlocks
@@ -292,6 +296,11 @@
       console.warn("User not authenticated, falling back to local dispatch");
       store.dispatch(action);
     }
+  }
+
+  $: if (isLiveMode && handle && !isEditingHandle) {
+    handleEditValue = handle;
+    handleEditError = "";
   }
 
   // Sync Step Index if in Batch
@@ -750,6 +759,42 @@
         update_listing({ handle, changes: { productCategory: e.detail } }),
       );
     }
+  }
+
+  function saveListingHandle() {
+    const uid = $user.uid;
+    if (!uid || !handle) return;
+
+    const nextHandle = canonicalizeHandle(handleEditValue, "");
+    if (!nextHandle) {
+      handleEditError = "Enter a handle.";
+      return;
+    }
+    if (nextHandle === handle) {
+      handleEditValue = handle;
+      handleEditError = "";
+      isEditingHandle = false;
+      return;
+    }
+    if ($store.listings.handleToListing[nextHandle]) {
+      handleEditError = "Another local listing already uses this handle.";
+      return;
+    }
+
+    handleEditError = "";
+    isEditingHandle = false;
+    broadcast(
+      firestore,
+      uid,
+      rename_listing_handle({ from: handle, to: nextHandle }),
+    );
+    goto(`/listing-detail?mode=live&handle=${encodeURIComponent(nextHandle)}`);
+  }
+
+  function cancelListingHandleEdit() {
+    handleEditValue = handle || "";
+    handleEditError = "";
+    isEditingHandle = false;
   }
 
   function handleUpdatePrice(e: CustomEvent<number>) {
@@ -2078,6 +2123,37 @@
           {/each}
         </div>
       {/if}
+      {#if handle && listingData}
+        <div class="handle-edit-row">
+          <label class="handle-edit-label" for="listing-handle-input">
+            Handle
+          </label>
+          <input
+            id="listing-handle-input"
+            class="handle-edit-input"
+            type="text"
+            bind:value={handleEditValue}
+            on:focus={() => (isEditingHandle = true)}
+            on:keydown={(e) => {
+              if (e.key === "Enter") saveListingHandle();
+              if (e.key === "Escape") cancelListingHandleEdit();
+            }}
+          />
+          <button
+            class="handle-edit-btn"
+            disabled={!handleEditValue.trim() || handleEditValue === handle}
+            on:click={saveListingHandle}>Save Handle</button
+          >
+          {#if isEditingHandle && handleEditValue !== handle}
+            <button class="handle-cancel-btn" on:click={cancelListingHandleEdit}
+              >Cancel</button
+            >
+          {/if}
+          {#if handleEditError}
+            <span class="handle-edit-error">{handleEditError}</span>
+          {/if}
+        </div>
+      {/if}
     </div>
   {:else}
     <div class="search-header">
@@ -2475,6 +2551,56 @@
   }
   .back-btn:hover {
     background: #e5e7eb;
+  }
+  .handle-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    max-width: 960px;
+  }
+  .handle-edit-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #4b5563;
+  }
+  .handle-edit-input {
+    flex: 1 1 420px;
+    min-width: 260px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 0.45rem 0.65rem;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    font-size: 0.9rem;
+  }
+  .handle-edit-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+  }
+  .handle-edit-btn,
+  .handle-cancel-btn {
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 0.45rem 0.75rem;
+    background: white;
+    color: #374151;
+    cursor: pointer;
+  }
+  .handle-edit-btn:hover:not(:disabled),
+  .handle-cancel-btn:hover {
+    border-color: #6b7280;
+  }
+  .handle-edit-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .handle-edit-error {
+    color: #b91c1c;
+    font-size: 0.85rem;
+    font-weight: 600;
   }
 
   .ai-controls-toolbar {

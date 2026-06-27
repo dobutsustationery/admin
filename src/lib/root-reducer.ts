@@ -37,6 +37,7 @@ import {
   listings,
   add_listing_image,
   create_listing,
+  rename_listing_handle,
   update_listing,
 } from "./listings-slice";
 import {
@@ -740,6 +741,53 @@ export const rootReducer = (
   }
 
   // 3. Interception & Composition
+
+  if (action.type === rename_listing_handle.type) {
+    const from = String(action.payload?.from || "").trim();
+    const to = String(action.payload?.to || "").trim();
+    const renameApplied =
+      from &&
+      to &&
+      from !== to &&
+      !!state?.listings?.handleToListing?.[from] &&
+      !state?.listings?.handleToListing?.[to] &&
+      !!nextState?.listings?.handleToListing?.[to] &&
+      !nextState?.listings?.handleToListing?.[from];
+    if (renameApplied) {
+      const affectedItemIds = new Set<string>();
+      for (const [id, handle] of Object.entries(
+        state?.listings?.idToHandle || {},
+      )) {
+        if (handle === from) affectedItemIds.add(id);
+      }
+      for (const [id, item] of Object.entries(
+        state?.inventory?.idToItem || {},
+      ) as [string, any][]) {
+        if (item?.handle === from) affectedItemIds.add(id);
+      }
+
+      for (const id of affectedItemIds) {
+        const currentHandle = nextState.inventory?.idToItem?.[id]?.handle || "";
+        if (!nextState.inventory?.idToItem?.[id] || currentHandle === to) {
+          continue;
+        }
+        const syncInventoryHandleAction = inheritTimestamp({
+          ...update_field({
+            id,
+            field: "handle",
+            from: currentHandle,
+            to,
+          }),
+          _ephemeral: true,
+        });
+        nextState = {
+          ...nextState,
+          inventory: inventory(nextState.inventory, syncInventoryHandleAction),
+        };
+        logger(syncInventoryHandleAction, nextState, action._timestamp);
+      }
+    }
+  }
 
   if (
     action.type === replaceShopifySyncEvents.type &&
