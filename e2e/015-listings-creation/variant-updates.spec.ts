@@ -227,6 +227,12 @@ test.describe("Variant Updates (Modal-driven)", () => {
       ({ janCode, item1Id, handle }) => {
         const { store, actions } = (window as any).testHelpers;
         store.dispatch(
+          actions.create_listing({
+            handle,
+            listing: { handle, title: "Live Split Test", images: [] },
+          }),
+        );
+        store.dispatch(
           actions.bulk_import_items({
             items: [
               {
@@ -235,12 +241,6 @@ test.describe("Variant Updates (Modal-driven)", () => {
                 type: "new",
               },
             ],
-          }),
-        );
-        store.dispatch(
-          actions.create_listing({
-            handle,
-            listing: { handle, title: "Live Split Test", images: [] },
           }),
         );
       },
@@ -312,6 +312,12 @@ test.describe("Variant Updates (Modal-driven)", () => {
       ({ janCode, keepId, errId, handle }) => {
         const { store, actions } = (window as any).testHelpers;
         store.dispatch(
+          actions.create_listing({
+            handle,
+            listing: { handle, title: "Live Remove Test", images: [] },
+          }),
+        );
+        store.dispatch(
           actions.bulk_import_items({
             items: [
               {
@@ -325,12 +331,6 @@ test.describe("Variant Updates (Modal-driven)", () => {
                 type: "new",
               },
             ],
-          }),
-        );
-        store.dispatch(
-          actions.create_listing({
-            handle,
-            listing: { handle, title: "Live Remove Test", images: [] },
           }),
         );
       },

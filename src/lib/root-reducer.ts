@@ -200,6 +200,34 @@ const migrateListingItemReference = (
   };
 };
 
+const removeMissingListingHandleReferences = (nextState: any): any => {
+  const listingState = nextState?.listings;
+  const idToHandle = listingState?.idToHandle;
+  const handleToListing = listingState?.handleToListing;
+  if (!idToHandle || !handleToListing) return nextState;
+
+  let changed = false;
+  const nextIdToHandle: Record<string, string> = {};
+  for (const [id, handle] of Object.entries(idToHandle) as Array<
+    [string, string]
+  >) {
+    if (handleToListing[handle]) {
+      nextIdToHandle[id] = handle;
+    } else {
+      changed = true;
+    }
+  }
+
+  if (!changed) return nextState;
+  return {
+    ...nextState,
+    listings: {
+      ...listingState,
+      idToHandle: nextIdToHandle,
+    },
+  };
+};
+
 const getIncomingIdObservations = (
   action: any,
 ): Array<{
@@ -1411,18 +1439,19 @@ export const rootReducer = (
       item: u.type === "new" ? mapShopifyToInventory(u.item) : u.item,
     }));
 
+    let bulkListingsAction: any = null;
     if (bulkUpdates.length > 0) {
-      const internalAction = inheritTimestamp({
+      bulkListingsAction = inheritTimestamp({
         ...bulk_import_items({ items: bulkUpdates }),
         _ephemeral: true,
       });
 
       nextState = {
         ...nextState,
-        inventory: inventory(nextState.inventory, internalAction),
-        listings: listings(nextState.listings, internalAction),
+        inventory: inventory(nextState.inventory, bulkListingsAction),
+        listings: listings(nextState.listings, bulkListingsAction),
       };
-      logger(internalAction, nextState, action._timestamp); // LOG SUB-ACTION
+      logger(bulkListingsAction, nextState, action._timestamp); // LOG SUB-ACTION
       nextState = reconcileImportItemRekeys(
         nextState,
         bulkUpdates,
@@ -1494,6 +1523,13 @@ export const rootReducer = (
       listingUpdates.forEach((u: any) => applyListingUpdate(u));
       deferredVariantOptions.forEach((u: any) => applyListingUpdate(u, false));
       nextState = { ...nextState, listings: nextListings };
+
+      if (bulkListingsAction) {
+        nextState = {
+          ...nextState,
+          listings: listings(nextState.listings, bulkListingsAction),
+        };
+      }
     }
 
     if (indices.length > 0) {
@@ -2366,8 +2402,9 @@ export const rootReducer = (
         }
       });
 
-      // 4.5 Ensure ALL merged items point to the final handle in listings state
-      // (Avoid stale idToHandle entries from previous handles after merges)
+      // 4.5 Ensure ALL merged items point to the final handle in listings state.
+      // Listing approval may create/update the approved listing, but it must
+      // not delete prior listing rows as an incidental handle cleanup.
       const mergedItemIds = new Set<string>();
       allVariants.forEach((v: any) => {
         const currentItemId = variantIdToItemId.get(v.id) || v.itemId;
@@ -2376,22 +2413,9 @@ export const rootReducer = (
       if (mergedItemIds.size > 0) {
         const listingState = nextState.listings;
         const nextIdToHandle = { ...listingState.idToHandle };
-        const nextHandleToListing = { ...listingState.handleToListing };
-        const priorHandles = new Set<string>();
 
         mergedItemIds.forEach((id) => {
-          const prior = nextIdToHandle[id];
-          if (prior && prior !== finalHandle) priorHandles.add(prior);
           nextIdToHandle[id] = finalHandle;
-        });
-
-        // Clean up old handles if no longer used
-        priorHandles.forEach((handle) => {
-          if (handle === finalHandle) return;
-          const stillUsed = Object.values(nextIdToHandle).includes(handle);
-          if (!stillUsed) {
-            delete nextHandleToListing[handle];
-          }
         });
 
         nextState = {
@@ -2399,7 +2423,6 @@ export const rootReducer = (
           listings: {
             ...listingState,
             idToHandle: nextIdToHandle,
-            handleToListing: nextHandleToListing,
           },
         };
       }
@@ -2525,6 +2548,8 @@ export const rootReducer = (
     "listingCreation/start_batch",
     "listingCreation/set_current_step",
   ];
+
+  nextState = removeMissingListingHandleReferences(nextState);
 
   if (criticalActions.includes(action.type)) {
     logger(action, nextState, action._timestamp);
