@@ -12,6 +12,7 @@
     buildAdminShopifyListingProjectionFromState,
     buildComparableAdminShopifySyncProjection,
     buildShopifySyncRequestEvent,
+    isListingSyncDisabled,
   } from "$lib/shopify-listing-projection";
   import ShopifyListingIssueDetail from "$lib/components/ShopifyListingIssueDetail.svelte";
   import type { ShopifyCatalogListing } from "$lib/shopify-catalog-slice";
@@ -56,11 +57,13 @@
     diffDetails: DetailedShopifyDiffResult | null;
     issueKeys: IssueKey[];
     primaryIssue: IssueKey;
+    syncDisabled: boolean;
   }
   type TableStatus =
     | "would_create"
     | "shopify_only"
     | "would_update"
+    | "no_sync"
     | "no_edit";
 
   const SKEW_MS = 3 * 60_000;
@@ -335,7 +338,11 @@
     status: RowStatus,
     drift: DriftStatus,
     diffDetails: DetailedShopifyDiffResult | null,
+    syncDisabled: boolean,
   ): IssueKey[] {
+    if (syncDisabled) {
+      return status === "both" ? ["presence"] : ["synced"];
+    }
     if (status !== "both") return ["presence"];
     if (!diffDetails || diffDetails.matches) {
       return drift === "in_sync" || drift === "unknown"
@@ -428,6 +435,9 @@
   }
 
   function issueSummary(row: ListingPresenceRow): string {
+    if (row.syncDisabled && row.inShopify)
+      return "No Sync listing exists on Shopify";
+    if (row.syncDisabled) return "Local listing is set to No Sync";
     if (row.status === "admin_only") return "Sync would create on Shopify";
     if (row.status === "shopify_only") return "Only in Shopify";
     return row.issueKeys.map((issue) => issueChipText(row, issue)).join(", ");
@@ -463,6 +473,7 @@
         const inShopify = shopifyByKey.has(key);
         const handle = adminByKey.get(key) || shopifyByKey.get(key) || key;
         const listing = inAdmin ? handleToListing[handle] : null;
+        const syncDisabled = isListingSyncDisabled(listing);
         const remoteHandle = shopifyByKey.get(key) || "";
         const remoteListing: ShopifyCatalogListing | null = remoteHandle
           ? shopifyHandleToListing[remoteHandle]
@@ -503,7 +514,12 @@
           }
         }
 
-        const issueKeys = classifyIssueKeys(status, drift, diffDetails);
+        const issueKeys = classifyIssueKeys(
+          status,
+          drift,
+          diffDetails,
+          syncDisabled,
+        );
 
         return {
           handle,
@@ -519,6 +535,7 @@
           diffDetails,
           issueKeys,
           primaryIssue: issueKeys[0],
+          syncDisabled,
         };
       })
       .sort((a, b) => {
@@ -536,6 +553,7 @@
   }
 
   function getTableStatus(row: ListingPresenceRow): TableStatus {
+    if (row.syncDisabled) return "no_sync";
     if (row.status === "admin_only") return "would_create";
     if (row.status === "shopify_only") return "shopify_only";
     if (row.deepDiff) return "would_update";
@@ -546,6 +564,7 @@
     if (status === "would_create") return "would create";
     if (status === "would_update") return "would update";
     if (status === "no_edit") return "no edit";
+    if (status === "no_sync") return "no sync";
     return "only in Shopify";
   }
 
@@ -606,7 +625,7 @@
   function syncableRows(
     sectionRows: ListingPresenceRow[],
   ): ListingPresenceRow[] {
-    return sectionRows.filter((row) => row.inAdmin);
+    return sectionRows.filter((row) => row.inAdmin && !row.syncDisabled);
   }
 
   async function syncListingsForSection(
@@ -1393,6 +1412,11 @@
   .badge.no_edit {
     background: #dcfce7;
     color: #166534;
+  }
+
+  .badge.no_sync {
+    background: #e5e7eb;
+    color: #374151;
   }
 
   .diff-link {

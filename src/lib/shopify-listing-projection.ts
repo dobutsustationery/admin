@@ -79,6 +79,15 @@ function trimString(value: unknown): string {
   return String(value || "").trim();
 }
 
+export function isListingSyncDisabled(
+  listing: { status?: unknown } | null | undefined,
+): boolean {
+  const normalized = trimString(listing?.status)
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return normalized === "no_sync" || normalized === "nosync";
+}
+
 function finiteNumber(value: unknown): number {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -161,6 +170,7 @@ export function buildAdminShopifyListingProjection(params: {
   const handle = trimString(params.handle);
   const listing = params.listing;
   if (!handle || !listing) return null;
+  if (isListingSyncDisabled(listing)) return null;
 
   const rawVariants = (Array.isArray(params.items) ? params.items : [])
     .map((item): ShopifyListingProjectionVariant | null => {

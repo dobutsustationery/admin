@@ -57,6 +57,7 @@
   import {
     buildAdminShopifyListingProjection,
     buildShopifySyncRequestEvent,
+    isListingSyncDisabled,
   } from "$lib/shopify-listing-projection";
   import { SHOPIFY_REQUEST_COLLECTION } from "$lib/sync-events";
 
@@ -91,6 +92,11 @@
   let handleEditValue = "";
   let isEditingHandle = false;
   let handleEditError = "";
+  const listingStatusOptions = [
+    { value: "active", label: "Active" },
+    { value: "draft", label: "Draft" },
+    { value: "no_sync", label: "No Sync" },
+  ] as const;
 
   onMount(() => {
     // Safety: Force reset stuck AI flags on load to prevent deadlocks
@@ -146,6 +152,7 @@
     bodyHtml: string;
     productCategory?: string;
     option1Name?: string;
+    status?: "active" | "archived" | "draft" | "no_sync";
     titlePrompt?: string;
     descriptionPrompt?: string;
   } | null = null;
@@ -597,6 +604,11 @@
       syncMessage = "Sign in to queue a Shopify sync request.";
       return;
     }
+    if (isListingSyncDisabled(listingData)) {
+      syncMessage = "This listing is set to No Sync.";
+      syncMessageLevel = "error";
+      return;
+    }
 
     const projection = buildAdminShopifyListingProjection({
       handle,
@@ -795,6 +807,15 @@
     handleEditValue = handle || "";
     handleEditError = "";
     isEditingHandle = false;
+  }
+
+  function handleListingStatusChange(e: Event) {
+    const uid = $user.uid;
+    if (!uid || !handle) return;
+    const target = e.currentTarget as HTMLSelectElement;
+    const status = target.value as "active" | "draft" | "no_sync";
+    if (status === listingData?.status) return;
+    broadcast(firestore, uid, update_listing({ handle, changes: { status } }));
   }
 
   function handleUpdatePrice(e: CustomEvent<number>) {
@@ -2152,6 +2173,19 @@
           {#if handleEditError}
             <span class="handle-edit-error">{handleEditError}</span>
           {/if}
+          <label class="handle-edit-label" for="listing-status-select">
+            Status
+          </label>
+          <select
+            id="listing-status-select"
+            class="listing-status-select"
+            value={listingData.status || "active"}
+            on:change={handleListingStatusChange}
+          >
+            {#each listingStatusOptions as option}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
         </div>
       {/if}
     </div>
@@ -2267,11 +2301,17 @@
           {#if mode !== "create" && handle}
             <button
               class="ai-btn"
-              disabled={isQueueingSync}
+              disabled={isQueueingSync || isListingSyncDisabled(listingData)}
               on:click={queueShopifyListingSync}
-              title="Queue this listing for Shopify API sync"
+              title={isListingSyncDisabled(listingData)
+                ? "Change status from No Sync to sync this listing"
+                : "Queue this listing for Shopify API sync"}
             >
-              {isQueueingSync ? "Queueing..." : "Sync This Listing"}
+              {#if isListingSyncDisabled(listingData)}
+                Sync Disabled
+              {:else}
+                {isQueueingSync ? "Queueing..." : "Sync This Listing"}
+              {/if}
             </button>
           {/if}
         </div>
@@ -2576,6 +2616,19 @@
     font-size: 0.9rem;
   }
   .handle-edit-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+  }
+  .listing-status-select {
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 0.45rem 0.65rem;
+    background: white;
+    color: #374151;
+    font-size: 0.9rem;
+  }
+  .listing-status-select:focus {
     outline: none;
     border-color: #3b82f6;
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);

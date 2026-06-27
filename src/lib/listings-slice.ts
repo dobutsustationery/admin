@@ -25,7 +25,7 @@ export interface Listing {
   productType: string;
   vendor: string;
   tags: string[];
-  status: "active" | "archived" | "draft";
+  status: "active" | "archived" | "draft" | "no_sync";
   option1Name: string; // e.g., "Color" or "Style"
   variantOptionsByItemId?: Record<string, string>;
   images: ListingImage[];
