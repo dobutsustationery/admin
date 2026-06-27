@@ -35,6 +35,57 @@ const makeListing = (handle: string, title: string, janCode = "123"): Listing =>
   }) as Listing;
 
 describe("inventory handle updates sync to listings", () => {
+  it("creates stable synthetic photo ids when importing existing variants", () => {
+    const janCode = "4901234567890";
+    const id = `${janCode}Blue`;
+    const image =
+      "https://cdn.shopify.com//s/files/1/0914/2937/2286/files/imported.jpg?v=123";
+    const item: Item = {
+      janCode,
+      subtype: "Blue",
+      description: "Test Item",
+      hsCode: "49090000",
+      image,
+      qty: 1,
+      pieces: 1,
+      shipped: 0,
+      creationDate: "2024-01-01",
+      timestamp: 0,
+      handle: "existing-handle",
+    };
+    const importAction = {
+      type: "listingCreation/import_existing_variants",
+      payload: { janCode, handle: "existing-handle" },
+      timestamp: { _seconds: 1_710_000_000, _nanoseconds: 0 },
+    };
+
+    const buildState = () => {
+      let state = rootReducer(undefined as any, { type: "@@INIT" });
+      state = rootReducer(
+        state,
+        create_listing({
+          listing: {
+            ...makeListing("existing-handle", item.description, janCode),
+            variantOptionsByItemId: { [id]: "Blue" },
+          } as Listing,
+        }),
+      );
+      state = rootReducer(state, update_item({ id, item }));
+      return rootReducer(state, importAction);
+    };
+
+    const first = buildState();
+    const second = buildState();
+    const firstPhoto = first.photos.janCodeToPhotos[`${janCode}:Blue`][0];
+    const secondPhoto = second.photos.janCodeToPhotos[`${janCode}:Blue`][0];
+
+    expect(firstPhoto.id).toMatch(/^synthetic-/);
+    expect(firstPhoto.id).toBe(secondPhoto.id);
+    expect(firstPhoto.mediaMetadata.creationTime).toBe(
+      "2024-03-09T16:00:00.000Z",
+    );
+  });
+
   it("does not create a listing when handle changes to a missing explicit handle", () => {
     const item: Item = {
       janCode: "4901234567890",
