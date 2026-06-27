@@ -282,6 +282,63 @@ export const computeShopifyImportBatch = (
     });
   };
 
+  const ensureListingUpdate = (
+    storeHandle: string,
+    item: ShopifyImportItem | null | undefined,
+  ) => {
+    if (
+      !storeHandle ||
+      handleToListing[storeHandle] ||
+      createdHandles.has(storeHandle)
+    ) {
+      return;
+    }
+    if (!item) return;
+    listingUpdates.push({
+      type: "create_listing",
+      listing: {
+        handle: storeHandle,
+        title: item.description || "Untitled",
+        bodyHtml: item.bodyHtml || "",
+        productCategory: item.productCategory || "",
+        productType: "",
+        vendor: "SPNSS Ltd.",
+        tags: [],
+        status: "active",
+        option1Name: item.option1Name || "Title",
+        images: [],
+        lastUpdated: timestampMs,
+      },
+    });
+    createdHandles.add(storeHandle);
+  };
+
+  const queueListingImageUpdate = (
+    storeHandle: string,
+    item: ShopifyImportItem,
+    targetImage: string | undefined,
+  ) => {
+    if (!storeHandle || !targetImage) return;
+    let alreadyHasImage = false;
+    const listing = handleToListing[storeHandle];
+    if (listing?.images) {
+      alreadyHasImage = listing.images.some(
+        (img: any) => img.url === targetImage,
+      );
+    }
+    if (alreadyHasImage) return;
+    listingUpdates.push({
+      type: "add_image",
+      handle: storeHandle,
+      image: {
+        id: targetImage,
+        url: targetImage,
+        position: item.imagePosition || 0,
+        altText: item.imageAltText || "",
+      },
+    });
+  };
+
   const useDesc = options?.useShopifyDescription ?? false;
   const useImg = options?.useShopifyImages ?? false;
   const useHandles = options?.useShopifyHandles ?? false;
@@ -442,6 +499,7 @@ export const computeShopifyImportBatch = (
           id: key,
           item: newItem,
         });
+        ensureListingUpdate(storeHandle, item);
         queueVariantOptionUpdate(storeHandle, key, item);
       });
 
@@ -449,60 +507,12 @@ export const computeShopifyImportBatch = (
 
       // Add Image to Listing (Gallery) using Store Handle
       if (useImg && storeHandle) {
-        const listingExists =
-          handleToListing[storeHandle] || createdHandles.has(storeHandle);
+        ensureListingUpdate(
+          storeHandle,
+          (parentJan ? janToRow.get(parentJan) : null) || item,
+        );
 
-        // RECOVERY: If listing missing, try to find parent in this batch and create it
-        if (!listingExists) {
-          const parentItem = parentJan ? janToRow.get(parentJan) : null;
-
-          if (parentItem) {
-            listingUpdates.push({
-              type: "create_listing",
-              listing: {
-                handle: storeHandle,
-                title: parentItem.description || "Untitled",
-                bodyHtml: parentItem.bodyHtml || "",
-                productCategory: parentItem.productCategory || "",
-                productType: "",
-                vendor: "SPNSS Ltd.",
-                tags: [],
-                status: "active",
-                option1Name: parentItem.option1Name || "Title",
-                images: [],
-                lastUpdated: timestampMs,
-              },
-            });
-            createdHandles.add(storeHandle);
-          }
-        }
-
-        const targetImage = sanitizedListingImage;
-
-        if (targetImage) {
-          let alreadyHasImage = false;
-          // Listing might be in handleToListing OR just created (not in handleToListing yet)
-          // If created, images is empty.
-          const listing = handleToListing[storeHandle];
-          if (listing && listing.images) {
-            alreadyHasImage = listing.images.some(
-              (img: any) => img.url === targetImage,
-            );
-          }
-
-          if (!alreadyHasImage) {
-            listingUpdates.push({
-              type: "add_image",
-              handle: storeHandle,
-              image: {
-                id: targetImage,
-                url: targetImage,
-                position: item.imagePosition || 0,
-                altText: item.imageAltText || "",
-              },
-            });
-          }
-        }
+        queueListingImageUpdate(storeHandle, item, sanitizedListingImage);
       }
     } else if (filter === "NEW" && !exists) {
       if (item.janCode) {
@@ -517,54 +527,22 @@ export const computeShopifyImportBatch = (
           id: item.janCode,
           item: itemWithoutShopifySubtype,
         });
+        ensureListingUpdate(storeHandle, item);
+        if (useImg && storeHandle) {
+          queueListingImageUpdate(storeHandle, item, sanitizedListingImage);
+        }
         queueVariantOptionUpdate(storeHandle, item.janCode, item);
-        if (storeHandle) createdHandles.add(storeHandle);
         indices.push(index);
       } else if (storeHandle) {
-        const listingExists =
-          handleToListing[storeHandle] || createdHandles.has(storeHandle);
-
-        // RECOVERY: If listing missing, try to find parent in this batch and create it
-        if (!listingExists) {
-          const parentJan = csvHandleToJan.get(item.handle || "");
-          const parentItem = parentJan ? janToRow.get(parentJan) : null;
-
-          if (parentItem) {
-            listingUpdates.push({
-              type: "create_listing",
-              listing: {
-                handle: storeHandle,
-                title: parentItem.description || "Untitled",
-                bodyHtml: parentItem.bodyHtml || "",
-                productCategory: parentItem.productCategory || "",
-                productType: "",
-                vendor: "SPNSS Ltd.",
-                tags: [],
-                status: "active",
-                option1Name: parentItem.option1Name || "Title",
-                images: [],
-                lastUpdated: timestampMs,
-              },
-            });
-            createdHandles.add(storeHandle);
-          }
-        }
+        const parentJan = csvHandleToJan.get(item.handle || "");
+        ensureListingUpdate(
+          storeHandle,
+          (parentJan ? janToRow.get(parentJan) : null) || item,
+        );
 
         if (handleToListing[storeHandle] || createdHandles.has(storeHandle)) {
-          const targetImage = sanitizedListingImage;
-          if (targetImage) {
-            listingUpdates.push({
-              type: "add_image",
-              handle: storeHandle,
-              image: {
-                id: targetImage,
-                url: targetImage,
-                position: item.imagePosition || 0,
-                altText: item.imageAltText || "",
-              },
-            });
-            indices.push(index);
-          }
+          queueListingImageUpdate(storeHandle, item, sanitizedListingImage);
+          if (sanitizedListingImage) indices.push(index);
         }
       }
     }

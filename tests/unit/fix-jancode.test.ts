@@ -11,6 +11,7 @@ import { categorize_photo } from "$lib/photos-slice";
 import { add_proposals_internal } from "$lib/listing-creation-slice";
 import { resolve_conflict as resolveOrderConflict } from "$lib/order-import-slice";
 import { resolve_conflict as resolveShopifyConflict } from "$lib/shopify-import-slice";
+import { create_listing } from "$lib/listings-slice";
 
 // Every replayed action carries a timestamp in production; these
 // fixtures omit it, so stamp a fixed one (deriveCreationTimestampMs
@@ -49,6 +50,26 @@ describe("fix_jancode", () => {
           shipped: 0,
           creationDate: "Jan 1, 2026",
           timestamp: 0,
+        },
+      }) as any,
+    );
+
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: {
+          handle: "tea-pack",
+          title: "Tea Pack",
+          bodyHtml: "<p>desc</p>",
+          productCategory: "Food",
+          productType: "",
+          vendor: "Vendor",
+          tags: [],
+          status: "draft",
+          option1Name: "Color",
+          variantOptionsByItemId: {},
+          images: [],
+          lastUpdated: 0,
         },
       }) as any,
     );

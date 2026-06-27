@@ -14,12 +14,8 @@ export async function waitForAppReady(page: Page) {
   // Some CI runs can briefly re-attach the overlay after auth/store hydration.
   // Require stable absence before moving on to screenshot capture.
   for (let i = 0; i < 5; i += 1) {
-    await expect(loadingOverlay).toHaveCount(0, { timeout: 5000 });
-    await page.waitForFunction(
-      () => !document.querySelector(".loading-overlay"),
-      undefined,
-      { timeout: 4000 },
-    );
+    await loadingOverlay.waitFor({ state: "detached", timeout: 5000 });
+    await page.waitForTimeout(100);
   }
   console.log("   ✓ Application ready (loading screen removed)");
 }

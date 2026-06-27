@@ -16,9 +16,26 @@ import {
   update_item,
   type Item,
 } from "$lib/inventory";
+import { create_listing, type Listing } from "$lib/listings-slice";
+
+const makeListing = (handle: string, title: string, janCode = "123"): Listing =>
+  ({
+    handle,
+    title,
+    bodyHtml: "",
+    productCategory: "",
+    productType: "",
+    vendor: "SPNSS Ltd.",
+    tags: [],
+    status: "active",
+    option1Name: "Subtype",
+    images: [],
+    lastUpdated: 0,
+    janCode,
+  }) as Listing;
 
 describe("inventory handle updates sync to listings", () => {
-  it("keeps listings.idToHandle and handleToListing aligned when handle changes via update_field", () => {
+  it("does not create a listing when handle changes to a missing explicit handle", () => {
     const item: Item = {
       janCode: "4901234567890",
       subtype: "Red",
@@ -35,6 +52,12 @@ describe("inventory handle updates sync to listings", () => {
     const id = `${item.janCode}${item.subtype}`;
 
     let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing("old-handle", item.description, item.janCode),
+      }),
+    );
     state = rootReducer(state, update_item({ id, item }));
 
     expect(state.listings.idToHandle[id]).toBe("old-handle");
@@ -51,9 +74,9 @@ describe("inventory handle updates sync to listings", () => {
     );
 
     expect(state.inventory.idToItem[id].handle).toBe("new-handle");
-    expect(state.listings.idToHandle[id]).toBe("new-handle");
-    expect(state.listings.handleToListing["new-handle"]).toBeDefined();
-    expect(state.listings.handleToListing["old-handle"]).toBeUndefined();
+    expect(state.listings.idToHandle[id]).toBeUndefined();
+    expect(state.listings.handleToListing["new-handle"]).toBeUndefined();
+    expect(state.listings.handleToListing["old-handle"]).toBeDefined();
   });
 
   it("merges into existing listing when handle changes to an existing handle", () => {
@@ -87,6 +110,18 @@ describe("inventory handle updates sync to listings", () => {
     const idB = `${itemB.janCode}${itemB.subtype}`;
 
     let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing("handle-a", itemA.description, itemA.janCode),
+      }),
+    );
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing("handle-b", itemB.description, itemB.janCode),
+      }),
+    );
     state = rootReducer(state, update_item({ id: idA, item: itemA }));
     state = rootReducer(state, update_item({ id: idB, item: itemB }));
 
@@ -106,7 +141,7 @@ describe("inventory handle updates sync to listings", () => {
     expect(state.listings.idToHandle[idA]).toBe("handle-b");
     expect(state.listings.idToHandle[idB]).toBe("handle-b");
     expect(state.listings.handleToListing["handle-b"]).toBeDefined();
-    expect(state.listings.handleToListing["handle-a"]).toBeUndefined();
+    expect(state.listings.handleToListing["handle-a"]).toBeDefined();
   });
 
   it("preserves a listing option label when a listed subtyped item normalizes to bare JAN", () => {
@@ -127,6 +162,12 @@ describe("inventory handle updates sync to listings", () => {
     const oldId = `${item.janCode}${item.subtype}`;
 
     let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing(handle, item.description, item.janCode),
+      }),
+    );
     state = rootReducer(state, update_item({ id: oldId, item }));
 
     expect(state.listings.idToHandle[oldId]).toBe(handle);
@@ -174,6 +215,12 @@ describe("inventory handle updates sync to listings", () => {
     const oldId = `${item.janCode}${item.subtype}`;
 
     let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing(handle, item.description, item.janCode),
+      }),
+    );
     state = rootReducer(state, update_item({ id: oldId, item }));
     state = {
       ...state,
@@ -230,6 +277,12 @@ describe("inventory handle updates sync to listings", () => {
     const newId = `${item.janCode}Cat`;
 
     let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing(handle, item.description, item.janCode),
+      }),
+    );
     state = rootReducer(state, update_item({ id: oldId, item }));
     state = {
       ...state,
@@ -299,6 +352,18 @@ describe("inventory handle updates sync to listings", () => {
     };
 
     let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing(sourceHandle, sourceItem.description, janCode),
+      }),
+    );
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing(targetHandle, targetItem.description, janCode),
+      }),
+    );
     state = rootReducer(state, update_item({ id: sourceId, item: sourceItem }));
     state = rootReducer(state, update_item({ id: targetId, item: targetItem }));
     state = {
