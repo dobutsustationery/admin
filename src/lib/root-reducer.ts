@@ -63,6 +63,7 @@ import { buildDraftListingImages } from "./listing-image-logic";
 import {
   canonicalizeInventoryItemKey,
   canonicalizeSubtype,
+  isDefaultSubtype,
   makeInventoryItemKey,
 } from "./sku";
 import { CURRENT_SCHEMA_VERSION } from "./schema-version";
@@ -196,6 +197,61 @@ const migrateListingItemReference = (
       ...listingState,
       idToHandle: nextIdToHandle,
       handleToListing: nextHandleToListing,
+    },
+  };
+};
+
+const itemKeyBelongsToJan = (itemId: string, janCode: string): boolean => {
+  if (!itemId || !janCode || !itemId.startsWith(janCode)) return false;
+  const suffix = itemId.slice(janCode.length);
+  return suffix === "" || !/^\d/.test(suffix);
+};
+
+const clearDefaultListingOptionsForItem = (
+  nextState: any,
+  itemId: string,
+  janCode: string,
+): any => {
+  const listingState = nextState?.listings;
+  const handle = listingState?.idToHandle?.[itemId];
+  const listing = handle ? listingState?.handleToListing?.[handle] : undefined;
+  const currentOptions = listing?.variantOptionsByItemId;
+  if (!listingState || !handle || !listing || !currentOptions) return nextState;
+
+  const linkedSameJanIds = Object.entries(listingState.idToHandle || {})
+    .filter(
+      ([id, linkedHandle]) =>
+        linkedHandle === handle && itemKeyBelongsToJan(id, janCode),
+    )
+    .map(([id]) => id);
+
+  const nextOptions = { ...currentOptions };
+  let changed = false;
+
+  if (linkedSameJanIds.length <= 1) {
+    for (const optionItemId of Object.keys(nextOptions)) {
+      if (itemKeyBelongsToJan(optionItemId, janCode)) {
+        delete nextOptions[optionItemId];
+        changed = true;
+      }
+    }
+  } else if (itemId in nextOptions) {
+    delete nextOptions[itemId];
+    changed = true;
+  }
+
+  if (!changed) return nextState;
+  return {
+    ...nextState,
+    listings: {
+      ...listingState,
+      handleToListing: {
+        ...listingState.handleToListing,
+        [handle]: {
+          ...listing,
+          variantOptionsByItemId: nextOptions,
+        },
+      },
     },
   };
 };
@@ -986,6 +1042,18 @@ export const rootReducer = (
           }
         }
       }
+    } else if (
+      isSubtypeUpdate &&
+      oldItemId &&
+      newItemId &&
+      oldItemId === newItemId &&
+      isDefaultSubtype(newSubtype)
+    ) {
+      nextState = clearDefaultListingOptionsForItem(
+        nextState,
+        oldItemId,
+        newBaseJan || oldBaseJan,
+      );
     }
 
     if (isFixJanCode && oldItemId && newItemId && oldItemId !== newItemId) {

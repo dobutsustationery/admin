@@ -197,6 +197,67 @@ describe("inventory handle updates sync to listings", () => {
     });
   });
 
+  it("clears stale listing option labels when the only linked JAN is set to Default", () => {
+    const handle =
+      "amifa-masterpiece-collection-b6-clear-folder-3-4542804147667";
+    const janCode = "4542804147667";
+    const item: Item = {
+      janCode,
+      subtype: "",
+      description: "Amifa Masterpiece Collection B6 Clear Folder (3)",
+      hsCode: "39261000",
+      image: "http://example.com/folder.jpg",
+      qty: 12,
+      pieces: 1,
+      shipped: 0,
+      creationDate: "2026-03-10",
+      timestamp: 0,
+      handle,
+    };
+
+    let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing(handle, item.description, janCode),
+      }),
+    );
+    state = rootReducer(state, update_item({ id: janCode, item }));
+    state = {
+      ...state,
+      listings: {
+        ...state.listings,
+        handleToListing: {
+          ...state.listings.handleToListing,
+          [handle]: {
+            ...state.listings.handleToListing[handle],
+            variantOptionsByItemId: {
+              [`${janCode}Blue`]: "Blue",
+              [`${janCode}Cream`]: "Cream",
+              [janCode]: "Pink",
+            },
+          },
+        },
+      },
+    };
+
+    state = rootReducer(
+      state,
+      update_field({
+        id: janCode,
+        field: "subtype",
+        from: "",
+        to: "Default",
+      }),
+    );
+
+    expect(state.inventory.idToItem[janCode]).toBeDefined();
+    expect(state.listings.idToHandle[janCode]).toBe(handle);
+    expect(
+      state.listings.handleToListing[handle].variantOptionsByItemId,
+    ).toEqual({});
+  });
+
   it("updates a listing option label when it only reflected the old subtype", () => {
     const handle = "amifa-animal-flake-stickers-100-4542804141160";
     const item: Item = {
