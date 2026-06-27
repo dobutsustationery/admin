@@ -11,7 +11,11 @@ const rootReducer = (s: any, a: any) =>
       : a,
   );
 import { update_item, update_field, type Item } from "$lib/inventory";
-import { create_listing, type Listing } from "$lib/listings-slice";
+import {
+  create_listing,
+  rename_listing_handle,
+  type Listing,
+} from "$lib/listings-slice";
 
 const makeListing = (handle: string, title: string, janCode = "123"): Listing =>
   ({
@@ -254,5 +258,116 @@ describe("listing handle update logic", () => {
     expect(state.listings.idToHandle[id]).toBeUndefined();
     expect(state.listings.handleToListing[generatedHandle]).toBeDefined();
     expect(state.listings.handleToListing["old-handle"]).toBeDefined();
+  });
+
+  it("renames a listing handle and updates all linked inventory references", () => {
+    const itemA: Item = {
+      janCode: "4969757171813",
+      subtype: "Pomeranian",
+      description: "Love Fur Sticky Notes",
+      handle: "old-handle",
+      qty: 12,
+      price: 4,
+      shipped: 1,
+      pieces: 1,
+      creationDate: "",
+      timestamp: 0,
+      hsCode: "",
+      image: "",
+    };
+    const itemB: Item = {
+      ...itemA,
+      subtype: "Poodle",
+      shipped: 2,
+    };
+    const idA = "4969757171813Pomeranian";
+    const idB = "4969757171813Poodle";
+
+    let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: {
+          ...makeListing("old-handle", itemA.description, itemA.janCode),
+          variantOptionsByItemId: {
+            [idA]: "Pomeranian",
+            [idB]: "Poodle",
+          },
+        },
+      }),
+    );
+    state = rootReducer(state, update_item({ id: idA, item: itemA }));
+    state = rootReducer(state, update_item({ id: idB, item: itemB }));
+
+    state = rootReducer(
+      state,
+      rename_listing_handle({ from: "old-handle", to: "new-handle" }),
+    );
+
+    expect(state.listings.handleToListing["old-handle"]).toBeUndefined();
+    expect(state.listings.handleToListing["new-handle"]).toMatchObject({
+      handle: "new-handle",
+      title: itemA.description,
+      variantOptionsByItemId: {
+        [idA]: "Pomeranian",
+        [idB]: "Poodle",
+      },
+    });
+    expect(state.listings.idToHandle[idA]).toBe("new-handle");
+    expect(state.listings.idToHandle[idB]).toBe("new-handle");
+    expect(state.inventory.idToItem[idA].handle).toBe("new-handle");
+    expect(state.inventory.idToItem[idB].handle).toBe("new-handle");
+    expect(
+      state.inventory.idToHistory[idA].some((entry: any) =>
+        String(entry.desc).includes(
+          "handle changed from old-handle to new-handle",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not rename or relink when the target handle already exists", () => {
+    const item: Item = {
+      janCode: "123",
+      subtype: "A",
+      description: "Item A",
+      handle: "old-handle",
+      qty: 1,
+      price: 100,
+      shipped: 0,
+      pieces: 1,
+      creationDate: "",
+      timestamp: 0,
+      hsCode: "",
+      image: "",
+    };
+    const id = "123A";
+
+    let state = rootReducer(undefined as any, { type: "@@INIT" });
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing("old-handle", item.description, item.janCode),
+      }),
+    );
+    state = rootReducer(
+      state,
+      create_listing({
+        listing: makeListing("new-handle", "Existing listing", item.janCode),
+      }),
+    );
+    state = rootReducer(state, update_item({ id, item }));
+
+    state = rootReducer(
+      state,
+      rename_listing_handle({ from: "old-handle", to: "new-handle" }),
+    );
+
+    expect(state.listings.handleToListing["old-handle"]).toBeDefined();
+    expect(state.listings.handleToListing["new-handle"].title).toBe(
+      "Existing listing",
+    );
+    expect(state.listings.idToHandle[id]).toBe("old-handle");
+    expect(state.inventory.idToItem[id].handle).toBe("old-handle");
   });
 });
