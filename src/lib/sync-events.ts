@@ -9,9 +9,12 @@ export const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
 export const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
 export const GOOGLE_AUTH_REQUEST_COLLECTION = "request_google_auth";
 export const GOOGLE_AUTH_RESULTS_COLLECTION = "google_auth_results";
+export const AMAZON_CATALOG_PROBE_REQUEST_COLLECTION =
+  "request_amazon_catalog_probe";
 export const SHOPIFY_SYNC_NAMESPACE = "shopify";
 export const PHOTOS_SYNC_NAMESPACE = "photos";
 export const GOOGLE_SYNC_NAMESPACE = "google";
+export const AMAZON_SYNC_NAMESPACE = "amazon";
 
 export const SHOPIFY_SYNC_REQUEST_EVENT = `${SHOPIFY_SYNC_NAMESPACE}/sync_requested`;
 export const PHOTOS_IMAGE_TRANSFER_REQUEST_EVENT = `${PHOTOS_SYNC_NAMESPACE}/image_transfer_requested`;
@@ -20,6 +23,11 @@ export const GOOGLE_AUTH_REQUESTED_EVENT = `${GOOGLE_SYNC_NAMESPACE}/auth_reques
 export const GOOGLE_AUTH_STARTED_EVENT = `${GOOGLE_SYNC_NAMESPACE}/auth_started`;
 export const GOOGLE_AUTH_COMPLETED_EVENT = `${GOOGLE_SYNC_NAMESPACE}/auth_completed`;
 export const GOOGLE_AUTH_FAILED_EVENT = `${GOOGLE_SYNC_NAMESPACE}/auth_failed`;
+export const AMAZON_CATALOG_PROBE_REQUESTED_EVENT = `${AMAZON_SYNC_NAMESPACE}/catalog_probe_requested`;
+export const AMAZON_CATALOG_PROBE_STARTED_EVENT = `${AMAZON_SYNC_NAMESPACE}/catalog_probe_started`;
+export const AMAZON_CATALOG_PROBE_API_CALL_EVENT = `${AMAZON_SYNC_NAMESPACE}/catalog_probe_api_call`;
+export const AMAZON_CATALOG_PROBE_COMPLETED_EVENT = `${AMAZON_SYNC_NAMESPACE}/catalog_probe_completed`;
+export const AMAZON_CATALOG_PROBE_FAILED_EVENT = `${AMAZON_SYNC_NAMESPACE}/catalog_probe_failed`;
 
 export function normalizeShopifySyncEventType(eventType: string): string {
   const value = String(eventType || "").trim();
@@ -50,6 +58,15 @@ export function normalizeShopifySyncEventType(eventType: string): string {
     if (tail === "image_transfer_failed" || tail === "image_transform_failed")
       return "sync_failed";
     if (tail === "image_transfer_api_call") return "sync_api_call";
+    return tail;
+  }
+  if (value.startsWith(`${AMAZON_SYNC_NAMESPACE}/`)) {
+    const tail = value.slice(AMAZON_SYNC_NAMESPACE.length + 1);
+    if (tail === "catalog_probe_requested") return "sync_requested";
+    if (tail === "catalog_probe_started") return "sync_claimed";
+    if (tail === "catalog_probe_api_call") return "sync_api_call";
+    if (tail === "catalog_probe_completed") return "sync_completed";
+    if (tail === "catalog_probe_failed") return "sync_failed";
     return tail;
   }
   return value;

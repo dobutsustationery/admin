@@ -45,4 +45,39 @@ describe("sync status classification", () => {
     ]);
     expect(status).toBe("failed");
   });
+
+  it("classifies amazon catalog probes through lifecycle states", () => {
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/catalog_probe_requested",
+      ]),
+    ).toBe("queued");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/catalog_probe_requested",
+        "amazon/catalog_probe_started",
+      ]),
+    ).toBe("processing");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/catalog_probe_requested",
+        "amazon/catalog_probe_started",
+        "amazon/catalog_probe_api_call",
+        "amazon/catalog_probe_completed",
+      ]),
+    ).toBe("success");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/catalog_probe_requested",
+        "amazon/catalog_probe_failed",
+      ]),
+    ).toBe("failed");
+  });
+
+  it("infers amazon domain from amazon event types", () => {
+    const domain = inferSyncRequestDomainFromEvents([
+      { eventType: "amazon/catalog_probe_requested" },
+    ]);
+    expect(domain).toBe("amazon");
+  });
 });

@@ -70,7 +70,7 @@
 
   function inferDomain(
     req: ShopifySyncRequestView | null,
-  ): "shopify" | "photos" | "google" | "etsy" | "unknown" {
+  ): "shopify" | "photos" | "google" | "etsy" | "amazon" | "unknown" {
     if (!req) return "unknown";
     const fromEvents = inferSyncRequestDomainFromEvents(req.timeline || []);
     if (fromEvents !== "unknown") return fromEvents;
@@ -103,7 +103,39 @@
     if (source.includes("etsy") || processor.includes("etsy")) {
       return "etsy";
     }
+    if (
+      source.includes("amazon") ||
+      processor.includes("amazon") ||
+      requestId.includes("amazon")
+    ) {
+      return "amazon";
+    }
     return "unknown";
+  }
+
+  function summarizeAmazonRequest(req: ShopifySyncRequestView | null): string {
+    if (!req) return "Amazon probe";
+    const requested = firstTimelineEventBySuffix(
+      req,
+      "catalog_probe_requested",
+    );
+    const payload = (requested?.payload ||
+      req.timeline?.[0]?.payload ||
+      {}) as any;
+    const jans = Array.isArray(payload?.jans) ? payload.jans : [];
+    const skus = Array.isArray(payload?.skus) ? payload.skus : [];
+    const parts = [];
+    if (jans.length) {
+      parts.push(
+        `${jans.slice(0, 3).join(", ")}${jans.length > 3 ? ` +${jans.length - 3}` : ""}`,
+      );
+    }
+    if (skus.length) {
+      parts.push(
+        `SKU ${skus.slice(0, 3).join(", ")}${skus.length > 3 ? ` +${skus.length - 3}` : ""}`,
+      );
+    }
+    return parts.length ? parts.join(" / ") : "Amazon probe";
   }
 
   function getEventBaseType(ev: ShopifySyncEvent): string {
@@ -465,6 +497,8 @@
                     {extractPhotosDetails(req).filename !== "-"
                       ? extractPhotosDetails(req).filename
                       : `photo ${extractPhotosDetails(req).photoId}`}
+                  {:else if inferDomain(req) === "amazon"}
+                    {summarizeAmazonRequest(req)}
                   {:else}
                     {req.handle || "(missing handle)"}
                   {/if}
@@ -515,6 +549,11 @@
               <div>
                 <strong>Secret State:</strong>
                 {selectedPhotos.secretState}
+              </div>
+            {:else if selectedDomain === "amazon"}
+              <div>
+                <strong>Amazon Probe:</strong>
+                {summarizeAmazonRequest(selected)}
               </div>
             {:else}
               <div><strong>Handle:</strong> {selected.handle || "-"}</div>

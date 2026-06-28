@@ -24,6 +24,7 @@ const SHOPIFY_REQUEST_COLLECTION = "request_shopify_sync";
 const SHOPIFY_LISTING_AUDIT_REQUEST_COLLECTION =
   "request_shopify_listing_audit";
 const SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION = "request_shopify_catalog_sync";
+const AMAZON_CATALOG_PROBE_REQUEST_COLLECTION = "request_amazon_catalog_probe";
 const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
 const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
 const GOOGLE_AUTH_REQUEST_COLLECTION = "request_google_auth";
@@ -82,6 +83,307 @@ function getEtsyConfig() {
     // MUST be overridden via ETSY_SHARED_SECRET env var in production.
     sharedSecret: process.env.ETSY_SHARED_SECRET || "whsec_dGVzdF9zZWNyZXQ=",
   };
+}
+
+const AMAZON_LWA_TOKEN_ENDPOINT = "https://api.amazon.com/auth/o2/token";
+const AMAZON_REGION_ENDPOINTS = {
+  na: "https://sellingpartnerapi-na.amazon.com",
+  eu: "https://sellingpartnerapi-eu.amazon.com",
+  fe: "https://sellingpartnerapi-fe.amazon.com",
+};
+const AMAZON_DEFAULT_CATALOG_INCLUDED_DATA = [
+  "summaries",
+  "identifiers",
+  "images",
+  "productTypes",
+  "relationships",
+  "classifications",
+];
+const AMAZON_DEFAULT_LISTINGS_INCLUDED_DATA = [
+  "summaries",
+  "attributes",
+  "issues",
+  "offers",
+  "fulfillmentAvailability",
+  "relationships",
+  "productTypes",
+];
+
+function amazonTrim(value) {
+  return String(value || "").trim();
+}
+
+function getAmazonEnv(keys, fallback = "") {
+  for (const key of keys) {
+    const value = normalizeEnvValue(process.env[key] || "");
+    if (value) return value;
+  }
+  return fallback;
+}
+
+function requireAmazonEnv(keys, label) {
+  const value = getAmazonEnv(keys, "");
+  if (value) return value;
+  throw new Error(`Missing ${label}. Tried: ${keys.join(", ")}`);
+}
+
+function getAmazonConfig() {
+  const region = getAmazonEnv(["AMAZON_SP_API_REGION"], "eu").toLowerCase();
+  const endpoint = getAmazonEnv(
+    ["AMAZON_SP_API_ENDPOINT"],
+    AMAZON_REGION_ENDPOINTS[region] || "",
+  ).replace(/\/+$/, "");
+  if (!endpoint) {
+    throw new Error(
+      `Missing Amazon SP-API endpoint. Set AMAZON_SP_API_ENDPOINT or AMAZON_SP_API_REGION (${Object.keys(AMAZON_REGION_ENDPOINTS).join(", ")}).`,
+    );
+  }
+
+  return {
+    endpoint,
+    marketplaceId: requireAmazonEnv(
+      ["AMAZON_MARKETPLACE_ID", "AMAZON_SP_API_MARKETPLACE_ID"],
+      "Amazon marketplace ID",
+    ),
+    sellerId: getAmazonEnv(["AMAZON_SELLER_ID", "AMAZON_SP_API_SELLER_ID"]),
+    userAgent: getAmazonEnv(
+      ["AMAZON_SP_API_USER_AGENT"],
+      "DobutsuAdmin/0.1 (Language=JavaScript; Runtime=CloudFunctions)",
+    ),
+    lwaClientId: requireAmazonEnv(
+      ["AMAZON_LWA_CLIENT_ID", "AMAZON_SP_API_CLIENT_ID"],
+      "Amazon LWA client ID",
+    ),
+    lwaClientSecret: requireAmazonEnv(
+      ["AMAZON_LWA_CLIENT_SECRET", "AMAZON_SP_API_CLIENT_SECRET"],
+      "Amazon LWA client secret",
+    ),
+    lwaRefreshToken: requireAmazonEnv(
+      ["AMAZON_LWA_REFRESH_TOKEN", "AMAZON_SP_API_REFRESH_TOKEN"],
+      "Amazon LWA refresh token",
+    ),
+  };
+}
+
+function amazonDate(date = new Date()) {
+  return date.toISOString().replace(/[:-]|\.\d{3}/g, "");
+}
+
+function cleanAmazonList(value, maxCount) {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,\s]+/)
+      : [];
+  return rawValues
+    .map((entry) => amazonTrim(entry))
+    .filter(Boolean)
+    .filter((entry, index, all) => all.indexOf(entry) === index)
+    .slice(0, maxCount);
+}
+
+function cleanAmazonIncludedData(value, fallback) {
+  const values = cleanAmazonList(value, 30);
+  return values.length ? values : fallback;
+}
+
+async function fetchAmazonLwaAccessToken(config) {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: config.lwaRefreshToken,
+    client_id: config.lwaClientId,
+    client_secret: config.lwaClientSecret,
+  });
+
+  const response = await fetch(AMAZON_LWA_TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+      accept: "application/json",
+    },
+    body,
+  });
+
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Amazon LWA token exchange failed (${response.status} ${response.statusText})`,
+    );
+  }
+
+  const accessToken = amazonTrim(data?.access_token);
+  if (!accessToken) {
+    throw new Error("Amazon LWA token response did not include access_token.");
+  }
+  return accessToken;
+}
+
+async function amazonSpApiGet({
+  endpoint,
+  path,
+  query,
+  accessToken,
+  userAgent,
+}) {
+  const url = new URL(path, endpoint);
+  for (const [key, value] of Object.entries(query || {})) {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      "user-agent": userAgent,
+      "x-amz-access-token": accessToken,
+      "x-amz-date": amazonDate(),
+    },
+  });
+
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+    rateLimit: response.headers.get("x-amzn-ratelimit-limit") || "",
+    url: url.toString(),
+    data,
+  };
+}
+
+function makeAmazonRawResponseRecord({
+  requestId,
+  kind,
+  key,
+  marketplaceId,
+  sellerId,
+  endpoint,
+  response,
+  fetchedAtMs,
+}) {
+  return {
+    id: `${requestId}:${kind}:${key}`,
+    requestId,
+    kind,
+    key,
+    marketplaceId,
+    sellerId,
+    endpoint,
+    requestUrl: response.url,
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    rateLimit: response.rateLimit,
+    fetchedAtMs,
+    raw: response.data,
+  };
+}
+
+async function writeAmazonSyncEvent({
+  requestId,
+  creator,
+  eventType,
+  processor,
+  source,
+  payload,
+}) {
+  await db.collection(SYNC_COLLECTION).add({
+    eventType,
+    requestId,
+    requestEventId: requestId,
+    creator,
+    requestedBy: creator,
+    processor,
+    source,
+    createdAt: new Date(),
+    createdAtMs: Date.now(),
+    timestamp: FieldValue.serverTimestamp(),
+    payload: payload || {},
+  });
+}
+
+async function searchAmazonCatalogByJan({
+  config,
+  jan,
+  identifiersType,
+  includedData,
+  accessToken,
+  locale,
+}) {
+  return amazonSpApiGet({
+    endpoint: config.endpoint,
+    path: "/catalog/2022-04-01/items",
+    query: {
+      identifiers: jan,
+      identifiersType,
+      marketplaceIds: config.marketplaceId,
+      includedData: includedData.join(","),
+      locale,
+      pageSize: "20",
+    },
+    accessToken,
+    userAgent: config.userAgent,
+  });
+}
+
+async function searchAmazonListingsByIdentifier({
+  config,
+  identifier,
+  identifiersType,
+  includedData,
+  accessToken,
+  locale,
+}) {
+  return amazonSpApiGet({
+    endpoint: config.endpoint,
+    path: `/listings/2021-08-01/items/${encodeURIComponent(config.sellerId)}`,
+    query: {
+      identifiers: identifier,
+      identifiersType,
+      marketplaceIds: config.marketplaceId,
+      includedData: includedData.join(","),
+      issueLocale: locale,
+      pageSize: "20",
+    },
+    accessToken,
+    userAgent: config.userAgent,
+  });
+}
+
+async function getAmazonListingBySku({
+  config,
+  sku,
+  includedData,
+  accessToken,
+  locale,
+}) {
+  return amazonSpApiGet({
+    endpoint: config.endpoint,
+    path: `/listings/2021-08-01/items/${encodeURIComponent(config.sellerId)}/${encodeURIComponent(sku)}`,
+    query: {
+      marketplaceIds: config.marketplaceId,
+      includedData: includedData.join(","),
+      issueLocale: locale,
+    },
+    accessToken,
+    userAgent: config.userAgent,
+  });
 }
 
 async function fetchAllShopifyProductAuditData(config) {
@@ -749,6 +1051,332 @@ exports.shopifyCatalogSyncRequest = onDocumentCreated(
           payload: {
             requestId,
             mode,
+            failedAtMs: Date.now(),
+            errorMessage: message,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: Date.now(),
+      });
+    }
+  },
+);
+
+exports.amazonCatalogProbeRequest = onDocumentCreated(
+  {
+    document: `${AMAZON_CATALOG_PROBE_REQUEST_COLLECTION}/{requestId}`,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    concurrency: 1,
+    maxInstances: 3,
+  },
+  async (event) => {
+    const requestData = event.data?.data();
+    if (!requestData) return;
+
+    const requestId = trimString(event.params?.requestId);
+    const creator = trimString(requestData.creator);
+    const processor = `function:${process.env.K_SERVICE || "amazonCatalogProbeRequest"}`;
+    const eventType = trimString(requestData.eventType);
+    if (
+      eventType &&
+      eventType !== "amazon/catalog_probe_requested" &&
+      eventType !== "catalog_probe_requested"
+    ) {
+      return;
+    }
+
+    const jans = cleanAmazonList(requestData.jans || requestData.jan, 100);
+    const skus = cleanAmazonList(requestData.skus || requestData.sku, 100);
+    const shouldSearchSellerListings =
+      requestData.includeSellerListings !== false;
+
+    if (!requestId || !creator || (jans.length === 0 && skus.length === 0)) {
+      logger.error("Invalid Amazon catalog probe request shape", {
+        requestId,
+        creator,
+        janCount: jans.length,
+        skuCount: skus.length,
+      });
+      return;
+    }
+
+    const mode = skus.length > 0 ? "sku_probe" : "jan_probe";
+    const broadcastCreator = "amazon-catalog-probe-function";
+    const startMs = Date.now();
+    const source = trimString(requestData.source || "amazon-listings-page");
+    let config = {
+      endpoint: "",
+      marketplaceId: "",
+      sellerId: "",
+      userAgent: "",
+    };
+
+    await writeAmazonSyncEvent({
+      requestId,
+      creator,
+      eventType: "amazon/catalog_probe_requested",
+      processor,
+      source,
+      payload: {
+        jans,
+        skus,
+        includeSellerListings: shouldSearchSellerListings,
+        identifiersType: requestData.identifiersType || "JAN",
+        listingIdentifiersType: requestData.listingIdentifiersType || "JAN",
+      },
+    });
+
+    try {
+      config = getAmazonConfig();
+      const identifiersType = amazonTrim(
+        requestData.identifiersType || "JAN",
+      ).toUpperCase();
+      const listingIdentifiersType = amazonTrim(
+        requestData.listingIdentifiersType || identifiersType,
+      ).toUpperCase();
+      const locale = amazonTrim(requestData.locale || "");
+      const includedData = cleanAmazonIncludedData(
+        requestData.includedData,
+        AMAZON_DEFAULT_CATALOG_INCLUDED_DATA,
+      );
+      const listingIncludedData = cleanAmazonIncludedData(
+        requestData.listingIncludedData,
+        AMAZON_DEFAULT_LISTINGS_INCLUDED_DATA,
+      );
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/catalog_probe_started",
+        processor,
+        source,
+        payload: {
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          endpoint: config.endpoint,
+          janCount: jans.length,
+          skuCount: skus.length,
+        },
+      });
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/begin_probe",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            requestedAtMs: startMs,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs,
+      });
+
+      if ((shouldSearchSellerListings || skus.length > 0) && !config.sellerId) {
+        throw new Error(
+          "Missing AMAZON_SELLER_ID. Set it to search Amazon seller listings.",
+        );
+      }
+
+      const accessToken = await fetchAmazonLwaAccessToken(config);
+      const responses = [];
+
+      async function writeApiCallEvent({ requestType, key, response }) {
+        await writeAmazonSyncEvent({
+          requestId,
+          creator,
+          eventType: "amazon/catalog_probe_api_call",
+          processor,
+          source,
+          payload: {
+            requestType,
+            endpoint: response.url,
+            success: !!response.ok,
+            response: response.data,
+            context: {
+              key,
+              status: response.status,
+              statusText: response.statusText,
+              rateLimit: response.rateLimit,
+              marketplaceId: config.marketplaceId,
+              sellerId: config.sellerId,
+            },
+          },
+        });
+      }
+
+      for (const jan of jans) {
+        const response = await searchAmazonCatalogByJan({
+          config,
+          jan,
+          identifiersType,
+          includedData,
+          accessToken,
+          locale,
+        });
+        await writeApiCallEvent({
+          requestType: "catalog_search_by_jan",
+          key: jan,
+          response,
+        });
+        responses.push(
+          makeAmazonRawResponseRecord({
+            requestId,
+            kind: "catalog_search_by_jan",
+            key: jan,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            endpoint: config.endpoint,
+            response,
+            fetchedAtMs: Date.now(),
+          }),
+        );
+
+        if (shouldSearchSellerListings) {
+          const listingsResponse = await searchAmazonListingsByIdentifier({
+            config,
+            identifier: jan,
+            identifiersType: listingIdentifiersType,
+            includedData: listingIncludedData,
+            accessToken,
+            locale,
+          });
+          await writeApiCallEvent({
+            requestType: "seller_listings_search_by_jan",
+            key: jan,
+            response: listingsResponse,
+          });
+          responses.push(
+            makeAmazonRawResponseRecord({
+              requestId,
+              kind: "seller_listings_search_by_jan",
+              key: jan,
+              marketplaceId: config.marketplaceId,
+              sellerId: config.sellerId,
+              endpoint: config.endpoint,
+              response: listingsResponse,
+              fetchedAtMs: Date.now(),
+            }),
+          );
+        }
+      }
+
+      for (const sku of skus) {
+        const listingResponse = await getAmazonListingBySku({
+          config,
+          sku,
+          includedData: listingIncludedData,
+          accessToken,
+          locale,
+        });
+        await writeApiCallEvent({
+          requestType: "seller_listing_get_by_sku",
+          key: sku,
+          response: listingResponse,
+        });
+        responses.push(
+          makeAmazonRawResponseRecord({
+            requestId,
+            kind: "seller_listing_get_by_sku",
+            key: sku,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            endpoint: config.endpoint,
+            response: listingResponse,
+            fetchedAtMs: Date.now(),
+          }),
+        );
+      }
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/apply_probe_chunk",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            responses,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs + 1,
+      });
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/complete_probe",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            completedAtMs: Date.now(),
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs + 2,
+      });
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/catalog_probe_completed",
+        processor,
+        source,
+        payload: {
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          janCount: jans.length,
+          skuCount: skus.length,
+          responseCount: responses.length,
+        },
+      });
+
+      logger.info("Amazon catalog probe completed", {
+        requestId,
+        creator,
+        processor,
+        janCount: jans.length,
+        skuCount: skus.length,
+        responseCount: responses.length,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Failed processing Amazon catalog probe request", {
+        requestId,
+        creator,
+        processor,
+        error: message,
+      });
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/catalog_probe_failed",
+        processor,
+        source,
+        payload: {
+          errorCode: "amazon_catalog_probe_failed",
+          errorMessage: message,
+          message,
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+        },
+      });
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/fail_probe",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
             failedAtMs: Date.now(),
             errorMessage: message,
           },

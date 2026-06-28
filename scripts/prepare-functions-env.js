@@ -31,6 +31,7 @@ const sourceMap = {
 
 const sourcePath = resolve(process.cwd(), sourceMap[env]);
 const stagingPath = resolve(process.cwd(), sourceMap.staging);
+const amazonPath = resolve(process.cwd(), ".env.amazon");
 const functionsDir = resolve(process.cwd(), "functions");
 const targetPath = resolve(functionsDir, ".env");
 
@@ -42,6 +43,7 @@ const keepPrefixes = [
   "AUTH_",
   "GOOGLE_APPLICATION_CREDENTIALS",
   "GOOGLE_OAUTH_",
+  "AMAZON_",
 ];
 const requiredGoogleKeys = [
   "GOOGLE_OAUTH_CLIENT_ID",
@@ -76,7 +78,10 @@ function parseEnvFileIfPresent(path) {
 }
 
 function canonicalizeGoogleKeys(envMap) {
-  if (!envMap.get("GOOGLE_OAUTH_CLIENT_ID") && envMap.get("E2E_GOOGLE_CLIENT_ID")) {
+  if (
+    !envMap.get("GOOGLE_OAUTH_CLIENT_ID") &&
+    envMap.get("E2E_GOOGLE_CLIENT_ID")
+  ) {
     envMap.set("GOOGLE_OAUTH_CLIENT_ID", envMap.get("E2E_GOOGLE_CLIENT_ID"));
   }
   if (
@@ -88,7 +93,10 @@ function canonicalizeGoogleKeys(envMap) {
       envMap.get("E2E_GOOGLE_CLIENT_SECRET"),
     );
   }
-  if (!envMap.get("GOOGLE_OAUTH_CLIENT_SECRET") && envMap.get("GOOGLE_OAUTH_SECRET")) {
+  if (
+    !envMap.get("GOOGLE_OAUTH_CLIENT_SECRET") &&
+    envMap.get("GOOGLE_OAUTH_SECRET")
+  ) {
     envMap.set("GOOGLE_OAUTH_CLIENT_SECRET", envMap.get("GOOGLE_OAUTH_SECRET"));
   }
 }
@@ -124,6 +132,21 @@ if (!existsSync(sourcePath)) {
   keyOrder = parsed.order;
 }
 
+const amazonParsed = parseEnvFileIfPresent(amazonPath);
+let amazonKeysAdded = 0;
+for (const key of amazonParsed.order) {
+  if (!key.startsWith("AMAZON_")) continue;
+  if (String(envMap.get(key) || "").trim()) continue;
+  envMap.set(key, amazonParsed.map.get(key) || "");
+  if (!keyOrder.includes(key)) keyOrder.push(key);
+  amazonKeysAdded += 1;
+}
+if (amazonKeysAdded > 0) {
+  console.log(
+    `Using ${amazonKeysAdded} AMAZON_* key${amazonKeysAdded === 1 ? "" : "s"} from .env.amazon fallback for ${sourceMap[env]}.`,
+  );
+}
+
 canonicalizeGoogleKeys(envMap);
 
 if (env !== "staging") {
@@ -131,7 +154,10 @@ if (env !== "staging") {
   const stagingMap = stagingParsed.map;
   canonicalizeGoogleKeys(stagingMap);
   for (const key of requiredGoogleKeys) {
-    if (!String(envMap.get(key) || "").trim() && String(stagingMap.get(key) || "").trim()) {
+    if (
+      !String(envMap.get(key) || "").trim() &&
+      String(stagingMap.get(key) || "").trim()
+    ) {
       envMap.set(key, stagingMap.get(key));
       if (!keyOrder.includes(key)) keyOrder.push(key);
       console.log(
@@ -151,7 +177,8 @@ const hasAnyGoogleOauthInput =
   String(process.env.GOOGLE_OAUTH_CLIENT_SECRET || "").trim() ||
   String(process.env.GOOGLE_OAUTH_SECRET || "").trim() ||
   requiredGoogleKeys.some((key) => String(envMap.get(key) || "").trim());
-const shouldRequireGoogleOauthKeys = !missingSourceInCi || hasAnyGoogleOauthInput;
+const shouldRequireGoogleOauthKeys =
+  !missingSourceInCi || hasAnyGoogleOauthInput;
 if (shouldRequireGoogleOauthKeys && missingGoogleKeys.length > 0) {
   console.error(
     `Missing required Google OAuth function env keys in ${sourceMap[env]}: ${missingGoogleKeys.join(", ")}`,

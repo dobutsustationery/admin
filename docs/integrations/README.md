@@ -2,6 +2,10 @@
 
 External service integrations.
 
+## Amazon
+
+- [SP-API Setup](./AMAZON_SP_API_SETUP.md)
+
 ## Shopify
 
 - [Integration Overview](./SHOPIFY_INTEGRATION.md)

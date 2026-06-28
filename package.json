@@ -60,6 +60,7 @@
     "shopify:sync:request": "bun scripts/shopify-sync-request.ts",
     "shopify:sync:worker": "bun scripts/shopify-sync-worker.ts",
     "shopify:devstore:setup": "bun scripts/shopify-devstore-setup.ts",
+    "amazon:catalog:probe": "bun scripts/amazon-catalog-probe.ts",
     "deploy": "npm run deploy:production",
     "functions:install": "npm --prefix functions install --engine-strict=false",
     "deploy:functions": "npm run deploy:functions:production",
