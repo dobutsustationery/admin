@@ -152,10 +152,65 @@ type AmazonProjectedVariant = {
 
 Open choices:
 
-- SKU format: use existing item key, or introduce Amazon-specific SKU aliases.
+- SKU format: buyable child/standalone SKUs use the existing inventory item
+  key format. Parent SKUs are deterministic Amazon-only grouping identifiers
+  derived from the local listing handle and are not buyable.
 - Currency: Amazon marketplace for Ireland/Europe likely uses EUR, but marketplace IDs must decide exact behavior.
 - Product type: infer from local category only if we have a reliable mapping; otherwise mark missing.
 - Browse node/category: do not invent mappings silently.
+
+### 5.1 Listing Handles, Parent SKUs, And Variants
+
+The admin listing handle is our local grouping identity. Amazon does not write
+or address listings by that handle; the Listings Items API writes seller SKUs.
+The projection therefore maps one local handle to one of two Amazon shapes:
+
+- If the local listing has exactly one option/item, emit one standalone buyable
+  SKU with no parent/child variation relationship.
+- If the local listing has multiple options/items, emit one non-buyable parent
+  SKU plus one buyable child SKU per local option.
+
+Every local subtype in a listing is a distinct product option for Amazon
+purposes. The initial variation projection uses Amazon's colour variation
+attributes because every current subtype varies at least by colour; later work
+can refine the variation theme when product-type-specific schemas indicate a
+better option such as style or size.
+
+We should not create parent SKUs for single-option listings just to preserve
+future flexibility. Amazon parent listings are variation containers, and the
+API/policy surface is clearer when a one-option product is represented as a
+standalone SKU. If more options are later grouped into that local handle, the
+sync projection can add a parent and convert the existing SKU into a child.
+
+### 5.2 Shared Manufacturer Barcodes
+
+Many Amifa products use one JAN/EAN for a family of colour/style variants. The
+admin system must not submit that shared JAN as the Amazon product identifier
+for every child SKU. Amazon treats the external product identifier as catalogue
+identity; submitting the same EAN for `Blue` and `Pink` collapses both seller
+SKUs onto one child ASIN and causes catalogue conflicts such as colour or part
+number mismatches.
+
+When a projected Amazon variation family contains multiple child SKUs with the
+same JAN:
+
+- keep the JAN as internal inventory identity;
+- omit `externally_assigned_product_identifier` from those child submissions;
+- add `supplier_declared_has_product_identifier_exemption: true`;
+- still submit normal parent/child variation attributes, SKU-specific
+  `part_number` / `model_number`, colour, offer, fulfillment, image, weight,
+  and descriptive data.
+
+This does not apply to standalone listings or listings where every child has a
+unique JAN; those should continue to submit the JAN/EAN normally.
+
+Amazon's Listings Restrictions API is ASIN-scoped. It can check whether this
+seller may list a known ASIN, but it is not a brand/product-type GTIN exemption
+application API. For new shared-barcode Amifa variants, the write response from
+Listings Items is the authoritative API feedback about whether the account and
+category accept the product-identifier exemption payload. Raw restriction and
+write responses must be stored verbatim in broadcast and sync logs so reducer/UI
+logic can be corrected later without losing source evidence.
 
 ## 6. Proposed Amazon Shadow State
 
@@ -379,11 +434,17 @@ The cheapest safe first step is to establish a read-only observed Amazon shadow 
 
 Only after phases 1-4:
 
-1. Add single-SKU sync request.
-2. Use Listings Items `patchListingsItem` or `putListingsItem` for one listing at a time.
-3. Record raw accepted/invalid response facts.
-4. Re-read listing after write to capture asynchronous issue state.
-5. Consider `JSON_LISTINGS_FEED` only for bulk operations after single-SKU writes are proven.
+1. Add a controlled listing-write request keyed by local listing handle.
+2. Project that handle into Listings Items submissions: one standalone SKU for
+   one-option listings, or one parent SKU plus child SKUs for multi-option
+   listings.
+3. Use Listings Items `patchListingsItem` or `putListingsItem` for each
+   generated seller SKU.
+4. Record raw accepted/invalid response facts per seller SKU.
+5. Re-read each accepted seller SKU after write to capture asynchronous issue
+   state.
+6. Consider `JSON_LISTINGS_FEED` only for bulk operations after per-listing
+   writes are proven.
 
 ## 13. First Baby Step
 
