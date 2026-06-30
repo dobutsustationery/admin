@@ -50,4 +50,20 @@
 // 15: bare numeric Shopify JANs with no historical binding now resolve to the
 //     single current subtyped inventory item for that JAN when unambiguous.
 //     v14 snapshots preserve the old unmatched order projection.
-export const CURRENT_SCHEMA_VERSION = 15;
+// 16: Amazon catalog probes, listing writes, and product-type discoveries now
+//     materialise raw SP-API responses into the `amazonCatalog` Redux slice.
+//     v15 snapshots can contain the broadcast actions but no replayed Amazon
+//     catalog state, so the Amazon listings route would appear empty until a
+//     manual replay. Force one automatic replay.
+// 17: Amazon product-type discovery now records only top-level required
+//     attributes from the linked Amazon schema. v16 snapshots may contain
+//     overbroad SELF_STICK_NOTE requirements from an earlier discovery.
+// 18: Local Amazon discovery/probe/write test artifacts were cleared from the
+//     emulator while this branch is still in development; force browser state
+//     to rebuild from the fresh emulator action log.
+// 19: Amazon product-type schemas are now stored as separate raw responses, and
+//     required/property field lists are reducer-derived state.
+// 20: Amazon listing-restriction checks are now materialised in the
+//     amazonCatalog slice, and duplicate-JAN variation payloads derive
+//     product-identifier exemption fields instead of repeated EAN identity.
+export const CURRENT_SCHEMA_VERSION = 20;

@@ -114,7 +114,50 @@
   }
 
   function summarizeAmazonRequest(req: ShopifySyncRequestView | null): string {
-    if (!req) return "Amazon probe";
+    if (!req) return "Amazon request";
+    const createRequested = firstTimelineEventBySuffix(
+      req,
+      "listing_create_requested",
+    );
+    if (createRequested) {
+      const payload = (createRequested.payload ||
+        req.timeline?.[0]?.payload ||
+        {}) as any;
+      const sku = String(payload?.sku || "").trim();
+      const productType = String(payload?.productType || "").trim();
+      return `Amazon create${sku ? ` SKU ${sku}` : ""}${productType ? ` / ${productType}` : ""}`;
+    }
+
+    const productTypeRequested = firstTimelineEventBySuffix(
+      req,
+      "product_type_discovery_requested",
+    );
+    if (productTypeRequested) {
+      const payload = (productTypeRequested.payload ||
+        req.timeline?.[0]?.payload ||
+        {}) as any;
+      const itemName = String(payload?.itemName || "").trim();
+      const keywords = Array.isArray(payload?.keywords) ? payload.keywords : [];
+      if (itemName) return `Amazon product types / ${itemName}`;
+      if (keywords.length) {
+        return `Amazon product types / ${keywords.slice(0, 4).join(", ")}`;
+      }
+      return "Amazon product type discovery";
+    }
+
+    const restrictionsRequested = firstTimelineEventBySuffix(
+      req,
+      "listing_restrictions_requested",
+    );
+    if (restrictionsRequested) {
+      const payload = (restrictionsRequested.payload ||
+        req.timeline?.[0]?.payload ||
+        {}) as any;
+      const asin = String(payload?.asin || "").trim();
+      const conditionType = String(payload?.conditionType || "").trim();
+      return `Amazon restrictions${asin ? ` / ${asin}` : ""}${conditionType ? ` / ${conditionType}` : ""}`;
+    }
+
     const requested = firstTimelineEventBySuffix(
       req,
       "catalog_probe_requested",
@@ -552,7 +595,7 @@
               </div>
             {:else if selectedDomain === "amazon"}
               <div>
-                <strong>Amazon Probe:</strong>
+                <strong>Amazon Request:</strong>
                 {summarizeAmazonRequest(selected)}
               </div>
             {:else}

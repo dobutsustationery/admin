@@ -125,6 +125,9 @@ export function classifySyncRequestStatusFromEventTypes(
       t.includes("image_transform_failed") ||
       t.includes("auth_failed") ||
       t.includes("catalog_probe_failed") ||
+      t.includes("listing_create_failed") ||
+      t.includes("product_type_discovery_failed") ||
+      t.includes("listing_restrictions_failed") ||
       t.includes("/rejected"),
   );
   if (hasFailed) return "failed";
@@ -136,7 +139,10 @@ export function classifySyncRequestStatusFromEventTypes(
       t.includes("image_transfer_completed") ||
       t.includes("image_transform_completed") ||
       t.includes("auth_completed") ||
-      t.includes("catalog_probe_completed"),
+      t.includes("catalog_probe_completed") ||
+      t.includes("listing_create_completed") ||
+      t.includes("product_type_discovery_completed") ||
+      t.includes("listing_restrictions_completed"),
   );
   if (hasCompleted) return "success";
 
@@ -147,6 +153,9 @@ export function classifySyncRequestStatusFromEventTypes(
       t.includes("image_transform_started") ||
       t.includes("auth_started") ||
       t.includes("catalog_probe_started") ||
+      t.includes("listing_create_started") ||
+      t.includes("product_type_discovery_started") ||
+      t.includes("listing_restrictions_started") ||
       t.includes("_api_call") || // Any API activity means it's processing
       t.includes("secret_provided"),
   );
@@ -167,6 +176,9 @@ export function classifySyncRequestStatusFromEventTypes(
       t.includes("image_transform_requested") ||
       t.includes("auth_requested") ||
       t.includes("catalog_probe_requested") ||
+      t.includes("listing_create_requested") ||
+      t.includes("product_type_discovery_requested") ||
+      t.includes("listing_restrictions_requested") ||
       t.includes("secret_required"),
   );
   if (hasRequested) return "queued";

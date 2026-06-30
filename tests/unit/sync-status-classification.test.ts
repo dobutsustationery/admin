@@ -74,6 +74,90 @@ describe("sync status classification", () => {
     ).toBe("failed");
   });
 
+  it("classifies amazon listing creates through lifecycle states", () => {
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/listing_create_requested",
+      ]),
+    ).toBe("queued");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/listing_create_requested",
+        "amazon/listing_create_started",
+      ]),
+    ).toBe("processing");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/listing_create_requested",
+        "amazon/listing_create_started",
+        "amazon/listing_create_api_call",
+        "amazon/listing_create_completed",
+      ]),
+    ).toBe("success");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/listing_create_requested",
+        "amazon/listing_create_failed",
+      ]),
+    ).toBe("failed");
+  });
+
+  it("classifies amazon product type discovery through lifecycle states", () => {
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/product_type_discovery_requested",
+      ]),
+    ).toBe("queued");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/product_type_discovery_requested",
+        "amazon/product_type_discovery_started",
+      ]),
+    ).toBe("processing");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/product_type_discovery_requested",
+        "amazon/product_type_discovery_started",
+        "amazon/product_type_discovery_api_call",
+        "amazon/product_type_discovery_completed",
+      ]),
+    ).toBe("success");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/product_type_discovery_requested",
+        "amazon/product_type_discovery_failed",
+      ]),
+    ).toBe("failed");
+  });
+
+  it("classifies amazon listing restriction checks through lifecycle states", () => {
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/listing_restrictions_requested",
+      ]),
+    ).toBe("queued");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/listing_restrictions_requested",
+        "amazon/listing_restrictions_started",
+      ]),
+    ).toBe("processing");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/listing_restrictions_requested",
+        "amazon/listing_restrictions_started",
+        "amazon/listing_restrictions_api_call",
+        "amazon/listing_restrictions_completed",
+      ]),
+    ).toBe("success");
+    expect(
+      classifySyncRequestStatusFromEventTypes([
+        "amazon/listing_restrictions_requested",
+        "amazon/listing_restrictions_failed",
+      ]),
+    ).toBe("failed");
+  });
+
   it("infers amazon domain from amazon event types", () => {
     const domain = inferSyncRequestDomainFromEvents([
       { eventType: "amazon/catalog_probe_requested" },

@@ -25,6 +25,12 @@ const SHOPIFY_LISTING_AUDIT_REQUEST_COLLECTION =
   "request_shopify_listing_audit";
 const SHOPIFY_CATALOG_SYNC_REQUEST_COLLECTION = "request_shopify_catalog_sync";
 const AMAZON_CATALOG_PROBE_REQUEST_COLLECTION = "request_amazon_catalog_probe";
+const AMAZON_LISTING_CREATE_REQUEST_COLLECTION =
+  "request_amazon_listing_create";
+const AMAZON_PRODUCT_TYPE_DISCOVERY_REQUEST_COLLECTION =
+  "request_amazon_product_type_discovery";
+const AMAZON_LISTING_RESTRICTIONS_REQUEST_COLLECTION =
+  "request_amazon_listing_restrictions";
 const PHOTOS_TRANSFER_REQUEST_COLLECTION = "request_photos_transfer";
 const PHOTOS_TRANSFORM_REQUEST_COLLECTION = "request_photos_transform";
 const GOOGLE_AUTH_REQUEST_COLLECTION = "request_google_auth";
@@ -108,6 +114,7 @@ const AMAZON_DEFAULT_LISTINGS_INCLUDED_DATA = [
   "relationships",
   "productTypes",
 ];
+const AMAZON_HTTP_TIMEOUT_MS = 90_000;
 
 function amazonTrim(value) {
   return String(value || "").trim();
@@ -187,6 +194,30 @@ function cleanAmazonIncludedData(value, fallback) {
   return values.length ? values : fallback;
 }
 
+async function fetchWithTimeout(
+  url,
+  options = {},
+  timeoutMs = AMAZON_HTTP_TIMEOUT_MS,
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(
+        `Amazon API request timed out after ${timeoutMs}ms: ${url}`,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchAmazonLwaAccessToken(config) {
   const body = new URLSearchParams({
     grant_type: "refresh_token",
@@ -195,7 +226,7 @@ async function fetchAmazonLwaAccessToken(config) {
     client_secret: config.lwaClientSecret,
   });
 
-  const response = await fetch(AMAZON_LWA_TOKEN_ENDPOINT, {
+  const response = await fetchWithTimeout(AMAZON_LWA_TOKEN_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -239,7 +270,7 @@ async function amazonSpApiGet({
     }
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "GET",
     headers: {
       accept: "application/json",
@@ -265,6 +296,87 @@ async function amazonSpApiGet({
     url: url.toString(),
     data,
   };
+}
+
+async function amazonSpApiPut({
+  endpoint,
+  path,
+  query,
+  accessToken,
+  userAgent,
+  body,
+}) {
+  const url = new URL(path, endpoint);
+  for (const [key, value] of Object.entries(query || {})) {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+
+  const response = await fetchWithTimeout(url, {
+    method: "PUT",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": userAgent,
+      "x-amz-access-token": accessToken,
+      "x-amz-date": amazonDate(),
+    },
+    body: JSON.stringify(body || {}),
+  });
+
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+    rateLimit: response.headers.get("x-amzn-ratelimit-limit") || "",
+    url: url.toString(),
+    data,
+  };
+}
+
+async function fetchAmazonProductTypeSchema({ schemaUrl }) {
+  if (!schemaUrl) return null;
+
+  const response = await fetchWithTimeout(schemaUrl, {
+    method: "GET",
+    headers: { accept: "application/json" },
+  });
+  const text = await response.text();
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+    rateLimit: response.headers.get("x-amzn-ratelimit-limit") || "",
+    url: schemaUrl,
+    data: text,
+  };
+}
+
+async function fetchAmazonProductTypeSchemaResponse(definitionData) {
+  const schemaUrl = amazonTrim(definitionData?.schema?.link?.resource);
+  if (!schemaUrl) return null;
+
+  try {
+    return await fetchAmazonProductTypeSchema({ schemaUrl });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      statusText: "",
+      url: schemaUrl,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function makeAmazonRawResponseRecord({
@@ -384,6 +496,172 @@ async function getAmazonListingBySku({
     accessToken,
     userAgent: config.userAgent,
   });
+}
+
+async function searchAmazonProductTypes({
+  config,
+  itemName,
+  keywords,
+  accessToken,
+  locale,
+  searchLocale,
+}) {
+  const query = {
+    marketplaceIds: config.marketplaceId,
+    locale,
+    searchLocale: searchLocale || locale,
+  };
+  const cleanItemName = amazonTrim(itemName);
+  const cleanKeywords = cleanAmazonList(keywords, 20).join(",");
+  if (cleanItemName) {
+    query.itemName = cleanItemName;
+  } else if (cleanKeywords) {
+    query.keywords = cleanKeywords;
+  }
+
+  return amazonSpApiGet({
+    endpoint: config.endpoint,
+    path: "/definitions/2020-09-01/productTypes",
+    query,
+    accessToken,
+    userAgent: config.userAgent,
+  });
+}
+
+async function getAmazonProductTypeDefinition({
+  config,
+  productType,
+  requirements,
+  accessToken,
+  locale,
+  requirementsEnforced,
+}) {
+  return amazonSpApiGet({
+    endpoint: config.endpoint,
+    path: `/definitions/2020-09-01/productTypes/${encodeURIComponent(productType)}`,
+    query: {
+      marketplaceIds: config.marketplaceId,
+      sellerId: config.sellerId,
+      requirements,
+      requirementsEnforced,
+      locale,
+    },
+    accessToken,
+    userAgent: config.userAgent,
+  });
+}
+
+async function getAmazonListingRestrictions({
+  config,
+  asin,
+  conditionType,
+  reasonLocale,
+  accessToken,
+}) {
+  return amazonSpApiGet({
+    endpoint: config.endpoint,
+    path: "/listings/2021-08-01/restrictions",
+    query: {
+      asin,
+      sellerId: config.sellerId,
+      marketplaceIds: config.marketplaceId,
+      conditionType,
+      reasonLocale,
+    },
+    accessToken,
+    userAgent: config.userAgent,
+  });
+}
+
+async function putAmazonListingBySku({
+  config,
+  sku,
+  productType,
+  requirements,
+  payload,
+  accessToken,
+  locale,
+}) {
+  return amazonSpApiPut({
+    endpoint: config.endpoint,
+    path: `/listings/2021-08-01/items/${encodeURIComponent(config.sellerId)}/${encodeURIComponent(sku)}`,
+    query: {
+      marketplaceIds: config.marketplaceId,
+      issueLocale: locale,
+    },
+    accessToken,
+    userAgent: config.userAgent,
+    body: {
+      productType,
+      requirements,
+      attributes: payload?.attributes || {},
+    },
+  });
+}
+
+function extractAmazonProductTypeNames(searchData, maxCount) {
+  const productTypes = Array.isArray(searchData?.productTypes)
+    ? searchData.productTypes
+    : [];
+  return productTypes
+    .map((entry) => amazonTrim(entry?.name || entry?.productType))
+    .filter(Boolean)
+    .filter((entry, index, all) => all.indexOf(entry) === index)
+    .slice(0, maxCount);
+}
+
+function getAmazonListingSubmissionError(responseData) {
+  const status = amazonTrim(responseData?.status).toUpperCase();
+  const issues = Array.isArray(responseData?.issues) ? responseData.issues : [];
+  const errorIssue = issues.find(
+    (issue) => amazonTrim(issue?.severity).toUpperCase() === "ERROR",
+  );
+  if (status === "INVALID" || errorIssue) {
+    const issueMessage = amazonTrim(errorIssue?.message);
+    return issueMessage || `Amazon listing submission status: ${status}`;
+  }
+  return "";
+}
+
+function normalizeAmazonListingCreateSubmissions({
+  payload,
+  fallbackProductType,
+  fallbackRequirements,
+}) {
+  const rawSubmissions = Array.isArray(payload?.submissions)
+    ? payload.submissions
+    : [];
+  const submissions = rawSubmissions
+    .map((entry) => {
+      const sku = amazonTrim(entry?.sku);
+      const productType = amazonTrim(
+        entry?.productType || fallbackProductType,
+      ).toUpperCase();
+      const requirements =
+        amazonTrim(entry?.requirements || fallbackRequirements) || "LISTING";
+      const submissionPayload =
+        entry?.payload && typeof entry.payload === "object"
+          ? entry.payload
+          : { attributes: entry?.attributes || {} };
+      return {
+        role: amazonTrim(entry?.role || "standalone") || "standalone",
+        itemKey: amazonTrim(entry?.itemKey),
+        sku,
+        productType,
+        requirements,
+        payload: submissionPayload,
+      };
+    })
+    .filter(
+      (entry) =>
+        entry.sku &&
+        entry.productType &&
+        entry.payload &&
+        typeof entry.payload === "object",
+    );
+
+  if (submissions.length > 0) return submissions;
+  return [];
 }
 
 async function fetchAllShopifyProductAuditData(config) {
@@ -1377,6 +1655,1036 @@ exports.amazonCatalogProbeRequest = onDocumentCreated(
             mode,
             marketplaceId: config.marketplaceId,
             sellerId: config.sellerId,
+            failedAtMs: Date.now(),
+            errorMessage: message,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: Date.now(),
+      });
+    }
+  },
+);
+
+exports.amazonProductTypeDiscoveryRequest = onDocumentCreated(
+  {
+    document: `${AMAZON_PRODUCT_TYPE_DISCOVERY_REQUEST_COLLECTION}/{requestId}`,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    concurrency: 1,
+    maxInstances: 2,
+  },
+  async (event) => {
+    const requestData = event.data?.data();
+    if (!requestData) return;
+
+    const requestId = trimString(event.params?.requestId);
+    const creator = trimString(requestData.creator);
+    const processor = `function:${process.env.K_SERVICE || "amazonProductTypeDiscoveryRequest"}`;
+    const eventType = trimString(requestData.eventType);
+    if (
+      eventType &&
+      eventType !== "amazon/product_type_discovery_requested" &&
+      eventType !== "product_type_discovery_requested"
+    ) {
+      return;
+    }
+
+    const itemName = amazonTrim(requestData.itemName);
+    const requestedKeywords = cleanAmazonList(requestData.keywords, 20);
+    const keywords = itemName ? [] : requestedKeywords;
+    const searchKey = itemName || keywords.join(",");
+
+    if (!requestId || !creator || !searchKey) {
+      logger.error("Invalid Amazon product type discovery request shape", {
+        requestId,
+        creator,
+        itemName,
+        keywords,
+      });
+      return;
+    }
+
+    const broadcastCreator = "amazon-product-type-discovery-function";
+    const startMs = Date.now();
+    const source = trimString(requestData.source || "amazon-listings-page");
+    const mode = "product_type_discovery";
+    let config = {
+      endpoint: "",
+      marketplaceId: "",
+      sellerId: "",
+      userAgent: "",
+    };
+
+    await writeAmazonSyncEvent({
+      requestId,
+      creator,
+      eventType: "amazon/product_type_discovery_requested",
+      processor,
+      source,
+      payload: {
+        itemName,
+        keywords,
+        searchKey,
+        handle: trimString(requestData.handle),
+        itemKey: trimString(requestData.itemKey),
+      },
+    });
+
+    try {
+      config = getAmazonConfig();
+      if (!config.sellerId) {
+        throw new Error(
+          "Missing AMAZON_SELLER_ID. Set it to fetch Amazon product type definitions.",
+        );
+      }
+
+      const locale = amazonTrim(requestData.locale || "en_GB") || "en_GB";
+      const searchLocale =
+        amazonTrim(requestData.searchLocale || locale) || locale;
+      const requirements = amazonTrim(requestData.requirements || "LISTING");
+      const requirementsEnforced = amazonTrim(
+        requestData.requirementsEnforced || "ENFORCED",
+      );
+      const maxDefinitions = Math.max(
+        0,
+        Math.min(10, Number(requestData.maxDefinitions || 5)),
+      );
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/product_type_discovery_started",
+        processor,
+        source,
+        payload: {
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          endpoint: config.endpoint,
+          itemName,
+          keywords,
+          searchKey,
+          requirements,
+          requirementsEnforced,
+          maxDefinitions,
+        },
+      });
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/begin_product_type_discovery",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            searchKey,
+            requestedAtMs: startMs,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs,
+      });
+
+      const accessToken = await fetchAmazonLwaAccessToken(config);
+      const responses = [];
+
+      async function writeApiCallEvent({ requestType, key, response }) {
+        await writeAmazonSyncEvent({
+          requestId,
+          creator,
+          eventType: "amazon/product_type_discovery_api_call",
+          processor,
+          source,
+          payload: {
+            requestType,
+            endpoint: response.url,
+            success: !!response.ok,
+            response: response.data,
+            context: {
+              key,
+              status: response.status,
+              statusText: response.statusText,
+              rateLimit: response.rateLimit,
+              marketplaceId: config.marketplaceId,
+              sellerId: config.sellerId,
+              requirements,
+              requirementsEnforced,
+            },
+          },
+        });
+      }
+
+      const searchResponse = await searchAmazonProductTypes({
+        config,
+        itemName,
+        keywords,
+        accessToken,
+        locale,
+        searchLocale,
+      });
+      await writeApiCallEvent({
+        requestType: "product_type_search",
+        key: searchKey,
+        response: searchResponse,
+      });
+      responses.push(
+        makeAmazonRawResponseRecord({
+          requestId,
+          kind: "product_type_search",
+          key: searchKey,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          endpoint: config.endpoint,
+          response: searchResponse,
+          fetchedAtMs: Date.now(),
+        }),
+      );
+
+      if (!searchResponse.ok) {
+        await writeBroadcastAction({
+          action: {
+            type: "amazonCatalog/apply_product_type_discovery_result",
+            payload: {
+              requestId,
+              mode,
+              marketplaceId: config.marketplaceId,
+              sellerId: config.sellerId,
+              searchKey,
+              responses,
+            },
+          },
+          creator: broadcastCreator,
+          atMs: startMs + 1,
+        });
+        throw new Error(
+          `Amazon product type search failed (${searchResponse.status} ${searchResponse.statusText})`,
+        );
+      }
+
+      const productTypes = extractAmazonProductTypeNames(
+        searchResponse.data,
+        maxDefinitions,
+      );
+      for (const productType of productTypes) {
+        const definitionResponse = await getAmazonProductTypeDefinition({
+          config,
+          productType,
+          requirements,
+          accessToken,
+          locale,
+          requirementsEnforced,
+        });
+        await writeApiCallEvent({
+          requestType: "product_type_definition",
+          key: productType,
+          response: definitionResponse,
+        });
+        responses.push(
+          makeAmazonRawResponseRecord({
+            requestId,
+            kind: "product_type_definition",
+            key: productType,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            endpoint: config.endpoint,
+            response: definitionResponse,
+            fetchedAtMs: Date.now(),
+          }),
+        );
+
+        if (definitionResponse.ok) {
+          const schemaResponse = await fetchAmazonProductTypeSchemaResponse(
+            definitionResponse.data,
+          );
+          if (schemaResponse) {
+            await writeApiCallEvent({
+              requestType: "product_type_schema",
+              key: productType,
+              response: schemaResponse,
+            });
+            responses.push(
+              makeAmazonRawResponseRecord({
+                requestId,
+                kind: "product_type_schema",
+                key: productType,
+                marketplaceId: config.marketplaceId,
+                sellerId: config.sellerId,
+                endpoint: config.endpoint,
+                response: schemaResponse,
+                fetchedAtMs: Date.now(),
+              }),
+            );
+          }
+        }
+      }
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/apply_product_type_discovery_result",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            searchKey,
+            responses,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs + 1,
+      });
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/complete_product_type_discovery",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            searchKey,
+            completedAtMs: Date.now(),
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs + 2,
+      });
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/product_type_discovery_completed",
+        processor,
+        source,
+        payload: {
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          itemName,
+          keywords,
+          searchKey,
+          productTypes,
+          responseCount: responses.length,
+        },
+      });
+
+      logger.info("Amazon product type discovery completed", {
+        requestId,
+        creator,
+        processor,
+        searchKey,
+        productTypes,
+        responseCount: responses.length,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Failed processing Amazon product type discovery request", {
+        requestId,
+        creator,
+        processor,
+        searchKey,
+        error: message,
+      });
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/product_type_discovery_failed",
+        processor,
+        source,
+        payload: {
+          errorCode: "amazon_product_type_discovery_failed",
+          errorMessage: message,
+          message,
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          searchKey,
+        },
+      });
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/fail_product_type_discovery",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            searchKey,
+            failedAtMs: Date.now(),
+            errorMessage: message,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: Date.now(),
+      });
+    }
+  },
+);
+
+exports.amazonListingRestrictionsRequest = onDocumentCreated(
+  {
+    document: `${AMAZON_LISTING_RESTRICTIONS_REQUEST_COLLECTION}/{requestId}`,
+    timeoutSeconds: 120,
+    memory: "512MiB",
+    concurrency: 1,
+    maxInstances: 2,
+  },
+  async (event) => {
+    const requestData = event.data?.data();
+    if (!requestData) return;
+
+    const requestId = trimString(event.params?.requestId);
+    const creator = trimString(requestData.creator);
+    const processor = `function:${process.env.K_SERVICE || "amazonListingRestrictionsRequest"}`;
+    const eventType = trimString(requestData.eventType);
+    if (
+      eventType &&
+      eventType !== "amazon/listing_restrictions_requested" &&
+      eventType !== "listing_restrictions_requested"
+    ) {
+      return;
+    }
+
+    const asin = amazonTrim(requestData.asin).toUpperCase();
+    const conditionType = amazonTrim(requestData.conditionType || "new_new");
+    const restrictionKey = `${asin}:${conditionType}`;
+
+    if (!requestId || !creator || !asin) {
+      logger.error("Invalid Amazon listing restrictions request shape", {
+        requestId,
+        creator,
+        asin,
+        conditionType,
+      });
+      return;
+    }
+
+    const broadcastCreator = "amazon-listing-restrictions-function";
+    const startMs = Date.now();
+    const source = trimString(requestData.source || "amazon-listings-page");
+    const mode = "listing_restrictions";
+    let config = {
+      endpoint: "",
+      marketplaceId: "",
+      sellerId: "",
+      userAgent: "",
+    };
+
+    await writeAmazonSyncEvent({
+      requestId,
+      creator,
+      eventType: "amazon/listing_restrictions_requested",
+      processor,
+      source,
+      payload: {
+        asin,
+        conditionType,
+        restrictionKey,
+      },
+    });
+
+    try {
+      config = getAmazonConfig();
+      if (!config.sellerId) {
+        throw new Error(
+          "Missing AMAZON_SELLER_ID. Set it to fetch Amazon listing restrictions.",
+        );
+      }
+
+      const reasonLocale =
+        amazonTrim(requestData.reasonLocale || "en_GB") || "en_GB";
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/listing_restrictions_started",
+        processor,
+        source,
+        payload: {
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          endpoint: config.endpoint,
+          asin,
+          conditionType,
+          reasonLocale,
+          restrictionKey,
+        },
+      });
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/begin_listing_restrictions",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            restrictionKey,
+            requestedAtMs: startMs,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs,
+      });
+
+      const accessToken = await fetchAmazonLwaAccessToken(config);
+      const response = await getAmazonListingRestrictions({
+        config,
+        asin,
+        conditionType,
+        reasonLocale,
+        accessToken,
+      });
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/listing_restrictions_api_call",
+        processor,
+        source,
+        payload: {
+          requestType: "listing_restrictions",
+          endpoint: response.url,
+          success: !!response.ok,
+          response: response.data,
+          context: {
+            key: restrictionKey,
+            asin,
+            conditionType,
+            status: response.status,
+            statusText: response.statusText,
+            rateLimit: response.rateLimit,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+          },
+        },
+      });
+
+      const responses = [
+        makeAmazonRawResponseRecord({
+          requestId,
+          kind: "listing_restrictions",
+          key: restrictionKey,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          endpoint: config.endpoint,
+          response,
+          fetchedAtMs: Date.now(),
+        }),
+      ];
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/apply_listing_restrictions_result",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            restrictionKey,
+            responses,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs + 1,
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Amazon listing restrictions check failed (${response.status} ${response.statusText})`,
+        );
+      }
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/complete_listing_restrictions",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            restrictionKey,
+            completedAtMs: Date.now(),
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs + 2,
+      });
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/listing_restrictions_completed",
+        processor,
+        source,
+        payload: {
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          asin,
+          conditionType,
+          restrictionKey,
+          responseCount: responses.length,
+        },
+      });
+
+      logger.info("Amazon listing restrictions check completed", {
+        requestId,
+        creator,
+        processor,
+        asin,
+        conditionType,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Failed processing Amazon listing restrictions request", {
+        requestId,
+        creator,
+        processor,
+        asin,
+        conditionType,
+        error: message,
+      });
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/listing_restrictions_failed",
+        processor,
+        source,
+        payload: {
+          errorCode: "amazon_listing_restrictions_failed",
+          errorMessage: message,
+          message,
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          asin,
+          conditionType,
+          restrictionKey,
+        },
+      });
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/fail_listing_restrictions",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            restrictionKey,
+            failedAtMs: Date.now(),
+            errorMessage: message,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: Date.now(),
+      });
+    }
+  },
+);
+
+exports.amazonListingCreateRequest = onDocumentCreated(
+  {
+    document: `${AMAZON_LISTING_CREATE_REQUEST_COLLECTION}/{requestId}`,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    concurrency: 1,
+    maxInstances: 2,
+  },
+  async (event) => {
+    const requestData = event.data?.data();
+    if (!requestData) return;
+
+    const requestId = trimString(event.params?.requestId);
+    const creator = trimString(requestData.creator);
+    const processor = `function:${process.env.K_SERVICE || "amazonListingCreateRequest"}`;
+    const eventType = trimString(requestData.eventType);
+    if (
+      eventType &&
+      eventType !== "amazon/listing_create_requested" &&
+      eventType !== "listing_create_requested"
+    ) {
+      return;
+    }
+
+    const handle = amazonTrim(requestData.handle);
+    const productType = amazonTrim(requestData.productType).toUpperCase();
+    const requirements = amazonTrim(requestData.requirements || "LISTING");
+    const payload =
+      requestData.payload && typeof requestData.payload === "object"
+        ? requestData.payload
+        : {};
+    const submissions = normalizeAmazonListingCreateSubmissions({
+      payload,
+      fallbackProductType: productType,
+      fallbackRequirements: requirements,
+    });
+    const skus = submissions.map((submission) => submission.sku);
+
+    if (
+      !requestId ||
+      !creator ||
+      !handle ||
+      !productType ||
+      !submissions.length
+    ) {
+      logger.error("Invalid Amazon listing create request shape", {
+        requestId,
+        creator,
+        handle,
+        productType,
+        submissionCount: submissions.length,
+      });
+      return;
+    }
+
+    const broadcastCreator = "amazon-listing-create-function";
+    const startMs = Date.now();
+    const source = trimString(requestData.source || "amazon-listings-page");
+    const mode = "listing_create";
+    let config = {
+      endpoint: "",
+      marketplaceId: "",
+      sellerId: "",
+      userAgent: "",
+    };
+
+    await writeAmazonSyncEvent({
+      requestId,
+      creator,
+      eventType: "amazon/listing_create_requested",
+      processor,
+      source,
+      payload: {
+        handle,
+        skus,
+        submissionCount: submissions.length,
+        productType,
+        requirements,
+        itemKey: trimString(requestData.itemKey),
+      },
+    });
+
+    try {
+      config = getAmazonConfig();
+      if (!config.sellerId) {
+        throw new Error(
+          "Missing AMAZON_SELLER_ID. Set it to create Amazon seller listings.",
+        );
+      }
+
+      const locale = amazonTrim(requestData.locale || "");
+      const listingIncludedData = cleanAmazonIncludedData(
+        requestData.listingIncludedData,
+        AMAZON_DEFAULT_LISTINGS_INCLUDED_DATA,
+      );
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/listing_create_started",
+        processor,
+        source,
+        payload: {
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          endpoint: config.endpoint,
+          handle,
+          skus,
+          submissionCount: submissions.length,
+          productType,
+          requirements,
+        },
+      });
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/begin_listing_write",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            handle,
+            skus,
+            requestedAtMs: startMs,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs,
+      });
+
+      const accessToken = await fetchAmazonLwaAccessToken(config);
+      const responses = [];
+      const submissionErrors = [];
+
+      async function writeApiCallEvent({
+        requestType,
+        key,
+        response,
+        request,
+      }) {
+        await writeAmazonSyncEvent({
+          requestId,
+          creator,
+          eventType: "amazon/listing_create_api_call",
+          processor,
+          source,
+          payload: {
+            requestType,
+            endpoint: response.url,
+            success: !!response.ok,
+            request: request || null,
+            response: response.data,
+            context: {
+              key,
+              status: response.status,
+              statusText: response.statusText,
+              rateLimit: response.rateLimit,
+              marketplaceId: config.marketplaceId,
+              sellerId: config.sellerId,
+              productType,
+              requirements,
+            },
+          },
+        });
+      }
+
+      for (const submission of submissions) {
+        const putRequest = {
+          role: submission.role,
+          itemKey: submission.itemKey,
+          productType: submission.productType,
+          requirements: submission.requirements,
+          attributes: submission.payload?.attributes || {},
+        };
+        const putResponse = await putAmazonListingBySku({
+          config,
+          sku: submission.sku,
+          productType: submission.productType,
+          requirements: submission.requirements,
+          payload: submission.payload,
+          accessToken,
+          locale,
+        });
+        await writeApiCallEvent({
+          requestType: "seller_listing_put",
+          key: submission.sku,
+          response: putResponse,
+          request: putRequest,
+        });
+        responses.push(
+          makeAmazonRawResponseRecord({
+            requestId,
+            kind: "seller_listing_put",
+            key: submission.sku,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            endpoint: config.endpoint,
+            response: putResponse,
+            fetchedAtMs: Date.now(),
+          }),
+        );
+
+        const submissionError = getAmazonListingSubmissionError(
+          putResponse.data,
+        );
+        if (!putResponse.ok || submissionError) {
+          submissionErrors.push({
+            sku: submission.sku,
+            message:
+              submissionError ||
+              `Amazon listing create failed (${putResponse.status} ${putResponse.statusText})`,
+          });
+          break;
+        }
+
+        const listingResponse = await getAmazonListingBySku({
+          config,
+          sku: submission.sku,
+          includedData: listingIncludedData,
+          accessToken,
+          locale,
+        });
+        await writeApiCallEvent({
+          requestType: "seller_listing_get_by_sku",
+          key: submission.sku,
+          response: listingResponse,
+        });
+        responses.push(
+          makeAmazonRawResponseRecord({
+            requestId,
+            kind: "seller_listing_get_by_sku",
+            key: submission.sku,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            endpoint: config.endpoint,
+            response: listingResponse,
+            fetchedAtMs: Date.now(),
+          }),
+        );
+      }
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/apply_listing_write_result",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            handle,
+            skus,
+            responses,
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs + 1,
+      });
+
+      if (submissionErrors.length > 0) {
+        const message = submissionErrors
+          .map((error) => `${error.sku}: ${error.message}`)
+          .join("; ");
+        await writeBroadcastAction({
+          action: {
+            type: "amazonCatalog/fail_listing_write",
+            payload: {
+              requestId,
+              mode,
+              marketplaceId: config.marketplaceId,
+              sellerId: config.sellerId,
+              handle,
+              skus,
+              failedAtMs: Date.now(),
+              errorMessage: message,
+            },
+          },
+          creator: broadcastCreator,
+          atMs: startMs + 2,
+        });
+
+        await writeAmazonSyncEvent({
+          requestId,
+          creator,
+          eventType: "amazon/listing_create_failed",
+          processor,
+          source,
+          payload: {
+            errorCode: "amazon_listing_create_rejected",
+            errorMessage: message,
+            message,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            handle,
+            skus,
+            productType,
+            requirements,
+            responseCount: responses.length,
+          },
+        });
+
+        logger.warn("Amazon listing create rejected", {
+          requestId,
+          creator,
+          processor,
+          handle,
+          skus,
+          productType,
+          submissionErrors,
+        });
+        return;
+      }
+
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/complete_listing_write",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            handle,
+            skus,
+            completedAtMs: Date.now(),
+          },
+        },
+        creator: broadcastCreator,
+        atMs: startMs + 2,
+      });
+
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/listing_create_completed",
+        processor,
+        source,
+        payload: {
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          handle,
+          skus,
+          productType,
+          requirements,
+          success: true,
+          responseCount: responses.length,
+        },
+      });
+
+      logger.info("Amazon listing create completed", {
+        requestId,
+        creator,
+        processor,
+        handle,
+        skus,
+        productType,
+        success: true,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Failed processing Amazon listing create request", {
+        requestId,
+        creator,
+        processor,
+        handle,
+        skus,
+        productType,
+        error: message,
+      });
+      await writeAmazonSyncEvent({
+        requestId,
+        creator,
+        eventType: "amazon/listing_create_failed",
+        processor,
+        source,
+        payload: {
+          errorCode: "amazon_listing_create_failed",
+          errorMessage: message,
+          message,
+          mode,
+          marketplaceId: config.marketplaceId,
+          sellerId: config.sellerId,
+          handle,
+          skus,
+          productType,
+        },
+      });
+      await writeBroadcastAction({
+        action: {
+          type: "amazonCatalog/fail_listing_write",
+          payload: {
+            requestId,
+            mode,
+            marketplaceId: config.marketplaceId,
+            sellerId: config.sellerId,
+            handle,
+            skus,
             failedAtMs: Date.now(),
             errorMessage: message,
           },
