@@ -66,4 +66,6 @@
 // 20: Amazon listing-restriction checks are now materialised in the
 //     amazonCatalog slice, and duplicate-JAN variation payloads derive
 //     product-identifier exemption fields instead of repeated EAN identity.
-export const CURRENT_SCHEMA_VERSION = 20;
+// 21: durable customs source/decision events project summaries in the reducer.
+// Bump this version when fixing calculations so cached projections fully replay.
+export const CURRENT_SCHEMA_VERSION = 21;

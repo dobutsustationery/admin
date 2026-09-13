@@ -1,4 +1,5 @@
 import { combineReducers } from "@reduxjs/toolkit";
+import { customsSummary, reduceCustoms } from "./customs-summary-slice";
 import { history } from "./history";
 import {
   inventory,
@@ -84,6 +85,7 @@ import {
 import { normalizeShopifySyncEventType } from "./sync-events";
 
 const reducerObject = {
+  customsSummary,
   names,
   inventory,
   history,
@@ -711,6 +713,16 @@ export const rootReducer = (
 
   // 1. Standard Reducer Execution
   let nextState: any = combinedReducer(state, action);
+  if (action.type.startsWith("customs/")) {
+    nextState = {
+      ...nextState,
+      customsSummary: reduceCustoms(
+        nextState.customsSummary,
+        action,
+        nextState.inventory.idToItem,
+      ),
+    };
+  }
 
   // 2. Ensure schemaVersion is always present in the state
   if (nextState.schemaVersion !== CURRENT_SCHEMA_VERSION) {

@@ -6,6 +6,8 @@ import path from "node:path";
 const root = process.cwd();
 
 const targets = [
+  { file: "src/lib/customs-summary-slice.ts", mode: "full" },
+  { file: "src/lib/customs-summary-compute.ts", mode: "full" },
   { file: "src/lib/inventory.ts", mode: "full" },
   { file: "src/lib/listings-slice.ts", mode: "full" },
   { file: "src/lib/photos-slice.ts", mode: "full" },
