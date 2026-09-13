@@ -39,10 +39,13 @@ test("customs source facts survive reload, reviewed classifications preview and 
     if (url.pathname.endsWith("/files"))
       return route.fulfill({
         json: {
-          files: Object.entries(sources).map(([id, s]) => ({
-            id,
-            name: s.name,
-          })),
+          files: [
+            ...Object.entries(sources).map(([id, s]) => ({
+              id,
+              name: s.name,
+            })),
+            { id: "duplicate-order", name: fixture.order.name },
+          ],
         },
       });
     const id = url.pathname.split("/").at(-1)!;
@@ -113,13 +116,32 @@ test("customs source facts survive reload, reviewed classifications preview and 
   await expect(page.getByRole("heading", { name: reportName })).toBeVisible();
   await page
     .getByRole("combobox", { name: "Order spreadsheet", exact: true })
-    .selectOption("order-fixture");
+    .fill(fixture.order.name + " — order-fixture");
   await expect(
     page.getByRole("combobox", { name: "Order tab", exact: true }),
   ).toHaveValue("Product List");
   await page
     .getByRole("combobox", { name: "Shipping spreadsheet", exact: true })
-    .selectOption("shipping-fixture");
+    .fill(fixture.shipping.name);
+  const orderPicker = page.getByRole("combobox", {
+    name: "Order spreadsheet",
+    exact: true,
+  });
+  await expect(
+    page.getByLabel("Or order URL / ID", { exact: true }),
+  ).toHaveValue("order-fixture");
+  await expect(
+    page.locator("#customs-order-spreadsheet-files option"),
+  ).toHaveCount(3);
+  await orderPicker.fill("unmatched partial search");
+  await expect(orderPicker).toHaveValue("unmatched partial search");
+  await expect(
+    page.getByLabel("Or order URL / ID", { exact: true }),
+  ).toHaveValue("");
+  await expect(
+    page.getByRole("button", { name: "Read and reconcile sources" }),
+  ).toBeDisabled();
+  await orderPicker.fill(fixture.order.name + " — order-fixture");
   await page
     .getByRole("button", { name: "Read and reconcile sources" })
     .click();

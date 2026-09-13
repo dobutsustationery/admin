@@ -31,6 +31,7 @@
     CustomsReport,
     CustomsSettings,
   } from "$lib/customs-summary-model";
+  import CustomsSpreadsheetPicker from "$lib/components/CustomsSpreadsheetPicker.svelte";
   import CustomsHsReview from "$lib/components/CustomsHsReview.svelte";
   let active = "";
   let savedName = "";
@@ -326,15 +327,14 @@
         </p>
         <div class="sources">
           <div>
-            <label
-              >Order spreadsheet <select
-                bind:value={orderId}
-                on:change={() => tabs("order")}
-                ><option value="">Choose…</option>{#each files as f}<option
-                    value={f.id}>{f.name}</option
-                  >{/each}</select
-              ></label
-            ><label>Or order URL / ID <input bind:value={orderId} /></label
+            <CustomsSpreadsheetPicker
+              id="customs-order-spreadsheet"
+              label="Order spreadsheet"
+              {files}
+              bind:value={orderId}
+              on:select={() => tabs("order")}
+            />
+            <label>Or order URL / ID <input bind:value={orderId} /></label
             ><button on:click={() => tabs("order")}>Load order tabs</button
             ><label
               >Order tab <select bind:value={orderTab}
@@ -343,16 +343,14 @@
             >
           </div>
           <div>
-            <label
-              >Shipping spreadsheet <select
-                bind:value={shippingId}
-                on:change={() => tabs("shipping")}
-                ><option value="">Choose…</option>{#each files as f}<option
-                    value={f.id}>{f.name}</option
-                  >{/each}</select
-              ></label
-            ><label
-              >Or shipping URL / ID <input bind:value={shippingId} /></label
+            <CustomsSpreadsheetPicker
+              id="customs-shipping-spreadsheet"
+              label="Shipping spreadsheet"
+              {files}
+              bind:value={shippingId}
+              on:select={() => tabs("shipping")}
+            />
+            <label>Or shipping URL / ID <input bind:value={shippingId} /></label
             ><button on:click={() => tabs("shipping")}
               >Load shipping tabs</button
             ><label
