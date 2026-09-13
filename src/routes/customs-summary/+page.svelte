@@ -305,6 +305,7 @@
       </div>
       <button
         disabled={!orderId || !shippingId || !orderTab || !shippingTab}
+        class="primary"
         on:click={read}
         >{report.input
           ? "Read sources again (resets HS decisions if changed)"
@@ -480,6 +481,7 @@
             !$store.inventory.initialized ||
             !projection.ready ||
             unsavedSettings}
+          class="primary"
           on:click={() => exportReport()}>Export to new Google workbook</button
         >
         {#each Object.entries(report.exports) as [runId, run]}
@@ -511,67 +513,192 @@
     max-width: 1500px;
     padding: 1.5rem;
     margin: auto;
+    background: #f8fafc;
+    color: #1e293b;
+    line-height: 1.5;
   }
-  fieldset {
-    border: 1px solid #bbb;
-    margin: 1rem 0;
-    padding: 1rem;
+  h1 {
+    margin: 0 0 0.5rem;
+    font-size: 1.85rem;
+    letter-spacing: -0.03em;
+  }
+  h2 {
+    margin: 1.5rem 0 0.75rem;
+    font-size: 1.3rem;
+  }
+  h3 {
+    font-size: 1.05rem;
+    margin: 1.5rem 0 0.75rem;
+  }
+  p {
+    color: #475569;
+  }
+  fieldset,
+  section {
+    min-width: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin: 1.25rem 0;
+    padding: 1.25rem;
+    background: white;
+    box-shadow: 0 1px 3px #0f172a08;
+  }
+  section > h2 {
+    margin-top: 0;
+  }
+  legend {
+    padding: 0 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
   }
   label {
     display: inline-flex;
     flex-direction: column;
-    gap: 0.3rem;
-    margin: 0.4rem;
+    gap: 0.4rem;
+    margin: 0.5rem;
     max-width: 100%;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    vertical-align: bottom;
   }
   input,
   select {
-    padding: 0.5rem;
+    min-height: 40px;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
     max-width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 400;
+    background: white;
+    color: #1e293b;
   }
   button {
-    padding: 0.5rem 0.8rem;
-    margin: 0.3rem;
+    min-height: 40px;
+    padding: 0.55rem 0.85rem;
+    margin: 0.35rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #334155;
+    background: white;
     cursor: pointer;
+    vertical-align: bottom;
+  }
+  button:hover:not(:disabled) {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+  }
+  button.primary {
+    color: white;
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+  }
+  button.primary:hover:not(:disabled) {
+    background: #00438b;
   }
   button:disabled {
     cursor: default;
     opacity: 0.5;
   }
-  .active {
-    border: 2px solid #245344;
+  input:focus-visible,
+  select:focus-visible,
+  button:focus-visible {
+    outline: 3px solid #93c5fd;
+    outline-offset: 2px;
+  }
+  button.active {
+    background: #eff6ff;
+    border-color: var(--primary-color);
+    color: var(--primary-color);
   }
   .sources {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.25rem;
+  }
+  .sources > div {
+    min-width: 0;
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: #f8fafc;
   }
   .sources label {
     display: flex;
   }
   .scroll {
     overflow-x: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
   }
   table {
     border-collapse: collapse;
     width: 100%;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
   }
   th,
   td {
     text-align: left;
     vertical-align: top;
-    padding: 0.6rem;
-    border-bottom: 1px solid #ddd;
+    padding: 0.8rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  th {
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  tbody tr:hover {
+    background: #f8fafc;
+  }
+  tbody tr:last-child td {
+    border-bottom: 0;
   }
   .error {
     padding: 1rem;
-    color: #8a1616;
-    background: #fff0ed;
+    color: #991b1b;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
   }
   details {
     margin: 1rem 0;
+    padding: 0.85rem 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
   }
-  h2 {
-    margin-top: 1.5rem;
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  details ul {
+    padding-left: 1.25rem;
+    margin-top: 0.75rem;
+    list-style: disc;
+    font-size: 0.85rem;
+  }
+  li + li {
+    margin-top: 0.3rem;
+  }
+  a {
+    color: var(--primary-color);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  @media (max-width: 640px) {
+    main {
+      padding: 0.75rem;
+    }
+    fieldset,
+    section {
+      padding: 1rem;
+    }
   }
 </style>

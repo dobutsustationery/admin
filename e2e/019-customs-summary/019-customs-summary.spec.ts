@@ -11,7 +11,7 @@ const fixture = JSON.parse(
 test("customs source facts survive reload, reviewed classifications preview and export", async ({
   page,
   authenticatedPage,
-}) => {
+}, testInfo) => {
   test.setTimeout(90000);
   void authenticatedPage;
   const reportName = `Durable customs browser test ${Date.now()}`;
@@ -130,6 +130,52 @@ test("customs source facts survive reload, reviewed classifications preview and 
   await page.reload();
   await page.getByRole("button", { name: `${reportName} — S067690` }).click();
   await expect(page.getByText(/911 pieces · ¥238,230/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Select all 69 shown products" })
+    .click();
+  const penCount = fixture.order.rows
+    .slice(10, 79)
+    .filter((r) =>
+      [r[2], r[4], r[1], r[10], r[9]]
+        .join(" ")
+        .normalize("NFKC")
+        .toLocaleLowerCase()
+        .includes("pen"),
+    ).length;
+  expect(penCount).toBeGreaterThan(0);
+  expect(penCount).toBeLessThan(69);
+  await page.getByLabel("Filter products").fill("  PeN  ");
+  await expect(page.getByRole("checkbox")).toHaveCount(penCount);
+  await expect(
+    page.getByRole("group", {
+      name: `Assign to ${penCount} selected products`,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Clear selection", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: `Select all ${penCount} shown products` })
+    .click();
+  await expect(page.getByRole("checkbox", { checked: true })).toHaveCount(
+    penCount,
+  );
+  await page
+    .getByRole("heading", { name: "Review HS classifications" })
+    .scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("hs-review-filter.png") });
+  await page.getByLabel("Filter products").fill("no-products-match-this");
+  await expect(page.getByText("No products match this filter.")).toBeVisible();
+  await expect(
+    page.getByRole("group", {
+      name: "Assign to 0 selected products",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Filter products").fill("");
+  await expect(page.getByRole("checkbox")).toHaveCount(69);
+  await expect(page.getByRole("checkbox", { checked: true })).toHaveCount(0);
   await page
     .getByRole("button", { name: "Select all 69 shown products" })
     .click();

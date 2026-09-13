@@ -15,12 +15,31 @@
   let en = "";
   let bg = "";
   let filter = "unresolved";
+  let search = "";
   let editing: string | null = null;
   let origin = "";
   let grams = "";
+  $: query = search.normalize("NFKC").trim().toLocaleLowerCase();
   $: visible = products.filter(
-    (p) => filter === "all" || !p.code || !p.en || !p.bg,
+    (p) =>
+      (filter === "all" || !p.code || !p.en || !p.bg) &&
+      [
+        p.jan,
+        p.description,
+        p.manufacturer,
+        p.material,
+        p.origin,
+        p.code,
+        p.en,
+        p.bg,
+      ]
+        .join(" ")
+        .normalize("NFKC")
+        .toLocaleLowerCase()
+        .includes(query),
   );
+  // Bulk actions must never include products hidden by either filter.
+  $: selected = selected.filter((jan) => visible.some((p) => p.jan === jan));
   function choose(
     jans: string[],
     suggestion: CustomsProduct["suggestions"][number],
@@ -42,19 +61,33 @@
     Suggestions require your acceptance. If none fits, choose or enter a code
     manually. These decisions affect this report only.
   </p>
-  <label
-    >Show <select bind:value={filter}
-      ><option value="unresolved">Needs classification</option><option
-        value="all">All products / edit decisions</option
-      ></select
-    ></label
-  >
-  <fieldset {disabled}>
-    <legend>Assign to {selected.length} selected products</legend>
-    <button on:click={() => (selected = visible.map((p) => p.jan))}
-      >Select all {visible.length} shown products</button
+  <div class="filters">
+    <label class="search"
+      >Filter products <input
+        type="search"
+        bind:value={search}
+        placeholder="Search products, e.g. pen"
+      />
+    </label>
+    <label
+      >Show <select bind:value={filter}
+        ><option value="unresolved">Needs classification</option><option
+          value="all">All products / edit decisions</option
+        ></select
+      ></label
     >
-    <button on:click={() => (selected = [])}>Clear selection</button>
+  </div>
+  <p class="result-count" aria-live="polite">
+    Showing {visible.length} of {products.length} products
+  </p>
+  <fieldset class="bulk-actions" {disabled}>
+    <legend>Assign to {selected.length} selected products</legend>
+    <div class="selection-actions">
+      <button on:click={() => (selected = visible.map((p) => p.jan))}
+        >Select all {visible.length} shown products</button
+      >
+      <button on:click={() => (selected = [])}>Clear selection</button>
+    </div>
     <label
       >HS code <input
         list="customs-hs-codes"
@@ -75,6 +108,7 @@
       /></label
     >
     <button
+      class="primary"
       disabled={!selected.length || !/^\d{8}$/.test(code)}
       on:click={() => {
         dispatch("decision", { jans: selected, decision: { code, en, bg } });
@@ -122,6 +156,7 @@
               {#each p.suggestions as suggestion}
                 <div>
                   <button
+                    class="primary"
                     {disabled}
                     on:click={() => choose([p.jan], suggestion)}
                     >Accept {suggestion.code} — {HS_CODE_DESCRIPTIONS[
@@ -179,6 +214,7 @@
                       editing = null;
                     }}>Save decision</button
                   >
+                  <button on:click={() => (editing = null)}>Cancel</button>
                 </fieldset>
               {/if}
             </td>
@@ -187,42 +223,205 @@
       >
     </table>
   </div>
-  {#if !visible.length}<p>No classifications need review.</p>{/if}
+  {#if !visible.length}<p class="empty">
+      {query
+        ? "No products match this filter."
+        : filter === "all"
+          ? "No products to show."
+          : "No classifications need review."}
+    </p>{/if}
 </section>
 
 <style>
+  section {
+    margin: 1.5rem 0;
+    padding: 1.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 1px 3px #0f172a08;
+    color: #1e293b;
+  }
+  h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.3rem;
+  }
+  p {
+    color: #64748b;
+    line-height: 1.5;
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 1rem;
+    margin-top: 1.25rem;
+  }
+  .search {
+    flex: 1;
+    min-width: 220px;
+  }
+  .result-count {
+    margin: 0.65rem 0 1rem;
+    font-size: 0.85rem;
+  }
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-width: 0;
+  }
+  input:not([type="checkbox"]),
+  select {
+    width: 100%;
+    min-height: 40px;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 400;
+    color: #1e293b;
+    background: white;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  button:focus-visible {
+    outline: 3px solid #93c5fd;
+    outline-offset: 2px;
+  }
+  input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+  }
+  fieldset {
+    min-width: 0;
+    padding: 1rem;
+    margin: 0.75rem 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+  legend {
+    padding: 0 0.4rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .bulk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.85rem;
+    margin-bottom: 1.25rem;
+  }
+  .bulk-actions > label {
+    flex: 1 1 160px;
+  }
+  .selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    width: 100%;
+  }
+  button {
+    min-height: 36px;
+    padding: 0.5rem 0.8rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    color: #334155;
+    font: inherit;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+  }
+  button.primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+  }
+  button.primary:hover:not(:disabled) {
+    background: #00438b;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
   .scroll {
     overflow-x: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
   }
   table {
     width: 100%;
+    min-width: 850px;
     border-collapse: collapse;
+    font-size: 0.9rem;
   }
   th,
   td {
-    padding: 0.6rem;
-    border-bottom: 1px solid #ddd;
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
     text-align: left;
     vertical-align: top;
+    line-height: 1.5;
+  }
+  th {
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  th:first-child {
+    width: 56px;
+  }
+  th:nth-child(2) {
+    width: 32%;
+  }
+  th:nth-child(3) {
+    width: 23%;
+  }
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  tbody tr:hover {
+    background: #f8fafc;
   }
   small {
     display: block;
-    color: #555;
+    margin: 0.3rem 0 0.6rem;
+    font-size: 0.78rem;
+    color: #64748b;
   }
-  label {
-    display: inline-flex;
-    flex-direction: column;
-    margin: 0.3rem;
+  td button {
+    margin-bottom: 0.4rem;
   }
-  fieldset {
-    margin: 0.7rem 0;
-    border: 1px solid #bbb;
+  td fieldset label {
+    margin-bottom: 0.7rem;
   }
-  button {
-    margin: 0.2rem;
+  .empty {
+    padding: 1.5rem;
+    text-align: center;
+    background: #f8fafc;
+    border-radius: 8px;
   }
-  input,
-  select {
-    padding: 0.4rem;
+  @media (max-width: 640px) {
+    section {
+      padding: 1rem;
+    }
+    .filters > label {
+      width: 100%;
+    }
+    .bulk-actions > label {
+      flex-basis: 100%;
+    }
   }
 </style>
