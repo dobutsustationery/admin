@@ -82,6 +82,7 @@ export interface CustomsProjection {
   tables: Record<string, Cell[][]>;
 }
 export interface CustomsReport {
+  abandoned?: boolean;
   id: string;
   name: string;
   creator: string;

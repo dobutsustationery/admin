@@ -12,6 +12,13 @@ import type {
 export const customsCreated = createAction<{ reportId: string; name: string }>(
   "customs/created",
 );
+export const customsRenamed = createAction<{ reportId: string; name: string }>(
+  "customs/renamed",
+);
+export const customsAbandonmentChanged = createAction<{
+  reportId: string;
+  abandoned: boolean;
+}>("customs/abandonmentChanged");
 export const customsSourceChunk = createAction<{
   reportId: string;
   readId: string;
@@ -93,6 +100,25 @@ function applyCustoms(
   } else {
     if (!existing) return state;
     report = { ...existing };
+    // Metadata never changes the calculation revision or invalidates exports.
+    if (customsRenamed.match(action)) {
+      if (typeof payload.name !== "string" || !payload.name.trim())
+        return state;
+      report.name = payload.name.trim();
+      return { ...state, reports: { ...state.reports, [report.id]: report } };
+    }
+    if (customsAbandonmentChanged.match(action)) {
+      if (typeof payload.abandoned !== "boolean") return state;
+      report.abandoned = payload.abandoned;
+      return { ...state, reports: { ...state.reports, [report.id]: report } };
+    }
+    // Still retain responses from exports that were already in flight.
+    if (
+      report.abandoned &&
+      !customsExportResponse.match(action) &&
+      !customsExportReadback.match(action)
+    )
+      return state;
     if (customsSourceChunk.match(action)) {
       report.chunks = {
         ...report.chunks,

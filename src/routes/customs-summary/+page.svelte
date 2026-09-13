@@ -17,6 +17,8 @@
   } from "$lib/google-sheets";
   import {
     customsCreated,
+    customsRenamed,
+    customsAbandonmentChanged,
     customsSourceChunk,
     customsSourceReceived,
     customsDecision,
@@ -31,6 +33,9 @@
   } from "$lib/customs-summary-model";
   import CustomsHsReview from "$lib/components/CustomsHsReview.svelte";
   let active = "";
+  let savedName = "";
+  let nameFor = "";
+  let showAbandoned = false;
   let name = "Kanegen customs summary";
   let files: { id: string; name: string }[] = [];
   let orderId = "",
@@ -55,6 +60,28 @@
   ) as CustomsReport[];
   $: report = reports.find((r) => r.id === active);
   $: projection = report?.projection;
+  $: if (report && nameFor !== JSON.stringify([report.id, report.name])) {
+    savedName = report.name;
+    nameFor = JSON.stringify([report.id, report.name]);
+  }
+  async function rename() {
+    if (!report || !savedName.trim()) return;
+    const reportId = report.id;
+    const name = savedName.trim();
+    await work(() => send(customsRenamed({ reportId, name })));
+  }
+  async function setAbandoned(abandoned: boolean) {
+    if (!report) return;
+    const reportId = report.id;
+    await work(async () => {
+      await send(customsAbandonmentChanged({ reportId, abandoned }));
+      if (abandoned) {
+        active = "";
+        message =
+          "Report abandoned. Choose Show abandoned reports to restore it. Exported workbooks are kept.";
+      }
+    });
+  }
   $: if (report && settingsFor !== `${report.id}:${report.revision}`) {
     settings = {
       ...report.settings,
@@ -168,7 +195,8 @@
   }
   async function exportReport(runId?: string) {
     await work(async () => {
-      if (!report?.input || !report.projection.ready) return;
+      if (!report?.input || report.abandoned || !report.projection.ready)
+        return;
       const snapshot = report;
       await assertCustomsSourcesCurrent(snapshot.input!);
       const id = runId || crypto.randomUUID();
@@ -196,8 +224,9 @@
         }),
       );
       if (
+        store.getState().customsSummary.reports[active].abandoned ||
         store.getState().customsSummary.reports[active].revision !==
-        snapshot.revision
+          snapshot.revision
       )
         throw new Error(
           "Report changed during export. Review the current preview and start a new export.",
@@ -247,10 +276,19 @@
   {#if message}<p role="status">{message}</p>{/if}
   <fieldset disabled={busy || !$store.inventory.initialized}>
     <legend>Saved reports</legend>
-    {#each reports as r}<button
+    <button
+      on:click={() => (showAbandoned = !showAbandoned)}
+      aria-pressed={showAbandoned}
+      >{showAbandoned
+        ? "Hide abandoned reports"
+        : "Show abandoned reports"}</button
+    >
+    {#each reports.filter((r) => !r.abandoned || showAbandoned) as r}<button
         class:active={active === r.id}
         on:click={() => resume(r)}
-        >{r.name} — {r.projection.invoice || "sources needed"}</button
+        >{r.name} — {r.projection.invoice || "sources needed"}{r.abandoned
+          ? " (abandoned)"
+          : ""}</button
       >{/each}
     <label>New report name <input bind:value={name} /></label><button
       disabled={!name.trim()}
@@ -260,249 +298,275 @@
   {#if report}
     <h2>{report.name}</h2>
     <fieldset disabled={busy || !$store.inventory.initialized}>
-      <legend>1. Choose source Google Sheets</legend>
-      <button on:click={() => initiateOAuthFlow(false, window.location.href)}
-        >Connect Google</button
-      ><button on:click={loadFiles}>Refresh spreadsheet list</button>
-      <p>
-        Choose two native Google Sheets. For Excel files, first use “Save as
-        Google Sheets” in Google. Only one shipping tab is used.
-      </p>
-      <div class="sources">
-        <div>
-          <label
-            >Order spreadsheet <select
-              bind:value={orderId}
-              on:change={() => tabs("order")}
-              ><option value="">Choose…</option>{#each files as f}<option
-                  value={f.id}>{f.name}</option
-                >{/each}</select
-            ></label
-          ><label>Or order URL / ID <input bind:value={orderId} /></label
-          ><button on:click={() => tabs("order")}>Load order tabs</button><label
-            >Order tab <select bind:value={orderTab}
-              >{#each orderTabs as tab}<option>{tab}</option>{/each}</select
-            ></label
-          >
-        </div>
-        <div>
-          <label
-            >Shipping spreadsheet <select
-              bind:value={shippingId}
-              on:change={() => tabs("shipping")}
-              ><option value="">Choose…</option>{#each files as f}<option
-                  value={f.id}>{f.name}</option
-                >{/each}</select
-            ></label
-          ><label>Or shipping URL / ID <input bind:value={shippingId} /></label
-          ><button on:click={() => tabs("shipping")}>Load shipping tabs</button
-          ><label
-            >Shipping tab <select bind:value={shippingTab}
-              >{#each shippingTabs as tab}<option>{tab}</option>{/each}</select
-            ></label
-          >
-        </div>
-      </div>
+      <legend>Report details</legend>
+      <label>Saved report name <input bind:value={savedName} /></label>
       <button
-        disabled={!orderId || !shippingId || !orderTab || !shippingTab}
-        class="primary"
-        on:click={read}
-        >{report.input
-          ? "Read sources again (resets HS decisions if changed)"
-          : "Read and reconcile sources"}</button
+        disabled={!savedName.trim() || savedName.trim() === report.name}
+        on:click={rename}>Save name</button
       >
-      {#if report.input}<p>
-          <a
-            href={`https://docs.google.com/spreadsheets/d/${report.input.order.id}/edit#gid=${report.input.order.sheetId}`}
-            >Order source</a
-          >
-          ·
-          <a
-            href={`https://docs.google.com/spreadsheets/d/${report.input.shipping.id}/edit#gid=${report.input.shipping.sheetId}`}
-            >Shipping source</a
-          >
-        </p>{/if}
+      {#if report.abandoned}
+        <p>
+          This report is abandoned. Restore it to continue working. Its sources,
+          decisions and exports are retained.
+        </p>
+        <button on:click={() => setAbandoned(false)}>Restore report</button>
+      {:else}
+        <button on:click={() => setAbandoned(true)}>Abandon report</button>
+      {/if}
     </fieldset>
-    {#if projection && report.input}
-      {#key report.id}
-        <CustomsHsReview
-          products={projection.products}
-          disabled={busy || !$store.inventory.initialized}
-          on:decision={(e) =>
-            work(async () => {
-              await send(customsDecision({ reportId: active, ...e.detail }));
-            })}
-        />
-      {/key}
+    {#if !report.abandoned}
       <fieldset disabled={busy || !$store.inventory.initialized}>
-        <legend>2. Measurements and packages</legend>
-        <label
-          >Gross allocation <select bind:value={settings.grossMethod}
-            ><option value="shipment"
-              >Proportional to net, whole shipment</option
-            ><option value="carton">Measured gross for each carton</option
-            ></select
-          ></label
+        <legend>1. Choose source Google Sheets</legend>
+        <button on:click={() => initiateOAuthFlow(false, window.location.href)}
+          >Connect Google</button
+        ><button on:click={loadFiles}>Refresh spreadsheet list</button>
+        <p>
+          Choose two native Google Sheets. For Excel files, first use “Save as
+          Google Sheets” in Google. Only one shipping tab is used.
+        </p>
+        <div class="sources">
+          <div>
+            <label
+              >Order spreadsheet <select
+                bind:value={orderId}
+                on:change={() => tabs("order")}
+                ><option value="">Choose…</option>{#each files as f}<option
+                    value={f.id}>{f.name}</option
+                  >{/each}</select
+              ></label
+            ><label>Or order URL / ID <input bind:value={orderId} /></label
+            ><button on:click={() => tabs("order")}>Load order tabs</button
+            ><label
+              >Order tab <select bind:value={orderTab}
+                >{#each orderTabs as tab}<option>{tab}</option>{/each}</select
+              ></label
+            >
+          </div>
+          <div>
+            <label
+              >Shipping spreadsheet <select
+                bind:value={shippingId}
+                on:change={() => tabs("shipping")}
+                ><option value="">Choose…</option>{#each files as f}<option
+                    value={f.id}>{f.name}</option
+                  >{/each}</select
+              ></label
+            ><label
+              >Or shipping URL / ID <input bind:value={shippingId} /></label
+            ><button on:click={() => tabs("shipping")}
+              >Load shipping tabs</button
+            ><label
+              >Shipping tab <select bind:value={shippingTab}
+                >{#each shippingTabs as tab}<option>{tab}</option
+                  >{/each}</select
+              ></label
+            >
+          </div>
+        </div>
+        <button
+          disabled={!orderId || !shippingId || !orderTab || !shippingTab}
+          class="primary"
+          on:click={read}
+          >{report.input
+            ? "Read sources again (resets HS decisions if changed)"
+            : "Read and reconcile sources"}</button
         >
-        {#if settings.grossMethod === "shipment"}<label
-            >Measured shipment gross (kg)<input
-              bind:value={settings.grossKg}
-              inputmode="decimal"
-            /></label
-          >{:else}{#each projection.cartons as c}<label
-              >Carton {c.id} gross kg (net {c.netKg.toFixed(3)})<input
-                bind:value={settings.cartonGross[c.id]}
+        {#if report.input}<p>
+            <a
+              href={`https://docs.google.com/spreadsheets/d/${report.input.order.id}/edit#gid=${report.input.order.sheetId}`}
+              >Order source</a
+            >
+            ·
+            <a
+              href={`https://docs.google.com/spreadsheets/d/${report.input.shipping.id}/edit#gid=${report.input.shipping.sheetId}`}
+              >Shipping source</a
+            >
+          </p>{/if}
+      </fieldset>
+      {#if projection && report.input}
+        {#key report.id}
+          <CustomsHsReview
+            products={projection.products}
+            disabled={busy || !$store.inventory.initialized}
+            on:decision={(e) =>
+              work(async () => {
+                await send(customsDecision({ reportId: active, ...e.detail }));
+              })}
+          />
+        {/key}
+        <fieldset disabled={busy || !$store.inventory.initialized}>
+          <legend>2. Measurements and packages</legend>
+          <label
+            >Gross allocation <select bind:value={settings.grossMethod}
+              ><option value="shipment"
+                >Proportional to net, whole shipment</option
+              ><option value="carton">Measured gross for each carton</option
+              ></select
+            ></label
+          >
+          {#if settings.grossMethod === "shipment"}<label
+              >Measured shipment gross (kg)<input
+                bind:value={settings.grossKg}
                 inputmode="decimal"
               /></label
-            >{/each}{/if}
-        <label
-          >Measurement source <input
-            bind:value={settings.grossSource}
-            placeholder="e.g. carrier packing certificate"
-          /></label
-        >
-        <label
-          >Package convention <select bind:value={settings.packagePolicy}
-            ><option value="">Choose / confirm…</option><option value="cartons"
-              >Cartons containing each commodity (non-additive)</option
-            ></select
-          ></label
-        >
-        <button
-          on:click={() =>
-            work(async () => {
-              await send(customsSettings({ reportId: active, settings }));
-            })}>Save measurements and convention</button
-        >
-      </fieldset>
-      <section>
-        <h2>3. Preview before export</h2>
-        {#if unsavedSettings}<p>
-            Save your measurements and convention to update this preview before
-            exporting.
-          </p>{/if}
-        <p>
-          <strong
-            >{projection.ready
-              ? "Ready"
-              : "Draft — resolve the issues below"}</strong
+            >{:else}{#each projection.cartons as c}<label
+                >Carton {c.id} gross kg (net {c.netKg.toFixed(3)})<input
+                  bind:value={settings.cartonGross[c.id]}
+                  inputmode="decimal"
+                /></label
+              >{/each}{/if}
+          <label
+            >Measurement source <input
+              bind:value={settings.grossSource}
+              placeholder="e.g. carrier packing certificate"
+            /></label
           >
-          · {projection.totals.pieces} pieces · ¥{projection.totals.yen.toLocaleString()}
-          · {projection.totals.netKg.toFixed(3)} kg net · {projection.totals.grossKg?.toFixed(
-            3,
-          ) ?? "Required"} kg gross · {projection.cartons.length} unique cartons
-        </p>
-        {#if projection.issues.length}<details open>
-            <summary>{projection.issues.length} items need attention</summary>
-            <ul>
-              {#each projection.issues as issue}<li>{issue}</li>{/each}
-            </ul>
-          </details>{/if}
-        <p>
-          Package counts are cartons containing each commodity. A shared carton
-          appears in several groups; do not add this column.
-        </p>
-        <div class="scroll">
-          <table>
-            <thead
-              ><tr
-                ><th>HS</th><th>English</th><th>Bulgarian</th><th>Origin</th><th
-                  >Pieces</th
-                ><th>Packages</th><th>Net kg</th><th>Gross kg</th><th>JPY</th
-                ></tr
-              ></thead
-            ><tbody
-              >{#each projection.groups as g}<tr
-                  ><td>{g.code || "Unclassified — action required"}</td><td
-                    >{g.en}</td
-                  ><td>{g.bg}</td><td>{g.origin}</td><td>{g.pieces}</td><td
-                    >{report.settings.packagePolicy
-                      ? g.cartons.length
-                      : "Required"}</td
-                  ><td>{g.netKg.toFixed(3)}</td><td
-                    >{g.grossKg?.toFixed(3) ?? "Required"}</td
-                  ><td>{g.yen}</td></tr
-                >{/each}</tbody
+          <label
+            >Package convention <select bind:value={settings.packagePolicy}
+              ><option value="">Choose / confirm…</option><option
+                value="cartons"
+                >Cartons containing each commodity (non-additive)</option
+              ></select
+            ></label
+          >
+          <button
+            on:click={() =>
+              work(async () => {
+                await send(customsSettings({ reportId: active, settings }));
+              })}>Save measurements and convention</button
+          >
+        </fieldset>
+        <section>
+          <h2>3. Preview before export</h2>
+          {#if unsavedSettings}<p>
+              Save your measurements and convention to update this preview
+              before exporting.
+            </p>{/if}
+          <p>
+            <strong
+              >{projection.ready
+                ? "Ready"
+                : "Draft — resolve the issues below"}</strong
             >
-          </table>
-        </div>
-        <h3>Carton membership</h3>
-        <div class="scroll">
-          <table>
-            <thead
-              ><tr
-                ><th>HS</th><th>English</th><th>Bulgarian</th><th>Origin</th><th
-                  >Cartons</th
-                ></tr
-              ></thead
-            ><tbody
-              >{#each projection.groups as g}<tr
-                  ><td>{g.code || "Unclassified"}</td><td>{g.en}</td><td
-                    >{g.bg}</td
-                  ><td>{g.origin}</td><td>{g.cartons.join(", ")}</td></tr
-                >{/each}</tbody
-            >
-          </table>
-        </div>
-        <details>
-          <summary>Contributing product allocations / carton totals</summary>
+            · {projection.totals.pieces} pieces · ¥{projection.totals.yen.toLocaleString()}
+            · {projection.totals.netKg.toFixed(3)} kg net · {projection.totals.grossKg?.toFixed(
+              3,
+            ) ?? "Required"} kg gross · {projection.cartons.length} unique cartons
+          </p>
+          {#if projection.issues.length}<details open>
+              <summary>{projection.issues.length} items need attention</summary>
+              <ul>
+                {#each projection.issues as issue}<li>{issue}</li>{/each}
+              </ul>
+            </details>{/if}
+          <p>
+            Package counts are cartons containing each commodity. A shared
+            carton appears in several groups; do not add this column.
+          </p>
           <div class="scroll">
             <table>
               <thead
                 ><tr
-                  ><th>JAN</th><th>Order row</th><th>Shipping row</th><th
-                    >Carton</th
-                  ><th>Pieces</th><th>JPY</th><th>Net kg</th></tr
+                  ><th>HS</th><th>English</th><th>Bulgarian</th><th>Origin</th
+                  ><th>Pieces</th><th>Packages</th><th>Net kg</th><th
+                    >Gross kg</th
+                  ><th>JPY</th></tr
                 ></thead
               ><tbody
-                >{#each projection.allocations as a}<tr
-                    ><td>{a.jan}</td><td>{a.orderRow}</td><td
-                      >{a.shippingRow}</td
-                    ><td>{a.carton}</td><td>{a.qty}</td><td>{a.yen}</td><td
-                      >{a.netKg.toFixed(3)}</td
-                    ></tr
+                >{#each projection.groups as g}<tr
+                    ><td>{g.code || "Unclassified — action required"}</td><td
+                      >{g.en}</td
+                    ><td>{g.bg}</td><td>{g.origin}</td><td>{g.pieces}</td><td
+                      >{report.settings.packagePolicy
+                        ? g.cartons.length
+                        : "Required"}</td
+                    ><td>{g.netKg.toFixed(3)}</td><td
+                      >{g.grossKg?.toFixed(3) ?? "Required"}</td
+                    ><td>{g.yen}</td></tr
                   >{/each}</tbody
               >
             </table>
           </div>
-          {#each projection.cartons as c}<p>
-              Carton {c.id}: {c.pieces} pieces, ¥{c.yen}, {c.netKg.toFixed(3)} kg
-              net
-            </p>{/each}
-        </details>
-        <details>
-          <summary>Excluded source rows ({projection.excluded.length})</summary>
-          <ul>
-            {#each projection.excluded as row}<li>{row}</li>{/each}
-          </ul>
-        </details>
-        <button
-          disabled={busy ||
-            !$store.inventory.initialized ||
-            !projection.ready ||
-            unsavedSettings}
-          class="primary"
-          on:click={() => exportReport()}>Export to new Google workbook</button
-        >
-        {#each Object.entries(report.exports) as [runId, run]}
-          <p>
-            Export {runId}: {run.revision !== report.revision
-              ? "Older preview"
-              : run.verified
-                ? "Verified against preview"
-                : "Incomplete / awaiting verification"}
-            {#if run.response}<a
-                href={`https://docs.google.com/spreadsheets/d/${JSON.parse(run.response).spreadsheetId}/edit`}
-                >Open workbook</a
-              >{/if}
-            {#if !run.verified && run.revision === report.revision}<button
-                disabled={busy || !projection.ready || unsavedSettings}
-                on:click={() => exportReport(runId)}
-                >Recover / retry this export</button
-              >{/if}
-          </p>
-        {/each}
-      </section>
+          <h3>Carton membership</h3>
+          <div class="scroll">
+            <table>
+              <thead
+                ><tr
+                  ><th>HS</th><th>English</th><th>Bulgarian</th><th>Origin</th
+                  ><th>Cartons</th></tr
+                ></thead
+              ><tbody
+                >{#each projection.groups as g}<tr
+                    ><td>{g.code || "Unclassified"}</td><td>{g.en}</td><td
+                      >{g.bg}</td
+                    ><td>{g.origin}</td><td>{g.cartons.join(", ")}</td></tr
+                  >{/each}</tbody
+              >
+            </table>
+          </div>
+          <details>
+            <summary>Contributing product allocations / carton totals</summary>
+            <div class="scroll">
+              <table>
+                <thead
+                  ><tr
+                    ><th>JAN</th><th>Order row</th><th>Shipping row</th><th
+                      >Carton</th
+                    ><th>Pieces</th><th>JPY</th><th>Net kg</th></tr
+                  ></thead
+                ><tbody
+                  >{#each projection.allocations as a}<tr
+                      ><td>{a.jan}</td><td>{a.orderRow}</td><td
+                        >{a.shippingRow}</td
+                      ><td>{a.carton}</td><td>{a.qty}</td><td>{a.yen}</td><td
+                        >{a.netKg.toFixed(3)}</td
+                      ></tr
+                    >{/each}</tbody
+                >
+              </table>
+            </div>
+            {#each projection.cartons as c}<p>
+                Carton {c.id}: {c.pieces} pieces, ¥{c.yen}, {c.netKg.toFixed(3)} kg
+                net
+              </p>{/each}
+          </details>
+          <details>
+            <summary
+              >Excluded source rows ({projection.excluded.length})</summary
+            >
+            <ul>
+              {#each projection.excluded as row}<li>{row}</li>{/each}
+            </ul>
+          </details>
+          <button
+            disabled={busy ||
+              !$store.inventory.initialized ||
+              !projection.ready ||
+              unsavedSettings}
+            class="primary"
+            on:click={() => exportReport()}
+            >Export to new Google workbook</button
+          >
+          {#each Object.entries(report.exports) as [runId, run]}
+            <p>
+              Export {runId}: {run.revision !== report.revision
+                ? "Older preview"
+                : run.verified
+                  ? "Verified against preview"
+                  : "Incomplete / awaiting verification"}
+              {#if run.response}<a
+                  href={`https://docs.google.com/spreadsheets/d/${JSON.parse(run.response).spreadsheetId}/edit`}
+                  >Open workbook</a
+                >{/if}
+              {#if !run.verified && run.revision === report.revision}<button
+                  disabled={busy || !projection.ready || unsavedSettings}
+                  on:click={() => exportReport(runId)}
+                  >Recover / retry this export</button
+                >{/if}
+            </p>
+          {/each}
+        </section>
+      {/if}
     {/if}
   {/if}
   {#if busy}<p role="status">Working…</p>{/if}

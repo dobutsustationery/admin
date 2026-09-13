@@ -3,6 +3,8 @@ import fixture from "../fixtures/customs-august.json";
 import { rootReducer } from "$lib/root-reducer";
 import {
   customsCreated,
+  customsRenamed,
+  customsAbandonmentChanged,
   customsSourceChunk,
   customsSourceReceived,
   customsDecision,
@@ -62,6 +64,54 @@ function readyEvents() {
   ];
 }
 describe("customs report event replay", () => {
+  it("replays names and abandonment without losing calculations or export history", () => {
+    const initial = replay([
+      ...readyEvents(),
+      customsExportStarted({ reportId, runId: "saved" }),
+    ]);
+    const before = report(initial);
+    const events = [
+      customsRenamed({ reportId, name: "  September shipment  " }),
+      customsRenamed({ reportId, name: "   " }),
+      customsAbandonmentChanged({ reportId, abandoned: true }),
+      customsDecision({
+        reportId,
+        jans: ["test"],
+        decision: { code: "12345678" },
+      }),
+      customsExportStarted({ reportId, runId: "blocked" }),
+      customsExportResponse({
+        reportId,
+        runId: "saved",
+        json: '{"spreadsheetId":"existing"}',
+      }),
+    ];
+    const abandoned = report(replay(events, initial));
+    expect(abandoned.name).toBe("September shipment");
+    expect(abandoned.abandoned).toBe(true);
+    expect(abandoned.revision).toBe(before.revision);
+    expect(abandoned.projection).toEqual(before.projection);
+    expect(abandoned.decisions).toEqual(before.decisions);
+    expect(abandoned.exports.blocked).toBeUndefined();
+    expect(abandoned.exports.saved.response).toContain("existing");
+    const restored = report(
+      replay(
+        [customsAbandonmentChanged({ reportId, abandoned: false })],
+        replay(events, initial),
+      ),
+    );
+    expect(restored).toEqual({ ...abandoned, abandoned: false });
+    expect(
+      report(
+        replay([
+          ...readyEvents(),
+          customsExportStarted({ reportId, runId: "saved" }),
+          ...events,
+        ]),
+      ),
+    ).toEqual(abandoned);
+  });
+
   it("offers earlier accepted classifications as suggestions, never silent acceptance", () => {
     const first = replay(readyEvents());
     const next = replay(

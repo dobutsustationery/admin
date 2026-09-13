@@ -218,4 +218,46 @@ test("customs source facts survive reload, reviewed classifications preview and 
   await page.reload();
   await page.getByRole("button", { name: `${reportName} — S067690` }).click();
   await expect(page.getByText(/Verified against preview/)).toBeVisible();
+  const renamed = reportName + " renamed";
+  await page.getByLabel("Saved report name", { exact: true }).fill(renamed);
+  await page.getByRole("button", { name: "Save name", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: renamed, exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole("button", { name: renamed + " — S067690", exact: true })
+    .click();
+  await expect(page.getByText(/Verified against preview/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Abandon report", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: renamed + " — S067690", exact: true }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: renamed + " — S067690", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Show abandoned reports", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: renamed + " — S067690 (abandoned)",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Export to new Google workbook" }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Restore report", exact: true })
+    .click();
+  await expect(page.getByText(/Verified against preview/)).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole("button", { name: renamed + " — S067690", exact: true })
+    .click();
+  await expect(page.getByText(/Verified against preview/)).toBeVisible();
 });
