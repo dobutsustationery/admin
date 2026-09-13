@@ -12,8 +12,6 @@
   }>();
   let selected: string[] = [];
   let code = "";
-  let en = "";
-  let bg = "";
   let filter = "unresolved";
   let search = "";
   let editing: string | null = null;
@@ -48,8 +46,9 @@
       jans,
       decision: {
         code: suggestion.code,
-        en: suggestion.en || "",
-        bg: suggestion.bg || "",
+        // Clear legacy description overrides when choosing a code.
+        en: "",
+        bg: "",
       },
     });
   }
@@ -59,7 +58,8 @@
   <h2>Review HS classifications</h2>
   <p>
     Suggestions require your acceptance. If none fits, choose or enter a code
-    manually. These decisions affect this report only.
+    manually. English and Bulgarian descriptions come from the selected code.
+    These decisions affect this report only.
   </p>
   <div class="filters">
     <label class="search"
@@ -95,23 +95,14 @@
         placeholder="Eight digits"
       /></label
     >
-    <label
-      >English override <input
-        bind:value={en}
-        placeholder="Dictionary default"
-      /></label
-    >
-    <label
-      >Bulgarian override <input
-        bind:value={bg}
-        placeholder="Dictionary default"
-      /></label
-    >
     <button
       class="primary"
       disabled={!selected.length || !/^\d{8}$/.test(code)}
       on:click={() => {
-        dispatch("decision", { jans: selected, decision: { code, en, bg } });
+        dispatch("decision", {
+          jans: selected,
+          decision: { code, en: "", bg: "" },
+        });
         selected = [];
       }}>Apply code to selected products</button
     >
@@ -170,8 +161,6 @@
                 on:click={() => {
                   editing = p.jan;
                   code = p.code;
-                  en = "";
-                  bg = "";
                   origin = p.origin;
                   grams = String(p.grams);
                 }}>Enter / override classification and details</button
@@ -183,18 +172,6 @@
                     >HS code <input
                       list="customs-hs-codes"
                       bind:value={code}
-                    /></label
-                  >
-                  <label
-                    >English <input
-                      bind:value={en}
-                      placeholder="Dictionary default"
-                    /></label
-                  >
-                  <label
-                    >Bulgarian <input
-                      bind:value={bg}
-                      placeholder="Dictionary default"
                     /></label
                   >
                   <label>Origin <input bind:value={origin} /></label>
@@ -209,7 +186,7 @@
                     on:click={() => {
                       dispatch("decision", {
                         jans: [p.jan],
-                        decision: { code, en, bg, origin, grams },
+                        decision: { code, en: "", bg: "", origin, grams },
                       });
                       editing = null;
                     }}>Save decision</button

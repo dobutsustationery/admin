@@ -201,6 +201,9 @@ test("customs source facts survive reload, reviewed classifications preview and 
   await page
     .getByRole("button", { name: "Select all 69 shown products" })
     .click();
+  await expect(
+    page.getByLabel(/English override|Bulgarian override/),
+  ).toHaveCount(0);
   await page.getByLabel("HS code", { exact: true }).fill("48201030");
   await page
     .getByRole("button", { name: "Apply code to selected products" })
