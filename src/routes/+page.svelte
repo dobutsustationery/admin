@@ -53,13 +53,13 @@
   <div class="quick-actions">
     <h2>Quick Actions</h2>
     <div class="actions-grid">
-      <a href="/scanner" class="card action">
+      <a href="/order-receipt" class="card action">
         <span class="icon">➕</span>
-        Add Inventory
+        Receive Order
       </a>
       <a href="/inventory" class="card action">
         <span class="icon">📋</span>
-        View Inventory
+        Inventory
       </a>
       <a href="/listings/create" class="card action">
         <span class="icon">✨</span>
@@ -67,11 +67,11 @@
       </a>
       <a href="/orders" class="card action">
         <span class="icon">📦</span>
-        Process Orders
+        Customer Orders
       </a>
-      <a href="/csv" class="card action">
-        <span class="icon">⬇️</span>
-        Export CSV
+      <a href="/customs-summary" class="card action">
+        <span class="icon">📋</span>
+        Customs Summary
       </a>
     </div>
   </div>
