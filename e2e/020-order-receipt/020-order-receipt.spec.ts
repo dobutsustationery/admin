@@ -106,6 +106,10 @@ test("receiving survives reload and posts stock and company assets once", async 
       exact: true,
     })
     .click();
+  await expect(
+    page.getByRole("button", { name: "Review " + first, exact: true }),
+  ).toHaveCount(0);
+  await page.getByLabel("Show confirmed rows", { exact: true }).check();
   await page
     .getByRole("button", { name: "Review " + first, exact: true })
     .click();

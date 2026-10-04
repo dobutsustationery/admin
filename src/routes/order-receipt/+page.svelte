@@ -23,6 +23,7 @@
     error = "",
     message = "",
     search = "";
+  let showConfirmed = false;
   let selected: string[] = [];
   let editJan = "";
   let editRevision = -1;
@@ -59,10 +60,12 @@
   }
   $: unsavedFacts =
     receipt && facts && JSON.stringify(facts) !== JSON.stringify(receipt.facts);
-  $: rows = (projection?.rows || []).filter((r) =>
-    (r.jan + " " + r.description)
-      .toLocaleLowerCase()
-      .includes(search.trim().toLocaleLowerCase()),
+  $: rows = (projection?.rows || []).filter(
+    (r) =>
+      (showConfirmed || !r.confirmed) &&
+      (r.jan + " " + r.description)
+        .toLocaleLowerCase()
+        .includes(search.trim().toLocaleLowerCase()),
   );
   $: selected = selected.filter((jan) => rows.some((r) => r.jan === jan));
   $: eligible = rows.filter((r) => !r.confirmed && r.matches.length <= 1);
@@ -285,6 +288,10 @@
           placeholder="Name or JAN"
         /></label
       >
+      <label class="check">
+        <input type="checkbox" bind:checked={showConfirmed} />
+        Show confirmed rows
+      </label>
       {#if !receipt.completed}
         <button
           disabled={busy || !!editJan}
@@ -347,6 +354,13 @@
                     </p>{/if}
                 </td>
               </tr>
+            {:else}
+              <tr
+                ><td colspan="7"
+                  >No rows to review with these filters. Show confirmed rows to
+                  review saved counts.</td
+                ></tr
+              >
             {/each}
           </tbody>
         </table>
