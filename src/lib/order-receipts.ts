@@ -83,6 +83,7 @@ export interface ReceiptProjection {
   acceptedJpy: number;
   acceptedEur: number;
   fx: number;
+  packResets: string[];
   updates: BulkImportItem[];
   stock: { key: string; added: number; before: number; after: number }[];
   assets: AssetAcceptance[];
@@ -265,6 +266,7 @@ export function projectReceipt(
     issues.push(
       "Goods value must reconcile to original quantities × reviewed unit costs.",
     );
+  const packResets: string[] = [];
   const updates: BulkImportItem[] = [];
   const assets: AssetAcceptance[] = [];
   const seenKeys = new Set<string>();
@@ -348,10 +350,17 @@ export function projectReceipt(
             continue;
           }
           if (existing && Number(existing.pieces || 1) !== 1) {
-            err(
-              "existing item uses packs/loose pieces; resolve the inventory unit before receiving.",
-            );
-            continue;
+            const available = existing.qty - (existing.shipped || 0);
+            if (available !== 0) {
+              err(
+                `existing item uses packs/loose pieces and has ${available} inventory units remaining; resolve the existing stock before switching to packs.`,
+              );
+              continue;
+            }
+            // At zero stock, the owner's policy is to receive whole packs.
+            // The posting below sets pieces to 1; historical counters and
+            // cost/sale events are preserved, and drafts never change stock.
+            packResets.push(key);
           }
           if (!/^\d{8}$/.test(p.code)) {
             err("resolve its HS code in the customs report.");
@@ -417,6 +426,7 @@ export function projectReceipt(
     acceptedJpy,
     acceptedEur: acceptedJpy * fx,
     fx,
+    packResets,
     updates,
     stock: updates.map((u) => ({
       key: String(u.id),

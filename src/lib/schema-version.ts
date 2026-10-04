@@ -69,4 +69,5 @@
 // 21: durable customs source/decision events project summaries in the reducer.
 // Bump this version when fixing calculations so cached projections fully replay.
 // 22: order-linked receiving drafts and once-only inventory/asset acceptance.
-export const CURRENT_SCHEMA_VERSION = 22;
+// 23: receiving resets obsolete loose-piece settings at zero available stock.
+export const CURRENT_SCHEMA_VERSION = 23;

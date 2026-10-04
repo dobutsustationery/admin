@@ -278,8 +278,9 @@
     <section>
       <h2>Count and inspect</h2>
       <p>
-        Counts are in source pieces. Confirm the matching inventory unit;
-        pack-based items require a separate unit review.
+        Counts are in supplier units matching the packs you sell. Items with an
+        old loose-piece setting switch to whole packs on completion when their
+        available stock is zero.
       </p>
       <label
         >Filter products <input
@@ -592,6 +593,13 @@
     </section>
     <section>
       <h2>Acceptance preview</h2>
+      {#if projection.packResets?.length}
+        <p>
+          These out-of-stock items will switch from the old loose-piece setting
+          to whole packs when this receipt is completed (one received unit = one
+          sellable pack): {projection.packResets.join(", ")}.
+        </p>
+      {/if}
       <p>
         {projection.received} received · {projection.rejected} rejected · {projection.accepted}
         accepted

@@ -314,6 +314,73 @@ describe("order receipts", () => {
       revision: s.get().revision - 1,
     });
   });
+  it.each([0, 10])(
+    "receives packs at zero available stock, preserving %i shipped units and replaying once",
+    (shipped) => {
+      const s = scenario();
+      s.send(
+        update_item({
+          id: s.first,
+          item: {
+            ...s.state().inventory.idToItem[s.first],
+            qty: shipped,
+            shipped,
+            pieces: 5,
+          } as any,
+        }),
+      );
+      s.confirm();
+      s.saveCosts();
+      const expected = s
+        .get()
+        .projection.rows.find((r: any) => r.jan === s.first).expected;
+      expect(s.get().projection.issues).toEqual([]);
+      expect(s.get().projection.packResets).toContain(s.first);
+      expect(s.state().inventory.idToItem[s.first].pieces).toBe(5);
+      s.complete();
+      const item = s.state().inventory.idToItem[s.first];
+      expect(item.pieces).toBe(1);
+      expect(item.shipped).toBe(shipped);
+      expect(item.qty - item.shipped).toBe(expected);
+      const posted = structuredClone(s.state().inventory);
+      s.complete();
+      expect(s.state().inventory).toEqual(posted);
+      const replay = s.events.reduce(
+        (state: any, event: any) => rootReducer(state, event, () => {}),
+        undefined,
+      );
+      expect(replay.inventory).toEqual(posted);
+    },
+  );
+  it("rechecks zero stock at completion instead of relying on the earlier preview", () => {
+    const s = scenario();
+    s.send(
+      update_item({
+        id: s.first,
+        item: {
+          ...s.state().inventory.idToItem[s.first],
+          qty: 0,
+          shipped: 0,
+          pieces: 5,
+        } as any,
+      }),
+    );
+    s.confirm();
+    s.saveCosts();
+    expect(s.get().projection.packResets).toContain(s.first);
+    s.send(
+      update_item({
+        id: s.first,
+        item: { ...s.state().inventory.idToItem[s.first], qty: 1 } as any,
+      }),
+    );
+    s.complete();
+    expect(s.get().completed).toBeUndefined();
+    expect(s.get().projection.issues.join(" ")).toContain(
+      "1 inventory units remaining",
+    );
+    expect(s.state().inventory.idToItem[s.first].pieces).toBe(5);
+  });
   it("requires discrepancy notes, rejects pack unit ambiguity, and respects completion immutability", () => {
     const s = scenario();
     s.confirm();
