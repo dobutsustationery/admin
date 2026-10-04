@@ -298,6 +298,11 @@
   </fieldset>
   {#if report}
     <h2>{report.name}</h2>
+    {#if report.input && !report.abandoned}<p>
+        <a href={"/order-receipt?reportId=" + encodeURIComponent(report.id)}
+          >Open receiving for this order →</a
+        >
+      </p>{/if}
     <fieldset disabled={busy || !$store.inventory.initialized}>
       <legend>Report details</legend>
       <label>Saved report name <input bind:value={savedName} /></label>

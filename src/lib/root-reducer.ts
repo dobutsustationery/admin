@@ -1,3 +1,4 @@
+import { orderReceipts, reduceReceipts } from "./order-receipts";
 import { combineReducers } from "@reduxjs/toolkit";
 import { customsSummary, reduceCustoms } from "./customs-summary-slice";
 import { history } from "./history";
@@ -85,6 +86,7 @@ import {
 import { normalizeShopifySyncEventType } from "./sync-events";
 
 const reducerObject = {
+  orderReceipts,
   customsSummary,
   names,
   inventory,
@@ -1373,7 +1375,14 @@ export const rootReducer = (
   }
 
   // Order Import Interceptor (Event Sourcing Logic)
-  if (action.type === "orderImport/import_batch") {
+  if (
+    action.type === "orderImport/import_batch" &&
+    !Object.values(nextState.orderReceipts.orders).some(
+      (r: any) =>
+        r.completed &&
+        r.source.input?.order.id === nextState.orderImport.activeFile?.id,
+    )
+  ) {
     const { filter, options } = action.payload;
     console.log(
       `[RootReducer] Intercepting Order Import Batch { filter: '${filter}' }`,
@@ -2700,6 +2709,35 @@ export const rootReducer = (
     "listingCreation/start_batch",
     "listingCreation/set_current_step",
   ];
+
+  const receiving = reduceReceipts(
+    nextState.orderReceipts,
+    action,
+    nextState.customsSummary.reports,
+    nextState.inventory,
+  );
+  nextState = { ...nextState, orderReceipts: receiving.state };
+  if (receiving.posting) {
+    const receipt = receiving.posting;
+    const metaAction = inheritTimestamp(
+      set_stock_order_meta({
+        orderId: receipt.id,
+        meta: receipt.projection.meta,
+      }),
+    );
+    const stockAction = inheritTimestamp(
+      bulk_import_items({ items: receipt.projection.updates }),
+    );
+    nextState = {
+      ...nextState,
+      inventory: inventory(
+        inventory(nextState.inventory, metaAction),
+        stockAction,
+      ),
+    };
+    logger(metaAction, nextState, action._timestamp);
+    logger(stockAction, nextState, action._timestamp);
+  }
 
   nextState = removeMissingListingHandleReferences(nextState);
 

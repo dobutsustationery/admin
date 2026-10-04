@@ -68,4 +68,5 @@
 //     product-identifier exemption fields instead of repeated EAN identity.
 // 21: durable customs source/decision events project summaries in the reducer.
 // Bump this version when fixing calculations so cached projections fully replay.
-export const CURRENT_SCHEMA_VERSION = 21;
+// 22: order-linked receiving drafts and once-only inventory/asset acceptance.
+export const CURRENT_SCHEMA_VERSION = 22;

@@ -379,6 +379,14 @@ export async function watchBroadcastActions(
 
       for (const change of querySnapshot.docChanges()) {
         const action = toActionWithId(change.doc);
+        // Receiving must not post inventory or acknowledge a review before
+        // Firestore has committed its timestamp. The layout deduplicates IDs,
+        // so executing a pending version would suppress the confirmed event.
+        if (
+          action.type.startsWith("receipts/") &&
+          change.doc.metadata.hasPendingWrites
+        )
+          continue;
 
         if (change.type === "added") {
           const isPending = change.doc.metadata.hasPendingWrites;

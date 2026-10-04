@@ -46,6 +46,7 @@
     { href: "/account", label: "Account", icon: User },
     { href: "/itemhistory", label: "Item History", icon: History },
     { href: "/jancodes", label: "Jan Codes", icon: Barcode },
+    { href: "/order-receipt", label: "Receive Order", icon: Package },
     { href: "/order-import", label: "Order Import", icon: Import },
     { href: "/customs-summary", label: "Customs Summary", icon: ClipboardList },
     { href: "/live-event-import", label: "Live Event Import", icon: Import },
