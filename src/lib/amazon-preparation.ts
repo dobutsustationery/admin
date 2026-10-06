@@ -9,6 +9,39 @@ export interface PreparationDecision {
   priceGBP?: string;
   productType?: string;
   deferred?: boolean;
+  included?: boolean;
+}
+export interface PreparationDraft {
+  revision: number;
+  token: string;
+  decisions: Record<string, PreparationDecision>;
+  gbpPerEur?: string;
+  view: {
+    active: boolean;
+    query: string;
+    tab: string;
+    pricingOpen: boolean;
+    reviewedJobIds: string[];
+  };
+}
+export const emptyPreparationDraft = (): PreparationDraft => ({
+  revision: 0,
+  token: "",
+  decisions: {},
+  view: {
+    active: false,
+    query: "",
+    tab: "prepare",
+    pricingOpen: false,
+    reviewedJobIds: [],
+  },
+});
+export const preparationDraftScope = (seller: string, owner: string) =>
+  auditScope(seller, UK_MARKETPLACE, owner);
+export function draftHasChanges(draft: PreparationDraft): boolean {
+  return (
+    Object.keys(draft.decisions).length > 0 || draft.gbpPerEur !== undefined
+  );
 }
 export interface PreparationEntry {
   itemKey: string;
@@ -26,12 +59,16 @@ export interface PreparationRow {
   job: any;
 }
 export interface PreparationState {
+  drafts: Record<string, PreparationDraft>;
+  draftApplications: Record<string, { revision: number; token: string }>;
   decisions: Record<string, PreparationDecision>;
   policies: Record<string, { gbpPerEur: string }>;
   jobs: Record<string, any>;
   rows: PreparationRow[];
 }
 export const initialPreparation: PreparationState = {
+  drafts: {},
+  draftApplications: {},
   decisions: {},
   policies: {},
   jobs: {},
@@ -44,6 +81,64 @@ export function reducePreparation(
   action: any,
 ): PreparationState {
   const p = action.payload || {};
+  if (
+    [
+      "amazonPrepare/draftSaved",
+      "amazonPrepare/draftApplied",
+      "amazonPrepare/draftDiscarded",
+    ].includes(action.type) &&
+    p.sellerId &&
+    p.owner &&
+    p.draft
+  ) {
+    const key = preparationDraftScope(p.sellerId, p.owner);
+    const old = previous.drafts?.[key];
+    const draft = p.draft as PreparationDraft;
+    const newer = (
+      a: { revision: number; token: string },
+      b?: { revision: number; token: string },
+    ) =>
+      !b ||
+      a.revision > b.revision ||
+      (a.revision === b.revision && a.token > b.token);
+    let next = previous;
+    if (
+      action.type === "amazonPrepare/draftApplied" &&
+      newer(draft, previous.draftApplications?.[key])
+    ) {
+      const decisions = { ...previous.decisions };
+      for (const [itemKey, changes] of Object.entries(draft.decisions)) {
+        const scope = preparationScope(p.sellerId, itemKey);
+        decisions[scope] = { ...decisions[scope], ...changes };
+      }
+      const policies = { ...previous.policies };
+      if (draft.gbpPerEur !== undefined)
+        policies[preparationScope(p.sellerId)] = { gbpPerEur: draft.gbpPerEur };
+      next = {
+        ...previous,
+        decisions,
+        policies,
+        draftApplications: {
+          ...previous.draftApplications,
+          [key]: { revision: draft.revision, token: draft.token },
+        },
+      };
+    }
+    if (!newer(draft, old)) return next;
+    const saved =
+      action.type === "amazonPrepare/draftSaved"
+        ? draft
+        : {
+            ...emptyPreparationDraft(),
+            revision: draft.revision,
+            token: draft.token,
+            ...(action.type === "amazonPrepare/draftApplied"
+              ? { view: { ...draft.view, reviewedJobIds: [] } }
+              : {}),
+          };
+    return { ...next, drafts: { ...previous.drafts, [key]: saved } };
+  }
+
   if (action.type === "amazonPrepare/decision" && p.sellerId && p.itemKey)
     return {
       ...previous,

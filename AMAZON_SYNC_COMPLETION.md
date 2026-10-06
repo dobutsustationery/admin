@@ -1,3 +1,16 @@
+## 2026-10-06: Durable preparation drafts
+
+Opening preparation now resumes a durable draft scoped to the signed-in user, seller and UK marketplace. Prices, product types, inclusion choices, Later/Resume choices, the pricing factor, filter, current tab, panel state and the stock review acknowledgement survive navigation and reloads. Drafts are distinct from applied sync choices.
+
+- **Apply draft choices** commits the draft's raw choices together. It does not call Amazon. Checking and publishing remain explicit subsequent actions and cannot run with unapplied choices or pending draft sync.
+- **Discard draft** clears pending choices and resets the draft view. Previously applied choices, validation results and already queued Amazon operations are unaffected.
+- `amazonPrepare/draftSaved` records raw draft input and view state. `amazonPrepare/draftApplied` records the explicit commit with its raw choices; `amazonPrepare/draftDiscarded` records abandonment. The reducer computes effective choices and proposals; no derived prices, eligibility or API payloads are stored in draft events.
+- Every edit is first journalled synchronously on the device, then appended to broadcast under a stable event ID. The recovery copy remains until both server acknowledgement and replay have happened; a local Firestore echo alone cannot clear it. Failed saves remain visible and retry on reconnect or with **Retry draft sync**. Storage is scoped by Firebase project, user and seller. Successfully synced drafts can also resume on another device.
+- Inclusion defaults apply only where no applied choice exists. Temporary unticking and per-row Save buttons have been replaced by draft inclusion choices and the single Apply/Discard boundary. Stock confirmation is retained for exactly the reviewed job IDs and becomes ineffective if the ready set changes.
+- Broadcast rules require draft-event ownership to match the authenticated creator. No new functions or API behaviour are needed for this change.
+
+---
+
 ## 2026-10-06: Guided preparation and independent publication
 
 The primary action on `/amazon-listings` is now **Prepare Amifa products for Amazon**. The existing catalogue audit remains below it, and the old diagnostic forms remain available as product tools.

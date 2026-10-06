@@ -147,15 +147,69 @@ test("prepare, leave an issue for later, and publish only the validated product"
     await green.getByRole("button", { name: "Later", exact: true }).click();
     await expect(green).toHaveCount(0);
     await page.reload();
-    await page
-      .getByRole("button", { name: "Prepare Amifa products for Amazon" })
-      .click();
+    await expect(panel.getByLabel("Filter preparation")).toHaveValue(
+      String(at),
+    );
     await panel.getByRole("button", { name: /Needs attention/ }).click();
     await expect(
-      panel.getByText("Set aside for later.", { exact: true }),
+      panel.getByText("Set aside in draft; apply choices to confirm.", {
+        exact: true,
+      }),
     ).toBeVisible();
     await panel.getByRole("button", { name: "Resume", exact: true }).click();
     await panel.getByRole("button", { name: /1. Prepare products/ }).click();
+    const blue = panel.locator("tbody tr").filter({ hasText: "Blue" });
+    await blue
+      .getByLabel(`GBP price for ${good}`, { exact: true })
+      .fill("4.50");
+    await blue.getByLabel(`Include ${good}`, { exact: true }).uncheck();
+    await panel.getByRole("button", { name: /Needs attention/ }).click();
+    await page.goto("/inventory");
+    await page.goto("/amazon-listings");
+    await expect(
+      panel.getByRole("button", { name: /Needs attention/ }),
+    ).toHaveClass(/current/);
+    await panel.getByRole("button", { name: /1. Prepare products/ }).click();
+    await expect(
+      blue.getByLabel(`GBP price for ${good}`, { exact: true }),
+    ).toHaveValue("4.50");
+    await expect(
+      blue.getByLabel(`Include ${good}`, { exact: true }),
+    ).not.toBeChecked();
+    expect(
+      (
+        await db
+          .collection("request_amazon_prepare")
+          .where("sellerId", "==", sellerId)
+          .get()
+      ).size,
+    ).toBe(0);
+    await panel
+      .getByRole("button", { name: "Discard draft", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Prepare Amifa products for Amazon" })
+      .click();
+    await panel.getByLabel("Filter preparation").fill(String(at));
+    await expect(
+      blue.getByLabel(`GBP price for ${good}`, { exact: true }),
+    ).toHaveValue("");
+    await expect(
+      blue.getByLabel(`Include ${good}`, { exact: true }),
+    ).toBeChecked();
+    await blue
+      .getByLabel(`GBP price for ${good}`, { exact: true })
+      .fill("4.50");
+    await panel
+      .getByRole("button", { name: "Apply draft choices", exact: true })
+      .click();
+    await page.reload();
+    await expect(
+      blue.getByLabel(`GBP price for ${good}`, { exact: true }),
+    ).toHaveValue("4.50");
+    await expect(
+      panel.getByRole("button", { name: "Apply draft choices", exact: true }),
+    ).toBeDisabled();
     await panel
       .getByRole("button", {
         name: "Check 2 products with Amazon",

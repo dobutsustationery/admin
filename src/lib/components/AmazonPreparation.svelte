@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy, createEventDispatcher } from "svelte";
+  import { browser } from "$app/environment";
+  import { amazonDraftJournal } from "$lib/amazon-draft-journal";
   import {
     addDoc,
     collection,
@@ -12,6 +14,11 @@
   import { UK_MARKETPLACE } from "$lib/amazon-audit";
   import {
     initialPreparation,
+    emptyPreparationDraft,
+    preparationDraftScope,
+    draftHasChanges,
+    reducePreparation,
+    type PreparationDraft,
     previewValid,
     preparationFingerprint,
     preparationScope,
@@ -20,26 +27,116 @@
     type PreparationState,
   } from "$lib/amazon-preparation";
   const dispatch = createEventDispatcher();
-  let active = false,
-    busy = false,
-    query = "",
-    tab = "prepare",
+  let storageFailed = false;
+  let lastRevision = 0;
+  let busy = false,
     message = "",
-    error = "",
-    stockConfirmed = false;
-  let reviewSignature = "";
-  let factor = "",
-    factorSeller = "";
-  let drafts: Record<string, PreparationDecision> = {};
-  let unchecked = new Set<string>();
+    error = "";
+  let journal: ReturnType<typeof amazonDraftJournal> | undefined;
+  let journalKey = "";
+  let journalState: { events: any[]; error: string } = {
+    events: [],
+    error: "",
+  };
+  let unsubscribeJournal = () => {};
   let unsubscribers: (() => void)[] = [];
-  onDestroy(() => unsubscribers.forEach((u) => u()));
+  onDestroy(() => {
+    unsubscribeJournal();
+    unsubscribers.forEach((u) => u());
+  });
   $: prep = ($store.amazonPreparation ||
     initialPreparation) as PreparationState;
   $: seller = $store.amazonAudit?.sellerId || "";
-  $: if (seller && factorSeller !== seller) {
-    factorSeller = seller;
-    factor = prep.policies[preparationScope(seller)]?.gbpPerEur || "";
+  $: owner = $user?.uid || "";
+  $: scope = preparationDraftScope(seller, owner);
+  $: if (browser && seller && owner && scope !== journalKey) {
+    unsubscribeJournal();
+    journalKey = scope;
+    try {
+      journal = amazonDraftJournal(owner, seller);
+      unsubscribeJournal = journal.subscribe((value) => (journalState = value));
+      void journal.flush();
+    } catch (e: any) {
+      storageFailed = true;
+      error = `Could not save drafts on this device: ${e.message}`;
+    }
+  }
+  $: savedDraft = prep.drafts?.[scope];
+  $: if (journal && savedDraft)
+    journal.observed(savedDraft.revision, savedDraft.token);
+  $: effective = journalState.events.reduce(
+    (state, event) => reducePreparation(state, event),
+    prep,
+  ) as PreparationState;
+  $: draft = effective.drafts?.[scope] || emptyPreparationDraft();
+  $: drafts = draft.decisions;
+  $: active = draft.view.active;
+  $: query = draft.view.query;
+  $: tab = draft.view.tab;
+  $: factor =
+    draft.gbpPerEur ??
+    effective.policies[preparationScope(seller)]?.gbpPerEur ??
+    "";
+  $: dirty = draftHasChanges(draft);
+  $: syncing = journalState.events.length > 0;
+  function change(next: PreparationDraft, type = "amazonPrepare/draftSaved") {
+    if (!journal || !owner || !seller) {
+      error = "Sign in and wait for your draft to load.";
+      return;
+    }
+    try {
+      lastRevision = Math.max(Date.now(), draft.revision + 1, lastRevision + 1);
+      journal.append({
+        type,
+        payload: {
+          sellerId: seller,
+          owner,
+          draft: {
+            ...next,
+            revision: lastRevision,
+            token: crypto.randomUUID(),
+          },
+        },
+      });
+      storageFailed = false;
+      error = "";
+    } catch (e: any) {
+      storageFailed = true;
+      error = `Draft could not be saved. Keep this page open: ${e.message}`;
+    }
+  }
+  function view(changes: Partial<PreparationDraft["view"]>) {
+    change({ ...draft, view: { ...draft.view, ...changes } });
+  }
+  function decision(
+    r: PreparationRow,
+    edits: Record<string, PreparationDecision>,
+  ) {
+    return { ...r.decision, ...edits[r.row.key] };
+  }
+  function edit(r: PreparationRow, name: string, value: string | boolean) {
+    change({
+      ...draft,
+      decisions: {
+        ...draft.decisions,
+        [r.row.key]: { ...draft.decisions[r.row.key], [name]: value },
+      },
+      view: { ...draft.view, reviewedJobIds: [] },
+    });
+  }
+  function applyDraft() {
+    if (draft.gbpPerEur && !(Number(draft.gbpPerEur) > 0)) {
+      error = "Enter a positive GBP-per-EUR factor.";
+      return;
+    }
+    change(draft, "amazonPrepare/draftApplied");
+    message =
+      "Draft choices applied. Check products with Amazon when ready; nothing has been published.";
+  }
+  function discardDraft() {
+    change(draft, "amazonPrepare/draftDiscarded");
+    message =
+      "Draft discarded. Previously applied choices and Amazon listings are unchanged.";
   }
   $: inStock = prep.rows.filter((r) => r.row.onHand > 0);
   $: typeResponses = Object.values(
@@ -134,87 +231,41 @@
     );
   }
   $: readyRows = inStock.filter(
-    (r) => ready(r, drafts) && !unchecked.has(r.row.key),
+    (r) => ready(r, drafts) && decision(r, drafts).included !== false,
   );
-  $: if (reviewSignature !== JSON.stringify(readyRows.map((r) => r.job.id))) {
-    reviewSignature = JSON.stringify(readyRows.map((r) => r.job.id));
-    stockConfirmed = false;
-  }
+  $: stockConfirmed =
+    readyRows.length > 0 &&
+    JSON.stringify(draft.view.reviewedJobIds) ===
+      JSON.stringify(readyRows.map((r) => r.job.id));
   $: checkRows = inStock.filter(
     (r) =>
       r.entry &&
       !drafts[r.row.key] &&
       !pending(r) &&
       !ready(r, drafts) &&
-      !unchecked.has(r.row.key),
+      decision(r, drafts).included !== false,
   );
-  $: issues = inStock.filter(blocked);
+  $: issues = inStock.filter((r) => decision(r, drafts).deferred || blocked(r));
   $: shown = inStock.filter(
     (r) =>
       (tab === "issues"
-        ? blocked(r)
+        ? decision(r, drafts).deferred || blocked(r)
         : tab === "review"
           ? ready(r, drafts) ||
             pending(r) ||
             ["submitted", "unknown"].includes(r.job?.status)
-          : !r.decision.deferred) &&
+          : !decision(r, drafts).deferred) &&
       [r.row.title, r.row.jan, r.row.subtype, r.row.sku]
         .join(" ")
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
-  async function event(type: string, payload: any) {
-    if (!$user?.uid) throw Error("Sign in to save preparation choices.");
-    await addDoc(collection(firestore, "broadcast"), {
-      type,
-      payload: { sellerId: seller, ...payload },
-      creator: $user.uid,
-      timestamp: serverTimestamp(),
-    });
-  }
-  async function save(r: PreparationRow, changes = drafts[r.row.key] || {}) {
-    busy = true;
-    error = "";
-    try {
-      await event("amazonPrepare/decision", {
-        itemKey: r.row.key,
-        decision: changes,
-      });
-      const next = { ...drafts };
-      delete next[r.row.key];
-      drafts = next;
-      stockConfirmed = false;
-    } catch (e: any) {
-      error = e.message;
-    } finally {
-      busy = false;
-    }
-  }
-  function edit(r: PreparationRow, name: string, value: string) {
-    drafts = {
-      ...drafts,
-      [r.row.key]: { ...drafts[r.row.key], [name]: value },
-    };
-    stockConfirmed = false;
-  }
-  async function savePolicy() {
-    if (factor && !(Number(factor) > 0)) {
-      error = "Enter a positive GBP-per-EUR factor.";
+  async function request(mode: "preview" | "publish") {
+    if (dirty || syncing || storageFailed || journalState.error) {
+      error =
+        "Apply or discard your draft and wait for it to sync before continuing.";
       return;
     }
-    busy = true;
-    error = "";
-    try {
-      await event("amazonPrepare/policy", { gbpPerEur: factor });
-      stockConfirmed = false;
-      message = "Pricing factor saved. Review the calculated GBP prices below.";
-    } catch (e: any) {
-      error = e.message;
-    } finally {
-      busy = false;
-    }
-  }
-  async function request(mode: "preview" | "publish") {
     if (!$user?.uid) {
       error = "Sign in to continue.";
       return;
@@ -250,21 +301,18 @@
           (e) => (error = e.message),
         ),
       );
-      tab = "review";
-      stockConfirmed = false;
+      view({ tab: "review", reviewedJobIds: [] });
     } catch (e: any) {
       error = e.message;
     } finally {
       busy = false;
     }
   }
-  function select(key: string) {
-    unchecked = new Set(unchecked);
-    unchecked.has(key) ? unchecked.delete(key) : unchecked.add(key);
-    stockConfirmed = false;
-  }
   function status(r: PreparationRow) {
-    if (drafts[r.row.key]) return "Save your changes before checking";
+    if (drafts[r.row.key])
+      return decision(r, drafts).deferred
+        ? "Set aside in draft; apply choices to confirm."
+        : "Draft changes saved; apply choices before checking";
     if (
       r.job?.status === "submitted" &&
       r.row.checkedAt > (r.job.submittedAt || r.job.updatedAt)
@@ -301,25 +349,60 @@
     </div>
     <button
       class="primary"
-      disabled={!seller || !$store.inventory.initialized}
-      on:click={() => (active = !active)}
+      disabled={!seller || !journal || !$store.inventory.initialized}
+      on:click={() => view({ active: !active })}
       >{active
-        ? "Close preparation"
-        : "Prepare Amifa products for Amazon"}</button
+        ? "Hide preparation"
+        : dirty
+          ? "Resume preparation draft"
+          : "Prepare Amifa products for Amazon"}</button
     >
   </div>
   {#if !seller}<p>Start by refreshing the seller catalogue below.</p>{/if}
+  {#if message}<p role="status">{message}</p>{/if}
+  {#if !active && dirty}<p>
+      Your preparation draft is saved. Resume it whenever you are ready.
+    </p>{/if}
+  {#if error}<p role="alert">{error}</p>{/if}
+  {#if journalState.error}<p role="alert">
+      Draft saved on this device. Sync failed: {journalState.error}
+      <button on:click={() => journal?.flush()}>Retry draft sync</button>
+    </p>{/if}
   {#if active}
+    <div class="draft-bar">
+      <strong
+        >{syncing
+          ? "Draft saved on this device · syncing…"
+          : "Draft saved"}</strong
+      >
+      <p>
+        You can leave this page and return. Prices, product types, selections
+        and Later choices remain a draft until you apply them. Applying does not
+        publish to Amazon.
+      </p>
+      <div class="actions">
+        <button
+          class="primary"
+          disabled={busy || storageFailed || !dirty}
+          on:click={applyDraft}>Apply draft choices</button
+        ><button disabled={busy} on:click={discardDraft}>Discard draft</button
+        ><span>{dirty ? "Unapplied choices" : "All choices applied"}</span>
+      </div>
+    </div>
     <nav aria-label="Preparation steps">
       <button
         class:current={tab === "prepare"}
-        on:click={() => (tab = "prepare")}
+        on:click={() => view({ tab: "prepare" })}
         >1. Prepare products ({inStock.length})</button
       >
-      <button class:current={tab === "review"} on:click={() => (tab = "review")}
+      <button
+        class:current={tab === "review"}
+        on:click={() => view({ tab: "review" })}
         >2. Review and publish ({readyRows.length} ready)</button
       >
-      <button class:current={tab === "issues"} on:click={() => (tab = "issues")}
+      <button
+        class:current={tab === "issues"}
+        on:click={() => view({ tab: "issues" })}
         >Needs attention / later ({issues.length})</button
       >
     </nav>
@@ -329,7 +412,13 @@
       each product.
     </p>
     {#if tab === "prepare"}
-      <details>
+      <details
+        open={draft.view.pricingOpen}
+        on:toggle={(e) => {
+          if (e.currentTarget.open !== draft.view.pricingOpen)
+            view({ pricingOpen: e.currentTarget.open });
+        }}
+      >
         <summary>Set prices for products without an Amazon GBP price</summary>
         <p>
           Enter your chosen GBP price per EUR of local retail price. For
@@ -343,10 +432,14 @@
               type="number"
               min="0.001"
               step="0.001"
-              bind:value={factor}
+              value={factor}
+              on:input={(e) =>
+                change({
+                  ...draft,
+                  gbpPerEur: e.currentTarget.value,
+                  view: { ...draft.view, reviewedJobIds: [] },
+                })}
             /></label
-          ><button disabled={busy} on:click={savePolicy}
-            >Apply pricing factor</button
           >
         </div>
       </details>
@@ -355,20 +448,24 @@
       <label
         >Filter preparation <input
           type="search"
-          bind:value={query}
+          value={query}
+          on:input={(e) => view({ query: e.currentTarget.value })}
           placeholder="Product, barcode or variant"
         /></label
       >
       {#if tab !== "review"}<button
           class="primary"
-          disabled={busy || !checkRows.length}
+          disabled={busy ||
+            storageFailed ||
+            dirty ||
+            syncing ||
+            !!journalState.error ||
+            !checkRows.length}
           on:click={() => request("preview")}
           >Check {Math.min(checkRows.length, 100)} products with Amazon</button
         >{/if}
       <span>{issues.length} products can be addressed later.</span>
     </div>
-    {#if message}<p role="status">{message}</p>{/if}
-    {#if error}<p role="alert">{error}</p>{/if}
     {#if tab === "review"}
       <p>
         Review the exact price and stock below. Publishing updates only price
@@ -377,12 +474,27 @@
         processing or further issues.
       </p>
       <label class="confirm"
-        ><input type="checkbox" bind:checked={stockConfirmed} /> I have checked these
-        quantities, including any recent Amazon sales not yet recorded here.</label
+        ><input
+          type="checkbox"
+          checked={stockConfirmed}
+          on:change={(e) =>
+            view({
+              reviewedJobIds: e.currentTarget.checked
+                ? readyRows.map((r) => r.job.id)
+                : [],
+            })}
+        /> I have checked these quantities, including any recent Amazon sales not
+        yet recorded here.</label
       >
       <button
         class="primary"
-        disabled={busy || !readyRows.length || !stockConfirmed}
+        disabled={busy ||
+          storageFailed ||
+          dirty ||
+          syncing ||
+          !!journalState.error ||
+          !readyRows.length ||
+          !stockConfirmed}
         on:click={() => request("publish")}
         >Publish {Math.min(readyRows.length, 100)} ready products · leave issues for
         later</button
@@ -403,8 +515,9 @@
                 ><input
                   type="checkbox"
                   aria-label={`Include ${r.row.key}`}
-                  checked={!unchecked.has(r.row.key)}
-                  on:change={() => select(r.row.key)}
+                  checked={decision(r, drafts).included !== false}
+                  on:change={(e) =>
+                    edit(r, "included", e.currentTarget.checked)}
                 /></td
               >
               <td
@@ -469,14 +582,11 @@
                       </p>{/each}
                   </details>{/if}
                 <div class="row-actions">
-                  {#if drafts[r.row.key]}<button
-                      disabled={busy}
-                      on:click={() => save(r)}>Save changes</button
-                    >{/if}
                   <button
                     disabled={busy}
-                    on:click={() => save(r, { deferred: !r.decision.deferred })}
-                    >{r.decision.deferred ? "Resume" : "Later"}</button
+                    on:click={() =>
+                      edit(r, "deferred", !decision(r, drafts).deferred)}
+                    >{decision(r, drafts).deferred ? "Resume" : "Later"}</button
                   >
                   {#if blocked(r) || !r.productType}<button
                       on:click={() => dispatch("inspect", r.row)}
@@ -503,6 +613,13 @@
 </section>
 
 <style>
+  .draft-bar {
+    background: white;
+    padding: 1rem;
+    margin: 1rem 0;
+    border: 1px solid #b7d4f3;
+    border-radius: 0.5rem;
+  }
   .preparation {
     background: #f0f7ff;
     border: 1px solid #b7d4f3;
