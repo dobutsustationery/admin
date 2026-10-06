@@ -7,12 +7,30 @@ const UK = "A1F83G8C2ARO7P";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const delays = [60_000, 180_000, 600_000, 1_800_000, 3_600_000];
 const array = (v) => (Array.isArray(v) ? v : []);
-function needsReadback(raw, status) {
+function needsReadback(raw, status, expected = {}) {
   if (status === 404) return true;
   if (status !== 200) return false;
   if (array(raw?.issues).some((i) => i.severity === "ERROR")) return false;
   if (array(raw?.attributes?.parentage_level).some((v) => v.value === "parent"))
     return false;
+  if (
+    expected.quantity !== undefined &&
+    !array(raw?.fulfillmentAvailability).some(
+      (a) =>
+        a.fulfillmentChannelCode === "DEFAULT" &&
+        a.quantity === expected.quantity,
+    )
+  )
+    return true;
+  if (
+    expected.priceGBP !== undefined &&
+    !array(raw?.offers).some(
+      (o) =>
+        (o.price?.currencyCode || o.price?.currency) === "GBP" &&
+        Number(o.price?.amount) === expected.priceGBP,
+    )
+  )
+    return true;
   if (array(raw?.summaries).some((s) => array(s.status).includes("BUYABLE")))
     return false;
   if (
@@ -60,6 +78,7 @@ function jobFact(id, j, status, at, error = "") {
     pages: j.page || 0,
     count: j.count || 0,
     nextCheckAt: status === "waiting" ? j.dueAt : 0,
+    expected: j.expected || {},
   };
 }
 function addEvent(batch, db, id, type, payload, at) {
@@ -91,7 +110,7 @@ function newJob(config, creator, sku, now) {
   };
 }
 function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
-  async function enqueueSku(sourceId, creator, sku) {
+  async function enqueueSku(sourceId, creator, sku, expected = {}) {
     const config = getConfig();
     if (!config.sellerId || config.marketplaceId !== UK)
       throw Error("Amazon audit requires a configured UK seller.");
@@ -101,6 +120,7 @@ function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
       if ((await tx.get(ref)).exists) return;
       const at = now(),
         job = newJob(config, creator, sku, at);
+      job.expected = expected;
       tx.create(ref, job);
       addEvent(
         tx,
@@ -250,7 +270,7 @@ function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
       } else if (j.sku) {
         j.checks++;
         j.failures = 0;
-        status = needsReadback(response.data, response.status)
+        status = needsReadback(response.data, response.status, j.expected)
           ? at >= j.deadline
             ? "expired"
             : "waiting"

@@ -1,4 +1,9 @@
 import {
+  initialPreparation,
+  reducePreparation,
+  projectPreparation,
+} from "./amazon-preparation";
+import {
   initialAmazonAudit,
   reduceAmazonAudit,
   projectAmazonAudit,
@@ -91,6 +96,7 @@ import {
 import { normalizeShopifySyncEventType } from "./sync-events";
 
 const reducerObject = {
+  amazonPreparation: (state = initialPreparation) => state,
   amazonAudit: (state = initialAmazonAudit) => state,
   orderReceipts,
   customsSummary,
@@ -2769,5 +2775,25 @@ export const rootReducer = (
       },
     };
   } else nextState = { ...nextState, amazonAudit: audit };
+  const preparation = reducePreparation(state?.amazonPreparation, action);
+  if (
+    preparation !== state?.amazonPreparation ||
+    nextState.amazonAudit !== state?.amazonAudit ||
+    nextState.inventory !== state?.inventory ||
+    nextState.listings !== state?.listings
+  ) {
+    nextState = {
+      ...nextState,
+      amazonPreparation: {
+        ...preparation,
+        rows: projectPreparation(
+          preparation,
+          nextState.amazonAudit,
+          nextState.inventory,
+          nextState.listings,
+        ),
+      },
+    };
+  }
   return nextState;
 };

@@ -1,3 +1,24 @@
+## 2026-10-06: Guided preparation and independent publication
+
+The primary action on `/amazon-listings` is now **Prepare Amifa products for Amazon**. The existing catalogue audit remains below it, and the old diagnostic forms remain available as product tools.
+
+1. Prepare in-stock Amifa products. Existing offers keep their observed GBP price unless overridden. For new products, enter explicit GBP prices or an operator-chosen GBP-per-EUR pricing factor. Choose the Amazon product type; per-product discovery offers Amazon's suggestions.
+2. **Check products with Amazon** uses Listings Items `VALIDATION_PREVIEW`. Each product has its own durable job. Invalid or incomplete products do not block other products. Shared-JAN creations need verified identity work and are left out; an exemption is never inferred by this flow.
+3. **Review and publish** shows the proposed GBP price and quantity, and the previous Amazon price/quantity. Only validated, unchanged products are eligible. Confirm stock includes recent Amazon sales, then publish ready products. The action is limited to 100 products at a time; it is explicit, not a continuous stock writer.
+4. **Needs attention / later** retains unresolved products. **Later** persists a decision to leave a product out; **Resume** brings it back. Other products can continue at either stage.
+
+Existing listings receive only price/merchant-fulfilled quantity PATCH operations; single distinct-GTIN products receive a create PUT after the worker confirms the SKU is absent. This does not yet create new shared-barcode variation families. The advanced diagnostic create tool remains separate and retains its historical behaviour.
+
+Durability: `amazonPrepare/decision` and `/policy` store operator inputs. `amazonPrepare/job` records exact external requests/responses and job progress. The reducer derives proposed payloads, prices and eligibility from these inputs, current inventory and scoped Amazon observations. `request_amazon_prepare` requests schedule server-only `amazon_prepare_jobs`. Publishing references previously validated server jobs rather than accepting replacement payloads. Rules prohibit client mutation of requests and access to job/lock documents.
+
+The worker leases each job, isolates failures, checks current Amazon price/stock/identity against the preview baseline, expires previews after 30 minutes and prevents concurrent guided writes for the same SKU. A write whose outcome is unknown is not retried automatically; durable audit readback is scheduled. Accepted submissions also schedule readback, and acceptance is not labelled buyable. A rejected or stale product requires another explicit check. No stock is sent merely by opening the screen or deploying this release.
+
+Remaining work: shared-JAN/exemption and variation-family preparation; richer forms for product-type-specific missing attributes; zero-stock/continuous reconciliation and Amazon order ingestion before unattended increases; cancellation of already queued batches. Those limits do not prevent independent publication of currently supported, validated products.
+
+References: [Amazon validation preview for creation](https://developer-docs.amazon/sp-api/lang-us/docs/preview-errors-before-creating-a-listing), [validation preview for partial updates](https://developer-docs.amazon/sp-api/lang-en_us/docs/preview-errors-before-partially-updating-a-listing).
+
+---
+
 # Amazon Sync Completion
 
 Status: first operational release implemented on 2026-10-06; production deployment authorized in the project conversation. The broader sync milestones below remain a roadmap.

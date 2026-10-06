@@ -249,3 +249,16 @@ describe("durable Amazon audit worker", () => {
     ).toBeTruthy();
   });
 });
+
+it("keeps reading a buyable offer until the explicitly submitted stock and GBP price appear", () => {
+  const raw = {
+    summaries: [{ status: ["BUYABLE"] }],
+    offers: [{ price: { currencyCode: "GBP", amount: 4 } }],
+    fulfillmentAvailability: [
+      { fulfillmentChannelCode: "DEFAULT", quantity: 2 },
+    ],
+  };
+  expect(needsReadback(raw, 200, { quantity: 3 })).toBe(true);
+  expect(needsReadback(raw, 200, { priceGBP: 5 })).toBe(true);
+  expect(needsReadback(raw, 200, { quantity: 2, priceGBP: 4 })).toBe(false);
+});

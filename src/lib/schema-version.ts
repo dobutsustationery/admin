@@ -71,4 +71,5 @@
 // 22: order-linked receiving drafts and once-only inventory/asset acceptance.
 // 23: receiving resets obsolete loose-piece settings at zero available stock.
 // 24: scoped Amifa audit observations and saved SKU mappings derive in replay.
-export const CURRENT_SCHEMA_VERSION = 24;
+// 25: guided Amazon preparation derives readiness from saved inputs and raw previews.
+export const CURRENT_SCHEMA_VERSION = 25;

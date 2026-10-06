@@ -30,6 +30,7 @@ export interface AuditRun {
   pages: number;
   count: number;
   nextCheckAt: number;
+  expected?: { quantity?: number; priceGBP?: number };
 }
 export interface AuditRow {
   key: string;
@@ -242,6 +243,23 @@ export function projectAmazonAudit(
             r.mode === `sku:${sku}`,
         )
         .sort((a, b) => b.startedAt - a.startedAt)[0];
+      const expected = checkRun?.expected;
+      if (
+        expected &&
+        ["waiting", "expired"].includes(checkRun.status) &&
+        checkRun.startedAt >= (submitted?.at || 0) &&
+        health.health !== "Needs attention" &&
+        ((expected.quantity !== undefined && quantity !== expected.quantity) ||
+          (expected.priceGBP !== undefined &&
+            (Number(price?.amount) !== expected.priceGBP ||
+              (price?.currencyCode || price?.currency) !== "GBP")))
+      ) {
+        health = {
+          health: "Processing",
+          detail:
+            "Amazon has not yet reported the submitted price and stock. Automatic readback is checking for those changes.",
+        };
+      }
       if (health.health === "Processing" && checkRun?.status === "expired")
         health = {
           health: "Needs attention",

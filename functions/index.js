@@ -307,6 +307,7 @@ async function amazonSpApiPut({
   accessToken,
   userAgent,
   body,
+  method = "PUT",
 }) {
   const url = new URL(path, endpoint);
   for (const [key, value] of Object.entries(query || {})) {
@@ -316,7 +317,7 @@ async function amazonSpApiPut({
   }
 
   const response = await fetchWithTimeout(url, {
-    method: "PUT",
+    method,
     headers: {
       accept: "application/json",
       "content-type": "application/json",
@@ -340,6 +341,8 @@ async function amazonSpApiPut({
     status: response.status,
     statusText: response.statusText,
     rateLimit: response.headers.get("x-amzn-ratelimit-limit") || "",
+    requestId: response.headers.get("x-amzn-requestid") || "",
+    retryAfter: response.headers.get("retry-after") || "",
     url: url.toString(),
     data,
   };
@@ -1412,6 +1415,32 @@ exports.amazonAuditReadback = onSchedule(
   },
   () => amazonAuditWorker.tick(),
 );
+
+const amazonPreparationWorker = require("./shared/amazon-preparation-worker.cjs").createWorker({
+  db, getConfig: getAmazonConfig, getToken: fetchAmazonLwaAccessToken,
+  read: ({ config, accessToken, sku }) => getAmazonListingBySku({ config, accessToken, sku, includedData: AMAZON_DEFAULT_LISTINGS_INCLUDED_DATA }),
+  write: ({ config, accessToken, entry, preview }) => amazonSpApiPut({
+    endpoint: config.endpoint,
+    path: `/listings/2021-08-01/items/${encodeURIComponent(config.sellerId)}/${encodeURIComponent(entry.sku)}`,
+    query: { marketplaceIds: config.marketplaceId, issueLocale: "en_GB", ...(preview ? { mode: "VALIDATION_PREVIEW" } : {}) },
+    accessToken, userAgent: config.userAgent, method: entry.method, body: entry.body,
+  }),
+  enqueueReadback: (id, creator, sku, expected) => amazonAuditWorker.enqueueSku(`prepare:${id}`, creator, sku, expected),
+});
+exports.amazonPreparationRequest = onDocumentCreated({
+  document: "request_amazon_prepare/{requestId}", timeoutSeconds: 300, memory: "512MiB", maxInstances: 1, concurrency: 1, retry: true,
+}, async (event) => {
+  const data = event.data?.data();
+  if (!data) return;
+  try { require("./shared/amazon-preparation-worker.cjs").validateRequest(data); }
+  catch (error) { await event.data.ref.update({ error: error.message }); return; }
+  try { await amazonPreparationWorker.enqueue(event.params.requestId, data); }
+  catch (error) { await event.data.ref.update({ error: error.message }); throw error; }
+  await amazonPreparationWorker.tick();
+});
+exports.amazonPreparationWorker = onSchedule({
+  schedule: "every 1 minutes", timeoutSeconds: 300, memory: "512MiB", maxInstances: 1, concurrency: 1,
+}, () => amazonPreparationWorker.tick());
 
 exports.amazonCatalogProbeRequest = onDocumentCreated(
   {

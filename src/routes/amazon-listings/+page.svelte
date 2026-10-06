@@ -9,6 +9,7 @@
   import { firestore } from "$lib/firebase";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
+  import AmazonPreparation from "$lib/components/AmazonPreparation.svelte";
   import AmazonDiagnostics from "$lib/components/AmazonDiagnostics.svelte";
   import {
     AMAZON_AUDIT_REQUEST_COLLECTION,
@@ -164,11 +165,8 @@
       on:click={() => request("catalogue")}>Refresh seller catalogue</button
     >
   </header>
-  <p>
-    Review your Amifa products, link existing Amazon SKUs, and resolve listing
-    issues. Refreshing reads Amazon; it does not publish products or change
-    stock.
-  </p>
+  <AmazonPreparation on:inspect={(e) => inspect(e.detail)} />
+  <h2>Catalogue status</h2>
   <section class="summary" aria-label="Catalogue summary">
     <div><strong>{rows.length}</strong> local variants</div>
     <div>
