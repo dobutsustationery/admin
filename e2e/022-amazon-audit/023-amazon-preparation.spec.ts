@@ -239,6 +239,41 @@ test("prepare, leave an issue for later, and publish only the validated product"
     const request = await runRequest("publish");
     expect(request.jobIds).toHaveLength(1);
     expect(sent).toEqual([good]);
+    const recorded = await db
+      .collection("broadcast")
+      .where("payload.sellerId", "==", sellerId)
+      .get();
+    const edits = recorded.docs
+      .map((d) => d.data())
+      .filter((d) => d.type.startsWith("amazonPrepare/draft"));
+    expect(
+      edits.some((d) => d.type === "amazonPrepare/draftDecisionChanged"),
+    ).toBe(true);
+    for (const e of edits) {
+      expect(e.payload).not.toHaveProperty("draft");
+      if (
+        ["amazonPrepare/draftApplied", "amazonPrepare/draftDiscarded"].includes(
+          e.type,
+        )
+      )
+        expect(Object.keys(e.payload).sort()).toEqual([
+          "owner",
+          "revision",
+          "sellerId",
+          "token",
+        ]);
+      if (e.type === "amazonPrepare/draftDecisionChanged")
+        expect(Object.keys(e.payload).sort()).toEqual([
+          "field",
+          "itemKey",
+          "owner",
+          "revision",
+          "sellerId",
+          "token",
+          "value",
+        ]);
+    }
+
     await panel.getByRole("button", { name: /Needs attention/ }).click();
     await expect(
       panel.getByText("8560: Missing product detail", { exact: true }),

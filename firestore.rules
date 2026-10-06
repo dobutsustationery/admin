@@ -19,7 +19,7 @@ service cloud.firestore {
       // Immutable event log: create-only, and creator must match authed user
       allow create: if request.auth != null && request.resource.data.creator == request.auth.uid
         && (!request.resource.data.keys().hasAny(["type"])
-          || !(request.resource.data.type in ["amazonPrepare/draftSaved", "amazonPrepare/draftApplied", "amazonPrepare/draftDiscarded"])
+          || !(request.resource.data.type in ["amazonPrepare/draftDecisionChanged", "amazonPrepare/draftPricingChanged", "amazonPrepare/draftViewChanged", "amazonPrepare/draftApplied", "amazonPrepare/draftDiscarded"])
           || request.resource.data.payload.owner == request.auth.uid);
       allow read: if request.auth != null;
     }

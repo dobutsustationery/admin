@@ -180,112 +180,97 @@ describe("Amazon preparation from durable inputs", () => {
 });
 
 import {
-  emptyPreparationDraft,
   preparationDraftScope,
   draftHasChanges,
 } from "../../src/lib/amazon-preparation";
-describe("durable preparation drafts", () => {
-  const event = (type: string, draft: any, owner = "user") => ({
-    type: `amazonPrepare/${type}`,
-    payload: { sellerId: "seller", owner, draft },
-  });
-  const draft = {
-    ...emptyPreparationDraft(),
-    revision: 1,
-    token: "one",
-    decisions: { [jan]: { priceGBP: "7.50", included: false, deferred: true } },
-    gbpPerEur: "0.80",
-    view: {
-      active: true,
-      query: "cards",
-      tab: "issues",
-      pricingOpen: true,
-      reviewedJobIds: [],
-    },
-  };
-  it("replays all work without applying choices or making Amazon requests", () => {
-    const prep = reducePreparation(
-      initialPreparation,
-      event("draftSaved", draft),
-    );
-    expect(prep.drafts[preparationDraftScope("seller", "user")]).toEqual(draft);
-    expect(prep.decisions).toEqual({});
-    expect(prep.policies).toEqual({});
-    expect(prep.jobs).toEqual({});
-    expect(draftHasChanges(draft)).toBe(true);
-  });
-  it("applies choices together and keeps the user's place", () => {
-    const prep = reducePreparation(
-      initialPreparation,
-      event("draftApplied", draft),
-    );
-    expect(Object.values(prep.decisions)[0]).toEqual(draft.decisions[jan]);
-    expect(Object.values(prep.policies)[0]).toEqual({ gbpPerEur: "0.80" });
-    const saved = prep.drafts[preparationDraftScope("seller", "user")];
-    expect(draftHasChanges(saved)).toBe(false);
-    expect(saved.view.query).toBe("cards");
-    expect(prep.jobs).toEqual({});
-  });
-  it("discards only draft work, preserves applied choices, and rejects stale recovery events", () => {
-    let prep = decision(initialPreparation, { priceGBP: "6" });
-    prep = reducePreparation(prep, event("draftSaved", draft));
-    prep = reducePreparation(
-      prep,
-      event("draftDiscarded", { ...draft, revision: 2, token: "two" }),
-    );
-    prep = reducePreparation(prep, event("draftSaved", draft));
-    expect(Object.values(prep.decisions)[0].priceGBP).toBe("6");
-    const saved = prep.drafts[preparationDraftScope("seller", "user")];
-    expect(draftHasChanges(saved)).toBe(false);
-    expect(saved.view.active).toBe(false);
-    expect(saved.view.query).toBe("");
-  });
-  it("keeps drafts separate for each user", () => {
-    let prep = reducePreparation(
-      initialPreparation,
-      event("draftSaved", draft),
-    );
-    prep = reducePreparation(
-      prep,
-      event(
-        "draftSaved",
-        { ...draft, decisions: {}, view: { ...draft.view, query: "other" } },
-        "sister",
-      ),
-    );
-    expect(
-      prep.drafts[preparationDraftScope("seller", "user")].view.query,
-    ).toBe("cards");
-    expect(
-      prep.drafts[preparationDraftScope("seller", "sister")].view.query,
-    ).toBe("other");
-  });
-});
-it("replays an applied choice even if a newer draft view arrived first", () => {
-  const make = (type: string, revision: number, decisions: any) => ({
-    type: `amazonPrepare/${type}`,
+describe("incremental preparation draft actions", () => {
+  const event = (kind: string, revision: number, fields = {}) => ({
+    type: `amazonPrepare/${kind}`,
     payload: {
       sellerId: "seller",
       owner: "user",
-      draft: {
-        ...emptyPreparationDraft(),
-        revision,
-        token: String(revision),
-        decisions,
-      },
+      revision,
+      token: String(revision),
+      ...fields,
     },
   });
-  let prep = reducePreparation(initialPreparation, make("draftSaved", 3, {}));
-  prep = reducePreparation(
-    prep,
-    make("draftApplied", 2, { [jan]: { priceGBP: "7" } }),
-  );
-  expect(Object.values(prep.decisions)[0].priceGBP).toBe("7");
-  expect(prep.drafts[preparationDraftScope("seller", "user")].revision).toBe(3);
-  prep = decision(prep, { priceGBP: "8" });
-  prep = reducePreparation(
-    prep,
-    make("draftApplied", 2, { [jan]: { priceGBP: "7" } }),
-  );
-  expect(Object.values(prep.decisions)[0].priceGBP).toBe("8");
+  const edit = (
+    revision: number,
+    field: string,
+    value: unknown,
+    itemKey = jan,
+  ) => event("draftDecisionChanged", revision, { itemKey, field, value });
+  const draftOf = (prep: any) =>
+    prep.drafts[preparationDraftScope("seller", "user")];
+  it("reconstructs edits from small actions without repeating earlier input", () => {
+    let prep = reducePreparation(
+      initialPreparation,
+      edit(1, "priceGBP", "7.50"),
+    );
+    const second = edit(2, "included", false, "second");
+    expect(second.payload).not.toHaveProperty("draft");
+    expect(JSON.stringify(second)).not.toContain("7.50");
+    prep = reducePreparation(prep, second);
+    prep = reducePreparation(
+      prep,
+      event("draftPricingChanged", 3, { value: "0.8" }),
+    );
+    prep = reducePreparation(
+      prep,
+      event("draftViewChanged", 4, {
+        changes: { active: true, query: "cards", tab: "issues" },
+      }),
+    );
+    expect(draftOf(prep).decisions).toEqual({
+      [jan]: { priceGBP: "7.50" },
+      second: { included: false },
+    });
+    expect(draftOf(prep).gbpPerEur).toBe("0.8");
+    expect(draftOf(prep).view.query).toBe("cards");
+    expect(prep.decisions).toEqual({});
+    expect(prep.jobs).toEqual({});
+  });
+  it("apply is a marker that commits the reconstructed draft, and ignores duplicate delivery", () => {
+    let prep = reducePreparation(
+      initialPreparation,
+      edit(1, "priceGBP", "7.50"),
+    );
+    prep = reducePreparation(
+      prep,
+      event("draftPricingChanged", 2, { value: "0.8" }),
+    );
+    const apply = event("draftApplied", 3);
+    expect(Object.keys(apply.payload).sort()).toEqual([
+      "owner",
+      "revision",
+      "sellerId",
+      "token",
+    ]);
+    prep = reducePreparation(prep, apply);
+    expect(Object.values(prep.decisions)[0].priceGBP).toBe("7.50");
+    expect(Object.values(prep.policies)[0].gbpPerEur).toBe("0.8");
+    expect(draftHasChanges(draftOf(prep))).toBe(false);
+    expect(reducePreparation(prep, apply)).toBe(prep);
+  });
+  it("discard resets only draft work; later edits start afresh", () => {
+    let prep = decision(initialPreparation, { priceGBP: "6" });
+    prep = reducePreparation(prep, edit(1, "priceGBP", "7.50"));
+    prep = reducePreparation(prep, event("draftDiscarded", 2));
+    expect(draftHasChanges(draftOf(prep))).toBe(false);
+    expect(Object.values(prep.decisions)[0].priceGBP).toBe("6");
+    prep = reducePreparation(prep, edit(3, "deferred", true));
+    expect(draftOf(prep).decisions[jan]).toEqual({ deferred: true });
+  });
+  it("keeps user drafts separate and invalidates stock approval on an edit", () => {
+    let prep = reducePreparation(
+      initialPreparation,
+      event("draftViewChanged", 1, { changes: { reviewedJobIds: ["job"] } }),
+    );
+    prep = reducePreparation(prep, edit(2, "included", false));
+    expect(draftOf(prep).view.reviewedJobIds).toEqual([]);
+    const other = edit(3, "priceGBP", "8");
+    other.payload.owner = "sister";
+    prep = reducePreparation(prep, other);
+    expect(draftOf(prep).decisions[jan]).toEqual({ included: false });
+  });
 });

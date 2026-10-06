@@ -60,7 +60,6 @@ export interface PreparationRow {
 }
 export interface PreparationState {
   drafts: Record<string, PreparationDraft>;
-  draftApplications: Record<string, { revision: number; token: string }>;
   decisions: Record<string, PreparationDecision>;
   policies: Record<string, { gbpPerEur: string }>;
   jobs: Record<string, any>;
@@ -68,7 +67,6 @@ export interface PreparationState {
 }
 export const initialPreparation: PreparationState = {
   drafts: {},
-  draftApplications: {},
   decisions: {},
   policies: {},
   jobs: {},
@@ -83,60 +81,70 @@ export function reducePreparation(
   const p = action.payload || {};
   if (
     [
-      "amazonPrepare/draftSaved",
+      "amazonPrepare/draftDecisionChanged",
+      "amazonPrepare/draftPricingChanged",
+      "amazonPrepare/draftViewChanged",
       "amazonPrepare/draftApplied",
       "amazonPrepare/draftDiscarded",
     ].includes(action.type) &&
     p.sellerId &&
     p.owner &&
-    p.draft
+    Number.isFinite(p.revision) &&
+    p.token
   ) {
     const key = preparationDraftScope(p.sellerId, p.owner);
-    const old = previous.drafts?.[key];
-    const draft = p.draft as PreparationDraft;
-    const newer = (
-      a: { revision: number; token: string },
-      b?: { revision: number; token: string },
-    ) =>
-      !b ||
-      a.revision > b.revision ||
-      (a.revision === b.revision && a.token > b.token);
-    let next = previous;
+    const old = previous.drafts[key] || emptyPreparationDraft();
     if (
-      action.type === "amazonPrepare/draftApplied" &&
-      newer(draft, previous.draftApplications?.[key])
-    ) {
-      const decisions = { ...previous.decisions };
-      for (const [itemKey, changes] of Object.entries(draft.decisions)) {
-        const scope = preparationScope(p.sellerId, itemKey);
-        decisions[scope] = { ...decisions[scope], ...changes };
-      }
-      const policies = { ...previous.policies };
-      if (draft.gbpPerEur !== undefined)
-        policies[preparationScope(p.sellerId)] = { gbpPerEur: draft.gbpPerEur };
-      next = {
-        ...previous,
-        decisions,
-        policies,
-        draftApplications: {
-          ...previous.draftApplications,
-          [key]: { revision: draft.revision, token: draft.token },
+      p.revision < old.revision ||
+      (p.revision === old.revision && p.token <= old.token)
+    )
+      return previous;
+    let draft = { ...old, revision: p.revision, token: p.token };
+    let next = previous;
+    if (action.type === "amazonPrepare/draftDecisionChanged") {
+      if (
+        !p.itemKey ||
+        !["priceGBP", "productType", "included", "deferred"].includes(p.field)
+      )
+        return previous;
+      draft = {
+        ...draft,
+        decisions: {
+          ...draft.decisions,
+          [p.itemKey]: { ...draft.decisions[p.itemKey], [p.field]: p.value },
         },
+        view: { ...draft.view, reviewedJobIds: [] },
+      };
+    } else if (action.type === "amazonPrepare/draftPricingChanged") {
+      draft = {
+        ...draft,
+        gbpPerEur: p.value,
+        view: { ...draft.view, reviewedJobIds: [] },
+      };
+    } else if (action.type === "amazonPrepare/draftViewChanged") {
+      draft = { ...draft, view: { ...draft.view, ...p.changes } };
+    } else {
+      if (action.type === "amazonPrepare/draftApplied") {
+        const decisions = { ...previous.decisions };
+        for (const [itemKey, changes] of Object.entries(old.decisions)) {
+          const scope = preparationScope(p.sellerId, itemKey);
+          decisions[scope] = { ...decisions[scope], ...changes };
+        }
+        const policies = { ...previous.policies };
+        if (old.gbpPerEur !== undefined)
+          policies[preparationScope(p.sellerId)] = { gbpPerEur: old.gbpPerEur };
+        next = { ...previous, decisions, policies };
+      }
+      draft = {
+        ...emptyPreparationDraft(),
+        revision: p.revision,
+        token: p.token,
+        ...(action.type === "amazonPrepare/draftApplied"
+          ? { view: { ...old.view, reviewedJobIds: [] } }
+          : {}),
       };
     }
-    if (!newer(draft, old)) return next;
-    const saved =
-      action.type === "amazonPrepare/draftSaved"
-        ? draft
-        : {
-            ...emptyPreparationDraft(),
-            revision: draft.revision,
-            token: draft.token,
-            ...(action.type === "amazonPrepare/draftApplied"
-              ? { view: { ...draft.view, reviewedJobIds: [] } }
-              : {}),
-          };
-    return { ...next, drafts: { ...previous.drafts, [key]: saved } };
+    return { ...next, drafts: { ...previous.drafts, [key]: draft } };
   }
 
   if (action.type === "amazonPrepare/decision" && p.sellerId && p.itemKey)

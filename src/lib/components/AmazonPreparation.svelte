@@ -79,7 +79,7 @@
     "";
   $: dirty = draftHasChanges(draft);
   $: syncing = journalState.events.length > 0;
-  function change(next: PreparationDraft, type = "amazonPrepare/draftSaved") {
+  function change(type: string, changes: Record<string, unknown> = {}) {
     if (!journal || !owner || !seller) {
       error = "Sign in and wait for your draft to load.";
       return;
@@ -91,11 +91,9 @@
         payload: {
           sellerId: seller,
           owner,
-          draft: {
-            ...next,
-            revision: lastRevision,
-            token: crypto.randomUUID(),
-          },
+          ...changes,
+          revision: lastRevision,
+          token: crypto.randomUUID(),
         },
       });
       storageFailed = false;
@@ -106,7 +104,7 @@
     }
   }
   function view(changes: Partial<PreparationDraft["view"]>) {
-    change({ ...draft, view: { ...draft.view, ...changes } });
+    change("amazonPrepare/draftViewChanged", { changes });
   }
   function decision(
     r: PreparationRow,
@@ -115,26 +113,24 @@
     return { ...r.decision, ...edits[r.row.key] };
   }
   function edit(r: PreparationRow, name: string, value: string | boolean) {
-    change({
-      ...draft,
-      decisions: {
-        ...draft.decisions,
-        [r.row.key]: { ...draft.decisions[r.row.key], [name]: value },
-      },
-      view: { ...draft.view, reviewedJobIds: [] },
+    change("amazonPrepare/draftDecisionChanged", {
+      itemKey: r.row.key,
+      field: name,
+      value,
     });
   }
+
   function applyDraft() {
     if (draft.gbpPerEur && !(Number(draft.gbpPerEur) > 0)) {
       error = "Enter a positive GBP-per-EUR factor.";
       return;
     }
-    change(draft, "amazonPrepare/draftApplied");
+    change("amazonPrepare/draftApplied");
     message =
       "Draft choices applied. Check products with Amazon when ready; nothing has been published.";
   }
   function discardDraft() {
-    change(draft, "amazonPrepare/draftDiscarded");
+    change("amazonPrepare/draftDiscarded");
     message =
       "Draft discarded. Previously applied choices and Amazon listings are unchanged.";
   }
@@ -434,10 +430,8 @@
               step="0.001"
               value={factor}
               on:input={(e) =>
-                change({
-                  ...draft,
-                  gbpPerEur: e.currentTarget.value,
-                  view: { ...draft.view, reviewedJobIds: [] },
+                change("amazonPrepare/draftPricingChanged", {
+                  value: e.currentTarget.value,
                 })}
             /></label
           >

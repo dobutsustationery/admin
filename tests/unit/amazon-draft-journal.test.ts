@@ -2,18 +2,16 @@ import { it, expect, vi } from "vitest";
 import { get } from "svelte/store";
 vi.mock("../../src/lib/firebase", () => ({ firestore: {} }));
 import { createDraftJournal } from "../../src/lib/amazon-draft-journal";
-import { emptyPreparationDraft } from "../../src/lib/amazon-preparation";
 const event = (revision: number) => ({
-  type: "amazonPrepare/draftSaved",
+  type: "amazonPrepare/draftDecisionChanged",
   payload: {
     sellerId: "seller",
     owner: "user",
-    draft: {
-      ...emptyPreparationDraft(),
-      revision,
-      token: String(revision),
-      decisions: { item: { priceGBP: String(revision) } },
-    },
+    revision,
+    token: String(revision),
+    itemKey: "item",
+    field: "priceGBP",
+    value: String(revision),
   },
 });
 function storage() {
@@ -50,8 +48,8 @@ it("sends an edit made while an earlier edit is still syncing", async () => {
   const wait = new Promise<void>((r) => (release = r));
   const sent: number[] = [];
   const journal = createDraftJournal(storage(), "draft", async (e) => {
-    if (e.payload.draft.revision === 1) await wait;
-    sent.push(e.payload.draft.revision);
+    if (e.payload.revision === 1) await wait;
+    sent.push(e.payload.revision);
   });
   journal.append(event(1));
   journal.append(event(2));
@@ -59,7 +57,7 @@ it("sends an edit made while an earlier edit is still syncing", async () => {
   await settle();
   expect(sent).toEqual([1, 2]);
   journal.observed(1, "1");
-  expect(get(journal).events.map((e) => e.payload.draft.revision)).toEqual([2]);
+  expect(get(journal).events.map((e) => e.payload.revision)).toEqual([2]);
 });
 it("does not claim an edit is saved when local storage fails", () => {
   const journal = createDraftJournal(

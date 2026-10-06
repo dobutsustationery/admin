@@ -6,10 +6,15 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { firestore } from "./firebase";
-import type { PreparationDraft } from "./amazon-preparation";
 interface DraftEvent {
   type: string;
-  payload: { sellerId: string; owner: string; draft: PreparationDraft };
+  payload: {
+    sellerId: string;
+    owner: string;
+    revision: number;
+    token: string;
+    [key: string]: unknown;
+  };
   acknowledged?: boolean;
 }
 // Synchronously save raw input before networking. Retain it until BOTH server
@@ -32,9 +37,8 @@ export function createDraftJournal(
     const next = events.filter(
       (e) =>
         !e.acknowledged ||
-        e.payload.draft.revision > seenRevision ||
-        (e.payload.draft.revision === seenRevision &&
-          e.payload.draft.token > seenToken),
+        e.payload.revision > seenRevision ||
+        (e.payload.revision === seenRevision && e.payload.token > seenToken),
     );
     if (next.length !== events.length) persist(next);
   }
@@ -48,7 +52,7 @@ export function createDraftJournal(
         await send({ type: event.type, payload: event.payload });
         persist(
           events.map((e) =>
-            e.payload.draft.token === event.payload.draft.token
+            e.payload.token === event.payload.token
               ? { ...e, acknowledged: true }
               : e,
           ),
@@ -88,7 +92,7 @@ export function amazonDraftJournal(owner: string, seller: string) {
       const ref = doc(
         firestore,
         "broadcast",
-        `amazon-draft-${event.payload.draft.token}`,
+        `amazon-draft-${event.payload.token}`,
       );
       if ((await getDocFromServer(ref)).exists()) return;
       await setDoc(ref, {
