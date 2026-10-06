@@ -70,4 +70,5 @@
 // Bump this version when fixing calculations so cached projections fully replay.
 // 22: order-linked receiving drafts and once-only inventory/asset acceptance.
 // 23: receiving resets obsolete loose-piece settings at zero available stock.
-export const CURRENT_SCHEMA_VERSION = 23;
+// 24: scoped Amifa audit observations and saved SKU mappings derive in replay.
+export const CURRENT_SCHEMA_VERSION = 24;

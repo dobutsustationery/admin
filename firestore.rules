@@ -45,6 +45,17 @@ service cloud.firestore {
       allow read: if request.auth != null && resource.data.creator == request.auth.uid;
       allow update, delete: if false;
     }
+    match /request_amazon_audit/{action} {
+      allow create: if request.auth != null
+        && request.resource.data.creator == request.auth.uid
+        && request.resource.data.keys().hasOnly(["creator", "marketplaceId", "mode", "skus", "createdAt"])
+        && request.resource.data.marketplaceId == "A1F83G8C2ARO7P"
+        && request.resource.data.mode in ["catalogue", "selected"]
+        && request.resource.data.skus is list
+        && request.resource.data.skus.size() <= 100;
+      allow read: if request.auth != null && resource.data.creator == request.auth.uid;
+      allow update, delete: if false;
+    }
     match /request_amazon_catalog_probe/{action} {
       allow create: if request.auth != null && request.resource.data.creator == request.auth.uid;
       allow read: if request.auth != null && resource.data.creator == request.auth.uid;

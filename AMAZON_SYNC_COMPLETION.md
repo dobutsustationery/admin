@@ -1,6 +1,51 @@
 # Amazon Sync Completion
 
-Status: proposed implementation plan, 2026-09-11. No implementation or deployment authorized by this document.
+Status: first operational release implemented on 2026-10-06; production deployment authorized in the project conversation. The broader sync milestones below remain a roadmap.
+
+## October 6 release: Amifa audit and durable readback
+
+The main `/amazon-listings` screen now presents Amifa families and variants with search,
+status/shared-JAN filtering, selection, last-observed GBP offers and merchant-fulfilled
+quantity, explicit SKU mappings, and actionable statuses. Existing probes and manual
+listing submissions are retained inside **Diagnostics**. This release does not add
+bulk creation, automatic stock publication, GBP price policy, or Amazon order ingestion.
+
+1. **Refresh seller catalogue** reads the configured UK seller's listings, following
+   pagination. Coverage is shown explicitly. Amazon's search limit is 1,000 SKUs;
+   limited/failed reads are marked incomplete and never imply remote deletion.
+2. Exact local inventory identities matching seller SKUs are identified automatically.
+   JAN matches are suggestions only. Save a SKU mapping to handle different remote
+   identifiers; shared JANs never imply exemption approval or identify a colour.
+3. **Refresh selected SKUs** queues up to 100 linked SKUs. The server records raw
+   responses and keeps checking processing listings for up to 24 hours, with backoff
+   for 429/5xx. Buyable, zero-stock, parent, and blocking-error responses settle checks.
+   Already-created listings are not resubmitted. Existing manual creates now enqueue
+   follow-up reads after successful submission.
+4. Prices/quantities/statuses are observations, not guarantees of current availability.
+   No local EUR price is converted or sent by the audit. Search/store placement is not
+   inferred from offer buyability.
+
+Durability: `request_amazon_audit` accepts authenticated UK read requests only;
+`amazon_audit_jobs` is server-only operational state. The request trigger and scheduled
+worker share leased, transactional jobs. Page cursors and chunked raw response events
+commit atomically. `amazonAudit/*` broadcast events retain responses, job facts and
+operator mappings; the root reducer derives the rows and health, scoped by seller,
+marketplace and SKU. Newer observations win even if replay arrival is out of order.
+Schema version 24 rebuilds existing browser caches. Large discovery schemas remain in
+broadcast; sync logs reference them instead of duplicating an oversized string.
+
+Deployment targets: `amazonAuditRequest`, `amazonAuditReadback`, the four existing
+Amazon request functions, Firestore rules, and Hosting. No automatic marketplace
+mutation is scheduled. The only scheduled work is reading explicitly queued jobs.
+The scheduler has no work until an audit/refresh/create has queued it.
+
+Validation includes reducer and worker tests, transaction recovery, rate limits,
+real Firestore emulator rules/worker checks, browser filter/mapping/reload checks,
+formatting, Svelte checks, and the full standard unit suite. Production verification
+uses a read-only catalogue request and checks resulting raw observations.
+
+The original detailed roadmap follows; historical observations below are dated and
+are not a fresh assertion of seller-account or approval state.
 
 Work in this checkout: `/Volumes/Macintosh HD/Users/anicolao/projects/antigravity/admin2`.
 Baseline: `codex/amazon-listings-delta-design`, commit `21b7e3e`.

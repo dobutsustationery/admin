@@ -1,3 +1,8 @@
+import {
+  initialAmazonAudit,
+  reduceAmazonAudit,
+  projectAmazonAudit,
+} from "./amazon-audit";
 import { orderReceipts, reduceReceipts } from "./order-receipts";
 import { combineReducers } from "@reduxjs/toolkit";
 import { customsSummary, reduceCustoms } from "./customs-summary-slice";
@@ -86,6 +91,7 @@ import {
 import { normalizeShopifySyncEventType } from "./sync-events";
 
 const reducerObject = {
+  amazonAudit: (state = initialAmazonAudit) => state,
   orderReceipts,
   customsSummary,
   names,
@@ -2745,5 +2751,23 @@ export const rootReducer = (
     logger(action, nextState, action._timestamp);
   }
 
+  const audit = reduceAmazonAudit(state?.amazonAudit, action);
+  if (
+    audit !== state?.amazonAudit ||
+    nextState.inventory !== state?.inventory ||
+    nextState.listings !== state?.listings
+  ) {
+    nextState = {
+      ...nextState,
+      amazonAudit: {
+        ...audit,
+        rows: projectAmazonAudit(
+          audit,
+          nextState.inventory,
+          nextState.listings,
+        ),
+      },
+    };
+  } else nextState = { ...nextState, amazonAudit: audit };
   return nextState;
 };

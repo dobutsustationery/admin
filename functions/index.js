@@ -293,6 +293,8 @@ async function amazonSpApiGet({
     status: response.status,
     statusText: response.statusText,
     rateLimit: response.headers.get("x-amzn-ratelimit-limit") || "",
+    requestId: response.headers.get("x-amzn-requestid") || "",
+    retryAfter: response.headers.get("retry-after") || "",
     url: url.toString(),
     data,
   };
@@ -415,6 +417,14 @@ async function writeAmazonSyncEvent({
   source,
   payload,
 }) {
+  // Large schema bytes are preserved in the discovery broadcast response. The
+  // sync log carries a reference instead of an oversized duplicate string.
+  if (payload?.requestType === "product_type_schema") {
+    payload = {
+      ...payload,
+      response: { broadcastRequestId: requestId, responseKind: "product_type_schema" },
+    };
+  }
   await db.collection(SYNC_COLLECTION).add({
     eventType,
     requestId,
@@ -1338,6 +1348,69 @@ exports.shopifyCatalogSyncRequest = onDocumentCreated(
       });
     }
   },
+);
+
+const amazonAuditWorker =
+  require("./shared/amazon-audit-worker.cjs").createWorker({
+    db,
+    getConfig: getAmazonConfig,
+    getToken: fetchAmazonLwaAccessToken,
+    read: async ({ config, accessToken, sku, cursor }) =>
+      amazonSpApiGet({
+        endpoint: config.endpoint,
+        path: `/listings/2021-08-01/items/${encodeURIComponent(config.sellerId)}${sku ? `/${encodeURIComponent(sku)}` : ""}`,
+        query: {
+          marketplaceIds: config.marketplaceId,
+          includedData: AMAZON_DEFAULT_LISTINGS_INCLUDED_DATA.join(","),
+          ...(sku
+            ? {}
+            : {
+                pageSize: 20,
+                pageToken: cursor,
+                sortBy: "sku",
+                sortOrder: "ASC",
+              }),
+        },
+        accessToken,
+        userAgent: config.userAgent,
+      }),
+  });
+exports.amazonAuditRequest = onDocumentCreated(
+  {
+    document: "request_amazon_audit/{requestId}",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    maxInstances: 1,
+    concurrency: 1,
+    retry: true,
+  },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+    try {
+      require("./shared/amazon-audit-worker.cjs").validateRequest(data);
+    } catch (e) {
+      await event.data.ref.update({ error: e.message });
+      return;
+    }
+    try {
+      await amazonAuditWorker.enqueue(event.params.requestId, data);
+    } catch (error) {
+      await event.data.ref.update({ error: error.message || "Could not queue Amazon audit." });
+      throw error;
+    }
+    await amazonAuditWorker.tick();
+  },
+);
+exports.amazonAuditReadback = onSchedule(
+  {
+    schedule: "every 1 minutes",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    maxInstances: 1,
+    concurrency: 1,
+  },
+  () => amazonAuditWorker.tick(),
 );
 
 exports.amazonCatalogProbeRequest = onDocumentCreated(
@@ -2502,6 +2575,8 @@ exports.amazonListingCreateRequest = onDocumentCreated(
           });
           break;
         }
+
+        await amazonAuditWorker.enqueueSku(requestId, creator, submission.sku);
 
         const listingResponse = await getAmazonListingBySku({
           config,
