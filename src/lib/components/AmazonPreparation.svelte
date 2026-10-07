@@ -14,6 +14,7 @@
   import { UK_MARKETPLACE } from "$lib/amazon-audit";
   import {
     initialPreparation,
+    projectPreparation,
     emptyPreparationDraft,
     preparationDraftScope,
     draftHasChanges,
@@ -134,7 +135,27 @@
     message =
       "Draft discarded. Previously applied choices and Amazon listings are unchanged.";
   }
-  $: inStock = prep.rows.filter((r) => r.row.onHand > 0);
+  $: previewRows = projectPreparation(
+    effective,
+    $store.amazonAudit,
+    $store.inventory,
+    $store.listings,
+    owner,
+  );
+  $: inStock = previewRows.filter((r) => r.row.onHand > 0);
+  $: pricedCount = inStock.filter(
+    (r) => Number.isFinite(r.price) && r.price > 0,
+  ).length;
+  $: issueGroups = Object.entries(
+    inStock.reduce(
+      (groups, r) => {
+        if (r.reason && r.reason !== "Price and stock already match Amazon.")
+          groups[r.reason] = (groups[r.reason] || 0) + 1;
+        return groups;
+      },
+      {} as Record<string, number>,
+    ),
+  ).sort((a, b) => b[1] - a[1]);
   $: typeResponses = Object.values(
     $store.amazonCatalog?.rawResponsesById || {},
   ) as any[];
@@ -308,7 +329,7 @@
     if (drafts[r.row.key])
       return decision(r, drafts).deferred
         ? "Set aside in draft; apply choices to confirm."
-        : "Draft changes saved; apply choices before checking";
+        : r.reason || "Draft changes saved; apply choices before checking";
     if (
       r.job?.status === "submitted" &&
       r.row.checkedAt > (r.job.submittedAt || r.job.updatedAt)
@@ -436,6 +457,28 @@
             /></label
           >
         </div>
+        <p aria-live="polite">
+          {pricedCount} of {inStock.length} in-stock products have a GBP price in
+          this preview. The factor applies to all products without an existing Amazon
+          price or an individual override, including products with other issues.
+          {#if dirty}Choose “Apply draft choices” once to apply these choices to
+            all products.{/if}
+        </p>
+      </details>
+    {/if}
+    {#if issueGroups.length}
+      <details class="issue-summary">
+        <summary>What still needs attention ({issues.length} products)</summary>
+        <p>
+          Setting prices does not resolve product identity or product-type
+          requirements.
+        </p>
+        <ul>
+          {#each issueGroups as [reason, count]}<li>
+              <strong>{count} products:</strong>
+              {reason}
+            </li>{/each}
+        </ul>
       </details>
     {/if}
     <div class="actions">
@@ -538,7 +581,11 @@
                       ""}
                     placeholder={r.price > 0 ? r.price.toFixed(2) : "Required"}
                     on:input={(e) => edit(r, "priceGBP", e.currentTarget.value)}
-                  />{/if}</td
+                  />
+                  {#if Number.isFinite(r.price) && r.price > 0}<small
+                      >Preview: £{r.price.toFixed(2)}</small
+                    >{/if}
+                {/if}</td
               >
               <td
                 >{r.row.onHand}<small>Amazon: {r.row.quantity ?? "—"}</small

@@ -292,3 +292,147 @@ test("prepare, leave an issue for later, and publish only the validated product"
     await deleteApp(app);
   }
 });
+
+test("one factor previews all prices before apply and survives reload", async ({
+  page,
+  authenticatedPage,
+}) => {
+  void authenticatedPage;
+  const at = Date.now(),
+    sellerId = `pricing-${at}`;
+  const app = initializeApp({ projectId: "demo-test-project" }, sellerId);
+  const db = initializeFirestore(app, {
+    host: `127.0.0.1:${process.env.E2E_FIRESTORE_EMULATOR_PORT || "8080"}`,
+    ssl: false,
+    preferRest: false,
+  });
+  const keys = [`${at}1`, `${at}2`];
+  const events = [
+    ...keys.map((key, i) => ({
+      type: "update_item",
+      payload: {
+        id: key,
+        item: {
+          janCode: key,
+          description: `Amifa bulk pricing ${at}`,
+          qty: 5,
+          pieces: 1,
+          price: i ? 10 : 5,
+        },
+      },
+    })),
+    {
+      type: "amazonAudit/job",
+      payload: {
+        id: sellerId,
+        sellerId,
+        marketplaceId: "A1F83G8C2ARO7P",
+        mode: "catalogue",
+        status: "complete",
+        startedAt: at,
+        updatedAt: at,
+        pages: 1,
+        count: 2,
+      },
+    },
+    {
+      type: "amazonAudit/chunk",
+      payload: {
+        responseId: sellerId,
+        index: 0,
+        json: JSON.stringify({
+          items: keys.map((sku) => ({
+            sku,
+            summaries: [
+              {
+                asin: `ASIN${sku}`,
+                status: ["BUYABLE"],
+                productType: "STICKER_DECAL",
+              },
+            ],
+            offers: [],
+            fulfillmentAvailability: [
+              { fulfillmentChannelCode: "DEFAULT", quantity: 2 },
+            ],
+          })),
+        }),
+      },
+    },
+    {
+      type: "amazonAudit/response",
+      payload: {
+        responseId: sellerId,
+        chunks: 1,
+        sellerId,
+        marketplaceId: "A1F83G8C2ARO7P",
+        status: 200,
+        at,
+      },
+    },
+  ];
+  try {
+    const batch = db.batch();
+    events.forEach((e, i) =>
+      batch.set(db.collection("broadcast").doc(`${sellerId}-${i}`), {
+        ...e,
+        creator: "test",
+        timestamp: Timestamp.fromMillis(at + i),
+      }),
+    );
+    await batch.commit();
+    await page.goto("/amazon-listings");
+    const panel = page.getByRole("region", { name: "Prepare Amazon products" });
+    await panel
+      .getByRole("button", {
+        name: "Prepare Amifa products for Amazon",
+        exact: true,
+      })
+      .click();
+    await panel.getByLabel("Filter preparation").fill(String(at));
+    await panel
+      .getByText("Set prices for products without an Amazon GBP price", {
+        exact: true,
+      })
+      .click();
+    await panel.getByLabel("GBP per EUR").fill("0.9");
+    await expect(
+      panel.getByText("Preview: £4.50", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByText("Preview: £9.00", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("button", {
+        name: "Check 2 products with Amazon",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await page.reload();
+    await expect(panel.getByLabel("GBP per EUR")).toHaveValue("0.9");
+    await expect(
+      panel.getByText("Preview: £9.00", { exact: true }),
+    ).toBeVisible();
+    expect(
+      (
+        await db
+          .collection("request_amazon_prepare")
+          .where("sellerId", "==", sellerId)
+          .get()
+      ).size,
+    ).toBe(0);
+    await panel
+      .getByRole("button", { name: "Apply draft choices", exact: true })
+      .click();
+    await expect(
+      panel.getByRole("button", {
+        name: "Check 2 products with Amazon",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await expect(
+      panel.getByText("Preview: £4.50", { exact: true }),
+    ).toBeVisible();
+  } finally {
+    await deleteApp(app);
+  }
+});

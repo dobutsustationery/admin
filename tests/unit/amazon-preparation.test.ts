@@ -274,3 +274,100 @@ describe("incremental preparation draft actions", () => {
     expect(draftOf(prep).decisions[jan]).toEqual({ included: false });
   });
 });
+
+describe("bulk pricing draft preview", () => {
+  it("previews hundreds of prices from one factor action without applying choices", () => {
+    const f = fixture();
+    const rows = Array.from({ length: 389 }, (_, i) => ({
+      ...f.audit.rows[0],
+      key: `item-${i}`,
+    }));
+    f.audit.rows = rows;
+    for (const row of rows)
+      Object.assign(f.inventory.idToItem, {
+        [row.key]: { ...f.inventory.idToItem[jan] },
+      });
+    const prep = reducePreparation(initialPreparation, {
+      type: "amazonPrepare/draftPricingChanged",
+      payload: {
+        sellerId: "seller",
+        owner: "owner",
+        revision: 1,
+        token: "factor",
+        value: "0.9",
+      },
+    });
+    const preview = projectPreparation(
+      prep,
+      f.audit,
+      f.inventory,
+      f.listings,
+      "owner",
+    );
+    expect(preview).toHaveLength(389);
+    expect(preview.every((r) => r.price === 8.1)).toBe(true);
+    expect(preview.every((r) => r.reason.includes("product type"))).toBe(true);
+    expect(
+      projectPreparation(prep, f.audit, f.inventory, f.listings).every(
+        (r) => r.price === 0,
+      ),
+    ).toBe(true);
+    expect(
+      projectPreparation(prep, f.audit, f.inventory, f.listings, "other").every(
+        (r) => r.price === 0,
+      ),
+    ).toBe(true);
+    expect(prep.policies).toEqual({});
+    const applied = reducePreparation(prep, {
+      type: "amazonPrepare/draftApplied",
+      payload: {
+        sellerId: "seller",
+        owner: "owner",
+        revision: 2,
+        token: "apply",
+      },
+    });
+    expect(
+      projectPreparation(applied, f.audit, f.inventory, f.listings),
+    ).toEqual(preview);
+  });
+  it("preserves existing Amazon prices and previews individual overrides and discard", () => {
+    const f = fixture(false, true);
+    let prep = reducePreparation(initialPreparation, {
+      type: "amazonPrepare/draftPricingChanged",
+      payload: {
+        sellerId: "seller",
+        owner: "owner",
+        revision: 1,
+        token: "factor",
+        value: "0.9",
+      },
+    });
+    const preview = () =>
+      projectPreparation(prep, f.audit, f.inventory, f.listings, "owner")[0];
+    expect(preview().price).toBe(6);
+    prep = reducePreparation(prep, {
+      type: "amazonPrepare/draftDecisionChanged",
+      payload: {
+        sellerId: "seller",
+        owner: "owner",
+        revision: 2,
+        token: "price",
+        itemKey: jan,
+        field: "priceGBP",
+        value: "5.50",
+      },
+    });
+    expect(preview().price).toBe(5.5);
+    prep = reducePreparation(prep, {
+      type: "amazonPrepare/draftDiscarded",
+      payload: {
+        sellerId: "seller",
+        owner: "owner",
+        revision: 3,
+        token: "discard",
+      },
+    });
+    expect(preview().price).toBe(6);
+  });
+});

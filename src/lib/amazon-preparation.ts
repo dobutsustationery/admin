@@ -194,8 +194,12 @@ export function projectPreparation(
   audit: AmazonAuditState,
   inventory: any,
   listings: any,
+  draftOwner?: string,
 ): PreparationRow[] {
   if (!audit.sellerId) return [];
+  const draft = draftOwner
+    ? prep.drafts[preparationDraftScope(audit.sellerId, draftOwner)]
+    : undefined;
   const latestJobs = new Map<string, any>();
   for (const job of Object.values(prep.jobs)) {
     if (
@@ -213,13 +217,16 @@ export function projectPreparation(
       latestJobs.set(job.entry.itemKey, job);
   }
   const factor = Number(
-    prep.policies[preparationScope(audit.sellerId)]?.gbpPerEur,
+    draft?.gbpPerEur ??
+      prep.policies[preparationScope(audit.sellerId)]?.gbpPerEur,
   );
   return audit.rows.map((row) => {
     const item = inventory?.idToItem?.[row.key] || {};
     const listing = listings?.handleToListing?.[row.family];
-    const decision =
-      prep.decisions[preparationScope(audit.sellerId, row.key)] || {};
+    const decision = {
+      ...prep.decisions[preparationScope(audit.sellerId, row.key)],
+      ...draft?.decisions[row.key],
+    };
     const observation =
       audit.observations[auditScope(audit.sellerId, UK_MARKETPLACE, row.sku)];
     const raw = observation?.raw;
