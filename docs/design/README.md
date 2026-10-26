@@ -17,3 +17,4 @@ Architectural and design documents.
 - [Action Audit](./ACTION_AUDIT.md)
 - [Shopify Image Migration](./SHOPIFY_IMAGE_MIGRATION_DESIGN.md)
 - [Subtype Replacement Remediation](./SUBTYPE_REPLACEMENT_REMEDIATION.md)
+- [Photo import repair plan](./photo-import-repair-plan.md)

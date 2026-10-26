@@ -1,3 +1,5 @@
+Current continuation plan: [Amazon listing and offer next steps](docs/ops/amazon-next-steps.md), updated October 26, 2026. The dated entries and original roadmap below retain historical context.
+
 ## 2026-10-06: Durable preparation drafts
 
 Opening preparation now resumes a durable draft scoped to the signed-in user, seller and UK marketplace. Prices, product types, inclusion choices, Later/Resume choices, the pricing factor, filter, current tab, panel state and the stock review acknowledgement survive navigation and reloads. Drafts are distinct from applied sync choices.
