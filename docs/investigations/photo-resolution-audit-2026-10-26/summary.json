@@ -1,0 +1,31 @@
+{
+  "snapshot": {
+    "fetchedAt": "2026-10-26T17:51:15.875Z",
+    "store": "kgxnau-sh.myshopify.com"
+  },
+  "products_audited": 473,
+  "images_audited": 2843,
+  "low_resolution_images": 540,
+  "affected_products": 104,
+  "active_published_affected_products": 103,
+  "active_published_stocked_affected_products": 99,
+  "low_resolution_lead_products": 80,
+  "all_low_resolution_products": 56,
+  "classifications": {
+    "low_resolution_origin_unverified": 31,
+    "not_flagged_by_size": 2296,
+    "medium_resolution_review": 7,
+    "confirmed_bare_download_lineage": 346,
+    "low_resolution_same_photo_bare_download": 163
+  },
+  "source_copies_measured": 1015,
+  "distinct_source_photos": 584,
+  "cdn_files_measured": 547,
+  "large_thumbnail_history_images": 59,
+  "large_thumbnail_history_products": 14,
+  "priority_counts": {
+    "1: live, stocked, low-resolution lead": 76,
+    "2: live, stocked, other low-resolution images": 23,
+    "3: sold out or unpublished": 5
+  }
+}
