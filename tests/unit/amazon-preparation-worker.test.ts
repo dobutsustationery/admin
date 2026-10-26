@@ -302,3 +302,66 @@ it("readback is given the exact submitted targets, even for an already buyable l
   await s.w.tick();
   expect(s.readbacks[0][3]).toEqual({ quantity: 4 });
 });
+
+describe("Offer-only server validation", () => {
+  const offer = () => ({
+    itemKey: "offer",
+    sku: "offer",
+    method: "PUT",
+    body: {
+      productType: "PRODUCT",
+      requirements: "LISTING_OFFER_ONLY",
+      attributes: {
+        merchant_suggested_asin: [
+          { value: "B012345678", marketplace_id: config.marketplaceId },
+        ],
+        condition_type: [
+          { value: "new_new", marketplace_id: config.marketplaceId },
+        ],
+        purchasable_offer: [
+          {
+            marketplace_id: config.marketplaceId,
+            currency: "GBP",
+            our_price: [{ schedule: [{ value_with_tax: 4 }] }],
+          },
+        ],
+        fulfillment_availability: [
+          { fulfillment_channel_code: "DEFAULT", quantity: 3 },
+        ],
+      },
+    },
+  });
+  it("accepts offer-only payloads but rejects product-content edits and zero-stock creation", () => {
+    const e = offer();
+    const validate = () =>
+      validateRequest({
+        ...config,
+        creator: "test",
+        mode: "preview",
+        entries: [e],
+      });
+    expect(validate).not.toThrow();
+    (e.body.attributes as any).item_name = [{ value: "overwrite" }];
+    expect(validate).toThrow("offer fields only");
+    delete (e.body.attributes as any).item_name;
+    e.body.attributes.fulfillment_availability[0].quantity = 0;
+    expect(validate).toThrow();
+  });
+  it("previews an absent offer without publishing and refuses to replace an existing SKU", async () => {
+    const s = setup();
+    s.setRemote({ status: 404, data: {} });
+    await s.request("new-offer", { mode: "preview", entries: [offer()] });
+    await s.w.tick();
+    expect(s.jobs()[0].status).toBe("ready");
+    expect(s.calls).toHaveLength(1);
+    expect(s.calls[0].preview).toBe(true);
+    const existing = setup();
+    await existing.request("existing-offer", {
+      mode: "preview",
+      entries: [offer()],
+    });
+    await existing.w.tick();
+    expect(existing.jobs()[0].status).toBe("blocked");
+    expect(existing.calls).toHaveLength(0);
+  });
+});

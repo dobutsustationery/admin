@@ -155,15 +155,7 @@ export function projectAmazonAudit(
     .flatMap(([key, item]) => {
       const handle = listings?.idToHandle?.[key] || item.handle || "";
       const listing = listings?.handleToListing?.[handle] || {};
-      const identity = [
-        listing.title,
-        listing.brand,
-        item.brand,
-        item.manufacturer,
-        item.description,
-        handle,
-      ].join(" ");
-      if (!/\bamifa\b/i.test(identity)) return [];
+      // Include the whole local catalogue, regardless of manufacturer.
       const jan = text(item.janCode);
       const mapped =
         state.mappings[auditScope(state.sellerId, state.marketplaceId, key)];

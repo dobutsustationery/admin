@@ -74,4 +74,5 @@
 // 25: guided Amazon preparation derives readiness from saved inputs and raw previews.
 // 26: durable per-user Amazon preparation drafts and explicit apply/discard.
 // 27: replay Amifa parsing and decimal weights saved through text inputs.
-export const CURRENT_SCHEMA_VERSION = 27;
+// 28: Amazon comparison includes all manufacturers.
+export const CURRENT_SCHEMA_VERSION = 28;

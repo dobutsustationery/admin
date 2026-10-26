@@ -371,3 +371,101 @@ describe("bulk pricing draft preview", () => {
     expect(preview().price).toBe(6);
   });
 });
+
+describe("Zero stock and existing-ASIN offers", () => {
+  it("makes a stock-only zero patch even without a price policy", () => {
+    const f = fixture(false, true);
+    f.audit.rows[0].onHand = 0;
+    const r = projectPreparation(
+      initialPreparation,
+      f.audit,
+      f.inventory,
+      f.listings,
+    )[0];
+    expect(r.entry?.body.patches).toEqual([
+      {
+        op: "replace",
+        path: "/attributes/fulfillment_availability",
+        value: [{ fulfillment_channel_code: "DEFAULT", quantity: 0 }],
+      },
+    ]);
+  });
+  it("does not create zero-stock offers or update already zero offers", () => {
+    for (const existing of [false, true]) {
+      const f = fixture(false, existing);
+      f.audit.rows[0].onHand = 0;
+      f.audit.rows[0].quantity = 0;
+      expect(
+        projectPreparation(
+          initialPreparation,
+          f.audit,
+          f.inventory,
+          f.listings,
+        )[0].entry,
+      ).toBeNull();
+    }
+  });
+  it("allows a confirmed exact ASIN despite a shared barcode and omits product content", () => {
+    const f = fixture(true);
+    let p = decision(initialPreparation, { asin: "B012345678", priceGBP: "4" });
+    expect(
+      projectPreparation(p, f.audit, f.inventory, f.listings)[0].entry,
+    ).toBeNull();
+    p = decision(p, { asinVerified: true });
+    const r = projectPreparation(p, f.audit, f.inventory, f.listings)[0];
+    expect(r.entry?.body.requirements).toBe("LISTING_OFFER_ONLY");
+    expect(r.productType).toBe("PRODUCT");
+    expect(Object.keys(r.entry!.body.attributes).sort()).toEqual([
+      "condition_type",
+      "fulfillment_availability",
+      "merchant_suggested_asin",
+      "purchasable_offer",
+    ]);
+    expect(r.entry!.body.attributes.merchant_suggested_asin[0].value).toBe(
+      "B012345678",
+    );
+  });
+  it("does not infer variant identity from an Amazon search match", () => {
+    const f = fixture(true);
+    const catalog = {
+      rawResponsesById: {
+        a: {
+          kind: "catalog_search_by_jan",
+          key: jan,
+          sellerId: "seller",
+          marketplaceId: UK_MARKETPLACE,
+          ok: true,
+          status: 200,
+          fetchedAtMs: 1,
+          raw: {
+            items: [
+              { asin: "B012345678", summaries: [{ itemName: "Black card" }] },
+            ],
+          },
+        },
+      },
+    };
+    const r = projectPreparation(
+      initialPreparation,
+      f.audit,
+      f.inventory,
+      f.listings,
+      undefined,
+      catalog,
+    )[0];
+    expect(r.offerMatch?.candidates).toHaveLength(1);
+    expect(r.entry).toBeNull();
+    expect(r.reason).toContain("Verify an ASIN");
+    catalog.rawResponsesById.a.sellerId = "other";
+    expect(
+      projectPreparation(
+        initialPreparation,
+        f.audit,
+        f.inventory,
+        f.listings,
+        undefined,
+        catalog,
+      )[0].offerMatch?.candidates,
+    ).toHaveLength(0);
+  });
+});

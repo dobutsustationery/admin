@@ -4,8 +4,11 @@ import {
   type AmazonAuditState,
   type AuditRow,
 } from "./amazon-audit";
+import { offerMatches } from "./amazon-offer-matches";
 import { buildAmazonListingCreateDraft } from "./amazon-listing-projection";
 export interface PreparationDecision {
+  asin?: string;
+  asinVerified?: boolean;
   priceGBP?: string;
   productType?: string;
   deferred?: boolean;
@@ -50,6 +53,7 @@ export interface PreparationEntry {
   body: any;
 }
 export interface PreparationRow {
+  offerMatch?: ReturnType<typeof offerMatches>;
   row: AuditRow;
   decision: PreparationDecision;
   price: number;
@@ -195,6 +199,7 @@ export function projectPreparation(
   inventory: any,
   listings: any,
   draftOwner?: string,
+  catalog?: any,
 ): PreparationRow[] {
   if (!audit.sellerId) return [];
   const draft = draftOwner
@@ -231,6 +236,14 @@ export function projectPreparation(
       audit.observations[auditScope(audit.sellerId, UK_MARKETPLACE, row.sku)];
     const raw = observation?.raw;
     const existing = observation?.status === 200;
+    const offerMatch = offerMatches(catalog, audit.sellerId, row.jan);
+    const asin = String(decision.asin || "")
+      .trim()
+      .toUpperCase();
+    const offerOnly =
+      !existing &&
+      /^[A-Z0-9]{10}$/.test(asin) &&
+      decision.asinVerified === true;
     const oldPrice = row.price.startsWith("GBP ")
       ? Number(row.price.slice(4))
       : 0;
@@ -242,13 +255,57 @@ export function projectPreparation(
           ? Math.round(Number(item.price) * factor * 100) / 100
           : 0;
     const productType = String(
-      decision.productType ||
+      (offerOnly ? "PRODUCT" : "") ||
+        decision.productType ||
         raw?.productTypes?.[0]?.productType ||
         raw?.summaries?.[0]?.productType ||
         "",
     )
       .trim()
       .toUpperCase();
+    if (row.onHand === 0) {
+      const canZero =
+        existing &&
+        Number(row.quantity) > 0 &&
+        row.health !== "Needs attention" &&
+        row.health !== "Processing" &&
+        Number(item.pieces || 1) === 1;
+      return {
+        row,
+        decision,
+        price,
+        productType: productType || "PRODUCT",
+        offerMatch,
+        reason: canZero
+          ? ""
+          : row.quantity === 0
+            ? "Zero locally and on Amazon. No stock update needed."
+            : !existing
+              ? "No local stock. No offer will be created."
+              : row.detail ||
+                "Refresh this offer before setting stock to zero.",
+        entry: canZero
+          ? {
+              itemKey: row.key,
+              sku: row.sku,
+              method: "PATCH" as const,
+              body: {
+                productType: productType || "PRODUCT",
+                patches: [
+                  {
+                    op: "replace",
+                    path: "/attributes/fulfillment_availability",
+                    value: [
+                      { fulfillment_channel_code: "DEFAULT", quantity: 0 },
+                    ],
+                  },
+                ],
+              },
+            }
+          : null,
+        job: latestJobs.get(row.key),
+      };
+    }
     let reason = "";
     if (!audit.sellerId) reason = "Refresh the seller catalogue first.";
     else if (decision.deferred) reason = "Set aside for later.";
@@ -260,15 +317,21 @@ export function projectPreparation(
       reason = row.detail;
     else if (row.sku && !existing && observation?.status !== 404)
       reason = "Refresh this mapped SKU before continuing.";
-    else if (!existing && row.sharedJan)
+    else if (!existing && asin && !offerOnly)
+      reason =
+        "Confirm the ASIN matches this exact product, variant and pack size.";
+    else if (!existing && !offerOnly && offerMatch.candidates.length)
+      reason =
+        "Amazon catalogue matches found. Verify an ASIN to add your offer.";
+    else if (!existing && !offerOnly && row.sharedJan)
       reason =
         "Shared JAN: link a verified existing child SKU. New variant creation needs a confirmed identifier or exemption.";
-    else if (!existing && row.skuCandidates.length)
+    else if (!existing && !offerOnly && row.skuCandidates.length)
       reason =
         "An Amazon SKU already uses this JAN. Verify and save its mapping first.";
-    else if (!existing && !/^\d{13}$/.test(row.jan))
+    else if (!existing && !offerOnly && !/^\d{13}$/.test(row.jan))
       reason = "A valid manufacturer EAN/JAN is needed for creation.";
-    else if (!existing && !listing)
+    else if (!existing && !offerOnly && !listing)
       reason =
         "Create the local product listing with its title and images first.";
     else if (
@@ -336,6 +399,26 @@ export function projectPreparation(
               ],
             },
           };
+      } else if (offerOnly) {
+        entry = {
+          itemKey: row.key,
+          sku: row.sku || row.key,
+          method: "PUT",
+          body: {
+            productType: "PRODUCT",
+            requirements: "LISTING_OFFER_ONLY",
+            attributes: {
+              merchant_suggested_asin: [
+                { value: asin, marketplace_id: UK_MARKETPLACE },
+              ],
+              condition_type: [
+                { value: "new_new", marketplace_id: UK_MARKETPLACE },
+              ],
+              purchasable_offer: offer,
+              fulfillment_availability: availability,
+            },
+          },
+        };
       } else {
         // This path deliberately prepares a single distinct GTIN product, never
         // infers exemptions or creates a COLOR family from a shared barcode.
@@ -369,7 +452,16 @@ export function projectPreparation(
       }
     }
     const job = latestJobs.get(row.key);
-    return { row, decision, price, productType, reason, entry, job };
+    return {
+      row,
+      decision,
+      price,
+      productType,
+      reason,
+      entry,
+      job,
+      offerMatch,
+    };
   });
 }
 

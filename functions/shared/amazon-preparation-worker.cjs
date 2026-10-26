@@ -79,8 +79,35 @@ function validateRequest(d) {
       throw Error(
         "Existing listings may update only price and merchant-fulfilled quantity.",
       );
+    const offerOnly =
+      e.method === "PUT" && e.body.requirements === "LISTING_OFFER_ONLY";
+    if (
+      offerOnly &&
+      (e.body.productType !== "PRODUCT" ||
+        !/^[A-Z0-9]{10}$/.test(
+          attributes?.merchant_suggested_asin?.[0]?.value || "",
+        ) ||
+        attributes.merchant_suggested_asin.length !== 1 ||
+        attributes.merchant_suggested_asin[0].marketplace_id !== UK ||
+        attributes?.condition_type?.length !== 1 ||
+        attributes.condition_type[0].value !== "new_new" ||
+        attributes.condition_type[0].marketplace_id !== UK ||
+        Object.keys(attributes).some(
+          (k) =>
+            ![
+              "merchant_suggested_asin",
+              "condition_type",
+              "purchasable_offer",
+              "fulfillment_availability",
+            ].includes(k),
+        ))
+    )
+      throw Error(
+        "Offer-only submissions require an exact UK ASIN and offer fields only.",
+      );
     if (
       e.method === "PUT" &&
+      !offerOnly &&
       (e.body.requirements !== "LISTING" ||
         attributes?.supplier_declared_has_product_identifier_exemption ||
         attributes?.parentage_level ||
@@ -111,7 +138,7 @@ function validateRequest(d) {
       throw Error(
         "Stock must be a non-negative whole number of merchant-fulfilled units.",
       );
-    if (e.method === "PUT" && (!stock || !offers))
+    if (e.method === "PUT" && (!stock || !offers || stock[0].quantity <= 0))
       throw Error("New products require a price and stock quantity.");
   }
 }

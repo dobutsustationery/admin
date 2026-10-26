@@ -78,14 +78,14 @@ function page(
     state = reduceAmazonAudit(state, e);
   return state;
 }
-describe("Amifa audit replay", () => {
+describe("Whole catalogue audit replay", () => {
   it("reassembles response-before-chunk input, scopes sellers and refuses stale observations", () => {
     let s = reduceAmazonAudit(undefined, job());
     s = page(s, { items: [item] }, 100, "seller", true);
     s = page(s, { items: [{ ...item, summaries: [] }] }, 50);
     s = page(s, { items: [{ ...item, summaries: [] }] }, 200, "other-seller");
     const rows = projectAmazonAudit(s, inventory, {});
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows.find((r) => r.key === "blue")).toMatchObject({
       health: "Active",
       price: "GBP 4",
@@ -98,6 +98,7 @@ describe("Amifa audit replay", () => {
       health: "Not linked",
       sku: "",
     });
+    expect(rows.find((r) => r.key === "other")?.title).toBe("Zebra pen");
     expect(s.chunks).toEqual({});
   });
   it("does not confuse acceptance, zero stock, parents, or explicit blocking errors", () => {
@@ -142,9 +143,9 @@ describe("Amifa audit replay", () => {
         },
       });
     expect(
-      projectAmazonAudit(s, inventory, {}).every((r) =>
-        r.detail.includes("Multiple inventory"),
-      ),
+      projectAmazonAudit(s, inventory, {})
+        .filter((r) => r.key !== "other")
+        .every((r) => r.detail.includes("Multiple inventory")),
     ).toBe(true);
     s = reduceAmazonAudit(s, {
       type: "amazonAudit/map",
@@ -184,7 +185,7 @@ describe("Amifa audit replay", () => {
     let state = rootReducer(undefined, { type: "@@INIT" });
     state = { ...state, inventory: { ...state.inventory, ...inventory } };
     state = rootReducer(state, job());
-    expect(state.amazonAudit.rows).toHaveLength(2);
+    expect(state.amazonAudit.rows).toHaveLength(3);
     expect(
       JSON.stringify(rootReducer(state, { type: "unrelated" }).amazonAudit),
     ).toBe(JSON.stringify(state.amazonAudit));
