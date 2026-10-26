@@ -3,6 +3,43 @@
   import { store } from "$lib/store";
   import SyncQueueStatusBar from "$lib/components/SyncQueueStatusBar.svelte";
 
+  import { onDestroy } from "svelte";
+  import {
+    collection,
+    query,
+    orderBy,
+    limit,
+    onSnapshot,
+  } from "firebase/firestore";
+  import { firestore } from "$lib/firebase";
+  import { user } from "$lib/user-store";
+  let scan: any = null;
+  let scanError = "";
+  let listeningFor = "";
+  let stopScan = () => {};
+  $: if (($user?.uid || "") !== listeningFor) {
+    stopScan();
+    listeningFor = $user?.uid || "";
+    scan = null;
+    scanError = "";
+    if (listeningFor)
+      stopScan = onSnapshot(
+        query(
+          collection(firestore, "amazon_catalog_scans"),
+          orderBy("startedAt", "desc"),
+          limit(1),
+        ),
+        (snapshot) => {
+          scan = snapshot.docs[0]?.data() || null;
+          scanError = "";
+        },
+        (error) => {
+          scanError = `Amazon scan progress unavailable: ${error.message}`;
+        },
+      );
+  }
+  onDestroy(() => stopScan());
+
   // The hedgehog progress is global, so we always show it inside the sticky container
   // if it wants to be visible.
   $: syncQueue = $store.syncQueue;
@@ -12,10 +49,13 @@
   class="sticky-banner-container"
   class:has-content={syncQueue?.queuedCount > 0 ||
     syncQueue?.processingCount > 0 ||
-    $activeBanners.length > 0}
+    $activeBanners.length > 0 ||
+    scan?.status === "running" ||
+    Boolean(scanError)}
 >
   <!-- Hedgehog Global Sync Status -->
-  <SyncQueueStatusBar {syncQueue} />
+  <SyncQueueStatusBar {syncQueue} {scan} />
+  {#if scanError}<p role="alert">{scanError}</p>{/if}
 
   <!-- Dynamic Banners from Pages -->
   {#each $activeBanners as banner (banner.id)}

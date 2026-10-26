@@ -1442,6 +1442,18 @@ exports.amazonPreparationWorker = onSchedule({
   schedule: "every 1 minutes", timeoutSeconds: 300, memory: "512MiB", maxInstances: 1, concurrency: 1,
 }, () => amazonPreparationWorker.tick());
 
+const catalogScan = require("./shared/amazon-catalog-scan.cjs");
+const amazonCatalogScanner = catalogScan.createWorker({db,getConfig:getAmazonConfig,getToken:fetchAmazonLwaAccessToken,
+ loadHistory:async()=>{const history=await db.collection("broadcast").where("type","==","amazonCatalog/apply_probe_chunk").get();return history.docs.flatMap(d=>d.data().payload?.responses||[]);},
+ search: args => searchAmazonCatalogByJan({...args,identifiersType:"JAN",includedData:["summaries","identifiers","images","productTypes"],locale:"en_GB"})});
+exports.amazonCatalogScanRequest = onDocumentCreated({document:"request_amazon_catalog_scan/{requestId}",timeoutSeconds:120,memory:"512MiB",maxInstances:1,concurrency:1,retry:true},async event=>{
+ const data=event.data?.data();if(!data)return;
+ try { catalogScan.validate(data); } catch(e) { await event.data.ref.update({error:e.message});return; }
+ try {await amazonCatalogScanner.enqueue(event.params.requestId,data);} catch(e){await event.data.ref.update({error:e.message});throw e;}
+ await amazonCatalogScanner.tick();
+});
+exports.amazonCatalogScanWorker = onSchedule({schedule:"every 1 minutes",timeoutSeconds:120,memory:"512MiB",maxInstances:1,concurrency:1},()=>amazonCatalogScanner.tick());
+
 exports.amazonCatalogProbeRequest = onDocumentCreated(
   {
     document: `${AMAZON_CATALOG_PROBE_REQUEST_COLLECTION}/{requestId}`,

@@ -4,17 +4,34 @@
   import type { SyncQueueState } from "$lib/sync-queue-slice";
 
   export let syncQueue: SyncQueueState;
+  export let scan: any = null;
+  $: scanning = scan?.status === "running";
+  $: scanTotal = scan
+    ? scan.limit === null
+      ? scan.jans.length
+      : Math.min(scan.limit, scan.jans.length)
+    : 0;
+  $: scanDone = scan ? (scan.limit === null ? scan.cursor : scan.searched) : 0;
+  $: scanPercent = scanTotal
+    ? Math.min(100, Math.round((scanDone / scanTotal) * 100))
+    : 0;
+  $: scanSummary = scanning
+    ? `${scanDone} / ${scanTotal} ${scan.limit === null ? "barcodes reviewed" : "lookups completed"}; ${scan.matched} matches, ${scan.noMatch} no match, ${scan.failed} failed, ${scan.skipped} skipped`
+    : "";
 
   $: queued = syncQueue?.queuedCount || 0;
-  $: processing = syncQueue?.processingCount || 0;
+  $: processing = (syncQueue?.processingCount || 0) + (scanning ? 1 : 0);
   $: failedRecent = syncQueue?.failedRecentCount || 0;
   $: completedRecent = syncQueue?.completedRecentCount || 0;
   $: activeTotal = queued + processing;
   $: hasActiveWork = activeTotal > 0;
   $: currentJob = syncQueue?.currentJob || null;
 
-  $: queueProgress =
-    activeTotal === 0 ? 0 : Math.round((processing / activeTotal) * 100);
+  $: queueProgress = scanning
+    ? scanPercent
+    : activeTotal === 0
+      ? 0
+      : Math.round((processing / activeTotal) * 100);
   $: showBarberPole = processing > 0 && !isAutomatedUi;
   $: visible = !isAutomatedUi && (hasActiveWork || celebrationPhase !== "idle");
 
@@ -50,8 +67,9 @@
       rootEl?.offsetHeight ||
       96;
     celebrationReason =
-      failedRecent > 0
-        ? `Queue drained with ${failedRecent} recent failure${failedRecent === 1 ? "" : "s"}`
+      failedRecent > 0 ||
+      (scan?.failed > 0 && Date.now() - scan.updatedAt < 60000)
+        ? "Finished with failures. Check the scan or queue for details."
         : "All Done!";
     celebrationPhase = "expanding";
     expandTimer = setTimeout(() => {
@@ -175,7 +193,9 @@
         <div class="title-wrap">
           <div class="eyebrow">Sync Patrol</div>
           <div class="title">
-            {#if currentJob}
+            {#if scanning}
+              Amazon: scanning inventory for ASINs
+            {:else if currentJob}
               {prettyDomain(currentJob.domain)}: {prettyEventType(
                 currentJob.latestEventType,
               )}
@@ -185,7 +205,11 @@
           </div>
         </div>
         <div class="badge-cluster">
-          <a class="open-link" href="/sync-status">Open Queue</a>
+          <a
+            class="open-link"
+            href={scanning ? "/amazon-listings" : "/sync-status"}
+            >{scanning ? "View scan" : "Open Queue"}</a
+          >
           <span class="badge badge-processing">{processing} active</span>
           <span class="badge badge-queued">{queued} queued</span>
           {#if failedRecent > 0}
@@ -196,8 +220,12 @@
 
       <div class="meter-wrap">
         <div class="meter-label-row">
-          <span>Queue meter</span>
-          <span>{processing} processing / {activeTotal} active</span>
+          <span>{scanning ? "ASIN scan" : "Queue meter"}</span>
+          <span
+            >{scanning
+              ? scanSummary
+              : `${processing} processing / ${activeTotal} active`}</span
+          >
         </div>
         <div
           class="meter"
@@ -205,15 +233,17 @@
           aria-valuemin="0"
           aria-valuemax="100"
           aria-valuenow={queueProgress}
-          aria-valuetext={`${processing} processing and ${queued} queued jobs`}
+          aria-valuetext={scanning
+            ? scanSummary
+            : `${processing} processing and ${queued} queued jobs`}
         >
           <div
             class="meter-segment meter-processing"
-            style={`width:${activeTotal ? (processing / activeTotal) * 100 : 0}%`}
+            style={`width:${scanning ? scanPercent : activeTotal ? (processing / activeTotal) * 100 : 0}%`}
           ></div>
           <div
             class="meter-segment meter-queued"
-            style={`width:${activeTotal ? (queued / activeTotal) * 100 : 0}%`}
+            style={`width:${scanning ? 0 : activeTotal ? (queued / activeTotal) * 100 : 0}%`}
           ></div>
           {#if showBarberPole}
             <div class="meter-barber"></div>
@@ -223,7 +253,12 @@
 
       <div class="meta-row">
         <div>
-          {#if currentJob}
+          {#if scanning}
+            <span
+              >{scan.lastError ||
+                "Running on the server. You can close the browser."}</span
+            >
+          {:else if currentJob}
             <strong>{currentJob.requestId}</strong>
             {#if currentJob.processor}
               <span class="muted"> • {currentJob.processor}</span>
