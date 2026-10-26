@@ -110,7 +110,7 @@ describe("customs Sheets transport", () => {
     ).rejects.toThrow("Google 503");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
-  it("rejects non-Sheets URLs and selecting a workbook twice", async () => {
+  it("rejects non-Sheets URLs and selecting the same source tab twice", async () => {
     expect(
       sheetIdFromUrl(
         "https://docs.google.com/spreadsheets/d/abcdefghijk/edit#gid=1",
@@ -118,7 +118,71 @@ describe("customs Sheets transport", () => {
     ).toBe("abcdefghijk");
     expect(() => sheetIdFromUrl("https://example.com/private")).toThrow();
     await expect(
-      readCustomsInput("same", "Product List", "same", "出荷明細書"),
-    ).rejects.toThrow("separate");
+      readCustomsInput("same", "Product List", "same", "Product List"),
+    ).rejects.toThrow("different tabs");
+  });
+  it("reads separate order and shipping tabs from one workbook", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        const u = new URL(url);
+        let body: any;
+        if (u.hostname === "www.googleapis.com") {
+          body = {
+            id: "shared-workbook",
+            name: "Combined supplier workbook",
+            mimeType: "application/vnd.google-apps.spreadsheet",
+            version: "1",
+            modifiedTime: "2026-10-13T12:00:00Z",
+          };
+        } else if (u.pathname.includes("/values/")) {
+          body = {
+            values: [
+              [
+                decodeURIComponent(u.pathname.split("/values/")[1]).startsWith(
+                  "'Order'",
+                )
+                  ? "order row"
+                  : "shipping row",
+              ],
+            ],
+          };
+        } else {
+          body = {
+            sheets: [
+              {
+                properties: {
+                  title: "Order",
+                  sheetId: 1,
+                  gridProperties: { rowCount: 1 },
+                },
+              },
+              {
+                properties: {
+                  title: "Shipping",
+                  sheetId: 2,
+                  gridProperties: { rowCount: 1 },
+                },
+              },
+            ],
+          };
+        }
+        return { ok: true, json: async () => body };
+      }),
+    );
+    const input = await readCustomsInput(
+      "shared-workbook",
+      "Order",
+      "shared-workbook",
+      "Shipping",
+    );
+    expect(input.order.id).toBe(input.shipping.id);
+    expect(input.order.sheetId).toBe(1);
+    expect(input.shipping.sheetId).toBe(2);
+    expect(input.order.rows).toEqual([["order row"]]);
+    expect(input.shipping.rows).toEqual([["shipping row"]]);
+    expect(calls.filter((url) => url.includes("/values/"))).toHaveLength(2);
   });
 });

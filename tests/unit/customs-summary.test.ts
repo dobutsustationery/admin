@@ -417,3 +417,193 @@ describe("customs report event replay", () => {
     expect(report(s).exports.run1.verified).toBe(false);
   });
 });
+
+describe("customs source diagnostics", () => {
+  it("identifies the order tab, row and exact missing headers in a shared workbook", () => {
+    const raw = input();
+    raw.order.name = raw.shipping.name = "Invoice_BU268EL_1005";
+    raw.order.tab = "Invoice";
+    raw.order.sheetId = 1327400919;
+    raw.order.rows = [
+      ...Array.from({ length: 19 }, () => []),
+      [
+        "Bar-Code No.",
+        "ORDER Q'ty PCS",
+        "Unrecognized price",
+        "Unrecognized origin",
+        "Unrecognized weight",
+      ],
+    ];
+    const issues = report(replay(factEvents(raw))).projection.issues.join(" ");
+    expect(issues).toContain(
+      'Order source "Invoice_BU268EL_1005", tab "Invoice" (gid 1327400919), header row 20',
+    );
+    expect(issues).toContain(
+      "price per piece, country of origin, weight per piece in grams",
+    );
+    expect(issues).not.toContain("carton number");
+    expect(issues).toContain("Found headers:");
+  });
+  it("identifies the shipping tab when its JAN header is not recognized", () => {
+    const raw = input();
+    raw.shipping.name = "Invoice_BU268EL_1005";
+    raw.shipping.tab = "Packing List";
+    raw.shipping.rows = [["Unknown product ID", "Packing (Unit)", "CTN No."]];
+    const issues = report(replay(factEvents(raw))).projection.issues.join(" ");
+    expect(issues).toContain(
+      'Shipping source "Invoice_BU268EL_1005", tab "Packing List"',
+    );
+    expect(issues).toContain("JAN header not found");
+  });
+});
+
+describe("Amifa customs sources", () => {
+  const amifa = () => {
+    const raw = input();
+    raw.order.tab = "Invoice";
+    raw.shipping.tab = "Packing List";
+    raw.order.id = raw.shipping.id = "combined-workbook";
+    raw.order.rows = [
+      ...Array.from({ length: 11 }, () => []),
+      ["Invoice No.", "TEST-AMIFA"],
+      ...Array.from({ length: 7 }, () => []),
+      [
+        "Bar-Code No.",
+        "Product name",
+        "Q'ty per UNIT",
+        "PCS Price JPY",
+        "UNIT Price JPY",
+        "ORDER Q'ty PCS",
+        "AMOUNT",
+        "Place of Origin",
+        "Unit Weight ( g )",
+        "Total Weight ( g )",
+      ],
+      [4542804119084, "Notebook", 12, 62, 744, 24, 1488, "China", 105, 2520],
+      [
+        4542804050851,
+        "Sticky notes",
+        12,
+        62,
+        744,
+        36,
+        2232,
+        "China",
+        24.583333333333332,
+        885,
+      ],
+      ["", "", "", "", "", 60, 3720, "", "", 3405],
+      ["1/ Supplier terms", ""],
+    ];
+    raw.shipping.rows = [
+      ["Invoice No.", "TEST-AMIFA"],
+      ["Item No.", "Packing (Unit)", "CTN No."],
+      [4542804119084, 2, 1],
+      [4542804050851, 1, ""],
+      [4542804050851, 2, 2],
+    ];
+    return raw;
+  };
+  it("uses piece prices, converts packs, carries carton IDs and reconciles formula weights", () => {
+    const p = report(replay(factEvents(amifa()))).projection;
+    expect(p.invoice).toBe("TEST-AMIFA");
+    expect(p.products).toHaveLength(2);
+    expect(p.products.map((v: any) => v.price)).toEqual([62, 62]);
+    expect(p.allocations.map((v: any) => [v.carton, v.qty])).toEqual([
+      ["1", 24],
+      ["1", 12],
+      ["2", 24],
+    ]);
+    expect(p.totals).toMatchObject({ pieces: 60, yen: 3720, netKg: 3.405 });
+    expect(
+      p.issues.filter((v: string) =>
+        /row|quantity|shipped|total|valid unit|Invoice numbers/.test(v),
+      ),
+    ).toEqual([]);
+    expect(
+      p.excluded.some((v: string) => v.includes("supplier notes/terms")),
+    ).toBe(true);
+  });
+  it("preserves calculated weights when saving them through a text input", () => {
+    const initial = replay(factEvents(amifa()));
+    const before = report(initial).projection;
+    const next = replay(
+      [
+        customsDecision({
+          reportId,
+          jans: ["4542804050851"],
+          decision: {
+            grams: String(before.products[1].grams),
+            origin: "China",
+          },
+        }),
+      ],
+      initial,
+    );
+    expect(report(next).projection.totals).toEqual(before.totals);
+    expect(report(next).projection.issues).toEqual(before.issues);
+  });
+  it.each(["", "NaN", "Infinity", "-18.5", "18.5 grams", "9".repeat(400)])(
+    "still rejects invalid saved weights: %s",
+    (grams) => {
+      const next = replay([
+        ...factEvents(amifa()),
+        customsDecision({
+          reportId,
+          jans: ["4542804050851"],
+          decision: { grams },
+        }),
+      ]);
+      expect(
+        report(next).projection.issues.some((v: string) =>
+          v.includes("valid unit grams"),
+        ),
+      ).toBe(true);
+      expect(report(next).projection.ready).toBe(false);
+    },
+  );
+  it("blocks pack conversion without a valid pack size", () => {
+    const raw = amifa();
+    raw.order.rows[20][2] = "";
+    const p = report(replay(factEvents(raw))).projection;
+    expect(p.ready).toBe(false);
+    expect(p.issues.some((v: string) => v.includes("Q'ty per UNIT"))).toBe(
+      true,
+    );
+    expect(
+      p.issues.some((v: string) => v.includes("ordered 24, shipped 0")),
+    ).toBe(true);
+  });
+  it("blocks missing initial cartons and quantity mismatches", () => {
+    const raw = amifa();
+    raw.shipping.rows[2][2] = "";
+    raw.shipping.rows[4][1] = 1;
+    const p = report(replay(factEvents(raw))).projection;
+    expect(p.ready).toBe(false);
+    expect(p.issues.some((v: string) => v.includes("single carton ID"))).toBe(
+      true,
+    );
+    expect(p.issues.some((v: string) => v.includes("ordered 36"))).toBe(true);
+  });
+  it("checks standalone weight totals and malformed product rows", () => {
+    const raw = amifa();
+    raw.order.rows.push(["", "", "", "", "", "", "", "", "", 9999]);
+    raw.order.rows.push([
+      "bad-jan",
+      "Broken product",
+      12,
+      62,
+      744,
+      12,
+      744,
+      "China",
+      1,
+      12,
+    ]);
+    const p = report(replay(factEvents(raw))).projection;
+    expect(
+      p.issues.some((v: string) => v.includes("supplier product weights")),
+    ).toBe(true);
+    expect(p.issues.some((v: string) => v.includes("invalid JAN"))).toBe(true);
+  });
+});

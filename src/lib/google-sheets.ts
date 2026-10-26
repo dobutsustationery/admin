@@ -136,8 +136,10 @@ export async function readCustomsInput(
   shippingId: string,
   shippingTab: string,
 ): Promise<CustomsInput> {
-  if (orderId === shippingId)
-    throw new Error("Select separate order and shipping spreadsheets.");
+  if (orderId === shippingId && orderTab === shippingTab)
+    throw new Error(
+      "Select different tabs for the order and shipping sources.",
+    );
   const [order, shipping, book] = await Promise.all([
     source(orderId, orderTab, "AZ"),
     source(shippingId, shippingTab, "AZ"),

@@ -45,6 +45,8 @@
     shippingTab = "出荷明細書";
   let orderTabs: string[] = [],
     shippingTabs: string[] = [];
+  let reading = false,
+    readError = "";
   let busy = false,
     error = "",
     message = "";
@@ -166,8 +168,10 @@
     });
   }
   async function read() {
+    reading = true;
+    readError = "";
     await work(async () => {
-      if (!report) return;
+      if (!report) throw new Error("Choose a report before reading sources.");
       const input = await readCustomsInput(
         sheetIdFromUrl(orderId),
         orderTab,
@@ -193,6 +197,8 @@
       message =
         "Source data saved. Review the classifications and summary below.";
     });
+    readError = error;
+    reading = false;
   }
   async function exportReport(runId?: string) {
     await work(async () => {
@@ -273,7 +279,9 @@
   {#if !$store.inventory.initialized}<p role="status">
       Waiting for inventory and saved reports to finish loading…
     </p>{/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error && error !== readError}<p class="error" role="alert">
+      {error}
+    </p>{/if}
   {#if message}<p role="status">{message}</p>{/if}
   <fieldset disabled={busy || !$store.inventory.initialized}>
     <legend>Saved reports</legend>
@@ -327,8 +335,9 @@
           >Connect Google</button
         ><button on:click={loadFiles}>Refresh spreadsheet list</button>
         <p>
-          Choose two native Google Sheets. For Excel files, first use “Save as
-          Google Sheets” in Google. Only one shipping tab is used.
+          Choose an order tab and a shipping tab, either in the same Google
+          spreadsheet or in separate spreadsheets. For Excel files, first use
+          “Save as Google Sheets” in Google. Only one shipping tab is used.
         </p>
         <div class="sources">
           <div>
@@ -370,10 +379,16 @@
           disabled={!orderId || !shippingId || !orderTab || !shippingTab}
           class="primary"
           on:click={read}
-          >{report.input
-            ? "Read sources again (resets HS decisions if changed)"
-            : "Read and reconcile sources"}</button
+          >{reading
+            ? "Reading and reconciling sources..."
+            : report.input
+              ? "Read sources again (resets HS decisions if changed)"
+              : "Read and reconcile sources"}</button
         >
+        {#if reading}<p role="status">
+            Reading Google Sheets and saving source data...
+          </p>{/if}
+        {#if readError}<p class="error" role="alert">{readError}</p>{/if}
         {#if report.input}<p>
             <a
               href={`https://docs.google.com/spreadsheets/d/${report.input.order.id}/edit#gid=${report.input.order.sheetId}`}

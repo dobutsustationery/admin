@@ -21,8 +21,10 @@ export const identifier = (v: unknown) => {
   return s;
 };
 const num = (v: unknown) => {
+  // Sheets formula results can contain normal floating-point tails.
+  if (typeof v === "number") return Number.isFinite(v) && v >= 0 ? v : NaN;
   const s = text(v);
-  return /^\d+(\.\d{1,6})?$/.test(s) && Number.isFinite(Number(s))
+  return /^\d+(\.\d+)?$/.test(s) && Number.isFinite(Number(s))
     ? Number(s)
     : NaN;
 };
@@ -46,41 +48,104 @@ function apportioned(values: number[], total: number, scale: number): number[] {
 }
 
 function mapping(source: CustomsSource, shipping: boolean) {
+  const label = `${shipping ? "Shipping" : "Order"} source "${source.name}", tab "${source.tab}" (gid ${source.sheetId})`;
+  const janHeader = shipping
+    ? /^(jan[ _-]?code|bar-code no\.|item no\.)$/
+    : /^(jan[ _-]?code|bar-code no\.)$/;
   const h = source.rows.findIndex((r) =>
-    r.some((v) => /^(jan[ _-]?code|bar-code no\.)$/.test(header(v))),
+    r.some((v) => janHeader.test(header(v))),
   );
-  if (h < 0) throw new Error(`${source.name}: JAN header not found`);
-  const columns = source.rows[h].map(header);
+  if (h < 0)
+    throw new Error(
+      `${label}: JAN header not found. Expected "JAN code" or "Bar-Code No.".`,
+    );
+  const first = source.rows[h].map(header);
+  const senshu =
+    first.includes("description") &&
+    first.includes("materials") &&
+    first.includes("ex-factory") &&
+    first.includes("unit");
+  const twoRows =
+    senshu &&
+    !shipping &&
+    !text(source.rows[h + 1]?.[first.findIndex((v) => janHeader.test(v))]) &&
+    source.rows[h + 1]?.some((v) => /weight.*gr/i.test(text(v)));
+  const columns = first.map((v, i) =>
+    twoRows ? header(`${v} ${text(source.rows[h + 1]?.[i])}`) : v,
+  );
+
   const find = (re: RegExp) => columns.findIndex((v) => re.test(v));
   const m = {
-    jan: find(/^(jan[ _-]?code|bar-code no\.)$/),
+    jan: find(janHeader),
     qty: find(
-      shipping ? /delivery quantity|shipped.*pcs/ : /order.*q.*pcs|^total pcs$/,
+      shipping
+        ? /delivery quantity|shipped.*pcs|^packing \(unit\)$/
+        : /order.*q.*pcs|^total pcs$/,
     ),
-    description: find(/product name|product description/),
+    description: find(/product name|product description|^description$/),
     manufacturer: find(/manufacturer/),
-    material: find(/^material$/),
-    origin: find(/country of origin|^origin$/),
-    weight: find(/weight in grams|per piece.*\(g\)/),
-    price: find(/wholesale price|unit price/),
-    total: find(/total wholesale/),
+    material: find(/^materials?$/),
+    origin: find(/country of origin|place of origin|^origin$/),
+    weight: find(
+      /weight in grams|per piece.*\(g\)|^unit weight \(\s*gr?\s*\)$/,
+    ),
+    // Amifa UNIT Price is the pack price; PCS Price must take precedence.
+    price:
+      find(/^pcs price jpy$/) >= 0
+        ? find(/^pcs price jpy$/)
+        : find(/wholesale price|unit price/),
+    piecesPerPack: find(/^q'ty per unit$/),
+    total: find(/total wholesale|^amount$/),
     totalWeight: find(/^total weight/),
-    carton: find(/box number|carton/),
+    carton: find(/box number|carton|^ctn no\.$/),
     hs: find(/hs[ -]?code/),
   };
-  if (
-    m.qty < 0 ||
-    (shipping ? m.carton < 0 : [m.price, m.origin, m.weight].some((v) => v < 0))
-  )
+  if (senshu) {
+    m.qty = shipping
+      ? columns.findIndex(
+          (v, i) => v === "total" && columns[i + 1] === "ex-factory",
+        )
+      : find(/^total pcs$/);
+    if (!shipping) {
+      m.price = find(/^ex-factory jpy$/);
+      m.total = find(/^total amount jpy$/);
+    }
+  }
+  const required = shipping
+    ? [
+        { index: m.qty, name: "shipped quantity in pieces" },
+        { index: m.carton, name: "carton number" },
+      ]
+    : [
+        { index: m.qty, name: "ordered quantity in pieces" },
+        { index: m.price, name: "price per piece" },
+        { index: m.origin, name: "country of origin" },
+        { index: m.weight, name: "weight per piece in grams" },
+      ];
+  const missing = required
+    .filter((field) => field.index < 0)
+    .map((field) => field.name);
+  if (missing.length)
     throw new Error(
-      `${source.name}: required quantity/cost/origin/weight/carton headers missing`,
+      `${label}, header row ${h + 1}: unrecognized or missing ${missing.join(", ")}. Found headers: ${source.rows[
+        h
+      ]
+        .filter((v) => text(v))
+        .map((v) => text(v).replace(/\s+/g, " "))
+        .join("; ")}.`,
     );
-  return { h, m };
+  const packingUnits = shipping && columns[m.qty] === "packing (unit)";
+  return { h: h + (twoRows ? 1 : 0), m, packingUnits, senshu };
 }
-function invoice(s: CustomsSource): string {
-  for (const r of s.rows.slice(0, 10)) {
+function invoice(s: CustomsSource, headerRow: number): string {
+  for (const r of s.rows.slice(0, headerRow)) {
     const i = r.findIndex((v) => /invoice\s*no/i.test(text(v)));
-    if (i >= 0) return text(r.slice(i + 1).find((v) => text(v)));
+    if (i >= 0) {
+      const inline = text(r[i])
+        .replace(/^.*?invoice\s*no\.?\s*:?\s*/i, "")
+        .trim();
+      return inline || text(r.slice(i + 1).find((v) => text(v)));
+    }
   }
   return "";
 }
@@ -106,8 +171,8 @@ export function computeCustoms(report: CustomsReport): CustomsProjection {
   try {
     const om = mapping(order, false),
       sm = mapping(shipping, true);
-    p.invoice = invoice(order);
-    if (!p.invoice || p.invoice !== invoice(shipping))
+    p.invoice = invoice(order, om.h);
+    if (!p.invoice || p.invoice !== invoice(shipping, sm.h))
       p.issues.push(
         "Invoice numbers are missing or do not match. Correct the sources and read them again.",
       );
@@ -129,14 +194,39 @@ export function computeCustoms(report: CustomsReport): CustomsProjection {
       yen: number;
       grams: number;
     }[] = [];
+    let senshuFooter = false;
+    let senshuCharges = 0;
+    let senshuGrandTotal: number | null = null;
     for (let i = om.h + 1; i < order.rows.length; i++) {
       const row = order.rows[i],
         m = om.m,
         jan = identifier(row[m.jan]);
+      if (om.senshu && senshuFooter) {
+        if (/^\d{8,14}$/.test(jan) && num(row[m.qty]) > 0)
+          p.issues.push(
+            `Order row ${i + 1}: product appears after the subtotal; review source layout`,
+          );
+        if (/^domestic\s+logistic\s+charge/i.test(text(row[m.description]))) {
+          const charge = num(row[m.total]);
+          if (!Number.isFinite(charge))
+            p.issues.push(`Order row ${i + 1}: invalid logistics charge`);
+          else senshuCharges += charge;
+        }
+        if (row.some((v) => /^grand total$/i.test(text(v))))
+          senshuGrandTotal = num(row[m.total]);
+        if (row.some((v) => text(v)))
+          p.excluded.push(
+            `Order row ${i + 1}: non-product charges/payment/footer`,
+          );
+        continue;
+      }
+      if (om.senshu && row.some((v) => /^sub total$/i.test(text(v))))
+        senshuFooter = true;
       if (!jan && !text(row[m.description])) {
         if (
-          Number.isFinite(num(row[m.qty])) &&
-          Number.isFinite(num(row[m.total]))
+          (Number.isFinite(num(row[m.qty])) &&
+            Number.isFinite(num(row[m.total]))) ||
+          num(row[m.totalWeight]) > 0
         ) {
           footerTotals.push({
             row: i + 1,
@@ -147,6 +237,19 @@ export function computeCustoms(report: CustomsReport): CustomsProjection {
         }
         if (row.some((v) => text(v)))
           p.excluded.push(`Order row ${i + 1}: blank/product-free footer`);
+        continue;
+      }
+      // Supplier terms below the table are not product rows. Never skip a
+      // numeric product ID or a row with quantity, cost or weight data.
+      if (
+        jan &&
+        !/^\d+$/.test(jan) &&
+        !text(row[m.description]) &&
+        [m.qty, m.price, m.total, m.weight, m.totalWeight, m.origin].every(
+          (col) => !text(row[col]),
+        )
+      ) {
+        p.excluded.push(`Order row ${i + 1}: supplier notes/terms`);
         continue;
       }
       const qty = num(row[m.qty]);
@@ -296,10 +399,12 @@ export function computeCustoms(report: CustomsReport): CustomsProjection {
     }
     for (const f of footerTotals) {
       if (
-        f.qty !== sum(p.products.map((v) => v.qty)) ||
-        Math.abs(
-          f.yen - sum(p.products.map((v) => v.qty * units(v.price))) / 1e6,
-        ) > 0.000001
+        (Number.isFinite(f.qty) &&
+          f.qty !== sum(p.products.map((v) => v.qty))) ||
+        (Number.isFinite(f.yen) &&
+          Math.abs(
+            f.yen - sum(p.products.map((v) => v.qty * units(v.price))) / 1e6,
+          ) > 0.000001)
       )
         p.issues.push(
           `Order totals row ${f.row} disagrees with product quantities/value; resolve source totals`,
@@ -319,19 +424,68 @@ export function computeCustoms(report: CustomsReport): CustomsProjection {
           `Order totals row ${f.row} disagrees with supplier product weights`,
         );
     }
+    if (
+      senshuGrandTotal !== null &&
+      (!Number.isFinite(senshuGrandTotal) ||
+        Math.abs(
+          senshuGrandTotal -
+            sum(p.products.map((v) => v.qty * v.price)) -
+            senshuCharges,
+        ) > 0.000001)
+    )
+      p.issues.push(
+        "Invoice grand total disagrees with goods plus logistics charges",
+      );
     const shipped = new Map<string, number>();
     const seenShipping = new Set<string>();
+    let carriedCarton = "";
+    let shippingFooter = false;
     for (let i = sm.h + 1; i < shipping.rows.length; i++) {
       const row = shipping.rows[i],
         m = sm.m,
         jan = identifier(row[m.jan]);
+      if (sm.senshu && shippingFooter) {
+        if (/^\d{8,14}$/.test(jan) && num(row[m.qty]) > 0)
+          p.issues.push(
+            `Shipping row ${i + 1}: product appears after the subtotal; review source layout`,
+          );
+        if (row.some((v) => text(v)))
+          p.excluded.push(
+            `Shipping row ${i + 1}: non-product charges/payment/footer`,
+          );
+        continue;
+      }
+      if (sm.senshu && !jan && num(row[m.qty]) > 0) shippingFooter = true;
       if (!jan && !text(row[m.description])) {
         if (row.some((v) => text(v)))
           p.excluded.push(`Shipping row ${i + 1}: blank/product-free footer`);
         continue;
       }
-      const qty = num(row[m.qty]);
-      const carton = identifier(row[m.carton]);
+      let qty = num(row[m.qty]);
+      let carton = identifier(row[m.carton]);
+      if (sm.packingUnits || sm.senshu) {
+        // These supplier layouts leave repeated carton cells blank within a group.
+        if (carton) carriedCarton = carton;
+        else carton = carriedCarton;
+      }
+      if (sm.packingUnits) {
+        const product = index.get(jan);
+        const packSize = product
+          ? num(order.rows[product.row - 1][om.m.piecesPerPack])
+          : NaN;
+        if (
+          !Number.isSafeInteger(packSize) ||
+          packSize <= 0 ||
+          !Number.isSafeInteger(qty) ||
+          qty < 0
+        ) {
+          p.issues.push(
+            `Shipping source "${shipping.name}", tab "${shipping.tab}", row ${i + 1}: packing units require a whole-pack quantity and a positive whole-number Q'ty per UNIT on the matching invoice row (${jan}).`,
+          );
+          continue;
+        }
+        qty *= packSize;
+      }
       if (qty === 0) {
         p.excluded.push(`Shipping row ${i + 1}: zero quantity`);
         continue;
