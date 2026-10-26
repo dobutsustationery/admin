@@ -61,6 +61,36 @@ export interface ReceiptRow {
   matches: { id: string; subtype: string; available: number }[];
   defaultDecision: ReceiptDecision;
 }
+/** Suggested allocations only: saving the review still requires confirmation. */
+export function receiptReviewDecision(
+  row: ReceiptRow,
+  saved?: ReceiptDecision,
+): ReceiptDecision {
+  if (saved) return structuredClone(saved);
+  const decision = structuredClone(row.defaultDecision);
+  if (row.matches.length > 1) {
+    const each = Math.floor(row.expected / row.matches.length);
+    const remainder = row.expected % row.matches.length;
+    decision.allocations = row.matches.map((match, index) => ({
+      destination: "inventory",
+      itemKey: match.id,
+      subtype: "",
+      qty: String(each + (index < remainder ? 1 : 0)),
+    }));
+  }
+  return decision;
+}
+
+export function receiptReviewPrompt(row: ReceiptRow): string {
+  if (row.matches.length <= 1) return "Confirm count and quality.";
+  const names = row.matches.map((match) => match.subtype || "Default");
+  const choices =
+    names.length === 2
+      ? names.join(" and ")
+      : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+  return `Split ${row.expected} units between ${choices}.`;
+}
+
 export interface AssetAcceptance {
   jan: string;
   description: string;

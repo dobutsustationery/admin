@@ -10,6 +10,9 @@ import {
 } from "$lib/customs-summary-slice";
 import {
   receiptStart,
+  receiptReviewDecision,
+  receiptReviewPrompt,
+  type ReceiptRow,
   receiptConfirm,
   receiptLine,
   receiptFacts,
@@ -422,5 +425,90 @@ describe("order receipts", () => {
     s.complete();
     expect(s.get().completed).toBeUndefined();
     expect(s.get().projection.issues.join(" ")).toContain("packs/loose pieces");
+  });
+});
+
+describe("receipt variant review suggestions", () => {
+  const row = (expected: number, variants = ["Cat", "Dog"]): ReceiptRow => ({
+    jan: "4542804050851",
+    description: "Lazy Animals",
+    expected,
+    code: "48211010",
+    unitJpy: 62,
+    received: 0,
+    rejected: 0,
+    accepted: 0,
+    missing: expected,
+    confirmed: false,
+    matches: variants.map((subtype) => ({
+      id: "4542804050851" + subtype,
+      subtype,
+      available: 0,
+    })),
+    defaultDecision: {
+      received: String(expected),
+      rejected: "0",
+      note: "",
+      allocations: [
+        {
+          destination: "inventory",
+          itemKey: "",
+          subtype: "",
+          qty: String(expected),
+        },
+      ],
+    },
+  });
+  it("explains the ambiguity and suggests 18 Cat and 18 Dog without confirming", () => {
+    const source = row(36);
+    expect(receiptReviewPrompt(source)).toBe(
+      "Split 36 units between Cat and Dog.",
+    );
+    const decision = receiptReviewDecision(source);
+    expect(decision.allocations.map((a) => [a.itemKey, a.qty])).toEqual([
+      ["4542804050851Cat", "18"],
+      ["4542804050851Dog", "18"],
+    ]);
+    expect(source.confirmed).toBe(false);
+    expect(source.defaultDecision.allocations).toHaveLength(1);
+  });
+  it.each([25, 2, 0])(
+    "keeps whole units and preserves the total of %s across three variants",
+    (expected) => {
+      const allocations = receiptReviewDecision(
+        row(expected, ["Cat", "Dog", "Seal"]),
+      ).allocations;
+      const quantities = allocations.map((a) => Number(a.qty));
+      expect(quantities.every((q) => Number.isInteger(q) && q >= 0)).toBe(true);
+      expect(quantities.reduce((a, b) => a + b, 0)).toBe(expected);
+      expect(
+        Math.max(...quantities) - Math.min(...quantities),
+      ).toBeLessThanOrEqual(1);
+    },
+  );
+  it("preserves saved counts, rejections and allocations when reopening", () => {
+    const source = row(36);
+    const saved = {
+      received: "35",
+      rejected: "1",
+      note: "One missing, one damaged",
+      allocations: [
+        {
+          destination: "inventory" as const,
+          itemKey: "4542804050851Dog",
+          subtype: "",
+          qty: "34",
+        },
+      ],
+    };
+    const decision = receiptReviewDecision(source, saved);
+    expect(decision).toEqual(saved);
+    decision.allocations[0].qty = "1";
+    expect(saved.allocations[0].qty).toBe("34");
+  });
+  it("keeps the existing default for unambiguous products", () => {
+    const source = row(36, ["Cat"]);
+    expect(receiptReviewDecision(source)).toEqual(source.defaultDecision);
+    expect(receiptReviewPrompt(source)).toBe("Confirm count and quality.");
   });
 });

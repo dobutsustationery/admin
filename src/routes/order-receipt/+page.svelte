@@ -6,6 +6,8 @@
   import { broadcast } from "$lib/redux-firestore";
   import {
     receiptStart,
+    receiptReviewDecision,
+    receiptReviewPrompt,
     receiptOrderId,
     receiptLine,
     receiptConfirm,
@@ -109,7 +111,7 @@
   function edit(row: ReceiptRow) {
     editJan = row.jan;
     editRevision = receipt!.revision;
-    draft = structuredClone(receipt!.decisions[row.jan] || row.defaultDecision);
+    draft = receiptReviewDecision(row, receipt!.decisions[row.jan]);
   }
   async function saveLine() {
     if (!receipt || !draft) return;
@@ -339,7 +341,9 @@
                 >
                 <td
                   >{#if receipt.completed}Recorded{:else}
-                    {row.confirmed ? "Confirmed" : "Unreviewed"}
+                    {#if row.confirmed}Confirmed{:else}
+                      <p>{receiptReviewPrompt(row)}</p>
+                    {/if}
                     <button
                       disabled={busy || (!!editJan && editJan !== row.jan)}
                       on:click={() => edit(row)}>Review {row.jan}</button
@@ -369,6 +373,20 @@
       {#if editedRow && draft && !receipt.completed}
         <fieldset disabled={busy}>
           <legend>Inspect {editedRow.description} ({editedRow.jan})</legend>
+          {#if editedRow.matches.length > 1}
+            <p><strong>{receiptReviewPrompt(editedRow)}</strong></p>
+            {#if !receipt.decisions[editedRow.jan]}
+              <p>
+                An even split is suggested below. Check it against the delivered
+                goods and adjust the quantities before saving.
+                {#if editedRow.expected % editedRow.matches.length !== 0}
+                  The total does not divide evenly: the first
+                  {editedRow.expected % editedRow.matches.length} listed variant(s)
+                  have one extra unit. Confirm where those units belong.
+                {/if}
+              </p>
+            {/if}
+          {/if}
           <label
             >Actual received <input
               inputmode="numeric"
@@ -658,7 +676,14 @@
         {#if projection.issues.length}<details open>
             <summary>{projection.issues.length} checks to resolve</summary>
             <ul>
-              {#each projection.issues as issue}<li>{issue}</li>{/each}
+              {#each projection.issues as issue}
+                {@const row = projection.rows.find(
+                  (r) => issue === `${r.jan}: confirm count and quality.`,
+                )}
+                <li>
+                  {row ? `${row.jan}: ${receiptReviewPrompt(row)}` : issue}
+                </li>
+              {/each}
             </ul>
           </details>{/if}
         <button
