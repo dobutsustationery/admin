@@ -89,7 +89,6 @@
   );
   let audit: PhotoAudit | undefined;
   let selected = new Set<string>(),
-    picked: MediaItem[] = [],
     selecting = false;
   let pickerHref = "";
   let configureOpen = false;
@@ -441,11 +440,11 @@
     const p = entry.entryId === activeId ? parent() : undefined;
     await startRepairAttempt(entry, steps(), p?.id, p?.index);
   }
-  async function selectOriginals() {
+  async function selectOriginals(target?: EntryRecord) {
     const popup = window.open("about:blank", "_blank", "width=900,height=700");
     let session;
     try {
-      session = await createPickerSession();
+      session = await createPickerSession(target ? 1 : undefined);
     } catch (e) {
       popup?.close();
       throw e;
@@ -471,6 +470,14 @@
           stopPicker();
           const photos = await listSessionMediaItems(session.id);
           await work(async () => {
+            if (target) {
+              if (photos.length !== 1)
+                throw Error("Select one original for this photo.");
+              await importRepairOriginal(target, photos[0]);
+              message = "Original import requested for this photo.";
+              openEntry(target);
+              return;
+            }
             const root = store.getState() as any;
             const sources = repairSelectionSources(
               root,
@@ -481,7 +488,6 @@
               sources,
               photos,
             );
-            picked = unmatched;
             let requested = 0;
             let firstImported: EntryRecord | undefined;
             const failures: string[] = [];
@@ -495,7 +501,7 @@
                 failures.push(`${source.filename}: ${e.message}`);
               }
             }
-            message = `${requested} original imports requested. ${unmatched.length} selected photos did not match a repair needing an original.`;
+            message = `${requested} original imports requested. ${unmatched.length} extra selected photos ignored.`;
             if (failures.length) error = failures.join("; ");
             if (requested) {
               setPhase("repair");
@@ -745,10 +751,6 @@
           </table>
         </section>
       {/if}
-      {#if picked.length}<p>
-          {picked.length} selected photos could not be matched automatically. In Process
-          and review, open a photo to assign one if needed.
-        </p>{/if}
     </section>
   {:else}
     <div class="actions">
@@ -893,10 +895,10 @@
           <div class="actions">
             <button
               disabled={busy || selecting}
-              on:click={() => work(selectOriginals)}
+              on:click={() => work(() => selectOriginals(activeEntry()))}
               >{selecting
                 ? "Selecting in Google Photos…"
-                : "Select originals in Google Photos"}</button
+                : "Choose one original in Google Photos"}</button
             >
             <label class="upload"
               >Upload original <input
@@ -910,25 +912,6 @@
           {#if original?.result?.message}<p role="alert" class="error">
               {original.result.message}
             </p>{/if}
-          {#if picked.length}<p>
-              Choose the original for this image. Select another queue entry to
-              assign the remaining photos.
-            </p>
-            <div class="picked">
-              {#each picked as photo}<button
-                  disabled={busy}
-                  on:click={() =>
-                    work(async () => {
-                      await importRepairOriginal(activeEntry(), photo);
-                      picked = picked.filter((p) => p.id !== photo.id);
-                    })}
-                  ><SecureImage
-                    src={photo.baseUrl}
-                    alt={photo.filename}
-                    size="thumbnail"
-                  />{photo.filename}</button
-                >{/each}
-            </div>{/if}
           {#if existingPhotos.length}<details>
               <summary>Choose a photo already in the system</summary>
               <div class="picked">

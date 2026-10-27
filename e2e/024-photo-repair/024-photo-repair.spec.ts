@@ -719,12 +719,16 @@ test("selects originals first, matches a batch by ID and resumes processing afte
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="green"/></svg>',
     }),
   );
+  let singleSelection = false;
   await context.route("https://photospicker.googleapis.com/**", (route) => {
     const url = route.request().url();
+    if (route.request().method() === "POST")
+      singleSelection =
+        route.request().postDataJSON()?.pickingConfig?.maxItemCount === "1";
     if (url.includes("/mediaItems?"))
       return route.fulfill({
         json: {
-          mediaItems: [0, 1, 2].map((i) => ({
+          mediaItems: (singleSelection ? [2] : [0, 1, 2]).map((i) => ({
             id: `${key}-google-${i}`,
             createTime: "2026-05-03T12:00:00Z",
             mediaFile: {
@@ -824,7 +828,7 @@ test("selects originals first, matches a batch by ID and resumes processing afte
     await expect(
       page.getByRole("status").filter({
         hasText:
-          "2 original imports requested. 1 selected photos did not match",
+          "2 original imports requested. 1 extra selected photos ignored",
       }),
     ).toBeVisible();
     await expect(
@@ -832,6 +836,12 @@ test("selects originals first, matches a batch by ID and resumes processing afte
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Re-import original", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("Choose the original for this image.", { exact: false }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("img", { name: "original-2.HEIC", exact: true }),
     ).toHaveCount(0);
     const requests = await db
       .collection("request_photos_transfer")
@@ -905,6 +915,37 @@ test("selects originals first, matches a batch by ID and resumes processing afte
       path: "/tmp/photo-repair-selection-finished.png",
       fullPage: true,
     });
+    await page
+      .getByRole("button", { name: "Resume original-0.HEIC", exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: "Choose one original in Google Photos",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Original import requested for this photo." }),
+    ).toBeVisible();
+    expect(singleSelection).toBe(true);
+    await expect
+      .poll(async () => {
+        const docs = await db
+          .collection("broadcast")
+          .where("type", "==", "photoRepair/originalRequested")
+          .get();
+        return docs.docs.some(
+          (doc) =>
+            doc.data().payload?.sourceId === `${key}-source-0` &&
+            doc.data().payload?.choice?.mediaItemId === `${key}-google-2`,
+        );
+      })
+      .toBe(true);
+    await expect(
+      page.getByRole("img", { name: "original-2.HEIC", exact: true }),
+    ).toHaveCount(0);
   } finally {
     const requests = await db.collection("request_photos_transfer").get();
     for (const ref of requests.docs)

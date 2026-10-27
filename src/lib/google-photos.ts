@@ -174,7 +174,9 @@ export async function handleOAuthCallback(): Promise<{
 /**
  * Create a new Picker session
  */
-export async function createPickerSession(): Promise<PickerSession> {
+export async function createPickerSession(
+  maxItemCount?: number,
+): Promise<PickerSession> {
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");
 
@@ -186,7 +188,11 @@ export async function createPickerSession(): Promise<PickerSession> {
         Authorization: `Bearer ${token.access_token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify(
+        maxItemCount
+          ? { pickingConfig: { maxItemCount: String(maxItemCount) } }
+          : {},
+      ),
     },
   );
 
