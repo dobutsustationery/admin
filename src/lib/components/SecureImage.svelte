@@ -26,12 +26,32 @@
   let objectUrl: string = "";
   let error = "";
   let loading = true;
+  let displayedSize: ImageSize = size;
 
   import { imageQueue } from "$lib/image-queue";
 
   let shouldRun = true;
   let loadSeq = 0;
-  const dispatch = createEventDispatcher<{ loadsuccess: { src: string } }>();
+  const dispatch = createEventDispatcher<{
+    loadsuccess: {
+      src: string;
+      width: number;
+      height: number;
+      size: ImageSize;
+    };
+  }>();
+
+  function handleLoad(event: Event) {
+    loading = false;
+    error = "";
+    const image = event.currentTarget as HTMLImageElement;
+    dispatch("loadsuccess", {
+      src: objectUrl,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      size: displayedSize,
+    });
+  }
 
   async function fetchWithRetries(
     url: string,
@@ -160,6 +180,7 @@
     const seq = ++loadSeq;
     loading = true;
     error = "";
+    displayedSize = size;
     if (objectUrl && !objectUrl.startsWith("data:"))
       URL.revokeObjectURL(objectUrl);
     objectUrl = "";
@@ -186,6 +207,7 @@
           return;
         }
 
+        displayedSize = "preview";
         objectUrl = previewUrl;
         loading = false;
 
@@ -212,7 +234,18 @@
         }
 
         const oldUrl = objectUrl;
+        displayedSize = "full";
         objectUrl = fullUrl;
+        // Non-Google URLs may be identical for preview and full size, so the
+        // displayed img need not fire another load event when decoding finishes.
+        if (img.naturalWidth && img.naturalHeight) {
+          dispatch("loadsuccess", {
+            src: fullUrl,
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+            size: "full",
+          });
+        }
         if (oldUrl && oldUrl.startsWith("blob:")) URL.revokeObjectURL(oldUrl);
       } else {
         const url = await fetchImageData(size);
@@ -301,11 +334,7 @@
       error = "Failed to load image";
       loading = false;
     }}
-    on:load={() => {
-      loading = false;
-      error = "";
-      dispatch("loadsuccess", { src: objectUrl });
-    }}
+    on:load={handleLoad}
   />
 {/if}
 

@@ -53,6 +53,8 @@ describe("SecureImage - Progressive Loading", () => {
       "Image",
       class {
         src = "";
+        naturalWidth = 1927;
+        naturalHeight = 3211;
         decode = decodeMock;
       },
     );
@@ -72,6 +74,9 @@ describe("SecureImage - Progressive Loading", () => {
       },
     });
 
+    const onLoaded = vi.fn();
+    component.$on("loadsuccess", onLoaded);
+
     // Wait for async operations (the preview URL set)
     await new Promise((r) => setTimeout(r, 50));
 
@@ -83,6 +88,8 @@ describe("SecureImage - Progressive Loading", () => {
     expect(img!.src).toContain("=s800");
     expect(img!.src).not.toContain("=s0");
 
+    expect(onLoaded).not.toHaveBeenCalled();
+
     // Resolve the decode promise
     resolveDecode!();
 
@@ -93,6 +100,15 @@ describe("SecureImage - Progressive Loading", () => {
     expect(img!.src).toContain("=s0");
     expect(img!.src).not.toContain("=s800");
 
+    expect(onLoaded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          width: 1927,
+          height: 3211,
+          size: "full",
+        }),
+      }),
+    );
     component.$destroy();
   });
 });

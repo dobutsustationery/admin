@@ -16,6 +16,7 @@
   import { onMount, onDestroy } from "svelte";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
+  import PhotoRepairImage from "$lib/components/PhotoRepairImage.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ProcessingConfigModal from "$lib/components/ProcessingConfigModal.svelte";
@@ -771,7 +772,7 @@
         <div class="comparison">
           <div>
             <h3>{active.approvalId ? "Previous image" : "Current image"}</h3>
-            {#if activeTask?.url || active.oldImageUrl}<SecureImage
+            {#if activeTask?.url || active.oldImageUrl}<PhotoRepairImage
                 src={activeTask?.url || active.oldImageUrl}
                 alt="Current product image"
               />{:else}<p>
@@ -782,14 +783,14 @@
           </div>
           <div>
             <h3>New original</h3>
-            {#if original?.result?.artifact}<SecureImage
+            {#if original?.result?.artifact}<PhotoRepairImage
                 src={original.result.artifact.url}
                 alt="New original"
               />{:else}<p>Import an original below.</p>{/if}
           </div>
           <div>
             <h3>New candidate</h3>
-            {#if candidate}<SecureImage
+            {#if candidate}<PhotoRepairImage
                 src={candidate.url}
                 alt="New candidate"
               />{:else}<p>Process the original to make a candidate.</p>{/if}
@@ -1101,11 +1102,6 @@
   }
   .comparison > div {
     min-height: 260px;
-    overflow: hidden;
-  }
-  .comparison :global(img) {
-    max-height: 420px;
-    object-fit: contain;
   }
   a {
     color: #155e45;

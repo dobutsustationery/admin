@@ -86,12 +86,27 @@ test("repair candidates survive reload, redo and require approval before replace
     targets,
     evidence: { kind: "bad_import", transferEventIds: [] },
   });
+  const fullImage =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1927" height="3211"><rect width="1927" height="3211" fill="green"/></svg>';
   await context.route("https://example.com/**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "image/svg+xml",
-      body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="green"/></svg>',
+      body: route.request().url().includes("old-photo")
+        ? '<svg xmlns="http://www.w3.org/2000/svg" width="307" height="512"><rect width="307" height="512" fill="green"/></svg>'
+        : fullImage,
     }),
+  );
+  await context.route(
+    "https://lh3.googleusercontent.com/d/test-uploaded-original*",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        body: route.request().url().endsWith("=s800")
+          ? '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="800"><rect width="480" height="800" fill="green"/></svg>'
+          : fullImage,
+      }),
   );
   await context.addInitScript(() => {
     (window as any).__GOOGLE_DRIVE_FOLDER_ID__ = "test-root";
@@ -185,6 +200,17 @@ test("repair candidates survive reload, redo and require approval before replace
     });
     await expect(row).toContainText("Ready to process");
     await row.getByRole("button", { name: "Review", exact: true }).click();
+    const panels = page.locator(".comparison > div");
+    await expect(panels.nth(0).locator(".dimensions")).toHaveText(
+      "307 × 512 px",
+    );
+    await expect(panels.nth(1).locator(".dimensions")).toHaveText(
+      "1927 × 3211 px",
+    );
+    await panels.nth(1).locator(".thumbnail-container").hover();
+    await expect(page.locator(".image-preview-overlay")).toBeVisible();
+    await page.getByRole("heading", { level: 1 }).hover();
+
     await expect(
       page.getByRole("button", { name: "Approve and update", exact: true }),
     ).toBeDisabled();
@@ -217,6 +243,16 @@ test("repair candidates survive reload, redo and require approval before replace
     await expect(
       page.getByRole("button", { name: "Approve and update", exact: true }),
     ).toBeEnabled();
+    await expect(panels.nth(2).locator(".dimensions")).toHaveText(
+      "1927 × 3211 px",
+    );
+    await panels.nth(2).locator(".thumbnail-container").hover();
+    await expect(page.locator(".image-preview-overlay")).toBeVisible();
+    await page.screenshot({
+      path: "/tmp/photo-repair-comparison-hover.png",
+      fullPage: true,
+    });
+    await page.getByRole("heading", { level: 1 }).hover();
     const first = await db
       .collection("broadcast")
       .where("type", "==", "photoRepair/attemptStarted")
