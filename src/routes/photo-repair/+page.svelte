@@ -1,5 +1,9 @@
 <script lang="ts">
   import {
+    repairSelectionSources,
+    matchRepairSelections,
+  } from "$lib/photo-repair-selection";
+  import {
     stockedPhotoTasks,
     groupRepairPhotosByListing,
     taskAssessment,
@@ -58,6 +62,15 @@
     filter = "All",
     activeId = "";
   let mode = "Needs photos";
+  let phase = "selection";
+  let selectionDate = "";
+  $: selectionSources = repairSelectionSources($store, tasks, audit);
+  $: selectionDates = [...new Set(selectionSources.map((s) => s.date))];
+  $: if (!selectionDates.includes(selectionDate))
+    selectionDate = selectionDates[0] || "";
+  $: dateSources = selectionSources.filter(
+    (s) => !selectionDate || s.date === selectionDate,
+  );
   let audit: PhotoAudit | undefined;
   let selected = new Set<string>(),
     picked: MediaItem[] = [],
@@ -256,6 +269,10 @@
     if (cropUrl) URL.revokeObjectURL(cropUrl);
   });
   onMount(() => {
+    phase =
+      sessionStorage.getItem("photo-repair-phase") === "repair"
+        ? "repair"
+        : "selection";
     void loadPhotoAudit()
       .then((value) => (audit = value))
       .catch((e: Error) => (error = e.message));
@@ -320,7 +337,12 @@
       activeId = entryId || "";
     }
   }
+  function setPhase(value: string) {
+    phase = value;
+    sessionStorage.setItem("photo-repair-phase", value);
+  }
   function openEntry(e: EntryRecord) {
+    setPhase("repair");
     activeId = e.entryId;
     startAt = "original";
     error = "";
@@ -399,25 +421,69 @@
     await startRepairAttempt(entry, steps(), p?.id, p?.index);
   }
   async function selectOriginals() {
-    const session = await createPickerSession();
+    const popup = window.open("about:blank", "_blank", "width=900,height=700");
+    let session;
+    try {
+      session = await createPickerSession();
+    } catch (e) {
+      popup?.close();
+      throw e;
+    }
     pickerHref = session.pickerUri.endsWith("/")
       ? session.pickerUri.slice(0, -1)
       : session.pickerUri;
     if (!pickerHref.endsWith("/autoclose")) pickerHref += "/autoclose";
-    window.open(pickerHref, "_blank", "width=900,height=700");
+    if (popup) popup.location.href = pickerHref;
     selecting = true;
-    let polling = false,
-      tries = 0;
+    let polling = false;
+    const expiresAt = session.expireTime
+      ? Date.parse(session.expireTime)
+      : Date.now() + 60 * 60 * 1000;
     const timer = setInterval(async () => {
       if (polling) return;
       polling = true;
       try {
-        if (++tries > 150)
+        if (Date.now() >= expiresAt)
           throw Error("Photo selection timed out. Select originals again.");
         const result = await pollPickerSession(session.id);
         if (result.mediaItemsSet) {
           stopPicker();
-          picked = await listSessionMediaItems(session.id);
+          const photos = await listSessionMediaItems(session.id);
+          await work(async () => {
+            const root = store.getState() as any;
+            const sources = repairSelectionSources(
+              root,
+              stockedPhotoTasks(root, audit),
+              audit,
+            );
+            const { matches, unmatched } = matchRepairSelections(
+              sources,
+              photos,
+            );
+            picked = unmatched;
+            let requested = 0;
+            let firstImported: EntryRecord | undefined;
+            const failures: string[] = [];
+            for (const { source, photo } of matches) {
+              try {
+                message = `Importing originals: ${requested + 1} / ${matches.length}…`;
+                await importRepairOriginal(source.entry, photo);
+                requested++;
+                firstImported ||= source.entry;
+              } catch (e: any) {
+                failures.push(`${source.filename}: ${e.message}`);
+              }
+            }
+            message = `${requested} original imports requested. ${unmatched.length} selected photos did not match a repair needing an original.`;
+            if (failures.length) error = failures.join("; ");
+            if (requested) {
+              setPhase("repair");
+              mode = "Needs photos";
+              query = "";
+              filter = "All";
+              if (firstImported) openEntry(firstImported);
+            }
+          });
         }
       } catch (e: any) {
         error = e.message;
@@ -518,388 +584,468 @@
         })}>Check stocked item photos</button
     >
   </div>
-  <div class="actions">
-    {#each ["Needs photos", "Other stocked photos", "Saved work"] as value}<button
-        class:primary={mode === value}
-        on:click={() => changeMode(value)}>{value}</button
-      >{/each}
+  <div class="actions" aria-label="Repair steps">
+    <button
+      class:primary={phase === "selection"}
+      on:click={() => {
+        setPhase("selection");
+        activeId = "";
+      }}>1. Select originals</button
+    >
+    <button
+      class:primary={phase === "repair"}
+      on:click={() => setPhase("repair")}>2. Process and review</button
+    >
   </div>
   {#if error}<p role="alert" class="error">{error}</p>{/if}
   {#if message}<p role="status">{message}</p>{/if}
-  {#if !$store.inventory.initialized}<p role="status">
-      Loading inventory and saved repair progress…
+  {#if selecting}<p role="status">
+      <a href={pickerHref} target="_blank" rel="noreferrer"
+        >Open Google Photos selection</a
+      > then return here after choosing originals.
     </p>{/if}
-  <div class="actions">
-    <label>Search <input type="search" bind:value={query} /></label>
-    <label
-      >Show <select bind:value={filter}
-        >{#each ["All", "Needs original", "Importing", "Ready to process", "Processing", "Processing failed", "Needs review", "Updating", "Sync failed", "Done", "Photo is good", "Later"] as value}<option
-            >{value}</option
-          >{/each}</select
-      ></label
-    >
-    <span
-      >{stockedItems} stocked items · {skipped} current photos skipped · {mode ===
-      "Saved work"
-        ? `${listingRows.length} listings with saved repairs`
-        : mode === "Other stocked photos"
-          ? `${otherListingRows.length} listings`
-          : `${listingRows.length} listings queued for review`}</span
-    >
-  </div>
-  {#if notChecked && mode === "Needs photos"}<p role="status">
-      {notChecked} current photos have not been checked yet. Choose Check stocked
-      item photos to find additional small or missing images. Previously detected
-      repairs remain in the queue until checked or reviewed.
-    </p>{/if}
-  {#if mode === "Other stocked photos"}
-    <p>
-      Large files are excluded from the repair queue automatically. If a photo
-      still looks poor, choose Needs a better photo.
-    </p>
-    <table>
-      <thead><tr><th>Listing</th><th>Stock</th><th>Photos</th></tr></thead>
-      <tbody>
-        {#each otherListingRows.slice(0, 150) as listing (listing.handle)}
-          <tr>
-            <td>{listing.title}<small>{listing.jans}</small></td>
-            <td>{listing.stock}</td>
-            <td
-              ><div class="photo-summaries">
-                {#each listing.photos as row (row.task.key)}
-                  <div class="photo-summary">
-                    {#if row.task.url}<ImageThumbnail
-                        src={row.task.url}
-                        alt={listing.title}
-                        width="80px"
-                        height="80px"
-                        fit="contain"
-                      />{:else}<span class="missing-photo">No photo</span>{/if}
-                    <small>{row.assessment}</small>
-                    <button
-                      disabled={busy}
-                      on:click={() => work(() => decidePhoto(row.task, false))}
-                      >Needs a better photo</button
-                    >
-                    {#if row.task.url}<button
-                        disabled={busy}
-                        on:click={() => work(() => decidePhoto(row.task, true))}
-                        >Photo is good</button
-                      >{/if}
-                  </div>
-                {/each}
-              </div></td
-            >
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-    {#if otherListingRows.length > 150}<p>
-        Showing the first 150 listings. Search by listing name or JAN to find
-        another listing.
-      </p>{/if}
-  {/if}
-  {#if active && details}
-    <section class="review" aria-label="Photo repair review">
-      <h2>{details.title}</h2>
+  {#if phase === "selection"}
+    <section aria-label="Select repair originals">
+      <h2>1. Select originals in Google Photos</h2>
       <p>
-        JAN {details.jans || "unassigned"} · {details.filename} · {details.stock}
-        in stock · <strong>{state}</strong>
+        Choose a capture date below, then search for that date in Google Photos.
+        Select the photos for that day together; extra photos are fine. Matching
+        originals are imported automatically, then you can process and review
+        them.
       </p>
-      <div class="comparison">
-        <div>
-          <h3>{active.approvalId ? "Previous image" : "Current image"}</h3>
-          {#if activeTask?.url || active.oldImageUrl}<SecureImage
-              src={activeTask?.url || active.oldImageUrl}
-              alt="Current product image"
-            />{:else}<p>
-              {active.approvalId
-                ? "No previous photo."
-                : "This stocked item has no photo."}
-            </p>{/if}
-        </div>
-        <div>
-          <h3>New original</h3>
-          {#if original?.result?.artifact}<SecureImage
-              src={original.result.artifact.url}
-              alt="New original"
-            />{:else}<p>Import an original below.</p>{/if}
-        </div>
-        <div>
-          <h3>New candidate</h3>
-          {#if candidate}<SecureImage
-              src={candidate.url}
-              alt="New candidate"
-            />{:else}<p>Process the original to make a candidate.</p>{/if}
-        </div>
-      </div>
-      <p>
-        Open any image in a new tab for a larger view: {#each [["Current", active.oldImageUrl], ["Original", original?.result?.artifact?.url], ["Candidate", candidate?.url]] as link}{#if link[1]}<a
-              href={link[1]}
-              target="_blank"
-              rel="noreferrer">{link[0]}</a
-            >
-          {/if}{/each}
-      </p>
-      <details>
-        <summary>Where this image is used ({uses.length || 1})</summary>
-        <ul>
-          {#each uses as use}<li>{use}</li>{:else}<li>Photo library</li>{/each}
-        </ul>
-      </details>
-      {#if !active.approvalId}
-        {#if activeTask?.url}<button
-            disabled={busy}
-            on:click={() => work(() => decidePhoto(activeTask, true))}
-            >Photo is good — no repair needed</button
-          >{/if}
-        <h3>1. Get the original</h3>
+      {#if selectionSources.length}
         <div class="actions">
-          <button
-            disabled={busy}
-            on:click={() => work(() => importRepairOriginal(activeEntry()))}
-            >Re-import original</button
+          <label
+            >Capture date <select bind:value={selectionDate}
+              >{#each selectionDates as date}<option value={date}
+                  >{date} ({selectionSources.filter((s) => s.date === date)
+                    .length} originals)</option
+                >{/each}</select
+            ></label
           >
+          {#if selectionDate && selectionDate !== "Unknown date"}<button
+              on:click={() =>
+                work(async () => {
+                  await navigator.clipboard.writeText(selectionDate);
+                  message =
+                    "Capture date copied. Paste it into Google Photos search.";
+                })}>Copy date for search</button
+            >{/if}
           <button
-            disabled={busy || selecting}
+            disabled={busy || selecting || !selectionSources.length}
             on:click={() => work(selectOriginals)}
             >{selecting
               ? "Selecting in Google Photos…"
               : "Select originals in Google Photos"}</button
           >
-          <label class="upload"
-            >Upload original <input
-              type="file"
-              accept="image/*,.heic,.heif"
-              disabled={busy}
-              on:change={upload}
-            /></label
-          >
         </div>
-        {#if selecting}<p>
-            <a href={pickerHref} target="_blank" rel="noreferrer"
-              >Open Google Photos selection</a
-            > then return here after choosing originals.
-          </p>{/if}
-        {#if original?.result?.message}<p role="alert" class="error">
-            {original.result.message}
-          </p>{/if}
-        {#if picked.length}<p>
-            Choose the original for this image. Select another queue entry to
-            assign the remaining photos.
-          </p>
-          <div class="picked">
-            {#each picked as photo}<button
+      {/if}
+      <p>
+        {selectionSources.length} originals still needed across {selectionDates.length}
+        capture dates. Originals already imported stay available in Process and review.
+      </p>
+      {#if !selectionSources.length && $store.inventory.initialized}<button
+          class="primary"
+          on:click={() => setPhase("repair")}
+          >Continue to processing and review</button
+        >{/if}
+      {#if !$store.inventory.initialized}<p role="status">
+          Loading saved listings and repair progress…
+        </p>{/if}
+      {#each selectionDates.filter((date) => !selectionDate || date === selectionDate) as date}
+        <h3>{date}</h3>
+        <div class="photo-summaries">
+          {#each dateSources.filter((source) => source.date === date) as source (source.entry.sourceId)}
+            <div class="photo-summary">
+              {#if source.url}<ImageThumbnail
+                  src={source.url}
+                  alt={source.filename}
+                  width="100px"
+                  height="100px"
+                  fit="contain"
+                />{/if}
+              <strong>{source.filename}</strong><small>{source.title}</small>
+              {#if source.importing}<small>Importing original…</small>{/if}
+              <button disabled={busy} on:click={() => openEntry(source.entry)}
+                >Review current photo</button
+              >
+            </div>
+          {/each}
+        </div>
+      {/each}
+      {#if picked.length}<p>
+          {picked.length} selected photos could not be matched automatically. In Process
+          and review, open a photo to assign one if needed.
+        </p>{/if}
+    </section>
+  {:else}
+    <div class="actions">
+      {#each ["Needs photos", "Other stocked photos", "Saved work"] as value}<button
+          class:primary={mode === value}
+          on:click={() => changeMode(value)}>{value}</button
+        >{/each}
+    </div>
+    {#if !$store.inventory.initialized}<p role="status">
+        Loading inventory and saved repair progress…
+      </p>{/if}
+    <div class="actions">
+      <label>Search <input type="search" bind:value={query} /></label>
+      <label
+        >Show <select bind:value={filter}
+          >{#each ["All", "Needs original", "Importing", "Ready to process", "Processing", "Processing failed", "Needs review", "Updating", "Sync failed", "Done", "Photo is good", "Later"] as value}<option
+              >{value}</option
+            >{/each}</select
+        ></label
+      >
+      <span
+        >{stockedItems} stocked items · {skipped} current photos skipped · {mode ===
+        "Saved work"
+          ? `${listingRows.length} listings with saved repairs`
+          : mode === "Other stocked photos"
+            ? `${otherListingRows.length} listings`
+            : `${listingRows.length} listings queued for review`}</span
+      >
+    </div>
+    {#if notChecked && mode === "Needs photos"}<p role="status">
+        {notChecked} current photos have not been checked yet. Choose Check stocked
+        item photos to find additional small or missing images. Previously detected
+        repairs remain in the queue until checked or reviewed.
+      </p>{/if}
+    {#if mode === "Other stocked photos"}
+      <p>
+        Large files are excluded from the repair queue automatically. If a photo
+        still looks poor, choose Needs a better photo.
+      </p>
+      <table>
+        <thead><tr><th>Listing</th><th>Stock</th><th>Photos</th></tr></thead>
+        <tbody>
+          {#each otherListingRows.slice(0, 150) as listing (listing.handle)}
+            <tr>
+              <td>{listing.title}<small>{listing.jans}</small></td>
+              <td>{listing.stock}</td>
+              <td
+                ><div class="photo-summaries">
+                  {#each listing.photos as row (row.task.key)}
+                    <div class="photo-summary">
+                      {#if row.task.url}<ImageThumbnail
+                          src={row.task.url}
+                          alt={listing.title}
+                          width="80px"
+                          height="80px"
+                          fit="contain"
+                        />{:else}<span class="missing-photo">No photo</span
+                        >{/if}
+                      <small>{row.assessment}</small>
+                      <button
+                        disabled={busy}
+                        on:click={() =>
+                          work(() => decidePhoto(row.task, false))}
+                        >Needs a better photo</button
+                      >
+                      {#if row.task.url}<button
+                          disabled={busy}
+                          on:click={() =>
+                            work(() => decidePhoto(row.task, true))}
+                          >Photo is good</button
+                        >{/if}
+                    </div>
+                  {/each}
+                </div></td
+              >
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      {#if otherListingRows.length > 150}<p>
+          Showing the first 150 listings. Search by listing name or JAN to find
+          another listing.
+        </p>{/if}
+    {/if}
+    {#if active && details}
+      <section class="review" aria-label="Photo repair review">
+        <h2>{details.title}</h2>
+        <p>
+          JAN {details.jans || "unassigned"} · {details.filename} · {details.stock}
+          in stock · <strong>{state}</strong>
+        </p>
+        <div class="comparison">
+          <div>
+            <h3>{active.approvalId ? "Previous image" : "Current image"}</h3>
+            {#if activeTask?.url || active.oldImageUrl}<SecureImage
+                src={activeTask?.url || active.oldImageUrl}
+                alt="Current product image"
+              />{:else}<p>
+                {active.approvalId
+                  ? "No previous photo."
+                  : "This stocked item has no photo."}
+              </p>{/if}
+          </div>
+          <div>
+            <h3>New original</h3>
+            {#if original?.result?.artifact}<SecureImage
+                src={original.result.artifact.url}
+                alt="New original"
+              />{:else}<p>Import an original below.</p>{/if}
+          </div>
+          <div>
+            <h3>New candidate</h3>
+            {#if candidate}<SecureImage
+                src={candidate.url}
+                alt="New candidate"
+              />{:else}<p>Process the original to make a candidate.</p>{/if}
+          </div>
+        </div>
+        <p>
+          Open any image in a new tab for a larger view: {#each [["Current", active.oldImageUrl], ["Original", original?.result?.artifact?.url], ["Candidate", candidate?.url]] as link}{#if link[1]}<a
+                href={link[1]}
+                target="_blank"
+                rel="noreferrer">{link[0]}</a
+              >
+            {/if}{/each}
+        </p>
+        <details>
+          <summary>Where this image is used ({uses.length || 1})</summary>
+          <ul>
+            {#each uses as use}<li>{use}</li>{:else}<li>
+                Photo library
+              </li>{/each}
+          </ul>
+        </details>
+        {#if !active.approvalId}
+          {#if activeTask?.url}<button
+              disabled={busy}
+              on:click={() => work(() => decidePhoto(activeTask, true))}
+              >Photo is good — no repair needed</button
+            >{/if}
+          <h3>1. Get the original</h3>
+          <div class="actions">
+            <button
+              disabled={busy || selecting}
+              on:click={() => work(selectOriginals)}
+              >{selecting
+                ? "Selecting in Google Photos…"
+                : "Select originals in Google Photos"}</button
+            >
+            <label class="upload"
+              >Upload original <input
+                type="file"
+                accept="image/*,.heic,.heif"
                 disabled={busy}
-                on:click={() =>
-                  work(async () => {
-                    await importRepairOriginal(activeEntry(), photo);
-                    picked = picked.filter((p) => p.id !== photo.id);
-                  })}
-                ><SecureImage
-                  src={photo.baseUrl}
-                  alt={photo.filename}
-                  size="thumbnail"
-                />{photo.filename}</button
-              >{/each}
-          </div>{/if}
-        {#if existingPhotos.length}<details>
-            <summary>Choose a photo already in the system</summary>
+                on:change={upload}
+              /></label
+            >
+          </div>
+          {#if original?.result?.message}<p role="alert" class="error">
+              {original.result.message}
+            </p>{/if}
+          {#if picked.length}<p>
+              Choose the original for this image. Select another queue entry to
+              assign the remaining photos.
+            </p>
             <div class="picked">
-              {#each existingPhotos as photo}<button
+              {#each picked as photo}<button
                   disabled={busy}
                   on:click={() =>
-                    work(() => useExistingRepairSource(activeEntry(), photo))}
+                    work(async () => {
+                      await importRepairOriginal(activeEntry(), photo);
+                      picked = picked.filter((p) => p.id !== photo.id);
+                    })}
                   ><SecureImage
                     src={photo.baseUrl}
                     alt={photo.filename}
                     size="thumbnail"
                   />{photo.filename}</button
                 >{/each}
-            </div>
-          </details>{/if}
-        <h3>2. Process</h3>
-        <button disabled={busy} on:click={() => (configureOpen = true)}
-          >Change processing order</button
-        >
-        <p>
-          Order: {steps()
-            .map((s) => stepName(s.kind))
-            .join(" → ") || "Use the original without processing"}
-        </p>
-        <div class="actions">
-          <label
-            ><input type="checkbox" bind:checked={color} />Colour correction</label
+            </div>{/if}
+          {#if existingPhotos.length}<details>
+              <summary>Choose a photo already in the system</summary>
+              <div class="picked">
+                {#each existingPhotos as photo}<button
+                    disabled={busy}
+                    on:click={() =>
+                      work(() => useExistingRepairSource(activeEntry(), photo))}
+                    ><SecureImage
+                      src={photo.baseUrl}
+                      alt={photo.filename}
+                      size="thumbnail"
+                    />{photo.filename}</button
+                  >{/each}
+              </div>
+            </details>{/if}
+          <h3>2. Process</h3>
+          <button disabled={busy} on:click={() => (configureOpen = true)}
+            >Change processing order</button
           >
-          <label
-            ><input type="checkbox" bind:checked={background} />Remove
-            background</label
-          >
-          <label
-            ><input type="checkbox" bind:checked={smartCrop} />Crop
-            automatically</label
-          >
-          <label
-            >Start from <select bind:value={startAt}
-              ><option value="original">New original</option
-              >{#each historyAttempts as prior, attemptIndex}
-                {#each prior.steps as step, i}
-                  {#if stepOutput(prior, i)}<option
-                      value={`${prior.attemptId}:${i}`}
-                      >Attempt {attemptIndex + 1}: {i + 1}. {step.kind.replace(
-                        /_/g,
-                        " ",
-                      )}</option
-                    >{/if}
-                {/each}
-              {/each}</select
-            ></label
-          >
+          <p>
+            Order: {steps()
+              .map((s) => stepName(s.kind))
+              .join(" → ") || "Use the original without processing"}
+          </p>
+          <div class="actions">
+            <label
+              ><input type="checkbox" bind:checked={color} />Colour correction</label
+            >
+            <label
+              ><input type="checkbox" bind:checked={background} />Remove
+              background</label
+            >
+            <label
+              ><input type="checkbox" bind:checked={smartCrop} />Crop
+              automatically</label
+            >
+            <label
+              >Start from <select bind:value={startAt}
+                ><option value="original">New original</option
+                >{#each historyAttempts as prior, attemptIndex}
+                  {#each prior.steps as step, i}
+                    {#if stepOutput(prior, i)}<option
+                        value={`${prior.attemptId}:${i}`}
+                        >Attempt {attemptIndex + 1}: {i + 1}. {step.kind.replace(
+                          /_/g,
+                          " ",
+                        )}</option
+                      >{/if}
+                  {/each}
+                {/each}</select
+              ></label
+            >
+            <button
+              disabled={busy || !original?.result?.artifact}
+              on:click={() => work(() => process(activeEntry()))}
+              >{candidate ? "Redo processing" : "Process original"}</button
+            >
+            <button
+              disabled={busy || !original?.result?.artifact}
+              on:click={() => work(manualCrop)}>Crop manually</button
+            >
+            {#if state === "Processing failed"}<button
+                disabled={busy}
+                on:click={() =>
+                  work(() =>
+                    queueNextStep(activeEntry().selectedAttemptId || "", true),
+                  )}>Retry failed step</button
+              >{/if}
+          </div>
           <button
             disabled={busy || !original?.result?.artifact}
-            on:click={() => work(() => process(activeEntry()))}
-            >{candidate ? "Redo processing" : "Process original"}</button
+            on:click={() => work(() => startRepairAttempt(activeEntry(), []))}
+            >Use original as candidate</button
           >
-          <button
-            disabled={busy || !original?.result?.artifact}
-            on:click={() => work(manualCrop)}>Crop manually</button
-          >
-          {#if state === "Processing failed"}<button
+          {#each failures as failure}<p role="alert" class="error">
+              {failure}
+            </p>{/each}
+          <h3>3. Review and update</h3>
+          <div class="actions">
+            <button
+              class="primary"
+              disabled={busy || !candidate}
+              on:click={() => work(() => approveRepair(activeEntry()))}
+              >Approve and update</button
+            ><button
               disabled={busy}
               on:click={() =>
                 work(() =>
-                  queueNextStep(activeEntry().selectedAttemptId || "", true),
-                )}>Retry failed step</button
-            >{/if}
-        </div>
-        <button
-          disabled={busy || !original?.result?.artifact}
-          on:click={() => work(() => startRepairAttempt(activeEntry(), []))}
-          >Use original as candidate</button
-        >
-        {#each failures as failure}<p role="alert" class="error">
-            {failure}
-          </p>{/each}
-        <h3>3. Review and update</h3>
-        <div class="actions">
-          <button
-            class="primary"
-            disabled={busy || !candidate}
-            on:click={() => work(() => approveRepair(activeEntry()))}
-            >Approve and update</button
-          ><button
-            disabled={busy}
-            on:click={() =>
-              work(() =>
-                repairEvent("laterChanged", {
-                  entryId: activeEntry().entryId,
-                  later: !activeEntry().later,
-                }),
-              )}>{active.later ? "Resume" : "Later"}</button
-          >
-        </div>
-        {#if activeApprovals.some((a) => a.result === "references_changed")}<p
-            role="alert"
-          >
-            An image reference changed since this entry was created. Refresh its
-            uses and review again.
-          </p>
-          <button disabled={busy} on:click={() => work(refreshTargets)}
-            >Refresh uses</button
-          >{/if}
-      {:else}
-        <p role="status">
-          {state === "Done"
-            ? "Approved and updated."
-            : state === "Sync failed"
-              ? "Approved locally. Shopify update failed."
-              : "Approved locally. Updating Shopify…"}
-        </p>
-        {#if state === "Sync failed"}<button
-            disabled={busy}
-            on:click={() =>
-              work(() => publishRepair(activeEntry().approvalId || "", true))}
-            >Retry Shopify update</button
-          >{/if}
-      {/if}
-    </section>
-  {/if}
-  {#if mode !== "Other stocked photos"}
-    {#if selected.size}<div class="actions">
-        <span>{selected.size} selected</span><button
-          disabled={busy}
-          on:click={() =>
-            work(async () => {
-              for (const key of selected) {
-                const e = repair.entriesById[key];
-                if (e && !e.approvalId) await importRepairOriginal(e);
-              }
-              message = "Original imports requested.";
-            })}>Re-import selected originals</button
-        ><button
-          disabled={busy}
-          on:click={() =>
-            work(async () => {
-              for (const key of selected) {
-                const e = repair.entriesById[key];
-                if (e && !e.approvalId) await process(e);
-              }
-              message =
-                "Processing requested. Review each result individually.";
-            })}>Process selected originals</button
-        >
-      </div>{/if}
-    <table>
-      <thead
-        ><tr><th>Listing</th><th>Stock</th><th>Photos to review</th></tr></thead
-      >
-      <tbody>
-        {#each listingRows.slice(0, 150) as listing (listing.handle)}
-          <tr
-            class:active={listing.photos.some(
-              (row) => activeId === row.e.entryId,
-            )}
-          >
-            <td>{listing.title}<small>{listing.jans}</small></td>
-            <td>{listing.stock}</td>
-            <td
-              ><div class="photo-summaries">
-                {#each listing.photos as row (row.e.entryId)}
-                  <div
-                    class="photo-summary"
-                    class:active={activeId === row.e.entryId}
-                  >
-                    <label>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${listing.title} ${row.details.filename || row.e.entryId}`}
-                        checked={selected.has(row.e.entryId)}
-                        on:change={() => toggle(row.e.entryId)}
-                      />
-                      {#if row.task?.url || row.e.oldImageUrl}<ImageThumbnail
-                          src={row.task?.url || row.e.oldImageUrl}
-                          alt={row.details.filename || listing.title}
-                          width="80px"
-                          height="80px"
-                          fit="contain"
-                        />{:else}<span class="missing-photo">No photo</span
-                        >{/if}
-                    </label>
-                    <small>{row.assessment}</small>
-                    <small>{row.status}</small>
-                    <button on:click={() => openEntry(row.e)}>Review</button>
-                  </div>
-                {/each}
-              </div></td
+                  repairEvent("laterChanged", {
+                    entryId: activeEntry().entryId,
+                    later: !activeEntry().later,
+                  }),
+                )}>{active.later ? "Resume" : "Later"}</button
             >
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-    {#if listingRows.length > 150}<p>
-        Showing the first 150 listings. Narrow the search or progress filter to
-        see more.
-      </p>{/if}
+          </div>
+          {#if activeApprovals.some((a) => a.result === "references_changed")}<p
+              role="alert"
+            >
+              An image reference changed since this entry was created. Refresh
+              its uses and review again.
+            </p>
+            <button disabled={busy} on:click={() => work(refreshTargets)}
+              >Refresh uses</button
+            >{/if}
+        {:else}
+          <p role="status">
+            {state === "Done"
+              ? "Approved and updated."
+              : state === "Sync failed"
+                ? "Approved locally. Shopify update failed."
+                : "Approved locally. Updating Shopify…"}
+          </p>
+          {#if state === "Sync failed"}<button
+              disabled={busy}
+              on:click={() =>
+                work(() => publishRepair(activeEntry().approvalId || "", true))}
+              >Retry Shopify update</button
+            >{/if}
+        {/if}
+      </section>
+    {/if}
+    {#if mode !== "Other stocked photos"}
+      {#if selected.size}<div class="actions">
+          <span>{selected.size} selected</span><button
+            disabled={busy}
+            on:click={() =>
+              work(async () => {
+                for (const key of selected) {
+                  const e = repair.entriesById[key];
+                  if (e && !e.approvalId) await process(e);
+                }
+                message =
+                  "Processing requested. Review each result individually.";
+              })}>Process selected originals</button
+          >
+        </div>{/if}
+      <table>
+        <thead
+          ><tr><th>Listing</th><th>Stock</th><th>Photos to review</th></tr
+          ></thead
+        >
+        <tbody>
+          {#each listingRows.slice(0, 150) as listing (listing.handle)}
+            <tr
+              class:active={listing.photos.some(
+                (row) => activeId === row.e.entryId,
+              )}
+            >
+              <td>{listing.title}<small>{listing.jans}</small></td>
+              <td>{listing.stock}</td>
+              <td
+                ><div class="photo-summaries">
+                  {#each listing.photos as row (row.e.entryId)}
+                    <div
+                      class="photo-summary"
+                      class:active={activeId === row.e.entryId}
+                    >
+                      <label>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${listing.title} ${row.details.filename || row.e.entryId}`}
+                          checked={selected.has(row.e.entryId)}
+                          on:change={() => toggle(row.e.entryId)}
+                        />
+                        {#if row.task?.url || row.e.oldImageUrl}<ImageThumbnail
+                            src={row.task?.url || row.e.oldImageUrl}
+                            alt={row.details.filename || listing.title}
+                            width="80px"
+                            height="80px"
+                            fit="contain"
+                          />{:else}<span class="missing-photo">No photo</span
+                          >{/if}
+                      </label>
+                      <small>{row.assessment}</small>
+                      <small>{row.status}</small>
+                      <button on:click={() => openEntry(row.e)}>Review</button>
+                    </div>
+                  {/each}
+                </div></td
+              >
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      {#if listingRows.length > 150}<p>
+          Showing the first 150 listings. Narrow the search or progress filter
+          to see more.
+        </p>{/if}
+    {/if}
   {/if}
 </main>
 

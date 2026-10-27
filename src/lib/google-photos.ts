@@ -80,6 +80,7 @@ export function initiateOAuthFlow(allowSwitchAccount = false): void {
 export interface PickerSession {
   id: string;
   pickerUri: string;
+  expireTime?: string;
   mediaItemsSet?: boolean;
 }
 

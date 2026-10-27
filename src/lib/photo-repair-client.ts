@@ -9,13 +9,7 @@ import {
   type PhotoMeasurement,
 } from "./photo-repair-scope";
 import { generateDerivationKey } from "./idempotency-utils";
-import {
-  doc,
-  writeBatch,
-  serverTimestamp,
-  getDoc,
-  setDoc,
-} from "firebase/firestore";
+import { doc, writeBatch, serverTimestamp, setDoc } from "firebase/firestore";
 import { firestore } from "./firebase";
 import { store } from "./store";
 import { user } from "./user-store";
@@ -305,10 +299,11 @@ export async function importRepairOriginal(
   selection?: MediaItem,
   file?: File,
 ) {
+  if (!file && !selection?.baseUrl)
+    throw Error("Select the original in Google Photos again before importing.");
   const importId = id(),
     requestId = id();
   const root = store.getState() as any;
-  const source = root.photoRepair.sourcesById[e.sourceId];
   const { drive, folders, secretRef } = await tokensAndFolder();
   if (file) {
     await repairEvent("originalRequested", {
@@ -352,19 +347,10 @@ export async function importRepairOriginal(
     }
     return;
   }
-  let baseUrl = selection?.baseUrl || "";
-  if (!baseUrl) {
-    for (const eventId of e.evidence.transferEventIds.slice(-3).reverse()) {
-      const event = await getDoc(doc(firestore, "sync", eventId));
-      baseUrl = event.data()?.payload?.sourceBaseUrl || "";
-      if (baseUrl) break;
-    }
-  }
-  if (!baseUrl)
-    throw Error(
-      "Select the original in Google Photos or upload it from your computer.",
-    );
-  const mediaItemId = selection?.id || source.originalGoogleMediaId;
+  const baseUrl = selection?.baseUrl;
+  if (!selection || !baseUrl)
+    throw Error("Select the original in Google Photos again before importing.");
+  const mediaItemId = selection.id;
   const filename =
     selection?.filename || entryDetails(root, e).filename || "original.jpg";
   await queuePhoto(

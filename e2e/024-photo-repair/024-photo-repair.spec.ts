@@ -150,6 +150,9 @@ test("repair candidates survive reload, redo and require approval before replace
   });
   try {
     await page.goto("/photo-repair");
+    await page
+      .getByRole("button", { name: "2. Process and review", exact: true })
+      .click();
     await page.getByRole("searchbox").fill(key);
     const row = page.locator("tbody tr").filter({ hasText: key });
     // Production's original discovery events had no measurements or imports.
@@ -401,6 +404,9 @@ test("checks current stocked photos, skips fixed images, remembers good decision
   try {
     await page.goto("/photo-repair");
     await page
+      .getByRole("button", { name: "2. Process and review", exact: true })
+      .click();
+    await page
       .getByRole("button", { name: "Check stocked item photos", exact: true })
       .click();
     await expect(
@@ -594,6 +600,9 @@ test("groups detected photos by listing with hover previews and excludes standal
       });
     }
     await page.goto("/photo-repair");
+    await page
+      .getByRole("button", { name: "2. Process and review", exact: true })
+      .click();
     await page.getByRole("searchbox").fill(key);
     const rows = page.locator("tbody tr");
     await expect(rows).toHaveCount(1);
@@ -626,6 +635,222 @@ test("groups detected photos by listing with hover previews and excludes standal
     ).toHaveCount(2);
   } finally {
     for (const ref of seeded.reverse()) await ref.delete();
+    await deleteApp(app);
+  }
+});
+
+test("selects originals first, matches a batch by ID and resumes processing after reload", async ({
+  page,
+  context,
+  authenticatedPage,
+}) => {
+  void authenticatedPage;
+  test.setTimeout(60000);
+  const key = `picker-repair-${Date.now()}`;
+  const app = initializeApp({ projectId: "demo-test-project" }, key);
+  const db = initializeFirestore(app, {
+    host: `127.0.0.1:${process.env.E2E_FIRESTORE_EMULATOR_PORT || "8080"}`,
+    ssl: false,
+  });
+  const seeded: any[] = [];
+  async function event(type: string, payload: any) {
+    const ref = db.collection("broadcast").doc();
+    await ref.set({ type, payload, creator: key, timestamp: Timestamp.now() });
+    seeded.push(ref);
+  }
+  await context.addInitScript(() => {
+    (window as any).__GOOGLE_DRIVE_FOLDER_ID__ = "test-root";
+    localStorage.setItem(
+      "google_photos_access_token",
+      JSON.stringify({
+        access_token: "fake-picker-token",
+        expires_in: 3600,
+        expires_at: Date.now() + 3600000,
+        scope:
+          "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+        token_type: "Bearer",
+      }),
+    );
+  });
+  await context.route("https://www.googleapis.com/**", (route) =>
+    route.fulfill({
+      json: { files: [{ id: "test-folder", name: "Originals" }] },
+    }),
+  );
+  await context.route("https://example.com/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="green"/></svg>',
+    }),
+  );
+  await context.route("https://photospicker.googleapis.com/**", (route) => {
+    const url = route.request().url();
+    if (url.includes("/mediaItems?"))
+      return route.fulfill({
+        json: {
+          mediaItems: [0, 1, 2].map((i) => ({
+            id: `${key}-google-${i}`,
+            createTime: "2026-05-03T12:00:00Z",
+            mediaFile: {
+              baseUrl: `https://example.com/${key}/fresh-${i}`,
+              filename: `original-${i}.HEIC`,
+              mimeType: "image/jpeg",
+            },
+          })),
+        },
+      });
+    return route.fulfill({
+      json: {
+        id: key,
+        pickerUri: `https://example.com/${key}/picker`,
+        mediaItemsSet: true,
+        expireTime: new Date(Date.now() + 3600000).toISOString(),
+      },
+    });
+  });
+  try {
+    await event("create_listing", {
+      listing: {
+        handle: key,
+        title: key,
+        status: "no_sync",
+        images: [0, 1].map((i) => ({
+          id: `${key}-image-${i}`,
+          url: `https://example.com/${key}/old-${i}`,
+          position: i + 1,
+          altText: "",
+        })),
+      },
+    });
+    await event("update_item", {
+      id: key,
+      item: {
+        janCode: key,
+        description: key,
+        handle: key,
+        qty: 5,
+        image: `https://example.com/${key}/old-0`,
+        subtype: "",
+        pieces: 1,
+      },
+    });
+    for (const i of [0, 1]) {
+      await event("photos/register_media_items", {
+        items: [
+          {
+            id: `${key}-google-${i}`,
+            filename: `original-${i}.HEIC`,
+            baseUrl: `https://example.com/${key}/old-${i}`,
+            mediaMetadata: { creationTime: "2026-05-03T12:00:00Z" },
+          },
+        ],
+      });
+      await event("photoRepair/sourceAdded", {
+        sourceId: `${key}-source-${i}`,
+        originalGoogleMediaId: `${key}-google-${i}`,
+      });
+      await event("photoRepair/entryAdded", {
+        entryId: `${key}-entry-${i}`,
+        sourceId: `${key}-source-${i}`,
+        existingPhotoId: `${key}-google-${i}`,
+        oldImageUrl: `https://example.com/${key}/old-${i}`,
+        targets: [
+          {
+            ref: {
+              kind: "listing_image",
+              handle: key,
+              imageId: `${key}-image-${i}`,
+            },
+            beforeUrl: `https://example.com/${key}/old-${i}`,
+          },
+        ],
+        evidence: { kind: "bad_import", transferEventIds: [] },
+      });
+    }
+    await page.goto("/photo-repair");
+    await expect(
+      page.getByRole("region", { name: "Select repair originals" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Capture date")).toHaveValue("2026-05-03");
+    await expect(
+      page.getByText("original-0.HEIC", { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: "/tmp/photo-repair-selection-first.png",
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", {
+        name: "Select originals in Google Photos",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole("status").filter({
+        hasText:
+          "2 original imports requested. 1 selected photos did not match",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Photo repair review" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Re-import original", exact: true }),
+    ).toHaveCount(0);
+    const requests = await db
+      .collection("request_photos_transfer")
+      .where("source", "==", "photo-repair")
+      .get();
+    const own = requests.docs.filter((d) =>
+      d.data().payload?.repair?.sourceId?.startsWith(key),
+    );
+    expect(own).toHaveLength(2);
+    for (const ref of own) {
+      const d = ref.data();
+      const i = d.payload.repair.sourceId.endsWith("-0") ? 0 : 1;
+      expect(d.payload.sourceBaseUrl).toBe(
+        `https://example.com/${key}/fresh-${i}`,
+      );
+      expect(d.payload.sourceRef.mediaItemId).toBe(`${key}-google-${i}`);
+      await event("photoRepair/originalImported", {
+        sourceId: d.payload.repair.sourceId,
+        importId: d.payload.repair.importId,
+        requestId: d.requestId,
+        artifact: {
+          driveFileId: `${key}-original-${i}`,
+          url: `https://example.com/${key}/saved-${i}`,
+          filename: `original-${i}.HEIC`,
+          mimeType: "image/jpeg",
+          webViewLink: "",
+        },
+      });
+    }
+    await expect(
+      page.getByRole("button", { name: "Process original", exact: true }),
+    ).toBeEnabled();
+    await page.reload();
+    await page.getByRole("searchbox").fill(key);
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await expect(page.locator("tbody tr")).toContainText("Ready to process");
+    await page
+      .getByRole("button", { name: "1. Select originals", exact: true })
+      .click();
+    await expect(
+      page.getByText("0 originals still needed", { exact: false }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: "/tmp/photo-repair-selection-finished.png",
+      fullPage: true,
+    });
+  } finally {
+    const requests = await db.collection("request_photos_transfer").get();
+    for (const ref of requests.docs)
+      if (ref.data().payload?.repair?.sourceId?.startsWith(key))
+        await ref.ref.delete();
+    for (const ref of seeded.reverse()) await ref.delete();
+    const broadcasts = await db.collection("broadcast").get();
+    for (const ref of broadcasts.docs)
+      if (ref.data().payload?.sourceId?.startsWith(key)) await ref.ref.delete();
     await deleteApp(app);
   }
 });

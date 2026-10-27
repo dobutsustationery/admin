@@ -28,11 +28,15 @@ Use **Other stocked photos** to flag any current photo the automatic size check 
 
 ## Get the correct originals into the system
 
-The user selects entries and chooses **Re-import originals**. Fetch the originals where access still works. For anything that cannot be fetched, show **Select original in Google Photos** and the old image and filename to help the user find it. Also allow **Upload original** from the computer.
+The default opening screen is **1. Select originals**. Derive pending sources from existing repair entries that still match stocked listing photos and need work or a current visual decision. Exclude approved/good photos, sources with a successful imported original, and duplicate entries for the same source. Display one capture-date batch at a time with original filenames and reference thumbnails; capture dates come from saved photo metadata and use the browser’s local time zone.
 
-The user can also choose a durable photo already recorded in the relevant JAN groups. Record it as an existing source rather than downloading it again. **Use original as candidate** skips processing when that source is already suitable.
+The user copies the date for search and opens a new Google Photos Picker session. The app cannot prefill or position Google’s picker. The user can select a broad batch; after selection, list the session’s media items and match their persistent `id` against `sourcesById[sourceId].originalGoogleMediaId` across all eligible repair sources, regardless of the currently displayed date. Do not guess matches from filenames. Download only matched sources; unrelated photos remain unassigned and can be manually assigned from an individual repair if necessary. Skip originals already imported or importing. A failed import can be selected again.
 
-When choosing a replacement source, show it beside the old image so the user can confirm it is the right photo. The user can select originals for several entries in one session and assign each to its entry. An imported original becomes the starting point for that entry's processing.
+Request matching imports immediately while fresh download URLs are usable, then enter **2. Process and review**. Each request uses the existing `photoRepair/originalRequested` event with `{sourceId, importId, requestId, choice:{kind:"google_photos", mediaItemId, filename}}` and the existing transfer request containing the freshly selected `sourceBaseUrl`. Completion/failure still records `originalImported`/`originalFailed` under the same repair source. No new IDs are assigned to existing listing photos; no listing reference changes until individual approval. No new reducer fields, event types, or schema version are needed. The current screen is remembered only in tab session storage; source imports, processing and decisions remain event-backed.
+
+Remove repair actions that attempt to re-download months-old URLs. Google Photos selection does not grant permanent API download access. Keep individual file upload and choosing an existing durable photo as alternatives, without adding bulk folder import.
+
+Open a blank picker window directly from the user’s click, then navigate it when session creation returns. Provide the picker link if popups are blocked. Poll until the session’s returned expiration rather than imposing the former five-minute selection timeout. Imported originals stay available after reload, and selecting another batch does not restart completed imports or processing.
 
 ## Process as before
 
