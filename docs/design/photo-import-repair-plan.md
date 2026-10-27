@@ -12,7 +12,7 @@ Group current uses by image file, including known Drive/CDN aliases. Library and
 
 An explicit **Photo is good** decision dismisses the file across its displayed uses. **Other stocked photos** allows the user to flag a large but blurry, wrong or unsuitable image. Explicit visual decisions take priority over dimensions. An approved replacement records a good decision for its output file. New file IDs and changed Shopify master `v` values are checked independently; display-width parameters do not invalidate a decision.
 
-The UI counts stocked items, current photos needing attention and skipped current photos separately. **Saved work** shows prior imports, attempts, deferred decisions and completed repairs without adding unused/zero-stock discovery records to the main queue.
+The UI counts stocked items, current photos needing attention and skipped current photos separately. Previously detected entries matching current stocked use remain in the main queue while their current measurement is unknown; a fresh check is not a prerequisite for restoring them after reload. Known good and repaired photos stay excluded. **Saved work** shows all recorded entries, including discovery-only entries, prior imports, attempts, deferred decisions and completed repairs, without adding unused/zero-stock discovery records to the main queue.
 
 ## Fix the bug
 

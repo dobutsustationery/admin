@@ -77,23 +77,6 @@ test("repair candidates survive reload, redo and require approval before replace
     targets,
     evidence: { kind: "bad_import", transferEventIds: [] },
   });
-  await event("photoRepair/originalRequested", {
-    sourceId,
-    importId: key,
-    requestId: key,
-    choice: { kind: "upload", filename: "original.png", mimeType: "image/png" },
-  });
-  await event("photoRepair/imageMeasured", {
-    url: oldUrl,
-    width: 400,
-    height: 512,
-  });
-  await event("photoRepair/originalImported", {
-    sourceId,
-    importId: key,
-    requestId: key,
-    artifact,
-  });
   await context.route("https://example.com/**", (route) =>
     route.fulfill({
       status: 200,
@@ -160,6 +143,35 @@ test("repair candidates survive reload, redo and require approval before replace
     await page.goto("/photo-repair");
     await page.getByRole("searchbox").fill(key);
     const row = page.locator("tbody tr").filter({ hasText: key });
+    // Production's original discovery events had no measurements or imports.
+    // They must remain visible after replay, in both the queue and saved work.
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("Not checked");
+    await page.reload();
+    await page.getByRole("searchbox").fill(key);
+    await expect(row).toHaveCount(1);
+    await page.getByRole("button", { name: "Saved work", exact: true }).click();
+    await expect(row).toHaveCount(1);
+    await page
+      .getByRole("button", { name: "Needs photos", exact: true })
+      .click();
+    await event("photoRepair/originalRequested", {
+      sourceId,
+      importId: key,
+      requestId: key,
+      choice: {
+        kind: "upload",
+        filename: "original.png",
+        mimeType: "image/png",
+      },
+    });
+    await event("photoRepair/originalImported", {
+      sourceId,
+      importId: key,
+      requestId: key,
+      artifact,
+    });
+    await expect(row).toContainText("Ready to process");
     await row.getByRole("button", { name: "Review", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Approve and update", exact: true }),

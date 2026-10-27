@@ -12,7 +12,9 @@ Open a queue row with **Review**. If the current image is fine, choose **Photo i
 
 Each candidate still needs individual approval. Repeated uses share a task. For a missing photo, approval fills the inventory image and adds its gallery image when a saved listing exists. Gallery order, variant assignments and existing IDs are preserved. Duplicate copies in a photo group are all updated; other edits of the same photo are left alone.
 
-**Saved work** retains original imports, attempts, Later decisions and completed replacements from the earlier discovery run. Unused and zero-stock discovery entries no longer fill the main queue. No discovery history is deleted.
+Previously detected entries that still match a stocked item's current photo remain in **Needs photos** even before a current measurement exists. Checking photos updates that assessment; it is not required to restore the detected queue after reload. Known good or repaired photos stay excluded.
+
+**Saved work** shows every recorded repair entry, including discovery-only entries, original imports, attempts, Later decisions and completed replacements. Unused and zero-stock discovery entries no longer fill the main queue. No discovery history is deleted.
 
 Progress survives reload. Reopen this screen to resume a processing step or approved update awaiting publication. Retry failed imports, processing or Shopify updates from their entry. A listing marked `no_sync` is updated locally only. Shopify still rebuilds the gallery when syncing; unapproved photos retain their current URLs.
 

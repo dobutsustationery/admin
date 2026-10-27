@@ -130,13 +130,9 @@
       const status = repairStatus(repair, e);
       const keep =
         mode === "Saved work"
-          ? e.attemptIds.length > 0 ||
-            originalFor(repair, e) ||
-            e.approvalId ||
-            e.later ||
-            status === "Photo is good"
+          ? true
           : task &&
-            photoNeedsWork(assessment) &&
+            (assessment === "Not checked" || photoNeedsWork(assessment)) &&
             !e.approvalId &&
             status !== "Photo is good";
       if (!keep) return [];
@@ -287,7 +283,9 @@
           (activeId === e.entryId ||
             (() => {
               const task = taskForEntry($store, e, tasks, audit);
-              return task && photoNeedsWork(taskAssessment($store, task));
+              if (!task) return false;
+              const assessment = taskAssessment($store, task);
+              return assessment === "Not checked" || photoNeedsWork(assessment);
             })()) &&
           a &&
           a.importId === originalFor(repair, e)?.importId
@@ -546,7 +544,8 @@
   </div>
   {#if notChecked && mode === "Needs photos"}<p role="status">
       {notChecked} current photos have not been checked yet. Choose Check stocked
-      item photos to find small or missing images.
+      item photos to find additional small or missing images. Previously detected
+      repairs remain in the queue until checked or reviewed.
     </p>{/if}
   {#if mode === "Other stocked photos"}
     <p>
