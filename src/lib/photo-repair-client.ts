@@ -25,6 +25,7 @@ import {
 } from "./google-photos";
 import {
   allImageTargets,
+  approvedRepairAssets,
   imageKey,
   entryDetails,
   originalFor,
@@ -90,6 +91,7 @@ export async function seedRepairQueue(
 
   const root = store.getState() as any;
   const targets = allImageTargets(root);
+  const repairedAssets = approvedRepairAssets(root.photoRepair);
   const aliases = new Map<string, any>();
   audit.images.forEach((r: any) => {
     aliases.set(imageKey(r.url), r);
@@ -104,6 +106,7 @@ export async function seedRepairQueue(
   );
   const grouped = new Map<string, any>();
   for (const target of targets) {
+    if (repairedAssets.has(imageKey(target.beforeUrl))) continue;
     const ref = target.ref;
     const photoId = "photoId" in ref ? ref.photoId : undefined;
     const alias = aliases.get(imageKey(target.beforeUrl));

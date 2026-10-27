@@ -4,6 +4,8 @@ import {
   candidateFor,
   repairStatus,
   allImageTargets,
+  approvedRepairAssets,
+  imageKey,
 } from "../../src/lib/photo-repair";
 const quiet = () => {};
 const artifact = {
@@ -106,6 +108,11 @@ function fixture() {
   return { get: () => state, apply, targets };
 }
 describe("photo repair identity and review", () => {
+  it("matches Shopify renditions without changing the recorded replacement URL", () => {
+    expect(
+      imageKey("https://cdn.shopify.com/files/original.png?v=1&width=200"),
+    ).toBe(imageKey("https://cdn.shopify.com/files/original.png?v=2"));
+  });
   it("keeps imported and processed candidates out of all existing product data until approval", () => {
     const f = fixture();
     f.apply("attemptStarted", {
@@ -144,6 +151,7 @@ describe("photo repair identity and review", () => {
       true,
     );
     expect(done.photos.registry["old-photo"].id).toBe("old-photo");
+    expect([...approvedRepairAssets(done.photoRepair)]).toEqual(["new-url"]);
     expect(done.photos.registry["old-photo"].mimeType).toBe("image/png");
     expect(done.listings.handleToListing.product.images[0]).toEqual({
       id: "local-listing-image",

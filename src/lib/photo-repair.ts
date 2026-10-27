@@ -417,8 +417,30 @@ export function applyPhotoRepair(root: any, action: any): any {
     }
   });
 }
+export function approvedRepairAssets(s: PhotoRepairState): Set<string> {
+  const keys = new Set<string>();
+  for (const approval of Object.values(s.approvalsById)) {
+    if (approval.result !== "applied") continue;
+    const a = s.attemptsById[approval.attemptId];
+    if (!a) continue;
+    const artifact = a.steps.length
+      ? stepOutput(a, a.steps.length - 1)
+      : attemptInput(s, a);
+    if (artifact) keys.add(imageKey(artifact.url));
+  }
+  return keys;
+}
 export function imageKey(url: string): string {
-  return extractGoogleDriveFileId(url) || url;
+  const driveId = extractGoogleDriveFileId(url);
+  if (driveId) return driveId;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "cdn.shopify.com")
+      return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    /* Non-URL fixture/legacy references retain their exact key. */
+  }
+  return url;
 }
 export function allImageTargets(root: any): Target[] {
   const targets: Target[] = [];
