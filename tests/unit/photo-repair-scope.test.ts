@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   stockedPhotoTasks,
+  groupRepairPhotosByListing,
   taskAssessment,
   taskForEntry,
   photoNeedsWork,
@@ -39,8 +40,13 @@ function fixture() {
       },
     },
     listings: {
-      idToHandle: { missing: "missing-product" },
+      idToHandle: {
+        missing: "missing-product",
+        bad: "product",
+        good: "product",
+      },
       handleToListing: {
+        product: { title: "Product", images: [], status: "active" },
         "missing-product": {
           title: "Missing product",
           images: [],
@@ -73,6 +79,66 @@ describe("stocked current-photo work", () => {
       "listing_new_image",
     ]);
     expect(taskAssessment(root, missing)).toBe("Missing photo");
+  });
+  it("excludes stocked inventory and library photos without a saved listing", () => {
+    const root = fixture();
+    root.inventory.idToItem.standalone = {
+      qty: 10,
+      image: "https://example.com/standalone",
+      handle: "not-a-listing",
+    };
+    expect(
+      stockedPhotoTasks(root).some((t) => t.url.includes("standalone")),
+    ).toBe(false);
+  });
+  it("groups multiple photos into one listing row without counting its stock twice", () => {
+    const root = fixture();
+    const photos = stockedPhotoTasks(root).map((task) => ({ task }));
+    const groups = groupRepairPhotosByListing(root, photos);
+    const product = groups.find((g) => g.handle === "product")!;
+    expect(product.photos).toHaveLength(2);
+    expect(product.stock).toBe(6);
+    expect(product.jans).toBe("bad, good");
+    expect(groups).toHaveLength(2);
+  });
+  it("keeps historical listing repairs grouped but hides standalone history", () => {
+    const root = fixture();
+    const groups = groupRepairPhotosByListing(root, [
+      {
+        e: { targets: [{ ref: { kind: "inventory", itemKey: "bad" } }] } as any,
+      },
+      {
+        e: {
+          targets: [
+            {
+              ref: { kind: "listing_image", handle: "product", imageId: "old" },
+            },
+          ],
+        } as any,
+      },
+      {
+        e: {
+          targets: [{ ref: { kind: "photo_registry", photoId: "unused" } }],
+        } as any,
+      },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].photos).toHaveLength(2);
+  });
+  it("shows a shared photo under each listing while retaining one repair task", () => {
+    const root = fixture();
+    root.listings.handleToListing.second = { title: "Second", images: [] };
+    root.listings.idToHandle.good = "second";
+    root.inventory.idToItem.good.image = root.inventory.idToItem.bad.image;
+    const tasks = stockedPhotoTasks(root).filter((t) => !t.missing);
+    expect(tasks).toHaveLength(1);
+    const groups = groupRepairPhotosByListing(
+      root,
+      tasks.map((task) => ({ task })),
+    );
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.stock)).toEqual([4, 2]);
+    expect(groups[0].photos[0].task).toBe(groups[1].photos[0].task);
   });
   it("uses the current file measurement instead of the photo's past bad import", () => {
     const root = fixture();
@@ -145,6 +211,7 @@ describe("stocked current-photo work", () => {
   });
   it("groups shared current uses once and deduplicates repeated photo-group members", () => {
     const root = fixture();
+    root.listings.idToHandle.other = "product";
     root.inventory.idToItem.other = {
       janCode: "other",
       qty: 3,

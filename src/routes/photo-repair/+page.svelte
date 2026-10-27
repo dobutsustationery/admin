@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     stockedPhotoTasks,
+    groupRepairPhotosByListing,
     taskAssessment,
     photoNeedsWork,
     taskForEntry,
@@ -11,6 +12,7 @@
   import { onMount, onDestroy } from "svelte";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
+  import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ProcessingConfigModal from "$lib/components/ProcessingConfigModal.svelte";
   import type { ProcessingConfig } from "$lib/photos-slice";
@@ -126,7 +128,7 @@
       const task = taskForEntry($store, e, tasks, audit);
       const assessment = task
         ? taskAssessment($store, task)
-        : "Not currently used by a stocked item";
+        : "Not currently used by a stocked listing";
       const status = repairStatus(repair, e);
       const keep =
         mode === "Saved work"
@@ -168,6 +170,8 @@
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  $: listingRows = groupRepairPhotosByListing($store, visible);
+  $: otherListingRows = groupRepairPhotosByListing($store, otherPhotos);
   $: active = repair.entriesById[activeId] as EntryRecord | undefined;
   $: activeTask = active
     ? taskForEntry($store, active, tasks, audit)
@@ -463,7 +467,7 @@
     if (!active) return;
     if (!activeTask)
       throw Error(
-        "This photo is no longer used by a stocked item. Its saved work is still available.",
+        "This photo is no longer used by a stocked listing. Its saved work is still available.",
       );
     await repairEvent("targetsChanged", {
       entryId: active.entryId,
@@ -497,8 +501,9 @@
 <main>
   <h1>Repair imported photos</h1>
   <p>
-    Fix missing or poor current photos for items with stock. Photos already
-    repaired or marked good stay out of the queue.
+    Fix missing or poor photos in listings with stock. Each row groups the
+    listing’s photos. Photos already repaired or marked good stay out of the
+    queue.
   </p>
   <div class="actions">
     <a href="/photos">Photos</a><button on:click={() => initiateOAuthFlow()}
@@ -536,10 +541,10 @@
     <span
       >{stockedItems} stocked items · {skipped} current photos skipped · {mode ===
       "Saved work"
-        ? `${visible.length} saved repairs`
+        ? `${listingRows.length} listings with saved repairs`
         : mode === "Other stocked photos"
-          ? `${otherPhotos.length} current photos`
-          : `${visible.length} queued for review`}</span
+          ? `${otherListingRows.length} listings`
+          : `${listingRows.length} listings queued for review`}</span
     >
   </div>
   {#if notChecked && mode === "Needs photos"}<p role="status">
@@ -553,44 +558,47 @@
       still looks poor, choose Needs a better photo.
     </p>
     <table>
-      <thead
-        ><tr
-          ><th>Current photo</th><th>Stocked item</th><th>Result</th><th
-            >Decision</th
-          ></tr
-        ></thead
-      ><tbody
-        >{#each otherPhotos.slice(0, 150) as row}<tr
-            ><td
-              >{#if row.task.url}<SecureImage
-                  src={row.task.url}
-                  alt={row.task.title}
-                  size="thumbnail"
-                  style="max-width:100px;max-height:100px"
-                />{:else}No photo{/if}</td
-            ><td
-              >{row.task.title}<small
-                >{row.task.jans} · {row.task.stock} in stock</small
-              ></td
-            ><td>{row.assessment}</td><td
-              ><button
-                disabled={busy}
-                on:click={() => work(() => decidePhoto(row.task, false))}
-                >Needs a better photo</button
-              >{#if row.task.url}<button
-                  disabled={busy}
-                  on:click={() => work(() => decidePhoto(row.task, true))}
-                  >Photo is good</button
-                >{/if}</td
-            ></tr
-          >{/each}</tbody
-      >
+      <thead><tr><th>Listing</th><th>Stock</th><th>Photos</th></tr></thead>
+      <tbody>
+        {#each otherListingRows.slice(0, 150) as listing (listing.handle)}
+          <tr>
+            <td>{listing.title}<small>{listing.jans}</small></td>
+            <td>{listing.stock}</td>
+            <td
+              ><div class="photo-summaries">
+                {#each listing.photos as row (row.task.key)}
+                  <div class="photo-summary">
+                    {#if row.task.url}<ImageThumbnail
+                        src={row.task.url}
+                        alt={listing.title}
+                        width="80px"
+                        height="80px"
+                        fit="contain"
+                      />{:else}<span class="missing-photo">No photo</span>{/if}
+                    <small>{row.assessment}</small>
+                    <button
+                      disabled={busy}
+                      on:click={() => work(() => decidePhoto(row.task, false))}
+                      >Needs a better photo</button
+                    >
+                    {#if row.task.url}<button
+                        disabled={busy}
+                        on:click={() => work(() => decidePhoto(row.task, true))}
+                        >Photo is good</button
+                      >{/if}
+                  </div>
+                {/each}
+              </div></td
+            >
+          </tr>
+        {/each}
+      </tbody>
     </table>
+    {#if otherListingRows.length > 150}<p>
+        Showing the first 150 listings. Search by listing name or JAN to find
+        another listing.
+      </p>{/if}
   {/if}
-  {#if mode === "Other stocked photos" && otherPhotos.length > 150}<p>
-      Showing the first 150 current photos. Search by product name or JAN to
-      find another item.
-    </p>{/if}
   {#if active && details}
     <section class="review" aria-label="Photo repair review">
       <h2>{details.title}</h2>
@@ -843,34 +851,53 @@
       </div>{/if}
     <table>
       <thead
-        ><tr
-          ><th>Select</th><th>Product</th><th>Stock</th><th>Photo issue</th><th
-            >Progress</th
-          ><th>Review</th></tr
-        ></thead
-      ><tbody
-        >{#each visible.slice(0, 150) as row}<tr
-            class:active={activeId === row.e.entryId}
-            ><td
-              ><input
-                type="checkbox"
-                aria-label={`Select ${row.details.title}`}
-                checked={selected.has(row.e.entryId)}
-                on:change={() => toggle(row.e.entryId)}
-              /></td
-            ><td
-              >{row.details.title}<small
-                >{row.details.jans} · {row.details.filename}</small
-              ></td
-            ><td>{row.details.stock}</td><td>{row.assessment}</td><td
-              >{row.status}</td
-            ><td><button on:click={() => openEntry(row.e)}>Review</button></td
-            ></tr
-          >{/each}</tbody
+        ><tr><th>Listing</th><th>Stock</th><th>Photos to review</th></tr></thead
       >
+      <tbody>
+        {#each listingRows.slice(0, 150) as listing (listing.handle)}
+          <tr
+            class:active={listing.photos.some(
+              (row) => activeId === row.e.entryId,
+            )}
+          >
+            <td>{listing.title}<small>{listing.jans}</small></td>
+            <td>{listing.stock}</td>
+            <td
+              ><div class="photo-summaries">
+                {#each listing.photos as row (row.e.entryId)}
+                  <div
+                    class="photo-summary"
+                    class:active={activeId === row.e.entryId}
+                  >
+                    <label>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${listing.title} ${row.details.filename || row.e.entryId}`}
+                        checked={selected.has(row.e.entryId)}
+                        on:change={() => toggle(row.e.entryId)}
+                      />
+                      {#if row.task?.url || row.e.oldImageUrl}<ImageThumbnail
+                          src={row.task?.url || row.e.oldImageUrl}
+                          alt={row.details.filename || listing.title}
+                          width="80px"
+                          height="80px"
+                          fit="contain"
+                        />{:else}<span class="missing-photo">No photo</span
+                        >{/if}
+                    </label>
+                    <small>{row.assessment}</small>
+                    <small>{row.status}</small>
+                    <button on:click={() => openEntry(row.e)}>Review</button>
+                  </div>
+                {/each}
+              </div></td
+            >
+          </tr>
+        {/each}
+      </tbody>
     </table>
-    {#if visible.length > 150}<p>
-        Showing the first 150 matches. Narrow the search or progress filter to
+    {#if listingRows.length > 150}<p>
+        Showing the first 150 listings. Narrow the search or progress filter to
         see more.
       </p>{/if}
   {/if}
@@ -959,6 +986,31 @@
   }
   .active {
     background: #edf7f1;
+  }
+  .photo-summaries {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .photo-summary {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0.4rem;
+    max-width: 180px;
+  }
+  .photo-summary label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .missing-photo {
+    display: grid;
+    place-items: center;
+    width: 80px;
+    height: 80px;
+    background: #f3f3f3;
   }
   .picked {
     display: flex;

@@ -56,6 +56,15 @@ test("repair candidates survive reload, redo and require approval before replace
       pieces: 1,
     },
   });
+  await event("create_listing", {
+    listing: {
+      handle: key,
+      title: key,
+      images: [{ id: photoId, url: oldUrl, position: 1, altText: "" }],
+      status: "no_sync",
+    },
+  });
+  await event("update_field", { id: jan, field: "handle", from: "", to: key });
   const photo = {
     id: photoId,
     filename: "test-original.png",
@@ -350,6 +359,23 @@ test("checks current stocked photos, skips fixed images, remembers good decision
     from: "",
     to: key,
   });
+  for (const kind of ["bad", "good", "sold"] as const) {
+    const handle = `${key}-${kind}-listing`;
+    await event("create_listing", {
+      listing: {
+        handle,
+        title: `${key} ${kind}`,
+        images: [],
+        status: "no_sync",
+      },
+    });
+    await event("update_field", {
+      id: ids[kind],
+      field: "handle",
+      from: "",
+      to: handle,
+    });
+  }
   // A known historical bad import must not make a currently large photo a repair task.
   await event("photoRepair/sourceAdded", {
     sourceId: key,
@@ -481,6 +507,125 @@ test("checks current stocked photos, skips fixed images, remembers good decision
       if (JSON.stringify(p).includes(key)) tracked.push(d.ref);
     }
     for (const ref of tracked) await ref.delete();
+    await deleteApp(app);
+  }
+});
+
+test("groups detected photos by listing with hover previews and excludes standalone photos", async ({
+  page,
+  context,
+  authenticatedPage,
+}) => {
+  void authenticatedPage;
+  test.setTimeout(30000);
+  const key = `listing-photos-${Date.now()}`;
+  const app = initializeApp({ projectId: "demo-test-project" }, key);
+  const db = initializeFirestore(app, {
+    host: `127.0.0.1:${process.env.E2E_FIRESTORE_EMULATOR_PORT || "8080"}`,
+    ssl: false,
+  });
+  const seeded: any[] = [];
+  async function event(type: string, payload: any) {
+    const ref = db.collection("broadcast").doc();
+    await ref.set({ type, payload, creator: key, timestamp: Timestamp.now() });
+    seeded.push(ref);
+  }
+  const urls = ["first", "second", "standalone"].map(
+    (name) => `https://example.com/${key}/${name}.svg`,
+  );
+  await context.route(`https://example.com/${key}/**`, (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" fill="green"/></svg>',
+    }),
+  );
+  try {
+    await event("create_listing", {
+      listing: {
+        handle: key,
+        title: key,
+        status: "no_sync",
+        images: urls.slice(0, 2).map((url, i) => ({
+          id: `image-${i}`,
+          url,
+          position: i + 1,
+          altText: "",
+        })),
+      },
+    });
+    await event("update_item", {
+      id: key,
+      item: {
+        janCode: key,
+        description: key,
+        qty: 3,
+        image: urls[0],
+        handle: key,
+        pieces: 1,
+        subtype: "",
+      },
+    });
+    await event("update_item", {
+      id: `${key}-standalone`,
+      item: {
+        janCode: `${key}-standalone`,
+        description: `${key} standalone`,
+        qty: 5,
+        image: urls[2],
+        pieces: 1,
+        subtype: "",
+      },
+    });
+    await event("photoRepair/sourceAdded", {
+      sourceId: key,
+      originalGoogleMediaId: key,
+    });
+    for (const [i, url] of urls.entries()) {
+      const ref =
+        i < 2
+          ? { kind: "listing_image", handle: key, imageId: `image-${i}` }
+          : { kind: "inventory", itemKey: `${key}-standalone` };
+      await event("photoRepair/entryAdded", {
+        entryId: `${key}-${i}`,
+        sourceId: key,
+        oldImageUrl: url,
+        targets: [{ ref, beforeUrl: url }],
+        evidence: { kind: "bad_import", transferEventIds: [] },
+      });
+    }
+    await page.goto("/photo-repair");
+    await page.getByRole("searchbox").fill(key);
+    const rows = page.locator("tbody tr");
+    await expect(rows).toHaveCount(1);
+    await expect(
+      rows.getByRole("button", { name: "Review", exact: true }),
+    ).toHaveCount(2);
+    await expect(rows.locator("img")).toHaveCount(2);
+    await rows.locator("img").first().hover();
+    await expect(page.locator(".image-preview-overlay")).toBeVisible();
+    await page.screenshot({
+      path: "/tmp/photo-repair-listing-hover.png",
+      fullPage: true,
+    });
+    await page.getByRole("heading", { level: 1 }).hover();
+    await page.getByRole("button", { name: "Saved work", exact: true }).click();
+    await expect(rows).toHaveCount(1);
+    await expect(
+      rows.getByRole("button", { name: "Review", exact: true }),
+    ).toHaveCount(2);
+    await page
+      .getByRole("button", { name: "Other stocked photos", exact: true })
+      .click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.locator("img")).toHaveCount(2);
+    await page.reload();
+    await page.getByRole("searchbox").fill(key);
+    await expect(rows).toHaveCount(1);
+    await expect(
+      rows.getByRole("button", { name: "Review", exact: true }),
+    ).toHaveCount(2);
+  } finally {
+    for (const ref of seeded.reverse()) await ref.delete();
     await deleteApp(app);
   }
 });

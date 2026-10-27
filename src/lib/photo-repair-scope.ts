@@ -112,6 +112,9 @@ export function stockedPhotoTasks(
   for (const [itemKey, item] of stockItems as [string, any][]) {
     const handle = root.listings.idToHandle[itemKey] || item.handle;
     const listing = listings[handle];
+    // Inventory images participate in a listing as variant images. Standalone
+    // inventory and library photos are outside the repair workflow.
+    if (!listing) continue;
     const images = [...(listing?.images || [])]
       .filter((i: any) => i.url)
       .sort((a: any, b: any) => a.position - b.position);
@@ -167,6 +170,62 @@ export function stockedPhotoTasks(
   );
   taskCache.set(root.inventory.idToItem, { dependencies, tasks: result });
   return result;
+}
+
+export function groupRepairPhotosByListing<
+  T extends { task?: StockPhotoTask; e?: EntryRecord },
+>(root: any, photos: T[]) {
+  const listings = root.listings.handleToListing || {};
+  const inventory = root.inventory.idToItem || {};
+  const groups = new Map<
+    string,
+    { handle: string; title: string; jans: string; stock: number; photos: T[] }
+  >();
+  for (const photo of photos) {
+    const handles = photo.task
+      ? photo.task.handles
+      : (photo.e?.targets || []).flatMap(({ ref }) => {
+          if (ref.kind === "listing_image" || ref.kind === "listing_new_image")
+            return [ref.handle];
+          if (ref.kind === "inventory") {
+            const handle =
+              root.listings.idToHandle[ref.itemKey] ||
+              inventory[ref.itemKey]?.handle;
+            return handle ? [handle] : [];
+          }
+          return [];
+        });
+    for (const handle of new Set(handles)) {
+      if (!listings[handle]) continue;
+      let group = groups.get(handle);
+      if (!group) {
+        const items = Object.entries(inventory)
+          .filter(
+            ([key, item]: [string, any]) =>
+              (root.listings.idToHandle[key] || item.handle) === handle,
+          )
+          .map(([, item]) => item as any);
+        group = {
+          handle,
+          title: listings[handle].title || handle,
+          jans: [...new Set(items.map((i) => i.janCode).filter(Boolean))].join(
+            ", ",
+          ),
+          stock: items.reduce(
+            (sum, i) =>
+              sum + Math.max(0, Number(i.qty || 0) - Number(i.shipped || 0)),
+            0,
+          ),
+          photos: [],
+        };
+        groups.set(handle, group);
+      }
+      group.photos.push(photo);
+    }
+  }
+  return [...groups.values()].sort(
+    (a, b) => b.stock - a.stock || a.title.localeCompare(b.title),
+  );
 }
 export function taskAssessment(root: any, task: StockPhotoTask): string {
   if (task.missing) return "Missing photo";
