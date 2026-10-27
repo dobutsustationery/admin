@@ -296,6 +296,27 @@ async function resolveFreshPhotosBaseUrl(
   return "";
 }
 
+async function emitRepairResult(
+  db,
+  requestEventId,
+  requestId,
+  creator,
+  repair,
+  result,
+) {
+  const original = repair.kind === "original";
+  const { kind, ...context } = repair;
+  await createIdempotentBroadcastAction(
+    db,
+    `photo_repair_result_${requestEventId}`,
+    {
+      type: `photoRepair/${original ? (result.artifact ? "originalImported" : "originalFailed") : result.artifact ? "stepCompleted" : "stepFailed"}`,
+      creator,
+      payload: { ...context, requestId, ...result },
+    },
+  );
+}
+
 async function emitSuccess({
   db,
   collectionName,
@@ -327,6 +348,26 @@ async function emitSuccess({
       payload,
     }),
   );
+
+  if (payload.repair) {
+    await emitRepairResult(
+      db,
+      requestEventId,
+      requestId,
+      creator,
+      payload.repair,
+      {
+        artifact: {
+          driveFileId: payload.driveFileId,
+          url: payload.permanentUrl,
+          webViewLink: payload.webViewLink || "",
+          filename: payload.filename,
+          mimeType: payload.mimeType,
+        },
+      },
+    );
+    return;
+  }
 
   const broadcastAction = isTransform
     ? {
@@ -394,7 +435,8 @@ async function fetchSourceBytes({
     throw new Error("missing_source_base_url");
   }
 
-  const isGoogleusercontent = baseUrl.includes("googleusercontent.com");
+  const isGoogleusercontent =
+    baseUrl.includes("googleusercontent.com") && !extractDriveFileId(baseUrl);
   const refreshedBaseUrl =
     isGoogleusercontent && photosAccessToken
       ? await resolveFreshPhotosBaseUrl(photoId, photosAccessToken, onApiCall)
@@ -404,15 +446,16 @@ async function fetchSourceBytes({
   const pushCandidate = (raw) => {
     const value = normalizeString(raw);
     if (!value) return;
-    candidateSet.add(value);
-    if (value.includes("googleusercontent.com")) {
+    if (isGoogleusercontent) {
       candidateSet.add(`${stripGoogleusercontentSuffix(value)}=d`);
+    } else {
+      candidateSet.add(value);
     }
   };
 
   pushCandidate(refreshedBaseUrl);
   pushCandidate(baseUrl);
-  pushCandidate(toDeletedShopifyCdnUrl(baseUrl));
+  if (!isGoogleusercontent) pushCandidate(toDeletedShopifyCdnUrl(baseUrl));
   const candidates = Array.from(candidateSet);
 
   let resp = null;
@@ -834,11 +877,16 @@ async function executeTransfer({
     : normalizeString(payload?.sourceType) ||
       (sourceBaseUrl.includes("googleusercontent.com") ? "photos" : "ext");
   const sourceId = driveFileId || photoId;
-  const derivationKey = generateDerivationKey(
-    sourceType,
-    sourceId,
-    transformName,
-  );
+  const repair = payload?.repair;
+  const derivationKey = repair
+    ? generateDerivationKey(
+        repair.kind === "original" ? "repair_original" : "repair_step",
+        repair.kind === "original"
+          ? repair.importId
+          : `${repair.attemptId}-${repair.stepIndex}`,
+        transformName,
+      )
+    : generateDerivationKey(sourceType, sourceId, transformName);
 
   const requestedBy = requestingUid(requestData);
   const logApiCall = (params) =>
@@ -878,6 +926,7 @@ async function executeTransfer({
           transformName,
           payload: {
             photoId,
+            ...(repair ? { repair } : {}),
             filename: existingFile.name,
             sourceUrl: sourceBaseUrl,
             sourceBaseUrl,
@@ -938,7 +987,7 @@ async function executeTransfer({
     }),
   );
 
-  if (!started.created) {
+  if (!started.created && !repair) {
     return { processed: false, reason: "already_started" };
   }
 
@@ -949,7 +998,7 @@ async function executeTransfer({
       if (transformName === "remove_bg") {
         // 1. Fetch Source
         const source = await fetchSourceBytes({
-          photoId,
+          photoId: payload.sourceRef?.mediaItemId || photoId,
           sourceBaseUrl,
           photosAccessToken,
           driveAccessToken,
@@ -964,7 +1013,7 @@ async function executeTransfer({
       } else if (transformName === "color_correct") {
         // 1. Fetch Source
         const source = await fetchSourceBytes({
-          photoId,
+          photoId: payload.sourceRef?.mediaItemId || photoId,
           sourceBaseUrl,
           photosAccessToken,
           driveAccessToken,
@@ -979,7 +1028,7 @@ async function executeTransfer({
       } else if (transformName === "crop") {
         // 1. Fetch Source
         const source = await fetchSourceBytes({
-          photoId,
+          photoId: payload.sourceRef?.mediaItemId || photoId,
           sourceBaseUrl,
           photosAccessToken,
           driveAccessToken,
@@ -991,12 +1040,34 @@ async function executeTransfer({
         bytes = await smartCrop(source.bytes);
         finalMimeType = "image/png"; // Result is always PNG from Sharp
         usedUrl = source.usedUrl;
+      } else if (transformName === "manual_crop") {
+        const source = await fetchSourceBytes({
+          photoId,
+          sourceBaseUrl,
+          photosAccessToken,
+          driveAccessToken,
+          onApiCall: logApiCall,
+        });
+        const sharp = require("sharp");
+        const c = payload.crop;
+        bytes = await sharp(source.bytes)
+          .rotate(Number(c.rotate) || undefined)
+          .extract({
+            left: Math.round(c.x),
+            top: Math.round(c.y),
+            width: Math.round(c.width),
+            height: Math.round(c.height),
+          })
+          .png()
+          .toBuffer();
+        finalMimeType = "image/png";
+        usedUrl = source.usedUrl;
       } else {
         throw new Error(`transform_not_implemented:${transformName}`);
       }
     } else {
       const source = await fetchSourceBytes({
-        photoId,
+        photoId: payload.sourceRef?.mediaItemId || photoId,
         sourceBaseUrl,
         photosAccessToken,
         driveAccessToken,
@@ -1009,7 +1080,7 @@ async function executeTransfer({
 
     const uploaded = await uploadToDrive({
       bytes,
-      mimeType: mimeType || finalMimeType,
+      mimeType: finalMimeType || mimeType,
       filename,
       folderId: targetFolderId,
       driveAccessToken,
@@ -1029,6 +1100,7 @@ async function executeTransfer({
       transformName,
       payload: {
         photoId,
+        ...(repair ? { repair } : {}),
         filename,
         sourceUrl: usedUrl,
         sourceBaseUrl,
@@ -1038,7 +1110,7 @@ async function executeTransfer({
         apiUrl: uploaded.apiUrl,
         webViewLink: uploaded.webViewLink,
         webContentLink: uploaded.webContentLink,
-        mimeType: uploaded.mimeType || mimeType || finalMimeType,
+        mimeType: uploaded.mimeType || finalMimeType || mimeType,
         derivationKey,
       },
     });
@@ -1088,6 +1160,7 @@ async function executeTransfer({
         requestedBy: requestingUid(requestData),
         payload: {
           photoId,
+          ...(repair ? { repair } : {}),
           errorCode: "transfer_failed",
           errorMessage: message,
           errorDetails,
@@ -1096,16 +1169,28 @@ async function executeTransfer({
       }),
     );
 
-    await createIdempotentBroadcastAction(db, `photos_fail_${requestEventId}`, {
-      type: "photos/fail_upload",
-      creator,
-      payload: {
-        id: photoId,
-        requestId,
-        error: message,
-        timestamp: nowMs(),
-      },
-    });
+    if (repair) {
+      await emitRepairResult(db, requestEventId, requestId, creator, repair, {
+        message: message.includes("source_fetch_failed")
+          ? "Could not download the original. Select it again in Google Photos or upload it from your computer."
+          : message,
+      });
+    } else {
+      await createIdempotentBroadcastAction(
+        db,
+        `photos_fail_${requestEventId}`,
+        {
+          type: "photos/fail_upload",
+          creator,
+          payload: {
+            id: photoId,
+            requestId,
+            error: message,
+            timestamp: nowMs(),
+          },
+        },
+      );
+    }
 
     if (message.includes("401") || message.includes("403")) {
       await emitSecretRequired({
@@ -1265,4 +1350,6 @@ async function processRequestEvent({
 module.exports = {
   processRequestEvent,
   toDeletedShopifyCdnUrl,
+  fetchSourceBytes,
+  emitRepairResult,
 };

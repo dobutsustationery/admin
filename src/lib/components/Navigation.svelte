@@ -64,6 +64,7 @@
         { href: "/itemhistory", label: "Item History", icon: History },
         { href: "/sku-review", label: "SKU Review", icon: CheckSquare },
         { href: "/photo-history", label: "Photo History", icon: Image },
+        { href: "/photo-repair", label: "Repair Imported Photos", icon: Image },
         { href: "/order-exceptions", label: "Order Exceptions", icon: Import },
         { href: "/unpriced", label: "Cost Issues", icon: ClipboardList },
         { href: "/audit", label: "Audit Log", icon: ClipboardList },

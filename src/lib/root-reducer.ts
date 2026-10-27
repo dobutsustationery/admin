@@ -1,3 +1,4 @@
+import { initialPhotoRepair, applyPhotoRepair } from "./photo-repair";
 import {
   initialPreparation,
   reducePreparation,
@@ -96,6 +97,7 @@ import {
 import { normalizeShopifySyncEventType } from "./sync-events";
 
 const reducerObject = {
+  photoRepair: (state = initialPhotoRepair) => state,
   amazonPreparation: (state = initialPreparation) => state,
   amazonAudit: (state = initialAmazonAudit) => state,
   orderReceipts,
@@ -2756,6 +2758,8 @@ export const rootReducer = (
   if (criticalActions.includes(action.type)) {
     logger(action, nextState, action._timestamp);
   }
+
+  nextState = applyPhotoRepair(nextState, action);
 
   const audit = reduceAmazonAudit(state?.amazonAudit, action);
   if (

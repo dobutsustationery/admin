@@ -5,7 +5,16 @@ describe("idempotency-utils", () => {
   describe("generateDerivationKey", () => {
     it("should generate a simple key for short IDs", () => {
       const key = generateDerivationKey("photos", "short-id", "identity");
-      expect(key).toBe("photos:short-id:identity");
+      expect(key).toBe("photos:short-id:identity_original_v2");
+    });
+
+    it("keeps ordinary Drive identities and separates fresh repair attempts", () => {
+      expect(generateDerivationKey("drive", "file", "identity")).toBe(
+        "drive:file:identity",
+      );
+      expect(
+        generateDerivationKey("repair_step", "attempt-a-0", "crop"),
+      ).not.toBe(generateDerivationKey("repair_step", "attempt-b-0", "crop"));
     });
 
     it("should handle remove_bg versioning", () => {
@@ -20,7 +29,7 @@ describe("idempotency-utils", () => {
 
       expect(key).not.toBeNull();
       expect(key!.length).toBeLessThanOrEqual(110);
-      expect(key).toMatch(/^photos:h_A{32}_\w{8}:identity$/);
+      expect(key).toMatch(/^photos:h_A{32}_\w{8}:identity_original_v2$/);
     });
 
     it("should be deterministic for long IDs", () => {

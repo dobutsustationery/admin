@@ -51,7 +51,10 @@ export function generateDerivationKey(
 
   // VERSIONING: We append a version to transforms to allow model upgrades
   // without clashing with old cached results in Drive properties.
-  const safeTransform = getVersionedTransform(String(transform || "identity"));
+  const safeTransform =
+    safeType === "photos" && (!transform || transform === "identity")
+      ? "identity_original_v2"
+      : getVersionedTransform(String(transform || "identity"));
 
   // Google Drive limit: Key + Value <= 124 bytes.
   // "derivation_key" is 14 bytes. So value must be <= 110 bytes.

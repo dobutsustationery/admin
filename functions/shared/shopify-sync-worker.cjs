@@ -187,6 +187,31 @@ async function appendFinalEvent(db, params) {
 
   const finalId = `result_${requestEventId}`;
   await createIdempotentEvent(db, finalId, finalEvent, options);
+  if (requestData.repairPublicationId) {
+    await createIdempotentEvent(
+      db,
+      `photo_repair_publish_${requestEventId}`,
+      {
+        type: "photoRepair/publicationFinished",
+        creator: creator || "shopify-sync-worker",
+        timestamp: FieldValue.serverTimestamp(),
+        payload: {
+          publicationId: requestData.repairPublicationId,
+          requestId,
+          outcome: status === "success" ? "completed" : "failed",
+          syncEventId: finalId,
+          ...(status === "success"
+            ? {}
+            : {
+                message:
+                  payload?.error ||
+                  "Shopify sync did not complete. Retry sync.",
+              }),
+        },
+      },
+      { collectionName: "broadcast" },
+    );
+  }
 }
 
 async function executeClaimedRequest({

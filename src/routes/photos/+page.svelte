@@ -1374,6 +1374,7 @@
   <div class="header-section">
     <div>
       <h1 class="page-title">Google Photos Import</h1>
+      <a href="/photo-repair">Repair imported photos</a>
       <div class="auth-status-row">
         <!-- Status Indicator -->
         {#if isPhotosAuthenticated}

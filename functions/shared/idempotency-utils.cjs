@@ -56,7 +56,7 @@ function generateDerivationKey(type, id, transform) {
   if (!id)
     return null;
   const safeType = String(type || "unknown");
-  const safeTransform = getVersionedTransform(String(transform || "identity"));
+  const safeTransform = safeType === "photos" && (!transform || transform === "identity") ? "identity_original_v2" : getVersionedTransform(String(transform || "identity"));
   let safeId = String(id).replace(/:/g, "_");
   const baseKey = `${safeType}:${safeId}:${safeTransform}`;
   if (baseKey.length > 110) {

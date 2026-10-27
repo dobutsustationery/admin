@@ -113,10 +113,11 @@ type Step =
       height: number;
       inputWidth: number;
       inputHeight: number;
+      rotate?: number;
     };
 ```
 
-`proposalKey` is the key in `listingCreation.proposals`; `variantId` is the existing `ListingVariant.id`. Manual crop coordinates are pixels in the displayed input image after orientation is applied, with origin at its top left. Array order is processing order. The UI calls `smart_crop` simply Crop and distinguishes manual crop in its controls.
+`proposalKey` is the key in `listingCreation.proposals`; `variantId` is the existing `ListingVariant.id`. Manual crop coordinates are pixels in the displayed input image after orientation is applied, with origin at its top left. Manual crops also record the rotation from the existing crop tool. The browser uploads its rendered PNG and records that output against the crop step. Array order is processing order. The UI calls `smart_crop` simply Crop and distinguishes manual crop in its controls.
 
 A target identifies one field occurrence. Do not replace every occurrence of a URL across the database. Use Drive file identity to discover alternate URL forms, but record each occurrence's actual stored `beforeUrl`. A listing image ID can differ from a photo ID; keep both as they are.
 
@@ -287,7 +288,7 @@ Resolve each target by its existing key and replace only the image field shown b
 
 For photo targets, compare `beforeUrl` with `baseUrl`; for inventory and proposal variants compare with `image`; for listing and proposal images compare with `url`. Keep the logical photo filename and original source metadata unchanged. Set the current photo MIME type to the candidate's actual format, since a processed PNG must not remain labelled HEIC. The new source's filename and Google media ID remain in the repair records; the existing photo ID continues to identify the same product photo slot.
 
-When `existingPhotoId` is present and approval applies, prepend the candidate URL once to `photos.urlHistory[existingPhotoId]`, retaining the prior history. Do not copy candidate processing flags into `photos.edits[existingPhotoId]`; processing history for this repair lives under its attempt. Do not rewrite historical broadcast events or replace old URLs inside historical edit records.
+When approval applies, prepend the candidate URL once to the history of `existingPhotoId` and every photo ID in the approved photo targets, retaining their prior history. Repeated uses of the same file can have distinct logical photo IDs. Do not copy candidate processing flags into `photos.edits[existingPhotoId]`; processing history for this repair lives under its attempt. Do not rewrite historical broadcast events or replace old URLs inside historical edit records.
 
 Keep `photoGroupIds`, `photoGroupKey`, `listingImageOrder`, `excludedPhotoIds`, inventory keys, listing handles and item-to-handle mappings unchanged. If an existing photo ID has several current edited versions, an entry updates only the occurrences of its chosen old version. Other entries using that ID stay pending and keep their own before images.
 

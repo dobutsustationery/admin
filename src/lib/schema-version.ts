@@ -75,4 +75,5 @@
 // 26: durable per-user Amazon preparation drafts and explicit apply/discard.
 // 27: replay Amifa parsing and decimal weights saved through text inputs.
 // 28: Amazon comparison includes all manufacturers.
-export const CURRENT_SCHEMA_VERSION = 28;
+// 29: durable photo repair candidates and explicit approval.
+export const CURRENT_SCHEMA_VERSION = 29;

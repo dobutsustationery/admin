@@ -104,6 +104,8 @@
                 width: Math.round(cropData.width),
                 height: Math.round(cropData.height),
                 rotate: Math.round(cropData.rotate),
+                inputWidth: cropperInstance.getImageData().naturalWidth,
+                inputHeight: cropperInstance.getImageData().naturalHeight,
               },
             });
             open = false;
