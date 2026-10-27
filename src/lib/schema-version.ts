@@ -1,7 +1,12 @@
 /**
  * Redux State Schema Version
- * Increment this number to invalidate all hydrated state and force a full replay of broadcast actions.
- * Use this whenever the shape of the state changes in a non-backward-compatible way.
+ * Changing this number invalidates all hydrated state and forces a very expensive
+ * full replay of broadcast actions. Keep it unchanged unless replay is REQUIRED
+ * for correctness. Prefer compatible defaults, lazy initialization, targeted
+ * migration, or recomputation from cached facts. New fields/slices/events and
+ * reducer changes alone do not justify a bump.
+ * Before changing it, document the affected production cache contents and why
+ * those alternatives are insufficient. See AGENTS.md for the repository rule.
  */
 // 5: `cost` is now DERIVED from a per-item receipt/sale costLedger
 //    (perpetual weighted-average) instead of last-write. Hydrated v4
@@ -67,7 +72,7 @@
 //     amazonCatalog slice, and duplicate-JAN variation payloads derive
 //     product-identifier exemption fields instead of repeated EAN identity.
 // 21: durable customs source/decision events project summaries in the reducer.
-// Bump this version when fixing calculations so cached projections fully replay.
+// Calculation fixes require a bump only when the repository rule above is met.
 // 22: order-linked receiving drafts and once-only inventory/asset acceptance.
 // 23: receiving resets obsolete loose-piece settings at zero available stock.
 // 24: scoped Amifa audit observations and saved SKU mappings derive in replay.
