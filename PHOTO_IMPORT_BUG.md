@@ -68,16 +68,13 @@ The third has fully recorded ancestry; the first two have incomplete manual-edit
 
 Shopify should receive a suitably large master derived from the full-resolution source and the intended edits. The existing sync requests up to 1600 pixels on the longest side. An `_s1600` filename or requested size is not proof that those pixels exist; cropping can change dimensions, and a small source cannot become a sharp large master by resizing.
 
-## Repair approach and verification
+## Repair flow
 
-1. Fix the source downloader before bulk reprocessing. Use the original-download form for Google Photos imports; do not silently accept a preview as a successful original import. Validate decoded dimensions against source metadata, allowing documented orientation/transform effects, and surface failures clearly.
-2. Preserve source dimensions, downloaded dimensions, photo ID and edit ancestry so future imports can be audited. Add regression coverage for a bare URL returning HTTP 200 with a preview, failed original downloads, and cached low-resolution results.
-3. Retrieve fresh original sources and regenerate the intended edits. Prioritize the 76 live, stocked products with degraded lead images, then the other affected gallery images. Do not merely enlarge existing files.
-4. Invalidate or deliberately bypass old derivations. The worker's derivation key uses source type, source ID and transform; a normal retry can reuse an existing Drive result. Re-syncing the same file is not a repair.
-5. Preserve product/variant image associations, selected edits and ordering. Validate repaired Drive files before replacing Shopify media, then inspect the actual CDN master dimensions and visual detail afterward.
-6. Review uncertain-origin and larger-history cases separately. Do not assume every small legacy image was caused by this regression.
+Fix the downloader by removing the bare-URL preview path. Re-import originals for photos that went through it, using Google Photos selection or a local upload when the old source is no longer accessible. Fresh imports and processing retries must not reuse the broken cached results.
 
-No repair was performed by the original audit or by writing this summary. Production deployment/fix status has not been independently re-checked here.
+Give the user a repair queue with the existing processing controls. Show the current image, new original and processed candidate side by side. Every candidate requires manual review: **Approve and update**, **Redo processing**, **Choose another original** or **Later**. Approval replaces the displayed product uses and syncs them to Shopify, keeping gallery order and variant assignments.
+
+The [photo import repair plan](docs/design/photo-import-repair-plan.md) describes this flow. No repair was performed by the original audit or by writing this summary.
 
 ## Evidence already in this repository
 

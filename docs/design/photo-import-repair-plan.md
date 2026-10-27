@@ -1,62 +1,62 @@
 # Photo import repair plan
 
-Proposed implementation and recovery sequence, October 26, 2026. Fix future imports first, then recover affected product images from original sources while preserving their intended edits and associations. The [bug summary](../../PHOTO_IMPORT_BUG.md) and [snapshot audit](../investigations/PHOTO_RESOLUTION_AUDIT_2026-10-26.md) contain the incident evidence. No repair or deployment is recorded by this plan.
+Fix the downloader, re-import photos that went through the broken path, and give the user a queue to review every replacement. Each photo is processed with the existing tools. Nothing is replaced until the user approves its new candidate.
 
-## Download and verify original sources
+## Fix the bug
 
-Extract the source-download policy in `functions/shared/photos-sync-worker.cjs` into a testable helper. Classify sources explicitly as Google Photos, Drive or external URLs rather than applying a Photos fallback policy to every image.
+Remove the bare Google Photos URL from the source download candidates. Download using `=d`; if that fails, show the import failure and let the user retry or select the original again. Do not fall back to a preview.
 
-For Photos images, try the refreshed download URL and then the stored download URL, each using the normalized `=d` form and the appropriate Photos bearer token. Never accept a bare URL or thumbnail rendition as an original fallback. If the original cannot be retrieved, fail with a useful retry/reselection state. Preserve authenticated Drive media downloads and existing external-source recovery as separate policies.
+A re-import must fetch a fresh source instead of returning the old cached Drive copy. Redoing processing must actually run it again instead of returning the previous cached result. Make those two actions work in both browser and server paths.
 
-Google documents the download parameter, requires bearer authorization for Picker media URLs, and limits those URLs to about 60 minutes. A stored photo ID is therefore not a guarantee of later access; recovery must support reselection. See [Google Photos media retrieval](https://developers.google.com/photos/picker/guides/media-items).
+## Open the repair queue
 
-Carry expected width and height from the selected media metadata through transfer requests. Decode downloaded bytes before upload; check actual dimensions and format against expected dimensions, accounting for EXIF orientation. Reject unexplained reductions. Where metadata is absent, require successful download-form retrieval and decodable bytes, record quality as unverified, and flag suspicious small sources for review rather than claiming original resolution. A legitimately small original must not fail solely because of a universal minimum size.
+Add a **Repair imported photos** screen linked from Photos. Populate it from recorded imports through the bad path and their product associations, using the existing audit as a starting point. Include photos even if a later edit produced a larger file. Group repeated uses of the same source so the user does not need to import it repeatedly.
 
-Verify HEIC support in the deployed image decoder. If the runtime cannot decode the returned original, report an explicit format failure or use a documented full-resolution conversion path; do not silently recover via previews. Use the decoded response format for uploads so a converted response is not labelled with the selected source's old MIME type.
+Show the product name, JAN, current image and progress for each entry. Put stocked products first. Provide filters for **Needs original**, **Processing**, **Needs review** and **Done**. Keep progress when the user leaves and returns.
 
-## Prevent reuse of degraded imports
+Small images with no known bad-path import can appear under **Other small images** for the same manual workflow. They do not need to block work on the known affected imports.
 
-Introduce a source-quality version for Photos identity imports in the shared derivation-key policy. Update browser lookups and server lookups together. The TypeScript utility is the source of truth; its CommonJS counterpart is generated for functions. Audit all upload entry points, including `PhotoUploadManager`, photo history, Photos transforms and Gemini paths, before selecting the versioning boundary.
+## Get the correct originals into the system
 
-Do not accept a legacy cached Photos import as a verified original. Persist a quality version, expected and measured dimensions, source identity and content hash with new successful imports. Cache reuse must preserve those facts. Use a new repaired source Drive ID for downstream transformations so their derivations cannot resolve to the old source's results.
+The user selects entries and chooses **Re-import originals**. Fetch the originals where access still works. For anything that cannot be fetched, show **Select original in Google Photos** and the old image and filename to help the user find it. Also allow **Upload original** from the computer.
 
-The existing `forceFunctionsPath` flag only skips the server's pre-work lookup. It does not address browser caches, and duplicate request IDs can still stop at the existing started/result events. Recovery needs new stable request IDs scoped to the repair and a deliberate quality version, with retries reusing those same repair IDs.
+When choosing a replacement source, show it beside the old image so the user can confirm it is the right photo. The user can select originals for several entries in one session and assign each to its entry. An imported original becomes the starting point for that entry's processing.
 
-## Preserve source and edit lineage
+## Process as before
 
-Record the original Photos ID, source Drive file ID, parent edit ID, expected source dimensions, decoded dimensions, output dimensions, actual MIME type, content hash and quality policy version. Keep recoverable facts in durable completion events and the projections needed by subsequent edits. Avoid introducing credentials or fresh expiring media URLs into audit artifacts.
+Use the existing processing pipeline and photo-history controls: colour correction, background removal, cropping and manual edits. Prefill the previous processing steps where known; otherwise use the user's current settings. The user can change those choices.
 
-Treat original dimensions and transformed output dimensions separately: a deliberate crop can reduce dimensions without indicating a bad import. Retain the ordered edit chain and any manual crop geometry. Do not rerun a historical manual crop as today's automatic smart crop, or assume a newly executed AI edit will reproduce the selected image exactly.
+Run processing for the selected entries and put the results into **Needs review**. These results are candidates. Processing a candidate does not change the current product image.
 
-## Test before release
+## Review every candidate
 
-- A bare URL would return a 512-pixel HTTP 200 preview, but is never used for a Photos original import.
-- Refreshed `=d` failure tries the stored `=d`; failure of both never falls back to a preview or emits a successful upload.
-- Dimension mismatch, rotated EXIF dimensions, a genuinely small original, missing metadata, invalid image bytes and HEIC/runtime format failures have explicit outcomes.
-- A legacy cached low-resolution import cannot bypass quality validation in either browser or worker. A verified current-version cache entry remains reusable.
-- Drive and external-source imports retain their intended behavior. Actual response MIME type survives upload and completion.
-- Repair retries do not duplicate completed work, interrupted work can recover, and the selected edit order, gallery order and variant associations remain intact.
+For each entry, show three images with zoom:
 
-Use mocked network/image fixtures for worker tests and a focused browser test for selection, cache bypass and visible failures. Run one freshly selected original through import and the normal edit pipeline; compare decoded source dimensions and visually inspect the output before enabling broad recovery.
+- **Current image** — what the product uses now.
+- **New original** — the freshly imported source.
+- **New candidate** — the processed result being reviewed.
 
-## Recover existing products in bounded batches
+Show where the image is used, including gallery positions and variants. Give the user these actions:
 
-Build a dry-run manifest from the audit CSVs, refreshed against current product/image state. Retain the audit's confidence classes: 346 fully traced images, 163 linked through the same photo with incomplete edit history, and 31 small images with unverified origin. Do not automatically attribute or regenerate the latter group. Review the seven medium-resolution images and 59 larger images with thumbnail history separately.
+- **Approve and update** — replace the current image with this candidate in the displayed uses, keeping gallery order and variant assignments. Send the updated images through the existing Shopify sync. Mark the entry Done when the update succeeds; show Retry if it fails.
+- **Redo processing** — return to the existing controls, change steps or edit manually, and generate another candidate. The user can start from the new original or a chosen processing step.
+- **Choose another original** — select or upload a different source and process it.
+- **Later** — leave the entry in the queue and move on.
 
-Prioritize the 76 live, stocked products with degraded lead images in the October 26 snapshot. Start with JAN `4542804169317`, whose three images provide a concrete comparison, then proceed to other affected gallery images. Current stock, publication state and images may have changed since the snapshot; recheck them when building a batch.
+Every candidate requires manual approval. There is no automatic approval or bulk approve action. Where one source has several different edited versions, each replacement candidate gets its own review.
 
-For each image, capture current references and ordering, retrieve or reselect the original, validate the new Drive source, and replay only the reproducible intended edits. Incomplete manual lineage goes to visual review. Stage the replacement without disturbing the current published image, then compare it with the current version. Retain old Drive assets and a mapping from old references to replacements for rollback.
+## Implementation
 
-Inspect the Shopify sync replacement behavior before choosing the publication operation; verify preservation of variant image assignments, alt text, lead image and gallery order. Replace only successfully prepared images, detect concurrent product changes, and journal each completed replacement so an interrupted batch can resume. Retain a concrete rollback manifest without deleting the old assets during repair.
+Keep a repair entry with its affected image uses, new original, candidate, processing choices and review status. Reuse the current importer, processing tools, history view and Shopify sync. Keep repair candidates separate from the active product photo until approval; the normal photo completion actions currently update active photo state, so they cannot be used unchanged for candidates.
 
-After publication, download the actual Shopify CDN master without sizing parameters, decode it and compare dimensions and visual detail with the prepared output. A filename containing `_s1600`, a successful upload response or a large upscaled image is not acceptance. Track repaired, awaiting reselection, awaiting edit review and failed rows separately.
+Build this in three pieces:
 
-## Delivery sequence
+1. Fix the downloader and make fresh re-import and redo bypass old results. Cover the preview-download regression with a focused test.
+2. Add the repair queue and source selection, then connect existing processing controls to candidates.
+3. Add side-by-side review and Approve and update. Walk all three calendar images for JAN `4542804169317` through the complete flow before working through the rest of the queue.
 
-1. Commit downloader policy, decoded validation and regression coverage.
-2. Commit quality-aware cache handling, request metadata and durable lineage across browser/server paths.
-3. Release the import fix and verify a fresh original plus normal edits.
-4. Implement manifest generation and a resumable recovery tool with a dry-run default and per-batch results.
-5. Verify the three calendar images end to end, then recover priority batches and review uncertain cases separately.
+The flow is complete when the user can import a correct source, process it, reject and redo the result, approve it, and see the replacement on the product without losing its position or variant assignment.
 
-The implementation can start with download correctness and tests. Bulk recovery depends on source access, reproducible edit history and verified Shopify replacement behavior.
+## Incident evidence
+
+See the [bug summary](../../PHOTO_IMPORT_BUG.md) and [October 26 audit](../investigations/PHOTO_RESOLUTION_AUDIT_2026-10-26.md). The audit is the starting inventory of affected photos; the repair queue tracks the work from here.
