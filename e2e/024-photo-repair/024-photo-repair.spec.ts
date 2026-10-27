@@ -868,12 +868,39 @@ test("selects originals first, matches a batch by ID and resumes processing afte
     await page.getByRole("searchbox").fill(key);
     await expect(page.locator("tbody tr")).toHaveCount(1);
     await expect(page.locator("tbody tr")).toContainText("Ready to process");
+    await expect(
+      page.getByRole("region", { name: "Photo repair review" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Process original", exact: true }),
+    ).toBeEnabled();
+
     await page
       .getByRole("button", { name: "1. Select originals", exact: true })
       .click();
     await expect(
       page.getByText("0 originals still needed", { exact: false }),
     ).toBeVisible();
+    const imported = page.getByRole("region", {
+      name: "Imported originals awaiting review",
+    });
+    await expect(imported).toContainText("original-0.HEIC");
+    await expect(imported).toContainText("original-1.HEIC");
+    await expect(imported.locator("tbody tr")).toHaveCount(1);
+    await page.reload();
+    await expect(imported).toContainText("original-0.HEIC");
+    await page
+      .getByRole("button", { name: "Resume original-0.HEIC", exact: true })
+      .click();
+    await expect(
+      page.getByRole("region", { name: "Photo repair review" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Process original", exact: true }),
+    ).toBeEnabled();
+    await page
+      .getByRole("button", { name: "1. Select originals", exact: true })
+      .click();
     await page.screenshot({
       path: "/tmp/photo-repair-selection-finished.png",
       fullPage: true,

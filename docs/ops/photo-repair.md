@@ -4,7 +4,7 @@ Open **Photos → Repair imported photos**. The first step is **Select originals
 
 Choose a date, copy it for Google Photos search, and choose **Select originals in Google Photos**. Select that day’s photos together; extra selections are fine. The app matches persistent Google photo IDs to current repair sources and immediately requests imports of matching originals. Extra photos are left unassigned, and sources already imported or importing are not imported again. Failed originals can be selected again.
 
-After matching, the screen moves to **Process and review**. Imports may still be running. Use each photo’s Review button to process, inspect, approve or redo as before. Originals and attempts are saved in the event log; the selected screen is remembered in this browser tab across reloads. You can switch back to Select originals for another capture date.
+After matching, the screen moves to **Process and review**. Imports may still be running. Use each photo’s Review button to process, inspect, approve or redo as before. Originals and attempts are saved in the event log; the selected screen and open repair are remembered in this browser tab across reloads. You can switch back to Select originals for another capture date. Its **Imported originals — continue your repairs** section groups saved originals by listing, with filenames, dates and Resume buttons. Imported photos leave the missing-originals list but remain available here until repaired or marked good.
 
 Use **Check stocked item photos** to discover additional problems. Old detection results do not need to be scanned again to appear. There is no automatic re-import from old Google Photos links; expired selections require a fresh picker selection.
 

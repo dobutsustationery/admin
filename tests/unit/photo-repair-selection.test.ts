@@ -94,6 +94,21 @@ describe("selection before photo repair", () => {
     const sources = repairSelectionSources(root, stockedPhotoTasks(root));
     expect(sources.map((s) => s.entry.entryId)).toEqual(["two"]);
     expect(sources[0].importing).toBe(true);
+    const all = repairSelectionSources(
+      root,
+      stockedPhotoTasks(root),
+      undefined,
+      true,
+    );
+    expect(all.find((s) => s.entry.entryId === "one")?.imported).toBe(true);
+    expect(all.find((s) => s.entry.entryId === "two")?.importing).toBe(true);
+    expect(
+      matchRepairSelections(all, [
+        selected("google-one"),
+        selected("google-two"),
+      ]).matches,
+    ).toHaveLength(0);
+
     expect(
       matchRepairSelections(sources, [
         selected("google-one"),

@@ -17,6 +17,7 @@ export function repairSelectionSources(
   root: any,
   tasks: StockPhotoTask[],
   audit?: PhotoAudit,
+  includeImported = false,
 ) {
   const repair = root.photoRepair || initialPhotoRepair;
   const sources = new Map<
@@ -30,6 +31,9 @@ export function repairSelectionSources(
       title: string;
       url: string;
       importing: boolean;
+      imported: boolean;
+      importedAt: number;
+      task: StockPhotoTask;
     }
   >();
   for (const entry of Object.values(repair.entriesById) as EntryRecord[]) {
@@ -43,7 +47,7 @@ export function repairSelectionSources(
     const assessment = taskAssessment(root, task);
     if (assessment !== "Not checked" && !photoNeedsWork(assessment)) continue;
     const original = originalFor(repair, entry);
-    if (original?.result?.artifact) continue;
+    if (original?.result?.artifact && !includeImported) continue;
     const source = repair.sourcesById[entry.sourceId];
     const mediaItemId = source?.originalGoogleMediaId || "";
     const photo =
@@ -63,6 +67,9 @@ export function repairSelectionSources(
       title: task.title,
       url: task.url,
       importing: !!original && !original.result,
+      imported: !!original?.result?.artifact,
+      importedAt: original?.result?.fact?.atMs || 0,
+      task,
     });
   }
   return [...sources.values()].sort(
@@ -78,7 +85,9 @@ export function matchRepairSelections(
   const picked = new Map(photos.map((photo) => [photo.id, photo]));
   const matches = sources.flatMap((source) => {
     const photo = picked.get(source.mediaItemId);
-    return photo && !source.importing ? [{ source, photo }] : [];
+    return photo && !source.importing && !source.imported
+      ? [{ source, photo }]
+      : [];
   });
   const matchedIds = new Set(matches.map((match) => match.photo.id));
   return {

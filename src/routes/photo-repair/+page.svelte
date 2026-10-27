@@ -65,7 +65,22 @@
   let mode = "Needs photos";
   let phase = "selection";
   let selectionDate = "";
-  $: selectionSources = repairSelectionSources($store, tasks, audit);
+  let resumeId = "";
+  let restoreActive = false;
+  $: allOriginalSources = repairSelectionSources($store, tasks, audit, true);
+  $: selectionSources = allOriginalSources.filter((source) => !source.imported);
+  $: importedSources = allOriginalSources
+    .filter((source) => source.imported)
+    .sort((a, b) => b.importedAt - a.importedAt);
+  $: importedListings = groupRepairPhotosByListing($store, importedSources);
+  $: importedResume =
+    importedSources.find((source) => source.entry.entryId === resumeId) ||
+    importedSources[0];
+  $: resumeEntry = repair.entriesById[resumeId] || importedSources[0]?.entry;
+  $: if (restoreActive && resumeEntry) {
+    restoreActive = false;
+    openEntry(resumeEntry);
+  }
   $: selectionDates = [...new Set(selectionSources.map((s) => s.date))];
   $: if (!selectionDates.includes(selectionDate))
     selectionDate = selectionDates[0] || "";
@@ -274,6 +289,8 @@
       sessionStorage.getItem("photo-repair-phase") === "repair"
         ? "repair"
         : "selection";
+    resumeId = sessionStorage.getItem("photo-repair-active-entry") || "";
+    restoreActive = phase === "repair";
     void loadPhotoAudit()
       .then((value) => (audit = value))
       .catch((e: Error) => (error = e.message));
@@ -340,11 +357,14 @@
   }
   function setPhase(value: string) {
     phase = value;
+    if (value === "selection") restoreActive = false;
     sessionStorage.setItem("photo-repair-phase", value);
   }
   function openEntry(e: EntryRecord) {
     setPhase("repair");
     activeId = e.entryId;
+    resumeId = e.entryId;
+    sessionStorage.setItem("photo-repair-active-entry", e.entryId);
     startAt = "original";
     error = "";
     const previous = repair.attemptsById[e.selectedAttemptId || ""]?.steps.map(
@@ -614,6 +634,15 @@
         originals are imported automatically, then you can process and review
         them.
       </p>
+      {#if importedResume}<div class="actions">
+          <button
+            class="primary"
+            on:click={() => openEntry(importedResume.entry)}
+            >Resume {importedResume.filename}</button
+          ><span
+            >Original already imported — continue processing and review.</span
+          >
+        </div>{/if}
       {#if selectionSources.length}
         <div class="actions">
           <label
@@ -674,6 +703,48 @@
           {/each}
         </div>
       {/each}
+      {#if importedSources.length}
+        <section aria-label="Imported originals awaiting review">
+          <h2>Imported originals — continue your repairs</h2>
+          <p>
+            These originals are already saved. Resume a repair here without
+            selecting the photo again.
+          </p>
+          <table>
+            <thead><tr><th>Listing</th><th>Imported photos</th></tr></thead>
+            <tbody
+              >{#each importedListings as listing (listing.handle)}<tr>
+                  <td>{listing.title}<small>{listing.jans}</small></td>
+                  <td
+                    ><div class="photo-summaries">
+                      {#each listing.photos as source (source.entry.sourceId)}<div
+                          class="photo-summary"
+                        >
+                          <ImageThumbnail
+                            src={originalFor(repair, source.entry)?.result
+                              ?.artifact?.url || source.url}
+                            alt={source.filename}
+                            width="100px"
+                            height="100px"
+                            fit="contain"
+                          />
+                          <strong>{source.filename}</strong><small
+                            >{source.date} · {repairStatus(
+                              repair,
+                              source.entry,
+                            )}</small
+                          >
+                          <button on:click={() => openEntry(source.entry)}
+                            >Resume repair</button
+                          >
+                        </div>{/each}
+                    </div></td
+                  >
+                </tr>{/each}</tbody
+            >
+          </table>
+        </section>
+      {/if}
       {#if picked.length}<p>
           {picked.length} selected photos could not be matched automatically. In Process
           and review, open a photo to assign one if needed.
