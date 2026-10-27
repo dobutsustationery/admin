@@ -76,4 +76,5 @@
 // 27: replay Amifa parsing and decimal weights saved through text inputs.
 // 28: Amazon comparison includes all manufacturers.
 // 29: durable photo repair candidates and explicit approval.
-export const CURRENT_SCHEMA_VERSION = 29;
+// 30: current-stock photo checks, review decisions and duplicate-reference approval.
+export const CURRENT_SCHEMA_VERSION = 30;

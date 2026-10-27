@@ -83,6 +83,11 @@ test("repair candidates survive reload, redo and require approval before replace
     requestId: key,
     choice: { kind: "upload", filename: "original.png", mimeType: "image/png" },
   });
+  await event("photoRepair/imageMeasured", {
+    url: oldUrl,
+    width: 400,
+    height: 512,
+  });
   await event("photoRepair/originalImported", {
     sourceId,
     importId: key,
@@ -244,6 +249,7 @@ test("repair candidates survive reload, redo and require approval before replace
       approvals.docs.filter((d) => d.data().payload.entryId === entryId),
     ).toHaveLength(1);
     await page.reload();
+    await page.getByRole("button", { name: "Saved work", exact: true }).click();
     await page.getByRole("searchbox").fill(key);
     await expect(
       page.locator("tbody tr").filter({ hasText: key }),
@@ -259,6 +265,210 @@ test("repair candidates survive reload, redo and require approval before replace
         seeded.push(d.ref);
     }
     for (const ref of seeded) await ref.delete();
+    await deleteApp(app);
+  }
+});
+
+test("checks current stocked photos, skips fixed images, remembers good decisions and fills missing photos", async ({
+  page,
+  context,
+  authenticatedPage,
+}) => {
+  void authenticatedPage;
+  test.setTimeout(90000);
+  const key = `stock-photos-${Date.now()}`;
+  const app = initializeApp({ projectId: "demo-test-project" }, key);
+  const db = initializeFirestore(app, {
+    host: `127.0.0.1:${process.env.E2E_FIRESTORE_EMULATOR_PORT || "8080"}`,
+    ssl: false,
+  });
+  const tracked: any[] = [];
+  const at = () => Timestamp.now();
+  async function event(type: string, payload: any) {
+    const ref = db.collection("broadcast").doc();
+    await ref.set({
+      type,
+      payload,
+      creator: "stock-photo-test",
+      timestamp: at(),
+    });
+    tracked.push(ref);
+  }
+  const ids = {
+    bad: `${key}-bad`,
+    good: `${key}-good`,
+    missing: `${key}-missing`,
+    sold: `${key}-sold`,
+  };
+  const urls = {
+    bad: `https://example.com/${key}/bad.svg`,
+    good: `https://example.com/${key}/good.svg`,
+    sold: `https://example.com/${key}/sold.svg`,
+  };
+  for (const [kind, itemId] of Object.entries(ids))
+    await event("update_item", {
+      id: itemId,
+      item: {
+        janCode: itemId,
+        subtype: "",
+        description: `${key} ${kind}`,
+        qty: kind === "sold" ? 0 : 2,
+        pieces: 1,
+        image: kind === "missing" ? "" : urls[kind as keyof typeof urls],
+      },
+    });
+  await event("create_listing", {
+    listing: {
+      handle: key,
+      title: `${key} missing`,
+      bodyHtml: "",
+      productCategory: "",
+      productType: "",
+      vendor: "",
+      tags: [],
+      status: "no_sync",
+      option1Name: "Subtype",
+      images: [],
+      lastUpdated: 0,
+    },
+  });
+  await event("update_field", {
+    id: ids.missing,
+    field: "handle",
+    from: "",
+    to: key,
+  });
+  // A known historical bad import must not make a currently large photo a repair task.
+  await event("photoRepair/sourceAdded", {
+    sourceId: key,
+    originalGoogleMediaId: `${key}-old-google`,
+  });
+  await event("photoRepair/entryAdded", {
+    entryId: `${key}-old-entry`,
+    sourceId: key,
+    oldImageUrl: urls.good,
+    targets: [
+      { ref: { kind: "inventory", itemKey: ids.good }, beforeUrl: urls.good },
+    ],
+    evidence: { kind: "bad_import", transferEventIds: [] },
+  });
+  await context.route(`https://example.com/${key}/**`, (route) => {
+    const size = route.request().url().includes("good") ? 1600 : 400;
+    return route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="100%" height="100%" fill="green"/></svg>`,
+    });
+  });
+  try {
+    await page.goto("/photo-repair");
+    await page
+      .getByRole("button", { name: "Check stocked item photos", exact: true })
+      .click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Checked 3 current photos. 2 need attention." }),
+    ).toBeVisible();
+    const rows = page.locator("tbody tr");
+    await expect(rows.filter({ hasText: `${key} bad` })).toHaveCount(1);
+    await expect(rows.filter({ hasText: `${key} missing` })).toHaveCount(1);
+    await expect(rows.filter({ hasText: `${key} good` })).toHaveCount(0);
+    await expect(rows.filter({ hasText: `${key} sold` })).toHaveCount(0);
+    await rows
+      .filter({ hasText: `${key} bad` })
+      .getByRole("button", { name: "Review", exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: "Photo is good — no repair needed",
+        exact: true,
+      })
+      .click();
+    await expect(rows.filter({ hasText: `${key} bad` })).toHaveCount(0);
+    await page.reload();
+    await expect(
+      page.locator("tbody tr").filter({ hasText: `${key} bad` }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Other stocked photos", exact: true })
+      .click();
+    await page
+      .locator("tbody tr")
+      .filter({ hasText: `${key} good` })
+      .getByRole("button", { name: "Needs a better photo", exact: true })
+      .click();
+    await expect(
+      page.getByRole("region", { name: "Photo repair review" }),
+    ).toContainText(`${key} good`);
+    await page
+      .getByRole("button", { name: "Needs photos", exact: true })
+      .click();
+    await page
+      .locator("tbody tr")
+      .filter({ hasText: `${key} missing` })
+      .getByRole("button", { name: "Review", exact: true })
+      .click();
+    const entries = await db
+      .collection("broadcast")
+      .where("type", "==", "photoRepair/entryAdded")
+      .get();
+    const missing = entries.docs
+      .find((d) =>
+        d
+          .data()
+          .payload.targets.some(
+            (t: any) =>
+              t.ref.kind === "inventory" && t.ref.itemKey === ids.missing,
+          ),
+      )!
+      .data().payload;
+    const importId = `${key}-upload`;
+    await event("photoRepair/originalRequested", {
+      sourceId: missing.sourceId,
+      importId,
+      requestId: importId,
+      choice: {
+        kind: "upload",
+        filename: "correct-original.png",
+        mimeType: "image/png",
+      },
+    });
+    await event("photoRepair/originalImported", {
+      sourceId: missing.sourceId,
+      importId,
+      requestId: importId,
+      artifact: {
+        driveFileId: "correct-file",
+        url: urls.good,
+        webViewLink: urls.good,
+        filename: "correct-original.png",
+        mimeType: "image/png",
+      },
+    });
+    await page
+      .getByRole("button", { name: "Use original as candidate", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Approve and update", exact: true }),
+    ).toBeEnabled();
+    await page
+      .getByRole("button", { name: "Approve and update", exact: true })
+      .click();
+    await expect(
+      page.getByText("Approved and updated.", { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: "/tmp/photo-repair-stock-corrected.png",
+      fullPage: true,
+    });
+  } finally {
+    const events = await db.collection("broadcast").get();
+    for (const d of events.docs) {
+      const p = d.data().payload || {};
+      if (JSON.stringify(p).includes(key)) tracked.push(d.ref);
+    }
+    for (const ref of tracked) await ref.delete();
     await deleteApp(app);
   }
 });

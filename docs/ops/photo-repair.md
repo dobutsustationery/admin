@@ -1,15 +1,19 @@
-# Repair imported photos
+# Repair photos for stocked items
 
-Open **Photos → Repair imported photos** (also under Tools).
+Open **Photos → Repair imported photos**. Let saved data finish loading, then choose **Check stocked item photos**.
 
-1. Choose **Find affected photos** to build the queue from bad-path import records and the October 26 audit. Stocked products appear first. **Include other small images** also adds images whose origin is uncertain.
-2. Open a row with **Review**. Try **Re-import original**, or select originals in Google Photos / upload an original from your computer. When several selected photos are returned, choose the appropriate source for each queue entry.
-3. Choose processing steps and order, then **Process original**. You can process selected entries together. All results still need individual review.
-4. Compare the current image, new original and new candidate. Use **Redo processing**, **Crop manually** or choose a different original until the result is right. Start from the original or a completed processing step.
-5. Choose **Approve and update** for that candidate. This updates the displayed local uses and queues their Shopify listings. Each candidate requires its own approval.
+The main queue starts with items whose quantity minus shipped is positive. It checks their assigned photos and current saved gallery images, across all brands. It includes missing images. Import history is used only to help find an original.
 
-Progress survives reload. Reopen this screen to resume the next processing step or an approved update awaiting publication. A failed import offers reselection/upload; a failed processing step offers Retry or Redo; a failed Shopify update offers **Retry Shopify update**. A listing marked `no_sync` is updated locally only.
+- Previously approved replacements and photos you marked good are skipped.
+- Current files at least 1024 pixels on the longest side stay out by default. Files below that size are flagged; an unreadable image gets **Needs a look** rather than being assumed good.
+- **Other stocked photos** lets you flag an otherwise large photo that is blurry or unsuitable. **Photo is good** dismisses that file without import or processing. A new file or Shopify master version is checked independently.
 
-The Shopify sync currently rebuilds the product gallery. Local photo IDs, image order and variant assignments are retained; Shopify assigns new media IDs. Images not yet approved continue using their current URLs.
+Open a queue row with **Review**. If the current image is fine, choose **Photo is good — no repair needed**. Otherwise re-import, select an original in Google Photos, upload one, or choose a photo already in the system. Process it, crop it, or choose **Use original as candidate** when no processing is needed. Compare the result, then **Approve and update** or redo it.
 
-The [design](../design/photo-import-repair-plan.md) records the IDs, data structures and events. The [incident summary](../../PHOTO_IMPORT_BUG.md) links the original evidence.
+Each candidate still needs individual approval. Repeated uses share a task. For a missing photo, approval fills the inventory image and adds its gallery image when a saved listing exists. Gallery order, variant assignments and existing IDs are preserved. Duplicate copies in a photo group are all updated; other edits of the same photo are left alone.
+
+**Saved work** retains original imports, attempts, Later decisions and completed replacements from the earlier discovery run. Unused and zero-stock discovery entries no longer fill the main queue. No discovery history is deleted.
+
+Progress survives reload. Reopen this screen to resume a processing step or approved update awaiting publication. Retry failed imports, processing or Shopify updates from their entry. A listing marked `no_sync` is updated locally only. Shopify still rebuilds the gallery when syncing; unapproved photos retain their current URLs.
+
+The [design](../design/photo-import-repair-plan.md) records the data and event contracts. The [incident summary](../../PHOTO_IMPORT_BUG.md) links the original evidence.

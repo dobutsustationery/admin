@@ -1,3 +1,13 @@
+import {
+  stockedPhotoTasks,
+  taskAssessment,
+  photoNeedsWork,
+  taskForEntry,
+  preferredStockEntry,
+  type PhotoAudit,
+  type StockPhotoTask,
+  type PhotoMeasurement,
+} from "./photo-repair-scope";
 import { generateDerivationKey } from "./idempotency-utils";
 import {
   doc,
@@ -5,10 +15,6 @@ import {
   serverTimestamp,
   getDoc,
   setDoc,
-  getDocs,
-  collection,
-  query,
-  where,
 } from "firebase/firestore";
 import { firestore } from "./firebase";
 import { store } from "./store";
@@ -27,6 +33,7 @@ import {
   allImageTargets,
   approvedRepairAssets,
   imageKey,
+  photoCheckKey,
   entryDetails,
   originalFor,
   attemptInput,
@@ -54,125 +61,187 @@ export async function repairEvent(type: string, payload: any, eventId = id()) {
   });
   return eventId;
 }
-export async function seedRepairQueue(
-  includeOther = false,
-  progress?: (added: number) => void,
-) {
+export async function loadPhotoAudit(): Promise<PhotoAudit> {
   const response = await fetch("/photo-repair-audit.json");
-  if (!response.ok) throw Error("Could not load photo import audit.");
-  const audit = await response.json();
-  // Include all recorded uses of the broken path, even beyond the audit snapshot.
-  const completions = await getDocs(
-    query(
-      collection(firestore, "sync"),
-      where("eventType", "==", "photos/image_transfer_completed"),
-    ),
-  );
-  for (const doc of completions.docs) {
-    const p = doc.data().payload || {};
-    const url = String(p.sourceUrl || "");
-    if (
-      !url.includes("googleusercontent.com") ||
-      url.includes("/d/") ||
-      /(?:=d|=s0)$/.test(url) ||
-      !p.photoId
-    )
-      continue;
-    let source = audit.sources.find((s: any) => s.photoId === p.photoId);
-    if (!source) {
-      source = { photoId: p.photoId, transferEventIds: [], driveIds: [] };
-      audit.sources.push(source);
+  if (!response.ok) throw Error("Could not load the source-photo lookup.");
+  return response.json();
+}
+async function measureCurrentPhoto(url: string): Promise<PhotoMeasurement> {
+  const driveId = imageKey(url);
+  if (!driveId.includes(":") && !driveId.includes("/")) {
+    const token = getStoredToken();
+    if (token) {
+      try {
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?fields=imageMediaMetadata(width,height)`,
+          { headers: { Authorization: `Bearer ${token.access_token}` } },
+        );
+        if (response.ok) {
+          const metadata = (await response.json()).imageMediaMetadata;
+          if (metadata?.width && metadata?.height)
+            return {
+              url,
+              width: Number(metadata.width),
+              height: Number(metadata.height),
+            };
+        }
+      } catch {
+        /* The public image remains usable when metadata is unavailable. */
+      }
     }
-    if (!source.transferEventIds.includes(doc.id))
-      source.transferEventIds.push(doc.id);
-    if (p.driveFileId && !source.driveIds.includes(p.driveFileId))
-      source.driveIds.push(p.driveFileId);
   }
-
-  const root = store.getState() as any;
-  const targets = allImageTargets(root);
-  const repairedAssets = approvedRepairAssets(root.photoRepair);
-  const aliases = new Map<string, any>();
-  audit.images.forEach((r: any) => {
-    aliases.set(imageKey(r.url), r);
-    if (r.drive_id) aliases.set(r.drive_id, r);
-  });
-  const sources = new Map<string, any>(
-    audit.sources.map((s: any) => [s.photoId, s]),
-  );
-  const driveToPhoto = new Map<string, string>();
-  audit.sources.forEach((s: any) =>
-    s.driveIds.forEach((d: string) => driveToPhoto.set(d, s.photoId)),
-  );
-  const grouped = new Map<string, any>();
-  for (const target of targets) {
-    if (repairedAssets.has(imageKey(target.beforeUrl))) continue;
-    const ref = target.ref;
-    const photoId = "photoId" in ref ? ref.photoId : undefined;
-    const alias = aliases.get(imageKey(target.beforeUrl));
-    const originalId =
-      (photoId && sources.has(photoId) ? photoId : undefined) ||
-      (alias?.photo_id && sources.has(alias.photo_id)
-        ? alias.photo_id
-        : undefined) ||
-      driveToPhoto.get(imageKey(target.beforeUrl));
-    if (!originalId && !(includeOther && alias)) continue;
-    const sourceKey = originalId || `other:${imageKey(target.beforeUrl)}`;
-    const assetKey = alias?.drive_id || imageKey(target.beforeUrl);
-    const key = `${sourceKey}:${assetKey}`;
-    const g = grouped.get(key) || {
-      sourceKey,
-      originalId,
-      oldImageUrl: target.beforeUrl,
-      targets: [],
-      existingPhotoId: photoId,
+  return new Promise((resolve) => {
+    const image = new Image();
+    const finish = (result: PhotoMeasurement) => {
+      clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+      resolve(result);
     };
-    if (photoId) g.existingPhotoId = photoId;
-    g.targets.push(target);
-    grouped.set(key, g);
-  }
-  let added = 0;
-  const sourceIds = new Map<string, string>();
-  for (const g of grouped.values()) {
-    const current = (store.getState() as any).photoRepair;
-    const exists = Object.values(current.entriesById).some((e: any) =>
-      e.targets.some((t: any) =>
-        g.targets.some(
-          (n: any) =>
-            JSON.stringify(n.ref) === JSON.stringify(t.ref) &&
-            n.beforeUrl === t.beforeUrl,
-        ),
-      ),
+    const timer = setTimeout(
+      () =>
+        finish({
+          url,
+          message:
+            "Could not load this photo. Take a look or select a replacement.",
+        }),
+      10000,
     );
-    if (exists) continue;
-    let sourceId =
-      sourceIds.get(g.sourceKey) ||
-      (Object.values(current.sourcesById) as any[]).find(
-        (s) => g.originalId && s.originalGoogleMediaId === g.originalId,
-      )?.sourceId;
-    if (!sourceId) {
-      sourceId = id();
-      await repairEvent("sourceAdded", {
-        sourceId,
-        ...(g.originalId ? { originalGoogleMediaId: g.originalId } : {}),
+    image.onload = () =>
+      finish({ url, width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () =>
+      finish({
+        url,
+        message:
+          "Could not load this photo. Take a look or select a replacement.",
       });
-    }
-    sourceIds.set(g.sourceKey, sourceId);
-    await repairEvent("entryAdded", {
-      entryId: id(),
-      sourceId,
-      oldImageUrl: g.oldImageUrl,
-      targets: g.targets,
-      ...(g.existingPhotoId ? { existingPhotoId: g.existingPhotoId } : {}),
-      evidence: {
-        kind: g.originalId ? "bad_import" : "other_small_image",
-        transferEventIds: sources.get(g.originalId)?.transferEventIds || [],
-      },
-    });
-    added++;
-    progress?.(added);
+    image.src = url;
+  });
+}
+export async function ensureStockPhotoEntry(
+  task: StockPhotoTask,
+  audit: PhotoAudit,
+): Promise<string> {
+  const root = store.getState() as any;
+  const existing = preferredStockEntry(root, task, audit);
+  if (existing) {
+    if (JSON.stringify(existing.targets) !== JSON.stringify(task.targets))
+      await repairEvent("targetsChanged", {
+        entryId: existing.entryId,
+        targets: task.targets,
+      });
+    return existing.entryId;
   }
-  return added;
+  const alias = audit.images.find(
+    (i) =>
+      imageKey(i.url) === imageKey(task.url) ||
+      i.drive_id === imageKey(task.url),
+  );
+  const photoTarget = task.targets.find((t) => "photoId" in t.ref);
+  const photoId =
+    photoTarget && "photoId" in photoTarget.ref
+      ? photoTarget.ref.photoId
+      : undefined;
+  const sourcePhoto = audit.sources.find(
+    (s) =>
+      s.photoId === photoId ||
+      s.photoId === alias?.photo_id ||
+      s.driveIds.includes(imageKey(task.url)),
+  );
+  let sourceId = (Object.values(root.photoRepair.sourcesById) as any[]).find(
+    (s) => sourcePhoto && s.originalGoogleMediaId === sourcePhoto.photoId,
+  )?.sourceId;
+  if (!sourceId) {
+    sourceId = id();
+    await repairEvent("sourceAdded", {
+      sourceId,
+      ...(sourcePhoto ? { originalGoogleMediaId: sourcePhoto.photoId } : {}),
+    });
+  }
+  const entryId = id();
+  await repairEvent("entryAdded", {
+    entryId,
+    sourceId,
+    oldImageUrl: task.url,
+    targets: task.targets,
+    ...(photoId ? { existingPhotoId: photoId } : {}),
+    evidence: {
+      kind: sourcePhoto ? "bad_import" : "other_small_image",
+      transferEventIds: sourcePhoto?.transferEventIds || [],
+    },
+  });
+  return entryId;
+}
+export async function reviewStockPhoto(
+  task: StockPhotoTask,
+  good: boolean,
+  audit: PhotoAudit,
+) {
+  if (!task.url && good) return;
+  if (task.url)
+    await repairEvent("photoReviewChanged", {
+      url: task.url,
+      relatedUrls: [
+        ...new Set(task.targets.map((t) => t.beforeUrl).filter(Boolean)),
+      ],
+      good,
+    });
+  if (!good) return ensureStockPhotoEntry(task, audit);
+}
+export async function seedRepairQueue(progress?: (message: string) => void) {
+  const audit = await loadPhotoAudit();
+  const tasks = stockedPhotoTasks(store.getState(), audit);
+  let checked = 0,
+    added = 0;
+  let index = 0;
+  const measured: Record<string, PhotoMeasurement> = {};
+  await Promise.all(
+    Array.from({ length: 6 }, async () => {
+      while (index < tasks.length) {
+        const task = tasks[index++];
+        const assessment = taskAssessment(store.getState(), task);
+        const cached = (store.getState() as any).photoRepair
+          .measurementsByKey?.[photoCheckKey(task.url)];
+        if (
+          task.url &&
+          (!cached || cached.message || cached.url !== task.url) &&
+          !["Repaired", "Photo is good", "Needs a better photo"].includes(
+            assessment,
+          )
+        ) {
+          const result = await measureCurrentPhoto(task.url);
+          measured[photoCheckKey(task.url)] = result;
+          await repairEvent("imageMeasured", result);
+        }
+        checked++;
+        progress?.(
+          `Checked ${checked} of ${tasks.length} current photos for stocked items…`,
+        );
+      }
+    }),
+  );
+  // Use this scan's returned facts while the broadcast listener catches up.
+  for (const task of stockedPhotoTasks(store.getState(), audit)) {
+    const root = store.getState() as any;
+    const assessment = taskAssessment(
+      {
+        ...root,
+        photoRepair: {
+          ...root.photoRepair,
+          measurementsByKey: {
+            ...root.photoRepair.measurementsByKey,
+            ...measured,
+          },
+        },
+      },
+      task,
+    );
+    if (photoNeedsWork(assessment)) {
+      await ensureStockPhotoEntry(task, audit);
+      added++;
+    }
+  }
+  return { checked, attention: added };
 }
 async function tokensAndFolder() {
   const drive = getStoredToken();
@@ -321,6 +390,37 @@ export async function importRepairOriginal(
       choice: { kind: "google_photos", mediaItemId, filename },
     },
   );
+}
+export async function useExistingRepairSource(
+  e: EntryRecord,
+  photo: MediaItem,
+) {
+  const importId = id(),
+    requestId = id();
+  await repairEvent("originalRequested", {
+    sourceId: e.sourceId,
+    importId,
+    requestId,
+    choice: {
+      kind: "existing_photo",
+      photoId: photo.id,
+      url: photo.baseUrl,
+      filename: photo.filename,
+    },
+  });
+  const key = imageKey(photo.baseUrl);
+  await repairEvent("originalImported", {
+    sourceId: e.sourceId,
+    importId,
+    requestId,
+    artifact: {
+      driveFileId: key.includes(":") ? "" : key,
+      url: photo.baseUrl,
+      webViewLink: photo.productUrl || photo.baseUrl,
+      filename: photo.filename,
+      mimeType: photo.mimeType,
+    },
+  });
 }
 export async function startRepairAttempt(
   e: EntryRecord,

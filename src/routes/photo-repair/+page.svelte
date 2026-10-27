@@ -1,4 +1,13 @@
 <script lang="ts">
+  import {
+    stockedPhotoTasks,
+    taskAssessment,
+    photoNeedsWork,
+    taskForEntry,
+    preferredStockEntry,
+    type PhotoAudit,
+    type StockPhotoTask,
+  } from "$lib/photo-repair-scope";
   import { onMount, onDestroy } from "svelte";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
@@ -16,6 +25,9 @@
   } from "$lib/google-photos";
   import {
     seedRepairQueue,
+    loadPhotoAudit,
+    useExistingRepairSource,
+    reviewStockPhoto,
     importRepairOriginal,
     repairEvent,
     startRepairAttempt,
@@ -43,6 +55,8 @@
     query = "",
     filter = "All",
     activeId = "";
+  let mode = "Needs photos";
+  let audit: PhotoAudit | undefined;
   let selected = new Set<string>(),
     picked: MediaItem[] = [],
     selecting = false;
@@ -94,15 +108,56 @@
     ticking = false;
   $: repair = ($store.photoRepair || initialPhotoRepair) as PhotoRepairState;
   $: entries = Object.values(repair.entriesById) as EntryRecord[];
+  $: tasks = $store.inventory.initialized
+    ? stockedPhotoTasks($store, audit)
+    : [];
+  $: assessed = tasks.map((task) => ({
+    task,
+    assessment: taskAssessment($store, task),
+  }));
+  $: stockedItems = new Set(tasks.flatMap((t) => t.itemKeys)).size;
+  $: skipped = assessed.filter((r) =>
+    ["Repaired", "Photo is good", "Good size"].includes(r.assessment),
+  ).length;
+  $: notChecked = assessed.filter((r) => r.assessment === "Not checked").length;
   $: rows = entries
-    .map((e) => ({
-      e,
-      details: entryDetails($store, e),
-      status: repairStatus(repair, e),
-    }))
+    .flatMap((e) => {
+      if (mode === "Other stocked photos") return [];
+      const task = taskForEntry($store, e, tasks, audit);
+      const assessment = task
+        ? taskAssessment($store, task)
+        : "Not currently used by a stocked item";
+      const status = repairStatus(repair, e);
+      const keep =
+        mode === "Saved work"
+          ? e.attemptIds.length > 0 ||
+            originalFor(repair, e) ||
+            e.approvalId ||
+            e.later ||
+            status === "Photo is good"
+          : task &&
+            photoNeedsWork(assessment) &&
+            !e.approvalId &&
+            status !== "Photo is good";
+      if (!keep) return [];
+      if (
+        mode !== "Saved work" &&
+        task &&
+        preferredStockEntry($store, task, audit)?.entryId !== e.entryId
+      )
+        return [];
+      const details = task
+        ? {
+            ...task,
+            filename:
+              $store.photos.registry[e.existingPhotoId || ""]?.filename || "",
+          }
+        : entryDetails($store, e);
+      return [{ e, task, assessment, details, status }];
+    })
     .sort(
       (a, b) =>
-        Number(b.details.stock > 0) - Number(a.details.stock > 0) ||
+        b.details.stock - a.details.stock ||
         a.details.title.localeCompare(b.details.title),
     );
   $: visible = rows.filter(
@@ -112,8 +167,45 @@
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
+  $: otherPhotos = assessed.filter((r) =>
+    `${r.task.title} ${r.task.jans}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
   $: active = repair.entriesById[activeId] as EntryRecord | undefined;
-  $: details = active ? entryDetails($store, active) : undefined;
+  $: activeTask = active
+    ? taskForEntry($store, active, tasks, audit)
+    : undefined;
+  $: details = active
+    ? activeTask
+      ? { ...entryDetails($store, active), ...activeTask }
+      : entryDetails($store, active)
+    : undefined;
+  $: existingPhotos = activeTask
+    ? [
+        ...new Map(
+          Object.entries($store.photos.janCodeToPhotos)
+            .filter(([groupKey]) =>
+              activeTask.itemKeys.some((key) => {
+                const item = $store.inventory.idToItem[key];
+                return (
+                  groupKey === key ||
+                  groupKey === item.janCode ||
+                  groupKey.startsWith(item.janCode + ":")
+                );
+              }),
+            )
+            .flatMap(([, photos]) => photos as MediaItem[])
+            .filter(
+              (photo) =>
+                photo.baseUrl &&
+                (!photo.baseUrl.includes("googleusercontent.com") ||
+                  photo.baseUrl.includes("/d/")),
+            )
+            .map((photo) => [photo.baseUrl, photo]),
+        ).values(),
+      ]
+    : [];
   $: original = active ? originalFor(repair, active) : undefined;
   $: candidate = active ? candidateFor(repair, active) : undefined;
   $: attempt = active
@@ -129,9 +221,11 @@
     : [];
   function useLabel(t: any): string {
     const r = t.ref;
-    if (r.kind === "listing_image") {
+    if (r.kind === "listing_image" || r.kind === "listing_new_image") {
       const listing = $store.listings.handleToListing[r.handle];
       const image = listing?.images.find((i: any) => i.id === r.imageId);
+      if (r.kind === "listing_new_image")
+        return `${listing?.title || r.handle} — new gallery image`;
       return `${listing?.title || r.handle} — gallery image ${image?.position || ""}`;
     }
     if (r.kind === "inventory") {
@@ -162,6 +256,9 @@
     if (cropUrl) URL.revokeObjectURL(cropUrl);
   });
   onMount(() => {
+    void loadPhotoAudit()
+      .then((value) => (audit = value))
+      .catch((e: Error) => (error = e.message));
     const timer = setInterval(() => {
       void advance();
     }, 2000);
@@ -187,6 +284,11 @@
         if (
           !e.approvalId &&
           !e.later &&
+          (activeId === e.entryId ||
+            (() => {
+              const task = taskForEntry($store, e, tasks, audit);
+              return task && photoNeedsWork(taskAssessment($store, task));
+            })()) &&
           a &&
           a.importId === originalFor(repair, e)?.importId
         )
@@ -197,6 +299,23 @@
       error = e.message;
     } finally {
       ticking = false;
+    }
+  }
+  function changeMode(value: string) {
+    mode = value;
+    activeId = "";
+    filter = "All";
+    selected = new Set();
+  }
+  async function decidePhoto(task: StockPhotoTask, good: boolean) {
+    const lookup = audit || (await loadPhotoAudit());
+    const entryId = await reviewStockPhoto(task, good, lookup);
+    if (good) {
+      activeId = "";
+      message = "Marked good. This image will stay out of the repair queue.";
+    } else {
+      mode = "Needs photos";
+      activeId = entryId || "";
     }
   }
   function openEntry(e: EntryRecord) {
@@ -326,10 +445,12 @@
         "Choose an imported original or a completed processing step.",
       );
     const token = getDriveToken();
-    const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${input.driveFileId}?alt=media`,
-      { headers: { Authorization: `Bearer ${token?.access_token || ""}` } },
-    );
+    const response = input.driveFileId
+      ? await fetch(
+          `https://www.googleapis.com/drive/v3/files/${input.driveFileId}?alt=media`,
+          { headers: { Authorization: `Bearer ${token?.access_token || ""}` } },
+        )
+      : await fetch(input.url);
     if (!response.ok)
       throw Error(
         "Could not open the image for cropping. Connect Google and retry.",
@@ -342,11 +463,14 @@
   }
   async function refreshTargets() {
     if (!active) return;
-    const keys = new Set(active.targets.map((t) => imageKey(t.beforeUrl)));
-    const targets = allImageTargets($store).filter((t) =>
-      keys.has(imageKey(t.beforeUrl)),
-    );
-    await repairEvent("targetsChanged", { entryId: active.entryId, targets });
+    if (!activeTask)
+      throw Error(
+        "This photo is no longer used by a stocked item. Its saved work is still available.",
+      );
+    await repairEvent("targetsChanged", {
+      entryId: active.entryId,
+      targets: activeTask.targets,
+    });
   }
 </script>
 
@@ -375,35 +499,27 @@
 <main>
   <h1>Repair imported photos</h1>
   <p>
-    Import the correct originals, process them, then review every replacement.
-    Your product images change only when you approve.
+    Fix missing or poor current photos for items with stock. Photos already
+    repaired or marked good stay out of the queue.
   </p>
   <div class="actions">
-    <a href="/photos">Photos</a>
-    <button on:click={() => initiateOAuthFlow()}>Connect Google</button>
-    <button
-      disabled={busy || !$store.inventory.initialized}
-      on:click={() =>
-        work(async () => {
-          const count = await seedRepairQueue(
-            false,
-            (count) => (message = `Added ${count} image versions so far…`),
-          );
-          message = `Added ${count} affected image versions to review.`;
-        })}>Find affected photos</button
+    <a href="/photos">Photos</a><button on:click={() => initiateOAuthFlow()}
+      >Connect Google</button
     >
     <button
       disabled={busy || !$store.inventory.initialized}
       on:click={() =>
         work(async () => {
-          const count = await seedRepairQueue(
-            true,
-            (count) =>
-              (message = `Added ${count} additional image versions so far…`),
-          );
-          message = `Added ${count} additional image versions.`;
-        })}>Include other small images</button
+          const result = await seedRepairQueue((text) => (message = text));
+          message = `Checked ${result.checked} current photos. ${result.attention} need attention.`;
+        })}>Check stocked item photos</button
     >
+  </div>
+  <div class="actions">
+    {#each ["Needs photos", "Other stocked photos", "Saved work"] as value}<button
+        class:primary={mode === value}
+        on:click={() => changeMode(value)}>{value}</button
+      >{/each}
   </div>
   {#if error}<p role="alert" class="error">{error}</p>{/if}
   {#if message}<p role="status">{message}</p>{/if}
@@ -414,17 +530,68 @@
     <label>Search <input type="search" bind:value={query} /></label>
     <label
       >Show <select bind:value={filter}
-        >{#each ["All", "Needs original", "Importing", "Ready to process", "Processing", "Processing failed", "Needs review", "Updating", "Sync failed", "Done", "Later"] as value}<option
+        >{#each ["All", "Needs original", "Importing", "Ready to process", "Processing", "Processing failed", "Needs review", "Updating", "Sync failed", "Done", "Photo is good", "Later"] as value}<option
             >{value}</option
           >{/each}</select
       ></label
     >
     <span
-      >{visible.length} of {rows.length} image versions · {rows.filter(
-        (r) => r.status === "Done",
-      ).length} done</span
+      >{stockedItems} stocked items · {skipped} current photos skipped · {mode ===
+      "Saved work"
+        ? `${visible.length} saved repairs`
+        : mode === "Other stocked photos"
+          ? `${otherPhotos.length} current photos`
+          : `${visible.length} queued for review`}</span
     >
   </div>
+  {#if notChecked && mode === "Needs photos"}<p role="status">
+      {notChecked} current photos have not been checked yet. Choose Check stocked
+      item photos to find small or missing images.
+    </p>{/if}
+  {#if mode === "Other stocked photos"}
+    <p>
+      Large files are excluded from the repair queue automatically. If a photo
+      still looks poor, choose Needs a better photo.
+    </p>
+    <table>
+      <thead
+        ><tr
+          ><th>Current photo</th><th>Stocked item</th><th>Result</th><th
+            >Decision</th
+          ></tr
+        ></thead
+      ><tbody
+        >{#each otherPhotos.slice(0, 150) as row}<tr
+            ><td
+              >{#if row.task.url}<SecureImage
+                  src={row.task.url}
+                  alt={row.task.title}
+                  size="thumbnail"
+                  style="max-width:100px;max-height:100px"
+                />{:else}No photo{/if}</td
+            ><td
+              >{row.task.title}<small
+                >{row.task.jans} · {row.task.stock} in stock</small
+              ></td
+            ><td>{row.assessment}</td><td
+              ><button
+                disabled={busy}
+                on:click={() => work(() => decidePhoto(row.task, false))}
+                >Needs a better photo</button
+              >{#if row.task.url}<button
+                  disabled={busy}
+                  on:click={() => work(() => decidePhoto(row.task, true))}
+                  >Photo is good</button
+                >{/if}</td
+            ></tr
+          >{/each}</tbody
+      >
+    </table>
+  {/if}
+  {#if mode === "Other stocked photos" && otherPhotos.length > 150}<p>
+      Showing the first 150 current photos. Search by product name or JAN to
+      find another item.
+    </p>{/if}
   {#if active && details}
     <section class="review" aria-label="Photo repair review">
       <h2>{details.title}</h2>
@@ -434,8 +601,15 @@
       </p>
       <div class="comparison">
         <div>
-          <h3>Current image</h3>
-          <SecureImage src={active.oldImageUrl} alt="Current product image" />
+          <h3>{active.approvalId ? "Previous image" : "Current image"}</h3>
+          {#if activeTask?.url || active.oldImageUrl}<SecureImage
+              src={activeTask?.url || active.oldImageUrl}
+              alt="Current product image"
+            />{:else}<p>
+              {active.approvalId
+                ? "No previous photo."
+                : "This stocked item has no photo."}
+            </p>{/if}
         </div>
         <div>
           <h3>New original</h3>
@@ -467,6 +641,11 @@
         </ul>
       </details>
       {#if !active.approvalId}
+        {#if activeTask?.url}<button
+            disabled={busy}
+            on:click={() => work(() => decidePhoto(activeTask, true))}
+            >Photo is good — no repair needed</button
+          >{/if}
         <h3>1. Get the original</h3>
         <div class="actions">
           <button
@@ -517,6 +696,21 @@
                 />{photo.filename}</button
               >{/each}
           </div>{/if}
+        {#if existingPhotos.length}<details>
+            <summary>Choose a photo already in the system</summary>
+            <div class="picked">
+              {#each existingPhotos as photo}<button
+                  disabled={busy}
+                  on:click={() =>
+                    work(() => useExistingRepairSource(activeEntry(), photo))}
+                  ><SecureImage
+                    src={photo.baseUrl}
+                    alt={photo.filename}
+                    size="thumbnail"
+                  />{photo.filename}</button
+                >{/each}
+            </div>
+          </details>{/if}
         <h3>2. Process</h3>
         <button disabled={busy} on:click={() => (configureOpen = true)}
           >Change processing order</button
@@ -571,6 +765,11 @@
                 )}>Retry failed step</button
             >{/if}
         </div>
+        <button
+          disabled={busy || !original?.result?.artifact}
+          on:click={() => work(() => startRepairAttempt(activeEntry(), []))}
+          >Use original as candidate</button
+        >
         {#each failures as failure}<p role="alert" class="error">
             {failure}
           </p>{/each}
@@ -618,60 +817,64 @@
       {/if}
     </section>
   {/if}
-  {#if selected.size}<div class="actions">
-      <span>{selected.size} selected</span><button
-        disabled={busy}
-        on:click={() =>
-          work(async () => {
-            for (const key of selected) {
-              const e = repair.entriesById[key];
-              if (e && !e.approvalId) await importRepairOriginal(e);
-            }
-            message = "Original imports requested.";
-          })}>Re-import selected originals</button
-      ><button
-        disabled={busy}
-        on:click={() =>
-          work(async () => {
-            for (const key of selected) {
-              const e = repair.entriesById[key];
-              if (e && !e.approvalId) await process(e);
-            }
-            message = "Processing requested. Review each result individually.";
-          })}>Process selected originals</button
+  {#if mode !== "Other stocked photos"}
+    {#if selected.size}<div class="actions">
+        <span>{selected.size} selected</span><button
+          disabled={busy}
+          on:click={() =>
+            work(async () => {
+              for (const key of selected) {
+                const e = repair.entriesById[key];
+                if (e && !e.approvalId) await importRepairOriginal(e);
+              }
+              message = "Original imports requested.";
+            })}>Re-import selected originals</button
+        ><button
+          disabled={busy}
+          on:click={() =>
+            work(async () => {
+              for (const key of selected) {
+                const e = repair.entriesById[key];
+                if (e && !e.approvalId) await process(e);
+              }
+              message =
+                "Processing requested. Review each result individually.";
+            })}>Process selected originals</button
+        >
+      </div>{/if}
+    <table>
+      <thead
+        ><tr
+          ><th>Select</th><th>Product</th><th>Stock</th><th>Photo issue</th><th
+            >Progress</th
+          ><th>Review</th></tr
+        ></thead
+      ><tbody
+        >{#each visible.slice(0, 150) as row}<tr
+            class:active={activeId === row.e.entryId}
+            ><td
+              ><input
+                type="checkbox"
+                aria-label={`Select ${row.details.title}`}
+                checked={selected.has(row.e.entryId)}
+                on:change={() => toggle(row.e.entryId)}
+              /></td
+            ><td
+              >{row.details.title}<small
+                >{row.details.jans} · {row.details.filename}</small
+              ></td
+            ><td>{row.details.stock}</td><td>{row.assessment}</td><td
+              >{row.status}</td
+            ><td><button on:click={() => openEntry(row.e)}>Review</button></td
+            ></tr
+          >{/each}</tbody
       >
-    </div>{/if}
-  <table>
-    <thead
-      ><tr
-        ><th>Select</th><th>Product</th><th>Stock</th><th>Progress</th><th
-          >Review</th
-        ></tr
-      ></thead
-    ><tbody
-      >{#each visible.slice(0, 150) as row}<tr
-          class:active={activeId === row.e.entryId}
-          ><td
-            ><input
-              type="checkbox"
-              aria-label={`Select ${row.details.title}`}
-              checked={selected.has(row.e.entryId)}
-              on:change={() => toggle(row.e.entryId)}
-            /></td
-          ><td
-            >{row.details.title}<small
-              >{row.details.jans} · {row.details.filename}</small
-            ></td
-          ><td>{row.details.stock}</td><td>{row.status}</td><td
-            ><button on:click={() => openEntry(row.e)}>Review</button></td
-          ></tr
-        >{/each}</tbody
-    >
-  </table>
-  {#if visible.length > 150}<p>
-      Showing the first 150 matches. Narrow the search or progress filter to see
-      more.
-    </p>{/if}
+    </table>
+    {#if visible.length > 150}<p>
+        Showing the first 150 matches. Narrow the search or progress filter to
+        see more.
+      </p>{/if}
+  {/if}
 </main>
 
 <style>

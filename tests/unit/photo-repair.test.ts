@@ -178,6 +178,199 @@ describe("photo repair identity and review", () => {
     });
     expect(JSON.stringify(f.get())).toBe(snapshot);
   });
+  it("updates every duplicate group occurrence on approval", () => {
+    const f = fixture();
+    const root = structuredClone(f.get());
+    root.photos.janCodeToPhotos.JAN.push(
+      structuredClone(root.photos.janCodeToPhotos.JAN[0]),
+    );
+    let state: any = rootReducer(
+      root,
+      {
+        id: "attempt-duplicate",
+        type: "photoRepair/attemptStarted",
+        payload: {
+          entryId: "entry",
+          attemptId: "attempt",
+          importId: "import",
+          steps: [],
+        },
+        timestamp: 2000,
+      },
+      quiet,
+    );
+    state = rootReducer(
+      state,
+      {
+        id: "approve-duplicate",
+        type: "photoRepair/approved",
+        payload: {
+          approvalId: "approval",
+          entryId: "entry",
+          attemptId: "attempt",
+          targets: f.targets,
+        },
+        timestamp: 3000,
+      },
+      quiet,
+    );
+    expect(state.photos.janCodeToPhotos.JAN.map((p: any) => p.baseUrl)).toEqual(
+      ["new-url", "new-url"],
+    );
+  });
+  it("keeps a different edit of the same group photo ID while replacing matching copies", () => {
+    const f = fixture();
+    const root = structuredClone(f.get());
+    root.photos.janCodeToPhotos.JAN.push({
+      ...root.photos.janCodeToPhotos.JAN[0],
+      baseUrl: "different-edit",
+    });
+    let state: any = rootReducer(
+      root,
+      {
+        id: "attempt-version",
+        type: "photoRepair/attemptStarted",
+        payload: {
+          entryId: "entry",
+          attemptId: "attempt",
+          importId: "import",
+          steps: [],
+        },
+        timestamp: 2000,
+      },
+      quiet,
+    );
+    state = rootReducer(
+      state,
+      {
+        id: "approve-version",
+        type: "photoRepair/approved",
+        payload: {
+          approvalId: "approval",
+          entryId: "entry",
+          attemptId: "attempt",
+          targets: f.targets,
+        },
+        timestamp: 3000,
+      },
+      quiet,
+    );
+    expect(state.photos.janCodeToPhotos.JAN.map((p: any) => p.baseUrl)).toEqual(
+      ["new-url", "different-edit"],
+    );
+  });
+  it("fills a missing inventory photo and adds a new gallery image without changing stock", () => {
+    const f = fixture();
+    const root = structuredClone(f.get());
+    root.inventory.idToItem.item.image = "";
+    root.listings.handleToListing.product.images = [];
+    let state: any = rootReducer(
+      root,
+      {
+        id: "attempt-missing",
+        type: "photoRepair/attemptStarted",
+        payload: {
+          entryId: "entry",
+          attemptId: "attempt",
+          importId: "import",
+          steps: [],
+        },
+        timestamp: 2000,
+      },
+      quiet,
+    );
+    state = rootReducer(
+      state,
+      {
+        id: "approve-missing",
+        type: "photoRepair/approved",
+        payload: {
+          approvalId: "approval",
+          entryId: "entry",
+          attemptId: "attempt",
+          targets: [
+            { ref: { kind: "inventory", itemKey: "item" }, beforeUrl: "" },
+            {
+              ref: {
+                kind: "listing_new_image",
+                handle: "product",
+                imageId: "new-slot",
+                altText: "Product photo",
+              },
+              beforeUrl: "",
+            },
+          ],
+        },
+        timestamp: 3000,
+      },
+      quiet,
+    );
+    expect(state.inventory.idToItem.item.image).toBe("new-url");
+    expect(state.inventory.idToItem.item.qty).toBe(10);
+    expect(state.listings.handleToListing.product.images).toEqual([
+      { id: "new-slot", url: "new-url", position: 1, altText: "Product photo" },
+    ]);
+  });
+  it("keeps an inventory-only photo approval local when no saved listing exists", () => {
+    const f = fixture();
+    const root = structuredClone(f.get());
+    delete root.listings.handleToListing.product;
+    let state: any = rootReducer(
+      root,
+      {
+        id: "attempt-local",
+        type: "photoRepair/attemptStarted",
+        payload: {
+          entryId: "entry",
+          attemptId: "attempt",
+          importId: "import",
+          steps: [],
+        },
+        timestamp: 2000,
+      },
+      quiet,
+    );
+    state = rootReducer(
+      state,
+      {
+        id: "approve-local",
+        type: "photoRepair/approved",
+        payload: {
+          approvalId: "approval",
+          entryId: "entry",
+          attemptId: "attempt",
+          targets: [
+            {
+              ref: { kind: "inventory", itemKey: "item" },
+              beforeUrl: "old-url",
+            },
+          ],
+        },
+        timestamp: 3000,
+      },
+      quiet,
+    );
+    expect(state.photoRepair.approvalsById.approval.affectedHandles).toEqual(
+      [],
+    );
+    expect(
+      repairStatus(state.photoRepair, state.photoRepair.entriesById.entry),
+    ).toBe("Done");
+  });
+  it("records photo checks and visual decisions as replayable facts", () => {
+    const f = fixture();
+    f.apply("imageMeasured", { url: "old-url", width: 400, height: 512 });
+    f.apply("photoReviewChanged", {
+      url: "old-url",
+      relatedUrls: ["other-form"],
+      good: true,
+    });
+    expect(f.get().photoRepair.measurementsByKey["old-url"].width).toBe(400);
+    expect(f.get().photoRepair.photoReviewsByKey["other-form"].good).toBe(true);
+    expect(
+      repairStatus(f.get().photoRepair, f.get().photoRepair.entriesById.entry),
+    ).toBe("Photo is good");
+  });
   it("applies none of an approval when a reference changed", () => {
     const f = fixture();
     f.apply("attemptStarted", {

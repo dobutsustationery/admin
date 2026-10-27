@@ -25,12 +25,19 @@ export type TargetRef =
   | { kind: "photo_group"; groupKey: string; photoId: string }
   | { kind: "inventory"; itemKey: string }
   | { kind: "listing_image"; handle: string; imageId: string }
+  | {
+      kind: "listing_new_image";
+      handle: string;
+      imageId: string;
+      altText: string;
+    }
   | { kind: "proposal_image"; proposalKey: string; imageId: string }
   | { kind: "proposal_variant"; proposalKey: string; variantId: string };
 export type Target = { ref: TargetRef; beforeUrl: string };
 type Fact = { eventId: string; creator: string; atMs: number };
 type Result = { fact: Fact; artifact?: Artifact; message?: string };
 export type OriginalChoice =
+  | { kind: "existing_photo"; photoId: string; url: string; filename: string }
   | { kind: "google_photos"; mediaItemId: string; filename: string }
   | { kind: "upload"; filename: string; mimeType: string };
 export type ImportRecord = {
@@ -107,6 +114,20 @@ export type PhotoRepairState = {
   attemptsById: Record<string, AttemptRecord>;
   approvalsById: Record<string, ApprovalRecord>;
   publicationsById: Record<string, PublicationRecord>;
+  photoReviewsByKey?: Record<
+    string,
+    { url: string; good: boolean; fact: Fact }
+  >;
+  measurementsByKey?: Record<
+    string,
+    {
+      url: string;
+      width?: number;
+      height?: number;
+      message?: string;
+      fact: Fact;
+    }
+  >;
   seenEventIds: Record<string, true>;
   pendingEventsById: Record<string, any>;
 };
@@ -116,6 +137,8 @@ export const initialPhotoRepair: PhotoRepairState = {
   attemptsById: {},
   approvalsById: {},
   publicationsById: {},
+  photoReviewsByKey: {},
+  measurementsByKey: {},
   seenEventIds: {},
   pendingEventsById: {},
 };
@@ -172,6 +195,8 @@ export function repairStatus(s: PhotoRepairState, e: EntryRecord): string {
       return "Sync failed";
     return "Updating";
   }
+  if (s.photoReviewsByKey?.[photoCheckKey(e.oldImageUrl)]?.good)
+    return "Photo is good";
   if (e.later) return "Later";
   const imp = originalFor(s, e);
   if (!imp || imp.result?.message) return "Needs original";
@@ -212,6 +237,12 @@ export function resolveTarget(
       object = root.inventory.idToItem[ref.itemKey];
       field = "image";
       break;
+    case "listing_new_image":
+      if (!root.listings.handleToListing[ref.handle]) return undefined;
+      object = root.listings.handleToListing[ref.handle].images.find(
+        (i: any) => i.id === ref.imageId,
+      ) || { url: "" };
+      break;
     case "listing_image":
       object = root.listings.handleToListing[ref.handle]?.images.find(
         (p: any) => p.id === ref.imageId,
@@ -231,10 +262,40 @@ export function resolveTarget(
   }
   return object ? { object, field } : undefined;
 }
+function resolveAllTargets(
+  root: any,
+  ref: TargetRef,
+  beforeUrl?: string,
+): { object: any; field: string }[] {
+  let objects: any[] | undefined;
+  if (ref.kind === "photo_group")
+    objects = root.photos.janCodeToPhotos[ref.groupKey]?.filter(
+      (p: any) => p.id === ref.photoId,
+    );
+  if (ref.kind === "photo_selected")
+    objects = root.photos.selected.filter((p: any) => p.id === ref.photoId);
+  if (ref.kind === "listing_image")
+    objects = root.listings.handleToListing[ref.handle]?.images.filter(
+      (p: any) => p.id === ref.imageId,
+    );
+  if (objects) {
+    const field = ref.kind === "listing_image" ? "url" : "baseUrl";
+    const matching = objects.filter(
+      (object) => beforeUrl === undefined || object[field] === beforeUrl,
+    );
+    return (matching.length ? matching : objects).map((object) => ({
+      object,
+      field,
+    }));
+  }
+  const one = resolveTarget(root, ref);
+  return one ? [one] : [];
+}
 function handlesFor(root: any, targets: Target[]): string[] {
   const handles = new Set<string>();
   for (const { ref } of targets) {
-    if (ref.kind === "listing_image") handles.add(ref.handle);
+    if (ref.kind === "listing_image" || ref.kind === "listing_new_image")
+      handles.add(ref.handle);
     if (ref.kind === "inventory") {
       const handle =
         root.listings.idToHandle[ref.itemKey] ||
@@ -243,7 +304,11 @@ function handlesFor(root: any, targets: Target[]): string[] {
     }
   }
   return [...handles]
-    .filter((h) => root.listings.handleToListing[h]?.status !== "no_sync")
+    .filter(
+      (h) =>
+        root.listings.handleToListing[h] &&
+        root.listings.handleToListing[h].status !== "no_sync",
+    )
     .sort();
 }
 function fold(root: any, a: any): boolean {
@@ -258,6 +323,20 @@ function fold(root: any, a: any): boolean {
     e = s.entriesById[p.entryId],
     attempt = s.attemptsById[p.attemptId];
   switch (a.type) {
+    case "photoRepair/photoReviewChanged":
+      for (const url of [p.url, ...(p.relatedUrls || [])]) {
+        const old = s.photoReviewsByKey?.[photoCheckKey(url)];
+        if (old && old.fact.atMs > f.atMs) continue;
+        (s.photoReviewsByKey ||= {})[photoCheckKey(url)] = {
+          url,
+          good: p.good,
+          fact: f,
+        };
+      }
+      break;
+    case "photoRepair/imageMeasured":
+      (s.measurementsByKey ||= {})[photoCheckKey(p.url)] = { ...p, fact: f };
+      break;
     case "photoRepair/sourceAdded":
       s.sourcesById[p.sourceId] ||= { ...p, fact: f, importsById: {} };
       break;
@@ -336,12 +415,15 @@ function fold(root: any, a: any): boolean {
       if (e.approvalId) break;
       const artifact = candidateFor(s, e);
       if (!artifact || e.selectedAttemptId !== p.attemptId) return false;
-      const resolved = p.targets.map((t: Target) => resolveTarget(root, t.ref));
+      const resolved = p.targets.map((t: Target) =>
+        resolveAllTargets(root, t.ref, t.beforeUrl),
+      );
       const valid =
         p.targets.length > 0 &&
         resolved.every(
-          (r: any, i: number) =>
-            r && r.object[r.field] === p.targets[i].beforeUrl,
+          (matches: any[], i: number) =>
+            matches.length > 0 &&
+            matches.every((r) => r.object[r.field] === p.targets[i].beforeUrl),
         );
       s.approvalsById[p.approvalId] = {
         ...p,
@@ -350,14 +432,30 @@ function fold(root: any, a: any): boolean {
         affectedHandles: valid ? handlesFor(root, p.targets) : [],
       };
       if (!valid) break;
-      resolved.forEach((r: any, i: number) => {
-        r.object[r.field] = artifact.url;
-        if (r.field === "baseUrl") {
-          r.object.productUrl = artifact.webViewLink;
-          r.object.mimeType = artifact.mimeType;
-        }
+      const appended = new Set<string>();
+      resolved.forEach((matches: any[], i: number) => {
         const ref = p.targets[i].ref;
-        if (ref.kind === "listing_image")
+        if (ref.kind === "listing_new_image") {
+          const key = `${ref.handle}:${ref.imageId}`;
+          if (!appended.has(key)) {
+            root.listings.handleToListing[ref.handle].images.push({
+              id: ref.imageId,
+              url: artifact.url,
+              altText: ref.altText,
+              position:
+                root.listings.handleToListing[ref.handle].images.length + 1,
+            });
+            appended.add(key);
+          }
+        } else
+          for (const r of matches) {
+            r.object[r.field] = artifact.url;
+            if (r.field === "baseUrl") {
+              r.object.productUrl = artifact.webViewLink;
+              r.object.mimeType = artifact.mimeType;
+            }
+          }
+        if (ref.kind === "listing_image" || ref.kind === "listing_new_image")
           root.listings.handleToListing[ref.handle].lastUpdated = Math.max(
             root.listings.handleToListing[ref.handle].lastUpdated || 0,
             f.atMs,
@@ -373,6 +471,11 @@ function fold(root: any, a: any): boolean {
         const history = (root.photos.urlHistory[photoId] ||= []);
         if (history[0] !== artifact.url) history.unshift(artifact.url);
       }
+      (s.photoReviewsByKey ||= {})[photoCheckKey(artifact.url)] = {
+        url: artifact.url,
+        good: true,
+        fact: f,
+      };
       e.approvalId = p.approvalId;
       break;
     }
@@ -416,6 +519,17 @@ export function applyPhotoRepair(root: any, action: any): any {
       }
     }
   });
+}
+export function photoCheckKey(url: string): string {
+  const key = imageKey(url);
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "cdn.shopify.com" && parsed.searchParams.has("v"))
+      return `${key}?v=${parsed.searchParams.get("v")}`;
+  } catch {
+    /* Legacy keys are already stable strings. */
+  }
+  return key;
 }
 export function approvedRepairAssets(s: PhotoRepairState): Set<string> {
   const keys = new Set<string>();
@@ -487,7 +601,8 @@ export function entryDetails(root: any, e: EntryRecord) {
   const handles = new Set<string>();
   e.targets.forEach(({ ref }) => {
     if (ref.kind === "inventory") itemKeys.add(ref.itemKey);
-    if (ref.kind === "listing_image") handles.add(ref.handle);
+    if (ref.kind === "listing_image" || ref.kind === "listing_new_image")
+      handles.add(ref.handle);
     if (ref.kind === "photo_group")
       Object.entries(root.inventory.idToItem).forEach(([id, item]: any) => {
         if (ref.groupKey === item.janCode || ref.groupKey === id)

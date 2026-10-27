@@ -1,6 +1,18 @@
 # Photo import repair plan
 
-Fix the downloader, re-import photos that went through the broken path, and give the user a queue to review every replacement. Each photo is processed with the existing tools. Nothing is replaced until the user approves its new candidate.
+The repair queue starts from stocked items and their current photos. Re-import and process only the images that still need work. Each replacement is reviewed before approval; a current good image can be dismissed without importing anything.
+
+## Current stock and photo selection
+
+Use `quantity - shipped > 0` to select inventory items, across all manufacturers. Inspect their assigned images and the saved gallery images of their listings. If an assigned image is blank, use the first saved gallery image as its current fallback. If neither exists, create a missing-photo task.
+
+Group current uses by image file, including known Drive/CDN aliases. Library and JAN-group references join a task only when that image is currently used by a stocked item or its saved gallery. Historical bad imports do not create work by themselves. Keep the earlier discovery events and any imports, attempts or approvals; the main queue is a new projection over current stock and files.
+
+**Check stocked item photos** reads Drive image dimensions where available, otherwise the current full image's dimensions. Record those returned facts. Reuse an existing successful measurement for an unchanged URL; retry unreadable images and check new files/Shopify master versions. Files smaller than 1024 pixels on the longest side enter the queue. Larger files stay out by default. Failed reads enter **Needs a look**, not an automatic good result.
+
+An explicit **Photo is good** decision dismisses the file across its displayed uses. **Other stocked photos** allows the user to flag a large but blurry, wrong or unsuitable image. Explicit visual decisions take priority over dimensions. An approved replacement records a good decision for its output file. New file IDs and changed Shopify master `v` values are checked independently; display-width parameters do not invalidate a decision.
+
+The UI counts stocked items, current photos needing attention and skipped current photos separately. **Saved work** shows prior imports, attempts, deferred decisions and completed repairs without adding unused/zero-stock discovery records to the main queue.
 
 ## Fix the bug
 
@@ -10,15 +22,15 @@ A re-import must fetch a fresh source instead of returning the old cached Drive 
 
 ## Open the repair queue
 
-Add a **Repair imported photos** screen linked from Photos. Populate it from recorded imports through the bad path and their product associations, using the existing audit as a starting point. Include photos even if a later edit produced a larger file. Group repeated uses of the same source so the user does not need to import it repeatedly.
+Open **Repair imported photos** from Photos, then choose **Check stocked item photos**. The main **Needs photos** view lists current small or missing images and files needing a visual decision. Put stocked uses first and group repeated uses of one file. Original-import history is a source lookup, not the eligibility test.
 
-Show the product name, JAN, current image and progress for each entry. Put stocked products first. Provide filters for **Needs original**, **Processing**, **Needs review** and **Done**. Keep progress when the user leaves and returns.
-
-Small images with no known bad-path import can appear under **Other small images** for the same manual workflow. They do not need to block work on the known affected imports.
+Use **Other stocked photos** to flag any current photo the automatic size check cannot judge. Use **Saved work** to reopen work from the prior discovery. Progress and decisions survive reload.
 
 ## Get the correct originals into the system
 
 The user selects entries and chooses **Re-import originals**. Fetch the originals where access still works. For anything that cannot be fetched, show **Select original in Google Photos** and the old image and filename to help the user find it. Also allow **Upload original** from the computer.
+
+The user can also choose a durable photo already recorded in the relevant JAN groups. Record it as an existing source rather than downloading it again. **Use original as candidate** skips processing when that source is already suitable.
 
 When choosing a replacement source, show it beside the old image so the user can confirm it is the right photo. The user can select originals for several entries in one session and assign each to its entry. An imported original becomes the starting point for that entry's processing.
 
@@ -84,6 +96,7 @@ type Artifact = {
 };
 
 type OriginalChoice =
+  | { kind: "existing_photo"; photoId: string; url: string; filename: string }
   | { kind: "google_photos"; mediaItemId: string; filename: string }
   | { kind: "upload"; filename: string; mimeType: string };
 
@@ -93,6 +106,12 @@ type TargetRef =
   | { kind: "photo_group"; groupKey: string; photoId: string }
   | { kind: "inventory"; itemKey: string }
   | { kind: "listing_image"; handle: string; imageId: string }
+  | {
+      kind: "listing_new_image";
+      handle: string;
+      imageId: string;
+      altText: string;
+    }
   | { kind: "proposal_image"; proposalKey: string; imageId: string }
   | { kind: "proposal_variant"; proposalKey: string; variantId: string };
 
@@ -163,6 +182,19 @@ A failed original import is retried with a new import ID and request ID. A retry
 An approval must name the entry's selected, completed attempt. The approval payload records the actual uses the user saw and approved. It references the attempt's recorded candidate rather than carrying a replacement URL supplied by the UI. Repeated approval of an already approved entry does nothing. Choosing a different candidate or scope after approval is a new repair entry.
 
 The reducer first resolves the whole approval. If a listed target is missing or no longer has `beforeUrl`, change no product references and show that the uses need refreshing. Record that result under the approval event ID in replay state; the user can refresh targets and approve again with a new approval ID. This prevents one approval leaving half the references on the old image.
+
+## Current photo facts and decisions
+
+Add these broadcast events using the same envelope and timestamps as the repair events above:
+
+| Type                             | Complete payload                                                     | Meaning                                                                                                                                       |
+| -------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `photoRepair/imageMeasured`      | `{ url: string, width?: number, height?: number, message?: string }` | Dimensions returned for the current file, or a failed read message. No good/bad verdict is stored by the measurement.                         |
+| `photoRepair/photoReviewChanged` | `{ url: string, relatedUrls?: string[], good: boolean }`             | The user says the displayed file is good, or flags it as needing a better photo. Related URLs identify the displayed uses of that same asset. |
+
+The repair slice adds optional maps for backward-compatible reads: `measurementsByKey` stores the measurement payload plus its `Fact`; `photoReviewsByKey` stores `{url, good, fact}`. Keys use Drive file identity or the CDN file path plus Shopify's master `v` value. Ignore display-size query parameters. Unchecked, missing, small, good-sized and needs-a-look labels are derived, not additional events.
+
+A missing-photo entry records an empty `oldImageUrl` and an inventory target with empty `beforeUrl`. If it has a saved listing, also record `listing_new_image` with the stable slot ID `repair-photo-<itemKey>` and the proposed alt text. Approval fills that inventory field and appends that gallery slot; it does not invent an old photo ID. The imported source and candidate remain recorded in the repair history.
 
 ## Replay state
 
@@ -252,6 +284,20 @@ type PhotoRepairState = {
   attemptsById: Record<string, AttemptRecord>;
   approvalsById: Record<string, ApprovalRecord>;
   publicationsById: Record<string, PublicationRecord>;
+  photoReviewsByKey?: Record<
+    string,
+    { url: string; good: boolean; fact: Fact }
+  >;
+  measurementsByKey?: Record<
+    string,
+    {
+      url: string;
+      width?: number;
+      height?: number;
+      message?: string;
+      fact: Fact;
+    }
+  >;
   seenEventIds: Record<string, true>;
   pendingEventsById: Record<
     string,
@@ -274,7 +320,7 @@ Process events only after their referenced source, import, entry or attempt exis
 
 ## Exact changes on approval
 
-Resolve each target by its existing key and replace only the image field shown below. Keep every existing object ID. Apply the replacement once across the root state, rather than broadcasting several independent field changes.
+Resolve each target by its existing key and old URL, including every duplicate occurrence of that same version in a group. Keep other edits with the same photo ID unchanged. Replace only the image field shown below. Keep every existing object ID. Apply the replacement once across the root state, rather than broadcasting several independent field changes.
 
 | Target kind        | Existing location                                                         | Change                                                                                                                       |
 | ------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -326,7 +372,7 @@ The request needs an optional `repairPublicationId` alongside its existing reque
 2. Add the repair slice and events, then queue/source selection and candidate processing using the existing tools.
 3. Add approval as one root transition and connect it to the existing Shopify request/result flow.
 
-Adding the repair slice requires a schema-version bump at implementation time so browser caches rebuild from broadcast. Existing photo events keep their existing behavior. The new routing field applies only to repair work; no existing IDs or historical events are migrated.
+Schema version 30 rebuilds browser caches for current-photo decisions and the corrected duplicate-reference approval behavior. Existing photo events keep their existing behavior. The new routing field applies only to repair work; no existing IDs or historical events are migrated.
 
 Verify the complete flow on the three calendar images for JAN `4542804169317`: import, process, redo, approve, reload and sync. Check that candidates do not change current data and that approval preserves identity, gallery order and variant assignments. Then work through the repair queue with manual review of every candidate.
 
