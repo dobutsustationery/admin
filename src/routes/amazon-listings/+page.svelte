@@ -35,6 +35,7 @@
     listingStatus,
     statusDetail,
   } from "$lib/amazon-listing-status";
+  import AmazonVariationFamily from "$lib/components/AmazonVariationFamily.svelte";
   import AmazonPreparation from "$lib/components/AmazonPreparation.svelte";
   let query = "",
     category = "All",
@@ -579,10 +580,11 @@
   </div>
   <p class="muted">
     Existing offers: price and merchant-fulfilled stock comparison.
-    Product-detail updates and creating new shared-barcode products are not
-    supported yet. Existing-ASIN offers and stock-only updates to zero are
-    supported. Counts below are product listings; a listing may appear in
-    multiple categories when its variants differ.
+    Existing-ASIN offers and stock-only updates to zero are supported. Use
+    “Prepare variant family” below to create new Amifa parent/child listings.
+    Product-detail updates for existing ASINs remain separate. Counts below are
+    product listings; a listing may appear in multiple categories when its
+    variants differ.
   </p>
   <section class="status" aria-label="Inventory ASIN scan">
     <h2>Find ASINs across the inventory</h2>
@@ -714,6 +716,7 @@
         : "Review saved preparation draft"}</button
     >{#if legacyDraft}<AmazonPreparation />{/if}
   </details>
+  <AmazonVariationFamily {rows} />
   {#if matchRequestIds.length}<p role="status">
       Amazon barcode lookup: {matchingResults.length} results received. {matchingResults.filter(
         (r) => !r.ok,

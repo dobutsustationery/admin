@@ -1,5 +1,10 @@
 // Explicit, per-product preview and publication. No unattended inventory writer.
 const { createHash, randomUUID } = require("node:crypto");
+const {
+  validateFamilyEntry,
+  validateFamilyBatch,
+  matchingParent,
+} = require("./amazon-variation-family.cjs");
 const REQUESTS = "request_amazon_prepare",
   JOBS = "amazon_prepare_jobs",
   LOCKS = "amazon_prepare_locks";
@@ -81,6 +86,7 @@ function validateRequest(d) {
       );
     const offerOnly =
       e.method === "PUT" && e.body.requirements === "LISTING_OFFER_ONLY";
+    const family = validateFamilyEntry(e, attributes);
     if (
       offerOnly &&
       (e.body.productType !== "PRODUCT" ||
@@ -108,6 +114,7 @@ function validateRequest(d) {
     if (
       e.method === "PUT" &&
       !offerOnly &&
+      !family &&
       (e.body.requirements !== "LISTING" ||
         attributes?.supplier_declared_has_product_identifier_exemption ||
         attributes?.parentage_level ||
@@ -138,9 +145,14 @@ function validateRequest(d) {
       throw Error(
         "Stock must be a non-negative whole number of merchant-fulfilled units.",
       );
-    if (e.method === "PUT" && (!stock || !offers || stock[0].quantity <= 0))
+    if (
+      e.method === "PUT" &&
+      e.family?.role !== "parent" &&
+      (!stock || !offers || (!family && stock[0].quantity <= 0))
+    )
       throw Error("New products require a price and stock quantity.");
   }
+  validateFamilyBatch(d.entries);
 }
 function baseline(r) {
   if (r?.status === 404) return "absent";
@@ -194,6 +206,10 @@ function createWorker({
       result: j.result || null,
       submittedAt: j.submittedAt || 0,
       before: j.before || null,
+      parentJobId: j.parentJobId || "",
+      previewRequestId: j.previewRequestId || "",
+      publishRequestId: j.publishRequestId || "",
+      reuseParent: !!j.reuseParent,
     };
     tx.set(
       db.collection("broadcast").doc(`amazon-prepare-${id}-${j.revision}`),
@@ -204,6 +220,29 @@ function createWorker({
         timestamp: new Date(j.updatedAt),
       },
     );
+    const phase = j.publishRequestId
+      ? `publish:${j.publishRequestId}`
+      : "preview";
+    const state = ["queued", "publish_queued"].includes(j.status)
+      ? "requested"
+      : j.status === "blocked" || j.status === "unknown"
+        ? "failed"
+        : ["ready", "submitted"].includes(j.status)
+          ? "completed"
+          : "claimed";
+    tx.set(db.collection("sync").doc(`amazon-prepare-${id}-${j.revision}`), {
+      eventType: `amazon/sync_${state}`,
+      requestId: `prepare:${id}:${phase}`,
+      creator: j.creator,
+      processor: "amazon-preparation-worker",
+      createdAtMs: j.updatedAt,
+      timestamp: new Date(j.updatedAt),
+      payload: {
+        sku: j.entry.sku,
+        status: j.status,
+        error: state === "failed" ? j.error || "" : "",
+      },
+    });
   }
   async function enqueue(id, data) {
     validateRequest(data);
@@ -230,6 +269,10 @@ function createWorker({
           const jobId = hash(`${id}:${entry.sku}`);
           const j = {
             entry,
+            previewRequestId: id,
+            ...(entry.family?.role === "child"
+              ? { parentJobId: hash(`${id}:${entry.family.parentSku}`) }
+              : {}),
             sellerId: config.sellerId,
             creator: data.creator,
             createdAt: at,
@@ -245,7 +288,21 @@ function createWorker({
           tx.create(db.collection(JOBS).doc(jobId), j);
           fact(tx, jobId, j);
         }
-      else
+      else {
+        const selectedIds = new Set(jobs.map((snap) => snap.id));
+        for (const snap of jobs) {
+          const child = snap.data();
+          if (!child?.parentJobId) continue;
+          const parent = jobs.find((p) => p.id === child.parentJobId)?.data();
+          if (
+            !selectedIds.has(child.parentJobId) ||
+            parent?.status !== "ready" ||
+            !valid(parent.validation)
+          )
+            throw Error(
+              "Publish the validated parent together with its children.",
+            );
+        }
         for (const snap of jobs) {
           const old = snap.data();
           // A row that has become ineligible does not prevent its neighbours.
@@ -269,6 +326,7 @@ function createWorker({
           tx.set(snap.ref, j);
           fact(tx, snap.id, j);
         }
+      }
       tx.update(ref, { queuedAt: at, error: "" });
     });
   }
@@ -303,6 +361,18 @@ function createWorker({
       )
         return null;
       tx.update(ref, { lease, leaseUntil: now() + 240000 });
+      tx.set(
+        db.collection("sync").doc(`amazon-prepare-claimed-${ref.id}-${lease}`),
+        {
+          eventType: "amazon/sync_claimed",
+          requestId: `prepare:${ref.id}:${j.publishRequestId ? `publish:${j.publishRequestId}` : "preview"}`,
+          creator: j.creator,
+          processor: "amazon-preparation-worker",
+          createdAtMs: now(),
+          timestamp: new Date(now()),
+          payload: { sku: j.entry.sku },
+        },
+      );
       return j;
     });
     if (!job) return;
@@ -328,6 +398,15 @@ function createWorker({
       await enqueueReadback(ref.id, job.creator, job.entry.sku, {
         ...(quantity !== undefined ? { quantity } : {}),
         ...(priceGBP !== undefined ? { priceGBP } : {}),
+        ...(job.entry.family
+          ? {
+              parentage: job.entry.family.role,
+              variationTheme: job.entry.family.theme,
+              ...(job.entry.family.role === "child"
+                ? { parentSku: job.entry.family.parentSku }
+                : {}),
+            }
+          : {}),
       });
       await done({
         status: job.status === "publishing" ? "unknown" : "submitted",
@@ -345,10 +424,51 @@ function createWorker({
       if (config.sellerId !== job.sellerId || config.marketplaceId !== UK)
         throw Error("Configured seller changed. Refresh and prepare again.");
       const accessToken = await getToken(config);
+      // A child is never sent before the parent is observed on Amazon. A
+      // queued/uncertain parent remains visible while this job waits for it.
+      if (job.parentJobId && job.status === "publish_queued") {
+        const parent = (
+          await db.collection(JOBS).doc(job.parentJobId).get()
+        ).data();
+        if (!parent || parent.status === "blocked")
+          throw Error(
+            "The parent could not be published. No child was submitted; resolve the parent first.",
+          );
+        if (
+          !["submitted", "readback_pending", "unknown"].includes(parent.status)
+        ) {
+          await done({
+            status: "publish_queued",
+            dueAt: now() + 10000,
+            error: "Waiting for the parent to be published.",
+          });
+          return;
+        }
+        const observedParent = await read({
+          config,
+          accessToken,
+          sku: job.entry.family.parentSku,
+        });
+        if (!matchingParent(observedParent, job.entry)) {
+          if (now() - (parent.submittedAt || parent.updatedAt) > 600000)
+            throw Error(
+              "Amazon has not confirmed the parent after ten minutes. No child was submitted; check the parent feedback.",
+            );
+          await done({
+            status: "publish_queued",
+            dueAt: now() + 10000,
+            error: "Waiting for Amazon to confirm the parent.",
+          });
+          return;
+        }
+      }
       const before = await read({ config, accessToken, sku: job.entry.sku });
       if (before.status !== 200 && before.status !== 404)
         throw Error(`Could not read Amazon SKU (HTTP ${before.status}).`);
-      if (job.entry.method === "PUT" && before.status !== 404)
+      const reuseParent =
+        job.entry.family?.role === "parent" &&
+        matchingParent(before, job.entry);
+      if (job.entry.method === "PUT" && before.status !== 404 && !reuseParent)
         throw Error(
           "This seller SKU already exists. Refresh the catalogue and prepare it as an update.",
         );
@@ -389,6 +509,22 @@ function createWorker({
           );
       }
       if (job.status === "queued") {
+        if (reuseParent) {
+          await done({
+            status: "ready",
+            validation: {
+              status: 200,
+              data: { status: "VALID", issues: [] },
+              source: "existing-parent-read",
+            },
+            validatedAt: now(),
+            before,
+            reuseParent: true,
+            error:
+              "Existing matching parent will be reused; it will not be overwritten.",
+          });
+          return;
+        }
         const response = await write({
           config,
           accessToken,
@@ -433,6 +569,18 @@ function createWorker({
         throw Error(
           "Amazon price, stock or identity changed since preview. Refresh and check this product again.",
         );
+      if (job.reuseParent) {
+        if (!reuseParent)
+          throw Error("The existing parent changed. Check this family again.");
+        await done({
+          status: "readback_pending",
+          dueAt: now(),
+          submittedAt: now(),
+          result: { status: 200, ok: true, data: { status: "REUSED_PARENT" } },
+          error: "Existing matching parent reused; no parent write was made.",
+        });
+        return;
+      }
       lockRef = db
         .collection(LOCKS)
         .doc(hash(`${job.sellerId}:${job.entry.sku}`));

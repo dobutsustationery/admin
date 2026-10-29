@@ -262,3 +262,23 @@ it("keeps reading a buyable offer until the explicitly submitted stock and GBP p
   expect(needsReadback(raw, 200, { priceGBP: 5 })).toBe(true);
   expect(needsReadback(raw, 200, { quantity: 2, priceGBP: 4 })).toBe(false);
 });
+
+it("keeps reading until the submitted child-parent relationship and variation theme are observed", () => {
+  const raw: any = { summaries: [{ status: ["BUYABLE"] }], attributes: {} };
+  const expected = {
+    parentage: "child",
+    parentSku: "P-letters",
+    variationTheme: "COLOR",
+  };
+  expect(needsReadback(raw, 200, expected)).toBe(true);
+  raw.attributes = {
+    parentage_level: [{ value: "child" }],
+    variation_theme: [{ name: "COLOR" }],
+    child_parent_sku_relationship: [
+      { parent_sku: "P-letters", child_relationship_type: "variation" },
+    ],
+  };
+  expect(needsReadback(raw, 200, expected)).toBe(false);
+  raw.attributes.child_parent_sku_relationship[0].parent_sku = "wrong";
+  expect(needsReadback(raw, 200, expected)).toBe(true);
+});

@@ -82,7 +82,7 @@ const ok = (data: any) => ({ ok: true, status: 200, data });
 function setup(write?: any) {
   const mem = database();
   let time = 1000,
-    remote = ok({
+    remote: any = ok({
       offers: [{ price: { currencyCode: "GBP", amount: 4 } }],
       fulfillmentAvailability: [
         { fulfillmentChannelCode: "DEFAULT", quantity: 2 },
@@ -94,7 +94,8 @@ function setup(write?: any) {
     db: mem.db,
     getConfig: () => config,
     getToken: async () => "token",
-    read: async () => remote,
+    read: async ({ sku }: any) =>
+      typeof remote === "function" ? remote(sku) : remote,
     write: async (args: any) => {
       calls.push(args);
       return write
@@ -364,4 +365,204 @@ describe("Offer-only server validation", () => {
     expect(existing.jobs()[0].status).toBe("blocked");
     expect(existing.calls).toHaveLength(0);
   });
+});
+
+function familyEntries() {
+  const attrs = (role: string) => ({
+    brand: [{ value: "Amifa", marketplace_id: config.marketplaceId }],
+    parentage_level: [{ value: role, marketplace_id: config.marketplaceId }],
+    variation_theme: [{ name: "COLOR", marketplace_id: config.marketplaceId }],
+  });
+  const family = {
+    handle: "letters",
+    parentSku: "P-letters",
+    theme: "COLOR",
+    attribute: "color",
+  };
+  return [
+    {
+      itemKey: "@family:letters",
+      sku: "P-letters",
+      method: "PUT",
+      family: { ...family, role: "parent" },
+      body: {
+        productType: "STICKER_DECAL",
+        requirements: "LISTING",
+        attributes: { ...attrs("parent"), skip_offer: [{ value: true }] },
+      },
+    },
+    ...["Blue", "Green"].map((value, i) => ({
+      itemKey: value,
+      sku: value,
+      method: "PUT",
+      family: { ...family, role: "child" },
+      body: {
+        productType: "STICKER_DECAL",
+        requirements: "LISTING",
+        attributes: {
+          ...attrs("child"),
+          child_parent_sku_relationship: [
+            {
+              parent_sku: "P-letters",
+              child_relationship_type: "variation",
+              marketplace_id: config.marketplaceId,
+            },
+          ],
+          color: [{ value, marketplace_id: config.marketplaceId }],
+          externally_assigned_product_identifier: [
+            {
+              type: "ean",
+              value: String(4542804151466 + i),
+              marketplace_id: config.marketplaceId,
+            },
+          ],
+          fulfillment_availability: [
+            { fulfillment_channel_code: "DEFAULT", quantity: 4 },
+          ],
+          purchasable_offer: [
+            {
+              currency: "GBP",
+              marketplace_id: config.marketplaceId,
+              our_price: [{ schedule: [{ value_with_tax: 4 }] }],
+            },
+          ],
+        },
+      },
+    })),
+  ];
+}
+function observedParent(entries: any[]) {
+  return ok({
+    attributes: entries[0].body.attributes,
+    summaries: [{ productType: "STICKER_DECAL" }],
+    issues: [],
+  });
+}
+describe("Amazon parent-first family publication", () => {
+  it("waits for the submitted parent to be observed before sending a child, and records relationship readback", async () => {
+    const entries = familyEntries(),
+      remote = new Map();
+    const s = setup();
+    s.setRemote((sku: string) => remote.get(sku) || { status: 404, data: {} });
+    await s.request("family-preview", { mode: "preview", entries });
+    await s.w.tick();
+    expect(s.jobs().every((j) => j.status === "ready")).toBe(true);
+    await expect(
+      s.request("orphan-publish", {
+        mode: "publish",
+        stockConfirmed: true,
+        jobIds: [s.jobs().find((j) => j.entry.sku === "Blue").id],
+      }),
+    ).rejects.toThrow("parent");
+    await s.request("family-publish", {
+      mode: "publish",
+      stockConfirmed: true,
+      jobIds: s.jobs().map((j) => j.id),
+    });
+    const parent = s.jobs().find((j) => j.entry.family.role === "parent"),
+      blue = s.jobs().find((j) => j.entry.sku === "Blue");
+    await s.w.step(blue.ref);
+    expect(s.calls.filter((c) => !c.preview)).toHaveLength(0);
+    await s.w.step(parent.ref);
+    expect(s.calls.filter((c) => !c.preview).map((c) => c.entry.sku)).toEqual([
+      "P-letters",
+    ]);
+    s.setTime(12000);
+    await s.w.step(blue.ref);
+    expect(s.calls.filter((c) => !c.preview)).toHaveLength(1);
+    remote.set("P-letters", observedParent(entries));
+    s.setTime(23000);
+    await s.w.step(blue.ref);
+    expect(s.calls.filter((c) => !c.preview).map((c) => c.entry.sku)).toEqual([
+      "P-letters",
+      "Blue",
+    ]);
+    await s.w.step(blue.ref);
+    expect(s.readbacks[0][3]).toMatchObject({
+      parentage: "child",
+      parentSku: "P-letters",
+      variationTheme: "COLOR",
+      quantity: 4,
+      priceGBP: 4,
+    });
+    expect(
+      [...s.docs.values()].some((d) => d.eventType === "amazon/sync_requested"),
+    ).toBe(true);
+    expect(
+      [...s.docs.values()].some((d) => d.eventType === "amazon/sync_claimed"),
+    ).toBe(true);
+  });
+  it("reuses an observed matching parent without overwriting it and blocks unrelated existing SKUs", async () => {
+    const entries = familyEntries(),
+      s = setup();
+    s.setRemote((sku: string) =>
+      sku === "P-letters" ? observedParent(entries) : { status: 404, data: {} },
+    );
+    await s.request("reuse-preview", { mode: "preview", entries });
+    await s.w.tick();
+    expect(
+      s.jobs().find((j) => j.entry.family.role === "parent").reuseParent,
+    ).toBe(true);
+    await s.request("reuse-publish", {
+      mode: "publish",
+      stockConfirmed: true,
+      jobIds: s.jobs().map((j) => j.id),
+    });
+    await s.w.tick();
+    expect(
+      s.calls
+        .filter((c) => !c.preview)
+        .map((c) => c.entry.sku)
+        .sort(),
+    ).toEqual(["Blue", "Green"]);
+    const unrelated = setup();
+    unrelated.setRemote(
+      ok({ attributes: { parentage_level: [{ value: "child" }] } }),
+    );
+    await unrelated.request("unrelated", { mode: "preview", entries });
+    await unrelated.w.tick();
+    expect(unrelated.jobs().every((j) => j.status === "blocked")).toBe(true);
+    expect(unrelated.calls).toHaveLength(0);
+  });
+});
+
+it("stops every child if Amazon rejects the parent publication", async () => {
+  const entries = familyEntries();
+  const s = setup(({ entry, preview }: any) =>
+    ok(
+      !preview && entry.family.role === "parent"
+        ? {
+            status: "INVALID",
+            issues: [
+              {
+                severity: "ERROR",
+                code: "parent-rejected",
+                message: "Parent rejected",
+              },
+            ],
+          }
+        : { status: preview ? "VALID" : "ACCEPTED" },
+    ),
+  );
+  s.setRemote({ status: 404, data: {} });
+  await s.request("reject-parent-preview", { mode: "preview", entries });
+  await s.w.tick();
+  await s.request("reject-parent-publish", {
+    mode: "publish",
+    stockConfirmed: true,
+    jobIds: s.jobs().map((j) => j.id),
+  });
+  await s.w.tick();
+  expect(s.calls.filter((c) => !c.preview).map((c) => c.entry.sku)).toEqual([
+    "P-letters",
+  ]);
+  expect(
+    s
+      .jobs()
+      .filter((j) => j.entry.family.role === "child")
+      .every(
+        (j) =>
+          j.status === "blocked" && j.error.includes("No child was submitted"),
+      ),
+  ).toBe(true);
 });

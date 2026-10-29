@@ -11,6 +11,29 @@ function needsReadback(raw, status, expected = {}) {
   if (status === 404) return true;
   if (status !== 200) return false;
   if (array(raw?.issues).some((i) => i.severity === "ERROR")) return false;
+  if (
+    expected.parentage &&
+    !array(raw?.attributes?.parentage_level).some(
+      (v) => v.value === expected.parentage,
+    )
+  )
+    return true;
+  if (
+    expected.variationTheme &&
+    !array(raw?.attributes?.variation_theme).some(
+      (v) => v.name === expected.variationTheme,
+    )
+  )
+    return true;
+  if (
+    expected.parentSku &&
+    !array(raw?.attributes?.child_parent_sku_relationship).some(
+      (v) =>
+        v.parent_sku === expected.parentSku &&
+        v.child_relationship_type === "variation",
+    )
+  )
+    return true;
   if (array(raw?.attributes?.parentage_level).some((v) => v.value === "parent"))
     return false;
   if (

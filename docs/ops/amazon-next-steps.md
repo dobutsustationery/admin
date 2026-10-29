@@ -1,14 +1,14 @@
 # Amazon listing and offer next steps
 
-Status as of October 26, 2026. Scope: Amazon UK, GBP and merchant fulfillment. The current implementation supports reviewed publication; deployment and live outcomes must be verified separately.
+Status updated October 29, 2026. Scope: Amazon UK, GBP and merchant fulfillment. The current implementation supports reviewed publication; deployment and live outcomes must be verified separately.
 
 ## Current capabilities
 
-| Workflow                           | Implemented                                                                                                                                 | Remaining                                                                             |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Create amifa catalogue products    | Standalone creation with a distinct JAN, local product content and images, chosen product type, validation preview and explicit publication | Shared-JAN children, variation families, richer required-attribute forms              |
-| Maintain existing amifa listings   | Compare and publish changed GBP prices and merchant-fulfilled quantities, including stock-only updates to zero                              | Title, description, bullets, images and relationship updates                          |
-| Supply existing catalogue products | Inventory JAN scan, candidate ASIN review with photos, exact variant and pack confirmation, offer-only validation and publication           | Live end-to-end verification of the newly added workflow and broader browser coverage |
+| Workflow                           | Implemented                                                                                                                             | Remaining                                                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Create amifa catalogue products    | Standalone creation and reviewed single-dimension parent/child families, with distinct identifiers or an explicitly confirmed exemption | Live family canary, multidimensional families, existing-child reparenting, richer required-attribute forms |
+| Maintain existing amifa listings   | Compare and publish changed GBP prices and merchant-fulfilled quantities, including stock-only updates to zero                          | Title, description, bullets, images and relationship updates                                               |
+| Supply existing catalogue products | Inventory JAN scan, candidate ASIN review with photos, exact variant and pack confirmation, offer-only validation and publication       | Live end-to-end verification of the newly added workflow and broader browser coverage                      |
 
 All manufacturers now appear in the comparison. This does not establish permission to create new catalogue products for every manufacturer. Brand ownership and existing-ASIN offer eligibility need separate controls.
 
@@ -58,3 +58,40 @@ Then add continuous reconciliation, write controls and queue cancellation. Alrea
 - [Historical milestones and observations](../../AMAZON_SYNC_COMPLETION.md)
 
 The older setup/design documents describe earlier phases. Use this sequence for ongoing work and the historical completion document for dated evidence.
+
+## Testing Amifa variation families (October 29, 2026)
+
+On **Amazon listings**, open **Prepare variant family**, find an Amifa listing,
+then choose the family, Amazon product type and variation type. Review each
+child's variation value, identifier, image, GBP price and available stock.
+Zero-stock children can remain in the family. The parent is a grouping SKU and
+has no price, stock or GTIN.
+
+For a shared JAN, supply distinct manufacturer child identifiers or explicitly
+confirm an already-approved Amifa GTIN exemption for this product type and record
+its reference. The form does not establish exemption eligibility. Amazon's
+validation and eventual processing can still reject an exemption or unsupported
+variation theme. Do not use a parent's ASIN as an existing child product match.
+
+Choose **Save and check variant family with Amazon**. This stores the choices and
+exact parent/child request bodies and queues validation; it does not publish.
+After every member is ready, review the family, confirm stock and choose
+**Publish reviewed variant family**. The server submits the parent first (or
+reuses a matching existing parent without overwriting it), waits for Amazon to
+return that parent, and then submits its children. A failed parent prevents child
+submission. Uncertain writes are observed rather than automatically repeated.
+
+The form retains device drafts across reloads; checked choices and job results
+also live on the server. Each job records the exact entry, preview request,
+parent-job dependency, publication request, validation result, submission result
+and observed baseline in `amazonPrepare/job` facts. Shared sync lifecycle events
+feed hedgehoggy. Readback expectations include parentage, parent SKU and variation
+theme in addition to child price and stock. Accepted submissions remain distinct
+from verified relationships and buyability.
+
+Current scope: new child SKUs with a single variation dimension (colour, style,
+pattern or size). Existing unrelated seller SKUs are not overwritten or silently
+reparented. Product-type-specific missing attributes appear in Amazon validation
+feedback. The worker's validation, dependency and readback changes apply to newly
+queued jobs; existing cached facts do not need recomputation. **Schema version
+remains unchanged; no full replay is required.**

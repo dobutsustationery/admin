@@ -6,6 +6,28 @@ const { createWorker } = createRequire(import.meta.url)(
   "../../functions/shared/amazon-preparation-worker.cjs",
 );
 
+async function openSavedPreparation(page: any) {
+  await expect(
+    page.getByRole("heading", { name: "Amazon listings", exact: true }),
+  ).toBeVisible();
+  const section = page
+    .locator("details")
+    .filter({
+      has: page.locator("summary", {
+        hasText: "Pricing and saved preparation choices",
+      }),
+    })
+    .first();
+  if ((await section.getAttribute("open")) === null)
+    await section.locator("summary").first().click();
+  await section
+    .getByRole("button", {
+      name: "Review saved preparation draft",
+      exact: true,
+    })
+    .click();
+}
+
 test("prepare, leave an issue for later, and publish only the validated product", async ({
   page,
   authenticatedPage,
@@ -138,6 +160,7 @@ test("prepare, leave an issue for later, and publish only the validated product"
   };
   try {
     await page.goto("/amazon-listings");
+    await openSavedPreparation(page);
     await page
       .getByRole("button", { name: "Prepare Amifa products for Amazon" })
       .click();
@@ -147,6 +170,7 @@ test("prepare, leave an issue for later, and publish only the validated product"
     await green.getByRole("button", { name: "Later", exact: true }).click();
     await expect(green).toHaveCount(0);
     await page.reload();
+    await openSavedPreparation(page);
     await expect(panel.getByLabel("Filter preparation")).toHaveValue(
       String(at),
     );
@@ -166,6 +190,7 @@ test("prepare, leave an issue for later, and publish only the validated product"
     await panel.getByRole("button", { name: /Needs attention/ }).click();
     await page.goto("/inventory");
     await page.goto("/amazon-listings");
+    await openSavedPreparation(page);
     await expect(
       panel.getByRole("button", { name: /Needs attention/ }),
     ).toHaveClass(/current/);
@@ -204,6 +229,7 @@ test("prepare, leave an issue for later, and publish only the validated product"
       .getByRole("button", { name: "Apply draft choices", exact: true })
       .click();
     await page.reload();
+    await openSavedPreparation(page);
     await expect(
       blue.getByLabel(`GBP price for ${good}`, { exact: true }),
     ).toHaveValue("4.50");
@@ -381,6 +407,7 @@ test("one factor previews all prices before apply and survives reload", async ({
     );
     await batch.commit();
     await page.goto("/amazon-listings");
+    await openSavedPreparation(page);
     const panel = page.getByRole("region", { name: "Prepare Amazon products" });
     await panel
       .getByRole("button", {
@@ -408,6 +435,7 @@ test("one factor previews all prices before apply and survives reload", async ({
       }),
     ).toBeDisabled();
     await page.reload();
+    await openSavedPreparation(page);
     await expect(panel.getByLabel("GBP per EUR")).toHaveValue("0.9");
     await expect(
       panel.getByText("Preview: £9.00", { exact: true }),

@@ -13,6 +13,11 @@ export interface PreparationDecision {
   productType?: string;
   deferred?: boolean;
   included?: boolean;
+  variationTheme?: string;
+  variationValue?: string;
+  identifierEAN?: string;
+  identifierExemption?: boolean;
+  exemptionReference?: string;
 }
 export interface PreparationDraft {
   revision: number;
@@ -51,6 +56,15 @@ export interface PreparationEntry {
   sku: string;
   method: "PUT" | "PATCH";
   body: any;
+  family?: {
+    handle: string;
+    role: "parent" | "child";
+    parentSku: string;
+    theme: string;
+    attribute: string;
+    exemptionApproved?: boolean;
+    exemptionReference?: string;
+  };
 }
 export interface PreparationRow {
   offerMatch?: ReturnType<typeof offerMatches>;

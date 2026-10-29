@@ -30,7 +30,13 @@ export interface AuditRun {
   pages: number;
   count: number;
   nextCheckAt: number;
-  expected?: { quantity?: number; priceGBP?: number };
+  expected?: {
+    quantity?: number;
+    priceGBP?: number;
+    parentage?: "parent" | "child";
+    variationTheme?: string;
+    parentSku?: string;
+  };
 }
 export interface AuditRow {
   key: string;
