@@ -11,6 +11,7 @@
     etsyZeroStockHeld,
     etsyQuantitySyncDeactivates,
     etsyLatestListingResults,
+    etsySyncErrorMessage,
     type EtsyIssue,
     type EtsyListing,
     type EtsyRow,
@@ -270,12 +271,14 @@
     >
       <h2>Etsy sync needs attention</h2>
       <p>
-        {listingFailures.length} listing updates failed. Expand Recent requests for
-        the full batch results.
+        {listingFailures.length} listings have an error from their previous sync.
+        These are saved request results; current differences are shown in the table.
       </p>
       <ul>
         {#each listingFailures as failure}<li>
-            <strong>{listingTitle(failure.listingId)}</strong>: {failure.error}
+            <strong>{listingTitle(failure.listingId)}</strong> ({new Date(
+              failure.startedAtMs,
+            ).toLocaleString()}): {etsySyncErrorMessage(failure.error)}
           </li>{/each}
         {#each requestFailures as failure}<li>
             {failure.mode}: {failure.error}
@@ -400,7 +403,11 @@
                 class="error"
                 role="alert"
               >
-                Sync failed: {latestListingResults[row.remote.listingId].error}
+                Previous sync ({new Date(
+                  latestListingResults[row.remote.listingId].startedAtMs,
+                ).toLocaleString()}): {etsySyncErrorMessage(
+                  latestListingResults[row.remote.listingId].error,
+                )}
               </p>{/if}
           </td><td
             ><div class="thumbnails">
@@ -535,7 +542,7 @@
             <span class:error={!entry.success}
               >{listingTitle(entry.listingId)}: {entry.success
                 ? entry.message || "Verified"
-                : entry.error}</span
+                : etsySyncErrorMessage(entry.error)}</span
             >
           </p>{/each}
       </details>{/each}

@@ -229,7 +229,7 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
   await expect(failures).toContainText("Etsy rejected this test quantity");
   await expect(
     page.getByRole("row").filter({ hasText: "Compare 1 variations" }),
-  ).toContainText("Sync failed: Etsy rejected this test quantity");
+  ).toContainText("Etsy rejected this test quantity");
   await db
     .collection("etsy_listing_results")
     .doc("test-visible-error")
@@ -243,7 +243,7 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
   await expect(failures).not.toContainText("Etsy rejected this test quantity");
   await expect(
     page.getByRole("row").filter({ hasText: "Compare 1 variations" }),
-  ).not.toContainText("Sync failed:");
+  ).not.toContainText("Previous sync (");
   await page.getByRole("button", { name: "Title (1)", exact: true }).click();
   await page
     .getByRole("button", {

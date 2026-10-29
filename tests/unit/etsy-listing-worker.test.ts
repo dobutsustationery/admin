@@ -7,11 +7,13 @@ describe("Etsy listing worker", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
-  it.each(["stock", "zero", "rejected"])(
+  it.each(["stock", "zero", "rejected", "wrong_quantity"])(
     "syncs stock with replaced product IDs, reports progress and ignores duplicate triggers (%s)",
     async (scenario) => {
       const zeroStock = scenario === "zero";
       const rejected = scenario === "rejected";
+      const wrongQuantity = scenario === "wrong_quantity";
+      const failed = rejected || wrongQuantity;
       const docs = new Map<string, any>();
       const db = {
         collection: (name: string) => ({
@@ -118,7 +120,7 @@ describe("Etsy listing worker", () => {
                 product_id: updated ? 99 : p.product_id,
                 offerings: p.offerings.map((o) => ({
                   ...o,
-                  quantity: updated ? 3 : 8,
+                  quantity: updated && !wrongQuantity ? 3 : 8,
                 })),
               })),
             }
@@ -168,13 +170,17 @@ describe("Etsy listing worker", () => {
         false,
       );
       expect(docs.get("etsy_listing_results/request").results[0].success).toBe(
-        !rejected,
+        !failed,
       );
+      if (wrongQuantity)
+        expect(docs.get("etsy_listing_results/request").results[0].error).toBe(
+          "Update submitted for 123: requested quantity 3, but Etsy returned 8.",
+        );
       if (!rejected) {
         expect(
           docs.get("etsy_listing_catalog/100").inventory.products[0]
             .offerings[0].quantity,
-        ).toBe(zeroStock || rejected ? 8 : 3);
+        ).toBe(zeroStock || failed ? 8 : 3);
         expect(docs.get("etsy_listing_catalog/100").state).toBe(
           zeroStock ? "inactive" : "active",
         );
@@ -187,9 +193,9 @@ describe("Etsy listing worker", () => {
       );
       expect(
         docs.get(
-          `sync/etsy-listings-request-${rejected ? "failed" : "completed"}`,
+          `sync/etsy-listings-request-${failed ? "failed" : "completed"}`,
         ).payload.results[0].success,
-      ).toBe(!rejected);
+      ).toBe(!failed);
     },
   );
 });

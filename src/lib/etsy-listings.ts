@@ -111,8 +111,18 @@ export function etsyLatestListingResults(results: any[]): Record<string, any> {
   ))
     for (const entry of result.results || [])
       if (!latest[entry.listingId])
-        latest[entry.listingId] = { ...entry, requestId: result.id };
+        latest[entry.listingId] = {
+          ...entry,
+          requestId: result.id,
+          startedAtMs: result.startedAtMs,
+        };
   return latest;
+}
+export function etsySyncErrorMessage(error: string): string {
+  return error ===
+    "Etsy has not returned the requested inventory; review the refreshed listing"
+    ? "The inventory update was submitted, but the previous verifier could not confirm it. This saved error does not describe the current stock."
+    : error;
 }
 export function etsyComparison(
   root: any,

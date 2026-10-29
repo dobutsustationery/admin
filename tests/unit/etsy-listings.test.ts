@@ -6,6 +6,7 @@ import {
   etsySyncEntry,
   plainDescription,
   etsyLatestListingResults,
+  etsySyncErrorMessage,
   type EtsyListing,
 } from "../../src/lib/etsy-listings";
 const {
@@ -261,5 +262,16 @@ it("feeds Etsy lifecycle events into hedgehoggy and the shared failure details",
   );
   expect(foldSyncRequests(events).requestsById["etsy-test"].result?.error).toBe(
     "One listing failed",
+  );
+});
+
+it("explains legacy verification failures as saved results without suggesting the stock update failed", () => {
+  expect(
+    etsySyncErrorMessage(
+      "Etsy has not returned the requested inventory; review the refreshed listing",
+    ),
+  ).toContain("does not describe the current stock");
+  expect(etsySyncErrorMessage("Etsy 400: Invalid SKU")).toBe(
+    "Etsy 400: Invalid SKU",
   );
 });

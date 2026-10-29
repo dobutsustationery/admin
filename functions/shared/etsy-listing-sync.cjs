@@ -316,12 +316,12 @@ function createWorker({ db, getConfig, now = Date.now, delay = sleep }) {
       updated[field] !== entry.value
     )
       throw Error(
-        "Etsy has not returned the requested content; review the refreshed listing",
+        `Etsy accepted the ${field} update, but the returned ${field} differs from the requested text.`,
       );
     if (deactivated) {
       if (updated.state === "active")
         throw Error(
-          "Etsy still reports this zero-stock listing as active; review the refreshed listing",
+          "Deactivation was submitted, but Etsy still reports this listing as active. It may still be available for purchase.",
         );
       return {
         action: "deactivated",
@@ -335,19 +335,20 @@ function createWorker({ db, getConfig, now = Date.now, delay = sleep }) {
           (p) => variationKey(p) === targetKeys.get(String(t.productId)),
         );
         const product = matches.length === 1 ? matches[0] : null;
-        if (
-          !product ||
-          !product.offerings?.filter((o) => !o.is_deleted).length ||
-          !product.offerings
-            ?.filter((o) => !o.is_deleted)
-            .every(
-              (o) =>
-                (field === "quantity" ? Number(o.quantity) : money(o.price)) ===
-                t.value,
-            )
-        )
+        const identity = t.sku || `variation ${t.productId}`;
+        if (!product)
           throw Error(
-            "Etsy has not returned the requested inventory; review the refreshed listing",
+            `Update submitted for ${identity}, but verification found ${matches.length} matching variations on Etsy; expected exactly one. Requested ${field}: ${t.value}.`,
+          );
+        const offerings = (product.offerings || []).filter(
+          (o) => !o.is_deleted,
+        );
+        const returned = offerings.map((o) =>
+          field === "quantity" ? Number(o.quantity) : money(o.price),
+        );
+        if (!returned.length || returned.some((value) => value !== t.value))
+          throw Error(
+            `Update submitted for ${identity}: requested ${field} ${t.value}, but Etsy returned ${returned.length ? returned.join(", ") : "no offerings"}.`,
           );
       }
   }
