@@ -8,12 +8,14 @@
     etsyComparison,
     etsyIssueLabels,
     etsySyncEntry,
+    etsyZeroStockHeld,
+    etsyQuantitySyncDeactivates,
+    etsyLatestListingResults,
     type EtsyIssue,
     type EtsyListing,
     type EtsyRow,
   } from "$lib/etsy-listings";
   import {
-    addDoc,
     collection,
     doc,
     limit,
@@ -22,6 +24,7 @@
     query as firestoreQuery,
     serverTimestamp,
     setDoc,
+    writeBatch,
   } from "firebase/firestore";
 
   let listings: EtsyListing[] = [],
@@ -105,6 +108,13 @@
   );
   $: filterLabel = filter === "all" ? "All" : etsyIssueLabels[filter];
   $: inProgress = results.filter((r) => r.status === "running");
+  $: latestListingResults = etsyLatestListingResults(results);
+  $: listingFailures = Object.values(latestListingResults).filter(
+    (r: any) => !r.success,
+  );
+  $: requestFailures = results.filter((r) => !!r.error);
+  const listingTitle = (id: string) =>
+    listings.find((l) => l.listingId === id)?.title || `Etsy ${id}`;
   $: inventoryChoices = Object.entries($store.inventory.idToItem).map(
     ([key, item]: [string, any]) => ({
       key,
@@ -113,6 +123,26 @@
   );
   const canSync = (field: string) =>
     ["quantity", "price", "title", "description"].includes(field);
+  async function enqueue(request: Record<string, any>) {
+    const ref = doc(collection(firestore, "request_etsy_listings"));
+    const batch = writeBatch(firestore);
+    batch.set(ref, {
+      ...request,
+      creator: $user!.uid,
+      createdAt: serverTimestamp(),
+    });
+    // Save the queue event atomically with the server request, so hedgehoggy
+    // shows queued work even while a worker is waiting to start.
+    batch.set(doc(firestore, "sync", `etsy-listings-${ref.id}-requested`), {
+      eventType: "etsy/sync_requested",
+      requestId: ref.id,
+      creator: $user!.uid,
+      createdAtMs: Date.now(),
+      timestamp: serverTimestamp(),
+      payload: { mode: request.mode, field: request.field || "" },
+    });
+    await batch.commit();
+  }
   function toggle(key: string, checked: boolean) {
     const next = new Set(selected);
     checked ? next.add(key) : next.delete(key);
@@ -123,10 +153,8 @@
     busy = true;
     error = "";
     try {
-      await addDoc(collection(firestore, "request_etsy_listings"), {
-        creator: $user.uid,
+      await enqueue({
         mode: "refresh",
-        createdAt: serverTimestamp(),
       });
       message =
         "Etsy refresh queued. Progress is saved; you can leave this page.";
@@ -165,12 +193,10 @@
         throw Error(
           "Local values changed. Close this review and prepare it again.",
         );
-      await addDoc(collection(firestore, "request_etsy_listings"), {
-        creator: $user.uid,
+      await enqueue({
         mode: "sync",
         field: review.field,
         entries: review.entries,
-        createdAt: serverTimestamp(),
       });
       message = `Queued ${review.field} updates for ${review.entries.length} Etsy listings. Results appear below.`;
       review = null;
@@ -224,9 +250,10 @@
       : "No full refresh completed yet"}
   </p>
   <p>
-    Quantity sync changes stock only. Price sync preserves stock. Title and
-    description edits are reviewed separately. Photos and listing activation are
-    managed on Etsy.
+    Quantity sync updates stock and deactivates listings when all variations are
+    out of stock. Etsy retains saved quantities for deactivated listings.
+    Restocked listings must be activated manually on Etsy. Price sync preserves
+    stock. Photos, titles and descriptions are separate from quantity sync.
   </p>
   {#if meta.canWrite === false}<p role="status">
       Etsy is connected for reading only. Reconnect Etsy with permission to edit
@@ -236,6 +263,25 @@
       {error || meta.error}
     </p>{/if}
   {#if message}<p role="status">{message}</p>{/if}
+  {#if listingFailures.length || requestFailures.length}<section
+      class="sync-errors"
+      role="alert"
+      aria-label="Etsy sync failures"
+    >
+      <h2>Etsy sync needs attention</h2>
+      <p>
+        {listingFailures.length} listing updates failed. Expand Recent requests for
+        the full batch results.
+      </p>
+      <ul>
+        {#each listingFailures as failure}<li>
+            <strong>{listingTitle(failure.listingId)}</strong>: {failure.error}
+          </li>{/each}
+        {#each requestFailures as failure}<li>
+            {failure.mode}: {failure.error}
+          </li>{/each}
+      </ul>
+    </section>{/if}
   {#each inProgress as result}<p role="status">
       {result.mode === "refresh"
         ? "Reading Etsy listings"
@@ -283,10 +329,16 @@
   {#if review}<section class="review" aria-label="Review Etsy changes">
       <h2>Review {review.field} changes</h2>
       <p>
-        {review.entries.length} listings. Only {review.field} will change. Other fields
-        and photos are preserved.
+        {review.entries.length} listings. {review.field === "quantity"
+          ? "Stock will be updated; listings with no remaining stock will be deactivated."
+          : `Only ${review.field} will change.`} Photos are preserved.
       </p>
       {#each review.rows as row, index}<h3>{row.title}</h3>
+        {#if review.field === "quantity" && etsyQuantitySyncDeactivates(row)}<p>
+            <strong>Deactivate on Etsy: all variations are out of stock.</strong
+            > Etsy will retain its saved quantities while the listing is not for sale.
+            Activate manually after restocking.
+          </p>{/if}
         {#if review.entries[index].targets}<ul>
             {#each review.entries[index].targets as target}<li>
                 {target.sku || target.itemKey}: {review.field === "quantity"
@@ -340,8 +392,17 @@
                   href={`/listing-detail?handle=${encodeURIComponent(handle)}`}
                   >Local listing</a
                 ></small
-              >{/each}</td
-          ><td
+              >{/each}
+            {#if row.remote && etsyZeroStockHeld(row.remote, row.matches)}<p>
+                Out of stock · Not for sale. Etsy retains saved quantities.
+              </p>{/if}
+            {#if row.remote && latestListingResults[row.remote.listingId]?.success === false}<p
+                class="error"
+                role="alert"
+              >
+                Sync failed: {latestListingResults[row.remote.listingId].error}
+              </p>{/if}
+          </td><td
             ><div class="thumbnails">
               {#each (row.remote?.images || []).slice(0, 4) as image}<ImageThumbnail
                   src={image.url}
@@ -459,7 +520,9 @@
   >
   <section>
     <h2>Recent requests</h2>
-    {#each results as result}<details>
+    {#each results as result}<details
+        open={result.status === "failed" || result.status === "partial_failed"}
+      >
         <summary
           >{result.mode} · {result.status} · {new Date(
             result.startedAtMs,
@@ -469,13 +532,24 @@
         >{#if result.error}<p class="error">
             {result.error}
           </p>{/if}{#each result.results || [] as entry}<p>
-            Etsy {entry.listingId}: {entry.success ? "Verified" : entry.error}
+            <span class:error={!entry.success}
+              >{listingTitle(entry.listingId)}: {entry.success
+                ? entry.message || "Verified"
+                : entry.error}</span
+            >
           </p>{/each}
       </details>{/each}
   </section>
 </main>
 
 <style>
+  .sync-errors {
+    border: 2px solid #b91c1c;
+    background: #fff1f2;
+    color: #991b1b;
+    padding: 1rem;
+    margin: 1rem 0;
+  }
   main {
     padding: 1.5rem;
     max-width: 1600px;

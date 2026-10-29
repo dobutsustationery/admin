@@ -1,8 +1,11 @@
+import { foldSyncRequests } from "../../src/lib/shopify-sync-model";
+import { syncQueue, replace_sync_events } from "../../src/lib/sync-queue-slice";
 import { describe, expect, it } from "vitest";
 import {
   etsyComparison,
   etsySyncEntry,
   plainDescription,
+  etsyLatestListingResults,
   type EtsyListing,
 } from "../../src/lib/etsy-listings";
 const {
@@ -191,4 +194,72 @@ describe("Etsy listing comparison", () => {
       "A & B\nSecond",
     );
   });
+});
+
+describe("Etsy out-of-stock listings and errors", () => {
+  it("holds inactive zero-stock listings without requesting impossible zero quantities, and shows restocked quantities again", () => {
+    const state = root();
+    for (const item of Object.values(state.inventory.idToItem) as any[]) {
+      item.qty = 0;
+      item.shipped = 0;
+    }
+    const remote = listing();
+    remote.state = "inactive";
+    remote.inventory.products = [remote.inventory.products[0]];
+    const row = etsyComparison(state, [remote])[0];
+    expect(row.issues).not.toContain("quantity");
+    expect(etsySyncEntry(row, "quantity")).toBeNull();
+    const item = Object.values(state.inventory.idToItem)[0] as any;
+    item.qty = 2;
+    const restocked = etsyComparison(state, [remote])[0];
+    expect(restocked.issues).toContain("quantity");
+    expect(restocked.issues).toContain("state");
+  });
+  it("retains each listing's latest failure until a later result for that listing succeeds", () => {
+    const results = [
+      {
+        id: "old",
+        startedAtMs: 1,
+        results: [
+          { listingId: "a", success: false, error: "Rejected" },
+          { listingId: "b", success: false, error: "Failed" },
+        ],
+      },
+      {
+        id: "new",
+        startedAtMs: 2,
+        results: [{ listingId: "a", success: true }],
+      },
+    ];
+    expect(etsyLatestListingResults(results).a.success).toBe(true);
+    expect(etsyLatestListingResults(results).b.error).toBe("Failed");
+  });
+});
+
+it("feeds Etsy lifecycle events into hedgehoggy and the shared failure details", () => {
+  const now = Date.now();
+  const events = ["requested", "claimed", "partial_failed"].map((phase, i) => ({
+    id: phase,
+    requestId: "etsy-test",
+    creator: "user",
+    createdAtMs: now + i,
+    eventType: `etsy/sync_${phase}`,
+    payload: { error: phase === "partial_failed" ? "One listing failed" : "" },
+  }));
+  expect(
+    syncQueue(undefined, replace_sync_events(events.slice(0, 1))).queuedCount,
+  ).toBe(1);
+  expect(
+    syncQueue(undefined, replace_sync_events(events.slice(0, 2)))
+      .processingCount,
+  ).toBe(1);
+  const done = syncQueue(undefined, replace_sync_events(events));
+  expect(done.failedRecentCount).toBe(1);
+  expect(done.jobsById["etsy-test"].domain).toBe("etsy");
+  expect(foldSyncRequests(events).requestsById["etsy-test"].status).toBe(
+    "failed",
+  );
+  expect(foldSyncRequests(events).requestsById["etsy-test"].result?.error).toBe(
+    "One listing failed",
+  );
 });

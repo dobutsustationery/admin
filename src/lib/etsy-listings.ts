@@ -85,6 +85,35 @@ export function plainDescription(html: string): string {
     .trim();
 }
 const text = (s: string) => plainDescription(s).replace(/\s+/g, " ").trim();
+export function etsyZeroStockHeld(
+  remote: EtsyListing,
+  matches: EtsyMatch[],
+): boolean {
+  return (
+    remote.state !== "active" &&
+    matches.length > 0 &&
+    matches.every((m) => !m.error && !m.excluded && m.wantedQuantity === 0)
+  );
+}
+export function etsyQuantitySyncDeactivates(row: EtsyRow): boolean {
+  return (
+    row.matches.length > 0 &&
+    row.matches.every(
+      (m) => (!m.error && !m.excluded ? m.wantedQuantity : m.quantity) === 0,
+    )
+  );
+}
+
+export function etsyLatestListingResults(results: any[]): Record<string, any> {
+  const latest: Record<string, any> = {};
+  for (const result of [...results].sort(
+    (a, b) => b.startedAtMs - a.startedAtMs,
+  ))
+    for (const entry of result.results || [])
+      if (!latest[entry.listingId])
+        latest[entry.listingId] = { ...entry, requestId: result.id };
+  return latest;
+}
 export function etsyComparison(
   root: any,
   listings: EtsyListing[],
@@ -189,6 +218,7 @@ export function etsyComparison(
     )
       issues.push("mapping");
     if (
+      !etsyZeroStockHeld(remote, matches) &&
       matches.some(
         (m) => !m.error && !m.excluded && m.quantity !== m.wantedQuantity,
       )
@@ -266,6 +296,8 @@ export function etsyComparison(
 export function etsySyncEntry(row: EtsyRow, field: string): any | null {
   if (!row.remote) return null;
   if (field === "quantity" || field === "price") {
+    if (field === "quantity" && etsyZeroStockHeld(row.remote, row.matches))
+      return null;
     if (field === "price" && row.remote.currency !== "EUR") return null;
     const targets = row.matches
       .filter(

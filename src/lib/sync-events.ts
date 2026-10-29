@@ -53,6 +53,7 @@ export const AMAZON_LISTING_RESTRICTIONS_FAILED_EVENT = `${AMAZON_SYNC_NAMESPACE
 export function normalizeShopifySyncEventType(eventType: string): string {
   const value = String(eventType || "").trim();
   if (!value) return "";
+  if (value.startsWith("etsy/sync_")) return value.slice("etsy/".length);
   if (value.startsWith(`${SHOPIFY_SYNC_NAMESPACE}/`)) {
     const tail = value.slice(SHOPIFY_SYNC_NAMESPACE.length + 1);
     // Backward-compat for listing audit events that were written with a

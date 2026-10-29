@@ -27,9 +27,11 @@ service cloud.firestore {
       // Sync event log: client may only create whitelisted response events.
       allow create: if request.auth != null
         && request.resource.data.creator == request.auth.uid
-        && request.resource.data.eventType in [
+        && (request.resource.data.eventType in [
           "photos/image_transfer_secret_provided"
-        ];
+        ] || (request.resource.data.eventType == "etsy/sync_requested"
+          && action == "etsy-listings-" + request.resource.data.requestId + "-requested"
+          && getAfter(/databases/$(database)/documents/request_etsy_listings/$(request.resource.data.requestId)).data.creator == request.auth.uid));
       allow read: if request.auth != null;
       allow update, delete: if false;
     }

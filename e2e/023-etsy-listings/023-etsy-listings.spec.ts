@@ -54,11 +54,12 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
   await page.waitForFunction(
     () => !!(window as any).store?.getState()?.inventory,
   );
-  async function localState() {
+  async function localState(zeroStock = false) {
+    await expect(page.locator(".loading-overlay")).not.toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Etsy listings", exact: true }),
     ).toBeVisible();
-    await page.evaluate(() => {
+    await page.evaluate((zeroStock) => {
       const store = (window as any).store,
         state = store.getState();
       store.dispatch({
@@ -73,8 +74,8 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
                 janCode: "4901234567890",
                 subtype: "Blue",
                 description: "Test Local Pens",
-                qty: 5,
-                shipped: 2,
+                qty: zeroStock ? 0 : 5,
+                shipped: zeroStock ? 0 : 2,
                 price: 4,
                 image: "",
                 handle: "test-etsy-pens",
@@ -96,7 +97,7 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
           },
         },
       });
-    });
+    }, zeroStock);
   }
   await localState();
   await expect(
@@ -119,6 +120,19 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
   });
   await review.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(review).not.toBeVisible();
+  await localState(true);
+  await page
+    .getByRole("button", {
+      name: "Review quantity changes in this category",
+      exact: true,
+    })
+    .click();
+  await expect(review).toContainText(
+    "Deactivate on Etsy: all variations are out of stock.",
+  );
+  await review.getByRole("button", { name: "Cancel", exact: true }).click();
+  await localState();
+
   await page
     .getByRole("button", {
       name: "Review quantity changes in this category",
@@ -161,6 +175,22 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
   const request = requests.docs
     .map((d) => d.data())
     .find((d) => d.entries?.some((e: any) => e.listingId === "90001"));
+  const recordedRequest = requests.docs.find((d) =>
+    d.data().entries?.some((e: any) => e.listingId === "90001"),
+  )!;
+  const queued = await db
+    .collection("sync")
+    .doc(`etsy-listings-${recordedRequest.id}-requested`)
+    .get();
+  expect(queued.data()?.eventType).toBe("etsy/sync_requested");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (id) => (window as any).store.getState().syncQueue.jobsById[id]?.domain,
+        recordedRequest.id,
+      ),
+    )
+    .toBe("etsy");
   expect(request?.field).toBe("quantity");
   expect(request?.entries[0].targets).toEqual([
     {
@@ -177,6 +207,43 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
   await expect(
     page.getByRole("button", { name: "Quantity (1)", exact: true }),
   ).toBeVisible();
+  await db
+    .collection("etsy_listing_results")
+    .doc("test-visible-error")
+    .set({
+      mode: "sync",
+      status: "partial_failed",
+      startedAtMs: Date.now(),
+      completed: 1,
+      total: 1,
+      results: [
+        {
+          listingId: "90001",
+          success: false,
+          error: "Etsy rejected this test quantity",
+        },
+      ],
+    });
+  const failures = page.getByRole("alert", { name: "Etsy sync failures" });
+  await expect(failures).toContainText("Test Etsy Pens");
+  await expect(failures).toContainText("Etsy rejected this test quantity");
+  await expect(
+    page.getByRole("row").filter({ hasText: "Compare 1 variations" }),
+  ).toContainText("Sync failed: Etsy rejected this test quantity");
+  await db
+    .collection("etsy_listing_results")
+    .doc("test-visible-error")
+    .set(
+      {
+        results: [{ listingId: "90001", success: true }],
+        status: "completed",
+      },
+      { merge: true },
+    );
+  await expect(failures).not.toContainText("Etsy rejected this test quantity");
+  await expect(
+    page.getByRole("row").filter({ hasText: "Compare 1 variations" }),
+  ).not.toContainText("Sync failed:");
   await page.getByRole("button", { name: "Title (1)", exact: true }).click();
   await page
     .getByRole("button", {
