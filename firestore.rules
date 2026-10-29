@@ -38,6 +38,41 @@ service cloud.firestore {
       allow read: if request.auth != null && resource.data.creator == request.auth.uid;
       allow update, delete: if false;
     }
+    match /request_etsy_listings/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.creator == request.auth.uid
+        && request.resource.data.keys().hasOnly(["creator", "mode", "field", "entries", "createdAt"])
+        && (request.resource.data.mode == "refresh"
+          || (request.resource.data.mode == "sync"
+            && request.resource.data.field in ["quantity", "price", "title", "description"]
+            && request.resource.data.entries is list
+            && request.resource.data.entries.size() > 0
+            && request.resource.data.entries.size() <= 100));
+      allow read: if request.auth != null;
+      allow update, delete: if false;
+    }
+    match /etsy_listing_catalog/{id} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /etsy_listing_sync/{id} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /etsy_listing_results/{id} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /etsy_listing_mappings/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(["itemKey", "creator", "updatedAtMs"])
+        && request.resource.data.creator == request.auth.uid
+        && request.resource.data.itemKey is string
+        && request.resource.data.itemKey.size() > 0
+        && request.resource.data.itemKey.size() <= 200;
+      allow delete: if false;
+    }
     match /request_shopify_listing_audit/{action} {
       allow create: if request.auth != null && request.resource.data.creator == request.auth.uid;
       allow read: if request.auth != null && resource.data.creator == request.auth.uid;

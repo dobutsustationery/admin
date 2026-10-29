@@ -3403,6 +3403,16 @@ exports.cleanupShopifyTransientData = onSchedule(
   },
 );
 
+const etsyListingWorker = require("./shared/etsy-listing-sync.cjs").createWorker({ db, getConfig: getEtsyConfig });
+exports.etsyListingRequest = onDocumentCreated({
+  document: "request_etsy_listings/{requestId}",
+  timeoutSeconds: 540, memory: "512MiB", concurrency: 1, maxInstances: 1,
+}, async event => {
+  const request = event.data?.data();
+  if (!request?.creator) return;
+  await etsyListingWorker.run(event.params.requestId, request);
+});
+
 exports.etsyOrderWebhook = onRequest(
   {
     timeoutSeconds: 30,

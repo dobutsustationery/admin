@@ -42,6 +42,7 @@
     { href: "/photos", label: "Photos", icon: Camera },
     { href: "/shopify-products", label: "Product Catalog", icon: ShoppingBag },
     { href: "/shopify-listings", label: "Shopify Listings", icon: ShoppingBag },
+    { href: "/etsy-listings", label: "Etsy Listings", icon: ShoppingBag },
     { href: "/amazon-listings", label: "Amazon Listings", icon: ShoppingBag },
     { href: "/inventory-value", label: "Inventory Value", icon: CreditCard },
     { href: "/sync-status", label: "Sync Status", icon: History },

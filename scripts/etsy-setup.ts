@@ -51,6 +51,7 @@ const ETSY_SCOPES = [
   "transactions_r",
   "transactions_w",
   "listings_r",
+  "listings_w",
 ];
 
 function generateRandomString(length: number): string {
