@@ -1,6 +1,7 @@
 <script lang="ts">
   import ItemHistoryValue from "$lib/components/ItemHistoryValue.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
+  import ShopifyDiffImage from "$lib/components/ShopifyDiffImage.svelte";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import type {
     FieldDiffDetail,
@@ -56,10 +57,6 @@
 
   function variantImage(detail: VariantDiffDetail): string {
     return thumbnailSrc(detail.local?.image || detail.remote?.image);
-  }
-
-  function galleryImage(diff: GalleryImageDiffDetail): string {
-    return thumbnailSrc(diff.local?.url || diff.remote?.url);
   }
 
   function variantFieldRows(field: VariantDiffField): VariantDiffDetail[] {
@@ -228,7 +225,6 @@
     <table class="mini-table">
       <thead>
         <tr>
-          <th class="image-column">Image</th>
           <th>Variant</th>
           <th>SKU</th>
           <th>Admin Image</th>
@@ -238,25 +234,26 @@
       <tbody>
         {#each variantFieldRows("image") as diff}
           <tr>
-            <td class="image-cell">
-              {#if variantImage(diff)}
-                <ImageThumbnail
-                  src={variantImage(diff)}
-                  alt={variantName(diff)}
-                  width="44px"
-                  height="44px"
-                  fit="contain"
-                />
-              {/if}
-            </td>
             <td>{variantName(diff)}</td>
             <td
               ><ItemHistoryValue
                 value={diff.local?.sku || diff.remote?.sku}
               /></td
             >
-            <td>{displayValue(diff.local?.image)}</td>
-            <td>{displayValue(diff.remote?.image)}</td>
+            <td
+              ><ShopifyDiffImage
+                value={diff.local?.image}
+                sourceUrls={row.localImageUrls || []}
+                alt={`Local ${variantName(diff)} image`}
+              /></td
+            >
+            <td
+              ><ShopifyDiffImage
+                value={diff.remote?.image}
+                sourceUrls={row.remoteImageUrls || []}
+                alt={`Shopify ${variantName(diff)} image`}
+              /></td
+            >
           </tr>
         {/each}
       </tbody>
@@ -265,7 +262,6 @@
     <table class="mini-table">
       <thead>
         <tr>
-          <th class="image-column">Preview</th>
           <th>Image #</th>
           <th>Field</th>
           <th>Admin</th>
@@ -276,40 +272,46 @@
         {#each galleryRows() as diff, index}
           {#if diff.fields.length === 0}
             <tr>
-              <td class="image-cell">
-                {#if galleryImage(diff)}
-                  <ImageThumbnail
-                    src={galleryImage(diff)}
-                    alt={`Gallery ${index + 1}`}
-                    width="44px"
-                    height="44px"
-                    fit="contain"
-                  />
-                {/if}
-              </td>
               <td>#{index + 1}</td>
               <td>presence</td>
-              <td>{diff.local ? "present" : "-"}</td>
-              <td>{diff.remote ? "present" : "-"}</td>
+              <td
+                ><ShopifyDiffImage
+                  value={diff.local?.url}
+                  sourceUrls={row.localImageUrls || []}
+                  alt={`Local gallery image ${index + 1}`}
+                /></td
+              >
+              <td
+                ><ShopifyDiffImage
+                  value={diff.remote?.url}
+                  sourceUrls={row.remoteImageUrls || []}
+                  alt={`Shopify gallery image ${index + 1}`}
+                /></td
+              >
             </tr>
           {:else}
             {#each diff.fields as field}
               <tr>
-                <td class="image-cell">
-                  {#if galleryImage(diff)}
-                    <ImageThumbnail
-                      src={galleryImage(diff)}
-                      alt={`Gallery ${index + 1}`}
-                      width="44px"
-                      height="44px"
-                      fit="contain"
-                    />
-                  {/if}
-                </td>
                 <td>#{index + 1}</td>
                 <td>{fieldLabel(field)}</td>
-                <td>{displayValue(diff.local?.[field])}</td>
-                <td>{displayValue(diff.remote?.[field])}</td>
+                <td
+                  ><ShopifyDiffImage
+                    value={diff.local?.url}
+                    sourceUrls={row.localImageUrls || []}
+                    alt={`Local gallery image ${index + 1}`}
+                  />{#if field !== "url"}<p>
+                      {displayValue(diff.local?.[field])}
+                    </p>{/if}</td
+                >
+                <td
+                  ><ShopifyDiffImage
+                    value={diff.remote?.url}
+                    sourceUrls={row.remoteImageUrls || []}
+                    alt={`Shopify gallery image ${index + 1}`}
+                  />{#if field !== "url"}<p>
+                      {displayValue(diff.remote?.[field])}
+                    </p>{/if}</td
+                >
               </tr>
             {/each}
           {/if}

@@ -181,7 +181,7 @@ function extractShopifyGeneratedDriveFileId(rawUrl: string): string {
   return /^[A-Za-z0-9_-]{10,}$/.test(candidate) ? candidate : "";
 }
 
-function normalizeImageUrl(rawUrl: unknown): string {
+export function normalizeImageUrl(rawUrl: unknown): string {
   const value = trimString(rawUrl);
   if (!value) return "";
   const driveId = extractGoogleDriveFileId(value);

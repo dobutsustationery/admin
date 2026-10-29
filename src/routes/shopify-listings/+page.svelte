@@ -58,6 +58,8 @@
     issueKeys: IssueKey[];
     primaryIssue: IssueKey;
     syncDisabled: boolean;
+    localImageUrls: string[];
+    remoteImageUrls: string[];
   }
   type TableStatus =
     | "would_create"
@@ -499,12 +501,21 @@
         let deepDiff = false;
         let mismatchKeys: string[] = [];
         let diffDetails: DetailedShopifyDiffResult | null = null;
+        let localImageUrls: string[] = [];
+        const remoteImageUrls = [
+          ...(remoteListing?.images || []).map((image) => image.url),
+          ...(remoteListing?.variants || []).map((variant) => variant.image),
+        ];
         if (status === "both" && listing && remoteListing) {
           const projection = buildAdminShopifyListingProjectionFromState(
             state,
             handle,
           );
           if (projection) {
+            localImageUrls = [
+              ...projection.listing.images.map((image) => image.url),
+              ...projection.variants.map((variant) => variant.image),
+            ];
             const result = diffComparableShopifyListingsDetailed(
               buildComparableAdminShopifySyncProjection(projection),
               buildComparableRemoteListing(remoteListing),
@@ -535,6 +546,8 @@
           mismatchKeys,
           diffDetails,
           issueKeys,
+          localImageUrls,
+          remoteImageUrls,
           primaryIssue: issueKeys[0],
           syncDisabled,
         };

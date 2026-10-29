@@ -2,6 +2,7 @@
   import { page } from "$app/stores";
   import JsonTree from "$lib/components/JsonTree.svelte";
   import ItemHistoryValue from "$lib/components/ItemHistoryValue.svelte";
+  import ShopifyDiffImage from "$lib/components/ShopifyDiffImage.svelte";
   import { formatLogTimestamp } from "$lib/format-log-timestamp";
   import {
     buildComparableRemoteListing,
@@ -113,6 +114,14 @@
     handle && remoteListingRaw
       ? buildComparableRemoteListing(remoteListingRaw)
       : null;
+  $: localImageUrls = [
+    ...(adminProjection?.listing.images || []).map((image) => image.url),
+    ...(adminProjection?.variants || []).map((variant) => variant.image),
+  ];
+  $: remoteImageUrls = [
+    ...(remoteListingRaw?.images || []).map((image: any) => image.url),
+    ...(remoteListingRaw?.variants || []).map((variant: any) => variant.image),
+  ];
   $: diffResult =
     localComparable && remoteComparable
       ? diffComparableShopifyListingsDetailed(localComparable, remoteComparable)
@@ -253,14 +262,26 @@
                           <td>{diff.matchType}</td>
                           <td>{fieldLabel(field)}</td>
                           <td
-                            ><ItemHistoryValue
-                              value={variantValue(diff, "local", field)}
-                            /></td
+                            >{#if field === "image"}
+                              <ShopifyDiffImage
+                                value={diff.local?.image}
+                                sourceUrls={localImageUrls}
+                                alt={`Local ${variantLabel(diff)} image`}
+                              />
+                            {:else}<ItemHistoryValue
+                                value={variantValue(diff, "local", field)}
+                              />{/if}</td
                           >
                           <td
-                            ><ItemHistoryValue
-                              value={variantValue(diff, "remote", field)}
-                            /></td
+                            >{#if field === "image"}
+                              <ShopifyDiffImage
+                                value={diff.remote?.image}
+                                sourceUrls={remoteImageUrls}
+                                alt={`Shopify ${variantLabel(diff)} image`}
+                              />
+                            {:else}<ItemHistoryValue
+                                value={variantValue(diff, "remote", field)}
+                              />{/if}</td
                           >
                         </tr>
                       {/each}
@@ -293,16 +314,44 @@
                       <tr>
                         <td>#{index + 1}</td>
                         <td>presence</td>
-                        <td>{diff.local ? "present" : "-"}</td>
-                        <td>{diff.remote ? "present" : "-"}</td>
+                        <td
+                          ><ShopifyDiffImage
+                            value={diff.local?.url}
+                            sourceUrls={localImageUrls}
+                            alt={`Local gallery image ${index + 1}`}
+                          /></td
+                        >
+                        <td
+                          ><ShopifyDiffImage
+                            value={diff.remote?.url}
+                            sourceUrls={remoteImageUrls}
+                            alt={`Shopify gallery image ${index + 1}`}
+                          /></td
+                        >
                       </tr>
                     {:else}
                       {#each diff.fields as field}
                         <tr>
                           <td>#{index + 1}</td>
                           <td>{fieldLabel(field)}</td>
-                          <td>{imageValue(diff, "local", field)}</td>
-                          <td>{imageValue(diff, "remote", field)}</td>
+                          <td
+                            ><ShopifyDiffImage
+                              value={diff.local?.url}
+                              sourceUrls={localImageUrls}
+                              alt={`Local gallery image ${index + 1}`}
+                            />{#if field !== "url"}<p>
+                                {imageValue(diff, "local", field)}
+                              </p>{/if}</td
+                          >
+                          <td
+                            ><ShopifyDiffImage
+                              value={diff.remote?.url}
+                              sourceUrls={remoteImageUrls}
+                              alt={`Shopify gallery image ${index + 1}`}
+                            />{#if field !== "url"}<p>
+                                {imageValue(diff, "remote", field)}
+                              </p>{/if}</td
+                          >
                         </tr>
                       {/each}
                     {/if}
