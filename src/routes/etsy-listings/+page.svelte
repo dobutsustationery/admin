@@ -153,7 +153,7 @@
         "No eligible changes in these listings. Expand a listing to review unmatched variations or currency differences.";
   }
   async function publish() {
-    if (!review || !$user?.uid || busy) return;
+    if (!review || !$user?.uid || busy || meta.canWrite === false) return;
     busy = true;
     error = "";
     try {
@@ -228,6 +228,10 @@
     description edits are reviewed separately. Photos and listing activation are
     managed on Etsy.
   </p>
+  {#if meta.canWrite === false}<p role="status">
+      Etsy is connected for reading only. Reconnect Etsy with permission to edit
+      listings before submitting changes. You can still review all mismatches.
+    </p>{/if}
   {#if error || meta.error}<p class="error" role="alert">
       {error || meta.error}
     </p>{/if}
@@ -303,7 +307,9 @@
             </div>
           </div>{/if}{/each}
       <button
-        disabled={busy || inProgress.some((r) => r.mode === "sync")}
+        disabled={busy ||
+          meta.canWrite === false ||
+          inProgress.some((r) => r.mode === "sync")}
         on:click={publish}>Sync reviewed {review.field} changes to Etsy</button
       ><button on:click={() => (review = null)}>Cancel</button>
     </section>{/if}

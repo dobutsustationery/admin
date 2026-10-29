@@ -125,6 +125,29 @@ test("Etsy mismatch categories, explicit review, quantity request and reload", a
       exact: true,
     })
     .click();
+  await db
+    .collection("etsy_listing_sync")
+    .doc("state")
+    .set({ canWrite: false }, { merge: true });
+  await expect(
+    review.getByRole("button", {
+      name: "Sync reviewed quantity changes to Etsy",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText(/Etsy is connected for reading only/),
+  ).toBeVisible();
+  await db
+    .collection("etsy_listing_sync")
+    .doc("state")
+    .set({ canWrite: true }, { merge: true });
+  await expect(
+    review.getByRole("button", {
+      name: "Sync reviewed quantity changes to Etsy",
+      exact: true,
+    }),
+  ).toBeEnabled();
   await review
     .getByRole("button", {
       name: "Sync reviewed quantity changes to Etsy",
@@ -243,11 +266,9 @@ test("Shopify quantity category submits inventory-only changes", async ({
       },
     });
   });
-  const section = page
-    .locator("details.issue-section")
-    .filter({
-      has: page.locator("summary strong", { hasText: "Inventory Quantity" }),
-    });
+  const section = page.locator("details.issue-section").filter({
+    has: page.locator("summary strong", { hasText: "Inventory Quantity" }),
+  });
   await section.locator("summary").click();
   await section
     .getByRole("button", { name: "Sync all (1)", exact: true })

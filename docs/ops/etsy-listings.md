@@ -25,7 +25,7 @@ These are observations and explicit request records, not browser-replayed market
 
 ## Permissions and release
 
-Reading requires Etsy `listings_r`; editing requires `listings_w`. The setup script now requests both. An older authorization may need renewal using `direnv exec . bun scripts/etsy-setup.ts --env production --reauth`; use the approved OAuth callback and deploy refreshed function environment values afterward. An API permission rejection is shown per listing. There is no need to renew authorization merely to see mismatches if reading already works.
+Reading requires Etsy `listings_r`; editing requires `listings_w`. The setup script now requests both. An older authorization may need renewal using `direnv exec . bun scripts/etsy-setup.ts --env production --reauth`; use the approved OAuth callback. Renewed tokens are saved both to the environment file and the existing server token store, preserving the order cursor, so running workers use the new grant immediately. Production/staging setup uses that environment's matching service-account file, or application-default credentials if it is absent. An API permission rejection is shown per listing. There is no need to renew authorization merely to see mismatches if reading already works.
 
 Deploy Firestore rules, `etsyListingRequest`, `shopifySyncRequest`, and Hosting. After deployment, queue one refresh to populate the comparison. Do not run a bulk Etsy write as part of release verification.
 

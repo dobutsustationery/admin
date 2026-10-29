@@ -42,6 +42,11 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as crypto from "node:crypto";
 import { execSync } from "node:child_process";
+import { applicationDefault, cert, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+const {
+  saveEtsyAuthorization,
+} = require("../functions/shared/etsy-authorization.cjs");
 import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
@@ -120,7 +125,8 @@ function updateEnvFile(path: string, updates: Record<string, string>) {
     if (regex.test(content)) {
       content = content.replace(regex, `${key}=${value}`);
     } else {
-      content += (content.endsWith("\n") || content === "" ? "" : "\n") +
+      content +=
+        (content.endsWith("\n") || content === "" ? "" : "\n") +
         `${key}=${value}\n`;
     }
   }
@@ -139,11 +145,7 @@ function resolveProjectId(envName: string): string | null {
   const firebasercPath = resolve(process.cwd(), ".firebaserc");
   if (!existsSync(firebasercPath)) return null;
   const firebaserc = JSON.parse(readFileSync(firebasercPath, "utf-8"));
-  return (
-    firebaserc.projects?.[envName] ||
-    firebaserc.projects?.default ||
-    null
-  );
+  return firebaserc.projects?.[envName] || firebaserc.projects?.default || null;
 }
 
 function findEtsyWebhookUrl(node: any): string | null {
@@ -217,7 +219,9 @@ function discoverWebhookUrlFromFirebase(envName: string): string | null {
   } catch (e: any) {
     const stderr = e?.stderr?.toString?.() || "";
     if (stderr) {
-      console.log(`    firebase functions:list failed: ${stderr.split("\n")[0]}`);
+      console.log(
+        `    firebase functions:list failed: ${stderr.split("\n")[0]}`,
+      );
     }
     return null;
   }
@@ -242,7 +246,8 @@ async function prompt(question: string): Promise<string> {
 async function runOAuthFlow(
   apiKey: string,
   redirectUri: string,
-): Promise<{ access_token: string; refresh_token: string }> {
+  sharedSecret?: string,
+): Promise<{ access_token: string; refresh_token: string; scope?: string }> {
   const verifier = generateRandomString(32);
   const challenge = generateCodeChallenge(verifier);
   const state = generateRandomString(16);
@@ -276,20 +281,18 @@ async function runOAuthFlow(
   const code = await prompt("Paste code: ");
   if (!code) throw new Error("Empty code");
 
-  const response = await fetch(
-    "https://api.etsy.com/v3/public/oauth/token",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        client_id: apiKey,
-        redirect_uri: redirectUri,
-        code,
-        code_verifier: verifier,
-      }),
-    },
-  );
+  const response = await fetch("https://api.etsy.com/v3/public/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: apiKey,
+      redirect_uri: redirectUri,
+      code,
+      code_verifier: verifier,
+      ...(sharedSecret ? { client_secret: sharedSecret } : {}),
+    }),
+  });
   if (!response.ok) {
     throw new Error(`OAuth token exchange failed: ${await response.text()}`);
   }
@@ -323,15 +326,11 @@ async function discoverShopId(env: Record<string, string>): Promise<string> {
     { headers: etsyAuthHeaders(env) },
   );
   if (!shopsResp.ok) {
-    throw new Error(
-      `users/${userId}/shops failed: ${await shopsResp.text()}`,
-    );
+    throw new Error(`users/${userId}/shops failed: ${await shopsResp.text()}`);
   }
   const shops = await shopsResp.json();
   const shopId =
-    shops.shop_id ||
-    shops.results?.[0]?.shop_id ||
-    shops.shops?.[0]?.shop_id;
+    shops.shop_id || shops.results?.[0]?.shop_id || shops.shops?.[0]?.shop_id;
   if (!shopId) throw new Error("Could not find a shop_id for this user");
   return String(shopId);
 }
@@ -365,7 +364,44 @@ async function main() {
     if (dryRun) {
       console.log("    (dry run) would run OAuth flow");
     } else {
-      const tokens = await runOAuthFlow(env.ETSY_API_KEY, redirectUri);
+      const tokens = await runOAuthFlow(
+        env.ETSY_API_KEY,
+        redirectUri,
+        env.ETSY_KEYSTRING_SHARED_SECRET,
+      );
+      const authorizedShopId = await discoverShopId({
+        ...env,
+        ETSY_ACCESS_TOKEN: tokens.access_token,
+        ETSY_REFRESH_TOKEN: tokens.refresh_token,
+      });
+      if (env.ETSY_SHOP_ID && authorizedShopId !== env.ETSY_SHOP_ID) {
+        throw Error(
+          "Authorize the owner of the configured Etsy shop; no credentials were changed.",
+        );
+      }
+      if (["production", "staging"].includes(envName)) {
+        const projectId = resolveProjectId(envName);
+        if (!projectId)
+          throw Error(
+            "Could not identify the Firebase project for Etsy authorization",
+          );
+        const credentialPath = resolve(`service-account-${envName}.json`);
+        const key = existsSync(credentialPath)
+          ? JSON.parse(readFileSync(credentialPath, "utf8"))
+          : null;
+        if (key && key.project_id !== projectId)
+          throw Error(
+            "Etsy authorization credential project does not match the selected environment",
+          );
+        const app = initializeApp(
+          { projectId, credential: key ? cert(key) : applicationDefault() },
+          "etsy-authorization",
+        );
+        await saveEtsyAuthorization(getFirestore(app), tokens, Date.now());
+        console.log(
+          "    Authorization saved for the running Etsy workers; order cursor preserved.",
+        );
+      }
       updateEnvFile(envPath, {
         ETSY_ACCESS_TOKEN: tokens.access_token,
         ETSY_REFRESH_TOKEN: tokens.refresh_token,
@@ -442,9 +478,7 @@ async function main() {
       if (dryRun) {
         console.log("    (dry run) would prompt for URL");
       } else {
-        const url = await prompt(
-          "Paste webhook URL now, or Enter to skip: ",
-        );
+        const url = await prompt("Paste webhook URL now, or Enter to skip: ");
         if (url) {
           updateEnvFile(envPath, { ETSY_ORDER_WEBHOOK_URL: url });
           env = loadEnvFile(envPath);
@@ -477,7 +511,9 @@ async function main() {
   console.log(
     "    Etsy will display a signing secret (or use the app's shared secret).",
   );
-  console.log(`    Paste it into ${envFilePathFor(envName)} as ETSY_SHARED_SECRET.`);
+  console.log(
+    `    Paste it into ${envFilePathFor(envName)} as ETSY_SHARED_SECRET.`,
+  );
   if (!env.ETSY_SHARED_SECRET) {
     if (dryRun) {
       console.log("    (dry run) would prompt for ETSY_SHARED_SECRET");
