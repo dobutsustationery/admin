@@ -35,7 +35,16 @@ describe("Etsy listing worker", () => {
         {
           product_id: 11,
           sku: "123",
-          property_values: [],
+          property_values: [
+            {
+              property_id: 513,
+              property_name: "Title",
+              scale_id: null,
+              scale_name: null,
+              value_ids: [64189375554],
+              values: ["Regular"],
+            },
+          ],
           offerings: [
             {
               price: { amount: 450, divisor: 100 },
@@ -55,6 +64,28 @@ describe("Etsy listing worker", () => {
       if (options.method === "PUT") {
         expect(url).toContain("/listings/100/inventory");
         const body = JSON.parse(options.body);
+        if (
+          body.products.some((p: any) =>
+            p.property_values.some(
+              (v: any) => typeof v.property_name !== "string",
+            ),
+          )
+        ) {
+          return new Response(
+            JSON.stringify({
+              error: "Expected string value for 'property_name' (got NULL).",
+            }),
+            { status: 400 },
+          );
+        }
+        expect(body.products[0].property_values).toEqual([
+          {
+            property_id: 513,
+            property_name: "Title",
+            value_ids: [64189375554],
+            values: ["Regular"],
+          },
+        ]);
         expect(body.products[0].offerings[0]).toEqual({
           price: 4.5,
           quantity: 3,

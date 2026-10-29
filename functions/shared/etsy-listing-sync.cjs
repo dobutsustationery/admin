@@ -54,6 +54,7 @@ function inventoryUpdate(inventory, targets, field) {
       sku: p.sku || "",
       property_values: (p.property_values || []).map((v) => ({
         property_id: v.property_id,
+        property_name: v.property_name,
         ...(v.scale_id != null ? { scale_id: v.scale_id } : {}),
         value_ids: v.value_ids || [],
         values: v.values || [],
