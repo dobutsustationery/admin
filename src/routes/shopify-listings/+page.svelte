@@ -108,7 +108,8 @@
     presence:
       "A sync would create the listing, or Shopify has no admin source.",
     bare_sku: "Shopify has bare JAN SKUs while admin expects JAN plus subtype.",
-    quantity: "Shopify on-hand quantity differs from admin on-hand inventory.",
+    quantity:
+      "Shopify on-hand quantity differs from admin on-hand inventory. Quantity sync updates stock only, preserving product content and images.",
     variant_image: "A sync would change a variant image assignment.",
     gallery: "A sync would change Shopify product images.",
     status: "A sync would change Shopify listing status.",
@@ -603,6 +604,7 @@
     state: any,
     handle: string,
     uid: string,
+    syncMode?: "inventory",
   ): Record<string, any> | null {
     const projection = buildAdminShopifyListingProjectionFromState(
       state,
@@ -619,6 +621,7 @@
       source: "shopify-listings-page",
       nowMs,
       serverTimestamp: serverTimestamp(),
+      syncMode,
     });
   }
 
@@ -648,7 +651,22 @@
     try {
       const state = store.getState();
       for (const row of rowsToSync) {
-        const request = buildListingSyncRequest(state, row.handle, $user.uid);
+        const request = buildListingSyncRequest(
+          state,
+          row.handle,
+          $user.uid,
+          issue === "quantity" ? "inventory" : undefined,
+        );
+        if (request && issue === "quantity") {
+          const skus = new Set(
+            (row.diffDetails?.variantDiffs || [])
+              .filter((diff) => diff.fields.includes("inventoryQuantity"))
+              .map((diff) => diff.local?.sku),
+          );
+          request.variants = request.variants.filter((variant: any) =>
+            skus.has(variant.sku),
+          );
+        }
         if (!request) {
           skipped += 1;
           continue;

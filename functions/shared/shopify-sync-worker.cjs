@@ -257,6 +257,9 @@ async function executeClaimedRequest({
   }
 
   try {
+    if (requestData.syncMode && requestData.syncMode !== "inventory") {
+      throw new Error("Unsupported Shopify sync mode");
+    }
     const locationId = await core.resolveLocationId(shopifyConfig);
     await appendApiEvent(db, creator, {
       requestId,
@@ -271,16 +274,21 @@ async function executeClaimedRequest({
       options: eventOptions,
     });
 
-    const product = await core.upsertProductFromRequest(
-      shopifyConfig,
-      requestData,
-    );
+    const inventoryOnly = requestData.syncMode === "inventory";
+    const product = inventoryOnly
+      ? await core.findProductByHandle(shopifyConfig, handle)
+      : await core.upsertProductFromRequest(shopifyConfig, requestData);
+    if (!product?.id) {
+      throw new Error(`Existing Shopify product not found: ${handle}`);
+    }
     await appendApiEvent(db, creator, {
       requestId,
       requestEventId,
       handle,
       processor,
-      requestType: "product_update",
+      requestType: inventoryOnly
+        ? "inventory_target_resolve"
+        : "product_update",
       endpoint: `/admin/api/${apiVersion}/products`,
       success: true,
       response: {
@@ -298,23 +306,25 @@ async function executeClaimedRequest({
       options: eventOptions,
     });
 
-    const publication = await core.ensureProductPublishedToOnlineStore(
-      shopifyConfig,
-      product.id,
-    );
+    if (!inventoryOnly) {
+      const publication = await core.ensureProductPublishedToOnlineStore(
+        shopifyConfig,
+        product.id,
+      );
 
-    await appendApiEvent(db, creator, {
-      requestId,
-      requestEventId,
-      handle,
-      processor,
-      requestType: "product_publication_sync",
-      endpoint: `/admin/api/${apiVersion}/graphql.json`,
-      success: true,
-      response: publication,
-      context: { requestId, handle, productId: product.id, processor },
-      options: eventOptions,
-    });
+      await appendApiEvent(db, creator, {
+        requestId,
+        requestEventId,
+        handle,
+        processor,
+        requestType: "product_publication_sync",
+        endpoint: `/admin/api/${apiVersion}/graphql.json`,
+        success: true,
+        response: publication,
+        context: { requestId, handle, productId: product.id, processor },
+        options: eventOptions,
+      });
+    }
 
     const variants = Array.isArray(requestData?.variants)
       ? requestData.variants
@@ -419,6 +429,7 @@ async function executeClaimedRequest({
         failureCount,
         productId: product.id,
         productHandle: product.handle,
+        ...(inventoryOnly ? { syncMode: "inventory" } : {}),
       },
       options: eventOptions,
     });

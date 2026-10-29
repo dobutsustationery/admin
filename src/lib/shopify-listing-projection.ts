@@ -43,6 +43,7 @@ export interface ShopifyListingProjection {
 }
 
 export interface ShopifySyncRequestEvent extends ShopifyListingProjection {
+  syncMode?: "inventory";
   eventType: typeof SHOPIFY_SYNC_REQUEST_EVENT;
   requestId: string;
   source: string;
@@ -264,10 +265,12 @@ export function buildShopifySyncRequestEvent(params: {
   source: string;
   nowMs: number;
   serverTimestamp: unknown;
+  syncMode?: "inventory";
 }): ShopifySyncRequestEvent {
   const { projection, requestId, uid, source, nowMs, serverTimestamp } = params;
   return {
     eventType: SHOPIFY_SYNC_REQUEST_EVENT,
+    ...(params.syncMode ? { syncMode: params.syncMode } : {}),
     requestId,
     handle: projection.handle,
     listing: projection.listing,
