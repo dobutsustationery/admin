@@ -1,8 +1,63 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
   buildProductPayload,
+  upsertProductFromRequest,
 } = require("../../functions/shared/shopify-sync-core.cjs");
+
+describe("shopify-sync-core update failures", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([409, 422, 500])(
+    "propagates HTTP %i without creating a replacement product",
+    async (status) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            data: {
+              productByHandle: {
+                id: "gid://shopify/Product/123",
+                handle: "existing-product",
+                variants: { nodes: [] },
+              },
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status,
+          json: async () => ({ errors: "Product update failed" }),
+        })
+        .mockRejectedValue(new Error("Unexpected additional Shopify request"));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        upsertProductFromRequest(
+          {
+            storeUrl: "test.myshopify.com",
+            apiVersion: "2026-01",
+            accessToken: "test-token",
+          },
+          {
+            handle: "existing-product",
+            listing: { title: "Existing Product" },
+            variants: [{ sku: "123", price: 6 }],
+          },
+        ),
+      ).rejects.toThrow("Product update failed");
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[1][0]).toBe(
+        "https://test.myshopify.com/admin/api/2026-01/products/123.json",
+      );
+      expect(fetchMock.mock.calls[1][1].method).toBe("PUT");
+    },
+  );
+});
 
 describe("shopify-sync-core buildProductPayload", () => {
   it("sets draft status and global published scope for new products", () => {

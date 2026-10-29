@@ -1012,11 +1012,7 @@ async function upsertProductFromRequest(config, requestPayload) {
 
   let opResult;
   if (existing) {
-    try {
-      opResult = await updateProduct(existing);
-    } catch (error) {
-      opResult = await createProduct();
-    }
+    opResult = await updateProduct(existing);
   } else {
     opResult = await createProduct();
   }
