@@ -104,6 +104,20 @@ describe("Amazon preparation from durable inputs", () => {
       projectPreparation(prep, f.audit, f.inventory, f.listings)[0].price,
     ).toBe(8.5);
   });
+  it("uses numeric GBP prices already saved by the standalone form", () => {
+    const f = fixture();
+    const prep = decision(initialPreparation, {
+      productType: "SHEET_PAPER",
+      priceGBP: 4,
+    } as any);
+    const r = projectPreparation(prep, f.audit, f.inventory, f.listings)[0];
+    expect(r.price).toBe(4);
+    expect(r.reason).toBe("");
+    expect(
+      r.entry?.body.attributes.purchasable_offer[0].our_price[0].schedule[0]
+        .value_with_tax,
+    ).toBe(4);
+  });
   it("leaves shared-JAN creations blocked while allowing verified existing offers", () => {
     const prep = decision(initialPreparation, {
       priceGBP: "8",

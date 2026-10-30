@@ -1200,7 +1200,8 @@
                       type="number"
                       min="0.01"
                       step="0.01"
-                      bind:value={price}
+                      value={price}
+                      on:input={(e) => (price = e.currentTarget.value)}
                     /></label
                   ><label
                     >Amazon product type<input

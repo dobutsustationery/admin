@@ -261,7 +261,9 @@ export function projectPreparation(
     const oldPrice = row.price.startsWith("GBP ")
       ? Number(row.price.slice(4))
       : 0;
-    const price = decision.priceGBP?.trim()
+    // Older number-input bindings recorded numeric prices in durable events.
+    // Read them directly without changing history or requiring a cache replay.
+    const price = String(decision.priceGBP ?? "").trim()
       ? Number(decision.priceGBP)
       : oldPrice > 0
         ? oldPrice
