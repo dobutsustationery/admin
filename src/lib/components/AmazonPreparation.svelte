@@ -14,6 +14,7 @@
   import { UK_MARKETPLACE } from "$lib/amazon-audit";
   import {
     initialPreparation,
+    isAmazonProductCreation,
     projectPreparation,
     emptyPreparationDraft,
     preparationDraftScope,
@@ -257,9 +258,19 @@
   $: checkRows = inStock.filter(
     (r) =>
       r.entry &&
+      !isAmazonProductCreation(r.entry) &&
       !drafts[r.row.key] &&
       !pending(r) &&
       !ready(r, drafts) &&
+      decision(r, drafts).included !== false,
+  );
+  $: createRows = inStock.filter(
+    (r) =>
+      isAmazonProductCreation(r.entry) &&
+      !r.reason &&
+      !pending(r) &&
+      r.row.health !== "Processing" &&
+      !drafts[r.row.key] &&
       decision(r, drafts).included !== false,
   );
   $: issues = inStock.filter((r) => decision(r, drafts).deferred || blocked(r));
@@ -360,8 +371,8 @@
     <div>
       <h2>Get your Amifa products onto Amazon</h2>
       <p>
-        Prepare products, check them with Amazon, then publish the ones that are
-        ready. Products with issues can wait.
+        Save prices and product choices here. Review new products and create
+        them directly; existing offer updates can be checked before publication.
       </p>
     </div>
     <button
@@ -489,6 +500,20 @@
           on:input={(e) => view({ query: e.currentTarget.value })}
           placeholder="Product, barcode or variant"
         /></label
+      >
+      <button
+        disabled={busy ||
+          dirty ||
+          syncing ||
+          storageFailed ||
+          !!journalState.error ||
+          !createRows.length}
+        on:click={() =>
+          dispatch(
+            "create",
+            createRows.slice(0, 100).map((r) => r.row.key),
+          )}
+        >Review and create {Math.min(createRows.length, 100)} new listings</button
       >
       {#if tab !== "review"}<button
           class="primary"

@@ -92,6 +92,7 @@ service cloud.firestore {
         && request.resource.data.sellerId is string
         && request.resource.data.marketplaceId == "A1F83G8C2ARO7P"
         && ((request.resource.data.mode == "preview" && request.resource.data.entries is list && request.resource.data.entries.size() > 0 && request.resource.data.entries.size() <= 100)
+          || (request.resource.data.mode == "create" && request.resource.data.stockConfirmed == true && request.resource.data.entries is list && request.resource.data.entries.size() > 0 && request.resource.data.entries.size() <= 100)
           || (request.resource.data.mode == "publish" && request.resource.data.stockConfirmed == true && request.resource.data.jobIds is list && request.resource.data.jobIds.size() > 0 && request.resource.data.jobIds.size() <= 100));
       allow read: if request.auth != null && resource.data.creator == request.auth.uid;
       allow update, delete: if false;

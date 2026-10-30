@@ -566,3 +566,201 @@ it("stops every child if Amazon rejects the parent publication", async () => {
       ),
   ).toBe(true);
 });
+
+function standaloneEntry() {
+  const child = familyEntries()[1];
+  const attributes: Record<string, any[]> = { ...child.body.attributes };
+  for (const key of [
+    "parentage_level",
+    "variation_theme",
+    "child_parent_sku_relationship",
+    "supplier_declared_has_product_identifier_exemption",
+  ])
+    delete attributes[key];
+  attributes.externally_assigned_product_identifier = [
+    {
+      value: "4542804151633",
+      type: "ean",
+      marketplace_id: config.marketplaceId,
+    },
+  ];
+  return {
+    itemKey: "4542804151633",
+    sku: "4542804151633",
+    method: "PUT",
+    body: { productType: "SHEET_PAPER", requirements: "LISTING", attributes },
+  };
+}
+
+it("creates a reviewed Amifa product directly, records the submission and reads back without preview or duplicate delivery", async () => {
+  const s = setup();
+  s.setRemote({ status: 404, data: {} });
+  const request = {
+    mode: "create",
+    stockConfirmed: true,
+    entries: [standaloneEntry()],
+  };
+  await s.request("direct", request);
+  await s.w.enqueue("direct", { ...config, creator: "user", ...request });
+  expect(s.jobs()).toHaveLength(1);
+  expect(s.jobs()[0]).toMatchObject({
+    directCreate: true,
+    publishRequestId: "direct",
+    status: "publish_queued",
+  });
+  await s.w.tick();
+  expect(s.calls).toHaveLength(1);
+  expect(s.calls[0].preview).toBe(false);
+  await s.w.tick();
+  await s.w.tick();
+  expect(s.calls).toHaveLength(1);
+  expect(s.jobs()[0].status).toBe("submitted");
+  expect(s.readbacks[0][3]).toMatchObject({ quantity: 4, priceGBP: 4 });
+  expect(
+    [...s.docs.values()].some(
+      (d) =>
+        d.type === "amazonPrepare/job" &&
+        d.payload.directCreate &&
+        d.payload.result?.data?.status === "ACCEPTED",
+    ),
+  ).toBe(true);
+});
+
+it("restricts direct creation to reviewed new Amifa products and refuses to overwrite a seller SKU", async () => {
+  const e = standaloneEntry(),
+    request = {
+      ...config,
+      creator: "user",
+      mode: "create",
+      stockConfirmed: true,
+      entries: [e],
+    };
+  expect(() => validateRequest({ ...request, stockConfirmed: false })).toThrow(
+    "Review",
+  );
+  expect(() => validateRequest({ ...request, entries: [entry()] })).toThrow(
+    "Direct creation",
+  );
+  expect(() =>
+    validateRequest({
+      ...request,
+      entries: [
+        {
+          ...e,
+          body: {
+            ...e.body,
+            attributes: { ...e.body.attributes, brand: [{ value: "Other" }] },
+          },
+        },
+      ],
+    }),
+  ).toThrow("Amifa");
+  const s = setup();
+  await s.request("existing", request);
+  await s.w.tick();
+  expect(s.calls).toHaveLength(0);
+  expect(s.jobs()[0].error).toContain("already exists");
+});
+
+it("does not retry an uncertain direct creation", async () => {
+  const s = setup(async () => {
+    throw Error("connection lost");
+  });
+  s.setRemote({ status: 404, data: {} });
+  await s.request("uncertain-direct", {
+    mode: "create",
+    stockConfirmed: true,
+    entries: [standaloneEntry()],
+  });
+  await s.w.tick();
+  await s.w.tick();
+  await s.w.tick();
+  expect(s.calls).toHaveLength(1);
+  expect(s.readbacks).toHaveLength(1);
+  expect(s.jobs()[0].status).toBe("unknown");
+});
+
+it("creates a family directly, waiting for the parent before sending children", async () => {
+  const entries = familyEntries(),
+    s = setup(),
+    remote = new Map();
+  s.setRemote((sku: string) => remote.get(sku) || { status: 404, data: {} });
+  await s.request("direct-family", {
+    mode: "create",
+    stockConfirmed: true,
+    entries,
+  });
+  const parent = s.jobs().find((j) => j.entry.family.role === "parent"),
+    blue = s.jobs().find((j) => j.entry.sku === "Blue");
+  await s.w.step(blue.ref);
+  expect(s.calls).toHaveLength(0);
+  await s.w.step(parent.ref);
+  expect(s.calls.map((c) => [c.entry.sku, c.preview])).toEqual([
+    ["P-letters", false],
+  ]);
+  await s.w.step(parent.ref);
+  s.setTime(12000);
+  await s.w.step(blue.ref);
+  expect(s.calls).toHaveLength(1);
+  remote.set("P-letters", observedParent(entries));
+  s.setTime(23000);
+  await s.w.step(blue.ref);
+  expect(s.calls.map((c) => [c.entry.sku, c.preview])).toEqual([
+    ["P-letters", false],
+    ["Blue", false],
+  ]);
+});
+
+it("reuses a matching parent during direct family creation without writing it", async () => {
+  const entries = familyEntries(),
+    s = setup();
+  s.setRemote((sku: string) =>
+    sku === "P-letters" ? observedParent(entries) : { status: 404, data: {} },
+  );
+  await s.request("reuse-direct", {
+    mode: "create",
+    stockConfirmed: true,
+    entries,
+  });
+  const parent = s.jobs().find((j) => j.entry.family.role === "parent");
+  await s.w.step(parent.ref);
+  expect(s.calls).toHaveLength(0);
+  expect(s.jobs().find((j) => j.id === parent.id)).toMatchObject({
+    reuseParent: true,
+    status: "readback_pending",
+  });
+  const child = s.jobs().find((j) => j.entry.sku === "Blue");
+  await s.w.step(child.ref);
+  expect(s.calls.map((c) => c.entry.sku)).toEqual(["Blue"]);
+  expect(s.calls[0].preview).toBe(false);
+});
+
+it("stops direct family creation when Amazon rejects the parent", async () => {
+  const s = setup(async () =>
+    ok({
+      status: "INVALID",
+      issues: [
+        { severity: "ERROR", code: "5461", message: "Brand approval needed" },
+      ],
+    }),
+  );
+  s.setRemote({ status: 404, data: {} });
+  await s.request("rejected-direct-family", {
+    mode: "create",
+    stockConfirmed: true,
+    entries: familyEntries(),
+  });
+  await s.w.tick();
+  s.setTime(12000);
+  await s.w.tick();
+  expect(s.calls.map((c) => c.entry.sku)).toEqual(["P-letters"]);
+  expect(
+    s
+      .jobs()
+      .filter((j) => j.entry.family.role === "child")
+      .every(
+        (j) =>
+          j.status === "blocked" && j.error.includes("No child was submitted"),
+      ),
+  ).toBe(true);
+});

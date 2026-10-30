@@ -1,4 +1,4 @@
-// Explicit, per-product preview and publication. No unattended inventory writer.
+// Reviewed direct product creation, plus preview/publication for offer updates.
 const { createHash, randomUUID } = require("node:crypto");
 const {
   validateFamilyEntry,
@@ -24,7 +24,7 @@ function validateRequest(d) {
     !d?.creator ||
     !d.sellerId ||
     d.marketplaceId !== UK ||
-    !["preview", "publish"].includes(d.mode)
+    !["preview", "publish", "create"].includes(d.mode)
   )
     throw Error("Choose the configured UK seller and sign in.");
   if (d.mode === "publish") {
@@ -47,6 +47,10 @@ function validateRequest(d) {
     JSON.stringify(d.entries).length > 600000
   )
     throw Error("Prepare 1–100 products at a time.");
+  if (d.mode === "create" && d.stockConfirmed !== true)
+    throw Error(
+      "Review the products and current stock before creating listings.",
+    );
   const seen = new Set();
   for (const e of d.entries) {
     if (
@@ -125,6 +129,14 @@ function validateRequest(d) {
       throw Error(
         "New products require a distinct manufacturer EAN/JAN; variant exemptions need separate review.",
       );
+    if (
+      d.mode === "create" &&
+      (e.method !== "PUT" ||
+        offerOnly ||
+        e.body.requirements !== "LISTING" ||
+        attributes?.brand?.[0]?.value !== "Amifa")
+    )
+      throw Error("Direct creation is for new Amifa catalogue products only.");
     const offers = attributes?.purchasable_offer;
     if (
       offers &&
@@ -210,6 +222,7 @@ function createWorker({
       previewRequestId: j.previewRequestId || "",
       publishRequestId: j.publishRequestId || "",
       reuseParent: !!j.reuseParent,
+      directCreate: !!j.directCreate,
     };
     tx.set(
       db.collection("broadcast").doc(`amazon-prepare-${id}-${j.revision}`),
@@ -264,12 +277,14 @@ function createWorker({
               ),
             )
           : [];
-      if (data.mode === "preview")
+      if (["preview", "create"].includes(data.mode))
         for (const entry of data.entries) {
           const jobId = hash(`${id}:${entry.sku}`);
           const j = {
             entry,
-            previewRequestId: id,
+            ...(data.mode === "create"
+              ? { publishRequestId: id, directCreate: true }
+              : { previewRequestId: id }),
             ...(entry.family?.role === "child"
               ? { parentJobId: hash(`${id}:${entry.family.parentSku}`) }
               : {}),
@@ -277,7 +292,7 @@ function createWorker({
             creator: data.creator,
             createdAt: at,
             updatedAt: at,
-            status: "queued",
+            status: data.mode === "create" ? "publish_queued" : "queued",
             dueAt: at,
             leaseUntil: 0,
             lease: "",
@@ -561,15 +576,16 @@ function createWorker({
         return;
       }
       if (
-        now() - (job.validatedAt || job.createdAt) > 1800000 ||
-        !valid(job.validation)
+        !job.directCreate &&
+        (now() - (job.validatedAt || job.createdAt) > 1800000 ||
+          !valid(job.validation))
       )
         throw Error("Preview expired or is invalid. Check this product again.");
-      if (baseline(before) !== baseline(job.before))
+      if (!job.directCreate && baseline(before) !== baseline(job.before))
         throw Error(
           "Amazon price, stock or identity changed since preview. Refresh and check this product again.",
         );
-      if (job.reuseParent) {
+      if (job.reuseParent || (job.directCreate && reuseParent)) {
         if (!reuseParent)
           throw Error("The existing parent changed. Check this family again.");
         await done({
@@ -577,6 +593,7 @@ function createWorker({
           dueAt: now(),
           submittedAt: now(),
           result: { status: 200, ok: true, data: { status: "REUSED_PARENT" } },
+          reuseParent: true,
           error: "Existing matching parent reused; no parent write was made.",
         });
         return;

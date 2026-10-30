@@ -28,6 +28,7 @@
     reducePreparation,
     type PreparationDecision,
     initialPreparation,
+    isAmazonProductCreation,
     type PreparationRow,
   } from "$lib/amazon-preparation";
   import {
@@ -160,6 +161,14 @@
   $: chosen = visible.filter(
     (r) => !creationFamilies.has(r.row.family) && selected.has(r.row.key),
   );
+  const isCreation = (r: PreparationRow) => isAmazonProductCreation(r.entry);
+  const canCreate = (r: PreparationRow) =>
+    isCreation(r) &&
+    ["New listings", "Failed", "Ready to publish"].includes(
+      listingStatus(r, now),
+    ) &&
+    r.job?.status !== "unknown";
+  $: creatable = chosen.filter(canCreate);
   $: checkable = chosen.filter(
     (r) =>
       [
@@ -170,6 +179,7 @@
         "Failed",
       ].includes(listingStatus(r, now)) &&
       r.entry &&
+      !isCreation(r) &&
       r.job?.status !== "unknown",
   );
   $: ready = chosen.filter((r) => listingStatus(r, now) === "Ready to publish");
@@ -177,7 +187,11 @@
   $: canPublish =
     review.length === reviewKeys.length &&
     review.length > 0 &&
-    review.every((r) => listingStatus(r, now) === "Ready to publish");
+    (review.every(canCreate) ||
+      review.every(
+        (r) => !isCreation(r) && listingStatus(r, now) === "Ready to publish",
+      ));
+  $: creating = review.length > 0 && review.every(isCreation);
   $: latest = Object.values(audit.runs)
     .filter(
       (r) =>
@@ -417,18 +431,20 @@
     return run(async () => {
       if (!canPublish || !confirmed)
         throw Error(
-          "Review the current quantities and recheck expired validations before publishing.",
+          "Review the current products and quantities before submitting.",
         );
       await enqueue("request_amazon_prepare", {
         sellerId: audit.sellerId,
         marketplaceId: UK_MARKETPLACE,
-        mode: "publish",
-        jobIds: review.map((r) => r.job.id),
+        mode: creating ? "create" : "publish",
+        ...(creating
+          ? { entries: review.map((r) => r.entry) }
+          : { jobIds: review.map((r) => r.job.id) }),
         stockConfirmed: true,
       });
       reviewKeys = [];
       message =
-        "Publication requested. Each result stays visible while Amazon processes and verifies it.";
+        "Submission queued on the server. Results appear as Amazon processes and verifies the listings.";
     });
   }
   function edit(r: PreparationRow) {
@@ -481,7 +497,7 @@
       }
       editKey = "";
       message =
-        "Choices saved. Nothing published. Check this product when it is ready.";
+        "Choices saved. Review and create the listing when it is ready.";
     });
   }
   function exclude(r: PreparationRow, value: boolean) {
@@ -733,7 +749,10 @@
       >{legacyDraft
         ? "Close saved draft"
         : "Review saved preparation draft"}</button
-    >{#if legacyDraft}<AmazonPreparation />{/if}
+    >{#if legacyDraft}<AmazonPreparation
+        on:create={(e) =>
+          openReview(rows.filter((r) => e.detail.includes(r.row.key)))}
+      />{/if}
   </details>
   {#if matchRequestIds.length}<p role="status">
       Amazon barcode lookup: {matchingResults.length} results received. {matchingResults.filter(
@@ -792,6 +811,10 @@
         disabled={busy || !offerCandidates.length}
         on:click={() => prepareOffers(offerCandidates)}
         >Prepare {Math.min(offerCandidates.length, 100)} selected offers</button
+      ><button
+        disabled={busy || !creatable.length}
+        on:click={() => openReview(creatable)}
+        >Review and create {Math.min(creatable.length, 100)} selected listings</button
       ><button
         disabled={busy || !checkable.length}
         on:click={() => check(checkable)}
@@ -1015,7 +1038,11 @@
       id="publish-review"
       aria-label="Review Amazon changes"
     >
-      <h2>Review changes before publishing</h2>
+      <h2>
+        {creating
+          ? "Review new listings before creating"
+          : "Review changes before publishing"}
+      </h2>
       <p>
         Only these products will be submitted. Prices are GBP; quantities are
         saleable units.
@@ -1039,7 +1066,12 @@
       ><button
         class="primary"
         disabled={busy || !confirmed || !canPublish}
-        on:click={publish}>Publish these {review.length} products</button
+        on:click={publish}
+        >{creating
+          ? review.length === 1
+            ? "Create listing"
+            : `Create ${review.length} listings`
+          : `Publish these ${review.length} products`}</button
       ><button on:click={() => (reviewKeys = [])}>Cancel</button>
     </section>{/if}
   {#if !$store.inventory.initialized}<p role="status">
@@ -1154,14 +1186,20 @@
                   disabled={busy}
                   on:click={() => prepareOffers([r])}>Prepare offer</button
                 >{/if}
-              {#if ["New listings", "Add offers", "Zero stock", "Updates needed", "Failed"].includes(status) && r.entry && r.job?.status !== "unknown"}<button
+              {#if canCreate(r)}<button
+                  class="primary"
+                  disabled={busy}
+                  on:click={() => openReview([r])}
+                  >Review and create listing</button
+                >{/if}
+              {#if !isCreation(r) && ["New listings", "Add offers", "Zero stock", "Updates needed", "Failed"].includes(status) && r.entry && r.job?.status !== "unknown"}<button
                   disabled={busy}
                   on:click={() => check([r])}
                   >{status === "Failed"
                     ? "Retry validation"
                     : "Check with Amazon"}</button
                 >{/if}
-              {#if status === "Ready to publish"}<button
+              {#if status === "Ready to publish" && !isCreation(r)}<button
                   class="primary"
                   on:click={() => openReview([r])}>Review and publish</button
                 >{/if}

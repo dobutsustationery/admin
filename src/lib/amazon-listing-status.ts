@@ -99,7 +99,7 @@ export function statusDetail(r: PreparationRow, now: number): string {
   return (
     r.reason ||
     (r.entry?.method === "PUT"
-      ? "New listing: check the product information with Amazon."
+      ? "New listing: review the product information and create it directly on Amazon."
       : "Price or stock differs from the last Amazon observation.")
   );
 }

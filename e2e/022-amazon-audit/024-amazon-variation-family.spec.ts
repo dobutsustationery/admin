@@ -244,7 +244,7 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
   );
   await expect(
     panel.getByRole("button", {
-      name: "Save and check variant family with Amazon",
+      name: "Create variant family",
     }),
   ).toBeDisabled();
   await panel
@@ -272,10 +272,13 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
     panel.getByLabel("Approval reference or note (optional)"),
   ).toHaveValue("Browser test: UK Amifa STICKER_DECAL approval");
   await panel
-    .getByRole("button", { name: "Save and check variant family with Amazon" })
-    .click();
+    .getByRole("checkbox", {
+      name: "I have reviewed this family and the current stock, including Amazon sales.",
+    })
+    .check();
+  await panel.getByRole("button", { name: "Create variant family" }).click();
   await expect(
-    panel.getByRole("status").filter({ hasText: "Family validation queued" }),
+    panel.getByRole("status").filter({ hasText: "Family creation queued" }),
   ).toBeVisible();
   const snap = await db.collection("request_amazon_prepare").get();
   const request = snap.docs
@@ -285,6 +288,8 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
         (e: any) => e.family?.handle === "amifa-family-browser-test",
       ),
     );
+  expect(request?.mode).toBe("create");
+  expect(request?.stockConfirmed).toBe(true);
   expect(request?.entries).toHaveLength(3);
   expect(request?.entries[0].family.role).toBe("parent");
   expect(request?.entries[0].body.attributes.purchasable_offer).toBeUndefined();

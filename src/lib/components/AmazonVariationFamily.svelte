@@ -10,7 +10,7 @@
     query as firestoreQuery,
     where,
   } from "firebase/firestore";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy } from "svelte";
   import { firestore } from "$lib/firebase";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
@@ -23,7 +23,6 @@
   } from "$lib/amazon-variation-family";
   import {
     preparationFingerprint,
-    previewValid,
     type PreparationDecision,
     type PreparationRow,
   } from "$lib/amazon-preparation";
@@ -32,11 +31,6 @@
   export let rows: PreparationRow[] = [];
   export let familyHandle = "";
   export let exemptionSelected = false;
-  let now = Date.now();
-  onMount(() => {
-    const timer = setInterval(() => (now = Date.now()), 10000);
-    return () => clearInterval(timer);
-  });
   let handle = "",
     search = "",
     open = false,
@@ -181,13 +175,6 @@
   $: currentJobs = parent
     ? jobs.filter((j) => j.id === parent.id || j.parentJobId === parent.id)
     : [];
-  $: matches = plan.entries.map((entry) =>
-    currentJobs.find(
-      (j) =>
-        j.entry.sku === entry.sku &&
-        preparationFingerprint(j.entry) === preparationFingerprint(entry),
-    ),
-  );
   $: pending =
     !!queuedRequestId ||
     currentJobs.some((j) =>
@@ -207,15 +194,6 @@
     save();
   }
   $: uncertain = currentJobs.some((j) => j.status === "unknown");
-  $: allReady =
-    !!plan.entries.length &&
-    matches.length === plan.entries.length &&
-    matches.every(
-      (j) =>
-        j?.status === "ready" &&
-        previewValid(j) &&
-        now - (j.validatedAt || j.updatedAt) < 1800000,
-    );
   $: if (
     confirmationKey !== preparationFingerprint([plan.entries, parent?.id])
   ) {
@@ -230,7 +208,7 @@
   function result(entry: any) {
     const j = currentJobs.find((job) => job.entry.sku === entry.sku);
     if (!j || preparationFingerprint(j.entry) !== preparationFingerprint(entry))
-      return "Not checked with these choices";
+      return "Not submitted with these choices";
     if (j.status === "ready")
       return j.reuseParent
         ? "Existing parent confirmed · will reuse"
@@ -280,7 +258,8 @@
       return "Relationship confirmed · price or stock still processing";
     return `Child, price and stock confirmed${raw.summaries?.some((s: any) => s.status?.includes("BUYABLE")) ? " · buyable" : " · not yet reported buyable"}`;
   }
-  async function request(mode: "preview" | "publish") {
+  async function request() {
+    const mode = "create";
     if (
       !owner ||
       !seller ||
@@ -289,7 +268,7 @@
       plan.reason ||
       pending ||
       uncertain ||
-      (mode === "publish" && (!allReady || !confirmed))
+      !confirmed
     )
       return;
     busy = true;
@@ -297,7 +276,7 @@
     try {
       const ref = doc(collection(firestore, "request_amazon_prepare"));
       const batch = writeBatch(firestore);
-      if (mode === "preview") {
+      {
         for (const [key, decision] of [
           [familyDecisionKey(handle), choices],
           ...familyRows.map((r) => [r.row.key, children[r.row.key] || {}]),
@@ -315,16 +294,13 @@
         sellerId: seller,
         marketplaceId: UK_MARKETPLACE,
         mode,
-        ...(mode === "preview"
-          ? { entries: plan.entries }
-          : { jobIds: matches.map((j) => j.id), stockConfirmed: true }),
+        entries: plan.entries,
+        stockConfirmed: true,
         createdAt: serverTimestamp(),
       });
       await batch.commit();
       message =
-        mode === "preview"
-          ? "Family validation queued on the server. Nothing has been published. You can leave and return."
-          : "Family publication queued. The server will confirm the parent before sending children. You can leave and return.";
+        "Family creation queued. The server will confirm the parent before sending children. You can leave and return.";
       confirmed = false;
       queuedRequestId = ref.id;
       save();
@@ -457,8 +433,8 @@
       : "Create an Amifa listing with variants"}
   </h2>
   <p>
-    Prepare one parent listing with a child for each local variant. Validate
-    with Amazon, review the family, then publish.
+    Prepare one parent listing with a child for each local variant. Review the
+    family and create it directly on Amazon.
   </p>
   {#if !familyHandle}<button on:click={() => (open = !open)}
       >{open ? "Hide variant family" : "Prepare variant family"}</button
@@ -538,8 +514,8 @@
             : `Amazon returned ${productTypeSuggestions.length} product type suggestions. Choose one above.`}
         </p>{/if}
       <p>
-        Amazon validation checks whether this variation type is supported by the
-        chosen product type.
+        Amazon checks whether this variation type is supported by the chosen
+        product type.
       </p>
       <p>
         Set the Amazon prices in GBP below. Your local inventory prices are in
@@ -643,7 +619,15 @@
           {storageError || error}
         </p>{/if}
       {#if message}<p role="status">{message}</p>{/if}
-      <div class="controls">
+      <div class="publish">
+        <p>
+          Review the child prices, quantities, identifiers and images above.
+          Creating this family submits it directly to Amazon.
+        </p>
+        <label class="inline"
+          ><input type="checkbox" bind:checked={confirmed} />I have reviewed
+          this family and the current stock, including Amazon sales.</label
+        >
         <button
           disabled={!seller ||
             busy ||
@@ -651,15 +635,16 @@
             !!storageError ||
             pending ||
             uncertain ||
-            allReady}
-          on:click={() => request("preview")}
-          >Save and check variant family with Amazon</button
-        >{#if currentJobs.some((j) => j.submittedAt)}<button
+            !confirmed ||
+            currentJobs.some((j) => j.submittedAt)}
+          on:click={() => request()}>Create variant family</button
+        >
+        {#if currentJobs.some((j) => j.submittedAt)}<button
             disabled={busy || !plan.entries.length}
             on:click={refresh}>Refresh family from Amazon</button
           >{/if}
       </div>
-      {#if currentJobs.length}<h3>Family validation and publication</h3>
+      {#if currentJobs.length}<h3>Family creation and Amazon processing</h3>
         <ul>
           {#each plan.entries as entry}<li>
               <strong
@@ -670,21 +655,6 @@
               >: {result(entry)}
             </li>{/each}
         </ul>{/if}
-      {#if allReady}<div class="publish">
-          <h3>Review and publish this family</h3>
-          <p>
-            The parent and all {familyRows.length} children passed their checks. Review
-            the child prices, quantities, identifiers and images above.
-          </p>
-          <label class="inline"
-            ><input type="checkbox" bind:checked={confirmed} />I have reviewed
-            this family and the current stock, including Amazon sales.</label
-          ><button
-            disabled={busy || !confirmed}
-            on:click={() => request("publish")}
-            >Publish reviewed variant family</button
-          >
-        </div>{/if}
     {/if}
   {/if}
 </section>

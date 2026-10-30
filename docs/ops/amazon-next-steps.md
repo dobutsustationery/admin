@@ -1,6 +1,6 @@
 # Amazon listing and offer next steps
 
-Status updated October 29, 2026. Scope: Amazon UK, GBP and merchant fulfillment. The current implementation supports reviewed publication; deployment and live outcomes must be verified separately.
+Status updated October 30, 2026. Scope: Amazon UK, GBP and merchant fulfillment. The current implementation supports reviewed publication; deployment and live outcomes must be verified separately.
 
 ## Current capabilities
 
@@ -12,7 +12,7 @@ Status updated October 29, 2026. Scope: Amazon UK, GBP and merchant fulfillment.
 
 All manufacturers now appear in the comparison. This does not establish permission to create new catalogue products for every manufacturer. Brand ownership and existing-ASIN offer eligibility need separate controls.
 
-The worker processes up to 100 products per request, isolates failures, expires validation after 30 minutes and compares fresh Amazon state before publication. Accepted or uncertain submissions queue readback; uncertain writes are not automatically resubmitted. “In sync” currently describes supported price and stock fields only.
+The worker processes up to 100 products per request and isolates failures. New Amifa products are created directly after review; existing-ASIN offers and price/stock updates retain preview and publication, with 30-minute validation expiry and fresh Amazon state comparison. Accepted or uncertain submissions queue readback; uncertain writes are not automatically resubmitted. “In sync” currently describes supported price and stock fields only.
 
 ## First verify the current release
 
@@ -78,17 +78,16 @@ the operator’s explicit exemption selection, brand, product type and marketpla
 validation and eventual processing can still reject an exemption or unsupported
 variation theme. Do not use a parent's ASIN as an existing child product match.
 
-Choose **Save and check variant family with Amazon**. This stores the choices and
-exact parent/child request bodies and queues validation; it does not publish.
-After every member is ready, review the family, confirm stock and choose
-**Publish reviewed variant family**. The server submits the parent first (or
+Review the family details and current stock, then choose **Create variant family**.
+This stores the choices and exact parent/child request bodies and queues direct
+creation on the server. It does not run `VALIDATION_PREVIEW`. The server submits the parent first (or
 reuses a matching existing parent without overwriting it), waits for Amazon to
 return that parent, and then submits its children. A failed parent prevents child
 submission. Uncertain writes are observed rather than automatically repeated.
 
 The form retains device drafts across reloads; checked choices and job results
-also live on the server. Each job records the exact entry, preview request,
-parent-job dependency, publication request, validation result, submission result
+also live on the server. Each job records the exact entry, request IDs,
+parent-job dependency, any legacy validation result, submission result
 and observed baseline in `amazonPrepare/job` facts. Shared sync lifecycle events
 feed hedgehoggy. Readback expectations include parentage, parent SKU and variation
 theme in addition to child price and stock. Accepted submissions remain distinct
@@ -118,3 +117,25 @@ selling price remains in `purchasable_offer`. These generated attributes are sto
 in the exact request body on each validation/publication job. Grouping parents
 continue to have no offer, price or stock. The standalone and variation preparation
 paths must preserve these attributes rather than deleting them.
+
+## Direct creation flow (October 30, 2026)
+
+New Amifa standalone products use **Review and create listing**, followed by
+**Create these products** after reviewing the GBP price and current stock. Families
+use **Create variant family** after reviewing all children. Both enqueue
+`request_amazon_prepare` with `mode: create`, exact `entries`, and
+`stockConfirmed: true`. The worker records `directCreate: true`, the originating
+`publishRequestId`, exact request/response, submission time, dependency and readback
+state in `amazonPrepare/job` events. No invented VALID validation result is stored.
+Existing preview and publication jobs remain readable without migration or replay.
+
+The worker reads each target SKU, creates absent products with a direct PUT, and
+reuses a matching family parent. It sends children only after the parent is observed.
+Existing unrelated SKUs are not overwritten. Accepted submissions queue readback;
+uncertain writes are observed rather than resubmitted. The UI shows processing until
+Amazon confirms the result. Amazon can still return delayed product errors.
+
+This follows the successful September Kamome API flow. On October 30, Aquarium
+JAN `4542804151633` returned 5461 in preview but its direct PUT was ACCEPTED without
+immediate issues (`direct-create-aquarium-20261030`). This establishes a difference
+in initial responses, not yet successful ASIN creation or buyability.

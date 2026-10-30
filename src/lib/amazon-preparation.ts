@@ -66,6 +66,9 @@ export interface PreparationEntry {
     exemptionReference?: string;
   };
 }
+export const isAmazonProductCreation = (
+  entry: PreparationEntry | null | undefined,
+) => entry?.method === "PUT" && entry.body.requirements === "LISTING";
 export interface PreparationRow {
   offerMatch?: ReturnType<typeof offerMatches>;
   row: AuditRow;

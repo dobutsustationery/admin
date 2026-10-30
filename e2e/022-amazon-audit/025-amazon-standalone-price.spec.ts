@@ -2,7 +2,7 @@ import { test, expect } from "../fixtures/auth";
 import { initializeApp, deleteApp } from "firebase-admin/app";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
-test("standalone price survives save and reload and enables Amazon validation", async ({
+test("standalone price survives save and reload and enables direct Amazon creation", async ({
   page,
   authenticatedPage,
 }) => {
@@ -135,7 +135,17 @@ test("standalone price survives save and reload and enables Amazon validation", 
       .getByRole("button", { name: "Save choices", exact: true })
       .click();
     await family
-      .getByRole("button", { name: "Check with Amazon", exact: true })
+      .getByRole("button", { name: "Review and create listing", exact: true })
+      .click();
+    const review = page.getByRole("region", { name: "Review Amazon changes" });
+    await expect(
+      review.getByRole("heading", {
+        name: "Review new listings before creating",
+      }),
+    ).toBeVisible();
+    await review.getByRole("checkbox").check();
+    await review
+      .getByRole("button", { name: "Create listing", exact: true })
       .click();
     await expect
       .poll(
@@ -153,7 +163,8 @@ test("standalone price survives save and reload and enables Amazon validation", 
       .where("sellerId", "==", sellerId)
       .get();
     const request = requests.docs[0].data();
-    expect(request.mode).toBe("preview");
+    expect(request.mode).toBe("create");
+    expect(request.stockConfirmed).toBe(true);
     expect(
       request.entries[0].body.attributes.purchasable_offer[0].our_price[0]
         .schedule[0].value_with_tax,
