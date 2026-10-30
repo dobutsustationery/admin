@@ -27,6 +27,8 @@
   } from "$lib/amazon-preparation";
   import { auditScope, UK_MARKETPLACE } from "$lib/amazon-audit";
   export let rows: PreparationRow[] = [];
+  export let familyHandle = "";
+  export let exemptionSelected = false;
   let now = Date.now();
   onMount(() => {
     const timer = setInterval(() => (now = Date.now()), 10000);
@@ -63,8 +65,17 @@
   $: if (browser && seller && owner && rows.length > 0 && loaded !== scope) {
     loaded = scope;
     try {
-      handle = localStorage.getItem(scope + ":selected") || "";
+      handle = familyHandle || localStorage.getItem(scope + ":selected") || "";
+      open = !!familyHandle;
       load();
+      if (
+        familyHandle &&
+        exemptionSelected &&
+        choices.identifierExemption === undefined
+      ) {
+        choices = { ...choices, identifierExemption: true };
+        save();
+      }
     } catch (e: any) {
       storageError = `Could not restore family choices: ${e.message}`;
     }
@@ -106,15 +117,6 @@
     } catch (e: any) {
       storageError = `Could not restore family choices: ${e.message}`;
     }
-  }
-  export function prepareFamily(selectedHandle: string) {
-    handle = selectedHandle;
-    search = "";
-    open = true;
-    load();
-    // This action explicitly selects the approved-exemption workflow.
-    choices = { ...choices, identifierExemption: true };
-    save();
   }
   function save() {
     try {
@@ -332,6 +334,50 @@
       ),
     );
   }
+  $: productTypeSuggestions =
+    (Object.values($store.amazonCatalog?.rawResponsesById || {}) as any[])
+      .filter(
+        (r) =>
+          r.kind === "product_type_search" &&
+          r.key === $store.listings.handleToListing[handle]?.title &&
+          r.sellerId === seller &&
+          r.marketplaceId === UK_MARKETPLACE,
+      )
+      .sort((a, b) => b.fetchedAtMs - a.fetchedAtMs)[0]?.raw?.productTypes ||
+    [];
+  async function suggestProductTypes() {
+    if (!owner || !familyRows.length) return;
+    busy = true;
+    error = "";
+    try {
+      await addDoc(
+        collection(firestore, "request_amazon_product_type_discovery"),
+        {
+          eventType: "amazon/product_type_discovery_requested",
+          creator: owner,
+          requestedBy: owner,
+          source: "amazon-variation-family",
+          handle,
+          itemKey: familyRows[0].row.key,
+          itemName: $store.listings.handleToListing[handle].title,
+          keywords: [],
+          requirements: "LISTING",
+          requirementsEnforced: "ENFORCED",
+          maxDefinitions: 5,
+          locale: "en_GB",
+          searchLocale: "en_GB",
+          createdAtMs: Date.now(),
+          createdAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
+        },
+      );
+      message = "Product type lookup queued. Suggestions will appear here.";
+    } catch (e: any) {
+      error = e.message;
+    } finally {
+      busy = false;
+    }
+  }
   async function refresh() {
     if (!owner || !plan.entries.length) return;
     try {
@@ -350,34 +396,40 @@
 </script>
 
 <section class="family-builder" aria-label="Create Amazon variation family">
-  <h2>Create an Amifa listing with variants</h2>
+  <h2>
+    {familyHandle
+      ? "Prepare variants for Amazon"
+      : "Create an Amifa listing with variants"}
+  </h2>
   <p>
     Prepare one parent listing with a child for each local variant. Validate
     with Amazon, review the family, then publish.
   </p>
-  <button on:click={() => (open = !open)}
-    >{open ? "Hide variant family" : "Prepare variant family"}</button
-  >
+  {#if !familyHandle}<button on:click={() => (open = !open)}
+      >{open ? "Hide variant family" : "Prepare variant family"}</button
+    >{/if}
   {#if open}
     {#if !seller}<p>Refresh the Amazon seller catalogue first.</p>{/if}
-    <div class="controls">
-      <label
-        >Find Amifa product<input type="search" bind:value={search} /></label
-      >
-      <label
-        >Product family<select
-          aria-label="Product family"
-          value={handle}
-          on:change={(e) => {
-            handle = e.currentTarget.value;
-            load();
-          }}
-          ><option value="">Choose a product</option
-          >{#each filteredFamilies as [h, l]}<option value={h}>{l.title}</option
-            >{/each}</select
-        ></label
-      >
-    </div>
+    {#if !familyHandle}<div class="controls">
+        <label
+          >Find Amifa product<input type="search" bind:value={search} /></label
+        >
+        <label
+          >Product family<select
+            aria-label="Product family"
+            value={handle}
+            on:change={(e) => {
+              handle = e.currentTarget.value;
+              load();
+            }}
+            ><option value="">Choose a product</option
+            >{#each filteredFamilies as [h, l]}<option value={h}
+                >{l.title}</option
+              >{/each}</select
+          ></label
+        >
+      </div>
+    {/if}
     {#if handle && familyRows.length}
       <div class="controls">
         <label
@@ -405,16 +457,27 @@
           ></label
         >
       </div>
+      <div class="controls">
+        <button disabled={busy} on:click={suggestProductTypes}
+          >Suggest product types</button
+        >{#each productTypeSuggestions as suggestion}<button
+            on:click={() => editChoice("productType", suggestion.name)}
+            >{suggestion.displayName || suggestion.name}</button
+          >{/each}
+      </div>
       <p>
         Amazon validation checks whether this variation type is supported by the
-        chosen product type. Use the product tools below to discover the product
-        type if needed.
+        chosen product type.
+      </p>
+      <p>
+        Set the Amazon prices in GBP below. Your local inventory prices are in
+        EUR.
       </p>
       <table>
         <thead
           ><tr
             ><th>Variant</th><th>Photo</th><th>Variation value</th><th
-              >Child EAN/JAN</th
+              >Identifier</th
             ><th>GBP price</th><th>Stock</th></tr
           ></thead
         ><tbody>
@@ -444,19 +507,22 @@
                     )}
                 /></td
               >
-              <td
-                ><input
-                  aria-label={`Child EAN for ${r.row.key}`}
-                  value={children[r.row.key]?.identifierEAN || ""}
-                  placeholder={r.row.jan}
-                  on:change={(e) =>
-                    editChild(
-                      r.row.key,
-                      "identifierEAN",
-                      e.currentTarget.value.trim(),
-                    )}
-                /><small>Leave blank to use {r.row.jan}.</small></td
-              >
+              <td>
+                {#if choices.identifierExemption && r.row.sharedJan && !children[r.row.key]?.identifierEAN}
+                  GTIN exempt<small>Source JAN: {r.row.jan}</small>
+                {:else}
+                  <input
+                    aria-label={`Child EAN for ${r.row.key}`}
+                    value={children[r.row.key]?.identifierEAN || ""}
+                    placeholder={r.row.jan}
+                    on:change={(e) =>
+                      editChild(
+                        r.row.key,
+                        "identifierEAN",
+                        e.currentTarget.value.trim(),
+                      )}
+                  /><small>Leave blank to use {r.row.jan}.</small>{/if}
+              </td>
               <td
                 ><input
                   aria-label={`Family GBP price for ${r.row.key}`}
@@ -466,9 +532,13 @@
                   value={children[r.row.key]?.priceGBP || ""}
                   on:change={(e) =>
                     editChild(r.row.key, "priceGBP", e.currentTarget.value)}
-                /></td
-              ><td>{r.row.onHand}</td></tr
-            >{/each}
+                /><small
+                  >Local: €{Number(
+                    $store.inventory.idToItem[r.row.key]?.price || 0,
+                  ).toFixed(2)}</small
+                ></td
+              ><td>{r.row.onHand}</td>
+            </tr>{/each}
         </tbody>
       </table>
       {#if familyRows.some((r) => r.row.sharedJan)}<fieldset>
@@ -512,9 +582,10 @@
             allReady}
           on:click={() => request("preview")}
           >Save and check variant family with Amazon</button
-        ><button disabled={busy || !plan.entries.length} on:click={refresh}
-          >Refresh family from Amazon</button
-        >
+        >{#if currentJobs.some((j) => j.submittedAt)}<button
+            disabled={busy || !plan.entries.length}
+            on:click={refresh}>Refresh family from Amazon</button
+          >{/if}
       </div>
       {#if currentJobs.length}<h3>Family validation and publication</h3>
         <ul>

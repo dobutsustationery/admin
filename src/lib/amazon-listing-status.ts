@@ -92,7 +92,7 @@ export function statusDetail(r: PreparationRow, now: number): string {
     );
   if (r.reason.startsWith("Shared JAN"))
     return /^amifa\b/i.test(r.row.title)
-      ? "Variants share a JAN. Use Create variant family with GTIN exemption to create new Amifa child ASINs under a parent. For products already on Amazon, confirm the exact existing child ASIN instead."
+      ? "Variants share a JAN. Use Prepare variant family to create one Amifa parent listing with these variants under your GTIN exemption. For products already on Amazon, confirm the exact existing child ASIN instead."
       : "Variants share a JAN. Confirm the exact existing child ASIN to add an offer, or link the existing seller SKU.";
   if (r.reason === "No whole units in stock.")
     return "No positive whole-unit stock. Zero-stock publication is not supported by this flow yet; review existing offers in Amazon.";

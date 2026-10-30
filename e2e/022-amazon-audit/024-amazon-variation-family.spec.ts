@@ -107,16 +107,26 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
   await expect(listing).not.toContainText(
     "Creating a new shared-barcode product is not supported",
   );
-  await listing
-    .getByRole("button", {
-      name: "Create variant family with GTIN exemption",
+  await expect(listing.locator("article")).toHaveCount(1);
+  await expect(
+    listing.getByRole("button", {
+      name: "Prepare variant family",
       exact: true,
-    })
-    .first()
+    }),
+  ).toHaveCount(1);
+  await expect(listing).not.toContainText("price needed");
+  await expect(
+    listing.getByRole("button", { name: "Exclude from sync", exact: true }),
+  ).toHaveCount(0);
+  await expect(listing).toContainText("Local price (EUR)");
+  await expect(listing).toContainText("€4.00");
+  await listing
+    .getByRole("button", { name: "Prepare variant family", exact: true })
     .click();
   await expect(
     panel.getByRole("combobox", { name: "Product family", exact: true }),
-  ).toHaveValue("amifa-family-browser-test");
+  ).toHaveCount(0);
+  await expect(panel).toContainText("GTIN exempt");
   await expect(
     panel.getByLabel("Amazon has approved the applicable amifa GTIN exemption"),
   ).toBeChecked();
@@ -154,7 +164,8 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
   await page.reload();
   await expect(page.locator(".loading-overlay")).not.toBeVisible();
   await fixture();
-  await panel
+  await listing.locator("summary").first().click();
+  await listing
     .getByRole("button", { name: "Prepare variant family", exact: true })
     .click();
   await expect(panel.getByLabel("Family Amazon product type")).toHaveValue(

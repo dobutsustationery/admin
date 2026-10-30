@@ -37,21 +37,23 @@
   } from "$lib/amazon-listing-status";
   import AmazonVariationFamily from "$lib/components/AmazonVariationFamily.svelte";
   import AmazonPreparation from "$lib/components/AmazonPreparation.svelte";
-  let familyEditor: AmazonVariationFamily;
-  function canPrepareFamily(r: PreparationRow) {
-    return (
-      !!r.row.sharedJan &&
-      /^amifa\b/i.test(r.row.title) &&
-      rows.filter((member) => member.row.family === r.row.family).length >= 2
-    );
-  }
-  async function prepareFamily(r: PreparationRow) {
-    familyEditor.prepareFamily(r.row.family);
-    await tick();
-    document
-      .querySelector('[aria-label="Create Amazon variation family"]')
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  import {
+    amazonCreationFamilies,
+    amazonFamilyStatus,
+  } from "$lib/amazon-family-view";
+  let editingFamily = "";
+  $: creationFamilies = amazonCreationFamilies(
+    rows,
+    $store.listings.handleToListing,
+  );
+  $: familyStatuses = new Map(
+    [...creationFamilies].map(([handle, members]) => [
+      handle,
+      amazonFamilyStatus(members, prep.jobs, audit.sellerId, now),
+    ]),
+  );
+  const viewStatus = (r: PreparationRow) =>
+    familyStatuses.get(r.row.family) || listingStatus(r, now);
   let query = "",
     category = "All",
     brand = "All",
@@ -151,11 +153,13 @@
   );
   $: visible = searched.filter(
     (r) =>
-      (category === "All" || listingStatus(r, now) === category) &&
+      (category === "All" || viewStatus(r) === category) &&
       (!hideZero || r.row.onHand !== 0),
   );
   $: families = [...new Set(visible.map((r) => r.row.family || r.row.key))];
-  $: chosen = visible.filter((r) => selected.has(r.row.key));
+  $: chosen = visible.filter(
+    (r) => !creationFamilies.has(r.row.family) && selected.has(r.row.key),
+  );
   $: checkable = chosen.filter(
     (r) =>
       [
@@ -595,11 +599,11 @@
   </div>
   <p class="muted">
     Existing offers: price and merchant-fulfilled stock comparison.
-    Existing-ASIN offers and stock-only updates to zero are supported. Use
-    “Prepare variant family” below to create new Amifa parent/child listings.
-    Product-detail updates for existing ASINs remain separate. Counts below are
-    product listings; a listing may appear in multiple categories when its
-    variants differ.
+    Existing-ASIN offers and stock-only updates to zero are supported. Open a
+    product below and choose “Prepare variant family” to create new Amifa
+    parent/child listings. Product-detail updates for existing ASINs remain
+    separate. Counts below are product listings; a listing may appear in
+    multiple categories when its variants differ.
   </p>
   <section class="status" aria-label="Inventory ASIN scan">
     <h2>Find ASINs across the inventory</h2>
@@ -692,7 +696,7 @@
         ><strong
           >{new Set(
             searched
-              .filter((r) => listingStatus(r, now) === c)
+              .filter((r) => viewStatus(r) === c)
               .map((r) => r.row.family || r.row.key),
           ).size}</strong
         >{c}</button
@@ -731,7 +735,6 @@
         : "Review saved preparation draft"}</button
     >{#if legacyDraft}<AmazonPreparation />{/if}
   </details>
-  <AmazonVariationFamily {rows} bind:this={familyEditor} />
   {#if matchRequestIds.length}<p role="status">
       Amazon barcode lookup: {matchingResults.length} results received. {matchingResults.filter(
         (r) => !r.ok,
@@ -776,31 +779,35 @@
         ><option>All</option>{#each brands as b}<option>{b}</option
           >{/each}</select
       ></label
-    ><button
-      on:click={() => (selected = new Set(visible.map((r) => r.row.key)))}
-      >Select this category</button
-    ><button on:click={() => (selected = new Set())}>Clear</button>
-    <button
-      class="primary"
-      disabled={busy || !offerCandidates.length}
-      on:click={() => prepareOffers(offerCandidates)}
-      >Prepare {Math.min(offerCandidates.length, 100)} selected offers</button
-    ><button
-      disabled={busy || !checkable.length}
-      on:click={() => check(checkable)}
-      >Check {Math.min(checkable.length, 100)} selected with Amazon</button
-    ><button
-      class="primary"
-      disabled={busy || !ready.length}
-      on:click={() => openReview(ready)}
-      >Review {Math.min(ready.length, 100)} ready to publish</button
-    ><button
-      disabled={busy || !chosen.some((r) => !r.row.asin && r.row.onHand > 0)}
-      on:click={() => findMatches(chosen)}
-      >Find ASIN matches (up to 20 barcodes)</button
-    ><span
-      >{chosen.length} variants selected in this view. Batches contain up to 100.</span
-    >
+    >{#if visible.some((r) => !creationFamilies.has(r.row.family))}<button
+        on:click={() =>
+          (selected = new Set(
+            visible
+              .filter((r) => !creationFamilies.has(r.row.family))
+              .map((r) => r.row.key),
+          ))}>Select this category</button
+      ><button on:click={() => (selected = new Set())}>Clear</button>
+      <button
+        class="primary"
+        disabled={busy || !offerCandidates.length}
+        on:click={() => prepareOffers(offerCandidates)}
+        >Prepare {Math.min(offerCandidates.length, 100)} selected offers</button
+      ><button
+        disabled={busy || !checkable.length}
+        on:click={() => check(checkable)}
+        >Check {Math.min(checkable.length, 100)} selected with Amazon</button
+      ><button
+        class="primary"
+        disabled={busy || !ready.length}
+        on:click={() => openReview(ready)}
+        >Review {Math.min(ready.length, 100)} ready to publish</button
+      ><button
+        disabled={busy || !chosen.some((r) => !r.row.asin && r.row.onHand > 0)}
+        on:click={() => findMatches(chosen)}
+        >Find ASIN matches (up to 20 barcodes)</button
+      ><span
+        >{chosen.length} variants selected in this view. Batches contain up to 100.</span
+      >{/if}
   </div>
   {#if offerKeys.length}
     <section
@@ -1044,193 +1051,257 @@
     {@const members = visible.filter(
       (r) => (r.row.family || r.row.key) === family,
     )}
+    {@const newFamily = creationFamilies.get(family)}
     <details class="family">
       <summary
         ><strong>{members[0].row.title}</strong><span
-          >{members.length} variant{members.length === 1 ? "" : "s"} · {[
-            ...new Set(members.map((r) => listingStatus(r, now))),
-          ].join(" / ")}</span
+          >{newFamily?.length || members.length} variant{(newFamily?.length ||
+            members.length) === 1
+            ? ""
+            : "s"} · {[...new Set(members.map(viewStatus))].join(" / ")}</span
         ></summary
       >
-      {#each members as r}{@const status = listingStatus(r, now)}
-        <article>
-          <div class="rowhead">
-            <label class="inline"
-              ><input
-                type="checkbox"
-                checked={selected.has(r.row.key)}
-                on:change={() => {
-                  const next = new Set(selected);
-                  next.has(r.row.key)
-                    ? next.delete(r.row.key)
-                    : next.add(r.row.key);
-                  selected = next;
-                }}
-              />{r.row.subtype || "Single variant"}
-              <small>{r.row.jan}</small></label
-            ><strong class:failed={status === "Failed"}>{status}</strong>
-          </div>
-          <p>{statusDetail(r, now)}</p>
-          <div class="values">
-            <span
-              >Amazon: {r.row.price} · stock {r.row.quantity ??
-                "not observed"}</span
-            ><span
-              >Proposed: {r.price > 0
-                ? `GBP ${r.price.toFixed(2)}`
-                : "price needed"} · stock {r.row.onHand}</span
-            ><small>Observed {date(r.row.checkedAt)}</small>
-          </div>
-          <div class="actions">
-            {#if canPrepareFamily(r) && !r.row.asin}<button
-                class="primary"
-                disabled={busy}
-                on:click={() => prepareFamily(r)}
-                >Create variant family with GTIN exemption</button
-              >{/if}
-            {#if status === "Add offers"}<button
-                class="primary"
-                disabled={busy}
-                on:click={() => prepareOffers([r])}>Prepare offer</button
-              >{/if}
-            {#if ["New listings", "Add offers", "Zero stock", "Updates needed", "Failed"].includes(status) && r.entry && r.job?.status !== "unknown"}<button
-                disabled={busy}
-                on:click={() => check([r])}
-                >{status === "Failed"
-                  ? "Retry validation"
-                  : "Check with Amazon"}</button
-              >{/if}
-            {#if status === "Ready to publish"}<button
-                class="primary"
-                on:click={() => openReview([r])}>Review and publish</button
-              >{/if}
-            {#if r.row.sku}<button
-                disabled={busy}
-                on:click={() => refresh([r.row.sku])}>Refresh this offer</button
-              >{/if}
+      {#if newFamily}
+        <article aria-label="New Amazon variant family">
+          {#if editingFamily === family}
+            <AmazonVariationFamily
+              {rows}
+              familyHandle={family}
+              exemptionSelected={newFamily.some((r) => r.row.sharedJan)}
+            />
+          {:else}
+            <p>
+              One Amazon product with {newFamily.length} variants. Set and review
+              their Amazon GBP prices together when preparing the family.
+            </p>
+            <table class="family-variants">
+              <thead
+                ><tr
+                  ><th>Variant</th><th>Photo</th><th>JAN</th><th
+                    >Local price (EUR)</th
+                  ><th>Available stock</th></tr
+                ></thead
+              ><tbody>
+                {#each newFamily as r}<tr
+                    ><td
+                      >{r.row.subtype ||
+                        $store.listings.handleToListing[family]
+                          ?.variantOptionsByItemId?.[r.row.key] ||
+                        r.row.jan}</td
+                    ><td
+                      ><ImageThumbnail
+                        src={$store.inventory.idToItem[r.row.key]?.image || ""}
+                        alt={r.row.subtype}
+                        width="64px"
+                        height="64px"
+                        fit="contain"
+                      /></td
+                    ><td>{r.row.jan}</td><td
+                      >€{Number(
+                        $store.inventory.idToItem[r.row.key]?.price || 0,
+                      ).toFixed(2)}</td
+                    ><td>{r.row.onHand}</td></tr
+                  >{/each}
+              </tbody>
+            </table>
             <button
-              on:click={() =>
-                editKey === r.row.key ? (editKey = "") : edit(r)}
-              >{status === "Needs your input"
-                ? "Resolve"
-                : "Edit choices"}</button
+              class="primary"
+              disabled={busy || !audit.sellerId}
+              on:click={() => (editingFamily = family)}
+              >{familyStatuses.get(family) === "New listings" ||
+              familyStatuses.get(family) === "Zero stock"
+                ? "Prepare variant family"
+                : "Review variant family"}</button
             >
-            {#if !/\bnot for sale\b/i.test(r.row.title)}<button
-                disabled={busy}
-                on:click={() => exclude(r, status !== "Excluded")}
-                >{status === "Excluded"
-                  ? "Include in sync"
-                  : "Exclude from sync"}</button
-              >{/if}
-            {#if r.row.asin}<a
-                href={`https://www.amazon.co.uk/dp/${r.row.asin}`}
-                target="_blank"
-                rel="noreferrer">View on Amazon</a
-              >{/if}
-          </div>
-          {#if editKey === r.row.key}<section class="resolve">
-              <h3>Resolve {r.row.title} {r.row.subtype}</h3>
-              <p>{statusDetail(r, now)}</p>
-              {#if canPrepareFamily(r) && !r.row.asin}<button
+            {#if newFamily.some((r) => r.row.sharedJan)}<p>
+                Uses your Amifa GTIN exemption for variants sharing a JAN.
+              </p>{/if}
+          {/if}
+        </article>
+      {:else}
+        {#each members as r}{@const status = listingStatus(r, now)}
+          <article>
+            <div class="rowhead">
+              <label class="inline"
+                ><input
+                  type="checkbox"
+                  checked={selected.has(r.row.key)}
+                  on:change={() => {
+                    const next = new Set(selected);
+                    next.has(r.row.key)
+                      ? next.delete(r.row.key)
+                      : next.add(r.row.key);
+                    selected = next;
+                  }}
+                />{r.row.subtype || "Single variant"}
+                <small>{r.row.jan}</small></label
+              ><strong class:failed={status === "Failed"}>{status}</strong>
+            </div>
+            <p>{statusDetail(r, now)}</p>
+            <div class="values">
+              <span
+                >Amazon: {r.row.price} · stock {r.row.quantity ??
+                  "not observed"}</span
+              ><span
+                >Proposed: {r.price > 0
+                  ? `GBP ${r.price.toFixed(2)}`
+                  : "price needed"} · stock {r.row.onHand}</span
+              ><small>Observed {date(r.row.checkedAt)}</small>
+            </div>
+            <div class="actions">
+              {#if status === "Add offers"}<button
                   class="primary"
-                  on:click={() => prepareFamily(r)}
-                  >Create variant family with GTIN exemption</button
+                  disabled={busy}
+                  on:click={() => prepareOffers([r])}>Prepare offer</button
                 >{/if}
-              <div class="actions">
-                <label
-                  >GBP price<input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    bind:value={price}
-                  /></label
-                ><label
-                  >Amazon product type<input
-                    bind:value={productType}
-                    list="amazon-type-options"
-                    placeholder="Choose a suggested type"
-                  /></label
-                ><button disabled={busy} on:click={() => discover(r)}
-                  >Suggest product types</button
-                >
-              </div>
-              <datalist id="amazon-type-options"
-                >{#each suggestions as suggestion}<option
-                    value={suggestion.name}>{suggestion.displayName}</option
-                  >{/each}</datalist
-              >{#if suggestions.length}<p>
-                  Amazon suggestions: {#each suggestions as suggestion}<button
-                      on:click={() => (productType = suggestion.name)}
-                      >{suggestion.displayName || suggestion.name}</button
-                    >{/each}
-                </p>{/if}
-              {#if !r.row.asin}
-                <h4>Existing Amazon product: add your offer</h4>
-                <p>
-                  Confirm the product, colour and pack size match exactly. This
-                  adds your offer without replacing Amazon product content.
-                </p>
-                <button
-                  disabled={busy || r.row.onHand <= 0}
-                  on:click={() => findMatches([r])}>Find ASIN matches</button
-                >
-                {#if r.offerMatch?.error}<p role="alert">
-                    {r.offerMatch.error}
-                  </p>{/if}
-                {#if r.offerMatch?.checked && !r.offerMatch.error && !r.offerMatch.candidates.length}<p
+              {#if ["New listings", "Add offers", "Zero stock", "Updates needed", "Failed"].includes(status) && r.entry && r.job?.status !== "unknown"}<button
+                  disabled={busy}
+                  on:click={() => check([r])}
+                  >{status === "Failed"
+                    ? "Retry validation"
+                    : "Check with Amazon"}</button
+                >{/if}
+              {#if status === "Ready to publish"}<button
+                  class="primary"
+                  on:click={() => openReview([r])}>Review and publish</button
+                >{/if}
+              {#if r.row.sku}<button
+                  disabled={busy}
+                  on:click={() => refresh([r.row.sku])}
+                  >Refresh this offer</button
+                >{/if}
+              <button
+                on:click={() =>
+                  editKey === r.row.key ? (editKey = "") : edit(r)}
+                >{status === "Needs your input"
+                  ? "Resolve"
+                  : "Edit choices"}</button
+              >
+              {#if !/\bnot for sale\b/i.test(r.row.title)}<button
+                  disabled={busy}
+                  on:click={() => exclude(r, status !== "Excluded")}
+                  >{status === "Excluded"
+                    ? "Include in sync"
+                    : "Exclude from sync"}</button
+                >{/if}
+              {#if r.row.asin}<a
+                  href={`https://www.amazon.co.uk/dp/${r.row.asin}`}
+                  target="_blank"
+                  rel="noreferrer">View on Amazon</a
+                >{/if}
+            </div>
+            {#if editKey === r.row.key}<section class="resolve">
+                <h3>Resolve {r.row.title} {r.row.subtype}</h3>
+                <p>{statusDetail(r, now)}</p>
+
+                <div class="actions">
+                  <label
+                    >GBP price<input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      bind:value={price}
+                    /></label
+                  ><label
+                    >Amazon product type<input
+                      bind:value={productType}
+                      list="amazon-type-options"
+                      placeholder="Choose a suggested type"
+                    /></label
+                  ><button disabled={busy} on:click={() => discover(r)}
+                    >Suggest product types</button
                   >
-                    No matching ASINs returned for this barcode. Enter an
-                    independently verified ASIN or prepare a new product
-                    listing.
+                </div>
+                <datalist id="amazon-type-options"
+                  >{#each suggestions as suggestion}<option
+                      value={suggestion.name}>{suggestion.displayName}</option
+                    >{/each}</datalist
+                >{#if suggestions.length}<p>
+                    Amazon suggestions: {#each suggestions as suggestion}<button
+                        on:click={() => (productType = suggestion.name)}
+                        >{suggestion.displayName || suggestion.name}</button
+                      >{/each}
                   </p>{/if}
-                {#each r.offerMatch?.candidates || [] as candidate}<div>
-                    <a
-                      href={`https://www.amazon.co.uk/dp/${candidate.asin}`}
-                      target="_blank"
-                      rel="noreferrer">{candidate.title} — {candidate.asin}</a
+                {#if !r.row.asin}
+                  <h4>Existing Amazon product: add your offer</h4>
+                  <p>
+                    Confirm the product, colour and pack size match exactly.
+                    This adds your offer without replacing Amazon product
+                    content.
+                  </p>
+                  <button
+                    disabled={busy || r.row.onHand <= 0}
+                    on:click={() => findMatches([r])}>Find ASIN matches</button
+                  >
+                  {#if r.offerMatch?.error}<p role="alert">
+                      {r.offerMatch.error}
+                    </p>{/if}
+                  {#if r.offerMatch?.checked && !r.offerMatch.error && !r.offerMatch.candidates.length}<p
                     >
-                    <p>{candidate.brand}</p>
-                    <button
-                      on:click={() => {
-                        asin = candidate.asin;
+                      No matching ASINs returned for this barcode. Enter an
+                      independently verified ASIN or prepare a new product
+                      listing.
+                    </p>{/if}
+                  {#each r.offerMatch?.candidates || [] as candidate}<div>
+                      <a
+                        href={`https://www.amazon.co.uk/dp/${candidate.asin}`}
+                        target="_blank"
+                        rel="noreferrer">{candidate.title} — {candidate.asin}</a
+                      >
+                      <p>{candidate.brand}</p>
+                      <button
+                        on:click={() => {
+                          asin = candidate.asin;
+                          asinVerified = false;
+                        }}>Use this ASIN</button
+                      >
+                    </div>{/each}
+                  <label
+                    >Existing ASIN<input
+                      value={asin}
+                      on:input={(e) => {
+                        asin = e.currentTarget.value;
                         asinVerified = false;
-                      }}>Use this ASIN</button
-                    >
-                  </div>{/each}
-                <label
-                  >Existing ASIN<input
-                    value={asin}
-                    on:input={(e) => {
-                      asin = e.currentTarget.value;
-                      asinVerified = false;
-                    }}
-                    maxlength="10"
-                    placeholder="B012345678"
+                      }}
+                      maxlength="10"
+                      placeholder="B012345678"
+                    /></label
+                  >
+                  <label class="inline"
+                    ><input type="checkbox" bind:checked={asinVerified} />I
+                    verified this ASIN matches the exact product, variant and
+                    pack size.</label
+                  >
+                {/if}<label
+                  >Verified existing Amazon seller SKU<input
+                    bind:value={sku}
+                    placeholder="Leave blank for a new listing"
+                    maxlength="200"
                   /></label
-                >
-                <label class="inline"
-                  ><input type="checkbox" bind:checked={asinVerified} />I
-                  verified this ASIN matches the exact product, variant and pack
-                  size.</label
-                >
-              {/if}<label
-                >Verified existing Amazon seller SKU<input
-                  bind:value={sku}
-                  placeholder="Leave blank for a new listing"
-                  maxlength="200"
-                /></label
-              >{#if r.row.skuCandidates.length}<p>
-                  Barcode matches: {r.row.skuCandidates.join(", ")}. Confirm the
-                  exact variant before linking.
-                </p>{/if}<button disabled={busy} on:click={() => save(r)}
-                >Save choices</button
-              ><button on:click={() => (editKey = "")}>Cancel</button>
-            </section>{/if}
-        </article>{/each}
+                >{#if r.row.skuCandidates.length}<p>
+                    Barcode matches: {r.row.skuCandidates.join(", ")}. Confirm
+                    the exact variant before linking.
+                  </p>{/if}<button disabled={busy} on:click={() => save(r)}
+                  >Save choices</button
+                ><button on:click={() => (editKey = "")}>Cancel</button>
+              </section>{/if}
+          </article>{/each}
+      {/if}
     </details>{/each}
 </main>
 
 <style>
+  .family-variants {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+  }
+  .family-variants th,
+  .family-variants td {
+    text-align: left;
+    padding: 0.6rem;
+    border-bottom: 1px solid #ddd;
+  }
   .offer-comparison {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

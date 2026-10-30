@@ -61,11 +61,13 @@ The older setup/design documents describe earlier phases. Use this sequence for 
 
 ## Testing Amifa variation families (October 29, 2026)
 
-On **Amazon listings**, use **Create variant family with GTIN exemption** on a
-shared-JAN product row to open that family directly, or open **Prepare variant
-family** and find an Amifa listing,
-then choose the family, Amazon product type and variation type. Review each
-child's variation value, identifier, image, GBP price and available stock.
+On **Amazon listings**, search for a product or JAN and expand its product row.
+A new Amifa family is shown once, with all variants, local EUR prices and stock
+in one table. Choose **Prepare variant family** to edit it inline. There are no
+per-variant creation or exclusion buttons in this new-family flow. Set the Amazon
+product type, variation type and each child's GBP price in that editor; local EUR
+prices are shown alongside them. Shared-JAN families select the approved GTIN
+exemption flow by default, and show those child identifiers as **GTIN exempt**.
 Zero-stock children can remain in the family. The parent is a grouping SKU and
 has no price, stock or GTIN.
 

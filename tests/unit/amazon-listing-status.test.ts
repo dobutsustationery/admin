@@ -102,6 +102,6 @@ it("routes shared-JAN products to the supported GTIN-exempt family workflow", ()
     }),
     100,
   );
-  expect(detail).toContain("Create variant family with GTIN exemption");
+  expect(detail).toContain("Prepare variant family");
   expect(detail).not.toContain("not supported");
 });
