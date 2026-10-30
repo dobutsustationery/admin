@@ -135,3 +135,20 @@ describe("Amifa variation family preparation", () => {
     expect(() => validateRequest(request(p.entries))).toThrow("share");
   });
 });
+
+it("records an explicit exemption selection without requiring an invented case number", () => {
+  const f = fixture(true);
+  const p = buildAmazonVariationFamily({
+    ...f,
+    decision: { ...f.decision, identifierExemption: true },
+  });
+  expect(p.reason).toBe("");
+  expect(
+    p.entries[1].body.attributes
+      .supplier_declared_has_product_identifier_exemption[0].value,
+  ).toBe(true);
+  expect(p.entries[1].family?.exemptionReference).toContain(
+    "Operator selected",
+  );
+  expect(() => validateRequest(request(p.entries))).not.toThrow();
+});

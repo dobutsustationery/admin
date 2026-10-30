@@ -107,6 +107,15 @@
       storageError = `Could not restore family choices: ${e.message}`;
     }
   }
+  export function prepareFamily(selectedHandle: string) {
+    handle = selectedHandle;
+    search = "";
+    open = true;
+    load();
+    // This action explicitly selects the approved-exemption workflow.
+    choices = { ...choices, identifierExemption: true };
+    save();
+  }
   function save() {
     try {
       localStorage.setItem(
@@ -477,7 +486,7 @@
                 editChoice("identifierExemption", e.currentTarget.checked)}
             />Amazon has approved the applicable amifa GTIN exemption</label
           ><label
-            >Approval reference or case<input
+            >Approval reference or note (optional)<input
               value={choices.exemptionReference || ""}
               on:change={(e) =>
                 editChoice("exemptionReference", e.currentTarget.value)}

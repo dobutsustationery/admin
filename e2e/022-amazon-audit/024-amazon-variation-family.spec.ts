@@ -24,7 +24,7 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
     await page.evaluate(() => {
       const store = (window as any).store,
         s = store.getState(),
-        jan = "4542804151466",
+        jan = "4542804116359",
         handle = "amifa-family-browser-test";
       const inventory = { ...s.inventory, initialized: true, idToItem: {} };
       const listings = {
@@ -33,18 +33,18 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
         handleToListing: {
           [handle]: {
             handle,
-            title: "Amifa Family Browser Test",
+            title: "Amifa 3D Aurora Stickers (22)",
             bodyHtml: "<p>Two designs</p>",
             images: [],
           },
         },
       };
-      for (const subtype of ["Blue", "Green"]) {
+      for (const subtype of ["Blue", "Pink"]) {
         const key = jan + subtype;
         inventory.idToItem[key] = {
           janCode: jan,
           subtype,
-          description: "Amifa Family Browser Test",
+          description: "Amifa 3D Aurora Stickers (22)",
           qty: 4,
           shipped: 0,
           pieces: 1,
@@ -65,10 +65,10 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
             sellerId: "family-browser-seller",
             observations: {},
             mappings: {},
-            rows: ["Blue", "Green"].map((subtype) => ({
+            rows: ["Blue", "Pink"].map((subtype) => ({
               key: jan + subtype,
               family: handle,
-              title: "Amifa Family Browser Test",
+              title: "Amifa 3D Aurora Stickers (22)",
               jan,
               subtype,
               onHand: 4,
@@ -100,22 +100,39 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
   const panel = page.getByRole("region", {
     name: "Create Amazon variation family",
   });
-  await panel
-    .getByRole("button", { name: "Prepare variant family", exact: true })
+  const listing = page
+    .locator("details.family")
+    .filter({ hasText: "Amifa 3D Aurora Stickers (22)" });
+  await listing.locator("summary").first().click();
+  await expect(listing).not.toContainText(
+    "Creating a new shared-barcode product is not supported",
+  );
+  await listing
+    .getByRole("button", {
+      name: "Create variant family with GTIN exemption",
+      exact: true,
+    })
+    .first()
     .click();
+  await expect(
+    panel.getByRole("combobox", { name: "Product family", exact: true }),
+  ).toHaveValue("amifa-family-browser-test");
+  await expect(
+    panel.getByLabel("Amazon has approved the applicable amifa GTIN exemption"),
+  ).toBeChecked();
   await panel
-    .getByRole("combobox", { name: "Product family", exact: true })
-    .selectOption("amifa-family-browser-test");
+    .getByLabel("Amazon has approved the applicable amifa GTIN exemption")
+    .uncheck();
   await panel.getByLabel("Family Amazon product type").fill("STICKER_DECAL");
   await panel
     .getByRole("combobox", { name: "Variants differ by", exact: true })
     .selectOption("STYLE_NAME");
-  for (const colour of ["Blue", "Green"]) {
+  for (const colour of ["Blue", "Pink"]) {
     await panel
-      .getByLabel(`Family GBP price for 4542804151466${colour}`)
+      .getByLabel(`Family GBP price for 4542804116359${colour}`)
       .fill("4.50");
     await panel
-      .getByLabel(`Family GBP price for 4542804151466${colour}`)
+      .getByLabel(`Family GBP price for 4542804116359${colour}`)
       .press("Tab");
   }
   await expect(panel).toContainText(
@@ -130,9 +147,9 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
     .getByLabel("Amazon has approved the applicable amifa GTIN exemption")
     .check();
   await panel
-    .getByLabel("Approval reference or case")
+    .getByLabel("Approval reference or note (optional)")
     .fill("Browser test: UK Amifa STICKER_DECAL approval");
-  await panel.getByLabel("Approval reference or case").press("Tab");
+  await panel.getByLabel("Approval reference or note (optional)").press("Tab");
   await expect(panel).toContainText("Parent SKU:");
   await page.reload();
   await expect(page.locator(".loading-overlay")).not.toBeVisible();
@@ -146,9 +163,9 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
   await expect(
     panel.getByRole("combobox", { name: "Variants differ by", exact: true }),
   ).toHaveValue("STYLE_NAME");
-  await expect(panel.getByLabel("Approval reference or case")).toHaveValue(
-    "Browser test: UK Amifa STICKER_DECAL approval",
-  );
+  await expect(
+    panel.getByLabel("Approval reference or note (optional)"),
+  ).toHaveValue("Browser test: UK Amifa STICKER_DECAL approval");
   await panel
     .getByRole("button", { name: "Save and check variant family with Amazon" })
     .click();

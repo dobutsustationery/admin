@@ -98,12 +98,9 @@ export function buildAmazonVariationFamily(params: {
       counts[identifiers[i]] > 1 ||
       (r.row.sharedJan && !r.decision.identifierEAN),
   );
-  if (
-    exempt.some(Boolean) &&
-    (!decision.identifierExemption || !decision.exemptionReference?.trim())
-  )
+  if (exempt.some(Boolean) && !decision.identifierExemption)
     return fail(
-      "Shared JANs cannot identify different Amazon children. Enter distinct child EAN/JANs, or confirm the approved Amifa GTIN exemption and its reference.",
+      "Shared JANs cannot identify different Amazon children. Enter distinct child EAN/JANs, or choose the approved Amifa GTIN exemption.",
     );
   if (identifiers.some((id, i) => !exempt[i] && !/^\d{13}$/.test(id)))
     return fail("Each non-exempt child needs a 13-digit manufacturer EAN/JAN.");
@@ -196,7 +193,9 @@ export function buildAmazonVariationFamily(params: {
         ...(exempt[index]
           ? {
               exemptionApproved: true,
-              exemptionReference: decision.exemptionReference!.trim(),
+              exemptionReference:
+                decision.exemptionReference?.trim() ||
+                `Operator selected the approved Amifa GTIN exemption for ${productType} in the UK.`,
             }
           : {}),
       },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { listingStatus } from "$lib/amazon-listing-status";
+import { listingStatus, statusDetail } from "$lib/amazon-listing-status";
 import type { PreparationRow } from "$lib/amazon-preparation";
 const row = (changes: any = {}): PreparationRow =>
   ({
@@ -91,4 +91,17 @@ it("separates zero stock and offer candidates from input problems", () => {
       100,
     ),
   ).toBe("Add offers");
+});
+
+it("routes shared-JAN products to the supported GTIN-exempt family workflow", () => {
+  const detail = statusDetail(
+    row({
+      row: { title: "Amifa stickers" },
+      reason: "Shared JAN: verify identity",
+      entry: null,
+    }),
+    100,
+  );
+  expect(detail).toContain("Create variant family with GTIN exemption");
+  expect(detail).not.toContain("not supported");
 });

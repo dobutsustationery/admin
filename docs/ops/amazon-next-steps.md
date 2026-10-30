@@ -61,15 +61,18 @@ The older setup/design documents describe earlier phases. Use this sequence for 
 
 ## Testing Amifa variation families (October 29, 2026)
 
-On **Amazon listings**, open **Prepare variant family**, find an Amifa listing,
+On **Amazon listings**, use **Create variant family with GTIN exemption** on a
+shared-JAN product row to open that family directly, or open **Prepare variant
+family** and find an Amifa listing,
 then choose the family, Amazon product type and variation type. Review each
 child's variation value, identifier, image, GBP price and available stock.
 Zero-stock children can remain in the family. The parent is a grouping SKU and
 has no price, stock or GTIN.
 
 For a shared JAN, supply distinct manufacturer child identifiers or explicitly
-confirm an already-approved Amifa GTIN exemption for this product type and record
-its reference. The form does not establish exemption eligibility. Amazon's
+select the already-approved Amifa GTIN exemption for this product type. An
+approval reference or note is optional; the recorded request always identifies
+the operator’s explicit exemption selection, brand, product type and marketplace. The form does not establish exemption eligibility. Amazon's
 validation and eventual processing can still reject an exemption or unsupported
 variation theme. Do not use a parent's ASIN as an existing child product match.
 

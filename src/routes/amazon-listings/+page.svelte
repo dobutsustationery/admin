@@ -37,6 +37,21 @@
   } from "$lib/amazon-listing-status";
   import AmazonVariationFamily from "$lib/components/AmazonVariationFamily.svelte";
   import AmazonPreparation from "$lib/components/AmazonPreparation.svelte";
+  let familyEditor: AmazonVariationFamily;
+  function canPrepareFamily(r: PreparationRow) {
+    return (
+      !!r.row.sharedJan &&
+      /^amifa\b/i.test(r.row.title) &&
+      rows.filter((member) => member.row.family === r.row.family).length >= 2
+    );
+  }
+  async function prepareFamily(r: PreparationRow) {
+    familyEditor.prepareFamily(r.row.family);
+    await tick();
+    document
+      .querySelector('[aria-label="Create Amazon variation family"]')
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   let query = "",
     category = "All",
     brand = "All",
@@ -716,7 +731,7 @@
         : "Review saved preparation draft"}</button
     >{#if legacyDraft}<AmazonPreparation />{/if}
   </details>
-  <AmazonVariationFamily {rows} />
+  <AmazonVariationFamily {rows} bind:this={familyEditor} />
   {#if matchRequestIds.length}<p role="status">
       Amazon barcode lookup: {matchingResults.length} results received. {matchingResults.filter(
         (r) => !r.ok,
@@ -1067,6 +1082,12 @@
             ><small>Observed {date(r.row.checkedAt)}</small>
           </div>
           <div class="actions">
+            {#if canPrepareFamily(r) && !r.row.asin}<button
+                class="primary"
+                disabled={busy}
+                on:click={() => prepareFamily(r)}
+                >Create variant family with GTIN exemption</button
+              >{/if}
             {#if status === "Add offers"}<button
                 class="primary"
                 disabled={busy}
@@ -1110,6 +1131,11 @@
           {#if editKey === r.row.key}<section class="resolve">
               <h3>Resolve {r.row.title} {r.row.subtype}</h3>
               <p>{statusDetail(r, now)}</p>
+              {#if canPrepareFamily(r) && !r.row.asin}<button
+                  class="primary"
+                  on:click={() => prepareFamily(r)}
+                  >Create variant family with GTIN exemption</button
+                >{/if}
               <div class="actions">
                 <label
                   >GBP price<input

@@ -91,7 +91,9 @@ export function statusDetail(r: PreparationRow, now: number): string {
       `Add your offer to ASIN ${r.decision.asin}. Existing Amazon product content will not be replaced.`
     );
   if (r.reason.startsWith("Shared JAN"))
-    return "Variants share a barcode. Find and confirm the exact existing ASIN to add an offer, or link an existing seller SKU. Creating a new shared-barcode product is not supported.";
+    return /^amifa\b/i.test(r.row.title)
+      ? "Variants share a JAN. Use Create variant family with GTIN exemption to create new Amifa child ASINs under a parent. For products already on Amazon, confirm the exact existing child ASIN instead."
+      : "Variants share a JAN. Confirm the exact existing child ASIN to add an offer, or link the existing seller SKU.";
   if (r.reason === "No whole units in stock.")
     return "No positive whole-unit stock. Zero-stock publication is not supported by this flow yet; review existing offers in Amazon.";
   return (
