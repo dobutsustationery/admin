@@ -7,6 +7,8 @@
     serverTimestamp,
     onSnapshot,
     addDoc,
+    query as firestoreQuery,
+    where,
   } from "firebase/firestore";
   import { onDestroy, onMount } from "svelte";
   import { firestore } from "$lib/firebase";
@@ -25,6 +27,7 @@
     type PreparationDecision,
     type PreparationRow,
   } from "$lib/amazon-preparation";
+  import { amazonProductTypeLookup } from "$lib/amazon-product-type-lookup";
   import { auditScope, UK_MARKETPLACE } from "$lib/amazon-audit";
   export let rows: PreparationRow[] = [];
   export let familyHandle = "";
@@ -42,6 +45,13 @@
   let choices: PreparationDecision = {},
     children: Record<string, PreparationDecision> = {};
   let queuedRequestId = "";
+  let typeLookup: { id: string; title: string } | null = null;
+  let typeLookupAppliedId = "";
+  let typeEvents: Record<string, any> = {};
+  let typeWatchingId = "",
+    typeReadError = "";
+  let stopTypeLookup = () => {};
+  onDestroy(() => stopTypeLookup());
   let busy = false,
     error = "",
     message = "",
@@ -109,6 +119,8 @@
             ]),
         );
       queuedRequestId = saved?.queuedRequestId || "";
+      typeLookup = saved?.typeLookup || null;
+      typeLookupAppliedId = saved?.typeLookupAppliedId || "";
       if (queuedRequestId) watchRequest(queuedRequestId);
       localStorage.setItem(scope + ":selected", handle);
       error = "";
@@ -122,7 +134,13 @@
     try {
       localStorage.setItem(
         `${scope}:${handle}`,
-        JSON.stringify({ choices, children, queuedRequestId }),
+        JSON.stringify({
+          choices,
+          children,
+          queuedRequestId,
+          typeLookup,
+          typeLookupAppliedId,
+        }),
       );
       storageError = "";
       confirmed = false;
@@ -334,23 +352,56 @@
       ),
     );
   }
-  $: productTypeSuggestions =
-    (Object.values($store.amazonCatalog?.rawResponsesById || {}) as any[])
-      .filter(
-        (r) =>
-          r.kind === "product_type_search" &&
-          r.key === $store.listings.handleToListing[handle]?.title &&
-          r.sellerId === seller &&
-          r.marketplaceId === UK_MARKETPLACE,
-      )
-      .sort((a, b) => b.fetchedAtMs - a.fetchedAtMs)[0]?.raw?.productTypes ||
-    [];
+  $: if ((typeLookup?.id || "") !== typeWatchingId) {
+    stopTypeLookup();
+    typeEvents = {};
+    typeReadError = "";
+    typeWatchingId = typeLookup?.id || "";
+    if (typeWatchingId) {
+      const id = typeWatchingId;
+      stopTypeLookup = onSnapshot(
+        firestoreQuery(
+          collection(firestore, "sync"),
+          where("requestId", "==", id),
+        ),
+        (snapshot) => {
+          if (typeWatchingId === id)
+            typeEvents = Object.fromEntries(
+              snapshot.docs.map((d) => [d.id, d.data()]),
+            );
+        },
+        (e) =>
+          (typeReadError = `Unable to read product type lookup results: ${e.message}`),
+      );
+    }
+  }
+  $: typeLookupResult = amazonProductTypeLookup({
+    responses: $store.amazonCatalog?.rawResponsesById || {},
+    events: { ...$store.syncQueue?.eventsById, ...typeEvents },
+    seller,
+    title:
+      typeLookup?.title || $store.listings.handleToListing[handle]?.title || "",
+    requestId: typeLookup?.id,
+  });
+  $: productTypeSuggestions = typeLookupResult.types;
+  $: if (
+    handle &&
+    loaded === scope &&
+    typeLookupResult.status === "success" &&
+    productTypeSuggestions.length === 1 &&
+    typeLookupAppliedId !== typeLookupResult.requestId
+  ) {
+    typeLookupAppliedId = typeLookupResult.requestId;
+    if (!choices.productType?.trim())
+      choices = { ...choices, productType: productTypeSuggestions[0].name };
+    save();
+  }
   async function suggestProductTypes() {
     if (!owner || !familyRows.length) return;
     busy = true;
     error = "";
     try {
-      await addDoc(
+      const ref = await addDoc(
         collection(firestore, "request_amazon_product_type_discovery"),
         {
           eventType: "amazon/product_type_discovery_requested",
@@ -371,7 +422,11 @@
           timestamp: serverTimestamp(),
         },
       );
-      message = "Product type lookup queued. Suggestions will appear here.";
+      typeLookup = {
+        id: ref.id,
+        title: $store.listings.handleToListing[handle].title,
+      };
+      save();
     } catch (e: any) {
       error = e.message;
     } finally {
@@ -465,6 +520,23 @@
             >{suggestion.displayName || suggestion.name}</button
           >{/each}
       </div>
+      {#if typeReadError}<p role="alert">{typeReadError}</p>{/if}
+      {#if typeLookupResult.status === "pending"}<p role="status">
+          Looking up Amazon product types…
+        </p>
+      {:else if typeLookupResult.status === "error"}<p role="alert">
+          {typeLookupResult.error}
+        </p>
+      {:else if typeLookupResult.status === "empty"}<p role="status">
+          Amazon returned no product types for this title. Enter a product type
+          manually or adjust the title and try again.
+        </p>
+      {:else if typeLookupResult.status === "success"}<p role="status">
+          {productTypeSuggestions.length === 1 &&
+          choices.productType === productTypeSuggestions[0].name
+            ? `Amazon suggested ${productTypeSuggestions[0].displayName || productTypeSuggestions[0].name}; selected ${productTypeSuggestions[0].name}.`
+            : `Amazon returned ${productTypeSuggestions.length} product type suggestions. Choose one above.`}
+        </p>{/if}
       <p>
         Amazon validation checks whether this variation type is supported by the
         chosen product type.

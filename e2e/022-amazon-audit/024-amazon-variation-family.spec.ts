@@ -133,7 +133,101 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
   await panel
     .getByLabel("Amazon has approved the applicable amifa GTIN exemption")
     .uncheck();
-  await panel.getByLabel("Family Amazon product type").fill("STICKER_DECAL");
+  await panel
+    .getByRole("button", { name: "Suggest product types", exact: true })
+    .click();
+  const lookups = await db
+    .collection("request_amazon_product_type_discovery")
+    .get();
+  const lookup = lookups.docs
+    .filter((d) => d.data().handle === "amifa-family-browser-test")
+    .sort((a, b) => b.data().createdAtMs - a.data().createdAtMs)[0];
+  expect(lookup).toBeTruthy();
+  // This response has no createdAtMs, so the global ordered sync listener
+  // cannot deliver it. The editor must watch its own server request directly.
+  await db
+    .collection("sync")
+    .doc(`search-result-${lookup.id}`)
+    .set({
+      creator: "test",
+      requestId: lookup.id,
+      eventType: "amazon/product_type_discovery_api_call",
+      payload: {
+        requestType: "product_type_search",
+        success: true,
+        response: {
+          productTypes: [
+            { name: "STICKER_DECAL", displayName: "Sticker Decal" },
+          ],
+        },
+        context: {
+          key: "Amifa 3D Aurora Stickers (22)",
+          sellerId: "family-browser-seller",
+          marketplaceId: "A1F83G8C2ARO7P",
+          status: 200,
+        },
+      },
+    });
+  await expect(panel.getByLabel("Family Amazon product type")).toHaveValue(
+    "STICKER_DECAL",
+  );
+  await panel.getByLabel("Family Amazon product type").fill("LABEL");
+  await panel.getByLabel("Family Amazon product type").press("Tab");
+  await db
+    .collection("broadcast")
+    .doc(`type-result-${lookup.id}`)
+    .set({
+      creator: "test",
+      timestamp: new Date(),
+      type: "amazonCatalog/apply_product_type_discovery_result",
+      payload: {
+        requestId: lookup.id,
+        mode: "product_type_discovery",
+        marketplaceId: "A1F83G8C2ARO7P",
+        sellerId: "family-browser-seller",
+        searchKey: "Amifa 3D Aurora Stickers (22)",
+        responses: [
+          {
+            id: `${lookup.id}:search`,
+            requestId: lookup.id,
+            kind: "product_type_search",
+            key: "Amifa 3D Aurora Stickers (22)",
+            marketplaceId: "A1F83G8C2ARO7P",
+            sellerId: "family-browser-seller",
+            status: 200,
+            ok: true,
+            fetchedAtMs: Date.now(),
+            raw: {
+              productTypes: [
+                { name: "STICKER_DECAL", displayName: "Sticker Decal" },
+              ],
+            },
+          },
+        ],
+      },
+    });
+  await page.waitForFunction(
+    (id) =>
+      !!(window as any).store.getState().amazonCatalog.rawResponsesById[
+        `${id}:search`
+      ],
+    lookup.id,
+  );
+  await expect(panel.getByLabel("Family Amazon product type")).toHaveValue(
+    "LABEL",
+  );
+  await panel
+    .getByRole("button", { name: "Sticker Decal", exact: true })
+    .click();
+  await expect(panel.getByLabel("Family Amazon product type")).toHaveValue(
+    "STICKER_DECAL",
+  );
+  await expect(
+    panel.getByRole("status").filter({
+      hasText: "Amazon suggested Sticker Decal; selected STICKER_DECAL",
+    }),
+  ).toBeVisible();
+
   await panel
     .getByRole("combobox", { name: "Variants differ by", exact: true })
     .selectOption("STYLE_NAME");
