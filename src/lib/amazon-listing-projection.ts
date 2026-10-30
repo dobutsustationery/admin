@@ -363,13 +363,14 @@ function buyableAttributes(params: {
     ];
   }
 
+  // No separate GBP RRP is recorded. Amazon specifies zero when unavailable.
+  attributes.list_price = [
+    marketplaceValue(marketplaceId, {
+      currency: currencyCode,
+      value_with_tax: 0,
+    }),
+  ];
   if (price > 0) {
-    attributes.list_price = [
-      marketplaceValue(marketplaceId, {
-        currency: currencyCode,
-        value_with_tax: price,
-      }),
-    ];
     attributes.purchasable_offer = [
       marketplaceValue(marketplaceId, {
         currency: currencyCode,

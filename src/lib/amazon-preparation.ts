@@ -445,16 +445,7 @@ export function projectPreparation(
           productType,
         });
         const attributes = { ...draft?.submissions[0]?.payload.attributes };
-        // Do not guess compliance declarations, pack counts or safety warnings.
-        for (const name of [
-          "batteries_required",
-          "supplier_declared_dg_hz_regulation",
-          "safety_warning",
-          "unit_count",
-          "number_of_items",
-          "list_price",
-        ])
-          delete attributes[name];
+        // Preserve catalogue defaults and product counts from the shared projection.
         attributes.purchasable_offer = offer;
         attributes.fulfillment_availability = availability;
         entry = {

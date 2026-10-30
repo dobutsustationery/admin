@@ -119,7 +119,7 @@ describe("Amazon listing projection", () => {
     });
     expect(attributes.list_price[0]).toMatchObject({
       currency: "GBP",
-      value_with_tax: 4,
+      value_with_tax: 0,
     });
     expect(attributes.skip_offer[0]).toMatchObject({
       marketplace_id: "A1F83G8C2ARO7P",

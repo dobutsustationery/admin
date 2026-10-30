@@ -91,7 +91,14 @@ describe("Amazon preparation from durable inputs", () => {
         .supplier_declared_has_product_identifier_exemption,
     ).toBeUndefined();
     expect(r.entry?.body.attributes.safety_warning).toBeUndefined();
-    expect(r.entry?.body.attributes.list_price).toBeUndefined();
+    expect(r.entry?.body.attributes.list_price[0]).toMatchObject({
+      currency: "GBP",
+      value_with_tax: 0,
+    });
+    expect(r.entry?.body.attributes.batteries_required[0].value).toBe(false);
+    expect(
+      r.entry?.body.attributes.supplier_declared_dg_hz_regulation[0].value,
+    ).toBe("not_applicable");
     prep = decision(prep, { priceGBP: "8.50" });
     expect(
       projectPreparation(prep, f.audit, f.inventory, f.listings)[0].price,

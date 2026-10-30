@@ -93,8 +93,46 @@ describe("Amifa variation family preparation", () => {
     expect(
       blue.body.attributes.main_product_image_locator[0].media_location,
     ).toBe("https://example.com/blue.png");
-    expect(blue.body.attributes.safety_warning).toBeUndefined();
+    for (const entry of p.entries) {
+      expect(entry.body.attributes.batteries_required[0].value).toBe(false);
+      expect(
+        entry.body.attributes.supplier_declared_dg_hz_regulation[0].value,
+      ).toBe("not_applicable");
+    }
+    expect(parent.body.attributes.list_price).toBeUndefined();
+    for (const child of [blue, green]) {
+      expect(child.body.attributes.safety_warning[0].value).toContain(
+        "choking hazard",
+      );
+      expect(child.body.attributes.unit_count[0].value).toBeGreaterThan(0);
+      expect(child.body.attributes.number_of_items[0].value).toBeGreaterThan(0);
+      expect(child.body.attributes.list_price[0]).toMatchObject({
+        currency: "GBP",
+        value_with_tax: 0,
+      });
+    }
     expect(() => validateRequest(request(p.entries))).not.toThrow();
+  });
+  it("automatically includes sticker package counts from the product text", () => {
+    const f = fixture(true);
+    f.listings.handleToListing.letters.title = "Amifa 3D Aurora Stickers (22)";
+    const p = buildAmazonVariationFamily({
+      ...f,
+      decision: { ...f.decision, identifierExemption: true },
+    });
+    expect(p.reason).toBe("");
+    for (const child of p.entries.slice(1)) {
+      expect(child.body.attributes.unit_count[0]).toMatchObject({
+        value: 22,
+        type: { value: "count" },
+      });
+      expect(child.body.attributes.number_of_items[0].value).toBe(22);
+      expect(
+        child.body.attributes.purchasable_offer[0].our_price[0].schedule[0]
+          .value_with_tax,
+      ).toBe(4);
+      expect(child.body.attributes.list_price[0].value_with_tax).toBe(0);
+    }
   });
   it("never infers an exemption from a shared JAN, and accepts an explicit scoped confirmation", () => {
     const f = fixture(true);

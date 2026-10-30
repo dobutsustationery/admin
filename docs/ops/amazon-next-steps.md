@@ -100,3 +100,21 @@ reparented. Product-type-specific missing attributes appear in Amazon validation
 feedback. The worker's validation, dependency and readback changes apply to newly
 queued jobs; existing cached facts do not need recomputation. **Schema version
 remains unchanged; no full replay is required.**
+
+## Catalogue defaults for automated creation (October 30, 2026)
+
+The catalogue owner confirmed that our products require no batteries and have no
+applicable dangerous goods regulations. Creation payloads therefore always include
+`batteries_required: false` and `supplier_declared_dg_hz_regulation: not_applicable`,
+including grouping parents. Sticker children also retain the standard under-three
+choking-hazard warning from the shared product projection. These values do not
+require per-product re-entry.
+
+The existing count rule extracts the package count from product descriptions or
+titles (for example `(22)`), falling back to one. Sticker payloads use this for
+`number_of_items` and `unit_count` with type `count`. No separate GBP RRP is currently
+recorded, so `list_price` is zero (Amazon's unavailable value); the reviewed GBP
+selling price remains in `purchasable_offer`. These generated attributes are stored
+in the exact request body on each validation/publication job. Grouping parents
+continue to have no offer, price or stock. The standalone and variation preparation
+paths must preserve these attributes rather than deleting them.

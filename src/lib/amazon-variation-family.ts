@@ -123,15 +123,7 @@ export function buildAmazonVariationFamily(params: {
   const entries = draft.submissions.map((s): PreparationEntry => {
     const index = rows.findIndex((r) => r.row.key === s.itemKey);
     const attributes: any = { ...s.payload.attributes };
-    for (const name of [
-      "batteries_required",
-      "supplier_declared_dg_hz_regulation",
-      "safety_warning",
-      "unit_count",
-      "number_of_items",
-      "list_price",
-    ])
-      delete attributes[name];
+    // Preserve catalogue defaults and product counts from the shared projection.
     attributes.brand = [
       { value: "Amifa", language_tag: "en_GB", marketplace_id: UK_MARKETPLACE },
     ];
