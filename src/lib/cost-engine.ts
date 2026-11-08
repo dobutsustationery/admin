@@ -26,6 +26,12 @@ export type ReceiptEntry = {
   // carry `receivedQty: 0`; inventory-value reporting derives cumulative value
   // from receipt-driven value increases, not directly from this metadata.
   receivedQty?: number;
+  inventoryTransfer?: {
+    sourceItemKey: string;
+    sourceLedgerEntryIds: string[];
+    receiptIds: string[];
+    orderIds: string[];
+  };
   unitCostJpy: number; // always a number (0 = unknown, surfaced elsewhere)
   unitCostEur: number; // always a number (0 = unknown, surfaced elsewhere)
   // Provenance: "stockOrder:<orderId>" for order-sourced lots, else the
@@ -71,6 +77,7 @@ export type ReceiptEntry = {
 };
 
 export type SaleEntry = {
+  inventoryTransfer?: { targetItemKey: string };
   id?: string;
   kind: "sale";
   at: number;
@@ -444,7 +451,10 @@ export function walkLedger(
       const existingPriced = avgJpy > 1e-9;
       const incomingPriced = unitCostJpy > 1e-9;
       const zeroBoundary =
-        onHand > 0 && receiptQty > 0 && existingPriced !== incomingPriced;
+        onHand > 0 &&
+        receiptQty > 0 &&
+        existingPriced !== incomingPriced &&
+        !e.inventoryTransfer;
       if (zeroBoundary && !existingPriced) {
         // Priced receipt landing on uncosted on-hand. Treat the now-known cost
         // as the basis for the whole position (the uncosted goods are the same

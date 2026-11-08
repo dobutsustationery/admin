@@ -2318,6 +2318,9 @@
       </div>
     </div>
 
+    {#if proposal?.allocationError}<p role="alert">
+        {proposal.allocationError}
+      </p>{/if}
     <ListingEditor
       listing={listingData}
       images={listingImages}

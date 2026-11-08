@@ -1,3 +1,9 @@
+import {
+  POOLED_LISTING_STOCK,
+  availableListingStock,
+  planListingStock,
+  relatedStockProposals,
+} from "./listing-stock-allocation";
 import { initialPhotoRepair, applyPhotoRepair } from "./photo-repair";
 import {
   initialPreparation,
@@ -23,6 +29,7 @@ import {
   new_order,
   package_item,
   split_inventory_item,
+  allocate_listing_stock,
   fix_jancode,
   set_stock_order_meta,
   apply_stock_order_costs,
@@ -725,6 +732,47 @@ export const rootReducer = (
     }
 
     return hydratedState;
+  }
+
+  let pooledStock: ReturnType<typeof planListingStock> = {
+    plans: [],
+    bindings: new Map(),
+  };
+  if (action.type === "listingCreation/approve_proposal") {
+    const proposal = state?.listingCreation.proposals[action.payload.janCode];
+    if (proposal) {
+      const handle =
+        proposal.handle || generateHandle(proposal.title, proposal.janCode);
+      const siblings = Object.values(state.listingCreation.proposals).filter(
+        (p: any) =>
+          (p.handle || generateHandle(p.title, p.janCode)) === handle ||
+          (!p.handle && !proposal.handle && p.janCode === proposal.janCode),
+      );
+      try {
+        pooledStock = planListingStock(
+          relatedStockProposals(
+            siblings,
+            Object.values(state.listingCreation.proposals),
+            state.inventory,
+          ),
+          state.inventory,
+        );
+      } catch (error) {
+        return {
+          ...state,
+          listingCreation: {
+            ...state.listingCreation,
+            proposals: {
+              ...state.listingCreation.proposals,
+              [action.payload.janCode]: {
+                ...proposal,
+                allocationError: (error as Error).message,
+              },
+            },
+          },
+        };
+      }
+    }
   }
 
   // 1. Standard Reducer Execution
@@ -1901,7 +1949,13 @@ export const rootReducer = (
       const inventoryItems: { id: string; item: any }[] = [];
       for (const [id, val] of Object.entries(state.inventory.idToItem)) {
         const item = val as any;
-        if (item.janCode === p.janCode && !item.handle && item.qty > 0) {
+        if (
+          item.janCode === p.janCode &&
+          !item.handle &&
+          (p.allocationMode === POOLED_LISTING_STOCK
+            ? availableListingStock(item)
+            : item.qty) > 0
+        ) {
           inventoryItems.push({ id, item });
         }
       }
@@ -1909,9 +1963,14 @@ export const rootReducer = (
       // Default to empty string if no inventory items found (shouldn't happen if scan logic was correct)
       const baseItemId = inventoryItemIds.length > 0 ? inventoryItemIds[0] : "";
       const sourceQty =
-        inventoryItems.length > 0
-          ? Number(inventoryItems[0].item?.qty || 0)
-          : 0;
+        p.allocationMode === POOLED_LISTING_STOCK
+          ? inventoryItems.reduce(
+              (sum, entry) => sum + availableListingStock(entry.item),
+              0,
+            )
+          : inventoryItems.length > 0
+            ? Number(inventoryItems[0].item?.qty || 0)
+            : 0;
 
       // Bind each variant to the pre-existing handle-less inventory item
       // whose subtype matches the variant's option1Value.  This avoids the
@@ -2267,6 +2326,11 @@ export const rootReducer = (
         nextState.listingCreation.proposals,
       ) as any[];
       const matching = allProposals.filter((p) => {
+        if (
+          p.allocationMode === POOLED_LISTING_STOCK &&
+          p === nextState.listingCreation.proposals[janCode]
+        )
+          return false;
         if (p.janCode === janCode) return false;
         const h = p.handle || generateHandle(p.title, p.janCode);
         return h === newHandle;
@@ -2432,7 +2496,50 @@ export const rootReducer = (
       const itemsToSplit = new Map<string, any[]>();
       const variantIdToItemId = new Map<string, string>();
 
+      for (const plan of pooledStock.plans) {
+        const allocation = inheritTimestamp({
+          ...allocate_listing_stock(plan),
+          _ephemeral: true,
+        });
+        nextState = {
+          ...nextState,
+          inventory: inventory(nextState.inventory, allocation),
+        };
+        logger(allocation, nextState, action._timestamp);
+      }
+      // Other drafts in this stock pool now point at their allocated subtype
+      // identities. They stay drafts, without receiving a listing handle.
+      if (pooledStock.bindings.size) {
+        const proposals = { ...nextState.listingCreation.proposals };
+        for (const [key, pending] of Object.entries(proposals) as [
+          string,
+          any,
+        ][]) {
+          if (
+            mergedProposals.includes(pending) ||
+            !pending.variants.some((v: any) => pooledStock.bindings.has(v.id))
+          )
+            continue;
+          const variants = pending.variants.map((v: any) => ({
+            ...v,
+            itemId: pooledStock.bindings.get(v.id) || v.itemId,
+          }));
+          proposals[key] = {
+            ...pending,
+            variants,
+            inventoryItemIds: [...new Set(variants.map((v: any) => v.itemId))],
+          };
+        }
+        nextState = {
+          ...nextState,
+          listingCreation: { ...nextState.listingCreation, proposals },
+        };
+      }
       allVariants.forEach((v: any) => {
+        if (pooledStock.bindings.has(v.id)) {
+          variantIdToItemId.set(v.id, pooledStock.bindings.get(v.id)!);
+          return;
+        }
         if (!itemsToSplit.has(v.itemId)) itemsToSplit.set(v.itemId, []);
         itemsToSplit.get(v.itemId)?.push(v);
         variantIdToItemId.set(v.id, v.itemId);
@@ -2667,7 +2774,14 @@ export const rootReducer = (
       // 6. Cleanup ALL Merged Proposals
       mergedProposals.forEach((p) => {
         const removeAction = inheritTimestamp({
-          ...remove_proposal({ janCode: p.janCode }),
+          ...remove_proposal({
+            janCode:
+              p.allocationMode === POOLED_LISTING_STOCK
+                ? Object.keys(allProposals).find(
+                    (key) => allProposals[key] === p,
+                  ) || p.janCode
+                : p.janCode,
+          }),
           _ephemeral: true,
         });
         nextState = {

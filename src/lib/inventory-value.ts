@@ -327,7 +327,10 @@ function cumulativeLedgerValues(
       const existingPriced = avgJpy > 1e-9;
       const incomingPriced = unitCostJpy > 1e-9;
       const zeroBoundary =
-        onHand > 0 && receiptQty > 0 && existingPriced !== incomingPriced;
+        onHand > 0 &&
+        receiptQty > 0 &&
+        existingPriced !== incomingPriced &&
+        !entry.inventoryTransfer;
       if (zeroBoundary && !existingPriced) {
         avgJpy = unitCostJpy;
         avgEur = unitCostEur;
@@ -397,9 +400,11 @@ function cumulativeLedgerValues(
       }
       const soldQty = Math.min(entry.qty, onHand);
       const soldValue = consumeNormalSaleValue(lots, soldQty, avgJpy, avgEur);
-      soldJpy += soldValue.jpy;
-      soldEur += soldValue.eur;
-      soldLots.push(...soldValue.lots);
+      if (!entry.inventoryTransfer) {
+        soldJpy += soldValue.jpy;
+        soldEur += soldValue.eur;
+        soldLots.push(...soldValue.lots);
+      }
       onHand -= soldQty;
       pendingSaleQty += entry.qty - soldQty;
     } else {

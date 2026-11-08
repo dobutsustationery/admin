@@ -1,4 +1,8 @@
 import {
+  POOLED_LISTING_STOCK,
+  availableListingStock,
+} from "./listing-stock-allocation";
+import {
   createSlice,
   type PayloadAction,
   type ThunkAction,
@@ -37,6 +41,8 @@ export interface ListingProposal {
   // Source Data (Immutable)
   janCode: string;
   inventoryItemIds: string[];
+  allocationMode?: typeof POOLED_LISTING_STOCK;
+  allocationError?: string;
   photoGroupIds: string[];
 
   // Editable Content
@@ -456,6 +462,7 @@ const listingCreationSlice = createSlice({
         const variant = findListingVariantByIdentity(proposal, variantId);
         if (variant) {
           variant.option1Value = value;
+          delete proposal.allocationError;
         }
       }
     },
@@ -473,6 +480,7 @@ const listingCreationSlice = createSlice({
         const variant = findListingVariantByIdentity(proposal, variantId);
         if (variant) {
           variant.qty = qty;
+          delete proposal.allocationError;
         }
       }
     },
@@ -650,6 +658,8 @@ const listingCreationSlice = createSlice({
       const targetItemId = variant.itemId;
 
       // Move Variant
+      if (source.allocationMode === POOLED_LISTING_STOCK)
+        target.allocationMode = POOLED_LISTING_STOCK;
       target.variants.push(variant);
       if (!target.inventoryItemIds.includes(targetItemId)) {
         target.inventoryItemIds.push(targetItemId);
@@ -681,6 +691,8 @@ const listingCreationSlice = createSlice({
 
       if (!source || !target || sourceJan === targetJan) return;
 
+      if (source.allocationMode === POOLED_LISTING_STOCK)
+        target.allocationMode = POOLED_LISTING_STOCK;
       // Merge Arrays
       target.inventoryItemIds = [
         ...new Set([...target.inventoryItemIds, ...source.inventoryItemIds]),
@@ -737,6 +749,8 @@ const listingCreationSlice = createSlice({
         const source = state.proposals[sourceJan];
         if (!source) return;
 
+        if (source.allocationMode === POOLED_LISTING_STOCK)
+          target.allocationMode = POOLED_LISTING_STOCK;
         // Merge arrays with dedupe
         target.inventoryItemIds = Array.from(
           new Set([...target.inventoryItemIds, ...source.inventoryItemIds]),
@@ -951,7 +965,9 @@ export const generate_proposals =
             // We need to find at least one item with this JAN in inventory (and valid qty)
             const inInventory = Object.values(inventory.idToItem).some(
               (item: any) =>
-                item.janCode === key && !item.handle && item.qty > 0,
+                item.janCode === key &&
+                !item.handle &&
+                availableListingStock(item) > 0,
             );
 
             return inInventory;
@@ -1076,7 +1092,9 @@ export const generate_proposals =
       }
 
       // 2. Group Photo Keys by Base JAN
-      const organizedJans = Object.keys(localJanCodeToPhotos);
+      const organizedJans = Object.keys(localJanCodeToPhotos).filter(
+        (key) => localJanCodeToPhotos[key]?.length > 0,
+      );
       const baseJanMap: Record<
         string,
         { key: string; subtype: string | null }[]
@@ -1103,7 +1121,9 @@ export const generate_proposals =
         // 2. Skip if no unlisted inventory items with qty > 0 exist for this JAN
         const hasUnlistedInventory = Object.values(inventory.idToItem).some(
           (item: any) =>
-            item.janCode === baseJan && !item.handle && item.qty > 0,
+            item.janCode === baseJan &&
+            !item.handle &&
+            availableListingStock(item) > 0,
         );
 
         return hasUnlistedInventory;
@@ -1134,7 +1154,11 @@ export const generate_proposals =
 
         for (const [id, val] of Object.entries(inventory.idToItem)) {
           const item = val as Item;
-          if (item.janCode === baseJan && !item.handle && item.qty > 0) {
+          if (
+            item.janCode === baseJan &&
+            !item.handle &&
+            availableListingStock(item) > 0
+          ) {
             inventoryItems.push({ id, item });
           }
         }
@@ -1275,6 +1299,7 @@ export const generate_proposals =
           // Create Proposal
           candidates.push({
             janCode: baseJan, // Use Base JAN (Correct Semantics)
+            allocationMode: POOLED_LISTING_STOCK,
             // inventoryItemIds: inventoryIds, // Enriched by RootReducer
             photoGroupIds: allPhotoGroupIds,
             title: title,
@@ -1327,6 +1352,7 @@ export const approve_proposal_thunk =
     // but explicit step advancement is good.
 
     const state = getState();
+    if (state.listingCreation.proposals[janCode]?.allocationError) return;
     const currentActive = state.listingCreation.activeBatchJans;
 
     if (currentActive.length === 0) {

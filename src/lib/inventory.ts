@@ -808,6 +808,11 @@ export const resolveHistoricalInventoryKey = (
   };
 };
 
+export const allocate_listing_stock = createAction<{
+  sourceIds: string[];
+  targets: { itemId: string; subtype: string; qty: number }[];
+}>("allocate_listing_stock");
+
 export const split_inventory_item = createAction<{
   sourceId: InventoryItemKey;
   splits: { newId: InventoryItemKey; qty: number; subtype: string }[];
@@ -1486,6 +1491,7 @@ function recordSale(
   options:
     | {
         isArchive?: boolean;
+        inventoryTransfer?: { targetItemKey: string };
         visibleQty?: number;
         auditComment?: string;
         idParts?: Array<string | number | boolean | null | undefined>;
@@ -1515,6 +1521,9 @@ function recordSale(
     at: Number.isFinite(atMs) && atMs > 0 ? atMs : UNKNOWN_RECEIPT_DATE,
     seq: ledger.length,
     qty,
+    ...(normalizedOptions.inventoryTransfer
+      ? { inventoryTransfer: normalizedOptions.inventoryTransfer }
+      : {}),
     ...(normalizedOptions.visibleQty !== undefined
       ? { visibleQty: normalizedOptions.visibleQty }
       : {}),
@@ -1522,7 +1531,9 @@ function recordSale(
     ...(normalizedOptions.auditComment
       ? {
           auditComment: normalizedOptions.auditComment,
-          auditSeverity: "warning" as const,
+          ...(normalizedOptions.inventoryTransfer
+            ? {}
+            : { auditSeverity: "warning" as const }),
         }
       : {}),
   };
@@ -2153,6 +2164,40 @@ function rederiveCostFromLedger(state: InventoryState, key: string) {
   );
   if (hasPriced) {
     item.cost = walkLedgerForDerivedCost(effectiveLedger).avgJpy;
+  }
+}
+
+// Re-price transfers from their original source position when purchase costs
+// arrive later. Snapshot IDs exclude later receipts and movements, while still
+// following cost corrections to the receipts that actually supplied the stock.
+function refreshListingTransferCosts(state: InventoryState) {
+  const done = new Set<ReceiptEntry>();
+  const refresh = (entry: ReceiptEntry) => {
+    const transfer = entry.inventoryTransfer;
+    if (!transfer || done.has(entry)) return;
+    done.add(entry);
+    const ids = new Set(transfer.sourceLedgerEntryIds);
+    const sourceKey = resolveHistoricalInventoryKey(
+      state,
+      transfer.sourceItemKey,
+      entry.at,
+    ).itemKey;
+    const sourceLedger = state.costLedger?.[sourceKey];
+    if (!sourceLedger) return;
+    const source = sourceLedger.filter((e) => e.id && ids.has(e.id));
+    for (const e of source) if (e.kind === "receipt") refresh(e);
+    const cost = walkLedger(source);
+    entry.unitCostJpy = cost.avgJpy;
+    entry.unitCostEur = cost.avgEur;
+  };
+  for (const [key, ledger] of Object.entries(state.costLedger || {})) {
+    let touched = false;
+    for (const entry of ledger) {
+      if (entry.kind !== "receipt" || !entry.inventoryTransfer) continue;
+      refresh(entry);
+      touched = true;
+    }
+    if (touched) rederiveCostFromLedger(state, key);
   }
 }
 
@@ -4913,6 +4958,7 @@ export const inventory = createReducer(initialState, (r) => {
       }
       if (touched) rederiveCostFromLedger(state, key);
     }
+    refreshListingTransferCosts(state);
   });
   r.addCase(apply_stock_order_costs, (state, action) => {
     const { orderId, rows, overrideExisting } = action.payload;
@@ -4959,6 +5005,7 @@ export const inventory = createReducer(initialState, (r) => {
       if (touched) rederiveCostFromLedger(state, key);
     }
 
+    refreshListingTransferCosts(state);
     state.stockOrderRegistry[orderId] = {
       ...state.stockOrderRegistry[orderId],
       costIssues: stockOrderCostIssues(state, orderId, rows),
@@ -6317,6 +6364,116 @@ export const inventory = createReducer(initialState, (r) => {
       product,
       date,
     };
+  });
+
+  r.addCase(allocate_listing_stock, (state, action) => {
+    const { sourceIds, targets } = action.payload;
+    const at = getTimestampMs((action as any).timestamp);
+    const sources = sourceIds.map((id) => {
+      const item = state.idToItem[id];
+      const ledger = state.costLedger?.[id] || [];
+      return {
+        id,
+        item: { ...item },
+        remaining: Math.max(0, Number(item.qty) - Number(item.shipped || 0)),
+        cost: walkLedger(ledger),
+        ledgerEntryIds: ledger.flatMap((e) => (e.id ? [e.id] : [])),
+        receipts: effectiveLedgerEntries(ledger).filter(
+          (entry): entry is ReceiptEntry =>
+            entry.kind === "receipt" && !entry.ignored,
+        ),
+      };
+    });
+    // Retain stock already in the correct subtype before moving excess to new ones.
+    const demand = targets.map((target) => ({
+      ...target,
+      remaining: target.qty,
+    }));
+    for (const source of sources) {
+      const target = demand.find((t) => t.itemId === source.id);
+      if (!target) continue;
+      const retained = Math.min(source.remaining, target.remaining);
+      source.remaining -= retained;
+      target.remaining -= retained;
+    }
+    for (const target of demand) {
+      if (!state.idToItem[target.itemId]) {
+        const template = sources[0].item;
+        state.idToItem[target.itemId] = {
+          ...template,
+          subtype: target.subtype,
+          qty: 0,
+          shipped: 0,
+          handle: "",
+          timestamp: at,
+        };
+        state.idToHistory[target.itemId] = [];
+        bindNewInventoryEntity(
+          state,
+          target.itemId,
+          at,
+          action.type,
+          (action as any).id,
+        );
+      }
+      for (const source of sources) {
+        const qty = Math.min(target.remaining, source.remaining);
+        if (!(qty > 0)) continue;
+        const orderIds = [
+          ...new Set(
+            source.receipts
+              .flatMap((r) => [
+                r.costOrderId,
+                r.source?.startsWith("stockOrder:")
+                  ? r.source.slice(11)
+                  : undefined,
+              ])
+              .filter((id): id is string => !!id),
+          ),
+        ];
+        const comment = `Listing stock allocation: ${qty} unit(s) from ${source.id} to ${target.itemId}.`;
+        // Append a stock movement at approval time. Original receipts, sales,
+        // identifiers and historical valuations remain intact on the source.
+        state.idToItem[source.id].qty -= qty;
+        recordSale(state, source.id, qty, at, {
+          auditComment: comment,
+          inventoryTransfer: { targetItemKey: target.itemId },
+          idParts: [(action as any).id || "local", action.type, target.itemId],
+        });
+        if (!state.costLedger) state.costLedger = {};
+        const ledger = (state.costLedger[target.itemId] ||= []);
+        ledger.push({
+          id: nextLedgerEntryId(
+            ledger,
+            action.type,
+            source.id,
+            target.itemId,
+            at,
+          ),
+          kind: "receipt",
+          at,
+          seq: ledger.length,
+          qty,
+          receivedQty: 0,
+          unitCostJpy: source.cost.avgJpy,
+          unitCostEur: source.cost.avgEur,
+          source: `listingTransfer:${source.id}`,
+          inventoryTransfer: {
+            sourceItemKey: source.id,
+            sourceLedgerEntryIds: source.ledgerEntryIds,
+            receiptIds: source.receipts.flatMap((r) => (r.id ? [r.id] : [])),
+            orderIds,
+          },
+          auditComment: comment,
+        });
+        state.idToItem[target.itemId].qty += qty;
+        rederiveCostFromLedger(state, target.itemId);
+        appendSubtypeResolutionHistory(state, source.id, comment, at);
+        appendSubtypeResolutionHistory(state, target.itemId, comment, at);
+        target.remaining -= qty;
+        source.remaining -= qty;
+      }
+    }
   });
 
   r.addCase(split_inventory_item, (state, action) => {

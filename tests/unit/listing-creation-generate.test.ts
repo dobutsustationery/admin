@@ -43,6 +43,7 @@ describe("Listing Creation - Generate Proposals", () => {
       },
       photos: {
         janCodeToPhotos: {
+          "4542804104370": [],
           "4542804104370:Blue": [
             {
               id: "p1",
@@ -100,6 +101,7 @@ describe("Listing Creation - Generate Proposals", () => {
 
     const proposal = proposals[0];
     expect(proposal.janCode).toBe("4542804104370");
+    expect(proposal.allocationMode).toBe("pooled-stock-v1");
     expect(proposal.inventoryItemIds).toContain("item-1");
 
     // Should have TWO variants
