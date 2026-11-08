@@ -118,6 +118,12 @@ describe("pooled listing stock", () => {
     ).toEqual(
       totalCumulativeValues(Object.values(before.inventory.costLedger), at),
     );
+    for (const ledger of Object.values(after.inventory.costLedger) as any[]) {
+      const v = valueAt(ledger),
+        cumulative = totalCumulativeValues([ledger], at);
+      expect(v.valueJpy + cumulative.soldJpy - cumulative.inventoryJpy).toBe(0);
+      expect(v.valueEur + cumulative.soldEur - cumulative.inventoryEur).toBe(0);
+    }
     for (const subtype of ["Blue", "Grey"])
       expect(after.inventory.costLedger[jan + subtype][0]).toEqual(
         before.inventory.costLedger[jan + subtype][0],

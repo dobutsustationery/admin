@@ -299,8 +299,11 @@ function cumulativeLedgerValues(
         carry = null;
       }
 
-      const receivedQty =
-        Number.isFinite(entry.receivedQty) && entry.receivedQty != null
+      // Transfers move cost basis between subtype ledgers. Across inventory
+      // the incoming and outgoing amounts cancel, without a purchase or sale.
+      const receivedQty = entry.inventoryTransfer
+        ? entry.qty
+        : Number.isFinite(entry.receivedQty) && entry.receivedQty != null
           ? entry.receivedQty
           : entry.qty;
       inventoryJpy += receivedQty * unitCostJpy;
@@ -400,7 +403,10 @@ function cumulativeLedgerValues(
       }
       const soldQty = Math.min(entry.qty, onHand);
       const soldValue = consumeNormalSaleValue(lots, soldQty, avgJpy, avgEur);
-      if (!entry.inventoryTransfer) {
+      if (entry.inventoryTransfer) {
+        inventoryJpy -= soldQty * avgJpy;
+        inventoryEur -= soldQty * avgEur;
+      } else {
         soldJpy += soldValue.jpy;
         soldEur += soldValue.eur;
         soldLots.push(...soldValue.lots);
