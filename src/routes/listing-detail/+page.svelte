@@ -53,6 +53,7 @@
   import {
     POOLED_LISTING_STOCK,
     reviewListingStock,
+    type DraftAllocationChanges,
   } from "$lib/listing-stock-allocation";
   import ListingVariantModal from "$lib/components/ListingVariantModal.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
@@ -1605,6 +1606,45 @@
     imagePickerTargetJan = null;
   }
 
+  function reviewDraftAllocation(changes: DraftAllocationChanges) {
+    const state = store.getState();
+    const source = state.listingCreation.proposals[janCode || ""];
+    const removed = source.variants.filter((v: any) =>
+      changes.removals.includes(v.id),
+    );
+    const variants = source.variants
+      .filter((v: any) => !changes.removals.includes(v.id))
+      .map((v: any) => ({
+        ...v,
+        qty: Object.prototype.hasOwnProperty.call(changes.quantities, v.id)
+          ? changes.quantities[v.id]
+          : v.qty,
+      }));
+    if (changes.added)
+      variants.push({
+        id: "modal-allocation-preview",
+        itemId: changes.added.itemId,
+        option1Value: changes.added.subtype,
+        qty: changes.added.qty,
+      } as any);
+    const draft = {
+      ...source,
+      variants,
+      inventoryItemIds: source.inventoryItemIds.filter(
+        (id: string) =>
+          !removed.some((v: any) => v.itemId === id) ||
+          variants.some((v: any) => v.itemId === id),
+      ),
+    };
+    return reviewListingStock(
+      siblingProposals.map((p) => (p === source ? draft : p)),
+      Object.values(state.listingCreation.proposals).map((p) =>
+        p === source ? draft : p,
+      ),
+      state.inventory,
+    );
+  }
+
   function handleAddVariant() {
     if (readOnly) return;
     variantModalMode = "add";
@@ -2369,6 +2409,8 @@
       janCode={variantModalJan}
       sourceItem={variantModalSourceItem}
       otherVariants={variantModalOtherVariants}
+      images={listingImages}
+      reviewDraftAllocation={pooledStockReview ? reviewDraftAllocation : null}
       {associatedItems}
       inventory={$store.inventory.idToItem}
       on:cancel={() => (showVariantModal = false)}

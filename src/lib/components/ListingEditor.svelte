@@ -6,6 +6,7 @@
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import CategoryBrowseModal from "./CategoryBrowseModal.svelte";
+  import { listingVariantImage } from "$lib/listing-image-logic";
   import type { ListingStockReview } from "$lib/listing-stock-allocation";
 
   export let listing: {
@@ -570,12 +571,7 @@
         {/if}
         <div class="subtype-list">
           {#each associatedItems as item, i (item.variantId || item.id)}
-            {@const subtypeImg =
-              (item.variantImage ? { url: item.variantImage } : null) ||
-              (item.photoGroupKey
-                ? images.find((img) => img.sourceGroup === item.photoGroupKey)
-                : null) ||
-              (item.image ? { url: item.image } : null)}
+            {@const subtypeImg = listingVariantImage(item, images)}
             <div class="subtype-row">
               <span
                 class="subtype-label {!readOnly ? 'editable' : ''}"

@@ -136,3 +136,17 @@ export function buildDraftListingImages(
     position: i + 1,
   }));
 }
+
+// Draft variants can share an inventory source while having different photos.
+export function listingVariantImage(
+  item: any,
+  images: (ListingImage & { sourceGroup?: string })[],
+) {
+  return (
+    (item.variantImage ? { url: item.variantImage } : null) ||
+    (item.photoGroupKey
+      ? images.find((img) => img.sourceGroup === item.photoGroupKey)
+      : null) ||
+    (item.image ? { url: item.image } : null)
+  );
+}

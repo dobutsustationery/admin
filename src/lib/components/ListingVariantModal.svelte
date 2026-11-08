@@ -2,6 +2,16 @@
   import { createEventDispatcher } from "svelte";
   import type { Item } from "$lib/inventory";
   import ImageThumbnail from "./ImageThumbnail.svelte";
+  import { listingVariantImage } from "$lib/listing-image-logic";
+  import type { ListingImage } from "$lib/listings-slice";
+  import type {
+    DraftAllocationChanges,
+    ListingStockReview,
+  } from "$lib/listing-stock-allocation";
+  export let images: ListingImage[] = [];
+  export let reviewDraftAllocation:
+    | ((changes: DraftAllocationChanges) => ListingStockReview)
+    | null = null;
 
   export let open = false;
   export let associatedItems: any[] = []; // Current variants of the listing
@@ -109,37 +119,58 @@
   // Validation Logic
   // Total available is sum of all variants currently on listing
   // PLUS the quantity of any NEW item being brought in.
-  $: totalAvailable = (() => {
-    // Sum unique inventory item quantities. Rows marked for removal are
-    // excluded from the pool: removing an erroneous subtype discards
-    // that variant rather than redistributing its units, so the
-    // conservation invariant must balance over the *kept* variants
-    // only. Without this a removal-only change can never balance and
-    // Confirm stays disabled. See
-    // docs/investigations/MANAGE_VARIANTS_CANNOT_REMOVE.md.
-    const sourceMap = new Map<string, number>();
-    associatedItems.forEach((i) => {
-      const rowId = i.variantId || i.id;
-      if (pendingRemovals.has(rowId)) return;
-      sourceMap.set(i.id, i.qty || 0);
-    });
-    if (selectedItemToAdd) {
-      if (!sourceMap.has(selectedItemToAdd.id)) {
-        sourceMap.set(selectedItemToAdd.id, selectedItemToAdd.qty || 0);
-      }
-    }
-    return Array.from(sourceMap.values()).reduce((sum, q) => sum + q, 0);
-  })();
+  $: draftReview = reviewDraftAllocation
+    ? reviewDraftAllocation({
+        quantities: proposedQtys,
+        removals: Array.from(pendingRemovals),
+        ...(selectedItemToAdd
+          ? {
+              added: {
+                itemId: selectedItemToAdd.id,
+                subtype: newSubtypeName,
+                qty: newVariantQty,
+              },
+            }
+          : {}),
+      })
+    : null;
+  $: totalAvailable = draftReview
+    ? draftReview.pools.reduce((sum, p) => sum + p.available, 0)
+    : (() => {
+        // Sum unique inventory item quantities. Rows marked for removal are
+        // excluded from the pool: removing an erroneous subtype discards
+        // that variant rather than redistributing its units, so the
+        // conservation invariant must balance over the *kept* variants
+        // only. Without this a removal-only change can never balance and
+        // Confirm stays disabled. See
+        // docs/investigations/MANAGE_VARIANTS_CANNOT_REMOVE.md.
+        const sourceMap = new Map<string, number>();
+        associatedItems.forEach((i) => {
+          const rowId = i.variantId || i.id;
+          if (pendingRemovals.has(rowId)) return;
+          sourceMap.set(i.id, i.qty || 0);
+        });
+        if (selectedItemToAdd) {
+          if (!sourceMap.has(selectedItemToAdd.id)) {
+            sourceMap.set(selectedItemToAdd.id, selectedItemToAdd.qty || 0);
+          }
+        }
+        return Array.from(sourceMap.values()).reduce((sum, q) => sum + q, 0);
+      })();
 
-  $: totalAllocated = (() => {
-    const existingAllocated = Object.values(proposedQtys).reduce(
-      (sum, q) => sum + (q || 0),
-      0,
-    );
-    return existingAllocated + (newVariantQty || 0);
-  })();
+  $: totalAllocated = draftReview
+    ? draftReview.pools.reduce((sum, p) => sum + p.allocated, 0)
+    : (() => {
+        const existingAllocated = Object.values(proposedQtys).reduce(
+          (sum, q) => sum + (q || 0),
+          0,
+        );
+        return existingAllocated + (newVariantQty || 0);
+      })();
 
-  $: isAllocationValid = Math.abs(totalAllocated - totalAvailable) < 0.001;
+  $: isAllocationValid = draftReview
+    ? draftReview.valid
+    : Math.abs(totalAllocated - totalAvailable) < 0.001;
 
   function toggleRemoval(rowId: string) {
     console.log("[VariantModal] toggleRemoval:", rowId);
@@ -353,9 +384,11 @@
               Total: <strong>{totalAllocated}</strong> / {totalAvailable}
             </div>
           </div>
+          {#if draftReview?.error}<p role="alert">{draftReview.error}</p>{/if}
           <div class="allocation-list">
             {#each associatedItems as item}
               {@const rowId = item.variantId || item.id}
+              {@const variantImage = listingVariantImage(item, images)}
               {@const isPotentialSource =
                 selectedItemToAdd && item.id === selectedItemToAdd.id}
               <div
@@ -374,9 +407,9 @@
                     />
                   {/if}
                   <div class="alloc-thumb">
-                    {#if item.image}
+                    {#if variantImage}
                       <ImageThumbnail
-                        src={item.image}
+                        src={variantImage.url}
                         alt={item.subtype}
                         width="32px"
                         height="32px"
@@ -465,7 +498,7 @@
           disabled={!isAllocationValid ||
             (mode === "add" &&
               !selectedItemToAdd &&
-              pendingRemovals.size === 0)}
+              associatedItems.length === 0)}
         >
           Confirm Changes
         </button>

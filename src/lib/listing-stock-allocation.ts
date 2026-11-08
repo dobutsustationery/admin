@@ -163,3 +163,9 @@ export function reviewListingStock(
     };
   }
 }
+
+export interface DraftAllocationChanges {
+  quantities: Record<string, number>;
+  removals: string[];
+  added?: { itemId: string; subtype: string; qty: number };
+}

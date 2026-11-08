@@ -6,6 +6,12 @@ test("pooled scissors quantities can be edited and approved as 8/8/8", async ({
 }) => {
   test.setTimeout(120000);
   const jan = "4571207041654";
+  await page.route("https://mock.photos/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="grey"/></svg>',
+    }),
+  );
   await page.goto("/");
   await waitForAppReady(page);
   await page.waitForFunction(
@@ -38,6 +44,7 @@ test("pooled scissors quantities can be edited and approved as 8/8/8", async ({
             pieces: 1,
             price: 4.95,
             handle: "",
+            image: "https://mock.photos/Grey.svg",
           },
         })),
       }),
@@ -65,6 +72,7 @@ test("pooled scissors quantities can be edited and approved as 8/8/8", async ({
           variants: ["Blue", "Grey", "Pink"].map((name) => ({
             id: `${jan}:${name}:browser`,
             option1Value: name,
+            image: `https://mock.photos/${name}.svg`,
           })),
         },
       ]),
@@ -122,6 +130,44 @@ test("pooled scissors quantities can be edited and approved as 8/8/8", async ({
   await qty("Pink").fill("8");
   await expect(qty("Blue")).toHaveValue("8");
   await expect(approve).toBeEnabled();
+  // Reproduce the reported Manage Variants path, starting with saved 4/4/4.
+  for (const name of ["Blue", "Grey", "Pink"]) await qty(name).fill("4");
+  await page.getByRole("button", { name: "Manage Variants" }).click();
+  const dialog = page
+    .locator(".modal")
+    .filter({ has: page.locator(".allocation-section") });
+  const dialogRow = (name: string) =>
+    dialog.locator(".allocation-row").filter({
+      has: page.locator(".alloc-subtype", { hasText: new RegExp(`^${name}$`) }),
+    });
+  const confirm = dialog.getByRole("button", { name: "Confirm Changes" });
+  for (const name of ["Blue", "Grey", "Pink"]) {
+    await expect(dialogRow(name).locator('input[type="number"]')).toHaveValue(
+      "4",
+    );
+    await expect(
+      dialogRow(name).getByRole("img", { name, exact: true }),
+    ).toHaveAttribute("src", `https://mock.photos/${name}.svg`);
+  }
+  await expect(dialog.locator(".allocation-summary")).toContainText("12 / 24");
+  await expect(confirm).toBeDisabled();
+  for (const name of ["Blue", "Grey", "Pink"])
+    await dialogRow(name).locator('input[type="number"]').fill("8");
+  await expect(dialog.locator(".allocation-summary")).toContainText("24 / 24");
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(dialog).not.toBeVisible();
+  for (const name of ["Blue", "Grey", "Pink"])
+    await expect(qty(name)).toHaveValue("8");
+  await expect(approve).toBeEnabled();
+  // Reopening reads the saved choices rather than keeping old dialog state.
+  await page.getByRole("button", { name: "Manage Variants" }).click();
+  for (const name of ["Blue", "Grey", "Pink"])
+    await expect(dialogRow(name).locator('input[type="number"]')).toHaveValue(
+      "8",
+    );
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
   await approve.click();
   await expect
     .poll(() =>
