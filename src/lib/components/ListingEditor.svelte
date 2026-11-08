@@ -6,6 +6,7 @@
   import SecureImage from "$lib/components/SecureImage.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import CategoryBrowseModal from "./CategoryBrowseModal.svelte";
+  import type { ListingStockReview } from "$lib/listing-stock-allocation";
 
   export let listing: {
     title: string;
@@ -18,6 +19,7 @@
   export let knownCategories: string[] = [];
   export let selectedSubtypeId: string | null = null;
   export let readOnly = false;
+  export let pooledStockReview: ListingStockReview | null = null;
   export let isCreationMode = false; // Toggle for "Approve" button vs "Add to cart"
   export let isGeneratingTitle: boolean = false;
   export let isGeneratingDescription = false;
@@ -38,12 +40,14 @@
 
   $: isAllocationValid =
     !isCreationMode ||
-    associatedItems.every((item) => {
-      if (typeof item.allocatedQty !== "number") return false;
-      const totalAlloc = sourceAllocations[item.id] || 0;
-      const avail = item.qty || 0;
-      return totalAlloc === avail;
-    });
+    (pooledStockReview
+      ? pooledStockReview.valid
+      : associatedItems.every((item) => {
+          if (typeof item.allocatedQty !== "number") return false;
+          const totalAlloc = sourceAllocations[item.id] || 0;
+          const avail = item.qty || 0;
+          return totalAlloc === avail;
+        }));
 
   $: isPriceValid =
     associatedItems.length > 0 && (associatedItems[0].price || 0) > 0;
@@ -551,6 +555,19 @@
             <span class="subtype-img-header">Image</span>
           </div>
         {/if}
+        {#if isCreationMode && pooledStockReview}
+          <div class="pooled-stock-summary" aria-live="polite">
+            {#each pooledStockReview.pools as pool}
+              <p>
+                Shared stock for JAN {pool.jan}: {pool.allocated} / {pool.available}
+                units allocated.
+              </p>
+            {/each}
+            {#if pooledStockReview.error}<p role="alert">
+                {pooledStockReview.error}
+              </p>{/if}
+          </div>
+        {/if}
         <div class="subtype-list">
           {#each associatedItems as item, i (item.variantId || item.id)}
             {@const subtypeImg =
@@ -573,11 +590,15 @@
                 {@const statusClass =
                   typeof item.allocatedQty !== "number"
                     ? "under-allocated"
-                    : totalAlloc > avail
-                      ? "over-allocated"
-                      : totalAlloc < avail
-                        ? "under-allocated"
-                        : "valid-allocated"}
+                    : pooledStockReview
+                      ? pooledStockReview.valid
+                        ? "valid-allocated"
+                        : "under-allocated"
+                      : totalAlloc > avail
+                        ? "over-allocated"
+                        : totalAlloc < avail
+                          ? "under-allocated"
+                          : "valid-allocated"}
                 <input
                   type="number"
                   min="0"
@@ -587,11 +608,14 @@
                     : ""}
                   on:input={(e) => handleQtyChange(e, item)}
                   placeholder="Qty"
-                  title={totalAlloc > avail
-                    ? `Over-allocated! ${totalAlloc}/${avail}`
-                    : totalAlloc < avail
-                      ? `Under-allocated: ${totalAlloc}/${avail} (remainder stays on source)`
-                      : "Fully allocated"}
+                  title={pooledStockReview
+                    ? pooledStockReview.error ||
+                      "Allocated from the combined available stock for this JAN"
+                    : totalAlloc > avail
+                      ? `Over-allocated! ${totalAlloc}/${avail}`
+                      : totalAlloc < avail
+                        ? `Under-allocated: ${totalAlloc}/${avail} (remainder stays on source)`
+                        : "Fully allocated"}
                 />
                 <span class="subtype-qty-display" title="Final Inventory Count">
                   {item.allocatedQty !== undefined ? item.allocatedQty : "-"}

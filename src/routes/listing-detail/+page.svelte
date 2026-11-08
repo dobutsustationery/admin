@@ -50,6 +50,10 @@
   import { buildDraftListingImages } from "$lib/listing-image-logic";
   import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
   import ListingEditor from "$lib/components/ListingEditor.svelte";
+  import {
+    POOLED_LISTING_STOCK,
+    reviewListingStock,
+  } from "$lib/listing-stock-allocation";
   import ListingVariantModal from "$lib/components/ListingVariantModal.svelte";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import BodyHtmlModal from "$lib/components/BodyHtmlModal.svelte";
@@ -160,6 +164,15 @@
   let listingImages: ListingImage[] = [];
   let associatedItems: any[] = [];
   let siblingProposals: any[] = []; // Hoisted for shared updates
+  $: pooledStockReview =
+    mode === "create" &&
+    siblingProposals.some((p) => p.allocationMode === POOLED_LISTING_STOCK)
+      ? reviewListingStock(
+          siblingProposals,
+          Object.values($store.listingCreation.proposals),
+          $store.inventory,
+        )
+      : null;
   let syncBannerImageUrl = "";
 
   // Image Upload State
@@ -865,7 +878,7 @@
 
       // If this is a 2-way split of a single source inventory item, persist the complementary
       // allocation so the UI reflects real reducer state instead of a derived remainder.
-      if (editedItem?.id) {
+      if (!pooledStockReview && editedItem?.id) {
         const siblings = associatedItems.filter(
           (item) => item.id === editedItem.id,
         );
@@ -2325,6 +2338,7 @@
       listing={listingData}
       images={listingImages}
       {associatedItems}
+      {pooledStockReview}
       knownCategories={$store.listings.knownCategories || []}
       bind:selectedSubtypeId
       {readOnly}

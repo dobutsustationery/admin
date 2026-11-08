@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import { rootReducer } from "../../src/lib/root-reducer";
 import { totalCumulativeValues } from "../../src/lib/inventory-value";
 import { totalValuation, valueAt } from "../../src/lib/cost-engine";
-import { POOLED_LISTING_STOCK } from "../../src/lib/listing-stock-allocation";
+import {
+  POOLED_LISTING_STOCK,
+  reviewListingStock,
+} from "../../src/lib/listing-stock-allocation";
 const jan = "4571207041654",
   at = Date.UTC(2026, 10, 6);
 const event = (type: string, payload: any, id = type) => ({
@@ -104,6 +107,17 @@ describe("pooled listing stock", () => {
     expect(
       draft.listingCreation.proposals[jan].variants.map((v: any) => v.qty),
     ).toEqual([8, 8, 8]);
+    expect(
+      reviewListingStock(
+        [draft.listingCreation.proposals[jan]],
+        Object.values(draft.listingCreation.proposals),
+        draft.inventory,
+      ),
+    ).toEqual({
+      valid: true,
+      error: "",
+      pools: [{ jan, available: 24, allocated: 24 }],
+    });
     const after = approve(draft);
     expect(stock(after)).toEqual({
       [jan + "Blue"]: 8,
@@ -198,6 +212,14 @@ describe("pooled listing stock", () => {
       }),
       () => {},
     );
+    const review = reviewListingStock(
+      [draft.listingCreation.proposals[jan]],
+      Object.values(draft.listingCreation.proposals),
+      draft.inventory,
+    );
+    expect(review.valid).toBe(false);
+    expect(review.pools).toEqual([{ jan, available: 24, allocated: 25 }]);
+    expect(review.error).toContain("24");
     const rejected = approve(draft);
     expect(rejected.listingCreation.proposals[jan].allocationError).toContain(
       "24",

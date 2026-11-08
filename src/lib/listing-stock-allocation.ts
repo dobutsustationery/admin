@@ -116,3 +116,50 @@ export function planListingStock(proposals: any[], inventory: any) {
   }
   return { plans: [...groups.values()], bindings };
 }
+
+export interface ListingStockReview {
+  valid: boolean;
+  error: string;
+  pools: { jan: string; available: number; allocated: number }[];
+}
+
+// UI review uses the same complete pool and approval rules as the reducer,
+// including variants in related drafts that have been split into other listings.
+export function reviewListingStock(
+  selected: any[],
+  all: any[],
+  inventory: any,
+): ListingStockReview {
+  const related = relatedStockProposals(selected, all, inventory);
+  const pools = new Map<
+    string,
+    { jan: string; available: number; allocated: number }
+  >();
+  for (const id of new Set(related.flatMap(sourceIds))) {
+    const item = inventory.idToItem[id];
+    if (!item) continue;
+    if (!pools.has(item.janCode))
+      pools.set(item.janCode, {
+        jan: item.janCode,
+        available: 0,
+        allocated: 0,
+      });
+    pools.get(item.janCode)!.available += availableListingStock(item);
+  }
+  for (const p of related)
+    for (const v of p.variants) {
+      const jan = inventory.idToItem[v.itemId]?.janCode || p.janCode;
+      const pool = pools.get(jan);
+      if (pool) pool.allocated += Number(v.qty) || 0;
+    }
+  try {
+    planListingStock(related, inventory);
+    return { valid: true, error: "", pools: [...pools.values()] };
+  } catch (error) {
+    return {
+      valid: false,
+      error: (error as Error).message,
+      pools: [...pools.values()],
+    };
+  }
+}
