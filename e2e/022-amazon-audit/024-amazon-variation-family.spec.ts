@@ -12,6 +12,9 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
 }) => {
   test.setTimeout(60000);
   await page.goto("/amazon-listings");
+  await page
+    .getByText("Advanced Amazon preparation and diagnostics", { exact: true })
+    .click();
   await expect(page.locator(".loading-overlay")).not.toBeVisible();
   async function fixture() {
     await expect(
@@ -256,6 +259,9 @@ test("prepare a shared-JAN Amifa family, retain choices on reload, and queue the
   await panel.getByLabel("Approval reference or note (optional)").press("Tab");
   await expect(panel).toContainText("Parent SKU:");
   await page.reload();
+  await page
+    .getByText("Advanced Amazon preparation and diagnostics", { exact: true })
+    .click();
   await expect(page.locator(".loading-overlay")).not.toBeVisible();
   await fixture();
   await listing.locator("summary").first().click();

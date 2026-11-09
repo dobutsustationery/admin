@@ -1,0 +1,7518 @@
+[
+  {
+    "name": "3D_PRINTABLE_DESIGNS",
+    "label": "3D_PRINTABLE_DESIGNS"
+  },
+  {
+    "name": "3D_PRINTED_PRODUCT",
+    "label": "3D_PRINTED_PRODUCT"
+  },
+  {
+    "name": "3D_PRINTER",
+    "label": "3D Printer"
+  },
+  {
+    "name": "ABDOMINAL_EXERCISER",
+    "label": "Abdominal Exerciser"
+  },
+  {
+    "name": "ABIS_BOOK",
+    "label": "Printed Book"
+  },
+  {
+    "name": "ABIS_MUSIC",
+    "label": "Physical Music Release"
+  },
+  {
+    "name": "ABRASIVES",
+    "label": "Abrasive"
+  },
+  {
+    "name": "ABRASIVE_BELTS",
+    "label": "Abrasive Belt"
+  },
+  {
+    "name": "ABRASIVE_BRUSH",
+    "label": "Abrasive Brush"
+  },
+  {
+    "name": "ABRASIVE_DISCS",
+    "label": "ABRASIVE_DISCS"
+  },
+  {
+    "name": "ABRASIVE_SHEETS",
+    "label": "Abrasive Sheet"
+  },
+  {
+    "name": "ABRASIVE_WHEELS",
+    "label": "Abrasive Wheel"
+  },
+  {
+    "name": "ACCELERATION_SENSOR",
+    "label": "Acceleration Sensor"
+  },
+  {
+    "name": "ACCESSORY",
+    "label": "ACCESSORY"
+  },
+  {
+    "name": "ACCESSORY_OR_PART_OR_SUPPLY",
+    "label": "ACCESSORY_OR_PART_OR_SUPPLY"
+  },
+  {
+    "name": "ADHESIVES_AND_SEALANTS",
+    "label": "ADHESIVES_AND_SEALANTS"
+  },
+  {
+    "name": "ADHESIVE_TAPES",
+    "label": "Adhesive Tape"
+  },
+  {
+    "name": "ADULT_COSTUME",
+    "label": "ADULT_COSTUME"
+  },
+  {
+    "name": "ADVENT_CALENDAR",
+    "label": "Advent Calendar"
+  },
+  {
+    "name": "ADVERTISEMENT_COLLECTIBLES",
+    "label": "ADVERTISEMENT_COLLECTIBLES"
+  },
+  {
+    "name": "AGILITY_LADDER",
+    "label": "Agility Ladder"
+  },
+  {
+    "name": "AGRICULTURAL_SUPPLIES",
+    "label": "AGRICULTURAL_SUPPLIES"
+  },
+  {
+    "name": "AIMING_SCOPE_SIGHT",
+    "label": "Aiming Scope & Sight"
+  },
+  {
+    "name": "AIR_COMPRESSOR",
+    "label": "Air Compressor"
+  },
+  {
+    "name": "AIR_CONDITIONER",
+    "label": "Air Conditioner"
+  },
+  {
+    "name": "AIR_COOLER",
+    "label": "Evaporative Cooler"
+  },
+  {
+    "name": "AIR_FRYER",
+    "label": "Air Fryer"
+  },
+  {
+    "name": "AIR_GUN",
+    "label": "Air Gun"
+  },
+  {
+    "name": "AIR_GUN_PROJECTILE",
+    "label": "Air Gun Projectile"
+  },
+  {
+    "name": "AIR_MATTRESS",
+    "label": "Air Mattress"
+  },
+  {
+    "name": "AIR_PUMP",
+    "label": "Air Pump"
+  },
+  {
+    "name": "AIR_PURIFIER",
+    "label": "Air Purifier"
+  },
+  {
+    "name": "ALARM",
+    "label": "Alarm"
+  },
+  {
+    "name": "ALCOHOLIC_BEVERAGE",
+    "label": "Alcoholic Beverage"
+  },
+  {
+    "name": "AMAZON_BOOK_READER_ACCESSORY",
+    "label": "AMAZON_BOOK_READER_ACCESSORY"
+  },
+  {
+    "name": "AMAZON_TABLET_ACCESSORY",
+    "label": "AMAZON_TABLET_ACCESSORY"
+  },
+  {
+    "name": "ANCHOR_STAKE",
+    "label": "Anchor Stake"
+  },
+  {
+    "name": "ANIMAL_CAGE",
+    "label": "Animal Cage"
+  },
+  {
+    "name": "ANIMAL_CARRIER",
+    "label": "Animal Carrier"
+  },
+  {
+    "name": "ANIMAL_COLLAR",
+    "label": "Animal Collar"
+  },
+  {
+    "name": "ANIMAL_FUR_CLEANER_CONDITIONER",
+    "label": "Animal Shampoo & Conditioner"
+  },
+  {
+    "name": "ANIMAL_HARNESS",
+    "label": "Animal Harness"
+  },
+  {
+    "name": "ANIMAL_INCONTINENCE_PROTECTOR",
+    "label": "Animal Nappy"
+  },
+  {
+    "name": "ANIMAL_LITTER",
+    "label": "Animal Litter"
+  },
+  {
+    "name": "ANIMAL_MEDICATION",
+    "label": "Animal Medication"
+  },
+  {
+    "name": "ANIMAL_MUZZLE",
+    "label": "Animal Muzzle"
+  },
+  {
+    "name": "ANIMAL_NUTRITIONAL_SUPPLEMENT",
+    "label": "Animal Nutritional Supplement"
+  },
+  {
+    "name": "ANIMAL_PERCH",
+    "label": "Animal Perch"
+  },
+  {
+    "name": "ANIMAL_RECOVERY_COLLAR_CONE",
+    "label": "Animal Recovery Collar & Cone"
+  },
+  {
+    "name": "ANIMAL_SHELTER",
+    "label": "Animal Shelter"
+  },
+  {
+    "name": "ANIMAL_STAIR",
+    "label": "Animal Stairs"
+  },
+  {
+    "name": "ANIMAL_VITAMIN",
+    "label": "Animal Vitamin"
+  },
+  {
+    "name": "ANIMAL_WATER_DISPENSER",
+    "label": "Animal Water Dispenser"
+  },
+  {
+    "name": "ANTENNA",
+    "label": "Antenna"
+  },
+  {
+    "name": "ANTENNA_COMPONENT",
+    "label": "Antenna Component"
+  },
+  {
+    "name": "ANTIQUES",
+    "label": "ANTIQUES"
+  },
+  {
+    "name": "ANTI_FATIGUE_FLOOR_MAT",
+    "label": "Anti-Fatigue Floor Mat"
+  },
+  {
+    "name": "APPAREL",
+    "label": "Apparel"
+  },
+  {
+    "name": "APPAREL_BELT",
+    "label": "Apparel Belt"
+  },
+  {
+    "name": "APPAREL_GLOVES",
+    "label": "Apparel Glove"
+  },
+  {
+    "name": "APPAREL_HEAD_NECK_COVERING",
+    "label": "Head & Neck Covering"
+  },
+  {
+    "name": "APPAREL_PIN",
+    "label": "Apparel Pin"
+  },
+  {
+    "name": "APPENDAGE_WARMER",
+    "label": "Hand & Foot Warmer"
+  },
+  {
+    "name": "APPLIANCE_ACCESSORY",
+    "label": "APPLIANCE_ACCESSORY"
+  },
+  {
+    "name": "APRON",
+    "label": "Apron Smock"
+  },
+  {
+    "name": "AQUARIUM_POND_WATER_TREATMENT",
+    "label": "Aquarium & Pond Water Treatment"
+  },
+  {
+    "name": "AREA_DEODORIZER",
+    "label": "Area Deodoriser"
+  },
+  {
+    "name": "ARM_SLEEVE",
+    "label": "Arm Sleeve"
+  },
+  {
+    "name": "AROMA_DIFFUSER",
+    "label": "Aroma Diffuser"
+  },
+  {
+    "name": "ART",
+    "label": "ART"
+  },
+  {
+    "name": "ARTIFICIAL_PLANT",
+    "label": "Artificial Plant"
+  },
+  {
+    "name": "ARTIFICIAL_SNOW",
+    "label": "Artificial Snow"
+  },
+  {
+    "name": "ARTIFICIAL_TREE",
+    "label": "Artificial Tree"
+  },
+  {
+    "name": "ART_AND_CRAFT_SUPPLY",
+    "label": "Art and Craft Supplies"
+  },
+  {
+    "name": "ART_CRAFT_KIT",
+    "label": "Art & Craft Kit"
+  },
+  {
+    "name": "ART_EASEL",
+    "label": "Art Easel"
+  },
+  {
+    "name": "ART_MEDIA_PAPER",
+    "label": "Art Media Paper"
+  },
+  {
+    "name": "ART_SUPPLIES",
+    "label": "ART_SUPPLIES"
+  },
+  {
+    "name": "ASHTRAY",
+    "label": "Ashtray"
+  },
+  {
+    "name": "ASTRINGENT_SUBSTANCE",
+    "label": "Astringent Substance"
+  },
+  {
+    "name": "AUDIO_CD_PLAYER",
+    "label": "Audio CD Player"
+  },
+  {
+    "name": "AUDIO_DEVICE",
+    "label": "AUDIO_DEVICE"
+  },
+  {
+    "name": "AUDIO_MIDI_CONTROLLER",
+    "label": "Audio & MIDI Controller"
+  },
+  {
+    "name": "AUDIO_MIDI_INTERFACE",
+    "label": "Audio & MIDI Interface"
+  },
+  {
+    "name": "AUDIO_MIXING_CONSOLE",
+    "label": "Audio Mixing Console"
+  },
+  {
+    "name": "AUDIO_OR_VIDEO",
+    "label": "AUDIO_OR_VIDEO"
+  },
+  {
+    "name": "AUDIO_TRANSFORMER",
+    "label": "Audio Transformer"
+  },
+  {
+    "name": "AUTOCLAVE",
+    "label": "Autoclave"
+  },
+  {
+    "name": "AUTOMOTIVE_HELMET",
+    "label": "Automotive Helmet"
+  },
+  {
+    "name": "AUTO_ACCESSORY",
+    "label": "AUTO_ACCESSORY"
+  },
+  {
+    "name": "AUTO_BATTERY",
+    "label": "Auto Battery"
+  },
+  {
+    "name": "AUTO_CHEMICAL",
+    "label": "AUTO_CHEMICAL"
+  },
+  {
+    "name": "AUTO_KEY_SHELL",
+    "label": "Auto Key Shell"
+  },
+  {
+    "name": "AUTO_OIL",
+    "label": "Motor Oil"
+  },
+  {
+    "name": "AUTO_PART",
+    "label": "AUTO_PART"
+  },
+  {
+    "name": "AV_FURNITURE",
+    "label": "AV_FURNITURE"
+  },
+  {
+    "name": "AV_RECEIVER",
+    "label": "AV Receiver"
+  },
+  {
+    "name": "AV_SIGNAL_SWITCH",
+    "label": "AV Signal Switch"
+  },
+  {
+    "name": "AWNING",
+    "label": "Awning"
+  },
+  {
+    "name": "AXE",
+    "label": "Axe"
+  },
+  {
+    "name": "BABY_BATHTUB",
+    "label": "Baby Bath"
+  },
+  {
+    "name": "BABY_BOTTLE",
+    "label": "Baby Bottle"
+  },
+  {
+    "name": "BABY_CARRIER",
+    "label": "Baby Carrier"
+  },
+  {
+    "name": "BABY_COSTUME",
+    "label": "BABY_COSTUME"
+  },
+  {
+    "name": "BABY_FOOD",
+    "label": "BABY_FOOD"
+  },
+  {
+    "name": "BABY_FORMULA",
+    "label": "Baby Formula"
+  },
+  {
+    "name": "BABY_JUMPER_WALKER",
+    "label": "Baby Jumper & Walker"
+  },
+  {
+    "name": "BABY_PRODUCT",
+    "label": "BABY_PRODUCT"
+  },
+  {
+    "name": "BABY_RATTLE",
+    "label": "Baby Rattle"
+  },
+  {
+    "name": "BABY_SEAT",
+    "label": "Baby Seat"
+  },
+  {
+    "name": "BACKDROP",
+    "label": "Backdrop"
+  },
+  {
+    "name": "BACKPACK",
+    "label": "Backpack"
+  },
+  {
+    "name": "BADGE_HOLDER",
+    "label": "Badge Holder"
+  },
+  {
+    "name": "BAG",
+    "label": "BAG"
+  },
+  {
+    "name": "BAKEWARE",
+    "label": "BAKEWARE"
+  },
+  {
+    "name": "BAKEWARE_SET",
+    "label": "Bakeware Set"
+  },
+  {
+    "name": "BAKING_CHOCOLATE",
+    "label": "Baking Chocolate"
+  },
+  {
+    "name": "BAKING_CUP",
+    "label": "Baking Cup"
+  },
+  {
+    "name": "BAKING_MAT",
+    "label": "Baking Mat"
+  },
+  {
+    "name": "BAKING_MIX",
+    "label": "Baking Mix"
+  },
+  {
+    "name": "BAKING_PAN",
+    "label": "Baking Pan"
+  },
+  {
+    "name": "BAKING_PAPER",
+    "label": "Baking Paper"
+  },
+  {
+    "name": "BAKING_STONE",
+    "label": "Baking Stone"
+  },
+  {
+    "name": "BALANCE_BOARD",
+    "label": "Balance Board"
+  },
+  {
+    "name": "BALLOON",
+    "label": "Balloon"
+  },
+  {
+    "name": "BANNER",
+    "label": "Banner"
+  },
+  {
+    "name": "BARBECUE_GRILL",
+    "label": "Barbecue Grill"
+  },
+  {
+    "name": "BARBECUE_TOOL_SET",
+    "label": "Barbecue Tool Set"
+  },
+  {
+    "name": "BARBELL",
+    "label": "Barbell"
+  },
+  {
+    "name": "BAROMETER",
+    "label": "Barometer"
+  },
+  {
+    "name": "BAR_CODE_READER",
+    "label": "Bar Code Reader"
+  },
+  {
+    "name": "BAR_TOOL_SET",
+    "label": "Bar Tool Set"
+  },
+  {
+    "name": "BASE_LAYER_APPAREL_SET",
+    "label": "base layer set"
+  },
+  {
+    "name": "BASKET",
+    "label": "Basket"
+  },
+  {
+    "name": "BASKETBALL_HOOP",
+    "label": "Basketball Hoop"
+  },
+  {
+    "name": "BASSINET",
+    "label": "Bassinet"
+  },
+  {
+    "name": "BATHING_SPONGE",
+    "label": "Bathing Sponge"
+  },
+  {
+    "name": "BATHROOM_CONTAINER_SET",
+    "label": "Bathroom Container Set"
+  },
+  {
+    "name": "BATHTUB",
+    "label": "Bath"
+  },
+  {
+    "name": "BATHTUB_SHOWER_MAT",
+    "label": "Bath & Shower Mat"
+  },
+  {
+    "name": "BATHTUB_SHOWER_TRIM_KIT",
+    "label": "Bath & Shower Trim Kit"
+  },
+  {
+    "name": "BATHWATER_ADDITIVE",
+    "label": "Bathwater Additive"
+  },
+  {
+    "name": "BATH_PILLOW",
+    "label": "Bath Pillow"
+  },
+  {
+    "name": "BATH_SAFETY_SEATING",
+    "label": "Bath Safety Seating"
+  },
+  {
+    "name": "BATH_TOY",
+    "label": "Bath Toy"
+  },
+  {
+    "name": "BATTERY",
+    "label": "Battery"
+  },
+  {
+    "name": "BATTERY_CHARGER",
+    "label": "Battery Charger"
+  },
+  {
+    "name": "BATTERY_CHARGER_OR_TESTER",
+    "label": "BATTERY_CHARGER_OR_TESTER"
+  },
+  {
+    "name": "BEAKER",
+    "label": "Beaker"
+  },
+  {
+    "name": "BEAN_BAG_CHAIR",
+    "label": "Bean Bag Chair"
+  },
+  {
+    "name": "BEARINGS_AND_BUSHINGS",
+    "label": "BEARINGS_AND_BUSHINGS"
+  },
+  {
+    "name": "BEAUTY",
+    "label": "BEAUTY"
+  },
+  {
+    "name": "BED",
+    "label": "Complete Bed"
+  },
+  {
+    "name": "BEDDING_SET",
+    "label": "Bedding Set"
+  },
+  {
+    "name": "BED_CURTAIN",
+    "label": "Bed Curtain"
+  },
+  {
+    "name": "BED_FRAME",
+    "label": "Bed Frame"
+  },
+  {
+    "name": "BED_LINEN",
+    "label": "Bed Linen"
+  },
+  {
+    "name": "BED_LINEN_SET",
+    "label": "Bed Linen Set"
+  },
+  {
+    "name": "BED_RAIL",
+    "label": "Bed Rail"
+  },
+  {
+    "name": "BED_SKIRT",
+    "label": "Bed Skirt"
+  },
+  {
+    "name": "BED_SLATS",
+    "label": "Bed Slat"
+  },
+  {
+    "name": "BEER",
+    "label": "Beer"
+  },
+  {
+    "name": "BELTS",
+    "label": "BELTS"
+  },
+  {
+    "name": "BENCH",
+    "label": "Bench Seat"
+  },
+  {
+    "name": "BEVERAGE",
+    "label": "Beverage"
+  },
+  {
+    "name": "BEVERAGE_INSULATOR",
+    "label": "Beverage Insulator"
+  },
+  {
+    "name": "BICYCLE",
+    "label": "Bicycle"
+  },
+  {
+    "name": "BICYCLE_BASKET",
+    "label": "Bicycle Basket"
+  },
+  {
+    "name": "BICYCLE_BELL",
+    "label": "Bicycle Warning Signal"
+  },
+  {
+    "name": "BICYCLE_BRAKE_PAD",
+    "label": "Bicycle Brake Pad"
+  },
+  {
+    "name": "BICYCLE_CARGO_RACK",
+    "label": "Bicycle Cargo Rack"
+  },
+  {
+    "name": "BICYCLE_DERAILLEUR",
+    "label": "Bicycle Derailleur"
+  },
+  {
+    "name": "BICYCLE_LIGHT",
+    "label": "Bicycle Light"
+  },
+  {
+    "name": "BICYCLE_PEDAL",
+    "label": "Bicycle Pedal"
+  },
+  {
+    "name": "BICYCLE_SEAT",
+    "label": "Bicycle Seat"
+  },
+  {
+    "name": "BICYCLE_SEATPOST",
+    "label": "Bicycle Seatpost"
+  },
+  {
+    "name": "BICYCLE_TRAILER",
+    "label": "Bicycle Trailer"
+  },
+  {
+    "name": "BICYCLE_TRAINER",
+    "label": "Bicycle Trainer"
+  },
+  {
+    "name": "BINDER_DIVIDER",
+    "label": "Binder Divider"
+  },
+  {
+    "name": "BINOCULAR",
+    "label": "Binocular"
+  },
+  {
+    "name": "BIOLOGICAL_MATERIAL_HOMOGENIZER",
+    "label": "Biological Material Homogeniser"
+  },
+  {
+    "name": "BIOMETRIC_MONITOR",
+    "label": "Biometric Monitor"
+  },
+  {
+    "name": "BLADED_FOOD_PEELER",
+    "label": "Bladed Food Peeler"
+  },
+  {
+    "name": "BLANKET",
+    "label": "Blanket"
+  },
+  {
+    "name": "BLANK_BOOK",
+    "label": "Blank Book & Notepad"
+  },
+  {
+    "name": "BLANK_MEDIA",
+    "label": "BLANK_MEDIA"
+  },
+  {
+    "name": "BLANK_MEDIA_FOR_CAMERAS",
+    "label": "BLANK_MEDIA_FOR_CAMERAS"
+  },
+  {
+    "name": "BLANK_STORAGE_MEDIA",
+    "label": "Blank Storage Media"
+  },
+  {
+    "name": "BLAZER",
+    "label": "Blazer"
+  },
+  {
+    "name": "BLEACH",
+    "label": "Bleach"
+  },
+  {
+    "name": "BLOOD_OXYGEN_MONITOR",
+    "label": "Blood Oxygen Monitor"
+  },
+  {
+    "name": "BLOOD_PRESSURE_MONITOR",
+    "label": "Blood Pressure Monitor"
+  },
+  {
+    "name": "BLOUSE",
+    "label": "BLOUSE"
+  },
+  {
+    "name": "BLOWER_INFLATED_DECORATION",
+    "label": "Inflatable Outdoor Decoration"
+  },
+  {
+    "name": "BLOWTORCH",
+    "label": "Blowtorch"
+  },
+  {
+    "name": "BLUE_LIGHT_BLOCKING_EYEGLASSES",
+    "label": "Blue Light Blocking Eyeglasses"
+  },
+  {
+    "name": "BOARD_GAME",
+    "label": "Board Game"
+  },
+  {
+    "name": "BODYSTOCKING",
+    "label": "BODYSTOCKING"
+  },
+  {
+    "name": "BODY_CARE_PRODUCT",
+    "label": "BODY_CARE_PRODUCT"
+  },
+  {
+    "name": "BODY_DEODORANT",
+    "label": "Body Deodorant"
+  },
+  {
+    "name": "BODY_LUBRICANT",
+    "label": "Body Lubricant"
+  },
+  {
+    "name": "BODY_PAINT",
+    "label": "Body Paint"
+  },
+  {
+    "name": "BODY_POSITIONER",
+    "label": "Body Positioner"
+  },
+  {
+    "name": "BODY_STRAP",
+    "label": "Body Strap"
+  },
+  {
+    "name": "BOLTS",
+    "label": "Hardware Bolt"
+  },
+  {
+    "name": "BONDING_ADHESIVES",
+    "label": "Bonding Adhesive"
+  },
+  {
+    "name": "BOOKEND",
+    "label": "Bookend"
+  },
+  {
+    "name": "BOOKMARK",
+    "label": "Bookmark"
+  },
+  {
+    "name": "BOOKSHELF_OR_MICRO_STEREO_SYS",
+    "label": "BOOKSHELF_OR_MICRO_STEREO_SYS"
+  },
+  {
+    "name": "BOOK_COVER",
+    "label": "Book Cover"
+  },
+  {
+    "name": "BOOK_DOCUMENT_STAND",
+    "label": "Book & Document Stand"
+  },
+  {
+    "name": "BOOMBOX",
+    "label": "BOOMBOX"
+  },
+  {
+    "name": "BOOT",
+    "label": "Boots"
+  },
+  {
+    "name": "BOTTLE",
+    "label": "Bottle"
+  },
+  {
+    "name": "BOTTLE_NIPPLE",
+    "label": "Bottle Teat"
+  },
+  {
+    "name": "BOTTLE_OPENER",
+    "label": "Bottle Opener"
+  },
+  {
+    "name": "BOTTLE_RACK",
+    "label": "Bottle Rack"
+  },
+  {
+    "name": "BOTTLE_STOPPER",
+    "label": "Bottle Stopper"
+  },
+  {
+    "name": "BOXING_GLOVE",
+    "label": "Boxing Glove"
+  },
+  {
+    "name": "BOX_SPRING",
+    "label": "Box Spring"
+  },
+  {
+    "name": "BRA",
+    "label": "Bra"
+  },
+  {
+    "name": "BRACELET",
+    "label": "Bracelet"
+  },
+  {
+    "name": "BRAKE_KIT",
+    "label": "Brake Kit"
+  },
+  {
+    "name": "BRAKE_ROTOR",
+    "label": "Brake Rotor"
+  },
+  {
+    "name": "BRASS_AND_WOODWIND_INSTRUMENTS",
+    "label": "Wind Instrument"
+  },
+  {
+    "name": "BRA_UNDERWEAR_SET",
+    "label": "Bra & Underwear Set"
+  },
+  {
+    "name": "BREAD",
+    "label": "Bread"
+  },
+  {
+    "name": "BREAD_BAKERY_PRODUCT",
+    "label": "BREAD_BAKERY_PRODUCT"
+  },
+  {
+    "name": "BREAD_MAKING_MACHINE",
+    "label": "Bread-Making Machine"
+  },
+  {
+    "name": "BREAKFAST_CEREAL",
+    "label": "Breakfast Cereal"
+  },
+  {
+    "name": "BREAST_PETAL",
+    "label": "Breast Petal"
+  },
+  {
+    "name": "BREAST_PUMP",
+    "label": "Breast Pump"
+  },
+  {
+    "name": "BROOM",
+    "label": "Broom"
+  },
+  {
+    "name": "BUBBLE_MAKER",
+    "label": "Bubble Maker"
+  },
+  {
+    "name": "BUCKET",
+    "label": "Bucket"
+  },
+  {
+    "name": "BUCKLE",
+    "label": "Buckle"
+  },
+  {
+    "name": "BUILDING_MATERIAL",
+    "label": "BUILDING_MATERIAL"
+  },
+  {
+    "name": "BULLION",
+    "label": "Bullion"
+  },
+  {
+    "name": "BUNGEE_CORD",
+    "label": "Bungee Cord"
+  },
+  {
+    "name": "BUNSEN_BURNER",
+    "label": "Bunsen Burner"
+  },
+  {
+    "name": "BURET",
+    "label": "Buret"
+  },
+  {
+    "name": "BURS_AND_ROTARY_FILES",
+    "label": "Burr"
+  },
+  {
+    "name": "BUTTER_DISH",
+    "label": "Butter Dish"
+  },
+  {
+    "name": "CABINET",
+    "label": "Cabinet"
+  },
+  {
+    "name": "CABLE",
+    "label": "CABLE"
+  },
+  {
+    "name": "CABLE_ASSEMBLY",
+    "label": "Cable Assembly"
+  },
+  {
+    "name": "CABLE_OR_ADAPTER",
+    "label": "CABLE_OR_ADAPTER"
+  },
+  {
+    "name": "CABLE_TIE",
+    "label": "Cable Tie"
+  },
+  {
+    "name": "CACHE_MEMORY",
+    "label": "CACHE_MEMORY"
+  },
+  {
+    "name": "CADDY",
+    "label": "Caddy"
+  },
+  {
+    "name": "CAKE",
+    "label": "Cake"
+  },
+  {
+    "name": "CAKE_TOPPER",
+    "label": "Cake Topper"
+  },
+  {
+    "name": "CALCULATOR",
+    "label": "Calculator"
+  },
+  {
+    "name": "CALENDAR",
+    "label": "Calendar"
+  },
+  {
+    "name": "CALISTHENICS_STAND",
+    "label": "Calisthenics Stand"
+  },
+  {
+    "name": "CAMCORDER",
+    "label": "Camcorder"
+  },
+  {
+    "name": "CAMERA",
+    "label": "Camera"
+  },
+  {
+    "name": "CAMERA_BAGS_AND_CASES",
+    "label": "CAMERA_BAGS_AND_CASES"
+  },
+  {
+    "name": "CAMERA_CLEANER",
+    "label": "Camera Cleaner"
+  },
+  {
+    "name": "CAMERA_CONTINUOUS_LIGHT",
+    "label": "Continuous Light"
+  },
+  {
+    "name": "CAMERA_DIGITAL",
+    "label": "Digital Camera"
+  },
+  {
+    "name": "CAMERA_ENCLOSURE",
+    "label": "Camera Enclosure"
+  },
+  {
+    "name": "CAMERA_FILM",
+    "label": "Film Camera"
+  },
+  {
+    "name": "CAMERA_FLASH",
+    "label": "Camera Flash"
+  },
+  {
+    "name": "CAMERA_LENSES",
+    "label": "Camera Lens"
+  },
+  {
+    "name": "CAMERA_LENS_ACCESSORY",
+    "label": "CAMERA_LENS_ACCESSORY"
+  },
+  {
+    "name": "CAMERA_LENS_FILTERS",
+    "label": "Optical Lens Filter"
+  },
+  {
+    "name": "CAMERA_OTHER_ACCESSORIES",
+    "label": "CAMERA_OTHER_ACCESSORIES"
+  },
+  {
+    "name": "CAMERA_POWER_SUPPLY",
+    "label": "CAMERA_POWER_SUPPLY"
+  },
+  {
+    "name": "CAMERA_STAGE_LIGHTING_MODIFIER",
+    "label": "Camera & Stage Lighting Modifier"
+  },
+  {
+    "name": "CAMERA_SUPPORT",
+    "label": "Camera Support"
+  },
+  {
+    "name": "CAMERA_TRIPOD",
+    "label": "Camera Tripod"
+  },
+  {
+    "name": "CAMISOLE",
+    "label": "CAMISOLE"
+  },
+  {
+    "name": "CAMPING_EQUIPMENT",
+    "label": "CAMPING_EQUIPMENT"
+  },
+  {
+    "name": "CANDLE",
+    "label": "Candle"
+  },
+  {
+    "name": "CANDLE_HOLDER",
+    "label": "Candle Holder"
+  },
+  {
+    "name": "CANDY",
+    "label": "Sugar Confection"
+  },
+  {
+    "name": "CANNED_AIR",
+    "label": "Canned Air"
+  },
+  {
+    "name": "CAN_OPENER",
+    "label": "Can Opener"
+  },
+  {
+    "name": "CAPACITOR",
+    "label": "Capacitor"
+  },
+  {
+    "name": "CAPO",
+    "label": "Capo"
+  },
+  {
+    "name": "CARABINER",
+    "label": "Carabiner"
+  },
+  {
+    "name": "CARBURETOR",
+    "label": "Carburetor"
+  },
+  {
+    "name": "CARD_DOCUMENT_SLEEVE",
+    "label": "Card Document Sleeve"
+  },
+  {
+    "name": "CARD_STOCK",
+    "label": "Card Stock"
+  },
+  {
+    "name": "CARGO_NET",
+    "label": "Cargo Net"
+  },
+  {
+    "name": "CARGO_STRAP",
+    "label": "Cargo Strap"
+  },
+  {
+    "name": "CARPETING",
+    "label": "Carpeting"
+  },
+  {
+    "name": "CARPET_UPHOLSTERY_CLEANING_MACHINE",
+    "label": "Carpet & Upholstery Cleaning Machine"
+  },
+  {
+    "name": "CARRIER_BAG_CASE",
+    "label": "Carrier Bag & Case"
+  },
+  {
+    "name": "CARRYING_CASE_OR_BAG",
+    "label": "CARRYING_CASE_OR_BAG"
+  },
+  {
+    "name": "CARTRIDGE_ROLLS",
+    "label": "Cartridge Rolls"
+  },
+  {
+    "name": "CAR_ALARM",
+    "label": "Car Alarm"
+  },
+  {
+    "name": "CAR_AUDIO_OR_THEATER",
+    "label": "CAR_AUDIO_OR_THEATER"
+  },
+  {
+    "name": "CAR_ELECTRONICS",
+    "label": "CAR_ELECTRONICS"
+  },
+  {
+    "name": "CAR_PARTS_AND_ACCESSORIES",
+    "label": "CAR_PARTS_AND_ACCESSORIES"
+  },
+  {
+    "name": "CASSEROLES",
+    "label": "Casserole"
+  },
+  {
+    "name": "CASSETTE_PLAYER_OR_RECORDER",
+    "label": "CASSETTE_PLAYER_OR_RECORDER"
+  },
+  {
+    "name": "CAULKS",
+    "label": "Caulk"
+  },
+  {
+    "name": "CD_PLAYER_OR_RECORDER",
+    "label": "CD_PLAYER_OR_RECORDER"
+  },
+  {
+    "name": "CELLULAR_PHONE",
+    "label": "Mobile Phone"
+  },
+  {
+    "name": "CELLULAR_PHONE_CASE",
+    "label": "Mobile Phone Case"
+  },
+  {
+    "name": "CELL_PHONE_GRIP",
+    "label": "Mobile Phone Grip"
+  },
+  {
+    "name": "CELL_PHONE_HOLSTER",
+    "label": "Mobile Phone Holster"
+  },
+  {
+    "name": "CENTRIFUGE",
+    "label": "Centrifuge"
+  },
+  {
+    "name": "CERAMICS",
+    "label": "CERAMICS"
+  },
+  {
+    "name": "CERAMIC_BALLS",
+    "label": "CERAMIC_BALLS"
+  },
+  {
+    "name": "CERAMIC_TUBING",
+    "label": "CERAMIC_TUBING"
+  },
+  {
+    "name": "CEREAL",
+    "label": "Cereal"
+  },
+  {
+    "name": "CEREAL_AND_GRAIN_AND_PULSE_MINIMALLY_PROCESSED",
+    "label": "CEREAL_AND_GRAIN_AND_PULSE_MINIMALLY_PROCESSED"
+  },
+  {
+    "name": "CEREAL_AND_GRAIN_AND_PULSE_PROCESSED",
+    "label": "CEREAL_AND_GRAIN_AND_PULSE_PROCESSED"
+  },
+  {
+    "name": "CEREAL_AND_GRAIN_AND_PULSE_PRODUCT",
+    "label": "CEREAL_AND_GRAIN_AND_PULSE_PRODUCT"
+  },
+  {
+    "name": "CEREAL_BAR",
+    "label": "CEREAL_BAR"
+  },
+  {
+    "name": "CE_ACCESSORY",
+    "label": "CE_ACCESSORY"
+  },
+  {
+    "name": "CE_CARRYING_CASE_OR_BAG",
+    "label": "CE_CARRYING_CASE_OR_BAG"
+  },
+  {
+    "name": "CHAFING_DISHES",
+    "label": "Chafing Dish"
+  },
+  {
+    "name": "CHAINSAW",
+    "label": "Chainsaw"
+  },
+  {
+    "name": "CHAINSAW_CHAIN",
+    "label": "Chainsaw Chain"
+  },
+  {
+    "name": "CHAIR",
+    "label": "Chair"
+  },
+  {
+    "name": "CHAIR_MAT",
+    "label": "Chair Mat"
+  },
+  {
+    "name": "CHANCHANKO",
+    "label": "CHANCHANKO"
+  },
+  {
+    "name": "CHANGING_PAD",
+    "label": "Changing Pad"
+  },
+  {
+    "name": "CHANGING_PAD_COVER",
+    "label": "Changing Pad Cover"
+  },
+  {
+    "name": "CHANGING_TABLE",
+    "label": "Changing Table"
+  },
+  {
+    "name": "CHARGING_ADAPTER",
+    "label": "Charging Adapter"
+  },
+  {
+    "name": "CHARM",
+    "label": "Charm"
+  },
+  {
+    "name": "CHEMICAL_TEST_STRIP",
+    "label": "Chemical Test Strip"
+  },
+  {
+    "name": "CHEWING_GUM",
+    "label": "Chewing Gum"
+  },
+  {
+    "name": "CHILDRENS_COSTUME",
+    "label": "CHILDRENS_COSTUME"
+  },
+  {
+    "name": "CHIMNEY_CAP",
+    "label": "Chimney Cap"
+  },
+  {
+    "name": "CHISEL",
+    "label": "Chisel"
+  },
+  {
+    "name": "CHOCOLATE_CANDY",
+    "label": "Chocolate"
+  },
+  {
+    "name": "CHOLI",
+    "label": "Choli"
+  },
+  {
+    "name": "CHOPSTICK",
+    "label": "Chopstick"
+  },
+  {
+    "name": "CIGARETTE_CASE",
+    "label": "cigarette case"
+  },
+  {
+    "name": "CIRCUIT_BREAKER",
+    "label": "circuit breaker"
+  },
+  {
+    "name": "CISTERN",
+    "label": "Cistern"
+  },
+  {
+    "name": "CLEANING_AGENT",
+    "label": "Cleaning Agent"
+  },
+  {
+    "name": "CLEANING_BRUSH",
+    "label": "Cleaning Brush"
+  },
+  {
+    "name": "CLEANING_OR_REPAIR_KIT",
+    "label": "CLEANING_OR_REPAIR_KIT"
+  },
+  {
+    "name": "CLEANING_PRODUCT",
+    "label": "CLEANING_PRODUCT"
+  },
+  {
+    "name": "CLIMBING_PLANT_SUPPORT_STRUCTURE",
+    "label": "Climbing Plant Support Structure"
+  },
+  {
+    "name": "CLIPBOARD",
+    "label": "Clipboard"
+  },
+  {
+    "name": "CLOCK",
+    "label": "Clock"
+  },
+  {
+    "name": "CLOCK_GENERATOR",
+    "label": "Clock Generator"
+  },
+  {
+    "name": "CLOCK_INTEGRATED_CIRCUIT",
+    "label": "Clock Integrated Circuit"
+  },
+  {
+    "name": "CLOCK_OR_CLOCK_RADIO",
+    "label": "CLOCK_OR_CLOCK_RADIO"
+  },
+  {
+    "name": "CLOTHES_HANGER",
+    "label": "Clothes Hanger"
+  },
+  {
+    "name": "CLOTHES_PIN",
+    "label": "Clothes Pin"
+  },
+  {
+    "name": "CLOTHES_RACK",
+    "label": "Clothes Rack"
+  },
+  {
+    "name": "CLOTH_NAPKIN",
+    "label": "Cloth Napkin"
+  },
+  {
+    "name": "CLOTH_WRAP",
+    "label": "CLOTH_WRAP"
+  },
+  {
+    "name": "COAT",
+    "label": "Coat"
+  },
+  {
+    "name": "COCKTAIL_MIX",
+    "label": "Cocktail Mix"
+  },
+  {
+    "name": "COCKTAIL_SHAKER",
+    "label": "cocktail shaker"
+  },
+  {
+    "name": "COFFEE",
+    "label": "Coffee"
+  },
+  {
+    "name": "COFFEE_FILTER",
+    "label": "Coffee Filter"
+  },
+  {
+    "name": "COFFEE_MAKER",
+    "label": "Coffee Maker"
+  },
+  {
+    "name": "COINS",
+    "label": "COINS"
+  },
+  {
+    "name": "COIN_PURSE_POUCH",
+    "label": "Coin Purse & Pouch"
+  },
+  {
+    "name": "COLLAPSIBLE_PLAY_STRUCTURE",
+    "label": "Collapsible Play Structure"
+  },
+  {
+    "name": "COLLECTIBLES",
+    "label": "COLLECTIBLES"
+  },
+  {
+    "name": "COLLECTIBLE_CARD",
+    "label": "Collectible Card"
+  },
+  {
+    "name": "COLLECTIBLE_COINS",
+    "label": "Collectible Coin"
+  },
+  {
+    "name": "COMBINED_AV_DEVICE",
+    "label": "COMBINED_AV_DEVICE"
+  },
+  {
+    "name": "COMMUNICATIONS_INTEGRATED_CIRCUIT",
+    "label": "Communications Integrated Circuit"
+  },
+  {
+    "name": "COMPOST_BIN",
+    "label": "Compost Bin"
+  },
+  {
+    "name": "COMPRESSED_AIR_FILTER",
+    "label": "Compressed Air Filter"
+  },
+  {
+    "name": "COMPRESSION_SPRINGS",
+    "label": "Compression Spring"
+  },
+  {
+    "name": "COMPUTER",
+    "label": "COMPUTER"
+  },
+  {
+    "name": "COMPUTER_ADD_ON",
+    "label": "COMPUTER_ADD_ON"
+  },
+  {
+    "name": "COMPUTER_AUDIO_INPUT",
+    "label": "COMPUTER_AUDIO_INPUT"
+  },
+  {
+    "name": "COMPUTER_CHASSIS",
+    "label": "Computer Chassis"
+  },
+  {
+    "name": "COMPUTER_COMPONENT",
+    "label": "COMPUTER_COMPONENT"
+  },
+  {
+    "name": "COMPUTER_COOLING_DEVICE",
+    "label": "COMPUTER_COOLING_DEVICE"
+  },
+  {
+    "name": "COMPUTER_DRIVE_OR_STORAGE",
+    "label": "Computer Storage Drive"
+  },
+  {
+    "name": "COMPUTER_INPUT_DEVICE",
+    "label": "COMPUTER_INPUT_DEVICE"
+  },
+  {
+    "name": "COMPUTER_INPUT_DEVICE_ACCESSORY",
+    "label": "COMPUTER_INPUT_DEVICE_ACCESSORY"
+  },
+  {
+    "name": "COMPUTER_PROCESSOR",
+    "label": "Computer Processor"
+  },
+  {
+    "name": "COMPUTER_SPEAKER",
+    "label": "COMPUTER_SPEAKER"
+  },
+  {
+    "name": "COMPUTER_VIDEO_GAME_CONTOLLER",
+    "label": "COMPUTER_VIDEO_GAME_CONTOLLER"
+  },
+  {
+    "name": "CONCENTRATED_FLAVORING_SUBSTANCE",
+    "label": "Food Extract"
+  },
+  {
+    "name": "CONDIMENT",
+    "label": "Condiment"
+  },
+  {
+    "name": "CONDITIONER",
+    "label": "Conditioner"
+  },
+  {
+    "name": "CONDOM",
+    "label": "Condom"
+  },
+  {
+    "name": "CONFETTI",
+    "label": "Confetti"
+  },
+  {
+    "name": "CONSOLE_VIDEO_GAMES",
+    "label": "CONSOLE_VIDEO_GAMES"
+  },
+  {
+    "name": "CONSUMER_ELECTRONICS",
+    "label": "CONSUMER_ELECTRONICS"
+  },
+  {
+    "name": "CONSUMER_ELECTRONICS_PARTS",
+    "label": "CONSUMER_ELECTRONICS_PARTS"
+  },
+  {
+    "name": "CONTACT_LENSES",
+    "label": "Contact Lenses"
+  },
+  {
+    "name": "CONTACT_LENS_CLEANER",
+    "label": "Contact Lens Cleaner"
+  },
+  {
+    "name": "CONTAINER_LID",
+    "label": "Container Lid"
+  },
+  {
+    "name": "CONTROLLER",
+    "label": "Controller"
+  },
+  {
+    "name": "COOKIE",
+    "label": "Cookie"
+  },
+  {
+    "name": "COOKIE_CUTTER",
+    "label": "Cookie Cutter"
+  },
+  {
+    "name": "COOKING_CONTAINER",
+    "label": "Cooking Container"
+  },
+  {
+    "name": "COOKING_OVEN",
+    "label": "Cooking Oven"
+  },
+  {
+    "name": "COOKING_POT",
+    "label": "Cooking Pot"
+  },
+  {
+    "name": "COOKTOP",
+    "label": "Cooktop"
+  },
+  {
+    "name": "COOKWARE",
+    "label": "COOKWARE"
+  },
+  {
+    "name": "COOKWARE_SET",
+    "label": "Cookware Set"
+  },
+  {
+    "name": "COORDINATED_OUTFIT",
+    "label": "Clothing Set"
+  },
+  {
+    "name": "COPIER",
+    "label": "Copier"
+  },
+  {
+    "name": "CORD_MANAGEMENT_COVER",
+    "label": "Cord Management Cover"
+  },
+  {
+    "name": "CORD_ROPE",
+    "label": "Cord & Rope"
+  },
+  {
+    "name": "CORE_PIT_REMOVER",
+    "label": "Core Pit Remover"
+  },
+  {
+    "name": "CORRECTIVE_EYEGLASSES",
+    "label": "Corrective Eyeglasses"
+  },
+  {
+    "name": "CORSET",
+    "label": "Corset"
+  },
+  {
+    "name": "COSMETIC_BRUSH",
+    "label": "Makeup Brush"
+  },
+  {
+    "name": "COSMETIC_CASE",
+    "label": "Cosmetic Case"
+  },
+  {
+    "name": "COSMETIC_NAIL_SET",
+    "label": "Cosmetic Nail Set"
+  },
+  {
+    "name": "COSMETIC_POWDER",
+    "label": "Cosmetic Powder"
+  },
+  {
+    "name": "COSMETIC_SPONGE",
+    "label": "Cosmetic Sponge"
+  },
+  {
+    "name": "COSTUME",
+    "label": "COSTUME"
+  },
+  {
+    "name": "COSTUME_EYEWEAR",
+    "label": "Costume Eyewear"
+  },
+  {
+    "name": "COSTUME_HEADWEAR",
+    "label": "Costume Headwear"
+  },
+  {
+    "name": "COSTUME_MASK",
+    "label": "Costume Mask"
+  },
+  {
+    "name": "COSTUME_OUTFIT",
+    "label": "Costume Outfit"
+  },
+  {
+    "name": "COTTON_PAD",
+    "label": "Cotton Pad"
+  },
+  {
+    "name": "COUNTERSINKS",
+    "label": "Countersinks"
+  },
+  {
+    "name": "COUNTERTOP_BURNER",
+    "label": "Portable Hob"
+  },
+  {
+    "name": "COUNTERTOP_FOOD_STEAMER",
+    "label": "Food Steamer"
+  },
+  {
+    "name": "COUNTERTOP_GRIDDLE_APPLIANCE",
+    "label": "Griddle Appliance"
+  },
+  {
+    "name": "COUNTERTOP_OVEN",
+    "label": "Portable Oven"
+  },
+  {
+    "name": "COUPLINGS_COLLARS_AND_UNIVERSAL_JOINTS",
+    "label": "COUPLINGS_COLLARS_AND_UNIVERSAL_JOINTS"
+  },
+  {
+    "name": "CRACKER",
+    "label": "Cracker"
+  },
+  {
+    "name": "CRAFTS",
+    "label": "CRAFTS"
+  },
+  {
+    "name": "CRAFT_BEAD",
+    "label": "Craft Bead"
+  },
+  {
+    "name": "CRAFT_BOW_MAKER",
+    "label": "Craft Bow Maker"
+  },
+  {
+    "name": "CRAFT_HOOP_FRAME",
+    "label": "Craft Hoop Frame"
+  },
+  {
+    "name": "CRAFT_MOLD",
+    "label": "Craft Mould"
+  },
+  {
+    "name": "CRAFT_WOOD",
+    "label": "Craft Wood"
+  },
+  {
+    "name": "CRAFT_WRAPPING_TISSUE_PAPER",
+    "label": "Tissue Paper"
+  },
+  {
+    "name": "CRIB",
+    "label": "Crib"
+  },
+  {
+    "name": "CRIMPING_PLIERS",
+    "label": "Crimping Pliers"
+  },
+  {
+    "name": "CROCHET_HOOK",
+    "label": "Crochet Hook"
+  },
+  {
+    "name": "CRUCIBLE",
+    "label": "Crucible"
+  },
+  {
+    "name": "CUFF_LINK",
+    "label": "Cuff Link"
+  },
+  {
+    "name": "CULINARY_MUSHROOM",
+    "label": "Mushroom"
+  },
+  {
+    "name": "CULINARY_SALT",
+    "label": "Salt"
+  },
+  {
+    "name": "CUP_HOLDER",
+    "label": "Cup Holder"
+  },
+  {
+    "name": "CURRENT_MONITORING_RELAY",
+    "label": "Current Monitoring Relay"
+  },
+  {
+    "name": "CURRENT_SENSOR",
+    "label": "Current Sensor"
+  },
+  {
+    "name": "CURRENT_TRANSDUCER",
+    "label": "Current Transducer"
+  },
+  {
+    "name": "CURTAIN",
+    "label": "Curtain"
+  },
+  {
+    "name": "CURTAIN_FASTENER",
+    "label": "Curtain Fastener"
+  },
+  {
+    "name": "CURTAIN_SWAG_HOLDER",
+    "label": "Curtain Swag Holder"
+  },
+  {
+    "name": "CUTLERY",
+    "label": "CUTLERY"
+  },
+  {
+    "name": "CUTTING_BOARD",
+    "label": "Cutting Board"
+  },
+  {
+    "name": "CUTTING_TOOLS",
+    "label": "CUTTING_TOOLS"
+  },
+  {
+    "name": "CUVET",
+    "label": "Cuvet"
+  },
+  {
+    "name": "CYCLING_COMPUTER",
+    "label": "Cycling Computer"
+  },
+  {
+    "name": "CYCLING_EQUIPMENT",
+    "label": "CYCLING_EQUIPMENT"
+  },
+  {
+    "name": "CYCLING_TIRE",
+    "label": "Bicycle Tyre"
+  },
+  {
+    "name": "CYCLING_TIRE_TUBE",
+    "label": "Bicycle Tyre Inner Tube"
+  },
+  {
+    "name": "CYCLING_WHEEL",
+    "label": "Bicycle Wheel"
+  },
+  {
+    "name": "DAILY_LIVING_AIDS",
+    "label": "DAILY_LIVING_AIDS"
+  },
+  {
+    "name": "DAIRY_BASED_BUTTER",
+    "label": "Dairy Butter"
+  },
+  {
+    "name": "DAIRY_BASED_CHEESE",
+    "label": "Cheese"
+  },
+  {
+    "name": "DAIRY_BASED_CREAM",
+    "label": "Dairy Cream"
+  },
+  {
+    "name": "DAIRY_BASED_DRINK",
+    "label": "Dairy-Based Drink"
+  },
+  {
+    "name": "DAIRY_BASED_FOOD",
+    "label": "DAIRY_BASED_FOOD"
+  },
+  {
+    "name": "DAIRY_BASED_ICE_CREAM",
+    "label": "Dairy Ice Cream"
+  },
+  {
+    "name": "DAIRY_BASED_PUDDING",
+    "label": "Dairy Pudding"
+  },
+  {
+    "name": "DAIRY_BASED_YOGURT",
+    "label": "Dairy Yoghurt"
+  },
+  {
+    "name": "DAIRY_FOOD_SUBSTITUTE",
+    "label": "Dairy Food Substitute"
+  },
+  {
+    "name": "DARKROOM_EQUIPMENT_AND_SUPPLY",
+    "label": "DARKROOM_EQUIPMENT_AND_SUPPLY"
+  },
+  {
+    "name": "DARTBOARD",
+    "label": "Dartboard"
+  },
+  {
+    "name": "DECORATIVE_CUTOUT",
+    "label": "Decorative Cutout"
+  },
+  {
+    "name": "DECORATIVE_MAGNET",
+    "label": "Decorative Magnet"
+  },
+  {
+    "name": "DECORATIVE_PILLOW_COVER",
+    "label": "Decorative Pillow Cover"
+  },
+  {
+    "name": "DECORATIVE_POM_POM",
+    "label": "Decorative Pom Pom"
+  },
+  {
+    "name": "DECORATIVE_RIBBON_TRIM",
+    "label": "Decorative Ribbon & Trim"
+  },
+  {
+    "name": "DECORATIVE_SIGNAGE",
+    "label": "Decorative Signage"
+  },
+  {
+    "name": "DEEP_FRYER",
+    "label": "Deep Fryer"
+  },
+  {
+    "name": "DEHUMIDIFIER",
+    "label": "Dehumidifier"
+  },
+  {
+    "name": "DENTAL_FLOSS",
+    "label": "Dental Floss"
+  },
+  {
+    "name": "DESIGNER_BLAZER",
+    "label": "DESIGNER_BLAZER"
+  },
+  {
+    "name": "DESIGNER_ETHNIC_WEAR",
+    "label": "DESIGNER_ETHNIC_WEAR"
+  },
+  {
+    "name": "DESIGNER_HANDBAG",
+    "label": "DESIGNER_HANDBAG"
+  },
+  {
+    "name": "DESIGNER_HAT",
+    "label": "DESIGNER_HAT"
+  },
+  {
+    "name": "DESIGNER_OUTERWEAR",
+    "label": "DESIGNER_OUTERWEAR"
+  },
+  {
+    "name": "DESIGNER_POWERSPORTS_PROTECTIVE_GEAR",
+    "label": "DESIGNER_POWERSPORTS_PROTECTIVE_GEAR"
+  },
+  {
+    "name": "DESIGNER_POWERSPORTS_RIDING_GLOVES",
+    "label": "DESIGNER_POWERSPORTS_RIDING_GLOVES"
+  },
+  {
+    "name": "DESIGNER_POWERSPORTS_RIDING_HELMET",
+    "label": "DESIGNER_POWERSPORTS_RIDING_HELMET"
+  },
+  {
+    "name": "DESIGNER_POWERSPORTS_RIDING_JACKET",
+    "label": "DESIGNER_POWERSPORTS_RIDING_JACKET"
+  },
+  {
+    "name": "DESIGNER_PROTECTIVE_GEAR",
+    "label": "DESIGNER_PROTECTIVE_GEAR"
+  },
+  {
+    "name": "DESIGNER_SHIRT",
+    "label": "DESIGNER_SHIRT"
+  },
+  {
+    "name": "DESIGNER_SHORTS",
+    "label": "DESIGNER_SHORTS"
+  },
+  {
+    "name": "DESIGNER_SLEEPWEAR",
+    "label": "DESIGNER_SLEEPWEAR"
+  },
+  {
+    "name": "DESIGNER_SUIT",
+    "label": "DESIGNER_SUIT"
+  },
+  {
+    "name": "DESIGNER_SWEATER",
+    "label": "DESIGNER_SWEATER"
+  },
+  {
+    "name": "DESIGNER_UNDERWEAR",
+    "label": "DESIGNER_UNDERWEAR"
+  },
+  {
+    "name": "DESK",
+    "label": "Desk"
+  },
+  {
+    "name": "DESK_PAD",
+    "label": "Desk Pad"
+  },
+  {
+    "name": "DEWAR_FLASK",
+    "label": "Dewar Flask"
+  },
+  {
+    "name": "DIETARY_SUPPLEMENTS",
+    "label": "DIETARY_SUPPLEMENTS"
+  },
+  {
+    "name": "DIE_CUT_MACHINE",
+    "label": "Die Cut Machine"
+  },
+  {
+    "name": "DIGITAL_DESIGNS",
+    "label": "DIGITAL_DESIGNS"
+  },
+  {
+    "name": "DIGITAL_DEVICE_ACCESSORY",
+    "label": "DIGITAL_DEVICE_ACCESSORY"
+  },
+  {
+    "name": "DIGITAL_PICTURE_FRAME",
+    "label": "Digital Picture Frame"
+  },
+  {
+    "name": "DIGITAL_SIGNAL_PROCESSOR",
+    "label": "Digital Signal Processor"
+  },
+  {
+    "name": "DIGITAL_VIDEO_RECORDER",
+    "label": "Digital Video Recorder"
+  },
+  {
+    "name": "DIMENSIONAL_MEASUREMENT_CALIPER",
+    "label": "Dimensional Measurement Caliper"
+  },
+  {
+    "name": "DINNERWARE",
+    "label": "DINNERWARE"
+  },
+  {
+    "name": "DIN_MOUNT_RELAY",
+    "label": "Din Mount Relay"
+  },
+  {
+    "name": "DIP_SWITCH",
+    "label": "DIP Switch"
+  },
+  {
+    "name": "DISC_GRINDER_TOOL",
+    "label": "Disc Grinder Tool"
+  },
+  {
+    "name": "DISHWARE_BOWL",
+    "label": "Bowl"
+  },
+  {
+    "name": "DISHWARE_PLACE_SETTING",
+    "label": "Dishware Place Setting"
+  },
+  {
+    "name": "DISHWARE_PLATE",
+    "label": "Plate Dishware"
+  },
+  {
+    "name": "DISHWASHER",
+    "label": "Dishwasher"
+  },
+  {
+    "name": "DISHWASHER_DETERGENT",
+    "label": "Dishwasher Detergent"
+  },
+  {
+    "name": "DISH_DRYING_MAT",
+    "label": "Dish Drying Mat"
+  },
+  {
+    "name": "DISPLAY_ALBUM",
+    "label": "Display Album"
+  },
+  {
+    "name": "DISPLAY_ENCLOSURE",
+    "label": "Display Enclosure"
+  },
+  {
+    "name": "DISPOSABLE_INCONTINENCE_SURFACE_PROTECTOR",
+    "label": "Disposable Incontinence Surface Protector"
+  },
+  {
+    "name": "DISPOSABLE_NAPKIN",
+    "label": "Disposable Napkin"
+  },
+  {
+    "name": "DIVE_MASK",
+    "label": "Dive Mask"
+  },
+  {
+    "name": "DJ_EQUIPMENT",
+    "label": "DJ_EQUIPMENT"
+  },
+  {
+    "name": "DOLL_CLOTHING",
+    "label": "Doll Clothing"
+  },
+  {
+    "name": "DONUT",
+    "label": "Doughnut"
+  },
+  {
+    "name": "DOOR",
+    "label": "Door"
+  },
+  {
+    "name": "DOORSTOP",
+    "label": "Doorstop"
+  },
+  {
+    "name": "DOOR_CLOSER",
+    "label": "Door Closer"
+  },
+  {
+    "name": "DOWNLOADABLE_VIDEO",
+    "label": "DOWNLOADABLE_VIDEO"
+  },
+  {
+    "name": "DRAFT_STOPPER",
+    "label": "Draft Stopper"
+  },
+  {
+    "name": "DRAIN_OPENER_SUBSTANCE",
+    "label": "Drain Opener Substance"
+  },
+  {
+    "name": "DRAIN_STRAINER",
+    "label": "Drain Strainer"
+  },
+  {
+    "name": "DRAWER_SLIDE",
+    "label": "Drawer Slide"
+  },
+  {
+    "name": "DRESS",
+    "label": "Dress"
+  },
+  {
+    "name": "DRESSER",
+    "label": "Dresser"
+  },
+  {
+    "name": "DRIED_PLANT",
+    "label": "Dried Plant"
+  },
+  {
+    "name": "DRILL",
+    "label": "Drill"
+  },
+  {
+    "name": "DRILL_BITS",
+    "label": "Drill Bit"
+  },
+  {
+    "name": "DRINKING_CUP",
+    "label": "Drinking Cup"
+  },
+  {
+    "name": "DRINKING_STRAW",
+    "label": "Drinking Straw"
+  },
+  {
+    "name": "DRINK_COASTER",
+    "label": "Drink Coaster"
+  },
+  {
+    "name": "DRINK_FLAVORED",
+    "label": "Flavoured Drink"
+  },
+  {
+    "name": "DRIP_IRRIGATION_KIT",
+    "label": "Drip Irrigation Kit"
+  },
+  {
+    "name": "DRYER",
+    "label": "Laundry Dryer"
+  },
+  {
+    "name": "DRYING_RACK",
+    "label": "Drying Rack"
+  },
+  {
+    "name": "DRY_SHAMPOO",
+    "label": "Dry Shampoo"
+  },
+  {
+    "name": "DUFFEL_BAG",
+    "label": "Duffel Bag"
+  },
+  {
+    "name": "DUMBBELL",
+    "label": "Dumbbell"
+  },
+  {
+    "name": "DUPATTA",
+    "label": "Dupatta"
+  },
+  {
+    "name": "DUST_REMOVAL_TOOL",
+    "label": "Dust Removal Tool"
+  },
+  {
+    "name": "DUTCH_OVENS",
+    "label": "Dutch Oven"
+  },
+  {
+    "name": "DUVET_COVER",
+    "label": "Duvet Cover"
+  },
+  {
+    "name": "DVD_PLAYER_OR_RECORDER",
+    "label": "DVD_PLAYER_OR_RECORDER"
+  },
+  {
+    "name": "DYE",
+    "label": "Dye"
+  },
+  {
+    "name": "EARMUFF",
+    "label": "Earmuff"
+  },
+  {
+    "name": "EARPLUG",
+    "label": "Earplug"
+  },
+  {
+    "name": "EARRING",
+    "label": "Earring"
+  },
+  {
+    "name": "EDIBLE_OIL_ANIMAL",
+    "label": "Edible Animal Fat"
+  },
+  {
+    "name": "EDIBLE_OIL_FAT",
+    "label": "Cooking Oil & Fat"
+  },
+  {
+    "name": "EDIBLE_OIL_VEGETABLE",
+    "label": "Vegetable Oil"
+  },
+  {
+    "name": "EDUCATIONAL_SUPPLIES",
+    "label": "EDUCATIONAL_SUPPLIES"
+  },
+  {
+    "name": "EGG",
+    "label": "Egg"
+  },
+  {
+    "name": "ELASTIC_BAND",
+    "label": "Elastic Band"
+  },
+  {
+    "name": "ELECTRICAL_DISTRIBUTION_BOARD",
+    "label": "Electrical Distribution Board"
+  },
+  {
+    "name": "ELECTRICAL_HOUSING",
+    "label": "Electrical Housing"
+  },
+  {
+    "name": "ELECTRICAL_OUTLET",
+    "label": "Electrical Outlet"
+  },
+  {
+    "name": "ELECTRICAL_PLUG",
+    "label": "Electrical Plug"
+  },
+  {
+    "name": "ELECTRICITY_GENERATOR",
+    "label": "Electricity Generator"
+  },
+  {
+    "name": "ELECTRIC_CIRCUIT_TESTING_DEVICE",
+    "label": "Electric Circuit Testing Device"
+  },
+  {
+    "name": "ELECTRIC_FAN",
+    "label": "Electric Fan"
+  },
+  {
+    "name": "ELECTRIC_FOOD_MILL_GRINDER",
+    "label": "Electric Food Mill & Grinder"
+  },
+  {
+    "name": "ELECTRIC_HEATING_PAD",
+    "label": "Electric Heating Pad"
+  },
+  {
+    "name": "ELECTRIC_LANTERN",
+    "label": "Electric Lantern"
+  },
+  {
+    "name": "ELECTRIC_LIGHT",
+    "label": "Electric Light"
+  },
+  {
+    "name": "ELECTRIC_MOTOR",
+    "label": "Electric Motor"
+  },
+  {
+    "name": "ELECTRIC_SHAVER",
+    "label": "Electric Shaver"
+  },
+  {
+    "name": "ELECTRIC_STIRRER",
+    "label": "Electric Stirrer"
+  },
+  {
+    "name": "ELECTRIC_WATER_BOILER",
+    "label": "Electric Water Boiler"
+  },
+  {
+    "name": "ELECTROMAGNETIC_INTERFERENCE_FILTER",
+    "label": "Electromagnetic Interference Filter"
+  },
+  {
+    "name": "ELECTROMECHANICAL_COMPONENT",
+    "label": "ELECTROMECHANICAL_COMPONENT"
+  },
+  {
+    "name": "ELECTROMECHANICAL_GAUGE",
+    "label": "Electromechanical Gauge"
+  },
+  {
+    "name": "ELECTRONIC_ADAPTER",
+    "label": "Electronic Adapter"
+  },
+  {
+    "name": "ELECTRONIC_BOOK_READER",
+    "label": "Electronic Book Reader"
+  },
+  {
+    "name": "ELECTRONIC_CABLE",
+    "label": "Electronic Cable"
+  },
+  {
+    "name": "ELECTRONIC_CIGARETTE",
+    "label": "Electronic Cigarette"
+  },
+  {
+    "name": "ELECTRONIC_CIGARETTE_LIQUID",
+    "label": "Electronic Cigarette Liquid"
+  },
+  {
+    "name": "ELECTRONIC_CIGARETTE_REPLACEMENT_CARTRIDGE",
+    "label": "ELECTRONIC_CIGARETTE_REPLACEMENT_CARTRIDGE"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT",
+    "label": "ELECTRONIC_COMPONENT"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_AMPLIFIER",
+    "label": "Electronic Component Amplifier"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_CRYSTAL",
+    "label": "Electronic Component Crystal"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_FAN",
+    "label": "Electronic Component Fan"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_LAMP",
+    "label": "Electronic Component Lamp"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_LAMP_HOLDER",
+    "label": "Electronic Component Lamp Holder"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_MULTIPLEXER",
+    "label": "Electronic Component Multiplexer"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_SOCKET",
+    "label": "Electronic Component Socket"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_SOLENOID",
+    "label": "Electronic Component Solenoid"
+  },
+  {
+    "name": "ELECTRONIC_COMPONENT_TERMINAL",
+    "label": "Electronic Component Terminal"
+  },
+  {
+    "name": "ELECTRONIC_CONTROLLER",
+    "label": "Electronic Controller"
+  },
+  {
+    "name": "ELECTRONIC_DEVICE_COOLING_PAD",
+    "label": "Electronic Device Cooling Pad"
+  },
+  {
+    "name": "ELECTRONIC_DEVICE_DOCKING_STATION",
+    "label": "Electronic Device Docking Station"
+  },
+  {
+    "name": "ELECTRONIC_DEVICE_FACEPLATE",
+    "label": "Electronic Device Faceplate"
+  },
+  {
+    "name": "ELECTRONIC_DEVICE_SKIN",
+    "label": "Electronic Device Skin"
+  },
+  {
+    "name": "ELECTRONIC_FINDER",
+    "label": "Electronic Finder"
+  },
+  {
+    "name": "ELECTRONIC_GIFT_CARD",
+    "label": "ELECTRONIC_GIFT_CARD"
+  },
+  {
+    "name": "ELECTRONIC_KNOB",
+    "label": "Electronic Knob"
+  },
+  {
+    "name": "ELECTRONIC_LEARNING_TOY",
+    "label": "Electronic Learning Toy"
+  },
+  {
+    "name": "ELECTRONIC_SENSOR",
+    "label": "Electronic Sensor"
+  },
+  {
+    "name": "ELECTRONIC_SIGNAL_CONVERTER",
+    "label": "Electronic Signal Converter"
+  },
+  {
+    "name": "ELECTRONIC_SWITCH",
+    "label": "Electromechanical Switch"
+  },
+  {
+    "name": "ELECTRONIC_WIRE",
+    "label": "Electronic Wire"
+  },
+  {
+    "name": "ELECTROPHORESIS_SYSTEM",
+    "label": "Electrophoresis System"
+  },
+  {
+    "name": "ELECTROSHOCK_WEAPON",
+    "label": "Electroshock Weapon"
+  },
+  {
+    "name": "ELLIPTICAL_TRAINER",
+    "label": "Elliptical Trainer"
+  },
+  {
+    "name": "END_MILLS",
+    "label": "End Mill"
+  },
+  {
+    "name": "ENEMA_DOUCHE",
+    "label": "Enema Douche"
+  },
+  {
+    "name": "ENGINE_AIR_FILTER",
+    "label": "Engine Air Filter"
+  },
+  {
+    "name": "ENGINE_COMPONENT_CAP",
+    "label": "Engine Component Cap"
+  },
+  {
+    "name": "ENGINE_EXHAUST_PIPE",
+    "label": "Engine Exhaust Pipe"
+  },
+  {
+    "name": "ENGINE_WATER_PUMP",
+    "label": "Engine Water Pump"
+  },
+  {
+    "name": "ENTERTAINMENT_MEMORABILIA",
+    "label": "ENTERTAINMENT_MEMORABILIA"
+  },
+  {
+    "name": "ENVELOPE",
+    "label": "Envelope"
+  },
+  {
+    "name": "EPILATOR",
+    "label": "Epilator"
+  },
+  {
+    "name": "EQUALIZER",
+    "label": "Equaliser"
+  },
+  {
+    "name": "ERASER",
+    "label": "Eraser"
+  },
+  {
+    "name": "ESSENTIAL_OIL",
+    "label": "Essential Oil"
+  },
+  {
+    "name": "ETHNIC_WEAR",
+    "label": "ETHNIC_WEAR"
+  },
+  {
+    "name": "EXERCISE_BAND",
+    "label": "Exercise Band"
+  },
+  {
+    "name": "EXERCISE_BLOCK",
+    "label": "Exercise Block"
+  },
+  {
+    "name": "EXERCISE_MACHINE",
+    "label": "Exercise Machine"
+  },
+  {
+    "name": "EXERCISE_MAT",
+    "label": "Exercise Mat"
+  },
+  {
+    "name": "EXERCISE_STEP_PLATFORM",
+    "label": "Exercise Step Platform"
+  },
+  {
+    "name": "EXERCISE_STRAP",
+    "label": "Exercise Strap"
+  },
+  {
+    "name": "EXTENSION_SPRINGS",
+    "label": "Extension Springs"
+  },
+  {
+    "name": "EYEBROW_COLOR",
+    "label": "Eyebrow Color"
+  },
+  {
+    "name": "EYEGLASS_CASE",
+    "label": "Eyeglass Case"
+  },
+  {
+    "name": "EYEGLASS_FRAME",
+    "label": "Eyeglass Frame"
+  },
+  {
+    "name": "EYELASH_CURLER",
+    "label": "Eyelash Curler"
+  },
+  {
+    "name": "EYELID_COLOR",
+    "label": "Eyelid Color"
+  },
+  {
+    "name": "EYEWEAR",
+    "label": "EYEWEAR"
+  },
+  {
+    "name": "FABRIC",
+    "label": "Fabric"
+  },
+  {
+    "name": "FABRIC_APPLIQUE_PATCH",
+    "label": "Fabric Appliqué Patch"
+  },
+  {
+    "name": "FABRIC_SOFTENER",
+    "label": "Fabric Softener"
+  },
+  {
+    "name": "FACE_SHAPING_MAKEUP",
+    "label": "Face Shaping Makeup"
+  },
+  {
+    "name": "FACE_SHIELD",
+    "label": "Face Shield"
+  },
+  {
+    "name": "FACIAL_STEAMER",
+    "label": "Facial Steamer"
+  },
+  {
+    "name": "FACIAL_TISSUE",
+    "label": "Facial Tissue"
+  },
+  {
+    "name": "FACIAL_TISSUE_HOLDER",
+    "label": "Facial Tissue Holder"
+  },
+  {
+    "name": "FALSE_EYELASH",
+    "label": "False Eyelash"
+  },
+  {
+    "name": "FALSE_NAIL",
+    "label": "False Nail"
+  },
+  {
+    "name": "FASHIONEARRING",
+    "label": "FASHIONEARRING"
+  },
+  {
+    "name": "FASHIONNECKLACEBRACELETANKLET",
+    "label": "FASHIONNECKLACEBRACELETANKLET"
+  },
+  {
+    "name": "FASHIONOTHER",
+    "label": "FASHIONOTHER"
+  },
+  {
+    "name": "FASHIONRING",
+    "label": "FASHIONRING"
+  },
+  {
+    "name": "FASHION_JEWELRY",
+    "label": "FASHION_JEWELRY"
+  },
+  {
+    "name": "FASTENER_DRIVE_BIT",
+    "label": "Fastener Drive Bit"
+  },
+  {
+    "name": "FAUCET",
+    "label": "Tap"
+  },
+  {
+    "name": "FAUCET_WATER_AERATOR",
+    "label": "Tap Water Aerator"
+  },
+  {
+    "name": "FAX_MACHINE",
+    "label": "Fax Machine"
+  },
+  {
+    "name": "FENCE_PANEL",
+    "label": "Fence Panel"
+  },
+  {
+    "name": "FERTILIZER",
+    "label": "Fertiliser"
+  },
+  {
+    "name": "FIDGET_TOY",
+    "label": "Fidget Toy"
+  },
+  {
+    "name": "FIDGET_TOY_SPINNER",
+    "label": "Fidget Toy Spinner"
+  },
+  {
+    "name": "FIGURINE",
+    "label": "Figurine"
+  },
+  {
+    "name": "FILE_FOLDER",
+    "label": "File Folder"
+  },
+  {
+    "name": "FINEEARRING",
+    "label": "FINEEARRING"
+  },
+  {
+    "name": "FINENECKLACEBRACELETANKLET",
+    "label": "FINENECKLACEBRACELETANKLET"
+  },
+  {
+    "name": "FINEOTHER",
+    "label": "FINEOTHER"
+  },
+  {
+    "name": "FINERING",
+    "label": "FINERING"
+  },
+  {
+    "name": "FINE_ART",
+    "label": "FINE_ART"
+  },
+  {
+    "name": "FINE_ART_EDITIONED",
+    "label": "FINE_ART_EDITIONED"
+  },
+  {
+    "name": "FINE_JEWELRY",
+    "label": "FINE_JEWELRY"
+  },
+  {
+    "name": "FIREPLACE",
+    "label": "Fireplace"
+  },
+  {
+    "name": "FIREPLACE_BACK_PLATE",
+    "label": "Fireplace Back Plate"
+  },
+  {
+    "name": "FIRE_GRATE",
+    "label": "Fire Grate"
+  },
+  {
+    "name": "FIRE_PIT",
+    "label": "Fire Pit"
+  },
+  {
+    "name": "FIRE_SCREEN",
+    "label": "Fire Screen"
+  },
+  {
+    "name": "FIRST_AID_KIT",
+    "label": "First Aid Kit"
+  },
+  {
+    "name": "FISH",
+    "label": "Fish"
+  },
+  {
+    "name": "FISHING_EQUIPMENT",
+    "label": "FISHING_EQUIPMENT"
+  },
+  {
+    "name": "FISHING_HOOK",
+    "label": "Fishing Hook"
+  },
+  {
+    "name": "FISHING_LINE",
+    "label": "Fishing Line"
+  },
+  {
+    "name": "FISHING_NET",
+    "label": "Fishing Net"
+  },
+  {
+    "name": "FISHING_REEL",
+    "label": "Fishing Reel"
+  },
+  {
+    "name": "FISHING_ROD",
+    "label": "Fishing Rod"
+  },
+  {
+    "name": "FISHING_ROD_HOLDER",
+    "label": "Fishing Rod Holder"
+  },
+  {
+    "name": "FISHING_ROD_REEL_COMBO",
+    "label": "Fishing Rod & Reel Combo"
+  },
+  {
+    "name": "FISHING_WEIGHT",
+    "label": "Fishing Weight"
+  },
+  {
+    "name": "FISH_PROCESSED",
+    "label": "FISH_PROCESSED"
+  },
+  {
+    "name": "FITNESS_BENCH",
+    "label": "Fitness Bench"
+  },
+  {
+    "name": "FITNESS_EQUIPMENT",
+    "label": "FITNESS_EQUIPMENT"
+  },
+  {
+    "name": "FITNESS_HOOP",
+    "label": "Fitness Hoop"
+  },
+  {
+    "name": "FITNESS_STEPPER",
+    "label": "Fitness Stepper"
+  },
+  {
+    "name": "FITTED_SHEET",
+    "label": "Fitted Sheet"
+  },
+  {
+    "name": "FLAME_WICK",
+    "label": "Flame Wick"
+  },
+  {
+    "name": "FLASHLIGHT",
+    "label": "Flashlight"
+  },
+  {
+    "name": "FLASH_CARD",
+    "label": "Flash Card"
+  },
+  {
+    "name": "FLASH_DRIVE",
+    "label": "Flash Drive"
+  },
+  {
+    "name": "FLASH_MEMORY",
+    "label": "Flash Memory"
+  },
+  {
+    "name": "FLASK",
+    "label": "Lab Flask"
+  },
+  {
+    "name": "FLATWARE",
+    "label": "Flatware Set"
+  },
+  {
+    "name": "FLAT_SCREEN_DISPLAY_MOUNT",
+    "label": "Flat Screen Display Mount"
+  },
+  {
+    "name": "FLAT_SHEET",
+    "label": "Flat Sheet"
+  },
+  {
+    "name": "FLAVORED_DRINK_CONCENTRATE",
+    "label": "Flavoured Drink Concentrate"
+  },
+  {
+    "name": "FLEXIBLE_COUPLINGS",
+    "label": "Flexible Coupling"
+  },
+  {
+    "name": "FLOOR_COVER",
+    "label": "FLOOR_COVER"
+  },
+  {
+    "name": "FLOUR",
+    "label": "Flour"
+  },
+  {
+    "name": "FLOWERS",
+    "label": "FLOWERS"
+  },
+  {
+    "name": "FOOD",
+    "label": "Food"
+  },
+  {
+    "name": "FOOD_BIB",
+    "label": "Food Bib"
+  },
+  {
+    "name": "FOOD_BLENDER",
+    "label": "Food Blender"
+  },
+  {
+    "name": "FOOD_COLORING",
+    "label": "Food Colouring"
+  },
+  {
+    "name": "FOOD_DEHYDRATOR",
+    "label": "Food Dehydrator"
+  },
+  {
+    "name": "FOOD_GLITTER_SPRINKLE",
+    "label": "Food Glitter & Sprinkle"
+  },
+  {
+    "name": "FOOD_GRATER",
+    "label": "Food Grater"
+  },
+  {
+    "name": "FOOD_MASHER",
+    "label": "Food Masher"
+  },
+  {
+    "name": "FOOD_MILL_GRINDER",
+    "label": "Food Mill & Grinder"
+  },
+  {
+    "name": "FOOD_MIXER",
+    "label": "Food Mixer"
+  },
+  {
+    "name": "FOOD_OR_BEVERAGE_WARMER",
+    "label": "Food Beverage Warmer"
+  },
+  {
+    "name": "FOOD_PREPARATION_MOLD",
+    "label": "Food Preparation Mould"
+  },
+  {
+    "name": "FOOD_PROCESSOR",
+    "label": "Food Processor"
+  },
+  {
+    "name": "FOOD_SCOOP",
+    "label": "Food Scoop"
+  },
+  {
+    "name": "FOOD_SERVICE_SUPPLY",
+    "label": "FOOD_SERVICE_SUPPLY"
+  },
+  {
+    "name": "FOOD_SHAKER",
+    "label": "Food Shaker"
+  },
+  {
+    "name": "FOOD_SLICER",
+    "label": "Food Slicer"
+  },
+  {
+    "name": "FOOD_SMOKER",
+    "label": "Food Smoker"
+  },
+  {
+    "name": "FOOD_SPATULA",
+    "label": "Food Spatula"
+  },
+  {
+    "name": "FOOD_STORAGE_BAG",
+    "label": "Food Storage Bag"
+  },
+  {
+    "name": "FOOD_STORAGE_CONTAINER",
+    "label": "Food Storage Container"
+  },
+  {
+    "name": "FOOD_STRAINER",
+    "label": "Food Strainer"
+  },
+  {
+    "name": "FOOD_WRAP",
+    "label": "Food Wrap"
+  },
+  {
+    "name": "FOOTREST",
+    "label": "Footrest"
+  },
+  {
+    "name": "FOOTWEAR",
+    "label": "Footwear"
+  },
+  {
+    "name": "FOOTWEAR_CARE_KIT",
+    "label": "Footwear Care Kit"
+  },
+  {
+    "name": "FOOT_SCRAPER",
+    "label": "Foot Scraper"
+  },
+  {
+    "name": "FORK",
+    "label": "Fork"
+  },
+  {
+    "name": "FOUNTAIN",
+    "label": "Fountain"
+  },
+  {
+    "name": "FRAGRANCE",
+    "label": "FRAGRANCE"
+  },
+  {
+    "name": "FREESTANDING_SHELTER",
+    "label": "Freestanding Shelter"
+  },
+  {
+    "name": "FREEZER",
+    "label": "Freezer"
+  },
+  {
+    "name": "FRESH_CUT_FLOWERS_PLANTS",
+    "label": "Fresh Cut Flower & Plant"
+  },
+  {
+    "name": "FRUIT",
+    "label": "Fruit"
+  },
+  {
+    "name": "FRUIT_SNACK",
+    "label": "Fruit Snack"
+  },
+  {
+    "name": "FUDGE",
+    "label": "Fudge"
+  },
+  {
+    "name": "FUEL_FILTER",
+    "label": "Fuel Filter"
+  },
+  {
+    "name": "FUEL_LAMP",
+    "label": "Fuel Lamp"
+  },
+  {
+    "name": "FUEL_PUMP",
+    "label": "Fuel Pump"
+  },
+  {
+    "name": "FUNNEL",
+    "label": "Funnel"
+  },
+  {
+    "name": "FURNITURE",
+    "label": "Furniture"
+  },
+  {
+    "name": "FURNITURE_CART",
+    "label": "Furniture Trolley"
+  },
+  {
+    "name": "FURNITURE_COVER",
+    "label": "Furniture Cover"
+  },
+  {
+    "name": "FURNITURE_EDGE_BUMPER",
+    "label": "Furniture Edge Bumper"
+  },
+  {
+    "name": "FURNITURE_FLOOR_PROTECTOR",
+    "label": "Furniture Floor Protector"
+  },
+  {
+    "name": "FURNITURE_LEG",
+    "label": "Furniture Leg"
+  },
+  {
+    "name": "FURNITURE_LINER",
+    "label": "Furniture Liner"
+  },
+  {
+    "name": "FURNITURE_SLIDER",
+    "label": "Furniture Slider"
+  },
+  {
+    "name": "FUSE",
+    "label": "Fuse"
+  },
+  {
+    "name": "GAMES",
+    "label": "GAMES"
+  },
+  {
+    "name": "GAME_DICE",
+    "label": "Game Dice"
+  },
+  {
+    "name": "GAMING_EQUIPMENT_ENCLOSURE",
+    "label": "Gaming Equipment Case"
+  },
+  {
+    "name": "GARDEN_EDGING",
+    "label": "Garden Edging"
+  },
+  {
+    "name": "GARDEN_SHEAR_SCISSORS",
+    "label": "Garden Shear Scissors"
+  },
+  {
+    "name": "GARDEN_TOOL_SET",
+    "label": "Garden Tool Set"
+  },
+  {
+    "name": "GARLAND",
+    "label": "Garland"
+  },
+  {
+    "name": "GARLIC_PRESS",
+    "label": "Garlic Press"
+  },
+  {
+    "name": "GARMENT_PROTECTOR_COVER",
+    "label": "Garment Protector Cover"
+  },
+  {
+    "name": "GARMENT_STEAMER",
+    "label": "Garment Steamer"
+  },
+  {
+    "name": "GASKETING_LIQUIDS",
+    "label": "Gasketing Liquids"
+  },
+  {
+    "name": "GASKETS",
+    "label": "Gasket"
+  },
+  {
+    "name": "GAS_SMOKE_FIRE_ALARM",
+    "label": "Gas, Smoke & Fire Alarm"
+  },
+  {
+    "name": "GEARS",
+    "label": "Mechanical Gear"
+  },
+  {
+    "name": "GIFT_CARD",
+    "label": "Gift Card"
+  },
+  {
+    "name": "GIFT_WRAP",
+    "label": "Gift Wrap"
+  },
+  {
+    "name": "GLITTER",
+    "label": "Glitter"
+  },
+  {
+    "name": "GLOBE",
+    "label": "Globe"
+  },
+  {
+    "name": "GLOVES",
+    "label": "GLOVES"
+  },
+  {
+    "name": "GLUCOSE_METER",
+    "label": "Glucose Meter"
+  },
+  {
+    "name": "GOLF_CLUB",
+    "label": "Golf Club"
+  },
+  {
+    "name": "GOLF_CLUB_BAG",
+    "label": "Golf Club Bag"
+  },
+  {
+    "name": "GOLF_CLUB_COVER",
+    "label": "Golf Club Cover"
+  },
+  {
+    "name": "GOLF_CLUB_HYBRID",
+    "label": "GOLF_CLUB_HYBRID"
+  },
+  {
+    "name": "GOLF_CLUB_IRON",
+    "label": "GOLF_CLUB_IRON"
+  },
+  {
+    "name": "GOLF_CLUB_PUTTER",
+    "label": "GOLF_CLUB_PUTTER"
+  },
+  {
+    "name": "GOLF_CLUB_WEDGE",
+    "label": "GOLF_CLUB_WEDGE"
+  },
+  {
+    "name": "GOLF_CLUB_WOOD",
+    "label": "GOLF_CLUB_WOOD"
+  },
+  {
+    "name": "GOLF_PRACTICE_MAT",
+    "label": "Golf Practice Mat"
+  },
+  {
+    "name": "GOURMET_FOOD",
+    "label": "GOURMET_FOOD"
+  },
+  {
+    "name": "GOURMET_FOOD_AND_WINE",
+    "label": "GOURMET_FOOD_AND_WINE"
+  },
+  {
+    "name": "GPS_OR_NAVIGATION_ACCESSORY",
+    "label": "GPS_OR_NAVIGATION_ACCESSORY"
+  },
+  {
+    "name": "GPS_OR_NAVIGATION_SYSTEM",
+    "label": "Satellite Navigation Device"
+  },
+  {
+    "name": "GRAPHIC_TABLET",
+    "label": "Graphic Tablet"
+  },
+  {
+    "name": "GRAVITY_BEVERAGE_DISPENSER",
+    "label": "Gravity Beverage Dispenser"
+  },
+  {
+    "name": "GREENHOUSE",
+    "label": "Greenhouse"
+  },
+  {
+    "name": "GREETING_CARD",
+    "label": "Greeting Card"
+  },
+  {
+    "name": "GRIDDLE_PLATE",
+    "label": "Griddle Plate"
+  },
+  {
+    "name": "GRILL_SMOKER_COVER",
+    "label": "Grill & Smoker Cover"
+  },
+  {
+    "name": "GROCERY",
+    "label": "GROCERY"
+  },
+  {
+    "name": "GROMMETS",
+    "label": "GROMMETS"
+  },
+  {
+    "name": "GUILD_ACCESSORIES",
+    "label": "GUILD_ACCESSORIES"
+  },
+  {
+    "name": "GUILD_APPAREL",
+    "label": "GUILD_APPAREL"
+  },
+  {
+    "name": "GUILD_ART",
+    "label": "GUILD_ART"
+  },
+  {
+    "name": "GUILD_BABY",
+    "label": "GUILD_BABY"
+  },
+  {
+    "name": "GUILD_BEAUTY_GROOMING",
+    "label": "GUILD_BEAUTY_GROOMING"
+  },
+  {
+    "name": "GUILD_HOME",
+    "label": "GUILD_HOME"
+  },
+  {
+    "name": "GUILD_JEWELRY",
+    "label": "GUILD_JEWELRY"
+  },
+  {
+    "name": "GUILD_PET_SUPPLIES",
+    "label": "GUILD_PET_SUPPLIES"
+  },
+  {
+    "name": "GUILD_SHOES",
+    "label": "GUILD_SHOES"
+  },
+  {
+    "name": "GUILD_TOYS_AND_GAMES",
+    "label": "GUILD_TOYS_AND_GAMES"
+  },
+  {
+    "name": "GUITARS",
+    "label": "Guitar"
+  },
+  {
+    "name": "GUITAR_EFFECT_DEVICE",
+    "label": "Guitar Effect Device"
+  },
+  {
+    "name": "GUN_CLEANING_KIT",
+    "label": "Gun Cleaning Kit"
+  },
+  {
+    "name": "GUN_GRIP",
+    "label": "Gun Grip"
+  },
+  {
+    "name": "GUN_HOLSTER",
+    "label": "Gun Holster"
+  },
+  {
+    "name": "GUN_SLING",
+    "label": "Gun Sling"
+  },
+  {
+    "name": "GUN_SUPPORT",
+    "label": "Gun Support"
+  },
+  {
+    "name": "HAIRBAND",
+    "label": "Hairband"
+  },
+  {
+    "name": "HAIR_BRUSH",
+    "label": "Hair Brush"
+  },
+  {
+    "name": "HAIR_CARE_AGENT",
+    "label": "Hair Care Agent"
+  },
+  {
+    "name": "HAIR_CARE_PRODUCT",
+    "label": "HAIR_CARE_PRODUCT"
+  },
+  {
+    "name": "HAIR_CLEANER_CONDITIONER",
+    "label": "Shampoo & Conditioner"
+  },
+  {
+    "name": "HAIR_CLIP",
+    "label": "Hair Clip"
+  },
+  {
+    "name": "HAIR_COLORING_AGENT",
+    "label": "Hair Colouring Agent"
+  },
+  {
+    "name": "HAIR_COMB",
+    "label": "Hair Comb"
+  },
+  {
+    "name": "HAIR_DRYER",
+    "label": "Hair Dryer"
+  },
+  {
+    "name": "HAIR_EXTENSION",
+    "label": "Hair Extension"
+  },
+  {
+    "name": "HAIR_IRON",
+    "label": "Hair Iron"
+  },
+  {
+    "name": "HAIR_REMOVAL_AGENT",
+    "label": "Hair Removal Agent"
+  },
+  {
+    "name": "HAIR_REMOVAL_AND_SHAVING_PRODUCT",
+    "label": "HAIR_REMOVAL_AND_SHAVING_PRODUCT"
+  },
+  {
+    "name": "HAIR_ROLLER",
+    "label": "Hair Roller"
+  },
+  {
+    "name": "HAIR_STYLING_AGENT",
+    "label": "Hair Styling Agent"
+  },
+  {
+    "name": "HAIR_TIE",
+    "label": "Hair Tie"
+  },
+  {
+    "name": "HAIR_TRIMMER",
+    "label": "Hair Trimmer"
+  },
+  {
+    "name": "HAIR_TRIMMING_KIT",
+    "label": "Hair Trimming Kit"
+  },
+  {
+    "name": "HAMMER_MALLET",
+    "label": "Hammer Mallet"
+  },
+  {
+    "name": "HAMMOCK",
+    "label": "Hammock"
+  },
+  {
+    "name": "HANDBAG",
+    "label": "Handbag"
+  },
+  {
+    "name": "HANDHELD_OR_PDA",
+    "label": "HANDHELD_OR_PDA"
+  },
+  {
+    "name": "HANDHELD_OR_PDA_ACCESSORY",
+    "label": "HANDHELD_OR_PDA_ACCESSORY"
+  },
+  {
+    "name": "HANDLEBAR",
+    "label": "Handlebar"
+  },
+  {
+    "name": "HANDLEBAR_GRIP",
+    "label": "Handlebar Grip"
+  },
+  {
+    "name": "HANDLE_GRIP",
+    "label": "Handle Grip"
+  },
+  {
+    "name": "HANDRAIL",
+    "label": "Handrail"
+  },
+  {
+    "name": "HAND_FAN",
+    "label": "Hand Fan"
+  },
+  {
+    "name": "HAND_SANITIZER",
+    "label": "Hand Sanitiser"
+  },
+  {
+    "name": "HAND_SEWING_NEEDLE",
+    "label": "Hand Sewing Needle"
+  },
+  {
+    "name": "HAND_STRENGTHENER",
+    "label": "Hand Strengthener"
+  },
+  {
+    "name": "HANGING_MOBILE",
+    "label": "Hanging Mobile"
+  },
+  {
+    "name": "HANGING_ORNAMENT",
+    "label": "Hanging Ornament"
+  },
+  {
+    "name": "HANGING_ROD",
+    "label": "Hanging Rod"
+  },
+  {
+    "name": "HARDWARE",
+    "label": "HARDWARE"
+  },
+  {
+    "name": "HARDWARE_BEARING",
+    "label": "Hardware Bearing"
+  },
+  {
+    "name": "HARDWARE_CLAMP_VISE",
+    "label": "Hardware Clamp Vise"
+  },
+  {
+    "name": "HARDWARE_HANDLE",
+    "label": "Hardware Handle"
+  },
+  {
+    "name": "HARDWARE_HINGE",
+    "label": "Hardware Hinge"
+  },
+  {
+    "name": "HARDWARE_PIN",
+    "label": "Hardware Pin"
+  },
+  {
+    "name": "HARDWARE_PLANER",
+    "label": "Hardware Planer"
+  },
+  {
+    "name": "HARDWARE_STAPLE",
+    "label": "Hardware Staple"
+  },
+  {
+    "name": "HARDWARE_TUBING",
+    "label": "Hardware Tubing"
+  },
+  {
+    "name": "HARD_DRIVE_ENCLOSURE",
+    "label": "Hard Drive Enclosure"
+  },
+  {
+    "name": "HAT",
+    "label": "Hat"
+  },
+  {
+    "name": "HEADBOARD",
+    "label": "Headboard"
+  },
+  {
+    "name": "HEADPHONES",
+    "label": "Headphones"
+  },
+  {
+    "name": "HEADPHONE_EARPAD",
+    "label": "Headphone Earpad"
+  },
+  {
+    "name": "HEALTH_FOOD",
+    "label": "HEALTH_FOOD"
+  },
+  {
+    "name": "HEALTH_PERSONAL_CARE",
+    "label": "HEALTH_PERSONAL_CARE"
+  },
+  {
+    "name": "HEARING_AMPLIFIER",
+    "label": "Hearing Amplifier"
+  },
+  {
+    "name": "HEATING_STOVE",
+    "label": "Heating Stove"
+  },
+  {
+    "name": "HEAT_PRESS",
+    "label": "Heat Press"
+  },
+  {
+    "name": "HEAT_SINK",
+    "label": "Heat Sink"
+  },
+  {
+    "name": "HELMET",
+    "label": "Helmet"
+  },
+  {
+    "name": "HERB",
+    "label": "Spice Herb"
+  },
+  {
+    "name": "HERBAL_SUPPLEMENT",
+    "label": "Herbal Supplement"
+  },
+  {
+    "name": "HIP_FLASK",
+    "label": "Hip Flask"
+  },
+  {
+    "name": "HISTORICAL_COLLECTIBLES",
+    "label": "HISTORICAL_COLLECTIBLES"
+  },
+  {
+    "name": "HOBBIES",
+    "label": "HOBBIES"
+  },
+  {
+    "name": "HOLE_PUNCH",
+    "label": "Hole Punch"
+  },
+  {
+    "name": "HOME",
+    "label": "Home"
+  },
+  {
+    "name": "HOMEACCESSORY",
+    "label": "HOMEACCESSORY"
+  },
+  {
+    "name": "HOME_BED_AND_BATH",
+    "label": "Bed and Bath"
+  },
+  {
+    "name": "HOME_FURNITURE_AND_DECOR",
+    "label": "HOME_FURNITURE_AND_DECOR"
+  },
+  {
+    "name": "HOME_LIGHTING_ACCESSORY",
+    "label": "HOME_LIGHTING_ACCESSORY"
+  },
+  {
+    "name": "HOME_LIGHTING_AND_LAMPS",
+    "label": "Lighting and Lamps"
+  },
+  {
+    "name": "HOME_MIRROR",
+    "label": "Home Mirror"
+  },
+  {
+    "name": "HOME_ORGANIZERS_AND_STORAGE",
+    "label": "HOME_ORGANIZERS_AND_STORAGE"
+  },
+  {
+    "name": "HOME_PARTS",
+    "label": "HOME_PARTS"
+  },
+  {
+    "name": "HOME_THEATER_SYSTEM_OR_HTIB",
+    "label": "HOME_THEATER_SYSTEM_OR_HTIB"
+  },
+  {
+    "name": "HONEY",
+    "label": "Honey"
+  },
+  {
+    "name": "HOOKAH",
+    "label": "Hookah"
+  },
+  {
+    "name": "HOOK_LOOP_FASTENER",
+    "label": "Hook Loop Fastener"
+  },
+  {
+    "name": "HORSE_TACK_EQUIPMENT",
+    "label": "HORSE_TACK_EQUIPMENT"
+  },
+  {
+    "name": "HOSE_PIPE_FITTING",
+    "label": "Hose Pipe Fitting"
+  },
+  {
+    "name": "HOSIERY",
+    "label": "HOSIERY"
+  },
+  {
+    "name": "HOT_GLUE_GUN",
+    "label": "Hot Glue Gun"
+  },
+  {
+    "name": "HOT_MELT",
+    "label": "Hot Melt"
+  },
+  {
+    "name": "HOT_TUB",
+    "label": "Hot Tub"
+  },
+  {
+    "name": "HOUSEHOLD_STAIN",
+    "label": "Household Stain"
+  },
+  {
+    "name": "HOUSEHOLD_VARNISH",
+    "label": "Household Varnish"
+  },
+  {
+    "name": "HUBCAP_WHEEL_COVER",
+    "label": "Hubcap Wheel Cover"
+  },
+  {
+    "name": "HUMIDIFIER",
+    "label": "Humidifier"
+  },
+  {
+    "name": "HUMIDIFIER_FILTER_WICK",
+    "label": "Humidifier Filter Wick"
+  },
+  {
+    "name": "HUMIDITY_METER",
+    "label": "Humidity Meter"
+  },
+  {
+    "name": "HUMIDOR",
+    "label": "Humidor"
+  },
+  {
+    "name": "HVAC_AIR_FILTER",
+    "label": "HVAC Air Filter"
+  },
+  {
+    "name": "HVAC_CONTROL_THERMOSTAT",
+    "label": "HVAC Control Thermostat"
+  },
+  {
+    "name": "HYDRATION_PACK",
+    "label": "Hydration Pack"
+  },
+  {
+    "name": "ICE_CHEST",
+    "label": "Ice Chest"
+  },
+  {
+    "name": "ICE_CREAM_MAKER",
+    "label": "Ice Cream Maker"
+  },
+  {
+    "name": "ICE_CUBE_TRAY",
+    "label": "Ice Cube Tray"
+  },
+  {
+    "name": "ICE_MAKER",
+    "label": "Ice Maker"
+  },
+  {
+    "name": "IGNITION_COIL",
+    "label": "Ignition Coil"
+  },
+  {
+    "name": "IMMERSION_HEATER",
+    "label": "Immersion Heater"
+  },
+  {
+    "name": "IMPACT_PROTECTION_GEAR",
+    "label": "Impact Protection Gear"
+  },
+  {
+    "name": "INCENSE",
+    "label": "Incense"
+  },
+  {
+    "name": "INCENSE_HOLDER",
+    "label": "Incense Holder"
+  },
+  {
+    "name": "INCONTINENCE_PROTECTOR",
+    "label": "Incontinence Protector"
+  },
+  {
+    "name": "INDEXABLE_INSERT",
+    "label": "Indexable Insert"
+  },
+  {
+    "name": "INDOOR_GROW_ENCLOSURE",
+    "label": "Indoor Grow Enclosure"
+  },
+  {
+    "name": "INDUSTRIAL_CASTERS",
+    "label": "Caster"
+  },
+  {
+    "name": "INDUSTRIAL_HOSE",
+    "label": "INDUSTRIAL_HOSE"
+  },
+  {
+    "name": "INDUSTRIAL_WHEELS",
+    "label": "INDUSTRIAL_WHEELS"
+  },
+  {
+    "name": "INFANT_TODDLER_CAR_SEAT",
+    "label": "Infant & Toddler Car Seat"
+  },
+  {
+    "name": "INFLATABLE_BOUNCER",
+    "label": "Inflatable Bouncer"
+  },
+  {
+    "name": "INFRARED_EMITTER",
+    "label": "Infrared Emitter"
+  },
+  {
+    "name": "INKJET_PRINTER_INK",
+    "label": "Inkjet Printer Ink"
+  },
+  {
+    "name": "INK_OR_TONER",
+    "label": "INK_OR_TONER"
+  },
+  {
+    "name": "INPUT_MOUSE",
+    "label": "Input Mouse"
+  },
+  {
+    "name": "INPUT_OUTPUT_CARD",
+    "label": "Input Output Card"
+  },
+  {
+    "name": "INPUT_OUTPUT_MODULE",
+    "label": "Input Output Module"
+  },
+  {
+    "name": "INPUT_PEN",
+    "label": "Input Pen"
+  },
+  {
+    "name": "INSECT_REPELLENT",
+    "label": "Insect Repellent"
+  },
+  {
+    "name": "INSTRUMENT_PARTS_AND_ACCESSORIES",
+    "label": "INSTRUMENT_PARTS_AND_ACCESSORIES"
+  },
+  {
+    "name": "INSULATION",
+    "label": "Insulation"
+  },
+  {
+    "name": "INTEGRATED_STEREO_SYSTEM",
+    "label": "Integrated Stereo System"
+  },
+  {
+    "name": "INTERCONNECT",
+    "label": "INTERCONNECT"
+  },
+  {
+    "name": "INTERNAL_MEMORY",
+    "label": "Internal Memory"
+  },
+  {
+    "name": "INTERNET_APPLIANCE",
+    "label": "INTERNET_APPLIANCE"
+  },
+  {
+    "name": "IRONING_BOARD",
+    "label": "Ironing Board"
+  },
+  {
+    "name": "IRONING_BOARD_COVER",
+    "label": "Ironing Board Cover"
+  },
+  {
+    "name": "IRON_ON_TRANSFER_DESIGN",
+    "label": "Iron-On Transfer Design"
+  },
+  {
+    "name": "IRRIGATION_EQUIPMENT",
+    "label": "IRRIGATION_EQUIPMENT"
+  },
+  {
+    "name": "IRRIGATION_SPRINKLER",
+    "label": "Irrigation Sprinkler"
+  },
+  {
+    "name": "ITEM_CONTAINER",
+    "label": "Item Container"
+  },
+  {
+    "name": "ITEM_STAND",
+    "label": "Item Stand"
+  },
+  {
+    "name": "JANITORIAL_SUPPLY",
+    "label": "JANITORIAL_SUPPLY"
+  },
+  {
+    "name": "JAR",
+    "label": "Jar"
+  },
+  {
+    "name": "JERKY",
+    "label": "Jerky"
+  },
+  {
+    "name": "JEWELRY",
+    "label": "Jewellery"
+  },
+  {
+    "name": "JEWELRY_AND_GEMS",
+    "label": "JEWELRY_AND_GEMS"
+  },
+  {
+    "name": "JEWELRY_FINDING",
+    "label": "Jewellery Finding"
+  },
+  {
+    "name": "JEWELRY_SET",
+    "label": "Jewellery Set"
+  },
+  {
+    "name": "JEWELRY_STORAGE",
+    "label": "Jewellery Storage"
+  },
+  {
+    "name": "JINBEI",
+    "label": "Jinbei"
+  },
+  {
+    "name": "JUICER",
+    "label": "Juicer"
+  },
+  {
+    "name": "JUICE_AND_JUICE_DRINK",
+    "label": "Juice"
+  },
+  {
+    "name": "JUMP_ROPE",
+    "label": "Skipping Rope"
+  },
+  {
+    "name": "JUMP_STARTER",
+    "label": "Jump Starter"
+  },
+  {
+    "name": "KARAOKE_MACHINE",
+    "label": "Karaoke Machine"
+  },
+  {
+    "name": "KAYAK",
+    "label": "Kayak"
+  },
+  {
+    "name": "KETTLEBELL",
+    "label": "Kettlebell"
+  },
+  {
+    "name": "KEYBOARDS",
+    "label": "Keyboard"
+  },
+  {
+    "name": "KEYBOARD_INSTRUMENTS",
+    "label": "Keyboard Musical Instrument"
+  },
+  {
+    "name": "KEYBOARD_MOUSE_SET",
+    "label": "Keyboard & Mouse Set"
+  },
+  {
+    "name": "KEYCAP",
+    "label": "Keycap"
+  },
+  {
+    "name": "KEYCHAIN",
+    "label": "Keychain"
+  },
+  {
+    "name": "KICK_SCOOTER",
+    "label": "Kick Scooter"
+  },
+  {
+    "name": "KIMONO",
+    "label": "Kimono"
+  },
+  {
+    "name": "KITCHEN",
+    "label": "KITCHEN"
+  },
+  {
+    "name": "KITCHEN_KNIFE",
+    "label": "Kitchen Knife"
+  },
+  {
+    "name": "KITCHEN_TOOLS",
+    "label": "KITCHEN_TOOLS"
+  },
+  {
+    "name": "KITE",
+    "label": "Kite"
+  },
+  {
+    "name": "KNEE_PAD",
+    "label": "Knee Pad"
+  },
+  {
+    "name": "KNIFE",
+    "label": "Knife"
+  },
+  {
+    "name": "KNIFE_BLOCK",
+    "label": "Knife Block"
+  },
+  {
+    "name": "KNIFE_BLOCK_SET",
+    "label": "Knife Block Set"
+  },
+  {
+    "name": "KNIFE_SHARPENER",
+    "label": "Knife Sharpener"
+  },
+  {
+    "name": "KNITTING_NEEDLE",
+    "label": "Knitting Needle"
+  },
+  {
+    "name": "KURTA",
+    "label": "Kurta"
+  },
+  {
+    "name": "LABEL",
+    "label": "Label"
+  },
+  {
+    "name": "LAB_CHEMICAL",
+    "label": "Lab Chemical"
+  },
+  {
+    "name": "LAB_HOT_PLATE",
+    "label": "Lab Hot Plate"
+  },
+  {
+    "name": "LAB_PUMP",
+    "label": "Lab Pump"
+  },
+  {
+    "name": "LAB_SUPPLY",
+    "label": "LAB_SUPPLY"
+  },
+  {
+    "name": "LAB_SUPPLY_TUBE",
+    "label": "Lab Supply Tube"
+  },
+  {
+    "name": "LAB_UTENSIL",
+    "label": "LAB_UTENSIL"
+  },
+  {
+    "name": "LAB_WATER_BATH",
+    "label": "Lab Water Bath"
+  },
+  {
+    "name": "LADDER",
+    "label": "Ladder"
+  },
+  {
+    "name": "LAMINATOR",
+    "label": "Laminator"
+  },
+  {
+    "name": "LAMP",
+    "label": "Lamp"
+  },
+  {
+    "name": "LAMPSHADE",
+    "label": "Lampshade"
+  },
+  {
+    "name": "LANDLINE_PHONE",
+    "label": "Landline Phone"
+  },
+  {
+    "name": "LAP_DESK",
+    "label": "Lap Desk"
+  },
+  {
+    "name": "LASER_PRINTER_TONER",
+    "label": "Laser Printer Toner"
+  },
+  {
+    "name": "LAUNDRY_APPLIANCE",
+    "label": "LAUNDRY_APPLIANCE"
+  },
+  {
+    "name": "LAUNDRY_DETERGENT",
+    "label": "Laundry Detergent"
+  },
+  {
+    "name": "LAUNDRY_HAMPER",
+    "label": "Laundry Hamper"
+  },
+  {
+    "name": "LAWN_MOWER",
+    "label": "Lawn Mower"
+  },
+  {
+    "name": "LCD_CHARACTER_MODULE",
+    "label": "LCD Character Module"
+  },
+  {
+    "name": "LCD_DOT_MATRIX_MODULE",
+    "label": "LCD Dot Matrix Module"
+  },
+  {
+    "name": "LCD_GRAPHIC_DISPLAY",
+    "label": "LCD Graphic Display"
+  },
+  {
+    "name": "LEAF_BLOWER",
+    "label": "Leaf Blower"
+  },
+  {
+    "name": "LEASH",
+    "label": "Lead"
+  },
+  {
+    "name": "LEAVENING_AGENT",
+    "label": "Leaven"
+  },
+  {
+    "name": "LEGUME",
+    "label": "Legume"
+  },
+  {
+    "name": "LEG_SLEEVE",
+    "label": "Leg Sleeve"
+  },
+  {
+    "name": "LEHENGA",
+    "label": "LEHENGA"
+  },
+  {
+    "name": "LEHENGA_CHOLI_SET",
+    "label": "Lehenga Choli"
+  },
+  {
+    "name": "LEOTARD",
+    "label": "Leotard"
+  },
+  {
+    "name": "LEVEL",
+    "label": "Level"
+  },
+  {
+    "name": "LICENSE_PLATE_ATTACHMENT",
+    "label": "Number Plate Attachment"
+  },
+  {
+    "name": "LIGHTED_OUTDOOR_DISPLAY",
+    "label": "Lighted Outdoor Display"
+  },
+  {
+    "name": "LIGHTER_FLUID",
+    "label": "Lighter Fluid"
+  },
+  {
+    "name": "LIGHT_BOX",
+    "label": "Light Box"
+  },
+  {
+    "name": "LIGHT_BULB",
+    "label": "Light Bulb"
+  },
+  {
+    "name": "LIGHT_BULB_SOCKET",
+    "label": "Light Bulb Socket"
+  },
+  {
+    "name": "LIGHT_FIXTURE",
+    "label": "Light Fixture"
+  },
+  {
+    "name": "LIGHT_MOTOR_VEHICLE",
+    "label": "LIGHT_MOTOR_VEHICLE"
+  },
+  {
+    "name": "LIGHT_SOURCE",
+    "label": "Light Sources"
+  },
+  {
+    "name": "LINEAR_GUIDES_AND_RAILS",
+    "label": "Linear Guides & Rails"
+  },
+  {
+    "name": "LINT_REMOVER",
+    "label": "Lint Remover"
+  },
+  {
+    "name": "LIP_BALM",
+    "label": "Lip Balm"
+  },
+  {
+    "name": "LIP_COLOR",
+    "label": "Lip Color"
+  },
+  {
+    "name": "LIQUID_FUEL_CONTAINER",
+    "label": "Liquid Fuel Container"
+  },
+  {
+    "name": "LIQUID_INK",
+    "label": "Liquid Ink"
+  },
+  {
+    "name": "LITTER_BOX",
+    "label": "Litter Tray"
+  },
+  {
+    "name": "LIVESTOCK_HOUSING",
+    "label": "LIVESTOCK_HOUSING"
+  },
+  {
+    "name": "LOCATION_TRACKER",
+    "label": "Location Tracker"
+  },
+  {
+    "name": "LOCK",
+    "label": "Lock"
+  },
+  {
+    "name": "LOOSE_CUT_GEM",
+    "label": "Loose Cut Gem"
+  },
+  {
+    "name": "LUGGAGE",
+    "label": "Luggage"
+  },
+  {
+    "name": "LUXURY_BEAUTY",
+    "label": "LUXURY_BEAUTY"
+  },
+  {
+    "name": "MACHINE_LUBRICANT",
+    "label": "Machine Lubricant"
+  },
+  {
+    "name": "MAGNIFIER",
+    "label": "Magnifier"
+  },
+  {
+    "name": "MAILBOX",
+    "label": "Postbox"
+  },
+  {
+    "name": "MAJOR_HOME_APPLIANCES",
+    "label": "MAJOR_HOME_APPLIANCES"
+  },
+  {
+    "name": "MAKEUP_PRIMER",
+    "label": "Makeup Primer"
+  },
+  {
+    "name": "MAKEUP_VANITY",
+    "label": "Makeup Vanity"
+  },
+  {
+    "name": "MAKE_UP",
+    "label": "Makeup"
+  },
+  {
+    "name": "MANNEQUIN_CLOTHING_FORM",
+    "label": "Mannequin Clothing Form"
+  },
+  {
+    "name": "MANUAL_FOOD_MILL_GRINDER",
+    "label": "Manual Food Mill & Grinder"
+  },
+  {
+    "name": "MANUAL_SHAVING_RAZOR",
+    "label": "Manual Shaving Razor"
+  },
+  {
+    "name": "MAPS",
+    "label": "Map"
+  },
+  {
+    "name": "MARBLE_TRACK",
+    "label": "Marble Track"
+  },
+  {
+    "name": "MARKING_PEN",
+    "label": "Marking Pen"
+  },
+  {
+    "name": "MASCARA",
+    "label": "Mascara"
+  },
+  {
+    "name": "MASSAGER",
+    "label": "Massager"
+  },
+  {
+    "name": "MASSAGE_STICK",
+    "label": "Massage Stick"
+  },
+  {
+    "name": "MATERIAL_HANDLING",
+    "label": "MATERIAL_HANDLING"
+  },
+  {
+    "name": "MATERIAL_HANDLING_TRUCK",
+    "label": "Material Handling Truck"
+  },
+  {
+    "name": "MATTRESS",
+    "label": "Mattress"
+  },
+  {
+    "name": "MATTRESS_COVER",
+    "label": "Mattress Cover"
+  },
+  {
+    "name": "MEAL_HOLDER",
+    "label": "Meal Holder"
+  },
+  {
+    "name": "MEAL_REPLACEMENT_AND_PROTEIN_DRINK",
+    "label": "MEAL_REPLACEMENT_AND_PROTEIN_DRINK"
+  },
+  {
+    "name": "MEAL_REPLACEMENT_BEVERAGE",
+    "label": "Meal Replacement Beverage"
+  },
+  {
+    "name": "MEASURING_CUP",
+    "label": "Measuring Cup"
+  },
+  {
+    "name": "MEAT",
+    "label": "Meat"
+  },
+  {
+    "name": "MEAT_ALTERNATIVE",
+    "label": "Meat Substitute"
+  },
+  {
+    "name": "MEAT_AND_POULTRY",
+    "label": "MEAT_AND_POULTRY"
+  },
+  {
+    "name": "MECHANICAL_BELT",
+    "label": "Mechanical Belt"
+  },
+  {
+    "name": "MECHANICAL_COMPONENTS",
+    "label": "MECHANICAL_COMPONENTS"
+  },
+  {
+    "name": "MECHANICAL_FASTENERS",
+    "label": "Mechanical Fastener"
+  },
+  {
+    "name": "MECHANICAL_LIGHTER",
+    "label": "Mechanical Lighter"
+  },
+  {
+    "name": "MEDIA",
+    "label": "MEDIA"
+  },
+  {
+    "name": "MEDIA_READER",
+    "label": "MEDIA_READER"
+  },
+  {
+    "name": "MEDIA_STORAGE",
+    "label": "MEDIA_STORAGE"
+  },
+  {
+    "name": "MEDICAL_COMPRESSION_GARMENT",
+    "label": "Medical Compression Garment"
+  },
+  {
+    "name": "MEDICAL_DEVICE",
+    "label": "MEDICAL_DEVICE"
+  },
+  {
+    "name": "MEDICAL_SCRUB_SET",
+    "label": "Medical Scrub Set"
+  },
+  {
+    "name": "MEDICAL_SUPPLIES",
+    "label": "MEDICAL_SUPPLIES"
+  },
+  {
+    "name": "MEDICAL_TEST_STRIP",
+    "label": "Medical Test Strip"
+  },
+  {
+    "name": "MEDICATION",
+    "label": "Medication"
+  },
+  {
+    "name": "MEMORY_CARD_READER",
+    "label": "Memory Card Reader"
+  },
+  {
+    "name": "MEMORY_READER",
+    "label": "MEMORY_READER"
+  },
+  {
+    "name": "MENSTRUAL_CUP",
+    "label": "Menstrual Cup"
+  },
+  {
+    "name": "MESS_KIT",
+    "label": "Mess Kit"
+  },
+  {
+    "name": "METALS",
+    "label": "METALS"
+  },
+  {
+    "name": "METAL_BALLS",
+    "label": "METAL_BALLS"
+  },
+  {
+    "name": "METAL_DETECTOR",
+    "label": "Metal Detector"
+  },
+  {
+    "name": "METAL_MESH",
+    "label": "METAL_MESH"
+  },
+  {
+    "name": "METAL_TUBING",
+    "label": "METAL_TUBING"
+  },
+  {
+    "name": "MICROCURRENT_FACIAL_MACHINE",
+    "label": "Microcurrent Facial Machine"
+  },
+  {
+    "name": "MICROPHONE",
+    "label": "Microphone"
+  },
+  {
+    "name": "MICROPHONE_ELEMENT",
+    "label": "Microphone Element"
+  },
+  {
+    "name": "MICROPHONE_STAND",
+    "label": "Microphone Stand"
+  },
+  {
+    "name": "MICROSCOPES",
+    "label": "Microscope"
+  },
+  {
+    "name": "MICROWAVE_OVEN",
+    "label": "Microwave Oven"
+  },
+  {
+    "name": "MILK_FROTHER",
+    "label": "Milk Frother"
+  },
+  {
+    "name": "MILK_SUBSTITUTE",
+    "label": "Milk Substitute"
+  },
+  {
+    "name": "MINERAL_SUPPLEMENT",
+    "label": "Mineral Supplement"
+  },
+  {
+    "name": "MINIATURE_TOY_BUILDING",
+    "label": "Miniature Toy Building"
+  },
+  {
+    "name": "MINIATURE_TOY_FURNISHING",
+    "label": "Miniature Toy Furnishing"
+  },
+  {
+    "name": "MINIDISC_PLAYER_OR_RECORDER",
+    "label": "MINIDISC_PLAYER_OR_RECORDER"
+  },
+  {
+    "name": "MISCELLANEOUS_ELECTRONICS",
+    "label": "MISCELLANEOUS_ELECTRONICS"
+  },
+  {
+    "name": "MISC_OTHER",
+    "label": "MISC_OTHER"
+  },
+  {
+    "name": "MISC_WORLD_INSTRUMENTS",
+    "label": "MISC_WORLD_INSTRUMENTS"
+  },
+  {
+    "name": "MODEL",
+    "label": "MODEL"
+  },
+  {
+    "name": "MODEM",
+    "label": "Modem"
+  },
+  {
+    "name": "MOISTURIZING_SOCK_GLOVE",
+    "label": "Moisturising Sock & Glove"
+  },
+  {
+    "name": "MONEY_BANK",
+    "label": "Money Bank"
+  },
+  {
+    "name": "MONITOR",
+    "label": "Monitor"
+  },
+  {
+    "name": "MOP",
+    "label": "Mop"
+  },
+  {
+    "name": "MOP_BUCKET_SET",
+    "label": "Mop & Bucket Set"
+  },
+  {
+    "name": "MORTAR_AND_PESTLE_SET",
+    "label": "Mortar & Pestle Set"
+  },
+  {
+    "name": "MOTHERBOARD",
+    "label": "Motherboard"
+  },
+  {
+    "name": "MOTION_ACTUATED_SWITCH",
+    "label": "MOTION_ACTUATED_SWITCH"
+  },
+  {
+    "name": "MOTION_DETECTOR_DEVICE",
+    "label": "Motion Detector Device"
+  },
+  {
+    "name": "MOTORCYCLES",
+    "label": "Motorcycle"
+  },
+  {
+    "name": "MOTORCYCLE_ACCESSORY",
+    "label": "MOTORCYCLE_ACCESSORY"
+  },
+  {
+    "name": "MOTORCYCLE_PART",
+    "label": "MOTORCYCLE_PART"
+  },
+  {
+    "name": "MOTOR_ENGINE_FUEL_TANK",
+    "label": "Motor Engine Fuel Tank"
+  },
+  {
+    "name": "MOTOR_STARTER",
+    "label": "Motor Starter"
+  },
+  {
+    "name": "MOUNTED_POINTS",
+    "label": "Mounted Point"
+  },
+  {
+    "name": "MOUNTED_STORAGE_SYSTEM_KIT",
+    "label": "Mounted Storage System Kit"
+  },
+  {
+    "name": "MOUNT_BRACKET",
+    "label": "Mount & Bracket"
+  },
+  {
+    "name": "MOUSE_PAD",
+    "label": "Mouse Pad"
+  },
+  {
+    "name": "MOUTHWASH",
+    "label": "Mouthwash"
+  },
+  {
+    "name": "MOUTH_GUARD",
+    "label": "Mouth Guard"
+  },
+  {
+    "name": "MP3_PLAYER",
+    "label": "MP3 Player"
+  },
+  {
+    "name": "MUFFLER",
+    "label": "Muffler"
+  },
+  {
+    "name": "MULTIFUNCTION_DEVICE",
+    "label": "MULTIFUNCTION_DEVICE"
+  },
+  {
+    "name": "MULTIFUNCTION_OFFICE_MACHINE",
+    "label": "MULTIFUNCTION_OFFICE_MACHINE"
+  },
+  {
+    "name": "MULTIPORT_HUB",
+    "label": "Multiport Hub"
+  },
+  {
+    "name": "MULTITOOL",
+    "label": "Multitool"
+  },
+  {
+    "name": "MUSCLE_ROLLER",
+    "label": "Muscle Roller"
+  },
+  {
+    "name": "MUSICAL_INSTRUMENTS",
+    "label": "Musical Instrument"
+  },
+  {
+    "name": "MUSICAL_INSTRUMENT_AMPLIFIER",
+    "label": "Musical Instrument Amplifier"
+  },
+  {
+    "name": "MUSICAL_INSTRUMENT_STRING",
+    "label": "Musical Instrument String"
+  },
+  {
+    "name": "MUSICAL_INSTRUMENT_TOY",
+    "label": "Musical Instrument Toy"
+  },
+  {
+    "name": "MUSIC_CLASSICAL",
+    "label": "MUSIC_CLASSICAL"
+  },
+  {
+    "name": "MUSIC_INSTRUMENT_OR_EQUIPMENT",
+    "label": "MUSIC_INSTRUMENT_OR_EQUIPMENT"
+  },
+  {
+    "name": "MUSIC_POPULAR",
+    "label": "MUSIC_POPULAR"
+  },
+  {
+    "name": "NAIL_CLIPPER",
+    "label": "Nail Clipper"
+  },
+  {
+    "name": "NAIL_DRILL",
+    "label": "Nail Drill"
+  },
+  {
+    "name": "NAIL_DRYER",
+    "label": "Nail Dryer"
+  },
+  {
+    "name": "NAIL_FILE",
+    "label": "Nail File"
+  },
+  {
+    "name": "NAIL_POLISH",
+    "label": "Nail Polish"
+  },
+  {
+    "name": "NAIL_POLISH_BRUSH",
+    "label": "Nail Polish Brush"
+  },
+  {
+    "name": "NAIL_POLISH_REMOVER",
+    "label": "Nail Polish Remover"
+  },
+  {
+    "name": "NAIL_POWDER",
+    "label": "Nail Powder"
+  },
+  {
+    "name": "NAIL_TREATMENT",
+    "label": "Nail Treatment"
+  },
+  {
+    "name": "NAPKIN_HOLDER",
+    "label": "Napkin Holder"
+  },
+  {
+    "name": "NAPKIN_RING",
+    "label": "Napkin Ring"
+  },
+  {
+    "name": "NASAL_ASPIRATOR",
+    "label": "Nasal Aspirator"
+  },
+  {
+    "name": "NAVIGATION_COMPASS",
+    "label": "Navigation Compass"
+  },
+  {
+    "name": "NECKLACE",
+    "label": "Necklace"
+  },
+  {
+    "name": "NECKTIE",
+    "label": "Necktie"
+  },
+  {
+    "name": "NETTING_COVER",
+    "label": "Netting Cover"
+  },
+  {
+    "name": "NETWORKING",
+    "label": "NETWORKING"
+  },
+  {
+    "name": "NETWORKING_DEVICE",
+    "label": "NETWORKING_DEVICE"
+  },
+  {
+    "name": "NETWORKING_HUB",
+    "label": "NETWORKING_HUB"
+  },
+  {
+    "name": "NETWORKING_ROUTER",
+    "label": "Networking Router"
+  },
+  {
+    "name": "NETWORK_ACCESSORY",
+    "label": "NETWORK_ACCESSORY"
+  },
+  {
+    "name": "NETWORK_ADAPTER",
+    "label": "NETWORK_ADAPTER"
+  },
+  {
+    "name": "NETWORK_CONCENTRATOR",
+    "label": "NETWORK_CONCENTRATOR"
+  },
+  {
+    "name": "NETWORK_INTERFACE_CONTROLLER_ADAPTER",
+    "label": "Network Interface Controller & Adapter"
+  },
+  {
+    "name": "NETWORK_MEDIA_PLAYER",
+    "label": "NETWORK_MEDIA_PLAYER"
+  },
+  {
+    "name": "NETWORK_STORAGE",
+    "label": "NETWORK_STORAGE"
+  },
+  {
+    "name": "NETWORK_SWITCH",
+    "label": "Network Switch"
+  },
+  {
+    "name": "NICOTINE_REPLACEMENT",
+    "label": "Nicotine Replacement"
+  },
+  {
+    "name": "NIGHTGOWN_NIGHTSHIRT",
+    "label": "Nightgown & Nightshirt"
+  },
+  {
+    "name": "NOISE_MACHINE",
+    "label": "Noise Machine"
+  },
+  {
+    "name": "NONAPPARELMISC",
+    "label": "NONAPPARELMISC"
+  },
+  {
+    "name": "NON_DAIRY_CHEESE",
+    "label": "Non-Dairy Cheese"
+  },
+  {
+    "name": "NON_DAIRY_CREAM",
+    "label": "Non-Dairy Cream"
+  },
+  {
+    "name": "NON_DAIRY_ICE_CREAM",
+    "label": "Non-Dairy Ice Cream"
+  },
+  {
+    "name": "NON_DAIRY_PUDDING",
+    "label": "Non-Dairy Pudding"
+  },
+  {
+    "name": "NON_DAIRY_YOGURT",
+    "label": "Non-Dairy Yoghurt"
+  },
+  {
+    "name": "NON_RIDING_TOY_VEHICLE",
+    "label": "Toy Vehicle"
+  },
+  {
+    "name": "NOODLE",
+    "label": "Noodle"
+  },
+  {
+    "name": "NOTEBOOK_COMPUTER",
+    "label": "Laptop Computer"
+  },
+  {
+    "name": "NUTRITIONAL_SUPPLEMENT",
+    "label": "Nutritional Supplement"
+  },
+  {
+    "name": "NUTRITION_BAR",
+    "label": "NUTRITION_BAR"
+  },
+  {
+    "name": "NUTS",
+    "label": "Hardware Nut"
+  },
+  {
+    "name": "NUT_AND_SEED",
+    "label": "Nuts & Seeds"
+  },
+  {
+    "name": "NUT_BUTTER",
+    "label": "Nut Butter"
+  },
+  {
+    "name": "OBI",
+    "label": "OBI"
+  },
+  {
+    "name": "OFFICE_ELECTRONICS",
+    "label": "OFFICE_ELECTRONICS"
+  },
+  {
+    "name": "OFFICE_PRODUCTS",
+    "label": "OFFICE_PRODUCTS"
+  },
+  {
+    "name": "OIL_FILTER",
+    "label": "Oil Filter"
+  },
+  {
+    "name": "OLIVE",
+    "label": "Olive"
+  },
+  {
+    "name": "ONBOARD_CAMERA",
+    "label": "Onboard Camera"
+  },
+  {
+    "name": "ONE_PIECE_OUTFIT",
+    "label": "One-Piece Outfit"
+  },
+  {
+    "name": "OPTICAL_DISC_DRIVE",
+    "label": "Optical Disc Drive"
+  },
+  {
+    "name": "ORAL_IRRIGATOR",
+    "label": "Oral Irrigator"
+  },
+  {
+    "name": "ORCA_SHIRT",
+    "label": "ORCA_SHIRT"
+  },
+  {
+    "name": "ORTHOPEDIC_BRACE",
+    "label": "Orthopedic Brace"
+  },
+  {
+    "name": "OTC_MEDICATION",
+    "label": "OTC_MEDICATION"
+  },
+  {
+    "name": "OTTOMAN",
+    "label": "Ottoman"
+  },
+  {
+    "name": "OUTBOARD_MOTOR",
+    "label": "Outboard Motor"
+  },
+  {
+    "name": "OUTBUILDING",
+    "label": "Outbuilding"
+  },
+  {
+    "name": "OUTDOOR_LIVING",
+    "label": "OUTDOOR_LIVING"
+  },
+  {
+    "name": "OUTDOOR_RECREATION_PRODUCT",
+    "label": "OUTDOOR_RECREATION_PRODUCT"
+  },
+  {
+    "name": "OUTERWEAR",
+    "label": "OUTERWEAR"
+  },
+  {
+    "name": "OVERALLS",
+    "label": "Overalls"
+  },
+  {
+    "name": "O_RINGS",
+    "label": "O-Ring"
+  },
+  {
+    "name": "PACIFIER",
+    "label": "Dummy"
+  },
+  {
+    "name": "PACKAGED_SOUP_AND_STEW",
+    "label": "Soup Stew"
+  },
+  {
+    "name": "PACKING_MATERIAL",
+    "label": "Packing Material"
+  },
+  {
+    "name": "PADDLEBOARD",
+    "label": "Paddleboard"
+  },
+  {
+    "name": "PAGER",
+    "label": "Pager"
+  },
+  {
+    "name": "PAINT",
+    "label": "Paint"
+  },
+  {
+    "name": "PAINT_BRUSH",
+    "label": "Paint Brush"
+  },
+  {
+    "name": "PAJAMAS",
+    "label": "Pyjamas"
+  },
+  {
+    "name": "PALETTE_PUTTY_KNIFE",
+    "label": "Palette & Putty Knife"
+  },
+  {
+    "name": "PANTS",
+    "label": "Pants"
+  },
+  {
+    "name": "PAPER_CLIP_CLAMP",
+    "label": "Paper Clip & Clamp"
+  },
+  {
+    "name": "PAPER_PRODUCT",
+    "label": "PAPER_PRODUCT"
+  },
+  {
+    "name": "PAPER_SHREDDER",
+    "label": "Paper Shredder"
+  },
+  {
+    "name": "PAPER_TOWEL",
+    "label": "Paper Towel"
+  },
+  {
+    "name": "PAPER_TOWEL_HOLDER",
+    "label": "Paper Towel Holder"
+  },
+  {
+    "name": "PARTY_DECORATION_PACK",
+    "label": "Party Decoration Pack"
+  },
+  {
+    "name": "PARTY_FAVOR",
+    "label": "Party Favour"
+  },
+  {
+    "name": "PARTY_SUPPLIES",
+    "label": "PARTY_SUPPLIES"
+  },
+  {
+    "name": "PASSENGER_MOTOR_VEHICLE",
+    "label": "Passenger Motor Vehicle"
+  },
+  {
+    "name": "PASTA_AND_NOODLES",
+    "label": "PASTA_AND_NOODLES"
+  },
+  {
+    "name": "PASTA_MAKER",
+    "label": "Pasta Maker"
+  },
+  {
+    "name": "PASTRY",
+    "label": "Pastry"
+  },
+  {
+    "name": "PASTRY_BASTING_BRUSH",
+    "label": "Pastry Basting Brush"
+  },
+  {
+    "name": "PAW_HOOF_PROTECTOR",
+    "label": "Paw & Hoof Protector"
+  },
+  {
+    "name": "PA_SYSTEM",
+    "label": "PA System"
+  },
+  {
+    "name": "PDA",
+    "label": "PDA"
+  },
+  {
+    "name": "PENCIL_SHARPENER",
+    "label": "Pencil Sharpener"
+  },
+  {
+    "name": "PEN_MARKER_INK_CARTRIDGE_REFILL",
+    "label": "Pen Ink Cartridge Refill"
+  },
+  {
+    "name": "PERCUSSION_INSTRUMENTS",
+    "label": "PERCUSSION_INSTRUMENTS"
+  },
+  {
+    "name": "PERSONALBODYCARE",
+    "label": "PERSONALBODYCARE"
+  },
+  {
+    "name": "PERSONAL_CARE_APPLIANCE",
+    "label": "PERSONAL_CARE_APPLIANCE"
+  },
+  {
+    "name": "PERSONAL_COMPUTER",
+    "label": "Desktop Computer"
+  },
+  {
+    "name": "PERSONAL_FLOTATION_DEVICE",
+    "label": "Personal Flotation Device"
+  },
+  {
+    "name": "PERSONAL_FRAGRANCE",
+    "label": "Personal Fragrance"
+  },
+  {
+    "name": "PERSONAL_PILL_DISPENSER",
+    "label": "Personal Pill Dispenser"
+  },
+  {
+    "name": "PESTICIDE",
+    "label": "Pesticide"
+  },
+  {
+    "name": "PEST_CONTROL_DEVICE",
+    "label": "Pest Control Device"
+  },
+  {
+    "name": "PET_ACTIVITY_STRUCTURE",
+    "label": "Pet Activity Structure"
+  },
+  {
+    "name": "PET_APPAREL",
+    "label": "Pet Apparel"
+  },
+  {
+    "name": "PET_BED_MAT",
+    "label": "Pet Bed Mat"
+  },
+  {
+    "name": "PET_DOOR",
+    "label": "Pet Door"
+  },
+  {
+    "name": "PET_FEEDER",
+    "label": "Pet Feeder"
+  },
+  {
+    "name": "PET_FOOD",
+    "label": "Pet Food"
+  },
+  {
+    "name": "PET_HEALTH_CARE",
+    "label": "PET_HEALTH_CARE"
+  },
+  {
+    "name": "PET_PEST_CONTROL",
+    "label": "Pet Pest Control"
+  },
+  {
+    "name": "PET_PLACEMAT",
+    "label": "Pet Placemat"
+  },
+  {
+    "name": "PET_PLAYPEN",
+    "label": "Pet Playpen"
+  },
+  {
+    "name": "PET_SEAT",
+    "label": "Pet Seat"
+  },
+  {
+    "name": "PET_SUPPLIES",
+    "label": "PET_SUPPLIES"
+  },
+  {
+    "name": "PET_TOY",
+    "label": "Pet Toy"
+  },
+  {
+    "name": "PHONE",
+    "label": "PHONE"
+  },
+  {
+    "name": "PHONE_ACCESSORY",
+    "label": "PHONE_ACCESSORY"
+  },
+  {
+    "name": "PHOTOGRAPHIC_FILM",
+    "label": "Photographic Film"
+  },
+  {
+    "name": "PHOTOGRAPHIC_LIGHTING",
+    "label": "PHOTOGRAPHIC_LIGHTING"
+  },
+  {
+    "name": "PHOTOGRAPHIC_LIGHT_METER",
+    "label": "Photographic Light Meter"
+  },
+  {
+    "name": "PHOTOGRAPHIC_PAPER",
+    "label": "Darkroom Paper"
+  },
+  {
+    "name": "PHOTOGRAPHIC_PROJECTOR",
+    "label": "PHOTOGRAPHIC_PROJECTOR"
+  },
+  {
+    "name": "PHOTOGRAPHIC_STUDIO_ITEMS",
+    "label": "PHOTOGRAPHIC_STUDIO_ITEMS"
+  },
+  {
+    "name": "PHYSICAL_GIFT_CARD",
+    "label": "PHYSICAL_GIFT_CARD"
+  },
+  {
+    "name": "PHYSICAL_MOVIE",
+    "label": "Physical Movie Release"
+  },
+  {
+    "name": "PHYSICAL_SOFTWARE",
+    "label": "Physical Software"
+  },
+  {
+    "name": "PHYSICAL_TV_SERIES",
+    "label": "Physical TV Series"
+  },
+  {
+    "name": "PHYSICAL_VIDEO_GAME_SOFTWARE",
+    "label": "Physical Video Game"
+  },
+  {
+    "name": "PICKLE",
+    "label": "Pickle"
+  },
+  {
+    "name": "PICNIC_HOLDER",
+    "label": "Picnic Holder"
+  },
+  {
+    "name": "PICTURE_FRAME",
+    "label": "Picture Frame"
+  },
+  {
+    "name": "PICTURE_HANGER",
+    "label": "Picture Hanger"
+  },
+  {
+    "name": "PIE",
+    "label": "Pie"
+  },
+  {
+    "name": "PIERCING_JEWELRY",
+    "label": "Piercing Jewellery"
+  },
+  {
+    "name": "PILLOW",
+    "label": "Pillow"
+  },
+  {
+    "name": "PILLOWCASE",
+    "label": "Pillowcase"
+  },
+  {
+    "name": "PILLOW_PROTECTOR",
+    "label": "Pillow Protector"
+  },
+  {
+    "name": "PINATA",
+    "label": "Piñata"
+  },
+  {
+    "name": "PINBOARD",
+    "label": "Pinboard"
+  },
+  {
+    "name": "PIPING_TIP",
+    "label": "Piping Tip"
+  },
+  {
+    "name": "PITCHER",
+    "label": "Pitcher"
+  },
+  {
+    "name": "PIZZA",
+    "label": "Pizza"
+  },
+  {
+    "name": "PLACEMAT",
+    "label": "Placemat"
+  },
+  {
+    "name": "PLANNER",
+    "label": "Planner"
+  },
+  {
+    "name": "PLANTER",
+    "label": "Planter"
+  },
+  {
+    "name": "PLANT_SEED",
+    "label": "Plant & Seed"
+  },
+  {
+    "name": "PLASTICS",
+    "label": "PLASTICS"
+  },
+  {
+    "name": "PLASTIC_BALLS",
+    "label": "PLASTIC_BALLS"
+  },
+  {
+    "name": "PLASTIC_MESH",
+    "label": "PLASTIC_MESH"
+  },
+  {
+    "name": "PLASTIC_TUBING",
+    "label": "PLASTIC_TUBING"
+  },
+  {
+    "name": "PLAYARD",
+    "label": "Playpen"
+  },
+  {
+    "name": "PLAYHOUSE",
+    "label": "Playhouse"
+  },
+  {
+    "name": "PLAY_SLIDE",
+    "label": "Play Slide"
+  },
+  {
+    "name": "PLAY_WORKSTATION",
+    "label": "Play Workstation"
+  },
+  {
+    "name": "PLECTRUM",
+    "label": "Plectrum"
+  },
+  {
+    "name": "PLIERS",
+    "label": "Pliers"
+  },
+  {
+    "name": "PLUG_STOPPER",
+    "label": "Plug Stopper"
+  },
+  {
+    "name": "PLUMBING_FIXTURE",
+    "label": "PLUMBING_FIXTURE"
+  },
+  {
+    "name": "POINTING_DEVICE",
+    "label": "POINTING_DEVICE"
+  },
+  {
+    "name": "POLISHING_BUFFING_TOOL",
+    "label": "Polishing Buffing Tool"
+  },
+  {
+    "name": "POOL_COVER",
+    "label": "Pool Cover"
+  },
+  {
+    "name": "POOL_SPA_WATER_TREATMENT",
+    "label": "Pool & Spa Water Treatment"
+  },
+  {
+    "name": "POOL_VACUUM",
+    "label": "Pool Vacuum"
+  },
+  {
+    "name": "POPCORN",
+    "label": "Popcorn"
+  },
+  {
+    "name": "POPCORN_POPPER",
+    "label": "Popcorn Popper"
+  },
+  {
+    "name": "PORTABLE_AUDIO",
+    "label": "PORTABLE_AUDIO"
+  },
+  {
+    "name": "PORTABLE_AV_DEVICE",
+    "label": "PORTABLE_AV_DEVICE"
+  },
+  {
+    "name": "PORTABLE_ELECTRONICS",
+    "label": "PORTABLE_ELECTRONICS"
+  },
+  {
+    "name": "PORTABLE_ELECTRONIC_DEVICE_ARMBAND",
+    "label": "Portable Electronic Device Armband"
+  },
+  {
+    "name": "PORTABLE_ELECTRONIC_DEVICE_COVER",
+    "label": "Portable Electronic Device Case"
+  },
+  {
+    "name": "PORTABLE_ELECTRONIC_DEVICE_MOUNT",
+    "label": "Portable Electronic Device Mount"
+  },
+  {
+    "name": "PORTABLE_ELECTRONIC_DEVICE_STAND",
+    "label": "Portable Electronic Device Stand"
+  },
+  {
+    "name": "PORTABLE_FREESTANDING_SHELTER",
+    "label": "Portable Freestanding Shelter"
+  },
+  {
+    "name": "PORTABLE_STOVE",
+    "label": "Portable Stove"
+  },
+  {
+    "name": "PORTABLE_TOOL_BOX",
+    "label": "Portable Tool Box"
+  },
+  {
+    "name": "PORTABLE_VIDEO_DISC_PLAYER",
+    "label": "Portable Video Disc Player"
+  },
+  {
+    "name": "POTABLE_WATER_FILTER",
+    "label": "Potable Water Filter"
+  },
+  {
+    "name": "POTPOURRI_SACHET",
+    "label": "Potpourri & Sachet"
+  },
+  {
+    "name": "POTTERY_AND_GLASS",
+    "label": "POTTERY_AND_GLASS"
+  },
+  {
+    "name": "POT_HOLDER",
+    "label": "Pot Holder"
+  },
+  {
+    "name": "POULTRY",
+    "label": "Poultry"
+  },
+  {
+    "name": "POWERSPORTS_PROTECTIVE_GEAR",
+    "label": "POWERSPORTS_PROTECTIVE_GEAR"
+  },
+  {
+    "name": "POWERSPORTS_RIDING_APPAREL",
+    "label": "POWERSPORTS_RIDING_APPAREL"
+  },
+  {
+    "name": "POWERSPORTS_RIDING_GLOVES",
+    "label": "POWERSPORTS_RIDING_GLOVES"
+  },
+  {
+    "name": "POWERSPORTS_RIDING_HELMET",
+    "label": "POWERSPORTS_RIDING_HELMET"
+  },
+  {
+    "name": "POWERSPORTS_RIDING_JACKET",
+    "label": "POWERSPORTS_RIDING_JACKET"
+  },
+  {
+    "name": "POWERSPORTS_RIDING_PANTS",
+    "label": "POWERSPORTS_RIDING_PANTS"
+  },
+  {
+    "name": "POWERSPORTS_RIDING_SHIRT",
+    "label": "POWERSPORTS_RIDING_SHIRT"
+  },
+  {
+    "name": "POWERSPORTS_RIDING_SHOES",
+    "label": "POWERSPORTS_RIDING_SHOES"
+  },
+  {
+    "name": "POWERSPORTS_RIDING_SUIT",
+    "label": "POWERSPORTS_RIDING_SUIT"
+  },
+  {
+    "name": "POWERSPORTS_VEHICLE_PART",
+    "label": "POWERSPORTS_VEHICLE_PART"
+  },
+  {
+    "name": "POWERSPORT_VEHICLE_FOOTREST",
+    "label": "Powersport Vehicle Footrest"
+  },
+  {
+    "name": "POWER_BANK",
+    "label": "Power Bank"
+  },
+  {
+    "name": "POWER_CONVERTER",
+    "label": "Power Converter"
+  },
+  {
+    "name": "POWER_CORD",
+    "label": "Power Cord"
+  },
+  {
+    "name": "POWER_INVERTER",
+    "label": "Power Inverter"
+  },
+  {
+    "name": "POWER_STRIP",
+    "label": "Power Strip"
+  },
+  {
+    "name": "POWER_SUPPLIES_OR_PROTECTION",
+    "label": "POWER_SUPPLIES_OR_PROTECTION"
+  },
+  {
+    "name": "POWER_SUPPLY",
+    "label": "Power Supply"
+  },
+  {
+    "name": "POWER_TOOL_SET",
+    "label": "Power Tool Set"
+  },
+  {
+    "name": "PRECISION_MEASURING",
+    "label": "PRECISION_MEASURING"
+  },
+  {
+    "name": "PRELOADED_ELECTRONIC_GAME",
+    "label": "Preloaded Electronic Game"
+  },
+  {
+    "name": "PREPARED_AND_PRESERVED_FOOD",
+    "label": "PREPARED_AND_PRESERVED_FOOD"
+  },
+  {
+    "name": "PREPARED_DOUGH",
+    "label": "Dough"
+  },
+  {
+    "name": "PRESCRIPTION_DRUG",
+    "label": "PRESCRIPTION_DRUG"
+  },
+  {
+    "name": "PRESCRIPTION_EYEWEAR",
+    "label": "PRESCRIPTION_EYEWEAR"
+  },
+  {
+    "name": "PRESSER_FOOT",
+    "label": "Presser Foot"
+  },
+  {
+    "name": "PRESSURE_COOKER",
+    "label": "Pressure Cooker"
+  },
+  {
+    "name": "PRESSURE_WASHER",
+    "label": "Pressure Washer"
+  },
+  {
+    "name": "PRETEND_PLAY_TOY",
+    "label": "Pretend Play Toy"
+  },
+  {
+    "name": "PRETZEL",
+    "label": "Pretzel"
+  },
+  {
+    "name": "PRINTED_MEDIA",
+    "label": "PRINTED_MEDIA"
+  },
+  {
+    "name": "PRINTER",
+    "label": "Printer"
+  },
+  {
+    "name": "PRINTER_CONSUMABLE",
+    "label": "PRINTER_CONSUMABLE"
+  },
+  {
+    "name": "PRINTS_AND_POSTERS",
+    "label": "PRINTS_AND_POSTERS"
+  },
+  {
+    "name": "PRINT_COPY_PAPER",
+    "label": "Copy & Printing Paper"
+  },
+  {
+    "name": "PRODUCT",
+    "label": "Product"
+  },
+  {
+    "name": "PROFESSIONAL_CHEMICALS",
+    "label": "PROFESSIONAL_CHEMICALS"
+  },
+  {
+    "name": "PROFESSIONAL_HEALTHCARE",
+    "label": "PROFESSIONAL_HEALTHCARE"
+  },
+  {
+    "name": "PROJECTILE_BOW",
+    "label": "Projectile Bow"
+  },
+  {
+    "name": "PROJECTION_SCREEN",
+    "label": "Projector Screen"
+  },
+  {
+    "name": "PROTECTIVE_GEAR",
+    "label": "PROTECTIVE_GEAR"
+  },
+  {
+    "name": "PROTECTIVE_GLOVE",
+    "label": "Protective Glove"
+  },
+  {
+    "name": "PROTEIN_DRINK",
+    "label": "Protein Drink"
+  },
+  {
+    "name": "PROTEIN_SUPPLEMENT_POWDER",
+    "label": "Protein Supplement Powder"
+  },
+  {
+    "name": "PUFFED_SNACK",
+    "label": "Puffed Grain Snack"
+  },
+  {
+    "name": "PULLEYS",
+    "label": "Pulley"
+  },
+  {
+    "name": "PULL_UP_BAR",
+    "label": "Pull-Up Bar"
+  },
+  {
+    "name": "PUMP_DISPENSER",
+    "label": "Pump Dispenser"
+  },
+  {
+    "name": "PUMP_SPRAYER",
+    "label": "Pump Sprayer"
+  },
+  {
+    "name": "PUNCHING_BAG",
+    "label": "Punch Bag"
+  },
+  {
+    "name": "PUPPET",
+    "label": "Puppet"
+  },
+  {
+    "name": "PUSH_PULL_TOY",
+    "label": "Push & Pull Toy"
+  },
+  {
+    "name": "PUZZLES",
+    "label": "Puzzle"
+  },
+  {
+    "name": "RADAR_DETECTOR",
+    "label": "Radar Detector"
+  },
+  {
+    "name": "RADIO",
+    "label": "Radio"
+  },
+  {
+    "name": "RADIO_FREQUENCY_FILTER",
+    "label": "Radio Frequency Filter"
+  },
+  {
+    "name": "RAKE",
+    "label": "Rake"
+  },
+  {
+    "name": "RAMP",
+    "label": "Ramp"
+  },
+  {
+    "name": "RAM_MEMORY",
+    "label": "RAM_MEMORY"
+  },
+  {
+    "name": "RANGE",
+    "label": "Range"
+  },
+  {
+    "name": "RANGEFINDER",
+    "label": "Rangefinder"
+  },
+  {
+    "name": "RAW_MATERIALS",
+    "label": "Raw Construction Material"
+  },
+  {
+    "name": "RAZOR_BLADE_CARTRIDGE",
+    "label": "Razor Blade Cartridge"
+  },
+  {
+    "name": "RECEIVER_OR_AMPLIFIER",
+    "label": "RECEIVER_OR_AMPLIFIER"
+  },
+  {
+    "name": "RECIPROCATING_HEDGE_TRIMMER",
+    "label": "Reciprocating Hedge Trimmer"
+  },
+  {
+    "name": "RECREATION_BALL",
+    "label": "Activity Ball"
+  },
+  {
+    "name": "REFRIGERATION_APPLIANCE",
+    "label": "REFRIGERATION_APPLIANCE"
+  },
+  {
+    "name": "REFRIGERATOR",
+    "label": "Refrigerator"
+  },
+  {
+    "name": "REINFORCED_ART_SURFACE",
+    "label": "Reinforced Art Surface"
+  },
+  {
+    "name": "RELAY",
+    "label": "Relay"
+  },
+  {
+    "name": "RELISH",
+    "label": "Relish"
+  },
+  {
+    "name": "REMOTE_CONTROL",
+    "label": "Remote Control"
+  },
+  {
+    "name": "RESPIRATOR",
+    "label": "Respirator"
+  },
+  {
+    "name": "REUSABLE_INCONTINENCE_SURFACE_PROTECTOR",
+    "label": "Reusable Incontinence Surface Protector"
+  },
+  {
+    "name": "RICE_COOKERS",
+    "label": "Rice Cooker"
+  },
+  {
+    "name": "RICE_MIX",
+    "label": "Rice Mix"
+  },
+  {
+    "name": "RICE_WINE",
+    "label": "Rice Wine"
+  },
+  {
+    "name": "RIDE_ON_TOY",
+    "label": "Ride-On Toy"
+  },
+  {
+    "name": "RIGID_COUPLINGS",
+    "label": "Rigid Couplings"
+  },
+  {
+    "name": "RING",
+    "label": "Ring"
+  },
+  {
+    "name": "ROASTING_PAN",
+    "label": "Roasting Tin"
+  },
+  {
+    "name": "ROBE",
+    "label": "Robe"
+  },
+  {
+    "name": "ROBOTIC_VACUUM_CLEANER",
+    "label": "Robotic Vacuum Cleaner"
+  },
+  {
+    "name": "ROLLER_CHAIN",
+    "label": "Roller Chain"
+  },
+  {
+    "name": "ROLLER_SKATE",
+    "label": "Roller Skate"
+  },
+  {
+    "name": "ROLLING_PAPER",
+    "label": "Rolling Paper"
+  },
+  {
+    "name": "ROLLING_PIN",
+    "label": "Rolling Pin"
+  },
+  {
+    "name": "ROM_MEMORY",
+    "label": "ROM_MEMORY"
+  },
+  {
+    "name": "ROOM_DIVIDER",
+    "label": "Room Divider"
+  },
+  {
+    "name": "ROTARY_TOOL",
+    "label": "Rotary Tool"
+  },
+  {
+    "name": "ROTATING_TRAY",
+    "label": "Rotating Tray"
+  },
+  {
+    "name": "ROUTER_BIT",
+    "label": "Router Bit"
+  },
+  {
+    "name": "ROUTER_POWER_TOOL",
+    "label": "Router Power Tool"
+  },
+  {
+    "name": "ROWING_MACHINE",
+    "label": "Rowing Machine"
+  },
+  {
+    "name": "RUBBER_STAMP",
+    "label": "Rubber Stamp"
+  },
+  {
+    "name": "RUG",
+    "label": "Rug"
+  },
+  {
+    "name": "RUG_PAD",
+    "label": "Rug Pad"
+  },
+  {
+    "name": "RULER",
+    "label": "Ruler"
+  },
+  {
+    "name": "SAFE",
+    "label": "Safe"
+  },
+  {
+    "name": "SAFETY_GLASSES",
+    "label": "Safety Glasses"
+  },
+  {
+    "name": "SAFETY_HARNESS",
+    "label": "Safety Harness"
+  },
+  {
+    "name": "SAFETY_MASK",
+    "label": "Safety Mask"
+  },
+  {
+    "name": "SAFETY_MASK_REPLACEMENT_FILTER",
+    "label": "Safety Mask Replacement Filter"
+  },
+  {
+    "name": "SAFETY_MASK_STRAP_EXTENDER",
+    "label": "Safety Mask Strap Extender"
+  },
+  {
+    "name": "SAFETY_SUPPLY",
+    "label": "SAFETY_SUPPLY"
+  },
+  {
+    "name": "SALAD_DRESSING",
+    "label": "Salad Dressing"
+  },
+  {
+    "name": "SALWAR_SUIT_SET",
+    "label": "Salwar Suit Set"
+  },
+  {
+    "name": "SANDAL",
+    "label": "Sandals"
+  },
+  {
+    "name": "SANDBOX",
+    "label": "Sandbox"
+  },
+  {
+    "name": "SANDER",
+    "label": "Sander"
+  },
+  {
+    "name": "SANITARY_NAPKIN",
+    "label": "Sanitary Towels"
+  },
+  {
+    "name": "SAREE",
+    "label": "Saree"
+  },
+  {
+    "name": "SATELLITE_OR_DSS",
+    "label": "SATELLITE_OR_DSS"
+  },
+  {
+    "name": "SATELLITE_RECEIVER",
+    "label": "Satellite Receiver"
+  },
+  {
+    "name": "SAUCE",
+    "label": "Sauce"
+  },
+  {
+    "name": "SAUCE_AND_SPREAD_AND_CONDIMENT",
+    "label": "SAUCE_AND_SPREAD_AND_CONDIMENT"
+  },
+  {
+    "name": "SAUTE_FRY_PAN",
+    "label": "Sauté & Frying Pan"
+  },
+  {
+    "name": "SAW",
+    "label": "Saw"
+  },
+  {
+    "name": "SAW_BLADE",
+    "label": "Saw Blade"
+  },
+  {
+    "name": "SCANNER",
+    "label": "Scanner"
+  },
+  {
+    "name": "SCARF",
+    "label": "Scarf"
+  },
+  {
+    "name": "SCIENCE_FUNDAMENTALS_KIT",
+    "label": "science fundamentals kit"
+  },
+  {
+    "name": "SCIENTIFIC_SUPPLIES",
+    "label": "SCIENTIFIC_SUPPLIES"
+  },
+  {
+    "name": "SCISSORS",
+    "label": "Scissors"
+  },
+  {
+    "name": "SCREEN_PROTECTOR",
+    "label": "Screen Protector"
+  },
+  {
+    "name": "SCREWDRIVER",
+    "label": "Screwdriver"
+  },
+  {
+    "name": "SCREWS",
+    "label": "Screw"
+  },
+  {
+    "name": "SCREW_GUN",
+    "label": "Screw Gun"
+  },
+  {
+    "name": "SCULPTING_MATERIAL",
+    "label": "Sculpting Material"
+  },
+  {
+    "name": "SCULPTURE",
+    "label": "Sculpture"
+  },
+  {
+    "name": "SEAFOOD",
+    "label": "Seafood"
+  },
+  {
+    "name": "SEAFOOD_SUBSTITUTE",
+    "label": "Seafood Substitute"
+  },
+  {
+    "name": "SEALANT",
+    "label": "Sealant"
+  },
+  {
+    "name": "SEALS",
+    "label": "SEALS"
+  },
+  {
+    "name": "SEASONING",
+    "label": "Seasoning"
+  },
+  {
+    "name": "SEASONING_MILL",
+    "label": "Seasoning Mill"
+  },
+  {
+    "name": "SECURITY_CAMERA",
+    "label": "Security Camera"
+  },
+  {
+    "name": "SECURITY_ELECTRONICS",
+    "label": "SECURITY_ELECTRONICS"
+  },
+  {
+    "name": "SECURITY_SYSTEM",
+    "label": "Security System"
+  },
+  {
+    "name": "SEEDS_AND_PLANTS",
+    "label": "SEEDS_AND_PLANTS"
+  },
+  {
+    "name": "SEITAN",
+    "label": "Seitan"
+  },
+  {
+    "name": "SELF_BALANCING_ELECTRIC_VEHICLE",
+    "label": "Self Balancing Electric Vehicle"
+  },
+  {
+    "name": "SELF_DEFENSE_SPRAY",
+    "label": "Self Defense Spray"
+  },
+  {
+    "name": "SELF_STICK_NOTE",
+    "label": "Self Stick Note"
+  },
+  {
+    "name": "SELF_TANNER",
+    "label": "Self Tanner"
+  },
+  {
+    "name": "SERVEWARE",
+    "label": "SERVEWARE"
+  },
+  {
+    "name": "SERVICE_CONTRACT",
+    "label": "SERVICE_CONTRACT"
+  },
+  {
+    "name": "SEWING_BUTTON",
+    "label": "Sewing Button"
+  },
+  {
+    "name": "SEWING_MACHINE",
+    "label": "Sewing Machine"
+  },
+  {
+    "name": "SEWING_MACHINE_BOBBIN",
+    "label": "Sewing Machine Bobbin"
+  },
+  {
+    "name": "SEWING_MACHINE_NEEDLE",
+    "label": "Sewing Machine Needle"
+  },
+  {
+    "name": "SEWING_PATTERN",
+    "label": "Sewing Pattern"
+  },
+  {
+    "name": "SEWING_TOOL_SET",
+    "label": "Sewing Tool Set"
+  },
+  {
+    "name": "SEXUAL_STIMULATION_DEVICE",
+    "label": "Sexual Stimulation Device"
+  },
+  {
+    "name": "SEXUAL_WELLNESS",
+    "label": "SEXUAL_WELLNESS"
+  },
+  {
+    "name": "SHADE_SAIL",
+    "label": "Shade Sail"
+  },
+  {
+    "name": "SHAFT_COLLAR",
+    "label": "Shaft Collar"
+  },
+  {
+    "name": "SHAMPOO",
+    "label": "Shampoo"
+  },
+  {
+    "name": "SHARPS_DISPOSAL_CONTAINER",
+    "label": "Sharps Disposal Container"
+  },
+  {
+    "name": "SHARP_PIN",
+    "label": "Sharp Pin"
+  },
+  {
+    "name": "SHAVING_AGENT",
+    "label": "Shaving Agent"
+  },
+  {
+    "name": "SHEET_PAN",
+    "label": "Sheet Pan"
+  },
+  {
+    "name": "SHEET_PAPER",
+    "label": "Sheet Paper"
+  },
+  {
+    "name": "SHELF",
+    "label": "Shelf"
+  },
+  {
+    "name": "SHELLFISH",
+    "label": "Shellfish"
+  },
+  {
+    "name": "SHIN_GUARD",
+    "label": "Shin Guard"
+  },
+  {
+    "name": "SHIPPING_BOX",
+    "label": "Shipping Box"
+  },
+  {
+    "name": "SHIRT",
+    "label": "Shirt"
+  },
+  {
+    "name": "SHOCK_ABSORBER",
+    "label": "Shock Absorber"
+  },
+  {
+    "name": "SHOELACE",
+    "label": "Shoelace"
+  },
+  {
+    "name": "SHOES",
+    "label": "Shoes"
+  },
+  {
+    "name": "SHOE_ACCESSORY",
+    "label": "Shoe Accessories"
+  },
+  {
+    "name": "SHOE_BAG",
+    "label": "Shoe Bag"
+  },
+  {
+    "name": "SHOE_INSERT",
+    "label": "Shoe Insert"
+  },
+  {
+    "name": "SHOE_POLISH",
+    "label": "Shoe Polish"
+  },
+  {
+    "name": "SHOE_TREE",
+    "label": "Shoe Tree"
+  },
+  {
+    "name": "SHORTS",
+    "label": "Shorts"
+  },
+  {
+    "name": "SHORTWAVE_RADIO",
+    "label": "Shortwave Radio"
+  },
+  {
+    "name": "SHOVEL_SPADE",
+    "label": "Shovel & Spade"
+  },
+  {
+    "name": "SHOWERHEAD",
+    "label": "Showerhead"
+  },
+  {
+    "name": "SHOWER_CAP",
+    "label": "Shower Cap"
+  },
+  {
+    "name": "SHOWER_ENCLOSURE",
+    "label": "Shower Enclosure"
+  },
+  {
+    "name": "SIDE_AND_SHELL_MILLS",
+    "label": "SIDE_AND_SHELL_MILLS"
+  },
+  {
+    "name": "SIGNAGE",
+    "label": "Signage"
+  },
+  {
+    "name": "SIM_CARD",
+    "label": "SIM Card"
+  },
+  {
+    "name": "SINGLE_BOARD_COMPUTER",
+    "label": "Single Board Computer"
+  },
+  {
+    "name": "SINK",
+    "label": "Sink"
+  },
+  {
+    "name": "SKATEBOARD",
+    "label": "Skateboard"
+  },
+  {
+    "name": "SKEWER",
+    "label": "Skewer"
+  },
+  {
+    "name": "SKIN_BLEMISH_REMOVAL_TOOL",
+    "label": "Skin Blemish Removal Tool"
+  },
+  {
+    "name": "SKIN_CARE_AGENT",
+    "label": "Skin Care Agent"
+  },
+  {
+    "name": "SKIN_CARE_PRODUCT",
+    "label": "SKIN_CARE_PRODUCT"
+  },
+  {
+    "name": "SKIN_CLEANING_AGENT",
+    "label": "Skin Cleaning Agent"
+  },
+  {
+    "name": "SKIN_CLEANING_BRUSH",
+    "label": "Skin Cleaning Brush"
+  },
+  {
+    "name": "SKIN_CLEANING_WIPE",
+    "label": "Skin Cleaning Wipe"
+  },
+  {
+    "name": "SKIN_EXFOLIANT",
+    "label": "Skin Exfoliant"
+  },
+  {
+    "name": "SKIN_FOUNDATION_CONCEALER",
+    "label": "Skin Foundation & Concealer"
+  },
+  {
+    "name": "SKIN_MOISTURIZER",
+    "label": "Skin Moisturiser"
+  },
+  {
+    "name": "SKIN_PROTECTANT",
+    "label": "Skin Protectant"
+  },
+  {
+    "name": "SKIN_SERUM",
+    "label": "Skin Serum"
+  },
+  {
+    "name": "SKIN_TREATMENT_MASK",
+    "label": "Skin Treatment Mask"
+  },
+  {
+    "name": "SKIRT",
+    "label": "Skirt"
+  },
+  {
+    "name": "SLED",
+    "label": "Sled"
+  },
+  {
+    "name": "SLEEPING_BAG",
+    "label": "Sleeping Bag"
+  },
+  {
+    "name": "SLEEPING_MAT",
+    "label": "Sleeping Mat"
+  },
+  {
+    "name": "SLEEPWEAR",
+    "label": "SLEEPWEAR"
+  },
+  {
+    "name": "SLEEP_MASK",
+    "label": "Sleep Mask"
+  },
+  {
+    "name": "SLIPPER",
+    "label": "Slipper"
+  },
+  {
+    "name": "SLOW_COOKER",
+    "label": "Slow Cooker"
+  },
+  {
+    "name": "SMALL_HOME_APPLIANCES",
+    "label": "SMALL_HOME_APPLIANCES"
+  },
+  {
+    "name": "SMOKING_PIPE",
+    "label": "Smoking Pipe"
+  },
+  {
+    "name": "SNACK_CHIP_AND_CRISP",
+    "label": "Snack Chip"
+  },
+  {
+    "name": "SNACK_FOOD",
+    "label": "SNACK_FOOD"
+  },
+  {
+    "name": "SNACK_FOOD_BAR",
+    "label": "Snack Bar"
+  },
+  {
+    "name": "SNACK_MIX",
+    "label": "Snack Mix"
+  },
+  {
+    "name": "SNAP_FASTENER",
+    "label": "Snap Fastener"
+  },
+  {
+    "name": "SNORKELING_SET",
+    "label": "Snorkeling Set"
+  },
+  {
+    "name": "SNOWBOARD_BOOT",
+    "label": "Snowboard Boot"
+  },
+  {
+    "name": "SNOWSHOE",
+    "label": "Snowshoe"
+  },
+  {
+    "name": "SNOWSUIT",
+    "label": "Snowsuit"
+  },
+  {
+    "name": "SNOW_BLOWER",
+    "label": "Snow Blower"
+  },
+  {
+    "name": "SNOW_CHAIN",
+    "label": "Snow Chain"
+  },
+  {
+    "name": "SNOW_GLOBE",
+    "label": "Snow Globe"
+  },
+  {
+    "name": "SNOW_PANT",
+    "label": "Snow Trousers"
+  },
+  {
+    "name": "SOAP_DISH",
+    "label": "Soap Dish"
+  },
+  {
+    "name": "SOCKS",
+    "label": "Sock"
+  },
+  {
+    "name": "SOCKSHOSIERY",
+    "label": "SOCKSHOSIERY"
+  },
+  {
+    "name": "SODA_MAKER",
+    "label": "Soda Maker"
+  },
+  {
+    "name": "SOFA",
+    "label": "Sofa"
+  },
+  {
+    "name": "SOFTWARE",
+    "label": "Software"
+  },
+  {
+    "name": "SOFTWARE_DOWNLOAD_PDA",
+    "label": "SOFTWARE_DOWNLOAD_PDA"
+  },
+  {
+    "name": "SOFTWARE_GAMES",
+    "label": "SOFTWARE_GAMES"
+  },
+  {
+    "name": "SOIL",
+    "label": "Soil"
+  },
+  {
+    "name": "SOIL_TILLER_CULTIVATOR",
+    "label": "Soil Tiller Cultivator"
+  },
+  {
+    "name": "SOLAR_PANEL",
+    "label": "Solar Panel"
+  },
+  {
+    "name": "SOLDERING_IRON",
+    "label": "Soldering Iron"
+  },
+  {
+    "name": "SOLDERING_STATION",
+    "label": "Soldering Station"
+  },
+  {
+    "name": "SOLID_FIRE_FUEL",
+    "label": "Solid Fire Fuel"
+  },
+  {
+    "name": "SONAR_FATHOMETER",
+    "label": "Sonar Fathometer"
+  },
+  {
+    "name": "SOUND_AND_RECORDING_EQUIPMENT",
+    "label": "SOUND_AND_RECORDING_EQUIPMENT"
+  },
+  {
+    "name": "SOUND_CARD",
+    "label": "Sound Card"
+  },
+  {
+    "name": "SOUS_VIDE_MACHINE",
+    "label": "Sous Vide Machine"
+  },
+  {
+    "name": "SPACE_HEATER",
+    "label": "Space Heater"
+  },
+  {
+    "name": "SPARK_PLUG",
+    "label": "Spark Plug"
+  },
+  {
+    "name": "SPEAKERS",
+    "label": "Speaker"
+  },
+  {
+    "name": "SPEAKER_AMPLIFIER_STAND",
+    "label": "Speaker & Amplifier Stand"
+  },
+  {
+    "name": "SPINNING_TOY_TOP",
+    "label": "Spinning Toy Top"
+  },
+  {
+    "name": "SPIRITS",
+    "label": "Spirits"
+  },
+  {
+    "name": "SPLASH_POOL",
+    "label": "Splash Pool"
+  },
+  {
+    "name": "SPOON",
+    "label": "Spoon"
+  },
+  {
+    "name": "SPOON_REST",
+    "label": "Spoon Rest"
+  },
+  {
+    "name": "SPORTING_GOODS",
+    "label": "SPORTING_GOODS"
+  },
+  {
+    "name": "SPORTS_DRINK",
+    "label": "SPORTS_DRINK"
+  },
+  {
+    "name": "SPORTS_MEMORABILIA",
+    "label": "SPORTS_MEMORABILIA"
+  },
+  {
+    "name": "SPORT_ACTIVITY_GLOVE",
+    "label": "Sport Glove"
+  },
+  {
+    "name": "SPORT_BAT",
+    "label": "Sport Bat"
+  },
+  {
+    "name": "SPORT_BINDING",
+    "label": "Sport Binding"
+  },
+  {
+    "name": "SPORT_BOARD_SKI",
+    "label": "Sport Board & Ski"
+  },
+  {
+    "name": "SPORT_BOOT",
+    "label": "Sport Boot"
+  },
+  {
+    "name": "SPORT_EQUIPMENT_BAG_CASE",
+    "label": "Sports Equipment Bag & Case"
+  },
+  {
+    "name": "SPORT_FACE_MASK",
+    "label": "Sport Face Mask"
+  },
+  {
+    "name": "SPORT_GOAL",
+    "label": "Sport Goal"
+  },
+  {
+    "name": "SPORT_HELMET",
+    "label": "Sport Helmet"
+  },
+  {
+    "name": "SPORT_MITT",
+    "label": "Sport Mitt"
+  },
+  {
+    "name": "SPORT_NET",
+    "label": "Sport Net"
+  },
+  {
+    "name": "SPORT_RACKET",
+    "label": "Sport Racket"
+  },
+  {
+    "name": "SPORT_TABLE_GAME",
+    "label": "Sport Table Game"
+  },
+  {
+    "name": "SPORT_TARGET",
+    "label": "Sport Target"
+  },
+  {
+    "name": "SPORT_WETSUIT",
+    "label": "Sport Wetsuit"
+  },
+  {
+    "name": "SPRAY_BOTTLE",
+    "label": "Spray Bottle"
+  },
+  {
+    "name": "SPRINGS",
+    "label": "SPRINGS"
+  },
+  {
+    "name": "SPROCKETS",
+    "label": "Sprocket"
+  },
+  {
+    "name": "SQUEEGEE",
+    "label": "Squeegee"
+  },
+  {
+    "name": "SQUEEZE_TOY",
+    "label": "Squeeze Toy"
+  },
+  {
+    "name": "STAMPS",
+    "label": "Postage Stamp"
+  },
+  {
+    "name": "STANDALONE_STREAMING_MEDIA_PLAYER",
+    "label": "Streaming Media Player"
+  },
+  {
+    "name": "STAPLER",
+    "label": "Stapler"
+  },
+  {
+    "name": "STATIONARY_BICYCLE",
+    "label": "Stationary Bicycle"
+  },
+  {
+    "name": "STEAM_CLEANER",
+    "label": "Steam Cleaner"
+  },
+  {
+    "name": "STEERING_WHEEL",
+    "label": "Steering Wheel"
+  },
+  {
+    "name": "STEERING_WHEEL_COVER",
+    "label": "Steering Wheel Cover"
+  },
+  {
+    "name": "STEP_STOOL",
+    "label": "Step Stool"
+  },
+  {
+    "name": "STETHOSCOPE",
+    "label": "Stethoscope"
+  },
+  {
+    "name": "STICKER_DECAL",
+    "label": "Sticker Decal"
+  },
+  {
+    "name": "STOOL_SEATING",
+    "label": "Stool Seating"
+  },
+  {
+    "name": "STORAGE_BAG",
+    "label": "Storage Bag"
+  },
+  {
+    "name": "STORAGE_BINDER",
+    "label": "Storage Binder"
+  },
+  {
+    "name": "STORAGE_BOX",
+    "label": "Storage Box"
+  },
+  {
+    "name": "STORAGE_COVER",
+    "label": "Storage Cover"
+  },
+  {
+    "name": "STORAGE_DRAWER",
+    "label": "Storage Drawer"
+  },
+  {
+    "name": "STORAGE_HOOK",
+    "label": "Storage Hook"
+  },
+  {
+    "name": "STORAGE_RACK",
+    "label": "Storage Rack"
+  },
+  {
+    "name": "STORE_FIXTURES_AND_EQUIPMENT",
+    "label": "STORE_FIXTURES_AND_EQUIPMENT"
+  },
+  {
+    "name": "STOVETOP_KETTLE",
+    "label": "Stovetop Kettle"
+  },
+  {
+    "name": "STRENGTH_TRAINING_MACHINE",
+    "label": "Strength Training Machine"
+  },
+  {
+    "name": "STRINGED_INSTRUMENTS",
+    "label": "String Instrument"
+  },
+  {
+    "name": "STRING_LIGHT",
+    "label": "String Light"
+  },
+  {
+    "name": "STRING_TRIMMER",
+    "label": "String Trimmer"
+  },
+  {
+    "name": "STROLLER",
+    "label": "Pushchair"
+  },
+  {
+    "name": "STROLLER_PROTECTION_SHIELD",
+    "label": "Pushchair Protection Shield"
+  },
+  {
+    "name": "SUGAR",
+    "label": "Sugar"
+  },
+  {
+    "name": "SUGAR_CANDY",
+    "label": "Sweets"
+  },
+  {
+    "name": "SUGAR_SUBSTITUTE",
+    "label": "Sugar Substitute"
+  },
+  {
+    "name": "SUIT",
+    "label": "Suit"
+  },
+  {
+    "name": "SUITCASE",
+    "label": "Suitcase"
+  },
+  {
+    "name": "SUNGLASSES",
+    "label": "Sunglasses"
+  },
+  {
+    "name": "SUNSCREEN",
+    "label": "Sunscreen"
+  },
+  {
+    "name": "SURFACE_CLEANING_WIPE",
+    "label": "Surface Cleaning Wipe"
+  },
+  {
+    "name": "SURFACE_PROTECTION_WAX",
+    "label": "Surface Protection Wax"
+  },
+  {
+    "name": "SURVEILANCE_SYSTEMS",
+    "label": "SURVEILANCE_SYSTEMS"
+  },
+  {
+    "name": "SURVEILLANCE_RECORDER_SYSTEM",
+    "label": "Surveillance Recorder System"
+  },
+  {
+    "name": "SURVIVAL_KIT",
+    "label": "Survival Kit"
+  },
+  {
+    "name": "SUSPENDER",
+    "label": "Suspender"
+  },
+  {
+    "name": "SUSPENSION_LIFT_SUPPORT",
+    "label": "Suspension Lift Support"
+  },
+  {
+    "name": "SWEATBAND",
+    "label": "Sweatband"
+  },
+  {
+    "name": "SWEATER",
+    "label": "Sweater"
+  },
+  {
+    "name": "SWEATSHIRT",
+    "label": "Sweatshirt"
+  },
+  {
+    "name": "SWEETENER",
+    "label": "Sweetener"
+  },
+  {
+    "name": "SWIMMING_POOL",
+    "label": "Swimming Pool"
+  },
+  {
+    "name": "SWIMWEAR",
+    "label": "Swimwear"
+  },
+  {
+    "name": "SWIM_CAP",
+    "label": "Swim Cap"
+  },
+  {
+    "name": "SWIM_FIN",
+    "label": "Swim Fin"
+  },
+  {
+    "name": "SWING",
+    "label": "Swing"
+  },
+  {
+    "name": "SWORD",
+    "label": "Sword"
+  },
+  {
+    "name": "SYRINGE",
+    "label": "Syringe"
+  },
+  {
+    "name": "SYRUP",
+    "label": "Syrup"
+  },
+  {
+    "name": "SYSTEM_CABINET",
+    "label": "System Cabinet"
+  },
+  {
+    "name": "SYSTEM_POWER_DEVICE",
+    "label": "System Power Device"
+  },
+  {
+    "name": "TABLE",
+    "label": "Table"
+  },
+  {
+    "name": "TABLECLOTH",
+    "label": "Tablecloth"
+  },
+  {
+    "name": "TABLETOP_GAME",
+    "label": "Tabletop Game"
+  },
+  {
+    "name": "TABLET_COMPUTER",
+    "label": "Tablet Computer"
+  },
+  {
+    "name": "TABLE_RUNNER",
+    "label": "Table Runner"
+  },
+  {
+    "name": "TAMPON",
+    "label": "Tampon"
+  },
+  {
+    "name": "TAPE_LABEL_DISPENSER",
+    "label": "Tape Label Dispenser"
+  },
+  {
+    "name": "TAPE_MEASURE",
+    "label": "Tape Measure"
+  },
+  {
+    "name": "TARGET_TOSSING_GAME",
+    "label": "Target Tossing Game"
+  },
+  {
+    "name": "TARP",
+    "label": "Tarp"
+  },
+  {
+    "name": "TASK_TRAY",
+    "label": "Task Tray"
+  },
+  {
+    "name": "TEA",
+    "label": "Tea"
+  },
+  {
+    "name": "TEACHING_AND_SCHOOL_SUPPLIES",
+    "label": "TEACHING_AND_SCHOOL_SUPPLIES"
+  },
+  {
+    "name": "TEACHING_EQUIPMENT",
+    "label": "TEACHING_EQUIPMENT"
+  },
+  {
+    "name": "TEAPOT",
+    "label": "Teapot"
+  },
+  {
+    "name": "TEA_INFUSER",
+    "label": "Tea Infuser"
+  },
+  {
+    "name": "TECHNICAL_SPORT_SHOE",
+    "label": "Sport Shoes"
+  },
+  {
+    "name": "TEETHER",
+    "label": "Teething ring"
+  },
+  {
+    "name": "TELESCOPE",
+    "label": "Telescope"
+  },
+  {
+    "name": "TELEVISION",
+    "label": "Television"
+  },
+  {
+    "name": "TEMPEH",
+    "label": "Tempeh"
+  },
+  {
+    "name": "TEMPLATE_STENCIL",
+    "label": "Template Stencil"
+  },
+  {
+    "name": "TEMPORARY_GATE",
+    "label": "Temporary Gate"
+  },
+  {
+    "name": "TEMPORARY_HANGER_HOOK",
+    "label": "Temporary Hanger & Hook"
+  },
+  {
+    "name": "TEMPORARY_TATTOO",
+    "label": "Temporary Tattoo"
+  },
+  {
+    "name": "TENT",
+    "label": "Tent"
+  },
+  {
+    "name": "TERMINAL_BLOCK",
+    "label": "Terminal Block"
+  },
+  {
+    "name": "TEXTILE_DEODORIZER",
+    "label": "Textile Deodoriser"
+  },
+  {
+    "name": "TEXTILE_IRON",
+    "label": "Textile Iron"
+  },
+  {
+    "name": "THERAPEUTIC_THERMAL_COMPRESS",
+    "label": "Therapeutic Thermal Compress"
+  },
+  {
+    "name": "THERMOMETER",
+    "label": "Thermometer"
+  },
+  {
+    "name": "THERMOPLASTIC_FILAMENT",
+    "label": "Thermoplastic Filament"
+  },
+  {
+    "name": "THERMOS",
+    "label": "Thermos"
+  },
+  {
+    "name": "THICKENING_AGENT",
+    "label": "Edible Thickening Agent"
+  },
+  {
+    "name": "THREADED_RODS_AND_STUDS",
+    "label": "Threaded Rod"
+  },
+  {
+    "name": "THREAD_CORD",
+    "label": "Thread & Cord"
+  },
+  {
+    "name": "TIGHTS",
+    "label": "Tights"
+  },
+  {
+    "name": "TILE",
+    "label": "Tile"
+  },
+  {
+    "name": "TIMER",
+    "label": "Timer"
+  },
+  {
+    "name": "TIRES",
+    "label": "Tyre"
+  },
+  {
+    "name": "TIRE_AND_WHEEL_ASSEMBLIES",
+    "label": "TIRE_AND_WHEEL_ASSEMBLIES"
+  },
+  {
+    "name": "TIRE_COVER",
+    "label": "Tyre Cover"
+  },
+  {
+    "name": "TIRE_VALVE_STEM_CAP",
+    "label": "Tyre Valve Stem Cap"
+  },
+  {
+    "name": "TOASTER",
+    "label": "Toaster"
+  },
+  {
+    "name": "TOFU",
+    "label": "Tofu"
+  },
+  {
+    "name": "TOGGLE_SWITCH",
+    "label": "Toggle Switch"
+  },
+  {
+    "name": "TOILET",
+    "label": "Toilet"
+  },
+  {
+    "name": "TOILET_PAPER",
+    "label": "Toilet Paper"
+  },
+  {
+    "name": "TOILET_PAPER_HOLDER",
+    "label": "Toilet Paper Holder"
+  },
+  {
+    "name": "TOILET_SEAT",
+    "label": "Toilet Seat"
+  },
+  {
+    "name": "TONG_UTENSIL",
+    "label": "Tong Utensil"
+  },
+  {
+    "name": "TONNEAU_COVER",
+    "label": "Tonneau Cover"
+  },
+  {
+    "name": "TOOLS",
+    "label": "TOOLS"
+  },
+  {
+    "name": "TOOL_BELT",
+    "label": "Tool Belt"
+  },
+  {
+    "name": "TOOL_CHUCK",
+    "label": "Tool Chuck"
+  },
+  {
+    "name": "TOOTHBRUSH",
+    "label": "Toothbrush"
+  },
+  {
+    "name": "TOOTHBRUSH_HEAD",
+    "label": "Toothbrush Head"
+  },
+  {
+    "name": "TOOTHBRUSH_HOLDER",
+    "label": "Toothbrush Holder"
+  },
+  {
+    "name": "TOOTH_CLEANING_AGENT",
+    "label": "Toothpaste"
+  },
+  {
+    "name": "TOOTH_WHITENER",
+    "label": "Tooth Whitener"
+  },
+  {
+    "name": "TOPICAL_HAIR_REGROWTH_TREATMENT",
+    "label": "Topical Hair Regrowth Treatment"
+  },
+  {
+    "name": "TORSION_SPRINGS",
+    "label": "Torsion Spring"
+  },
+  {
+    "name": "TOTE_BAG",
+    "label": "Tote Bag"
+  },
+  {
+    "name": "TOWEL",
+    "label": "Towel"
+  },
+  {
+    "name": "TOWEL_HOLDER",
+    "label": "Towel Holder"
+  },
+  {
+    "name": "TOW_HITCH",
+    "label": "Tow Hitch"
+  },
+  {
+    "name": "TOW_SPORTS_LINE",
+    "label": "Tow Sports Line"
+  },
+  {
+    "name": "TOYS_AND_GAMES",
+    "label": "Toy & Game"
+  },
+  {
+    "name": "TOY_BUILDING_BLOCK",
+    "label": "Toy Building Block"
+  },
+  {
+    "name": "TOY_FIGURE",
+    "label": "Toy Figure"
+  },
+  {
+    "name": "TOY_FIGURE_PLAYSET",
+    "label": "Toy Figure Playset"
+  },
+  {
+    "name": "TOY_GUN",
+    "label": "Toy Gun"
+  },
+  {
+    "name": "TOY_MODEL_VEHICLE_TRACK",
+    "label": "Toy & Model Vehicle Track"
+  },
+  {
+    "name": "TOY_SLIME",
+    "label": "Toy Slime"
+  },
+  {
+    "name": "TOY_STROLLER",
+    "label": "Toy Pushchair"
+  },
+  {
+    "name": "TOY_VEHICLE_SET",
+    "label": "Toy Vehicle Set"
+  },
+  {
+    "name": "TRACK_SUIT",
+    "label": "Track Suit"
+  },
+  {
+    "name": "TRACTION_CLEAT",
+    "label": "Traction Cleat"
+  },
+  {
+    "name": "TRADING_CARDS_CARDS_SETS",
+    "label": "TRADING_CARDS_CARDS_SETS"
+  },
+  {
+    "name": "TRADING_CARDS_FACTORY_SEALED",
+    "label": "TRADING_CARDS_FACTORY_SEALED"
+  },
+  {
+    "name": "TRADING_CARDS_GRADED_CARDS_INSERTS",
+    "label": "TRADING_CARDS_GRADED_CARDS_INSERTS"
+  },
+  {
+    "name": "TRADING_CARDS_MISC_TRADING_CARDS",
+    "label": "TRADING_CARDS_MISC_TRADING_CARDS"
+  },
+  {
+    "name": "TRADING_CARDS_UNGRADED_INSERTS",
+    "label": "TRADING_CARDS_UNGRADED_INSERTS"
+  },
+  {
+    "name": "TRAILER_HITCH_COVER",
+    "label": "Trailer Hitch Cover"
+  },
+  {
+    "name": "TRAMPOLINE",
+    "label": "Trampoline"
+  },
+  {
+    "name": "TRANSFORMER",
+    "label": "Transformer"
+  },
+  {
+    "name": "TRANSPORT_RACK",
+    "label": "Transport Rack"
+  },
+  {
+    "name": "TRASH_CAN",
+    "label": "Rubbish Bin"
+  },
+  {
+    "name": "TRASH_COMPACTOR",
+    "label": "Waste Compactor"
+  },
+  {
+    "name": "TRAVEL_GARMENT_BAG",
+    "label": "Travel Garment Bag"
+  },
+  {
+    "name": "TRAY",
+    "label": "Tray"
+  },
+  {
+    "name": "TREADMILL",
+    "label": "Treadmill"
+  },
+  {
+    "name": "TREE_SKIRT",
+    "label": "Tree Skirt"
+  },
+  {
+    "name": "TREE_TOPPER",
+    "label": "Tree Topper"
+  },
+  {
+    "name": "TRIVET",
+    "label": "Trivet"
+  },
+  {
+    "name": "TUNER",
+    "label": "Tuner"
+  },
+  {
+    "name": "TUNIC",
+    "label": "Tunic"
+  },
+  {
+    "name": "TURNTABLE",
+    "label": "Turntable"
+  },
+  {
+    "name": "TV_TUNER_CARD",
+    "label": "TV Tuner Card"
+  },
+  {
+    "name": "TWEEZER",
+    "label": "Tweezer"
+  },
+  {
+    "name": "TWO_WAY_RADIO",
+    "label": "Two-Way Radio"
+  },
+  {
+    "name": "UMBRELLA",
+    "label": "Umbrella"
+  },
+  {
+    "name": "UNDERGARMENT_SLIP",
+    "label": "Undergarment Slip"
+  },
+  {
+    "name": "UNDERGARMENT_THIGH_SLIMMER",
+    "label": "Thigh Slimmer"
+  },
+  {
+    "name": "UNDERPANTS",
+    "label": "Underpants"
+  },
+  {
+    "name": "UNDERWEAR",
+    "label": "UNDERWEAR"
+  },
+  {
+    "name": "UNINTERRUPTIBLE_POWER_SUPPLY",
+    "label": "Uninterruptible Power Supply"
+  },
+  {
+    "name": "UNION_SUIT",
+    "label": "Union Suit"
+  },
+  {
+    "name": "UNIVERSAL_JOINTS",
+    "label": "Universal Joint"
+  },
+  {
+    "name": "UNMANNED_AERIAL_VEHICLE",
+    "label": "Unmanned Aerial Vehicle"
+  },
+  {
+    "name": "UNSTITCHED_GARMENT",
+    "label": "Unstitched Garment"
+  },
+  {
+    "name": "URN",
+    "label": "Urn"
+  },
+  {
+    "name": "UTILITY_CART_WAGON",
+    "label": "Utility Trolley"
+  },
+  {
+    "name": "UTILITY_HOLSTER_POUCH",
+    "label": "Utility Holster Pouch"
+  },
+  {
+    "name": "UTILITY_JACK",
+    "label": "Utility Jack"
+  },
+  {
+    "name": "UTILITY_KNIFE",
+    "label": "Utility Knife"
+  },
+  {
+    "name": "UTILITY_MAGNET",
+    "label": "Utility Magnet"
+  },
+  {
+    "name": "UTILITY_SPONGE",
+    "label": "Utility Sponge"
+  },
+  {
+    "name": "VACUUM_CLEANER",
+    "label": "Vacuum Cleaners"
+  },
+  {
+    "name": "VACUUM_CLEANER_BAG",
+    "label": "Vacuum Cleaner Bag"
+  },
+  {
+    "name": "VACUUM_FILTER",
+    "label": "Vacuum Filter"
+  },
+  {
+    "name": "VACUUM_SEALER_MACHINE",
+    "label": "Vacuum Sealer Machine"
+  },
+  {
+    "name": "VALVE",
+    "label": "Valve"
+  },
+  {
+    "name": "VASE",
+    "label": "Vase"
+  },
+  {
+    "name": "VCR",
+    "label": "VCR"
+  },
+  {
+    "name": "VEGETABLE",
+    "label": "Vegetable"
+  },
+  {
+    "name": "VEGETARIAN_EGG_SUBSTITUTE",
+    "label": "Egg Substitute"
+  },
+  {
+    "name": "VEHICLE_ACCENT_LIGHT",
+    "label": "Vehicle Accent Light"
+  },
+  {
+    "name": "VEHICLE_BAG",
+    "label": "Vehicle Bag"
+  },
+  {
+    "name": "VEHICLE_BODY_PANEL",
+    "label": "Vehicle Body Panel"
+  },
+  {
+    "name": "VEHICLE_BRAKE_PAD",
+    "label": "Vehicle Brake Pad"
+  },
+  {
+    "name": "VEHICLE_BUMPER",
+    "label": "Vehicle Bumper"
+  },
+  {
+    "name": "VEHICLE_CARGO_CARRIER",
+    "label": "Vehicle Cargo Carrier"
+  },
+  {
+    "name": "VEHICLE_CONTROL_ARM",
+    "label": "Vehicle Control Arm"
+  },
+  {
+    "name": "VEHICLE_COVER",
+    "label": "Vehicle Cover"
+  },
+  {
+    "name": "VEHICLE_EMBLEM",
+    "label": "Vehicle Emblem"
+  },
+  {
+    "name": "VEHICLE_EXTERIOR_GUARD",
+    "label": "Vehicle Exterior Guard"
+  },
+  {
+    "name": "VEHICLE_GRILLE",
+    "label": "Vehicle Grille"
+  },
+  {
+    "name": "VEHICLE_HORN",
+    "label": "Motorised Vehicle Horn"
+  },
+  {
+    "name": "VEHICLE_INTERIOR_SHADE",
+    "label": "Vehicle Interior Shade"
+  },
+  {
+    "name": "VEHICLE_LIFT_KIT",
+    "label": "Vehicle Lift Kit"
+  },
+  {
+    "name": "VEHICLE_LIGHTING_CONVERSION_KIT",
+    "label": "Vehicle Lighting Conversion Kit"
+  },
+  {
+    "name": "VEHICLE_LIGHT_ASSEMBLY",
+    "label": "Vehicle Light Assembly"
+  },
+  {
+    "name": "VEHICLE_LIGHT_BULB",
+    "label": "Vehicle Light Bulb"
+  },
+  {
+    "name": "VEHICLE_MAT",
+    "label": "Vehicle Mat"
+  },
+  {
+    "name": "VEHICLE_MIRROR",
+    "label": "Vehicle Mirror"
+  },
+  {
+    "name": "VEHICLE_MOLDING",
+    "label": "Vehicle Moulding"
+  },
+  {
+    "name": "VEHICLE_RAIL",
+    "label": "Vehicle Rail"
+  },
+  {
+    "name": "VEHICLE_SAFETY_CAMERA",
+    "label": "Vehicle Safety Camera"
+  },
+  {
+    "name": "VEHICLE_SCAN_TOOL",
+    "label": "Vehicle Scan Tool"
+  },
+  {
+    "name": "VEHICLE_SEAT",
+    "label": "Vehicle Seat"
+  },
+  {
+    "name": "VEHICLE_SEAT_COVER",
+    "label": "Vehicle Seat Cover"
+  },
+  {
+    "name": "VEHICLE_SPOILER",
+    "label": "Vehicle Spoiler"
+  },
+  {
+    "name": "VEHICLE_TIRE",
+    "label": "Vehicle Tyre"
+  },
+  {
+    "name": "VEHICLE_WINDOW",
+    "label": "Vehicle Window"
+  },
+  {
+    "name": "VEHICLE_WIND_DEFLECTOR",
+    "label": "Vehicle Wind Deflector"
+  },
+  {
+    "name": "VEHICLE_WRAP",
+    "label": "Vehicle Wrap"
+  },
+  {
+    "name": "VENT_HOOD",
+    "label": "Extractor Fan"
+  },
+  {
+    "name": "VEST",
+    "label": "Vest"
+  },
+  {
+    "name": "VIDEO_CARD",
+    "label": "Video Card"
+  },
+  {
+    "name": "VIDEO_CONFERENCE_EQUIPMENT",
+    "label": "VIDEO_CONFERENCE_EQUIPMENT"
+  },
+  {
+    "name": "VIDEO_DEVICE",
+    "label": "VIDEO_DEVICE"
+  },
+  {
+    "name": "VIDEO_DISC_PLAYER",
+    "label": "Video Disc Player"
+  },
+  {
+    "name": "VIDEO_DVD",
+    "label": "VIDEO_DVD"
+  },
+  {
+    "name": "VIDEO_GAME_ACCESSORIES",
+    "label": "VIDEO_GAME_ACCESSORIES"
+  },
+  {
+    "name": "VIDEO_GAME_CONSOLE",
+    "label": "Video Game Console"
+  },
+  {
+    "name": "VIDEO_GAME_CONTROLLER",
+    "label": "Video Game Controller"
+  },
+  {
+    "name": "VIDEO_GAME_HARDWARE",
+    "label": "VIDEO_GAME_HARDWARE"
+  },
+  {
+    "name": "VIDEO_GAME_PERIPHERAL_SET",
+    "label": "Video Game Peripheral Set"
+  },
+  {
+    "name": "VIDEO_GAME_SOFTWARE",
+    "label": "VIDEO_GAME_SOFTWARE"
+  },
+  {
+    "name": "VIDEO_PROJECTOR",
+    "label": "Video Projector"
+  },
+  {
+    "name": "VIDEO_PROJECTOR_PART",
+    "label": "VIDEO_PROJECTOR_PART"
+  },
+  {
+    "name": "VIDEO_VHS",
+    "label": "VIDEO_VHS"
+  },
+  {
+    "name": "VINEGAR",
+    "label": "Vinegar"
+  },
+  {
+    "name": "VIRTUAL_REALITY_HEADSET",
+    "label": "Virtual Reality Headset"
+  },
+  {
+    "name": "VITAMIN",
+    "label": "Vitamin"
+  },
+  {
+    "name": "VIVARIUM",
+    "label": "Vivarium"
+  },
+  {
+    "name": "VOICE_RECORDER",
+    "label": "Voice Recorder"
+  },
+  {
+    "name": "WAIST_CINCHER",
+    "label": "Waist Cincher"
+  },
+  {
+    "name": "WAIST_PACK",
+    "label": "Waist Pack"
+  },
+  {
+    "name": "WALKER",
+    "label": "Walker"
+  },
+  {
+    "name": "WALKING_STICK",
+    "label": "Walking Stick"
+  },
+  {
+    "name": "WALLET",
+    "label": "Wallet"
+  },
+  {
+    "name": "WALLPAPER",
+    "label": "Wallpaper"
+  },
+  {
+    "name": "WALL_ART",
+    "label": "Wall Art"
+  },
+  {
+    "name": "WALL_PLATE",
+    "label": "Wall Plate"
+  },
+  {
+    "name": "WASHER",
+    "label": "Laundry Washer"
+  },
+  {
+    "name": "WASHERS",
+    "label": "Hardware Washer"
+  },
+  {
+    "name": "WASHER_DRYER_COMBINATION",
+    "label": "Washer Dryer Combination"
+  },
+  {
+    "name": "WASTE_BAG",
+    "label": "Waste Bag"
+  },
+  {
+    "name": "WATCH",
+    "label": "Watch"
+  },
+  {
+    "name": "WATCH_BAND",
+    "label": "Watch Band"
+  },
+  {
+    "name": "WATER",
+    "label": "Drinking Water"
+  },
+  {
+    "name": "WATERING_CAN",
+    "label": "Watering Can"
+  },
+  {
+    "name": "WATER_DISPENSER",
+    "label": "Water Dispenser"
+  },
+  {
+    "name": "WATER_FLOTATION_DEVICE",
+    "label": "Water Flotation Device"
+  },
+  {
+    "name": "WATER_HEATER",
+    "label": "Water Heater"
+  },
+  {
+    "name": "WATER_PLAY_SPRINKLER",
+    "label": "Water Play Sprinkler"
+  },
+  {
+    "name": "WATER_PUMP",
+    "label": "Water Pump"
+  },
+  {
+    "name": "WATER_PURIFICATION_UNIT",
+    "label": "Water Purifier"
+  },
+  {
+    "name": "WEAPON_CASE",
+    "label": "Weapon Case"
+  },
+  {
+    "name": "WEARABLE_COMPUTER",
+    "label": "Wearable Computer"
+  },
+  {
+    "name": "WEARABLE_WEIGHT",
+    "label": "Wearable Weight"
+  },
+  {
+    "name": "WEATHER_STATION",
+    "label": "Weather Station"
+  },
+  {
+    "name": "WEATHER_STRIPPING",
+    "label": "Weather Stripping"
+  },
+  {
+    "name": "WEBCAM",
+    "label": "WEBCAM"
+  },
+  {
+    "name": "WEED_MOSS_CONTROL_AGENT",
+    "label": "Weed & Moss Control Agent"
+  },
+  {
+    "name": "WEIGHTLIFTING_BELT",
+    "label": "Weightlifting Belt"
+  },
+  {
+    "name": "WEIGHT_PLATE",
+    "label": "Weight Plate"
+  },
+  {
+    "name": "WEIGHT_RACK",
+    "label": "Weight Rack"
+  },
+  {
+    "name": "WEIGH_SCALE",
+    "label": "Weigh Scale"
+  },
+  {
+    "name": "WHEEL",
+    "label": "Wheel"
+  },
+  {
+    "name": "WHEELCHAIR",
+    "label": "Wheelchair"
+  },
+  {
+    "name": "WHEEL_CUTTER",
+    "label": "Wheel Cutter"
+  },
+  {
+    "name": "WHISK_UTENSIL",
+    "label": "Whisk Utensil"
+  },
+  {
+    "name": "WHOLESALE_AND_INDUSTRIAL",
+    "label": "WHOLESALE_AND_INDUSTRIAL"
+  },
+  {
+    "name": "WIG",
+    "label": "Wig"
+  },
+  {
+    "name": "WILDLIFE_FEEDER",
+    "label": "Wildlife Feeder"
+  },
+  {
+    "name": "WINDING_REEL",
+    "label": "Winding Reel"
+  },
+  {
+    "name": "WINDOW_FILM",
+    "label": "Window Film"
+  },
+  {
+    "name": "WINDOW_SHADE",
+    "label": "Window Shade"
+  },
+  {
+    "name": "WIND_CHIME",
+    "label": "Wind Chime"
+  },
+  {
+    "name": "WIND_SPINNER",
+    "label": "Wind Spinner"
+  },
+  {
+    "name": "WINE",
+    "label": "Wine"
+  },
+  {
+    "name": "WIPER",
+    "label": "WIPER"
+  },
+  {
+    "name": "WIPER_BLADE",
+    "label": "Wiper Blade"
+  },
+  {
+    "name": "WIRE",
+    "label": "Metal Wire"
+  },
+  {
+    "name": "WIRELESS_ACCESSORY",
+    "label": "WIRELESS_ACCESSORY"
+  },
+  {
+    "name": "WIRELESS_AUDIO_ADAPTER",
+    "label": "Wireless Audio Adapter"
+  },
+  {
+    "name": "WIRELESS_DOWNLOAD",
+    "label": "WIRELESS_DOWNLOAD"
+  },
+  {
+    "name": "WIRELESS_LOCKED_PHONE",
+    "label": "WIRELESS_LOCKED_PHONE"
+  },
+  {
+    "name": "WIRELESS_SIGNAL_REPEATER",
+    "label": "Wireless Signal Repeater"
+  },
+  {
+    "name": "WIRE_STRIPPER",
+    "label": "Wire Stripper"
+  },
+  {
+    "name": "WORKBENCH",
+    "label": "Workbench"
+  },
+  {
+    "name": "WOUND_DRESSING",
+    "label": "Wound Dressing"
+  },
+  {
+    "name": "WREATH",
+    "label": "Wreath"
+  },
+  {
+    "name": "WRENCH",
+    "label": "Wrench"
+  },
+  {
+    "name": "WRIST_REST",
+    "label": "Wrist Rest"
+  },
+  {
+    "name": "WRITING_BOARD",
+    "label": "Writing Board"
+  },
+  {
+    "name": "WRITING_INSTRUMENT",
+    "label": "Writing Instrument"
+  },
+  {
+    "name": "WRITING_PAPER",
+    "label": "Writing Paper"
+  },
+  {
+    "name": "YARN",
+    "label": "Yarn"
+  },
+  {
+    "name": "YO_YO",
+    "label": "Yo-Yo"
+  },
+  {
+    "name": "YUKATA",
+    "label": "YUKATA"
+  },
+  {
+    "name": "ZIPPER_FASTENER",
+    "label": "Zip Fastener"
+  }
+]

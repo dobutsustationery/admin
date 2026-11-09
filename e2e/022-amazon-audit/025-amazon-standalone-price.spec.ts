@@ -91,6 +91,9 @@ test("standalone price survives save and reload and enables direct Amazon creati
   await batch.commit();
   try {
     await page.goto("/amazon-listings");
+    await page
+      .getByText("Advanced Amazon preparation and diagnostics", { exact: true })
+      .click();
     await page.getByLabel("Find products").fill(jan);
     const family = page.locator("details.family").filter({ hasText: title });
     await expect(family).toBeVisible();
@@ -120,6 +123,9 @@ test("standalone price survives save and reload and enables direct Amazon creati
       saved.docs.some((d) => d.data().payload.decision.priceGBP === "4.50"),
     ).toBe(true);
     await page.reload();
+    await page
+      .getByText("Advanced Amazon preparation and diagnostics", { exact: true })
+      .click();
     await page.getByLabel("Find products").fill(jan);
     await family.locator("summary").first().click();
     await expect(

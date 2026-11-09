@@ -44,6 +44,11 @@
     { href: "/shopify-listings", label: "Shopify Listings", icon: ShoppingBag },
     { href: "/etsy-listings", label: "Etsy Listings", icon: ShoppingBag },
     { href: "/amazon-listings", label: "Amazon Listings", icon: ShoppingBag },
+    {
+      href: "/amazon-categories",
+      label: "Amazon Categories",
+      icon: ShoppingBag,
+    },
     { href: "/inventory-value", label: "Inventory Value", icon: CreditCard },
     { href: "/sync-status", label: "Sync Status", icon: History },
     { href: "/account", label: "Account", icon: User },
