@@ -855,6 +855,13 @@ describe("direct Amazon issue sync worker", () => {
     });
     await f.w.step(f.jobs()[0].ref);
     expect(f.calls[0].entry.body.attributes).toEqual(attributes);
+    expect(f.jobs()[0].entry.body.attributes).toEqual(attributes);
+    const publishing = [...f.docs.values()].find(
+      (d: any) =>
+        d.type === "amazonPrepare/job" && d.payload.status === "publishing",
+    );
+    expect(publishing.payload.entry.body.attributes).toEqual(attributes);
+    expect(publishing.payload.before.data.attributes).toEqual(attributes);
   });
 });
 

@@ -681,6 +681,13 @@ function createWorker({
         });
         return;
       }
+      const writeEntry =
+        job.syncMode && job.entry.syncIssue === "category"
+          ? {
+              ...job.entry,
+              body: { ...job.entry.body, attributes: before.data.attributes },
+            }
+          : job.entry;
       lockRef = db
         .collection(LOCKS)
         .doc(hash(`${job.sellerId}:${job.entry.sku}`));
@@ -692,6 +699,7 @@ function createWorker({
         tx.set(lockRef, { jobId: ref.id, until: now() + 300000 });
         const j = {
           ...current,
+          ...(job.syncMode ? { entry: writeEntry, before } : {}),
           status: "publishing",
           updatedAt: now(),
           revision: current.revision + 1,
@@ -713,13 +721,6 @@ function createWorker({
           "Another update for this SKU is running. Check it again after that update finishes.",
         );
       sending = true;
-      const writeEntry =
-        job.syncMode && job.entry.syncIssue === "category"
-          ? {
-              ...job.entry,
-              body: { ...job.entry.body, attributes: before.data.attributes },
-            }
-          : job.entry;
       const result = await write({
         config,
         accessToken,
