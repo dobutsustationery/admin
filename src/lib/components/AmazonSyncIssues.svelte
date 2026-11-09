@@ -235,7 +235,9 @@
               {#if row.entries[issue]?.length}<button
                   disabled={busy || !!submitted[pendingKey(row.handle, issue)]}
                   on:click={() => sync([row], issue)}
-                  >Sync {label.toLowerCase()}</button
+                  >{issue === "presence"
+                    ? "Sync listing"
+                    : `Sync ${label.toLowerCase()}`}</button
                 >{/if}
             </div>
             {#each row.details.filter((d) => d.issue === issue) as d}
