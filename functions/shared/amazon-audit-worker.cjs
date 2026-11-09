@@ -1,6 +1,7 @@
 // Read-only, restartable Amazon catalogue audit. Operational jobs carry cursors;
 // raw API bytes and operator intent are the durable replay inputs.
 const { createHash, randomUUID } = require("node:crypto");
+const { comparable } = require("./amazon-sync-fields.cjs");
 const JOBS = "amazon_audit_jobs";
 const REQUESTS = "request_amazon_audit";
 const UK = "A1F83G8C2ARO7P";
@@ -34,6 +35,15 @@ function needsReadback(raw, status, expected = {}) {
     )
   )
     return true;
+  if (
+    expected.productType &&
+    !(raw.productTypes || raw.summaries || []).some(
+      (p) => p.productType === expected.productType,
+    )
+  )
+    return true;
+  for (const [field, value] of Object.entries(expected.attributes || {}))
+    if (comparable(raw?.attributes?.[field]) !== comparable(value)) return true;
   if (array(raw?.attributes?.parentage_level).some((v) => v.value === "parent"))
     return false;
   if (

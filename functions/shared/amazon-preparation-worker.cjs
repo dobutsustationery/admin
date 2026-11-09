@@ -5,6 +5,7 @@ const {
   validateFamilyBatch,
   matchingParent,
 } = require("./amazon-variation-family.cjs");
+const { validateSyncEntry } = require("./amazon-sync-fields.cjs");
 const REQUESTS = "request_amazon_prepare",
   JOBS = "amazon_prepare_jobs",
   LOCKS = "amazon_prepare_locks";
@@ -24,7 +25,7 @@ function validateRequest(d) {
     !d?.creator ||
     !d.sellerId ||
     d.marketplaceId !== UK ||
-    !["preview", "publish", "create"].includes(d.mode)
+    !["preview", "publish", "create", "sync"].includes(d.mode)
   )
     throw Error("Choose the configured UK seller and sign in.");
   if (d.mode === "publish") {
@@ -47,7 +48,7 @@ function validateRequest(d) {
     JSON.stringify(d.entries).length > 600000
   )
     throw Error("Prepare 1–100 products at a time.");
-  if (d.mode === "create" && d.stockConfirmed !== true)
+  if (["create", "sync"].includes(d.mode) && d.stockConfirmed !== true)
     throw Error(
       "Review the products and current stock before creating listings.",
     );
@@ -75,6 +76,7 @@ function validateRequest(d) {
           );
     if (
       e.method === "PATCH" &&
+      d.mode !== "sync" &&
       (!e.body.patches?.length ||
         e.body.patches.some(
           (p) =>
@@ -90,7 +92,11 @@ function validateRequest(d) {
       );
     const offerOnly =
       e.method === "PUT" && e.body.requirements === "LISTING_OFFER_ONLY";
-    const family = validateFamilyEntry(e, attributes);
+    if (d.mode === "sync") validateSyncEntry(e);
+    const family =
+      e.syncIssue === "category" && d.mode === "sync"
+        ? false
+        : validateFamilyEntry(e, attributes, { sync: d.mode === "sync" });
     if (
       offerOnly &&
       (e.body.productType !== "PRODUCT" ||
@@ -119,6 +125,7 @@ function validateRequest(d) {
       e.method === "PUT" &&
       !offerOnly &&
       !family &&
+      !(d.mode === "sync" && e.syncIssue === "category") &&
       (e.body.requirements !== "LISTING" ||
         attributes?.supplier_declared_has_product_identifier_exemption ||
         attributes?.parentage_level ||
@@ -160,11 +167,12 @@ function validateRequest(d) {
     if (
       e.method === "PUT" &&
       e.family?.role !== "parent" &&
+      !(d.mode === "sync" && e.syncIssue === "category") &&
       (!stock || !offers || (!family && stock[0].quantity <= 0))
     )
       throw Error("New products require a price and stock quantity.");
   }
-  validateFamilyBatch(d.entries);
+  validateFamilyBatch(d.entries, { sync: d.mode === "sync" });
 }
 function baseline(r) {
   if (r?.status === 404) return "absent";
@@ -223,6 +231,7 @@ function createWorker({
       publishRequestId: j.publishRequestId || "",
       reuseParent: !!j.reuseParent,
       directCreate: !!j.directCreate,
+      ...(j.syncMode ? { syncMode: true } : {}),
     };
     tx.set(
       db.collection("broadcast").doc(`amazon-prepare-${id}-${j.revision}`),
@@ -277,13 +286,17 @@ function createWorker({
               ),
             )
           : [];
-      if (["preview", "create"].includes(data.mode))
+      if (["preview", "create", "sync"].includes(data.mode))
         for (const entry of data.entries) {
           const jobId = hash(`${id}:${entry.sku}`);
           const j = {
             entry,
-            ...(data.mode === "create"
-              ? { publishRequestId: id, directCreate: true }
+            ...(["create", "sync"].includes(data.mode)
+              ? {
+                  publishRequestId: id,
+                  directCreate: true,
+                  ...(data.mode === "sync" ? { syncMode: true } : {}),
+                }
               : { previewRequestId: id }),
             ...(entry.family?.role === "child"
               ? { parentJobId: hash(`${id}:${entry.family.parentSku}`) }
@@ -292,7 +305,9 @@ function createWorker({
             creator: data.creator,
             createdAt: at,
             updatedAt: at,
-            status: data.mode === "create" ? "publish_queued" : "queued",
+            status: ["create", "sync"].includes(data.mode)
+              ? "publish_queued"
+              : "queued",
             dueAt: at,
             leaseUntil: 0,
             lease: "",
@@ -413,6 +428,27 @@ function createWorker({
       await enqueueReadback(ref.id, job.creator, job.entry.sku, {
         ...(quantity !== undefined ? { quantity } : {}),
         ...(priceGBP !== undefined ? { priceGBP } : {}),
+        ...(job.syncMode && job.entry.method === "PATCH"
+          ? {
+              attributes: Object.fromEntries(
+                job.entry.body.patches
+                  .filter(
+                    (p) =>
+                      ![
+                        "/attributes/purchasable_offer",
+                        "/attributes/fulfillment_availability",
+                      ].includes(p.path),
+                  )
+                  .map((p) => [
+                    p.path.replace("/attributes/", ""),
+                    p.op === "delete" ? [] : p.value,
+                  ]),
+              ),
+            }
+          : {}),
+        ...(job.syncMode && job.entry.syncIssue === "category"
+          ? { productType: job.entry.body.productType }
+          : {}),
         ...(job.entry.family
           ? {
               parentage: job.entry.family.role,
@@ -483,20 +519,67 @@ function createWorker({
       const reuseParent =
         job.entry.family?.role === "parent" &&
         matchingParent(before, job.entry);
-      if (job.entry.method === "PUT" && before.status !== 404 && !reuseParent)
+      const ownAmifa =
+        String(
+          before.data?.attributes?.brand?.[0]?.value || "",
+        ).toLowerCase() === "amifa";
+      const ownIdentity =
+        ownAmifa &&
+        (job.entry.syncIssue !== "presence" ||
+          job.entry.family?.role === "parent" ||
+          !(before.data?.summaries || []).some((s) => s.asin)) &&
+        (job.entry.syncIssue === "category" ||
+          (job.entry.family?.role === "parent" &&
+            before.data?.attributes?.parentage_level?.[0]?.value ===
+              "parent") ||
+          ["externally_assigned_product_identifier", "part_number"].some(
+            (field) => {
+              const expected = job.entry.body.attributes?.[field]?.[0]?.value;
+              return (
+                expected &&
+                before.data?.attributes?.[field]?.some(
+                  (v) => v.value === expected,
+                )
+              );
+            },
+          ));
+      if (
+        job.syncMode &&
+        job.entry.syncIssue === "category" &&
+        before.status !== 200
+      )
+        throw Error(
+          "Refresh this existing listing before changing its category.",
+        );
+      if (
+        job.entry.method === "PUT" &&
+        before.status !== 404 &&
+        !reuseParent &&
+        !(job.syncMode && ownIdentity)
+      )
         throw Error(
           "This seller SKU already exists. Refresh the catalogue and prepare it as an update.",
         );
       if (
         job.entry.method === "PATCH" &&
         (before.status !== 200 ||
-          (before.data?.issues || []).some((i) => i.severity === "ERROR") ||
+          (!job.syncMode &&
+            (before.data?.issues || []).some((i) => i.severity === "ERROR")) ||
           (before.data?.attributes?.parentage_level || []).some(
             (v) => v.value === "parent",
           ))
       )
         throw Error(
           "The existing SKU is missing, is a variation parent, or has an Amazon error. Refresh and resolve this product later.",
+        );
+      if (
+        job.syncMode &&
+        before.status === 200 &&
+        !ownAmifa &&
+        !["quantity", "price"].includes(job.entry.syncIssue)
+      )
+        throw Error(
+          "Content sync is available only for Amifa products owned by this catalogue.",
         );
       if (job.entry.method === "PATCH") {
         const paths = job.entry.body.patches.map((p) => p.path);
@@ -617,15 +700,30 @@ function createWorker({
         fact(tx, ref.id, j);
         return true;
       });
+      if (!claimed && job.syncMode) {
+        await done({
+          status: "publish_queued",
+          dueAt: now() + 10000,
+          error: "Waiting for another update of this SKU to finish.",
+        });
+        return;
+      }
       if (!claimed)
         throw Error(
           "Another update for this SKU is running. Check it again after that update finishes.",
         );
       sending = true;
+      const writeEntry =
+        job.syncMode && job.entry.syncIssue === "category"
+          ? {
+              ...job.entry,
+              body: { ...job.entry.body, attributes: before.data.attributes },
+            }
+          : job.entry;
       const result = await write({
         config,
         accessToken,
-        entry: job.entry,
+        entry: writeEntry,
         preview: false,
       });
       const accepted =

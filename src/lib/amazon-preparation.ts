@@ -56,6 +56,7 @@ export interface PreparationEntry {
   sku: string;
   method: "PUT" | "PATCH";
   body: any;
+  syncIssue?: string;
   family?: {
     handle: string;
     role: "parent" | "child";
@@ -80,6 +81,10 @@ export interface PreparationRow {
   job: any;
 }
 export interface PreparationState {
+  categoryMappings?: Record<
+    string,
+    import("./amazon-defaults").AmazonCategoryMapping
+  >;
   drafts: Record<string, PreparationDraft>;
   decisions: Record<string, PreparationDecision>;
   policies: Record<string, { gbpPerEur: string }>;
@@ -179,6 +184,26 @@ export function reducePreparation(
         },
       },
     };
+  if (
+    action.type === "amazonPrepare/categoryMapping" &&
+    p.sellerId &&
+    typeof p.category === "string"
+  ) {
+    return {
+      ...previous,
+      categoryMappings: {
+        ...previous.categoryMappings,
+        [auditScope(p.sellerId, UK_MARKETPLACE, p.category)]: {
+          productType: String(p.mapping?.productType || "")
+            .trim()
+            .toUpperCase(),
+          variationTheme: String(
+            p.mapping?.variationTheme || "COLOR",
+          ).toUpperCase(),
+        },
+      },
+    };
+  }
   if (action.type === "amazonPrepare/policy" && p.sellerId)
     return {
       ...previous,

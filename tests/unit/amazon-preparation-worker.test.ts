@@ -764,3 +764,152 @@ it("stops direct family creation when Amazon rejects the parent", async () => {
       ),
   ).toBe(true);
 });
+
+describe("direct Amazon issue sync worker", () => {
+  it("publishes quantity without a preview and records progress plus expected readback", async () => {
+    const f = setup();
+    const e = { ...entry(), syncIssue: "quantity" };
+    await f.request("direct-quantity", {
+      mode: "sync",
+      stockConfirmed: true,
+      entries: [e],
+    });
+    await f.w.step(f.jobs()[0].ref);
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0].preview).toBe(false);
+    expect(f.calls[0].entry.body.patches.map((p: any) => p.path)).toEqual([
+      "/attributes/fulfillment_availability",
+    ]);
+    await f.w.step(f.jobs()[0].ref);
+    expect(f.readbacks[0][3].quantity).toBe(4);
+    expect(f.jobs()[0].status).toBe("submitted");
+    expect(
+      [...f.docs.values()].some(
+        (d: any) => d.eventType === "amazon/sync_completed",
+      ),
+    ).toBe(true);
+  });
+  it("publishes content updates for owned Amifa listings and reads back the exact changed field", async () => {
+    const f = setup();
+    f.setRemote(
+      ok({
+        attributes: { brand: [{ value: "Amifa" }] },
+        summaries: [{ asin: "B0TESTASIN" }],
+      }),
+    );
+    const e = {
+      ...entry(),
+      syncIssue: "metadata",
+      body: {
+        productType: "SHEET_PAPER",
+        patches: [
+          {
+            op: "replace",
+            path: "/attributes/item_name",
+            value: [{ value: "New title" }],
+          },
+        ],
+      },
+    };
+    await f.request("metadata", {
+      mode: "sync",
+      stockConfirmed: true,
+      entries: [e],
+    });
+    await f.w.step(f.jobs()[0].ref);
+    await f.w.step(f.jobs()[0].ref);
+    expect(f.calls).toHaveLength(1);
+    expect(f.readbacks[0][3].attributes).toEqual({
+      item_name: [{ value: "New title" }],
+    });
+  });
+  it("preserves fresh remote attributes when changing category", async () => {
+    const f = setup();
+    const attributes = {
+      brand: [{ value: "Amifa" }],
+      item_name: [{ value: "Fresh title" }],
+      fulfillment_availability: [
+        { fulfillment_channel_code: "DEFAULT", quantity: 7 },
+      ],
+    };
+    f.setRemote(ok({ attributes, summaries: [{ asin: "B0TESTASIN" }] }));
+    await f.request("category", {
+      mode: "sync",
+      stockConfirmed: true,
+      entries: [
+        {
+          itemKey: "sku",
+          sku: "sku",
+          syncIssue: "category",
+          method: "PUT",
+          body: {
+            productType: "SHEET_PAPER",
+            requirements: "LISTING",
+            attributes: {
+              brand: [{ value: "Amifa" }],
+              item_name: [{ value: "Stale title" }],
+            },
+          },
+        },
+      ],
+    });
+    await f.w.step(f.jobs()[0].ref);
+    expect(f.calls[0].entry.body.attributes).toEqual(attributes);
+  });
+});
+
+it("retries a failed own Amifa creation but never overwrites a successful listing through presence sync", async () => {
+  for (const hasAsin of [false, true]) {
+    const f = setup();
+    const attributes = {
+      brand: [{ value: "Amifa" }],
+      externally_assigned_product_identifier: [
+        {
+          type: "ean",
+          value: "4542804151534",
+          marketplace_id: config.marketplaceId,
+        },
+      ],
+      part_number: [{ value: "sku" }],
+      purchasable_offer: [
+        {
+          currency: "GBP",
+          marketplace_id: config.marketplaceId,
+          our_price: [{ schedule: [{ value_with_tax: 4 }] }],
+        },
+      ],
+      fulfillment_availability: [
+        { fulfillment_channel_code: "DEFAULT", quantity: 8 },
+      ],
+    };
+    f.setRemote(
+      ok({
+        attributes,
+        summaries: hasAsin ? [{ asin: "B0TESTASIN" }] : [],
+        issues: hasAsin
+          ? []
+          : [{ severity: "ERROR", code: "5461", message: "Prior brand error" }],
+      }),
+    );
+    await f.request("retry", {
+      mode: "sync",
+      stockConfirmed: true,
+      entries: [
+        {
+          itemKey: "sku",
+          sku: "sku",
+          method: "PUT",
+          syncIssue: "presence",
+          body: {
+            productType: "SHEET_PAPER",
+            requirements: "LISTING",
+            attributes,
+          },
+        },
+      ],
+    });
+    await f.w.step(f.jobs()[0].ref);
+    expect(f.calls).toHaveLength(hasAsin ? 0 : 1);
+    expect(f.jobs()[0].status).toBe(hasAsin ? "blocked" : "readback_pending");
+  }
+});

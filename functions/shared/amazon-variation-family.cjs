@@ -5,12 +5,12 @@ const themes = {
   PATTERN_NAME: "pattern_name",
   SIZE_NAME: "size_name",
 };
-function validateFamilyEntry(e, attributes) {
+function validateFamilyEntry(e, attributes, options = {}) {
   const f = e.family;
   if (!f) return false;
   if (
-    e.method !== "PUT" ||
-    e.body.requirements !== "LISTING" ||
+    (!(options.sync && e.method === "PATCH" && f.role === "child") &&
+      (e.method !== "PUT" || e.body.requirements !== "LISTING")) ||
     !f.handle ||
     !["parent", "child"].includes(f.role) ||
     !f.parentSku ||
@@ -22,7 +22,8 @@ function validateFamilyEntry(e, attributes) {
     attributes.variation_theme?.length !== 1 ||
     attributes.variation_theme[0].name !== f.theme ||
     attributes.variation_theme[0].marketplace_id !== UK ||
-    String(attributes.brand?.[0]?.value || "").toLowerCase() !== "amifa"
+    (!(options.sync && e.method === "PATCH") &&
+      String(attributes.brand?.[0]?.value || "").toLowerCase() !== "amifa")
   )
     throw Error("Invalid Amifa variation family, theme or parentage.");
   if (f.role === "parent") {
@@ -51,6 +52,7 @@ function validateFamilyEntry(e, attributes) {
       throw Error(
         "Each child needs its variation value and the correct parent SKU.",
       );
+    if (options.sync && e.method === "PATCH") return true;
     const exemption =
       attributes.supplier_declared_has_product_identifier_exemption;
     if (exemption) {
@@ -80,7 +82,7 @@ function validateFamilyEntry(e, attributes) {
   }
   return true;
 }
-function validateFamilyBatch(entries) {
+function validateFamilyBatch(entries, options = {}) {
   const groups = new Map();
   for (const e of entries)
     if (e.family) {
@@ -91,7 +93,7 @@ function validateFamilyBatch(entries) {
   for (const group of groups.values()) {
     const parents = group.filter((e) => e.family.role === "parent");
     const children = group.filter((e) => e.family.role === "child");
-    if (parents.length !== 1 || children.length < 2)
+    if (parents.length !== 1 || children.length < (options.sync ? 1 : 2))
       throw Error(
         "Check the complete family: one parent and at least two children in the same request.",
       );
@@ -108,7 +110,13 @@ function validateFamilyBatch(entries) {
           "All family members must use the same product type and variation theme.",
         );
       const value = String(
-        c.body.attributes[c.family.attribute]?.[0]?.value || "",
+        (c.body.attributes ||
+          Object.fromEntries(
+            c.body.patches.map((p) => [
+              p.path.replace("/attributes/", ""),
+              p.value,
+            ]),
+          ))[c.family.attribute]?.[0]?.value || "",
       )
         .trim()
         .toLowerCase();
@@ -116,7 +124,7 @@ function validateFamilyBatch(entries) {
         throw Error("Variation values must be different for each child.");
       values.add(value);
       const id =
-        c.body.attributes.externally_assigned_product_identifier?.[0]?.value;
+        c.body.attributes?.externally_assigned_product_identifier?.[0]?.value;
       if (id && identifiers.has(id))
         throw Error("Different Amazon children cannot share the same EAN/JAN.");
       if (id) identifiers.add(id);
