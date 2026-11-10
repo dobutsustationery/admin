@@ -20,6 +20,7 @@
   import { onMount } from "svelte";
   import {
     store,
+    initialSyncReady,
     inventory_synced,
     snapshotMetadata,
     hydrate,
@@ -311,6 +312,7 @@
           }
         },
         onReady: () => {
+          initialSyncReady.set(true);
           loadingProgress = 100;
           loadingMessage = "Live sync connected.";
           setSnapshotPersistencePaused(false, { flush: true });

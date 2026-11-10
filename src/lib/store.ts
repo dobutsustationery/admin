@@ -20,6 +20,9 @@ import {
   remove_variant_requested,
 } from "./listing-creation-slice";
 
+// Operational bootstrap signal; never persisted in the event-derived state.
+export const initialSyncReady = writable(false);
+
 // Persistence Logic
 export interface SnapshotMetadata {
   id: string;

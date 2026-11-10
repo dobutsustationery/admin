@@ -11,7 +11,7 @@
     where,
   } from "firebase/firestore";
   import { firestore } from "$lib/firebase";
-  import { store } from "$lib/store";
+  import { store, initialSyncReady } from "$lib/store";
   import { user } from "$lib/user-store";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
   import {
@@ -79,6 +79,7 @@
   }
   let baselineSeller = "";
   $: if (
+    $initialSyncReady &&
     $user?.uid &&
     seller &&
     baselineSeller !== seller &&
