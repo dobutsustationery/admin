@@ -234,13 +234,15 @@
     <button
       aria-pressed={issueFilter === "all"}
       on:click={() => (issueFilter = "all")}
-      >All listings ({rows.length})</button
+      aria-label={`All listings (${rows.length})`}
+      ><strong>{rows.length}</strong>All listings</button
     >
     {#each groups as { issue, label, affected }}
       <button
         aria-pressed={issueFilter === issue}
         on:click={() => (issueFilter = issue)}
-        >{label} ({affected.length})</button
+        aria-label={`${label} (${affected.length})`}
+        ><strong>{affected.length}</strong>{label}</button
       >
     {/each}
   </nav>
@@ -415,19 +417,35 @@
     margin: 1rem 0;
   }
   .filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.6rem;
     margin-bottom: 1rem;
   }
   .filters button {
-    border-radius: 999px;
+    border-radius: 0.6rem;
     margin: 0;
+    min-height: 85px;
+    padding: 1rem;
+    text-align: left;
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #334155;
+  }
+  .filters strong {
+    display: block;
+    font-size: 1.6rem;
+    margin-bottom: 0.3rem;
   }
   .filters button[aria-pressed="true"] {
-    background: #2563eb;
+    background: #1e40af;
     color: white;
-    border-color: #2563eb;
+    border-color: #1e40af;
+  }
+  @media (max-width: 640px) {
+    .filters {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
   details {
     border: 1px solid #d1d5db;
