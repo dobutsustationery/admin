@@ -145,7 +145,7 @@ test("map categories and queue individual or bulk issue-specific Amazon updates"
       quantity.getByText(`Amifa sync paper ${at}`, { exact: true }),
     ).toBeVisible();
     await quantity
-      .getByRole("button", { name: "Sync inventory quantity", exact: true })
+      .getByRole("button", { name: "Sync listing", exact: true })
       .click();
     await expect(screen.getByRole("status")).toContainText("sync queued");
     const requests = () =>
@@ -157,32 +157,30 @@ test("map categories and queue individual or bulk issue-specific Amazon updates"
     const qty = (await requests()).docs[0].data();
     expect(qty.mode).toBe("sync");
     expect(qty.entries).toHaveLength(1);
-    expect(qty.entries[0].body.patches).toEqual([
-      {
-        op: "replace",
-        path: "/attributes/fulfillment_availability",
-        value: [{ fulfillment_channel_code: "DEFAULT", quantity: 8 }],
-      },
-    ]);
-    const price = screen.locator('details[data-issue="price"]');
-    await price.locator("summary").click();
-    await price
-      .getByRole("button", { name: "Sync all price (1)", exact: true })
-      .click();
-    await expect.poll(async () => (await requests()).size).toBe(2);
-    const priceRequest = (await requests()).docs
-      .map((d) => d.data())
-      .find((d) => d.entries[0].syncIssue === "price")!;
+    expect(qty.entries[0].syncIssue).toBe("all");
+    const patches = qty.entries[0].body.patches;
     expect(
-      priceRequest.entries[0].body.patches[0].value[0].our_price[0].schedule[0]
-        .value_with_tax,
+      patches.find(
+        (p: any) => p.path === "/attributes/fulfillment_availability",
+      ).value[0].quantity,
+    ).toBe(8);
+    expect(
+      patches.find((p: any) => p.path === "/attributes/purchasable_offer")
+        .value[0].our_price[0].schedule[0].value_with_tax,
     ).toBe(4);
-    const photos = screen.locator('details[data-issue="variant_image"]');
-    await photos.locator("summary").click();
-    await expect(photos.locator(".images [role=figure]")).toHaveCount(2);
-    await photos.locator(".images [role=figure]").first().hover();
-    await expect(page.locator(".image-preview-overlay")).toBeVisible();
-    await photos.locator("summary").hover();
+    expect(patches.some((p: any) => p.path === "/attributes/item_name")).toBe(
+      true,
+    );
+    expect(patches.some((p: any) => /image_locator/.test(p.path))).toBe(false);
+    await expect(
+      quantity.getByRole("button", { name: "Sync listing", exact: true }),
+    ).toBeDisabled();
+    await expect(
+      screen.locator('details[data-issue="variant_image"] summary'),
+    ).toContainText("0 listing(s)");
+    await expect(
+      screen.locator('details[data-issue="offer_unchecked"] summary'),
+    ).toContainText("1 listing(s)");
     await screen
       .getByRole("link", { name: "Amazon category mappings and exchange rate" })
       .click();

@@ -57,6 +57,21 @@ export interface AuditRow {
   mappingSource: string;
 }
 export interface AmazonAuditState {
+  pricing?: Record<
+    string,
+    {
+      sku: string;
+      sellerId: string;
+      marketplaceId: string;
+      at: number;
+      status: number;
+      raw: any;
+    }
+  >;
+  imageBaselines?: Record<
+    string,
+    { sku: string; sources: any; remote: any; at: number }
+  >;
   sellerId: string;
   marketplaceId: string;
   observations: Record<string, AuditObservation>;
@@ -331,7 +346,30 @@ export function reduceAmazonAudit(
     chunks: { ...previous.chunks },
     receipts: { ...previous.receipts },
   };
-  if (action.type === "amazonAudit/map") {
+  if (
+    action.type === "amazonAudit/pricing" &&
+    p.sellerId &&
+    p.marketplaceId &&
+    p.sku
+  ) {
+    const key = auditScope(p.sellerId, p.marketplaceId, p.sku);
+    if (!previous.pricing?.[key] || p.at >= previous.pricing[key].at)
+      state.pricing = { ...previous.pricing, [key]: p };
+  } else if (
+    action.type === "amazonAudit/imageBaselines" &&
+    p.sellerId &&
+    p.marketplaceId
+  ) {
+    state.imageBaselines = { ...previous.imageBaselines };
+    for (const baseline of p.items || []) {
+      const key = auditScope(p.sellerId, p.marketplaceId, baseline.sku);
+      if (
+        !state.imageBaselines[key] ||
+        baseline.at > state.imageBaselines[key].at
+      )
+        state.imageBaselines[key] = baseline;
+    }
+  } else if (action.type === "amazonAudit/map") {
     if (p.sellerId && p.marketplaceId && p.itemKey) {
       const key = auditScope(p.sellerId, p.marketplaceId, p.itemKey);
       if (text(p.sku)) state.mappings[key] = text(p.sku);

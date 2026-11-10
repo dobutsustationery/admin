@@ -1358,6 +1358,7 @@ const amazonAuditWorker =
     db,
     getConfig: getAmazonConfig,
     getToken: fetchAmazonLwaAccessToken,
+    readPricing: ({config,accessToken,sku})=>amazonSpApiGet({endpoint:config.endpoint,path:`/products/pricing/v0/listings/${encodeURIComponent(sku)}/offers`,query:{MarketplaceId:config.marketplaceId,ItemCondition:"New",CustomerType:"Consumer"},accessToken,userAgent:config.userAgent}),
     read: async ({ config, accessToken, sku, cursor }) =>
       amazonSpApiGet({
         endpoint: config.endpoint,

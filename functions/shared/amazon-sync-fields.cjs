@@ -1,4 +1,18 @@
 const fields = {
+  attributes: [
+    "batteries_required",
+    "supplier_declared_dg_hz_regulation",
+    "unit_count",
+    "number_of_items",
+    "model_number",
+    "size",
+    "safety_warning",
+    "condition_type",
+    "skip_offer",
+    "list_price",
+    "country_of_origin",
+    "manufacturer",
+  ],
   quantity: ["fulfillment_availability"],
   price: ["purchasable_offer"],
   variant_image: ["main_product_image_locator"],
@@ -31,18 +45,38 @@ function comparable(v) {
       : value;
   });
 }
+const allFields = [...new Set(Object.values(fields).flat())];
 function validateSyncEntry(e) {
   if (e.method === "PUT") {
     if (
-      !["presence", "category", "variant_structure"].includes(e.syncIssue) ||
+      !(
+        ["presence", "category", "variant_structure"].includes(e.syncIssue) ||
+        (e.syncIssue === "all" && e.updateExisting === true)
+      ) ||
       e.body.requirements !== "LISTING" ||
       String(e.body.attributes?.brand?.[0]?.value || "").toLowerCase() !==
         "amifa"
     )
       throw Error("Full Amazon sync submissions must be Amifa listings.");
+    if (e.updateExisting)
+      validateSyncEntry({
+        ...e,
+        method: "PATCH",
+        body: {
+          patches: e.syncPatches?.length
+            ? e.syncPatches
+            : [
+                {
+                  op: "replace",
+                  path: "/attributes/item_name",
+                  value: e.body.attributes.item_name,
+                },
+              ],
+        },
+      });
     return;
   }
-  const allowed = fields[e.syncIssue];
+  const allowed = e.syncIssue === "all" ? allFields : fields[e.syncIssue];
   if (
     !allowed ||
     !e.body.patches?.length ||
@@ -52,7 +86,11 @@ function validateSyncEntry(e) {
         !p.path.startsWith("/attributes/") ||
         !Array.isArray(p.value) ||
         (p.op !== "replace" &&
-          !(e.syncIssue === "gallery" && p.op === "delete")) ||
+          !(
+            ["gallery", "all"].includes(e.syncIssue) &&
+            /^\/attributes\/other_product_image_locator_[1-8]$/.test(p.path) &&
+            p.op === "delete"
+          )) ||
         (p.op === "replace" && !p.value.length),
     )
   )

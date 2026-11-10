@@ -920,3 +920,49 @@ it("retries a failed own Amifa creation but never overwrites a successful listin
     expect(f.jobs()[0].status).toBe(hasAsin ? "blocked" : "readback_pending");
   }
 });
+
+it("sends a complete update in one call and reads back every changed field", async () => {
+  const f = setup();
+  f.setRemote(
+    ok({
+      attributes: { brand: [{ value: "Amifa" }] },
+      summaries: [{ asin: "B0TESTASIN" }],
+    }),
+  );
+  const e = {
+    ...entry(),
+    syncIssue: "all",
+    body: {
+      productType: "SHEET_PAPER",
+      patches: [
+        ...entry().body.patches,
+        {
+          op: "replace",
+          path: "/attributes/item_name",
+          value: [{ value: "Full update" }],
+        },
+        {
+          op: "replace",
+          path: "/attributes/unit_count",
+          value: [{ value: 48, type: { value: "count" } }],
+        },
+      ],
+    },
+  };
+  await f.request("complete", {
+    mode: "sync",
+    stockConfirmed: true,
+    entries: [e],
+  });
+  await f.w.step(f.jobs()[0].ref);
+  await f.w.step(f.jobs()[0].ref);
+  expect(f.calls).toHaveLength(1);
+  expect(f.calls[0].entry.body.patches).toHaveLength(3);
+  expect(f.readbacks[0][3]).toMatchObject({
+    quantity: 4,
+    attributes: {
+      item_name: [{ value: "Full update" }],
+      unit_count: [{ value: 48, type: { value: "count" } }],
+    },
+  });
+});

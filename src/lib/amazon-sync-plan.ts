@@ -1,3 +1,4 @@
+import { imageChanges } from "./amazon-images";
 import {
   auditScope,
   UK_MARKETPLACE,
@@ -30,12 +31,30 @@ export const amazonSyncIssues = {
   metadata: "Title and description",
   weight: "Weight",
   variant_structure: "Variant relationships",
+  attributes: "Product details",
+  featured_offer: "Offer not featured",
+  offer_unchecked: "Offer status needs checking",
+  all: "All changes",
   attention: "Needs attention",
   processing: "In progress",
   synced: "In sync",
 } as const;
 export type AmazonSyncIssue = keyof typeof amazonSyncIssues;
 export const syncAttributes: Partial<Record<AmazonSyncIssue, string[]>> = {
+  attributes: [
+    "batteries_required",
+    "supplier_declared_dg_hz_regulation",
+    "unit_count",
+    "number_of_items",
+    "model_number",
+    "size",
+    "safety_warning",
+    "condition_type",
+    "skip_offer",
+    "list_price",
+    "country_of_origin",
+    "manufacturer",
+  ],
   quantity: ["fulfillment_availability"],
   price: ["purchasable_offer"],
   variant_image: ["main_product_image_locator"],
@@ -292,6 +311,41 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
             continue;
           }
         }
+        if (
+          liveExisting &&
+          r.row.onHand > 0 &&
+          (liveRaw?.summaries || []).some((s: any) =>
+            s.status?.includes("BUYABLE"),
+          )
+        ) {
+          const pricing =
+            audit.pricing?.[auditScope(seller, UK_MARKETPLACE, r.row.sku)];
+          const mine = pricing?.raw?.payload?.Offers?.find(
+            (o: any) => o.MyOffer || o.SellerId === seller,
+          );
+          if (
+            pricing?.status === 200 &&
+            typeof mine?.IsBuyBoxWinner === "boolean"
+          ) {
+            if (!mine.IsBuyBoxWinner)
+              detail(
+                r,
+                "featured_offer",
+                "Featured Offer",
+                "Not featured",
+                "Your offer is buyable but Amazon is not featuring it. Check Pricing Health in Seller Central; syncing listing data cannot guarantee selection.",
+              );
+          } else
+            detail(
+              r,
+              "offer_unchecked",
+              null,
+              null,
+              pricing && pricing.status !== 200
+                ? `Featured Offer check failed (HTTP ${pricing.status}). Refresh from Amazon to retry.`
+                : "Refresh from Amazon to check Featured Offer status.",
+            );
+        }
         if (liveExisting && selectable) {
           for (const issue of ["quantity", "price"] as const) {
             const quantity = issue === "quantity";
@@ -451,7 +505,12 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
           const a = want.body.attributes,
             b = raw.attributes || {};
           const patches: any[] = [];
+          const changedImages =
+            issue === "variant_image" || issue === "gallery"
+              ? imageChanges(state, seller, want.sku, a, b)
+              : null;
           for (const field of fields) {
+            if (changedImages && !changedImages.includes(field)) continue;
             let local = a[field] || [],
               remote = b[field] || [];
             const different =
@@ -503,6 +562,34 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
             ];
         }
       }
+      result.entries.all = combineAmazonChanges(result.entries);
+      if (family && !family.reason && result.entries.category?.length) {
+        const parent = family.entries.find((e) => e.family?.role === "parent");
+        if (parent && !result.entries.all.some((e) => e.sku === parent.sku))
+          result.entries.all.unshift({
+            ...parent,
+            syncIssue: "variant_structure",
+          });
+        for (const entry of result.entries.all)
+          if (entry.updateExisting) {
+            const want = desired.get(entry.itemKey);
+            if (!want?.family) continue;
+            entry.family = want.family;
+            for (const field of [
+              "parentage_level",
+              "variation_theme",
+              "child_parent_sku_relationship",
+              want.family.attribute,
+            ]) {
+              entry.body.attributes[field] = want.body.attributes[field];
+              entry.syncPatches!.push({
+                op: "replace",
+                path: `/attributes/${field}`,
+                value: want.body.attributes[field],
+              });
+            }
+          }
+      }
       if (!result.issues.length) result.issues = ["synced"];
       return [result];
     })
@@ -533,4 +620,63 @@ export function batchAmazonSync(
   if (batches.length > 400 || JSON.stringify(batches).length > 8000000)
     throw Error("Select fewer products for this sync.");
   return batches;
+}
+
+// One write per SKU combines every supported difference. Family parents remain
+// in the same durable request as any children needing creation/relationships.
+export function combineAmazonChanges(
+  groups: AmazonSyncRow["entries"],
+): PreparationEntry[] {
+  const merged = new Map<string, PreparationEntry>();
+  const changes = new Map<string, any[]>();
+  for (const [issue, entries] of Object.entries(groups)) {
+    if (issue === "all") continue;
+    for (const entry of entries || []) {
+      const old = merged.get(entry.sku);
+      if (entry.method === "PUT") {
+        if (
+          !old ||
+          entry.family?.role === "parent" ||
+          issue === "presence" ||
+          issue === "category"
+        )
+          merged.set(entry.sku, structuredClone(entry));
+      } else {
+        changes.set(entry.sku, [
+          ...(changes.get(entry.sku) || []),
+          ...entry.body.patches,
+        ]);
+        if (!old)
+          merged.set(entry.sku, {
+            ...entry,
+            syncIssue: "all",
+            body: { productType: entry.body.productType, patches: [] },
+          });
+        else if (entry.family)
+          merged.set(entry.sku, { ...old, family: entry.family });
+      }
+    }
+  }
+  for (const [sku, entry] of merged) {
+    const patches = [
+      ...new Map((changes.get(sku) || []).map((p) => [p.path, p])).values(),
+    ];
+    if (entry.method === "PATCH") {
+      entry.syncIssue = "all";
+      entry.body.patches = patches;
+    } else if (entry.syncIssue === "category") {
+      entry.syncIssue = "all";
+      (entry as any).updateExisting = true;
+      (entry as any).syncPatches = patches;
+      for (const p of patches) {
+        const key = p.path.replace("/attributes/", "");
+        if (p.op === "delete") delete entry.body.attributes[key];
+        else entry.body.attributes[key] = p.value;
+      }
+    }
+  }
+  return [...merged.values()].sort(
+    (a, b) =>
+      Number(b.family?.role === "parent") - Number(a.family?.role === "parent"),
+  );
 }

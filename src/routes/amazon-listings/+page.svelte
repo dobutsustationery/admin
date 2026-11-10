@@ -404,6 +404,22 @@
           marketplaceId: UK_MARKETPLACE,
           mode: skus ? "selected" : "catalogue",
           skus: skus || [],
+          ...(!skus
+            ? {
+                knownSkus: [
+                  ...new Set(
+                    [
+                      ...Object.values(audit.observations)
+                        .filter((o) => o.sellerId === audit.sellerId)
+                        .map((o) => o.sku),
+                      ...Object.values(prep.jobs)
+                        .filter((j: any) => j.sellerId === audit.sellerId)
+                        .map((j: any) => j.entry?.sku),
+                    ].filter(Boolean),
+                  ),
+                ].slice(0, 100),
+              }
+            : {}),
         });
         message = "Refresh requested. Progress and results will appear here.";
       } catch (e) {

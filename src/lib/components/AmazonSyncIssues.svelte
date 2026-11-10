@@ -4,12 +4,11 @@
     collection,
     doc,
     writeBatch,
-    addDoc,
+    runTransaction,
     serverTimestamp,
     onSnapshot,
     query,
     where,
-    limit,
   } from "firebase/firestore";
   import { firestore } from "$lib/firebase";
   import { store } from "$lib/store";
@@ -23,11 +22,11 @@
     type AmazonSyncRow,
   } from "$lib/amazon-sync-plan";
   import { amazonExchangeRate } from "$lib/amazon-defaults";
+  import { legacyImageBaselines } from "$lib/amazon-images";
   import { UK_MARKETPLACE } from "$lib/amazon-audit";
-  const issueEntries = Object.entries(amazonSyncIssues) as [
-    AmazonSyncIssue,
-    string,
-  ][];
+  const issueEntries = Object.entries(amazonSyncIssues).filter(
+    ([key]) => key !== "all",
+  ) as [AmazonSyncIssue, string][];
   let search = "",
     error = "",
     message = "",
@@ -77,6 +76,42 @@
       },
       (e) => (error = e.message),
     );
+  }
+  let baselineSeller = "";
+  $: if (
+    $user?.uid &&
+    seller &&
+    baselineSeller !== seller &&
+    Object.keys($store.amazonAudit?.observations || {}).length
+  ) {
+    baselineSeller = seller;
+    initializeImages().catch((e) => (error = e.message));
+  }
+  async function initializeImages() {
+    const items = await legacyImageBaselines($store);
+    if (!items.length) {
+      return;
+    }
+    const ref = doc(
+      firestore,
+      "broadcast",
+      `amazon-image-baseline-v1-${seller}`,
+    );
+    await runTransaction(firestore, async (tx) => {
+      if ((await tx.get(ref)).exists()) return;
+      tx.set(ref, {
+        type: "amazonAudit/imageBaselines",
+        payload: {
+          sellerId: seller,
+          marketplaceId: UK_MARKETPLACE,
+          items,
+          reason:
+            "Existing Amazon images accepted by the operator during source-tracking migration.",
+        },
+        creator: $user!.uid,
+        timestamp: serverTimestamp(),
+      });
+    });
   }
   $: allRows = projectAmazonSync($store);
   $: rows = allRows.filter((r) =>
@@ -167,8 +202,10 @@
 <section class="sync-issues" aria-label="Amifa Amazon sync issues">
   <h2>Amifa sync issues</h2>
   <p>
-    One row per listing. Open an issue category to inspect changes, sync one
-    listing, or sync that category in bulk. Price: EUR × {rate} → GBP.
+    One row per listing. Sync listing applies all supported differences
+    together, including stock, price, product details, images and relationships.
+    Amazon approvals and Featured Offer decisions remain visible when they need
+    attention. Price: EUR × {rate} → GBP.
   </p>
   <p>
     <a href="/amazon-categories">Amazon category mappings and exchange rate</a>
@@ -187,12 +224,29 @@
   {#each requestErrors as failure}<p class="error">
       Request {failure.id}: {failure.error}
     </p>{/each}
+  <button
+    class="primary"
+    disabled={busy ||
+      !rows.some(
+        (r) => r.entries.all?.length && !submitted[pendingKey(r.handle, "all")],
+      )}
+    on:click={() =>
+      sync(
+        rows.filter(
+          (r) =>
+            r.entries.all?.length && !submitted[pendingKey(r.handle, "all")],
+        ),
+        "all",
+      )}
+    >Sync all listings with changes ({rows.filter(
+      (r) => r.entries.all?.length && !submitted[pendingKey(r.handle, "all")],
+    ).length})</button
+  >
   <div class="cards">
     {#each issueEntries as [issue, label]}
       {@const affected = rows.filter((r) => r.issues.includes(issue))}
       {@const eligible = affected.filter(
-        (r) =>
-          r.entries[issue]?.length && !submitted[pendingKey(r.handle, issue)],
+        (r) => r.entries.all?.length && !submitted[pendingKey(r.handle, "all")],
       )}
       <details data-issue={issue}>
         <summary
@@ -203,8 +257,8 @@
           <button
             class="primary"
             disabled={busy || !eligible.length}
-            on:click={() => sync(eligible, issue)}
-            >Sync all {label.toLowerCase()} ({eligible.length})</button
+            on:click={() => sync(eligible, "all")}
+            >Sync listings in {label.toLowerCase()} ({eligible.length})</button
           >
         {/if}
         {#if issue === "category"}<p>
@@ -218,7 +272,15 @@
             use the approved Amifa GTIN exemption.
           </p>{/if}
         {#if issue === "quantity"}<p>
-            Updates merchant-fulfilled quantities only.
+            Sync listing also applies its other supported changes.
+          </p>{/if}
+        {#if issue === "featured_offer" || issue === "offer_unchecked"}<p>
+            Refresh from Amazon to recheck. For an offer that remains
+            unfeatured, review Pricing Health in <a
+              href="https://sellercentral.amazon.co.uk/"
+              target="_blank"
+              rel="noreferrer">Seller Central</a
+            >. A data sync cannot force Amazon to feature an offer.
           </p>{/if}
         {#if !affected.length}<p>No listings in this category.</p>{/if}
         {#each affected as row (row.handle)}
@@ -232,12 +294,9 @@
                   fit="contain"
                 />{/if}
               <div><strong>{row.title}</strong><small>{row.handle}</small></div>
-              {#if row.entries[issue]?.length}<button
-                  disabled={busy || !!submitted[pendingKey(row.handle, issue)]}
-                  on:click={() => sync([row], issue)}
-                  >{issue === "presence"
-                    ? "Sync listing"
-                    : `Sync ${label.toLowerCase()}`}</button
+              {#if row.entries.all?.length}<button
+                  disabled={busy || !!submitted[pendingKey(row.handle, "all")]}
+                  on:click={() => sync([row], "all")}>Sync listing</button
                 >{/if}
             </div>
             {#each row.details.filter((d) => d.issue === issue) as d}

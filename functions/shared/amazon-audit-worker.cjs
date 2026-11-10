@@ -43,7 +43,13 @@ function needsReadback(raw, status, expected = {}) {
   )
     return true;
   for (const [field, value] of Object.entries(expected.attributes || {}))
-    if (comparable(raw?.attributes?.[field]) !== comparable(value)) return true;
+    if (/^(main|other)_product_image_locator/.test(field)) {
+      // Amazon replaces source URLs with CDN locators. Compare slot presence;
+      // source identity is retained in the accepted preparation job facts.
+      if (array(raw?.attributes?.[field]).length !== array(value).length)
+        return true;
+    } else if (comparable(raw?.attributes?.[field]) !== comparable(value))
+      return true;
   if (array(raw?.attributes?.parentage_level).some((v) => v.value === "parent"))
     return false;
   if (
@@ -94,6 +100,15 @@ function validateRequest(data) {
       ))
   )
     throw Error("Select 1–100 valid seller SKUs.");
+  if (
+    data.knownSkus &&
+    (!Array.isArray(data.knownSkus) ||
+      data.knownSkus.length > 100 ||
+      data.knownSkus.some(
+        (s) => typeof s !== "string" || !s.trim() || s.length > 200,
+      ))
+  )
+    throw Error("Refresh up to 100 known seller SKUs.");
   return data.mode === "selected"
     ? [...new Set(data.skus.map((s) => s.trim()))]
     : [];
@@ -142,7 +157,15 @@ function newJob(config, creator, sku, now) {
     status: "waiting",
   };
 }
-function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
+function createWorker({
+  db,
+  getConfig,
+  getToken,
+  read,
+  readPricing,
+  pause = (ms) => new Promise((r) => setTimeout(r, ms)),
+  now = Date.now,
+}) {
   async function enqueueSku(sourceId, creator, sku, expected = {}) {
     const config = getConfig();
     if (!config.sellerId || config.marketplaceId !== UK)
@@ -178,6 +201,7 @@ function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
       for (const sku of skus.length ? skus : [""]) {
         const id = digest(`${requestId}:${sku}`),
           job = newJob(config, data.creator, sku, at);
+        if (!sku && data.knownSkus) job.knownSkus = data.knownSkus;
         tx.create(db.collection(JOBS).doc(id), job);
         addEvent(
           tx,
@@ -205,6 +229,7 @@ function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
     if (!job) return;
     let response,
       problem = "";
+    const pricing = [];
     try {
       const config = getConfig();
       if (
@@ -221,6 +246,38 @@ function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
         sku: job.sku,
         cursor: job.cursor,
       });
+      if (readPricing && response.status === 200) {
+        const items = job.sku
+          ? [{ ...response.data, sku: job.sku }]
+          : array(response.data.items);
+        for (const item of items) {
+          if (
+            !array(item.summaries).some((s) =>
+              array(s.status).includes("BUYABLE"),
+            )
+          )
+            continue;
+          try {
+            const result = await readPricing({
+              config,
+              accessToken,
+              sku: item.sku,
+            });
+            pricing.push({
+              sku: item.sku,
+              status: result.status,
+              raw: result.data,
+            });
+          } catch (e) {
+            pricing.push({
+              sku: item.sku,
+              status: 0,
+              raw: { errors: [{ message: e.message || String(e) }] },
+            });
+          }
+          await pause(1100);
+        }
+      }
     } catch (e) {
       problem = e.message || String(e);
     }
@@ -238,6 +295,20 @@ function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
       };
       const id = `${ref.id}:${current.sequence}`;
       let status = "waiting";
+      for (const result of pricing)
+        addEvent(
+          tx,
+          db,
+          `${id}:pricing:${result.sku}`,
+          "amazonAudit/pricing",
+          {
+            ...result,
+            sellerId: j.sellerId,
+            marketplaceId: j.marketplaceId,
+            at,
+          },
+          at,
+        );
       if (response) {
         const json = JSON.stringify(response.data ?? {});
         if (Buffer.byteLength(json) > 4_000_000) {
@@ -303,11 +374,14 @@ function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
       } else if (j.sku) {
         j.checks++;
         j.failures = 0;
-        status = needsReadback(response.data, response.status, j.expected)
-          ? at >= j.deadline
-            ? "expired"
-            : "waiting"
-          : "complete";
+        const pricingFailed = pricing.some((p) => p.status !== 200);
+        status =
+          pricingFailed ||
+          needsReadback(response.data, response.status, j.expected)
+            ? at >= j.deadline
+              ? "expired"
+              : "waiting"
+            : "complete";
         j.dueAt = at + delays[Math.min(j.checks - 1, delays.length - 1)];
       } else {
         j.page++;
@@ -327,12 +401,47 @@ function createWorker({ db, getConfig, getToken, read, now = Date.now }) {
         }
         j.dueAt = at + 1000;
         for (const item of array(response.data?.items)) {
-          if (!item.sku || !needsReadback(item, 200)) continue;
+          if (
+            !item.sku ||
+            (!needsReadback(item, 200) &&
+              !pricing.some((p) => p.sku === item.sku && p.status !== 200))
+          )
+            continue;
           const childId = digest(`${ref.id}:${item.sku}`),
             child = newJob(
               { sellerId: j.sellerId, marketplaceId: j.marketplaceId },
               j.creator,
               item.sku,
+              at,
+            );
+          tx.set(db.collection(JOBS).doc(childId), child);
+          addEvent(
+            tx,
+            db,
+            `${childId}:queued`,
+            "amazonAudit/job",
+            jobFact(childId, child, "waiting", at),
+            at,
+          );
+        }
+      }
+      if (!j.sku && response?.status === 200) {
+        const visible = new Set(array(response.data.items).map((i) => i.sku));
+        const extras = new Set();
+        for (const item of array(response.data.items))
+          for (const scope of array(item.relationships))
+            for (const relation of array(scope.relationships))
+              for (const sku of array(relation.childSkus))
+                if (!visible.has(sku)) extras.add(sku);
+        if (!j.cursor)
+          for (const sku of array(j.knownSkus))
+            if (!visible.has(sku)) extras.add(sku);
+        for (const sku of extras) {
+          const childId = digest(`${ref.id}:explicit:${sku}`),
+            child = newJob(
+              { sellerId: j.sellerId, marketplaceId: j.marketplaceId },
+              j.creator,
+              sku,
               at,
             );
           tx.set(db.collection(JOBS).doc(childId), child);

@@ -282,3 +282,48 @@ it("keeps reading until the submitted child-parent relationship and variation th
   raw.attributes.child_parent_sku_relationship[0].parent_sku = "wrong";
   expect(needsReadback(raw, 200, expected)).toBe(true);
 });
+
+it("records Featured Offer responses and discovers failed children omitted by catalogue search", async () => {
+  const s = database();
+  const w = createWorker({
+    db: s.db,
+    getConfig: () => config,
+    getToken: async () => "token",
+    now: () => 1000,
+    pause: async () => {},
+    read: async () =>
+      ok({
+        items: [
+          {
+            sku: "parent",
+            summaries: [{ status: ["DISCOVERABLE"] }],
+            relationships: [
+              { relationships: [{ childSkus: ["hidden-child"] }] },
+            ],
+          },
+          { sku: "visible", summaries: [{ status: ["BUYABLE"] }] },
+        ],
+      }),
+    readPricing: async () =>
+      ok({ payload: { Offers: [{ MyOffer: true, IsBuyBoxWinner: false }] } }),
+  });
+  const request = {
+    creator: "u",
+    marketplaceId: config.marketplaceId,
+    mode: "catalogue",
+    skus: [],
+    knownSkus: ["orphan"],
+  };
+  s.docs.set(`${REQUESTS}/pricing`, request);
+  await w.enqueue("pricing", request);
+  await w.tick();
+  const pricing = [...s.docs.values()].find(
+    (d: any) => d.type === "amazonAudit/pricing",
+  );
+  expect(pricing.payload.raw.payload.Offers[0].IsBuyBoxWinner).toBe(false);
+  const jobs = [...s.docs.entries()]
+    .filter(([p]) => p.startsWith(JOBS + "/"))
+    .map(([, d]) => d.sku);
+  expect(jobs).toContain("hidden-child");
+  expect(jobs).toContain("orphan");
+});

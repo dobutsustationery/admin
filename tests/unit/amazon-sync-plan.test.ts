@@ -205,7 +205,7 @@ describe("Amazon issue sync", () => {
       createdAt: 500,
       updatedAt: 600,
     };
-    expect(projectAmazonSync(s)[0].issues).toEqual(["synced"]);
+    expect(projectAmazonSync(s)[0].issues).toEqual(["offer_unchecked"]);
   });
   it("keeps pending jobs out of subsequent sync requests, includes zero local stock on existing offers", () => {
     const s = fixture(),
@@ -243,7 +243,8 @@ describe("Amazon issue sync", () => {
     const expected = {
       attributes: { main_product_image_locator: e.body.patches[0].value },
     };
-    expect(needsReadback(o.raw, 200, expected)).toBe(true);
+    // Source URL substitution itself is not evidence of bad images.
+    expect(needsReadback(o.raw, 200, expected)).toBe(false);
     o.raw.attributes.main_product_image_locator = e.body.patches[0].value;
     expect(needsReadback(o.raw, 200, expected)).toBe(false);
     expect(
@@ -314,4 +315,95 @@ it("updates family relationships with scoped child PATCHes and an existing reusa
   expect(batch[1].body.patches.map((p: any) => p.path)).not.toContain(
     "/attributes/fulfillment_availability",
   );
+});
+
+it("combines all supported differences into one SKU write", () => {
+  const s = fixture(),
+    created = projectAmazonSync(s)[0].entries.presence![0];
+  observe(s, created);
+  const o =
+    s.amazonAudit.observations[
+      auditScope("seller", UK_MARKETPLACE, created.sku)
+    ];
+  o.raw.fulfillmentAvailability[0].quantity = 1;
+  o.raw.offers[0].price.amount = 99;
+  o.raw.attributes.item_name = [{ value: "Old name" }];
+  o.raw.attributes.unit_count = [{ value: 1, type: { value: "count" } }];
+  const entries = batchAmazonSync(projectAmazonSync(s), "all")[0];
+  expect(entries).toHaveLength(1);
+  expect(entries[0].syncIssue).toBe("all");
+  expect(entries[0].body.patches.map((p: any) => p.path)).toEqual(
+    expect.arrayContaining([
+      "/attributes/fulfillment_availability",
+      "/attributes/purchasable_offer",
+      "/attributes/item_name",
+      "/attributes/unit_count",
+    ]),
+  );
+  expect(() => validateRequest(request(entries))).not.toThrow();
+});
+it("detects non-featured offers separately from buyability and never promises to fix Amazon's decision", () => {
+  const s = fixture(),
+    created = projectAmazonSync(s)[0].entries.presence![0];
+  observe(s, created);
+  const key = auditScope("seller", UK_MARKETPLACE, created.sku);
+  s.amazonAudit.pricing = {
+    [key]: {
+      at: 1200,
+      status: 200,
+      raw: { payload: { Offers: [{ MyOffer: true, IsBuyBoxWinner: false }] } },
+    },
+  };
+  expect(projectAmazonSync(s)[0].issues).toContain("featured_offer");
+  expect(projectAmazonSync(s)[0].entries.featured_offer).toBeUndefined();
+  s.amazonAudit.pricing[key].raw.payload.Offers[0].IsBuyBoxWinner = true;
+  expect(projectAmazonSync(s)[0].issues).toEqual(["synced"]);
+});
+it("ignores CDN replacement and detects later changes to the recorded source images", () => {
+  const s = fixture(),
+    created = projectAmazonSync(s)[0].entries.presence![0];
+  observe(s, created);
+  const key = auditScope("seller", UK_MARKETPLACE, created.sku),
+    o = s.amazonAudit.observations[key];
+  const source = structuredClone(created.body.attributes);
+  o.raw.attributes.main_product_image_locator = [
+    { media_location: "https://m.media-amazon.com/images/I/abc.jpg" },
+  ];
+  s.amazonAudit.imageBaselines = {
+    [key]: {
+      at: 1001,
+      sku: created.sku,
+      sources: source,
+      remote: structuredClone(o.raw.attributes),
+    },
+  };
+  expect(projectAmazonSync(s)[0].entries.variant_image).toBeUndefined();
+  s.inventory.idToItem[created.itemKey].image =
+    "https://example.com/replacement.png";
+  expect(projectAmazonSync(s)[0].entries.variant_image).toHaveLength(1);
+});
+
+it("combines a category correction with other fields without dropping the existing identity", () => {
+  const s = fixture(),
+    created = projectAmazonSync(s)[0].entries.presence![0];
+  observe(s, created);
+  const o =
+    s.amazonAudit.observations[
+      auditScope("seller", UK_MARKETPLACE, created.sku)
+    ];
+  o.raw.summaries[0].productType = "STICKER_DECAL";
+  o.raw.offers[0].price.amount = 99;
+  o.raw.fulfillmentAvailability[0].quantity = 0;
+  const entries = batchAmazonSync(projectAmazonSync(s), "all")[0];
+  expect(entries).toHaveLength(1);
+  const e = entries[0];
+  expect(e.method).toBe("PUT");
+  expect(e.updateExisting).toBe(true);
+  expect(e.body.attributes.externally_assigned_product_identifier).toEqual(
+    created.body.attributes.externally_assigned_product_identifier,
+  );
+  expect(e.syncPatches!.map((p: any) => p.path)).toContain(
+    "/attributes/fulfillment_availability",
+  );
+  expect(() => validateRequest(request(entries))).not.toThrow();
 });

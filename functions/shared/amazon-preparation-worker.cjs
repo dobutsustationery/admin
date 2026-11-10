@@ -94,7 +94,7 @@ function validateRequest(d) {
       e.method === "PUT" && e.body.requirements === "LISTING_OFFER_ONLY";
     if (d.mode === "sync") validateSyncEntry(e);
     const family =
-      e.syncIssue === "category" && d.mode === "sync"
+      (e.syncIssue === "category" || e.updateExisting) && d.mode === "sync"
         ? false
         : validateFamilyEntry(e, attributes, { sync: d.mode === "sync" });
     if (
@@ -125,7 +125,10 @@ function validateRequest(d) {
       e.method === "PUT" &&
       !offerOnly &&
       !family &&
-      !(d.mode === "sync" && e.syncIssue === "category") &&
+      !(
+        d.mode === "sync" &&
+        (e.syncIssue === "category" || e.updateExisting)
+      ) &&
       (e.body.requirements !== "LISTING" ||
         attributes?.supplier_declared_has_product_identifier_exemption ||
         attributes?.parentage_level ||
@@ -167,7 +170,10 @@ function validateRequest(d) {
     if (
       e.method === "PUT" &&
       e.family?.role !== "parent" &&
-      !(d.mode === "sync" && e.syncIssue === "category") &&
+      !(
+        d.mode === "sync" &&
+        (e.syncIssue === "category" || e.updateExisting)
+      ) &&
       (!stock || !offers || (!family && stock[0].quantity <= 0))
     )
       throw Error("New products require a price and stock quantity.");
@@ -428,10 +434,11 @@ function createWorker({
       await enqueueReadback(ref.id, job.creator, job.entry.sku, {
         ...(quantity !== undefined ? { quantity } : {}),
         ...(priceGBP !== undefined ? { priceGBP } : {}),
-        ...(job.syncMode && job.entry.method === "PATCH"
+        ...(job.syncMode &&
+        (job.entry.method === "PATCH" || job.entry.updateExisting)
           ? {
               attributes: Object.fromEntries(
-                job.entry.body.patches
+                (job.entry.syncPatches || job.entry.body.patches || [])
                   .filter(
                     (p) =>
                       ![
@@ -446,7 +453,8 @@ function createWorker({
               ),
             }
           : {}),
-        ...(job.syncMode && job.entry.syncIssue === "category"
+        ...(job.syncMode &&
+        (job.entry.syncIssue === "category" || job.entry.updateExisting)
           ? { productType: job.entry.body.productType }
           : {}),
         ...(job.entry.family
@@ -529,6 +537,7 @@ function createWorker({
           job.entry.family?.role === "parent" ||
           !(before.data?.summaries || []).some((s) => s.asin)) &&
         (job.entry.syncIssue === "category" ||
+          job.entry.updateExisting ||
           (job.entry.family?.role === "parent" &&
             before.data?.attributes?.parentage_level?.[0]?.value ===
               "parent") ||
@@ -545,7 +554,7 @@ function createWorker({
           ));
       if (
         job.syncMode &&
-        job.entry.syncIssue === "category" &&
+        (job.entry.syncIssue === "category" || job.entry.updateExisting) &&
         before.status !== 200
       )
         throw Error(
@@ -682,12 +691,22 @@ function createWorker({
         return;
       }
       const writeEntry =
-        job.syncMode && job.entry.syncIssue === "category"
+        job.syncMode &&
+        (job.entry.syncIssue === "category" || job.entry.updateExisting)
           ? {
               ...job.entry,
-              body: { ...job.entry.body, attributes: before.data.attributes },
+              body: {
+                ...job.entry.body,
+                attributes: { ...before.data.attributes },
+              },
             }
           : job.entry;
+      if (job.entry.updateExisting)
+        for (const patch of job.entry.syncPatches || []) {
+          const key = patch.path.replace("/attributes/", "");
+          if (patch.op === "delete") delete writeEntry.body.attributes[key];
+          else writeEntry.body.attributes[key] = patch.value;
+        }
       lockRef = db
         .collection(LOCKS)
         .doc(hash(`${job.sellerId}:${job.entry.sku}`));

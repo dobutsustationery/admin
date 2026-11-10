@@ -57,6 +57,8 @@ export interface PreparationEntry {
   method: "PUT" | "PATCH";
   body: any;
   syncIssue?: string;
+  updateExisting?: boolean;
+  syncPatches?: any[];
   family?: {
     handle: string;
     role: "parent" | "child";
