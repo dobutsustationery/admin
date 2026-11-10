@@ -30,6 +30,24 @@ export function imageAttributes(attributes: any) {
       .map((k) => [k, attributes[k]]),
   );
 }
+export function rejectedAmazonImageFields(issues: any[] = []): string[] {
+  const fields = new Set<string>();
+  for (const issue of issues) {
+    if (issue.severity !== "ERROR") continue;
+    const named = (issue.attributeNames || []).filter((field: string) =>
+      amazonImageFields.includes(field),
+    );
+    if (named.length) named.forEach((field: string) => fields.add(field));
+    else if (
+      String(issue.code) === "18320" ||
+      issue.categories?.some((category: string) =>
+        ["INVALID_IMAGE", "MISSING_IMAGE"].includes(category),
+      )
+    )
+      fields.add("main_product_image_locator");
+  }
+  return [...fields];
+}
 // Accepted request bytes preserve source identity; Amazon's CDN URLs do not.
 export function imageChanges(
   state: any,
@@ -37,6 +55,7 @@ export function imageChanges(
   sku: string,
   desired: any,
   remote: any,
+  rejected: string[] = [],
 ) {
   let baseline =
     state.amazonAudit?.imageBaselines?.[
@@ -87,6 +106,7 @@ export function imageChanges(
   return amazonImageFields.filter((field) => {
     const want = desired?.[field] || [],
       actual = remote?.[field] || [];
+    if (want.length && rejected.includes(field)) return true;
     if (tracked)
       return (
         imageSignature(desired, [field]) !== imageSignature(sources, [field]) ||

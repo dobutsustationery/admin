@@ -1,4 +1,4 @@
-import { imageChanges } from "./amazon-images";
+import { imageChanges, rejectedAmazonImageFields } from "./amazon-images";
 import {
   auditScope,
   UK_MARKETPLACE,
@@ -492,6 +492,7 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
             },
           ];
         }
+        const rejectedImages = rejectedAmazonImageFields(raw.issues);
         for (const [issue, baseFields] of Object.entries(syncAttributes) as [
           AmazonSyncIssue,
           string[],
@@ -507,7 +508,7 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
           const patches: any[] = [];
           const changedImages =
             issue === "variant_image" || issue === "gallery"
-              ? imageChanges(state, seller, want.sku, a, b)
+              ? imageChanges(state, seller, want.sku, a, b, rejectedImages)
               : null;
           for (const field of fields) {
             if (changedImages && !changedImages.includes(field)) continue;
@@ -516,7 +517,7 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
             const different =
               comparableAmazonAttribute(local) !==
               comparableAmazonAttribute(remote);
-            if (!different) continue;
+            if (!different && !rejectedImages.includes(field)) continue;
             // Absence of a local optional field does not erase Amazon content.
             if (!local.length && issue !== "gallery") continue;
             detail(r, issue, local, remote);

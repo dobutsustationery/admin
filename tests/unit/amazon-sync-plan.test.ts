@@ -407,3 +407,44 @@ it("combines a category correction with other fields without dropping the existi
   );
   expect(() => validateRequest(request(entries))).not.toThrow();
 });
+
+it.each([false, true])(
+  "resubmits a rejected main image even when its source is unchanged (CDN: %s)",
+  (cdn) => {
+    const s = fixture(),
+      created = projectAmazonSync(s)[0].entries.presence![0];
+    observe(s, created);
+    const key = auditScope("seller", UK_MARKETPLACE, created.sku),
+      o = s.amazonAudit.observations[key];
+    const source = structuredClone(created.body.attributes);
+    if (cdn)
+      o.raw.attributes.main_product_image_locator = [
+        { media_location: "https://m.media-amazon.com/images/I/rejected.jpg" },
+      ];
+    s.amazonAudit.imageBaselines = {
+      [key]: {
+        at: 1001,
+        sku: created.sku,
+        sources: source,
+        remote: structuredClone(o.raw.attributes),
+      },
+    };
+    o.raw.issues = [
+      {
+        code: "18320",
+        severity: "ERROR",
+        categories: ["INVALID_IMAGE"],
+        message: "The main image is missing or incorrect.",
+      },
+    ];
+    const row = projectAmazonSync(s)[0];
+    expect(row.issues).toContain("variant_image");
+    expect(row.entries.all![0].body.patches).toContainEqual({
+      op: "replace",
+      path: "/attributes/main_product_image_locator",
+      value: source.main_product_image_locator,
+    });
+    o.raw.issues = [];
+    expect(projectAmazonSync(s)[0].entries.variant_image).toBeUndefined();
+  },
+);
