@@ -33,6 +33,7 @@
     message = "",
     busy = false;
   let submitted: Record<string, string> = {};
+  let issueFilter: AmazonSyncIssue = "all";
   const pendingKey = (handle: string, issue: AmazonSyncIssue) =>
     `${seller}:${issue}:${handle}`;
   $: if (Object.keys(submitted).length) {
@@ -136,6 +137,18 @@
       .includes(search.toLowerCase()),
   );
   $: rate = amazonExchangeRate($store.amazonPreparation, seller);
+  $: groups = issueEntries
+    .map(([issue, label]) => ({
+      issue,
+      label,
+      affected: rows.filter((r) => r.issues.includes(issue)),
+    }))
+    .filter((group) => group.affected.length > 0);
+  $: if (issueFilter !== "all" && !groups.some((g) => g.issue === issueFilter))
+    issueFilter = "all";
+  $: visibleGroups = groups.filter(
+    (g) => issueFilter === "all" || g.issue === issueFilter,
+  );
   function displayValue(issue: AmazonSyncIssue, value: any) {
     if (issue === "quantity")
       return String(value?.[0]?.quantity ?? "Not reported");
@@ -217,6 +230,20 @@
 
 <section class="sync-issues" aria-label="Amifa Amazon sync issues">
   <h2>Amifa sync issues</h2>
+  <nav class="filters" aria-label="Filter Amazon sync issues">
+    <button
+      aria-pressed={issueFilter === "all"}
+      on:click={() => (issueFilter = "all")}
+      >All listings ({rows.length})</button
+    >
+    {#each groups as { issue, label, affected }}
+      <button
+        aria-pressed={issueFilter === issue}
+        on:click={() => (issueFilter = issue)}
+        >{label} ({affected.length})</button
+      >
+    {/each}
+  </nav>
   <p>
     One row per listing. Sync listing applies all supported differences
     together, including stock, price, product details, images and relationships.
@@ -259,8 +286,7 @@
     ).length})</button
   >
   <div class="cards">
-    {#each issueEntries as [issue, label]}
-      {@const affected = rows.filter((r) => r.issues.includes(issue))}
+    {#each visibleGroups as { issue, label, affected } (issue)}
       {@const eligible = affected.filter(
         (r) => r.entries.all?.length && !submitted[pendingKey(r.handle, "all")],
       )}
@@ -298,7 +324,6 @@
               rel="noreferrer">Seller Central</a
             >. A data sync cannot force Amazon to feature an offer.
           </p>{/if}
-        {#if !affected.length}<p>No listings in this category.</p>{/if}
         {#each affected as row (row.handle)}
           <div class="listing">
             <div class="heading">
@@ -388,6 +413,21 @@
     display: grid;
     gap: 0.8rem;
     margin: 1rem 0;
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .filters button {
+    border-radius: 999px;
+    margin: 0;
+  }
+  .filters button[aria-pressed="true"] {
+    background: #2563eb;
+    color: white;
+    border-color: #2563eb;
   }
   details {
     border: 1px solid #d1d5db;

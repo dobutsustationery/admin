@@ -721,26 +721,13 @@
             </details>{/if}
         </div>{/if}
     </section>
-    <section class="cards" aria-label="Sync categories">
-      <button
-        class:current={category === "All"}
-        on:click={() => (category = "All")}
-        ><strong
-          >{new Set(searched.map((r) => r.row.family || r.row.key))
-            .size}</strong
-        >All listings</button
-      >{#each categories as c}<button
-          class:current={category === c}
-          on:click={() => (category = c)}
-          ><strong
-            >{new Set(
-              searched
-                .filter((r) => viewStatus(r) === c)
-                .map((r) => r.row.family || r.row.key),
-            ).size}</strong
-          >{c}</button
-        >{/each}
-    </section>
+    <label>
+      Preparation status
+      <select bind:value={category}>
+        <option value="All">All listings</option>
+        {#each categories as c}<option value={c}>{c}</option>{/each}
+      </select>
+    </label>
     <details class="settings">
       <summary>Pricing and saved preparation choices</summary>
       <p>
@@ -1440,8 +1427,7 @@
     opacity: 0.45;
     cursor: default;
   }
-  .primary,
-  .cards .current {
+  .primary {
     background: #1e40af;
     color: white;
     border-color: #1e40af;
@@ -1463,20 +1449,6 @@
   }
   .status span {
     margin-left: 1rem;
-  }
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.6rem;
-  }
-  .cards button {
-    text-align: left;
-    min-height: 85px;
-  }
-  .cards strong {
-    display: block;
-    font-size: 1.6rem;
-    margin-bottom: 0.3rem;
   }
   .muted,
   small,
@@ -1545,9 +1517,6 @@
   @media (max-width: 640px) {
     main {
       padding: 0.8rem;
-    }
-    .cards {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .toolbar > label,
     .toolbar > button {

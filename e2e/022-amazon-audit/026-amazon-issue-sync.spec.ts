@@ -139,6 +139,23 @@ test("map categories and queue individual or bulk issue-specific Amazon updates"
     });
     await expect(screen).toBeVisible();
     await screen.getByLabel("Search listings").fill(jan);
+    const filters = screen.getByRole("navigation", {
+      name: "Filter Amazon sync issues",
+    });
+    await expect(filters).toBeVisible();
+    await expect(
+      filters.getByRole("button", { name: /^Variant image/ }),
+    ).toHaveCount(0);
+    await filters
+      .getByRole("button", { name: "Inventory quantity (1)", exact: true })
+      .click();
+    await expect(screen.locator("details[data-issue]")).toHaveCount(1);
+    await expect(
+      filters.getByRole("button", {
+        name: "Inventory quantity (1)",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
     const quantity = screen.locator('details[data-issue="quantity"]');
     await quantity.locator("summary").click();
     await expect(
@@ -175,9 +192,12 @@ test("map categories and queue individual or bulk issue-specific Amazon updates"
     await expect(
       quantity.getByRole("button", { name: "Sync listing", exact: true }),
     ).toBeDisabled();
+    await filters
+      .getByRole("button", { name: "All listings (1)", exact: true })
+      .click();
     await expect(
       screen.locator('details[data-issue="variant_image"] summary'),
-    ).toContainText("0 listing(s)");
+    ).toHaveCount(0);
     await expect(
       screen.locator('details[data-issue="offer_unchecked"] summary'),
     ).toContainText("1 listing(s)");
