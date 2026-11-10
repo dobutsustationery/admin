@@ -5,6 +5,7 @@
     doc,
     writeBatch,
     runTransaction,
+    getDocs,
     serverTimestamp,
     onSnapshot,
     query,
@@ -89,6 +90,17 @@
     initializeImages().catch((e) => (error = e.message));
   }
   async function initializeImages() {
+    // Older tabs may have advanced their cursor past facts they did not yet
+    // understand. Recover only the new observation type, never replay inventory.
+    if (!$store.amazonAudit?.pricing) {
+      const facts = await getDocs(
+        query(
+          collection(firestore, "broadcast"),
+          where("type", "==", "amazonAudit/pricing"),
+        ),
+      );
+      for (const fact of facts.docs) store.dispatch(fact.data() as any);
+    }
     const items = await legacyImageBaselines($store);
     if (!items.length) {
       return;
@@ -98,8 +110,9 @@
       "broadcast",
       `amazon-image-baseline-v1-${seller}`,
     );
-    await runTransaction(firestore, async (tx) => {
-      if ((await tx.get(ref)).exists()) return;
+    const existing = await runTransaction(firestore, async (tx) => {
+      const snapshot = await tx.get(ref);
+      if (snapshot.exists()) return snapshot.data();
       tx.set(ref, {
         type: "amazonAudit/imageBaselines",
         payload: {
@@ -112,7 +125,9 @@
         creator: $user!.uid,
         timestamp: serverTimestamp(),
       });
+      return null;
     });
+    if (existing) store.dispatch(existing as any);
   }
   $: allRows = projectAmazonSync($store);
   $: rows = allRows.filter((r) =>
