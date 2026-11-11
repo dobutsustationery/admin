@@ -21,7 +21,8 @@ function validateFamilyEntry(e, attributes, options = {}) {
     attributes.parentage_level[0].marketplace_id !== UK ||
     attributes.variation_theme?.length !== 1 ||
     attributes.variation_theme[0].name !== f.theme ||
-    attributes.variation_theme[0].marketplace_id !== UK ||
+    (attributes.variation_theme[0].marketplace_id &&
+      attributes.variation_theme[0].marketplace_id !== UK) ||
     (!(options.sync && e.method === "PATCH") &&
       String(attributes.brand?.[0]?.value || "").toLowerCase() !== "amifa")
   )
@@ -138,9 +139,11 @@ function matchingParent(response, entry) {
     a?.parentage_level?.[0]?.value === "parent" &&
     a?.variation_theme?.[0]?.name === entry.family.theme &&
     String(a?.brand?.[0]?.value || "").toLowerCase() === "amifa" &&
-    (response.data.summaries || []).some(
-      (s) => s.productType === entry.body.productType,
-    ) &&
+    (response.data.summaries || []).some((s) => s.asin) &&
+    [
+      ...(response.data.productTypes || []),
+      ...(response.data.summaries || []),
+    ].some((s) => s.productType === entry.body.productType) &&
     !(response.data.issues || []).some((i) => i.severity === "ERROR")
   );
 }

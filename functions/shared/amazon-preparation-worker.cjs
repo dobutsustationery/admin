@@ -212,6 +212,7 @@ function createWorker({
   read,
   write,
   enqueueReadback,
+  prepareImages = async (entry) => entry,
   now = Date.now,
   pause = (ms) => new Promise((r) => setTimeout(r, ms)),
 }) {
@@ -509,14 +510,23 @@ function createWorker({
           sku: job.entry.family.parentSku,
         });
         if (!matchingParent(observedParent, job.entry)) {
-          if (now() - (parent.submittedAt || parent.updatedAt) > 600000)
+          const waited = now() - (parent.submittedAt || parent.updatedAt);
+          const parentErrors = (observedParent.data?.issues || []).filter(
+            (i) => i.severity === "ERROR",
+          );
+          if (parentErrors.length)
             throw Error(
-              "Amazon has not confirmed the parent after ten minutes. No child was submitted; check the parent feedback.",
+              `Amazon rejected the parent. No child was submitted: ${parentErrors.map((i) => `${i.code}: ${i.message}`).join(" · ")}`,
+            );
+          if (waited > 86400000)
+            throw Error(
+              "Amazon has not confirmed the parent after 24 hours. No child was submitted; check the parent feedback and retry this listing.",
             );
           await done({
             status: "publish_queued",
-            dueAt: now() + 10000,
-            error: "Waiting for Amazon to confirm the parent.",
+            dueAt: now() + (waited > 600000 ? 60000 : 10000),
+            error:
+              "Waiting for Amazon to confirm the parent. Children will continue automatically.",
           });
           return;
         }
@@ -565,10 +575,15 @@ function createWorker({
         before.status !== 404 &&
         !reuseParent &&
         !(job.syncMode && ownIdentity)
-      )
+      ) {
+        if (job.syncMode)
+          await enqueueReadback(ref.id, job.creator, job.entry.sku, {});
         throw Error(
-          "This seller SKU already exists. Refresh the catalogue and prepare it as an update.",
+          job.syncMode
+            ? "This seller SKU already exists. An Amazon refresh has been queued; wait for it, then sync this listing as an update."
+            : "This seller SKU already exists. Refresh the catalogue and prepare it as an update.",
         );
+      }
       if (
         job.entry.method === "PATCH" &&
         (before.status !== 200 ||
@@ -690,7 +705,7 @@ function createWorker({
         });
         return;
       }
-      const writeEntry =
+      let writeEntry =
         job.syncMode &&
         (job.entry.syncIssue === "category" || job.entry.updateExisting)
           ? {
@@ -707,6 +722,7 @@ function createWorker({
           if (patch.op === "delete") delete writeEntry.body.attributes[key];
           else writeEntry.body.attributes[key] = patch.value;
         }
+      writeEntry = await prepareImages(writeEntry);
       lockRef = db
         .collection(LOCKS)
         .doc(hash(`${job.sellerId}:${job.entry.sku}`));
@@ -718,7 +734,8 @@ function createWorker({
         tx.set(lockRef, { jobId: ref.id, until: now() + 300000 });
         const j = {
           ...current,
-          ...(job.syncMode ? { entry: writeEntry, before } : {}),
+          entry: writeEntry,
+          ...(job.syncMode ? { before } : {}),
           status: "publishing",
           updatedAt: now(),
           revision: current.revision + 1,

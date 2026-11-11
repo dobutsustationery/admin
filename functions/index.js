@@ -1417,6 +1417,9 @@ exports.amazonAuditReadback = onSchedule(
   () => amazonAuditWorker.tick(),
 );
 
+const amazonImagePreparer = require("./shared/amazon-images.cjs").createImagePreparer({
+  bucket: require("firebase-admin/storage").getStorage().bucket(process.env.AMAZON_IMAGE_BUCKET || `${process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "dobutsu-admin"}-amazon-images`),
+});
 const amazonPreparationWorker = require("./shared/amazon-preparation-worker.cjs").createWorker({
   db, getConfig: getAmazonConfig, getToken: fetchAmazonLwaAccessToken,
   read: ({ config, accessToken, sku }) => getAmazonListingBySku({ config, accessToken, sku, includedData: AMAZON_DEFAULT_LISTINGS_INCLUDED_DATA }),
@@ -1427,6 +1430,7 @@ const amazonPreparationWorker = require("./shared/amazon-preparation-worker.cjs"
     accessToken, userAgent: config.userAgent, method: entry.method, body: entry.body,
   }),
   enqueueReadback: (id, creator, sku, expected) => amazonAuditWorker.enqueueSku(`prepare:${id}`, creator, sku, expected),
+  prepareImages: amazonImagePreparer,
 });
 exports.amazonPreparationRequest = onDocumentCreated({
   document: "request_amazon_prepare/{requestId}", timeoutSeconds: 300, memory: "512MiB", maxInstances: 1, concurrency: 1, retry: true,

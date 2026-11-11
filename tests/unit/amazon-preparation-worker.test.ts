@@ -79,7 +79,7 @@ const entry = (sku = "sku") => ({
   },
 });
 const ok = (data: any) => ({ ok: true, status: 200, data });
-function setup(write?: any) {
+function setup(write?: any, prepareImages?: any) {
   const mem = database();
   let time = 1000,
     remote: any = ok({
@@ -105,6 +105,7 @@ function setup(write?: any) {
     enqueueReadback: async (...args: any[]) => {
       readbacks.push(args);
     },
+    prepareImages,
     now: () => time,
     pause: async () => {},
   });
@@ -434,7 +435,7 @@ function familyEntries() {
 function observedParent(entries: any[]) {
   return ok({
     attributes: entries[0].body.attributes,
-    summaries: [{ productType: "STICKER_DECAL" }],
+    summaries: [{ asin: "B0PARENT01", productType: "STICKER_DECAL" }],
     issues: [],
   });
 }
@@ -965,4 +966,122 @@ it("sends a complete update in one call and reads back every changed field", asy
       unit_count: [{ value: 48, type: { value: "count" } }],
     },
   });
+});
+
+it("keeps a child queued beyond ten minutes and continues when its parent is ready", async () => {
+  const entries = familyEntries(),
+    s = setup();
+  let ready = false;
+  s.setRemote((sku: string) =>
+    sku === "P-letters" && ready
+      ? {
+          ...observedParent(entries),
+          data: {
+            ...observedParent(entries).data,
+            summaries: [{ asin: "B0PARENT01", productType: "PRODUCT" }],
+            productTypes: [{ productType: "STICKER_DECAL" }],
+          },
+        }
+      : { status: 404, data: {} },
+  );
+  await s.request("slow-parent", {
+    mode: "create",
+    stockConfirmed: true,
+    entries,
+  });
+  const parent = s.jobs().find((j) => j.entry.family.role === "parent"),
+    child = s.jobs().find((j) => j.entry.sku === "Blue");
+  await s.w.step(parent.ref);
+  s.setTime(602000);
+  await s.w.step(child.ref);
+  expect(s.jobs().find((j) => j.entry.sku === "Blue").status).toBe(
+    "publish_queued",
+  );
+  expect(s.calls.map((c) => c.entry.sku)).toEqual(["P-letters"]);
+  ready = true;
+  s.setTime(663000);
+  await s.w.step(child.ref);
+  expect(s.calls.map((c) => c.entry.sku)).toEqual(["P-letters", "Blue"]);
+});
+
+it("shows parent catalogue errors instead of sending the child or pretending it is still processing", async () => {
+  const entries = familyEntries(),
+    s = setup();
+  s.setRemote({ status: 404, data: {} });
+  await s.request("bad-parent", {
+    mode: "create",
+    stockConfirmed: true,
+    entries,
+  });
+  const parent = s.jobs().find((j) => j.entry.family.role === "parent"),
+    child = s.jobs().find((j) => j.entry.sku === "Blue");
+  await s.w.step(parent.ref);
+  s.setTime(12000);
+  s.setRemote((sku: string) =>
+    sku === "P-letters"
+      ? {
+          ...observedParent(entries),
+          data: {
+            ...observedParent(entries).data,
+            issues: [
+              {
+                severity: "ERROR",
+                code: "18369",
+                message: "Listing limitation",
+              },
+            ],
+          },
+        }
+      : { status: 404, data: {} },
+  );
+  await s.w.step(child.ref);
+  expect(s.jobs().find((j) => j.entry.sku === "Blue")).toMatchObject({
+    status: "blocked",
+    error: expect.stringContaining("18369: Listing limitation"),
+  });
+  expect(s.calls.map((c) => c.entry.sku)).toEqual(["P-letters"]);
+});
+
+it("journals the exact hosted image request and original source before sending it to Amazon", async () => {
+  const source = [{ media_location: "https://example.com/original.png" }],
+    hosted = [
+      { media_location: "https://storage.googleapis.com/images/delivery.jpg" },
+    ];
+  const s = setup(undefined, async (entry: any) => ({
+    ...entry,
+    imageSources: { main_product_image_locator: source },
+    body: {
+      ...entry.body,
+      attributes: {
+        ...entry.body.attributes,
+        main_product_image_locator: hosted,
+      },
+    },
+  }));
+  s.setRemote({ status: 404, data: {} });
+  const e = standaloneEntry();
+  e.body.attributes.main_product_image_locator = source;
+  await s.request("hosted-image", {
+    mode: "create",
+    stockConfirmed: true,
+    entries: [e],
+  });
+  await s.w.step(s.jobs()[0].ref);
+  expect(s.calls[0].entry.body.attributes.main_product_image_locator).toEqual(
+    hosted,
+  );
+  expect(s.jobs()[0].entry.imageSources.main_product_image_locator).toEqual(
+    source,
+  );
+  const facts = [...s.docs.values()].filter(
+    (d) => d.type === "amazonPrepare/job" && d.payload.entry.imageSources,
+  );
+  expect(
+    facts.some(
+      (d) =>
+        d.payload.entry.body.attributes.main_product_image_locator[0]
+          .media_location === hosted[0].media_location,
+    ),
+  ).toBe(true);
+  expect(e.body.attributes.main_product_image_locator).toEqual(source);
 });
