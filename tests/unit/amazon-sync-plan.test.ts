@@ -526,3 +526,33 @@ it("retains original source identity after sending a hosted Amazon delivery copy
     "https://example.com/changed.png";
   expect(projectAmazonSync(s)[0].entries.variant_image).toHaveLength(1);
 });
+
+it("groups missing product facts separately from Amazon errors and enables creation once completed", () => {
+  const s = fixture(),
+    key = "4542804151534";
+  s.listings.handleToListing.paper.productCategory =
+    "Arts & Crafts > Decorative Tape";
+  let row = projectAmazonSync(s)[0];
+  expect(row.issues).toContain("missing_data");
+  expect(row.issues).not.toContain("attention");
+  expect(row.details.find((d) => d.issue === "missing_data")?.local).toEqual([
+    "Total tape / roll length (metres)",
+  ]);
+  expect(row.entries.all).toEqual([]);
+  s.amazonPreparation.decisions[preparationScope("seller", key)] = {
+    productFacts: { lengthMetres: 4 },
+  };
+  row = projectAmazonSync(s)[0];
+  expect(row.issues).not.toContain("missing_data");
+  expect(row.entries.presence).toHaveLength(1);
+});
+
+it("enumerates missing facts for both children of a shared-JAN family", () => {
+  const s = fixture(true);
+  s.listings.handleToListing.paper.productCategory =
+    "Arts & Crafts > Decorative Tape";
+  const row = projectAmazonSync(s)[0];
+  expect(row.issues).toContain("missing_data");
+  expect(row.details.filter((d) => d.issue === "missing_data")).toHaveLength(2);
+  expect(row.entries.all).toEqual([]);
+});

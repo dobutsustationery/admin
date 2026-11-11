@@ -25,6 +25,7 @@ import {
 export const amazonSyncIssues = {
   presence: "New listings",
   category: "Category",
+  missing_data: "Missing product data",
   quantity: "Inventory quantity",
   price: "Price",
   variant_image: "Variant image",
@@ -339,9 +340,16 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
           );
           continue;
         }
+        const missingFacts = missingAmazonProductFacts(
+          mapping.productType,
+          inventory.idToItem[r.row.key],
+          listing,
+          r.decision.productFacts,
+        );
         if (
           job &&
           terminal.has(job.status) &&
+          (job.status === "unknown" || !missingFacts.length) &&
           (!observation || observation.at < job.updatedAt)
         ) {
           detail(
@@ -477,6 +485,16 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
           );
           continue;
         }
+        if (missingFacts.length) {
+          detail(
+            r,
+            "missing_data",
+            missingFacts,
+            null,
+            `Enter Amazon product details: ${missingFacts.join(", ")}.`,
+          );
+          continue;
+        }
         const want = desired.get(r.row.key);
         if (!want) {
           detail(
@@ -485,22 +503,6 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
             null,
             null,
             family?.reason || "Could not build the local listing.",
-          );
-          continue;
-        }
-        const missingFacts = missingAmazonProductFacts(
-          mapping.productType,
-          inventory.idToItem[r.row.key],
-          listing,
-          r.decision.productFacts,
-        );
-        if (missingFacts.length) {
-          detail(
-            r,
-            "attention",
-            null,
-            null,
-            `Enter Amazon product details: ${missingFacts.join(", ")}.`,
           );
           continue;
         }

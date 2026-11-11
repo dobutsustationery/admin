@@ -150,6 +150,27 @@
   $: visibleGroups = groups.filter(
     (g) => issueFilter === "all" || g.issue === issueFilter,
   );
+  function missingDataFields(row: AmazonSyncRow) {
+    const fields = new Map<string, Set<string>>();
+    for (const detail of row.details.filter((d) => d.issue === "missing_data"))
+      for (const field of detail.local || []) {
+        if (!fields.has(field)) fields.set(field, new Set());
+        fields.get(field)!.add(detail.subtype || detail.key);
+      }
+    return [...fields].map(([field, variants]) => ({
+      field,
+      variants: [...variants],
+    }));
+  }
+  function missingDataJans(row: AmazonSyncRow) {
+    return [
+      ...new Set(
+        row.details
+          .filter((d) => d.issue === "missing_data")
+          .map((d) => $store.inventory.idToItem[d.key]?.janCode || d.key),
+      ),
+    ].join(", ");
+  }
   function displayValue(issue: AmazonSyncIssue, value: any) {
     if (issue === "quantity")
       return String(value?.[0]?.quantity ?? "Not reported");
@@ -298,7 +319,7 @@
           ><strong>{label}</strong><span>{affected.length} listing(s)</span
           ></summary
         >
-        {#if !["attention", "processing", "synced", "category"].includes(issue) || eligible.length}
+        {#if issue !== "missing_data" && (!["attention", "processing", "synced", "category"].includes(issue) || eligible.length)}
           <button
             class="primary"
             disabled={busy || !eligible.length}
@@ -306,6 +327,11 @@
             >Sync listings in {label.toLowerCase()} ({eligible.length})</button
           >
         {/if}
+        {#if issue === "missing_data"}<p>
+            Complete the fields listed for each product using Edit Amazon
+            product details. Saving the missing facts updates this list
+            automatically; the product can then be synced.
+          </p>{/if}
         {#if issue === "category"}<p>
             <a href="/amazon-categories"
               >Set Shopify → Amazon category mappings</a
@@ -337,14 +363,30 @@
                   height="64px"
                   fit="contain"
                 />{/if}
-              <div><strong>{row.title}</strong><small>{row.handle}</small></div>
-              {#if row.entries.all?.length}<button
+              <div>
+                <strong>{row.title}</strong><small
+                  >{#if issue === "missing_data"}JAN {missingDataJans(
+                      row,
+                    )}{:else}{row.handle}{/if}</small
+                >
+              </div>
+              {#if issue !== "missing_data" && row.entries.all?.length}<button
                   disabled={busy || !!submitted[pendingKey(row.handle, "all")]}
                   on:click={() => sync([row], "all")}>Sync listing</button
                 >{/if}
             </div>
+            {#if issue === "missing_data"}
+              <ul class="missing-fields">
+                {#each missingDataFields(row) as { field, variants }}
+                  <li>
+                    <strong>{field}</strong><small>{variants.join(" · ")}</small
+                    >
+                  </li>
+                {/each}
+              </ul>
+            {/if}
             <AmazonProductFactsEditor handle={row.handle} />
-            {#each row.details.filter((d) => d.issue === issue) as d}
+            {#each row.details.filter((d) => d.issue === issue && issue !== "missing_data") as d}
               <div class="change">
                 <strong>{d.subtype || d.key}</strong><small>SKU {d.sku}</small>
                 {#if d.reason}<p>
@@ -469,6 +511,14 @@
     border-top: 1px solid #d1d5db;
     padding: 1rem 0;
     margin-top: 0.7rem;
+  }
+  .missing-fields {
+    list-style: disc;
+    padding-left: 1.5rem;
+    margin: 0.75rem 0;
+  }
+  .missing-fields li {
+    margin: 0.5rem 0;
   }
   .heading {
     display: flex;
