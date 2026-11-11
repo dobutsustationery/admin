@@ -7,6 +7,7 @@ import {
 import { offerMatches } from "./amazon-offer-matches";
 import { buildAmazonListingCreateDraft } from "./amazon-listing-projection";
 export interface PreparationDecision {
+  productFacts?: import("./amazon-product-attributes").AmazonProductFacts;
   asin?: string;
   asinVerified?: boolean;
   priceGBP?: string;
@@ -59,6 +60,7 @@ export interface PreparationEntry {
   syncIssue?: string;
   updateExisting?: boolean;
   syncPatches?: any[];
+  imageSources?: Record<string, any[]>;
   family?: {
     handle: string;
     role: "parent" | "child";

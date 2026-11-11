@@ -106,7 +106,10 @@ export function buildAmazonVariationFamily(params: {
     return fail("Each non-exempt child needs a 13-digit manufacturer EAN/JAN.");
   const items = rows.map((r) => ({
     itemKey: r.row.key,
-    item: inventory.idToItem[r.row.key],
+    item: {
+      ...inventory.idToItem[r.row.key],
+      amazonFacts: r.decision.productFacts,
+    },
   }));
   const draft = buildAmazonListingCreateDraft({
     handle,
@@ -127,9 +130,7 @@ export function buildAmazonVariationFamily(params: {
     attributes.brand = [
       { value: "Amifa", language_tag: "en_GB", marketplace_id: UK_MARKETPLACE },
     ];
-    attributes.variation_theme = [
-      { name: theme, marketplace_id: UK_MARKETPLACE },
-    ];
+    attributes.variation_theme = [{ name: theme }];
     if (s.role === "parent") {
       attributes.skip_offer = [{ value: true, marketplace_id: UK_MARKETPLACE }];
     } else {

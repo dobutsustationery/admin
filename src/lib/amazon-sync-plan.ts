@@ -1,4 +1,5 @@
 import { imageChanges, rejectedAmazonImageFields } from "./amazon-images";
+import { missingAmazonProductFacts } from "./amazon-product-attributes";
 import {
   auditScope,
   UK_MARKETPLACE,
@@ -54,6 +55,24 @@ export const syncAttributes: Partial<Record<AmazonSyncIssue, string[]>> = {
     "list_price",
     "country_of_origin",
     "manufacturer",
+    "warranty_description",
+    "included_components",
+    "model_name",
+    "style",
+    "department",
+    "material",
+    "ink",
+    "item_length_width_height",
+    "item_width_height",
+    "item_length",
+    "is_fragile",
+    "contains_liquid_contents",
+    "ingredients",
+    "hair_type",
+    "lifestyle",
+    "target_audience_keyword",
+    "generic_keyword",
+    "item_form",
   ],
   quantity: ["fulfillment_availability"],
   price: ["purchasable_offer"],
@@ -117,6 +136,19 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
     listings = state.listings;
   const seller = audit.sellerId,
     rate = amazonExchangeRate(prep, seller);
+  const shippingGroups = new Map<string, any>();
+  for (const o of Object.values(audit.observations) as any[])
+    if (
+      o.sellerId === seller &&
+      o.marketplaceId === UK_MARKETPLACE &&
+      o.status === 200 &&
+      o.raw?.summaries?.some((s: any) => s.status?.includes("BUYABLE")) &&
+      isAmifa(undefined, { brand: o.raw?.attributes?.brand?.[0]?.value })
+    )
+      for (const group of o.raw?.attributes?.merchant_shipping_group || [])
+        if (group.value) shippingGroups.set(group.value, group);
+  const defaultShippingGroup =
+    shippingGroups.size === 1 ? [...shippingGroups.values()][0] : null;
   const rows = projectAmazonAudit(audit, inventory, listings);
   const effective = { ...prep, decisions: { ...prep.decisions } };
   for (const row of rows) {
@@ -215,7 +247,10 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
           const draft = buildAmazonListingCreateDraft({
             handle,
             itemKey: r.row.key,
-            item: inventory.idToItem[r.row.key],
+            item: {
+              ...inventory.idToItem[r.row.key],
+              amazonFacts: r.decision.productFacts,
+            },
             listing,
             marketplaceId: UK_MARKETPLACE,
             productType: mapping.productType,
@@ -247,6 +282,12 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
               },
             });
         }
+
+      for (const entry of desired.values())
+        if (defaultShippingGroup && entry.family?.role !== "parent")
+          entry.body.attributes.merchant_shipping_group = [
+            { ...defaultShippingGroup },
+          ];
 
       for (const r of members) {
         const observation = obs(r),
@@ -291,7 +332,10 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
             "processing",
             null,
             null,
-            job.error || "Queued on the server or awaiting Amazon readback.",
+            job.error ||
+              (job.status === "submitted"
+                ? "Amazon accepted this submission. Waiting for readback to confirm the changes; acceptance alone does not mean the listing is ready."
+                : "Queued on the server or awaiting Amazon readback."),
           );
           continue;
         }
@@ -444,10 +488,41 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
           );
           continue;
         }
+        const missingFacts = missingAmazonProductFacts(
+          mapping.productType,
+          inventory.idToItem[r.row.key],
+          listing,
+          r.decision.productFacts,
+        );
+        if (missingFacts.length) {
+          detail(
+            r,
+            "attention",
+            null,
+            null,
+            `Enter Amazon product details: ${missingFacts.join(", ")}.`,
+          );
+          continue;
+        }
         const raw = observation?.raw,
           existing = observation?.status === 200;
         const hasAsin = !!(raw?.summaries || []).find((s: any) => s.asin);
         if (!existing || !hasAsin) {
+          const parentErrors = family
+            ? audit.observations[
+                auditScope(seller, UK_MARKETPLACE, family.parentSku)
+              ]?.raw?.issues?.filter((i: any) => i.severity === "ERROR") || []
+            : [];
+          if (parentErrors.length) {
+            detail(
+              r,
+              "attention",
+              null,
+              null,
+              `Resolve the parent listing first: ${parentErrors.map((i: any) => `${i.code}: ${i.message}`).join(" · ")}`,
+            );
+            continue;
+          }
           const candidates = r.row.skuCandidates.filter((s) => s !== r.row.sku);
           if (
             candidates.length ||
@@ -492,7 +567,18 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
             },
           ];
         }
-        const rejectedImages = rejectedAmazonImageFields(raw.issues);
+        const rejectedImages = rejectedAmazonImageFields(
+          raw.issues,
+          want.body.attributes,
+          raw.attributes,
+          job?.entry.body.attributes ||
+            Object.fromEntries(
+              (job?.entry.body.patches || []).map((p: any) => [
+                p.path.replace("/attributes/", ""),
+                p.value,
+              ]),
+            ),
+        );
         for (const [issue, baseFields] of Object.entries(syncAttributes) as [
           AmazonSyncIssue,
           string[],

@@ -448,3 +448,81 @@ it.each([false, true])(
     expect(projectAmazonSync(s)[0].entries.variant_image).toBeUndefined();
   },
 );
+
+it("retries only a gallery slot named by an Amazon image-download timeout", () => {
+  const s = fixture(),
+    created = projectAmazonSync(s)[0].entries.presence![0];
+  s.listings.handleToListing.paper.images.push({
+    url: "https://example.com/detail.png",
+    position: 1,
+  });
+  const withGallery = projectAmazonSync(s)[0].entries.presence![0];
+  observe(s, withGallery);
+  const key = auditScope("seller", UK_MARKETPLACE, created.sku),
+    o = s.amazonAudit.observations[key];
+  s.amazonAudit.imageBaselines = {
+    [key]: {
+      at: 1001,
+      sku: created.sku,
+      sources: structuredClone(withGallery.body.attributes),
+      remote: structuredClone(o.raw.attributes),
+    },
+  };
+  o.raw.issues = [
+    {
+      code: "20000",
+      severity: "ERROR",
+      message:
+        "Your media at https://example.com/detail.png couldn't be downloaded due to a timeout.",
+    },
+  ];
+  const row = projectAmazonSync(s)[0];
+  expect(row.entries.gallery![0].body.patches.map((p: any) => p.path)).toEqual([
+    "/attributes/other_product_image_locator_1",
+  ]);
+  expect(row.entries.variant_image).toBeUndefined();
+});
+
+it("retains original source identity after sending a hosted Amazon delivery copy", () => {
+  const s = fixture(),
+    created = projectAmazonSync(s)[0].entries.presence![0];
+  const originalImages = structuredClone(
+    created.body.attributes.main_product_image_locator,
+  );
+  observe(s, created);
+  const key = auditScope("seller", UK_MARKETPLACE, created.sku);
+  s.amazonAudit.observations[key].raw.attributes.main_product_image_locator = [
+    { media_location: "https://m.media-amazon.com/CDN.jpg" },
+  ];
+  s.amazonPreparation.jobs.delivered = {
+    id: "delivered",
+    sellerId: "seller",
+    marketplaceId: UK_MARKETPLACE,
+    createdAt: 100,
+    submittedAt: 100,
+    updatedAt: 101,
+    status: "submitted",
+    entry: {
+      ...created,
+      imageSources: {
+        main_product_image_locator: originalImages,
+      },
+      body: {
+        ...created.body,
+        attributes: {
+          ...created.body.attributes,
+          main_product_image_locator: [
+            {
+              media_location: "https://storage.googleapis.com/bucket/cache.jpg",
+            },
+          ],
+        },
+      },
+    },
+    result: { data: { status: "ACCEPTED" } },
+  };
+  expect(projectAmazonSync(s)[0].entries.variant_image).toBeUndefined();
+  s.inventory.idToItem[created.itemKey].image =
+    "https://example.com/changed.png";
+  expect(projectAmazonSync(s)[0].entries.variant_image).toHaveLength(1);
+});

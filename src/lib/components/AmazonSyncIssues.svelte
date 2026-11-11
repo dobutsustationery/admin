@@ -15,6 +15,7 @@
   import { store, initialSyncReady } from "$lib/store";
   import { user } from "$lib/user-store";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
+  import AmazonProductFactsEditor from "$lib/components/AmazonProductFactsEditor.svelte";
   import {
     projectAmazonSync,
     amazonSyncIssues,
@@ -342,6 +343,7 @@
                   on:click={() => sync([row], "all")}>Sync listing</button
                 >{/if}
             </div>
+            <AmazonProductFactsEditor handle={row.handle} />
             {#each row.details.filter((d) => d.issue === issue) as d}
               <div class="change">
                 <strong>{d.subtype || d.key}</strong><small>SKU {d.sku}</small>

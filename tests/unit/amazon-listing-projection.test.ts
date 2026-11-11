@@ -129,7 +129,7 @@ describe("Amazon listing projection", () => {
       marketplace_id: "A1F83G8C2ARO7P",
       currency: "GBP",
     });
-    expect(attributes.warranty_description).toBeUndefined();
+    expect(attributes.warranty_description[0].value).toContain("warranty");
     expect(attributes.part_number[0].value).toBe("4542804050264Dog");
     expect(attributes.unit_count[0]).toMatchObject({
       value: 100,

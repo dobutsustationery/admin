@@ -30,7 +30,10 @@ export function imageAttributes(attributes: any) {
       .map((k) => [k, attributes[k]]),
   );
 }
-export function rejectedAmazonImageFields(issues: any[] = []): string[] {
+export function rejectedAmazonImageFields(
+  issues: any[] = [],
+  ...attributes: any[]
+): string[] {
   const fields = new Set<string>();
   for (const issue of issues) {
     if (issue.severity !== "ERROR") continue;
@@ -38,7 +41,21 @@ export function rejectedAmazonImageFields(issues: any[] = []): string[] {
       amazonImageFields.includes(field),
     );
     if (named.length) named.forEach((field: string) => fields.add(field));
-    else if (
+    else if (String(issue.code) === "20000") {
+      const url = String(issue.message || "").match(/https:\/\/\S+/)?.[0];
+      if (url)
+        for (const field of amazonImageFields)
+          if (
+            attributes.some((a) =>
+              (a?.[field] || []).some(
+                (v: any) =>
+                  sourceImageKey(v.media_location || "") ===
+                  sourceImageKey(url),
+              ),
+            )
+          )
+            fields.add(field);
+    } else if (
       String(issue.code) === "18320" ||
       issue.categories?.some((category: string) =>
         ["INVALID_IMAGE", "MISSING_IMAGE"].includes(category),
@@ -79,7 +96,10 @@ export function imageChanges(
       !job.entry.updateExisting &&
       job.entry.syncIssue !== "category"
     )
-      sources = { ...sources, ...imageAttributes(job.entry.body.attributes) };
+      sources = {
+        ...sources,
+        ...imageAttributes(job.entry.imageSources || job.entry.body.attributes),
+      };
     else
       for (const patch of job.entry.syncPatches ||
         job.entry.body.patches ||
@@ -88,7 +108,10 @@ export function imageChanges(
         if (amazonImageFields.includes(field))
           sources = {
             ...sources,
-            [field]: patch.op === "delete" ? [] : patch.value,
+            [field]:
+              patch.op === "delete"
+                ? []
+                : job.entry.imageSources?.[field] || patch.value,
           };
       }
   }
@@ -99,7 +122,7 @@ export function imageChanges(
         (j.entry.method === "PUT" &&
           !j.entry.updateExisting &&
           j.entry.syncIssue !== "category") ||
-        j.entry.body.patches?.some((p: any) =>
+        (j.entry.syncPatches || j.entry.body.patches)?.some((p: any) =>
           amazonImageFields.includes(p.path.replace("/attributes/", "")),
         ),
     );

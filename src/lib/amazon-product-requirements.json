@@ -1,0 +1,469 @@
+{
+  "ADHESIVE_TAPES": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "included_components",
+      "item_form",
+      "item_length",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": ["included_components", "number_of_items"],
+    "unitTypes": ["meter"]
+  },
+  "BLANK_BOOK": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [],
+    "unitTypes": ["count"]
+  },
+  "BOOKMARK": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "ink",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": ["warranty_description"],
+    "unitTypes": ["count"]
+  },
+  "CARD_DOCUMENT_SLEEVE": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": ["warranty_description"],
+    "unitTypes": ["count"]
+  },
+  "CARRIER_BAG_CASE": {
+    "fields": [
+      "color",
+      "department",
+      "generic_keyword",
+      "ink",
+      "item_length",
+      "item_length_width_height",
+      "material",
+      "model_name",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": [
+      "color",
+      "department",
+      "material",
+      "model_name",
+      "model_number",
+      "style"
+    ],
+    "unitTypes": ["count"]
+  },
+  "CLEANING_PRODUCT": {
+    "fields": [
+      "color",
+      "contains_liquid_contents",
+      "generic_keyword",
+      "ingredients",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": ["contains_liquid_contents", "ingredients", "number_of_items"],
+    "unitTypes": ["count", "gram", "meter", "millilitre", "square meter"]
+  },
+  "CLIPBOARD": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "ink",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": ["warranty_description"],
+    "unitTypes": ["count"]
+  },
+  "DECORATIVE_MAGNET": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "included_components",
+      "is_fragile",
+      "item_length_width_height",
+      "material",
+      "model_name",
+      "model_number",
+      "number_of_items",
+      "safety_warning",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [
+      "included_components",
+      "is_fragile",
+      "model_number",
+      "number_of_items",
+      "size"
+    ],
+    "unitTypes": ["count"]
+  },
+  "ENVELOPE": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "material",
+      "model_name",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [],
+    "unitTypes": ["count"]
+  },
+  "FILE_FOLDER": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "ink",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": ["warranty_description"],
+    "unitTypes": ["count"]
+  },
+  "FOOD_STORAGE_BAG": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "included_components",
+      "item_length_width_height",
+      "item_width_height",
+      "material",
+      "model_name",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [
+      "included_components",
+      "item_length_width_height",
+      "item_width_height",
+      "model_name",
+      "model_number"
+    ],
+    "unitTypes": ["count"]
+  },
+  "FOOD_WRAP": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": ["material", "model_number"],
+    "unitTypes": ["meter", "square meter"]
+  },
+  "GIFT_WRAP": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "included_components",
+      "item_form",
+      "item_length_width_height",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": ["item_form", "number_of_items"],
+    "unitTypes": ["count", "gram", "square meter"]
+  },
+  "GREETING_CARD": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": ["color"],
+    "unitTypes": ["count"]
+  },
+  "HAIR_CLIP": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "hair_type",
+      "lifestyle",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "target_audience_keyword",
+      "unit_count"
+    ],
+    "required": [
+      "color",
+      "generic_keyword",
+      "hair_type",
+      "lifestyle",
+      "number_of_items",
+      "target_audience_keyword"
+    ],
+    "unitTypes": ["count"]
+  },
+  "HANGING_ORNAMENT": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "included_components",
+      "is_fragile",
+      "item_form",
+      "material",
+      "model_number",
+      "number_of_items",
+      "safety_warning",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [
+      "included_components",
+      "is_fragile",
+      "model_number",
+      "number_of_items",
+      "size"
+    ],
+    "unitTypes": ["count"]
+  },
+  "LABEL": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "ink",
+      "item_length",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": ["model_number", "warranty_description"],
+    "unitTypes": ["count"]
+  },
+  "MAGNIFIER": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "is_fragile",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": ["is_fragile", "model_number", "number_of_items", "size"],
+    "unitTypes": ["count"]
+  },
+  "PAPER_CLIP_CLAMP": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": ["warranty_description"],
+    "unitTypes": ["count"]
+  },
+  "RUBBER_STAMP": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "ink",
+      "item_length_width_height",
+      "material",
+      "model_number",
+      "number_of_items",
+      "safety_warning",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [
+      "ink",
+      "item_length_width_height",
+      "model_number",
+      "number_of_items",
+      "safety_warning",
+      "size"
+    ],
+    "unitTypes": ["count"]
+  },
+  "SELF_STICK_NOTE": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "ink",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": ["warranty_description"],
+    "unitTypes": ["count"]
+  },
+  "SHEET_PAPER": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [],
+    "unitTypes": ["count"]
+  },
+  "STICKER_DECAL": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "item_form",
+      "material",
+      "model_number",
+      "number_of_items",
+      "safety_warning",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [],
+    "unitTypes": ["count", "square meter"]
+  },
+  "TRAY": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "is_fragile",
+      "item_form",
+      "item_length_width_height",
+      "material",
+      "model_name",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [
+      "is_fragile",
+      "item_length_width_height",
+      "model_number",
+      "number_of_items",
+      "size"
+    ],
+    "unitTypes": ["count"]
+  },
+  "WRITING_INSTRUMENT": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "included_components",
+      "ink",
+      "item_length",
+      "material",
+      "model_name",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count",
+      "warranty_description"
+    ],
+    "required": ["ink", "number_of_items", "warranty_description"],
+    "unitTypes": ["count"]
+  },
+  "WRITING_PAPER": {
+    "fields": [
+      "color",
+      "generic_keyword",
+      "material",
+      "model_number",
+      "number_of_items",
+      "size",
+      "style",
+      "unit_count"
+    ],
+    "required": [],
+    "unitTypes": ["count"]
+  }
+}

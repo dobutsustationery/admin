@@ -2,8 +2,15 @@ import { toGoogleDrivePublicImageUrl } from "$lib/drive-url";
 import type { Item } from "$lib/inventory";
 import type { Listing } from "$lib/listings-slice";
 import { generateSku } from "$lib/sku";
+import {
+  amazonCategoryAttributes,
+  type AmazonProductFacts,
+} from "./amazon-product-attributes";
 
-type ItemLike = Partial<Item> & { id?: string };
+type ItemLike = Partial<Item> & {
+  id?: string;
+  amazonFacts?: AmazonProductFacts;
+};
 type ListingLike = Partial<Listing>;
 
 type AmazonRequirements =
@@ -103,6 +110,7 @@ function inferPackCount(...values: unknown[]): number {
     const text = trimString(value);
     const match =
       text.match(/\((\d{1,4})\)/) ||
+      text.match(/\b(\d{1,4})[ -]pack\b/i) ||
       text.match(
         /\b(\d{1,4})\s*(?:pcs?|pieces?|sheets?|stickers?|decals?|枚|個)\b/i,
       );
@@ -362,6 +370,18 @@ function buyableAttributes(params: {
       ),
     ];
   }
+  Object.assign(
+    attributes,
+    amazonCategoryAttributes({
+      productType,
+      item,
+      listing,
+      sku,
+      marketplaceId,
+      optionLabel,
+      packCount,
+    }),
+  );
 
   // No separate GBP RRP is recorded. Amazon specifies zero when unavailable.
   attributes.list_price = [
@@ -408,7 +428,7 @@ function variationAttributes(params: {
   const { marketplaceId, role, optionLabel, parentSku } = params;
   const attributes: Record<string, unknown[]> = {
     parentage_level: [marketplaceValue(marketplaceId, { value: role })],
-    variation_theme: [marketplaceValue(marketplaceId, { name: "COLOR" })],
+    variation_theme: [{ name: "COLOR" }],
   };
   if (role === "child" && parentSku) {
     attributes.child_parent_sku_relationship = [
