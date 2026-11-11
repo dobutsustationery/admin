@@ -45,7 +45,7 @@ Acceptance: a small representative family has correct child identities, relation
 
 ## Add orders before unattended stock publication
 
-Implement Amazon order ingestion, reservation, cancellation and duplicate handling against the shared inventory model. Define allocatable stock, order freshness and the environment that owns writes. Test cross-channel sales and races between preview, order arrival and publication. Keep operator-reviewed stock publication until those prerequisites pass.
+Amazon order ingestion, inventory allocation, cancellation handling and duplicate suppression are implemented; see [Amazon orders](amazon-orders.md) for deployment and SQS notification setup. Pending orders allocate stock; Unshipped orders appear as ready to ship. Complete the SQS connection and verify a live pending-to-unshipped-to-canceled order before relying on notifications. Cross-channel quantity publication remains operator-driven; test cross-channel sales and races before enabling unattended publication.
 
 Then add continuous reconciliation, write controls and queue cancellation. Already queued publication currently has no operator cancellation workflow. Monitor queue age, throttling, validation failures, order lag and accepted-to-verified latency.
 

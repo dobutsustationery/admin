@@ -3592,3 +3592,109 @@ exports.etsyOrderReconcile = onSchedule(
     }
   },
 );
+
+// ORDER_CHANGE uses SQS; reconciliation also recovers orders placed before subscription.
+const amazonOrders = require("./shared/amazon-order-logic.cjs").createWorker({
+  db,
+  getToken: fetchAmazonLwaAccessToken,
+  writeOnce: writeBroadcastActionOnce,
+  getConfig: () => ({
+    ...getAmazonConfig(),
+    sqsQueueUrl: process.env.AMAZON_ORDERS_SQS_QUEUE_URL || "",
+    sqsRegion: process.env.AMAZON_ORDERS_SQS_REGION || "eu-west-1",
+    sqsAccessKeyId: process.env.AMAZON_ORDERS_SQS_ACCESS_KEY_ID || "",
+    sqsSecretAccessKey: process.env.AMAZON_ORDERS_SQS_SECRET_ACCESS_KEY || "",
+  }),
+  sqsFactory: (config) => {
+    const {
+      SQSClient,
+      ReceiveMessageCommand,
+      DeleteMessageCommand,
+    } = require("@aws-sdk/client-sqs");
+    const client = new SQSClient({
+      region: config.sqsRegion,
+      ...(config.sqsAccessKeyId
+        ? {
+            credentials: {
+              accessKeyId: config.sqsAccessKeyId,
+              secretAccessKey: config.sqsSecretAccessKey,
+            },
+          }
+        : {}),
+    });
+    return {
+      receive: async () =>
+        (
+          await client.send(
+            new ReceiveMessageCommand({
+              QueueUrl: config.sqsQueueUrl,
+              MaxNumberOfMessages: 5,
+              WaitTimeSeconds: 20,
+              VisibilityTimeout: 300,
+            }),
+          )
+        ).Messages || [],
+      remove: (receipt) =>
+        client.send(
+          new DeleteMessageCommand({
+            QueueUrl: config.sqsQueueUrl,
+            ReceiptHandle: receipt,
+          }),
+        ),
+    };
+  },
+});
+exports.amazonOrderNotifications = onSchedule(
+  {
+    schedule: "every 1 minutes",
+    timeoutSeconds: 240,
+    memory: "256MiB",
+    maxInstances: 1,
+    concurrency: 1,
+  },
+  () => amazonOrders.notifications(),
+);
+exports.amazonOrderReconcile = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    timeoutSeconds: 300,
+    memory: "256MiB",
+    maxInstances: 1,
+    concurrency: 1,
+  },
+  () => amazonOrders.reconcile(),
+);
+exports.amazonOrderRefreshRequest = onDocumentCreated(
+  {
+    document: "request_amazon_orders/{requestId}",
+    timeoutSeconds: 300,
+    memory: "256MiB",
+    maxInstances: 1,
+    concurrency: 1,
+    retry: true,
+  },
+  async (event) => {
+    const request = event.data.data();
+    const progress = async (phase, payload = {}) =>
+      db
+        .collection("sync")
+        .doc(`amazon-orders-${event.params.requestId}-${phase}`)
+        .set({
+          eventType: `amazon/sync_${phase}`,
+          requestId: event.params.requestId,
+          creator: request.creator,
+          processor: "amazon-orders-worker",
+          timestamp: FieldValue.serverTimestamp(),
+          createdAtMs: Date.now(),
+          payload: { mode: "orders", ...payload },
+        });
+    await progress("claimed");
+    try {
+      const result = await amazonOrders.reconcile();
+      await progress("completed", result);
+    } catch (error) {
+      await progress("failed", { error: error.message });
+      throw error;
+    }
+  },
+);

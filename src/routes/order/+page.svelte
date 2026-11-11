@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { amazonOrderLabel } from "$lib/amazon-orders";
   import { page } from "$app/stores";
   import BarcodeScanner from "$lib/BarcodeScanner.svelte";
   import { firestore } from "$lib/firebase";
@@ -25,6 +26,12 @@
   $: product = $page.url.searchParams.get("product");
 
   let orderItems: LineItem[] = [];
+  $: amazonOrder = orderID
+    ? state.inventory.orderIdToOrder[orderID]?.amazonFacts
+    : undefined;
+  $: amazonLabel = orderID
+    ? amazonOrderLabel(state.inventory.orderIdToOrder[orderID] || {})
+    : "";
   let unmatchedOrderLines: UnmatchedOrderLine[] = [];
   let orderStatusRaw = "";
   let displayStatus: OrderDisplayStatus = "ok";
@@ -56,6 +63,7 @@
   };
 
   function barcode(e: CustomEvent) {
+    if (amazonOrder) return;
     let itemKey = e.detail;
     if (state.inventory.idToItem[itemKey] === undefined) {
       const allKeys = Object.keys(state.inventory.idToItem);
@@ -150,7 +158,18 @@
   $: orderItemsR = [...orderItems].reverse();
 </script>
 
-<BarcodeScanner on:barcode={barcode} on:snapshot={snapshot} />
+{#if amazonOrder}
+  <p role="status">Amazon: {amazonLabel}</p>
+  <p>
+    Quantities and status come from Amazon. Fulfil this order and handle
+    cancellation requests in Seller Central.
+  </p>
+  <a
+    href={`https://sellercentral.amazon.co.uk/orders-v3/order/${orderID?.replace("amazon:", "")}`}
+    target="_blank"
+    rel="noreferrer">Open order in Amazon Seller Central</a
+  >
+{:else}<BarcodeScanner on:barcode={barcode} on:snapshot={snapshot} />{/if}
 {#if displayStatus !== "ok"}
   <div class="status-banner {displayStatus}">
     <span class="status-label">{STATUS_LABEL[displayStatus]}</span>
@@ -183,6 +202,7 @@
   >
   {#each orderItemsR as k, i (k.itemKey)}
     <OrderRow
+      immutable={Boolean(amazonOrder)}
       key={k.itemKey}
       row={i}
       qty={k.qty}
@@ -222,19 +242,21 @@
   </section>
 {/if}
 
-<button
-  on:click={cancelOrder}
-  disabled={displayStatus === "canceled" || cancelPending}
-  class="cancel-button"
->
-  {#if displayStatus === "canceled"}
-    Order Canceled
-  {:else if cancelPending}
-    Cancelling…
-  {:else}
-    Cancel Order
-  {/if}
-</button>
+{#if !amazonOrder}
+  <button
+    on:click={cancelOrder}
+    disabled={displayStatus === "canceled" || cancelPending}
+    class="cancel-button"
+  >
+    {#if displayStatus === "canceled"}
+      Order Canceled
+    {:else if cancelPending}
+      Cancelling…
+    {:else}
+      Cancel Order
+    {/if}
+  </button>
+{/if}
 {#if cancelError}
   <p class="cancel-error" role="alert">{cancelError}</p>
 {/if}

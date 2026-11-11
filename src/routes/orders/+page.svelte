@@ -8,6 +8,10 @@
     type OrderDisplayStatus,
     type UnmatchedOrderLine,
   } from "$lib/inventory";
+  import { amazonOrderLabel } from "$lib/amazon-orders";
+  import { writeBatch, serverTimestamp, doc } from "firebase/firestore";
+  import { user } from "$lib/globals";
+  import { onDestroy } from "svelte";
   import { store } from "$lib/store";
 
   interface OrderInfo {
@@ -20,6 +24,58 @@
     displayStatus: OrderDisplayStatus;
     exceptionCount: number;
     exceptionSummary: string;
+    amazonLabel: string;
+  }
+
+  let amazonSync: {
+    lastSuccessAtMs?: number;
+    lastError?: string;
+    notificationsConfigured?: boolean;
+    notificationError?: string;
+  } = {};
+  let refreshError = "";
+  let refreshing = false;
+  const unsubscribeAmazon = onSnapshot(
+    doc(firestore, "amazon_order_sync_state", "default"),
+    (snapshot) => {
+      amazonSync = snapshot.data() || {};
+    },
+    (error) => {
+      refreshError = error.message;
+    },
+  );
+  onDestroy(() => {
+    unsubscribeAmazon();
+    unsub();
+  });
+  async function refreshAmazonOrders() {
+    if (!$user) return;
+    refreshing = true;
+    refreshError = "";
+    try {
+      const requestRef = doc(collection(firestore, "request_amazon_orders"));
+      const batch = writeBatch(firestore);
+      batch.set(requestRef, {
+        creator: $user.uid,
+        createdAt: serverTimestamp(),
+      });
+      batch.set(
+        doc(firestore, "sync", `amazon-orders-${requestRef.id}-requested`),
+        {
+          eventType: "amazon/sync_requested",
+          requestId: requestRef.id,
+          creator: $user.uid,
+          timestamp: serverTimestamp(),
+          createdAtMs: Date.now(),
+          payload: { mode: "orders" },
+        },
+      );
+      await batch.commit();
+    } catch (error) {
+      refreshError = (error as Error).message;
+    } finally {
+      refreshing = false;
+    }
   }
 
   function updateOrderInfo() {
@@ -47,6 +103,7 @@
         ...exceptionMessages,
       ].join("\n");
       orderInfo.push({
+        amazonLabel: amazonOrderLabel(order),
         id,
         email,
         item,
@@ -123,6 +180,27 @@
 </script>
 
 <h1>Orders</h1>
+<section aria-label="Amazon order sync">
+  <button on:click={refreshAmazonOrders} disabled={refreshing || !$user}
+    >Refresh Amazon orders</button
+  >
+  <span
+    >{amazonSync.lastSuccessAtMs
+      ? `Last checked ${new Date(amazonSync.lastSuccessAtMs).toLocaleString()}`
+      : "Amazon orders have not been checked yet."}</span
+  >
+  {#if !amazonSync.notificationsConfigured}<p>
+      Amazon orders are checked every five minutes. Live notifications need an
+      SQS connection.
+    </p>{/if}
+  {#if amazonSync.lastError || amazonSync.notificationError || refreshError}<p
+      role="alert"
+    >
+      Amazon order sync: {amazonSync.lastError ||
+        amazonSync.notificationError ||
+        refreshError}
+    </p>{/if}
+</section>
 <table>
   <tr
     ><th>Order Date</th><th>Entered</th><th>ID</th><th>Status</th><th>Email</th
@@ -141,7 +219,8 @@
       <td class="entered">{formatDate(order.date)}</td>
       <td>{order.id}</td>
       <td>
-        {#if order.displayStatus !== "ok"}
+        {#if order.amazonLabel}<span class="badge">{order.amazonLabel}</span
+          >{:else if order.displayStatus !== "ok"}
           <span class="badge {order.displayStatus}"
             >{STATUS_LABEL[order.displayStatus]}</span
           >

@@ -9,6 +9,8 @@
   import { auth, firestore, googleAuthProvider } from "$lib/firebase"; // Ensure imports are correct based on file context
   import {
     collection,
+    getDocs,
+    where,
     doc,
     limit,
     onSnapshot,
@@ -46,6 +48,7 @@
     SYNC_COLLECTION,
     toShopifySyncListenerEvent,
   } from "$lib/sync-events";
+  import { recoverAmazonOrderEvents } from "$lib/amazon-order-recovery";
   import { makeInventoryItemKey } from "$lib/sku";
   import {
     getExpiryInfo as getPhotosExpiry,
@@ -311,7 +314,30 @@
             loadingDetail = "";
           }
         },
-        onReady: () => {
+        onReady: async () => {
+          if (!store.getState().inventory.amazonOrdersRecovered) {
+            loadingMessage = "Checking Amazon order history...";
+            try {
+              const events = await getDocs(
+                query(
+                  collection(firestore, "broadcast"),
+                  where("type", "==", "amazon_order_reconciled"),
+                ),
+              );
+              recoverAmazonOrderEvents(
+                store,
+                events.docs.map((d) => ({ ...d.data(), id: d.id })),
+              );
+            } catch (error) {
+              console.error(
+                "[Amazon orders] Targeted cache recovery failed",
+                error,
+              );
+              loadingMessage =
+                "Failed to recover Amazon orders. Reload to try again.";
+              return;
+            }
+          }
           initialSyncReady.set(true);
           loadingProgress = 100;
           loadingMessage = "Live sync connected.";

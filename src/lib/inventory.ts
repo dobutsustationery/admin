@@ -1,4 +1,5 @@
 import { createAction, createReducer } from "@reduxjs/toolkit";
+import type { AmazonOrderSnapshot } from "./amazon-orders";
 import { formatYen } from "./formatters";
 import {
   type InventoryItemKey,
@@ -51,7 +52,7 @@ export interface LineItem {
   qty: number;
 }
 export interface UnmatchedOrderLine {
-  source: "shopify" | "etsy";
+  source: "shopify" | "etsy" | "amazon";
   lineId: string;
   sku: string;
   title: string;
@@ -105,6 +106,13 @@ export interface OrderInfo {
   // to flag non-normal orders; compare case-insensitively.
   status?: string;
   isPaid?: boolean;
+  buyerRequestedCancel?: boolean;
+  latestShipDate?: string;
+  amazonFacts?: {
+    lines: Record<string, ShopifyLineFact>;
+    reconciledTimestamp: number;
+    marketplaceId: string;
+  };
   shopifyFacts?: {
     lines: Record<string, ShopifyLineFact>; // lineItemID -> counts
     refunds: Record<string, boolean>; // refundID -> processed
@@ -135,6 +143,7 @@ export interface InventoryState {
   costLedger?: { [key: string]: LedgerEntry[] };
   // Per stock-order receipt date + JPY/EUR totals (owner-supplied).
   stockOrderRegistry?: { [orderId: string]: StockOrderMeta };
+  amazonOrdersRecovered?: boolean;
   initialized: boolean;
 }
 
@@ -480,6 +489,13 @@ export const etsy_order_reconciled = createAction<{
   raw: any;
   topic: string;
 }>("etsy_order_reconciled");
+
+export const amazon_orders_recovered = createAction("amazon_orders_recovered");
+
+export const amazon_order_reconciled = createAction<{
+  order: AmazonOrderSnapshot;
+  source: "notification" | "reconcile";
+}>("amazon_order_reconciled");
 
 function getTimestampMs(timestamp: any): number {
   const ms = toTimestampMs(timestamp as FirestoreTimestampLike);
@@ -1245,6 +1261,11 @@ function moveOrderLineQuantity(
     }
     if (order.etsyFacts?.lines) {
       for (const fact of Object.values(order.etsyFacts.lines)) {
+        if (fact.itemKey === oldKey) fact.itemKey = newKey;
+      }
+    }
+    if (order.amazonFacts?.lines) {
+      for (const fact of Object.values(order.amazonFacts.lines)) {
         if (fact.itemKey === oldKey) fact.itemKey = newKey;
       }
     }
@@ -3620,6 +3641,13 @@ function rewriteOrderItemKeyReferences(
         }
       }
     }
+    if (order.amazonFacts?.lines) {
+      for (const fact of Object.values(order.amazonFacts.lines)) {
+        if (fact.itemKey === oldKey) {
+          fact.itemKey = newKey;
+        }
+      }
+    }
   });
 }
 
@@ -3657,6 +3685,136 @@ function getOrCreateOrder(
 export const inventory = createReducer(initialState, (r) => {
   r.addCase(inventory_synced, (state) => {
     state.initialized = true;
+  });
+
+  r.addCase(amazon_orders_recovered, (state) => {
+    state.amazonOrdersRecovered = true;
+  });
+
+  r.addCase(amazon_order_reconciled, (state, action) => {
+    const raw = action.payload.order;
+    const at = Date.parse(raw.lastUpdatedDate);
+    const purchasedAt = Date.parse(raw.purchaseDate);
+    if (
+      !raw.orderId ||
+      !Number.isFinite(at) ||
+      !Number.isFinite(purchasedAt) ||
+      !Array.isArray(raw.lines) ||
+      !raw.lines.length
+    )
+      return;
+    const orderID = `amazon:${raw.orderId}`;
+    const previous = state.orderIdToOrder[orderID];
+    if (previous?.amazonFacts && previous.amazonFacts.reconciledTimestamp > at)
+      return;
+    const order =
+      previous ||
+      (state.orderIdToOrder[orderID] = {
+        id: orderID,
+        date: new Date(purchasedAt),
+        eventDate: new Date(purchasedAt),
+        items: [],
+      });
+    const oldFacts = order.amazonFacts?.lines || {};
+    const facts: Record<string, ShopifyLineFact> = {};
+    order.unmatchedLines = [];
+    const cancelled =
+      raw.status === "CANCELLED" || raw.status === "UNFULFILLABLE";
+    for (const line of raw.lines) {
+      const resolved = resolveLineItemInventoryKey(
+        state,
+        { sku: line.sku },
+        purchasedAt,
+        { allowLabeledSkuToBareJan: false },
+      );
+      const old = oldFacts[line.id];
+      const key = old?.manualEntityId
+        ? state.keyIdentity?.currentKeyByEntityId[old.manualEntityId] ||
+          old.itemKey
+        : resolved.outcome === "resolved"
+          ? resolved.itemKey
+          : null;
+      if (key && state.idToItem[key]) {
+        facts[line.id] = {
+          itemKey: canonicalizeInventoryItemKey(key),
+          placed: line.quantity,
+          cancelled: cancelled ? line.quantity : line.quantityCancelled,
+          refunded: 0,
+          rawSku: line.sku,
+          ...(resolved.entityId ? { entityId: resolved.entityId } : {}),
+          ...(old?.manualEntityId
+            ? { manualEntityId: old.manualEntityId }
+            : {}),
+        };
+      } else {
+        // Keep existing attribution if an item was removed/renamed, but honor cancellation.
+        if (old)
+          facts[line.id] = {
+            ...old,
+            cancelled: cancelled ? old.placed : old.cancelled,
+          };
+        if (!cancelled)
+          order.unmatchedLines.push({
+            source: "amazon",
+            lineId: line.id,
+            sku: line.sku,
+            title: line.title,
+            quantity: line.quantity,
+            reason: "Amazon SKU has no unambiguous inventory match",
+          });
+      }
+    }
+    const differences: Record<string, number> = {};
+    for (const [lines, sign] of [
+      [facts, 1],
+      [oldFacts, -1],
+    ] as const) {
+      for (const f of Object.values(lines))
+        differences[f.itemKey] =
+          (differences[f.itemKey] || 0) +
+          sign * (f.placed - f.cancelled - f.refunded);
+    }
+    for (const [key, diff] of Object.entries(differences)) {
+      if (!diff || !state.idToItem[key]) continue;
+      state.idToItem[key].shipped += diff;
+      recordSale(state, key, diff, purchasedAt, {
+        idParts: [
+          (action as any).id ||
+            (action as any).recoveredEventId ||
+            raw.lastUpdatedDate,
+          "amazon-order",
+          orderID,
+          key,
+        ],
+      });
+      if (!state.idToHistory[key]) state.idToHistory[key] = [];
+      state.idToHistory[key].push({
+        date: new Date(at).toLocaleString("en"),
+        val: at,
+        desc: `Amazon order ${raw.orderId}: ${raw.status}, inventory allocation ${diff > 0 ? "+" : ""}${diff}`,
+      });
+      state.idToHistory[key].sort((a, b) => a.val - b.val);
+    }
+    order.amazonFacts = {
+      lines: facts,
+      reconciledTimestamp: at,
+      marketplaceId: raw.marketplaceId,
+    };
+    order.status = raw.status;
+    order.isPaid = !["PENDING", "PENDING_AVAILABILITY"].includes(raw.status);
+    order.latestShipDate = raw.latestShipDate;
+    order.buyerRequestedCancel =
+      !cancelled && raw.lines.some((l) => l.buyerRequestedCancel);
+    order.product = raw.lines.map((l) => l.title || l.sku).join(", ");
+    const quantities: Record<string, number> = {};
+    for (const f of Object.values(facts)) {
+      const qty = f.placed - f.cancelled - f.refunded;
+      if (qty > 0) quantities[f.itemKey] = (quantities[f.itemKey] || 0) + qty;
+    }
+    order.items = Object.entries(quantities).map(([key, qty]) => ({
+      itemKey: canonicalizeInventoryItemKey(key),
+      qty,
+    }));
   });
 
   r.addCase(shopify_order_created, (state, action) => {
@@ -5340,6 +5498,7 @@ export const inventory = createReducer(initialState, (r) => {
     };
   });
   r.addCase(package_item, (state, action) => {
+    if (state.orderIdToOrder[action.payload.orderID]?.amazonFacts) return;
     const { itemKey, qty, orderID } = action.payload;
     if (state.orderIdToOrder[orderID] === undefined) {
       let date = new Date(0); // Default to epoch if missing
@@ -5401,6 +5560,7 @@ export const inventory = createReducer(initialState, (r) => {
     }
   });
   r.addCase(quantify_item, (state, action) => {
+    if (state.orderIdToOrder[action.payload.orderID]?.amazonFacts) return;
     const { itemKey, qty, orderID } = action.payload;
     if (state.orderIdToOrder[orderID] === undefined) {
       const date = new Date(0);
@@ -5479,6 +5639,7 @@ export const inventory = createReducer(initialState, (r) => {
     }
   });
   r.addCase(retype_item, (state, action) => {
+    if (state.orderIdToOrder[action.payload.orderID]?.amazonFacts) return;
     const { itemKey, orderID, qty } = action.payload;
     const janCode = action.payload.janCode?.trim();
     const subtype = action.payload.subtype?.trim() || "";
@@ -5587,6 +5748,19 @@ export const inventory = createReducer(initialState, (r) => {
       }
       if (order.etsyFacts?.lines) {
         for (const fact of Object.values(order.etsyFacts.lines)) {
+          if (
+            fact.itemKey === itemKey ||
+            (fact.itemKey === newItemKey && !fact.manualEntityId)
+          ) {
+            fact.itemKey = newItemKey;
+            if (newEntityId) {
+              fact.manualEntityId = newEntityId;
+            }
+          }
+        }
+      }
+      if (order.amazonFacts?.lines) {
+        for (const fact of Object.values(order.amazonFacts.lines)) {
           if (
             fact.itemKey === itemKey ||
             (fact.itemKey === newItemKey && !fact.manualEntityId)
@@ -6180,6 +6354,7 @@ export const inventory = createReducer(initialState, (r) => {
     }
   });
   r.addCase(cancel_order, (state, action) => {
+    if (state.orderIdToOrder[action.payload.orderID]?.amazonFacts) return;
     const orderID = action.payload.orderID;
     const order = state.orderIdToOrder[orderID];
     if (!order) return;
