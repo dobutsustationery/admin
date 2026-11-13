@@ -15,6 +15,9 @@
   import { store, initialSyncReady } from "$lib/store";
   import { user } from "$lib/user-store";
   import ImageThumbnail from "$lib/components/ImageThumbnail.svelte";
+  import AmazonOfferPreparation from "./AmazonOfferPreparation.svelte";
+  import { findAmazonOfferMatches } from "$lib/amazon-offer-requests";
+  import { amazonSyncBrands, type AmazonSyncBrand } from "$lib/amazon-defaults";
   import AmazonProductFactsEditor from "$lib/components/AmazonProductFactsEditor.svelte";
   import {
     projectAmazonSync,
@@ -35,6 +38,14 @@
     busy = false;
   let submitted: Record<string, string> = {};
   let issueFilter: AmazonSyncIssue = "all";
+  let brandFilter: AmazonSyncBrand | "All" = "All";
+  let preparingOffers: string[] = [];
+  let matchRequestIds: string[] = [];
+  $: matchError = matchRequestIds.includes(
+    $store.amazonCatalog?.lastFailedRequestId,
+  )
+    ? $store.amazonCatalog.lastProbeError
+    : "";
   const pendingKey = (handle: string, issue: AmazonSyncIssue) =>
     `${seller}:${issue}:${handle}`;
   $: if (Object.keys(submitted).length) {
@@ -132,11 +143,13 @@
     if (existing) store.dispatch(existing as any);
   }
   $: allRows = projectAmazonSync($store);
-  $: rows = allRows.filter((r) =>
-    `${r.title} ${r.handle} ${r.details.map((d) => d.key + " " + d.sku).join(" ")}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
+  $: rows = allRows
+    .filter((r) => brandFilter === "All" || r.brand === brandFilter)
+    .filter((r) =>
+      `${r.title} ${r.handle} ${r.details.map((d) => d.key + " " + d.sku).join(" ")}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+    );
   $: rate = amazonExchangeRate($store.amazonPreparation, seller);
   $: groups = issueEntries
     .map(([issue, label]) => ({
@@ -150,6 +163,31 @@
   $: visibleGroups = groups.filter(
     (g) => issueFilter === "all" || g.issue === issueFilter,
   );
+  $: supplierRows = rows.filter((r) => r.brand !== "Amifa");
+  async function findMatches(selected: AmazonSyncRow[]) {
+    if (!$user?.uid) return;
+    busy = true;
+    error = "";
+    message = "";
+    try {
+      const keys = selected.flatMap((r) =>
+        r.details
+          .filter((d) => ["offer_match", "presence"].includes(d.issue))
+          .map((d) => d.key),
+      );
+      const result = await findAmazonOfferMatches(
+        firestore,
+        $user.uid,
+        keys.map((k) => $store.inventory.idToItem[k]?.janCode || ""),
+      );
+      matchRequestIds = [...matchRequestIds, ...result.requestIds];
+      message = `Searching ${result.count} barcodes on the server. Open Prepare offers to review the matches.`;
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      busy = false;
+    }
+  }
   function missingDataFields(row: AmazonSyncRow) {
     const fields = new Map<string, Set<string>>();
     for (const detail of row.details.filter((d) => d.issue === "missing_data"))
@@ -250,8 +288,31 @@
   }
 </script>
 
-<section class="sync-issues" aria-label="Amifa Amazon sync issues">
-  <h2>Amifa sync issues</h2>
+<section class="sync-issues" aria-label="Amazon sync issues">
+  <h2>Amazon sync issues</h2>
+  <nav class="filters" aria-label="Filter Amazon brands">
+    <button
+      aria-pressed={brandFilter === "All"}
+      on:click={() => {
+        brandFilter = "All";
+        preparingOffers = [];
+      }}>All brands ({allRows.length})</button
+    >
+    {#each amazonSyncBrands as brand}
+      <button
+        aria-pressed={brandFilter === brand}
+        on:click={() => {
+          brandFilter = brand;
+          preparingOffers = [];
+        }}>{brand} ({allRows.filter((r) => r.brand === brand).length})</button
+      >
+    {/each}
+  </nav>
+  {#if (brandFilter === "Pilot" || brandFilter === "All") && allRows.some((r) => r.brand === "Pilot")}<p
+    >
+      Pilot approval is still to be verified. You can prepare and test its
+      existing-ASIN offers; any Amazon approval errors appear here.
+    </p>{/if}
   <nav class="filters" aria-label="Filter Amazon sync issues">
     <button
       aria-pressed={issueFilter === "all"}
@@ -270,13 +331,14 @@
   </nav>
   <p>
     One row per listing. Sync listing applies all supported differences
-    together, including stock, price, product details, images and relationships.
-    Amazon approvals and Featured Offer decisions remain visible when they need
+    together. Amifa includes product content, images and relationships. Uni,
+    Zebra and Pilot sync offers for existing ASINs: price and stock only. Amazon
+    approvals and Featured Offer decisions remain visible when they need
     attention. Price: EUR × {rate} → GBP.
   </p>
   <p>
     <a href="/amazon-categories">Amazon category mappings and exchange rate</a>
-    · {allRows.length} stocked or existing Amifa listings
+    · {allRows.length} stocked or existing listings
   </p>
   <label
     >Search listings <input
@@ -285,8 +347,33 @@
       placeholder="Title, JAN or SKU"
     /></label
   >
+  {#if supplierRows.length}
+    <div class="offer-actions">
+      <button
+        disabled={busy ||
+          !$user ||
+          !supplierRows.some(
+            (r) =>
+              r.issues.includes("offer_match") || r.issues.includes("presence"),
+          )}
+        on:click={() => findMatches(supplierRows)}
+        >Find ASIN matches in bulk</button
+      >
+      <button
+        on:click={() => (preparingOffers = supplierRows.map((r) => r.handle))}
+        >Prepare offers ({supplierRows.length} listings)</button
+      >
+    </div>
+  {/if}
+  {#if preparingOffers.length > 1}
+    <button on:click={() => (preparingOffers = [])}
+      >Close offer preparation</button
+    >
+    <AmazonOfferPreparation handles={preparingOffers} />
+  {/if}
   {#if !seller}<p>Refresh from Amazon to load your UK seller catalogue.</p>{/if}
   {#if message}<p role="status" class="message">{message}</p>{/if}
+  {#if matchError}<p role="alert" class="error">{matchError}</p>{/if}
   {#if error}<p role="alert" class="error">{error}</p>{/if}
   {#each requestErrors as failure}<p class="error">
       Request {failure.id}: {failure.error}
@@ -319,7 +406,7 @@
           ><strong>{label}</strong><span>{affected.length} listing(s)</span
           ></summary
         >
-        {#if issue !== "missing_data" && (!["attention", "processing", "synced", "category"].includes(issue) || eligible.length)}
+        {#if issue !== "missing_data" && (!["attention", "processing", "synced", "category", "offer_match"].includes(issue) || eligible.length)}
           <button
             class="primary"
             disabled={busy || !eligible.length}
@@ -338,9 +425,9 @@
             >
           </p>{/if}
         {#if issue === "presence"}<p>
-            Creates Amifa products with the mapped product type, current stock,
-            converted price and existing catalogue defaults. Shared JAN variants
-            use the approved Amifa GTIN exemption.
+            Creates new Amifa catalogue products, or adds confirmed Uni, Zebra
+            and Pilot offers to existing ASINs. Offer preparation does not
+            change Amazon product content or create new ASINs.
           </p>{/if}
         {#if issue === "quantity"}<p>
             Sync listing also applies its other supported changes.
@@ -385,7 +472,21 @@
                 {/each}
               </ul>
             {/if}
-            <AmazonProductFactsEditor handle={row.handle} />
+            {#if row.brand === "Amifa"}
+              <AmazonProductFactsEditor handle={row.handle} />
+            {:else}
+              <button
+                on:click={() =>
+                  (preparingOffers =
+                    preparingOffers.length === 1 &&
+                    preparingOffers[0] === row.handle
+                      ? []
+                      : [row.handle])}>Prepare offers</button
+              >
+              {#if preparingOffers.length === 1 && preparingOffers[0] === row.handle}<AmazonOfferPreparation
+                  handles={[row.handle]}
+                />{/if}
+            {/if}
             {#each row.details.filter((d) => d.issue === issue && issue !== "missing_data") as d}
               <div class="change">
                 <strong>{d.subtype || d.key}</strong><small>SKU {d.sku}</small>
@@ -411,7 +512,18 @@
                     </div>
                   </div>
                 {:else if issue === "presence"}<p>
-                    Not yet published on Amazon.
+                    {#if d.local?.merchant_suggested_asin?.[0]?.value}
+                      Offer for <a
+                        href={`https://www.amazon.co.uk/dp/${d.local.merchant_suggested_asin[0].value}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        >{d.local.merchant_suggested_asin[0].value}</a
+                      >
+                      · {displayValue("price", d.local.purchasable_offer)} · {displayValue(
+                        "quantity",
+                        d.local.fulfillment_availability,
+                      )} units
+                    {:else}Not yet published on Amazon.{/if}
                   </p>
                 {:else}<div class="values">
                     <div>

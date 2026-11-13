@@ -1085,3 +1085,58 @@ it("journals the exact hosted image request and original source before sending i
   ).toBe(true);
   expect(e.body.attributes.main_product_image_locator).toEqual(source);
 });
+
+it("publishes supplier price and quantity together but continues to reject supplier content updates", async () => {
+  const s = setup();
+  s.setRemote(
+    ok({
+      summaries: [{ asin: "B012345678" }],
+      attributes: { brand: [{ value: "Zebra" }] },
+    }),
+  );
+  const e = entry();
+  (e as any).syncIssue = "all";
+  e.body.patches.push({
+    op: "replace",
+    path: "/attributes/purchasable_offer",
+    value: [
+      {
+        marketplace_id: config.marketplaceId,
+        currency: "GBP",
+        our_price: [{ schedule: [{ value_with_tax: 4 }] }],
+      },
+    ],
+  } as any);
+  await s.request("supplier-update", {
+    mode: "sync",
+    stockConfirmed: true,
+    entries: [e],
+  });
+  await s.w.step(s.jobs()[0].ref);
+  expect(s.calls).toHaveLength(1);
+  expect(s.calls[0].preview).toBe(false);
+  const forbidden = setup();
+  forbidden.setRemote(
+    ok({
+      summaries: [{ asin: "B012345678" }],
+      attributes: { brand: [{ value: "Zebra" }] },
+    }),
+  );
+  const content = entry();
+  (content as any).syncIssue = "all";
+  content.body.patches = [
+    {
+      op: "replace",
+      path: "/attributes/item_name",
+      value: [{ value: "Our title" }],
+    } as any,
+  ];
+  await forbidden.request("supplier-content", {
+    mode: "sync",
+    stockConfirmed: true,
+    entries: [content],
+  });
+  await forbidden.w.step(forbidden.jobs()[0].ref);
+  expect(forbidden.calls).toHaveLength(0);
+  expect(forbidden.jobs()[0].error).toContain("Content sync");
+});

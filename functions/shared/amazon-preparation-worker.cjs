@@ -600,7 +600,11 @@ function createWorker({
         job.syncMode &&
         before.status === 200 &&
         !ownAmifa &&
-        !["quantity", "price"].includes(job.entry.syncIssue)
+        !["quantity", "price"].includes(job.entry.syncIssue) &&
+        !(job.entry.method === "PATCH" &&
+          job.entry.body.patches.every((p) =>
+            p.op === "replace" &&
+            ["/attributes/purchasable_offer", "/attributes/fulfillment_availability"].includes(p.path)))
       )
         throw Error(
           "Content sync is available only for Amifa products owned by this catalogue.",

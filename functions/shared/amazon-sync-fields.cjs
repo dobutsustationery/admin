@@ -66,6 +66,14 @@ function comparable(v) {
 const allFields = [...new Set(Object.values(fields).flat())];
 function validateSyncEntry(e) {
   if (e.method === "PUT") {
+    // The outer request validator checks the exact ASIN and offer-only field set.
+    if (
+      e.syncIssue === "offer" &&
+      e.body.requirements === "LISTING_OFFER_ONLY" &&
+      !e.family &&
+      !e.updateExisting
+    )
+      return;
     if (
       !(
         ["presence", "category", "variant_structure"].includes(e.syncIssue) ||

@@ -15,6 +15,34 @@ export function isAmifa(listing: any, item: any = {}) {
     item.description,
   ].some((v) => /^amifa\b/i.test(String(v || "").trim()));
 }
+export type AmazonSyncBrand = "Amifa" | "Uni" | "Zebra" | "Pilot";
+export const amazonSyncBrands: AmazonSyncBrand[] = [
+  "Amifa",
+  "Uni",
+  "Zebra",
+  "Pilot",
+];
+export function amazonSyncBrand(
+  listing: any,
+  item: any = {},
+): AmazonSyncBrand | null {
+  if (isAmifa(listing, item)) return "Amifa";
+  const values = [
+    item.brand,
+    item.manufacturer,
+    listing?.vendor,
+    listing?.title,
+    item.description,
+  ];
+  for (const value of values) {
+    const name = String(value || "").trim();
+    if (/^(uni(?:[ -]?ball)?|mitsubishi(?: pencil)?)\b/i.test(name))
+      return "Uni";
+    if (/^zebra\b/i.test(name)) return "Zebra";
+    if (/^pilot\b/i.test(name)) return "Pilot";
+  }
+  return null;
+}
 // Suggestions are editable defaults. Specific leaves precede broader categories.
 const suggestions: [RegExp, string, string?][] = [
   [/Decorative Stickers$/i, "STICKER_DECAL"],

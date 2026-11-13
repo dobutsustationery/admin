@@ -135,7 +135,7 @@ test("map categories and queue individual or bulk issue-specific Amazon updates"
   try {
     await page.goto("/amazon-listings");
     const screen = page.getByRole("region", {
-      name: "Amifa Amazon sync issues",
+      name: "Amazon sync issues",
     });
     await expect(screen).toBeVisible();
     await screen.getByLabel("Search listings").fill(jan);

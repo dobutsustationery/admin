@@ -20,10 +20,13 @@ import {
   amazonPrice,
   categoryMapping,
   isAmifa,
+  amazonSyncBrand,
+  type AmazonSyncBrand,
 } from "./amazon-defaults";
 
 export const amazonSyncIssues = {
   presence: "New listings",
+  offer_match: "Prepare offers",
   category: "Category",
   missing_data: "Missing product data",
   quantity: "Inventory quantity",
@@ -114,6 +117,7 @@ export interface AmazonSyncDetail {
   reason: string;
 }
 export interface AmazonSyncRow {
+  brand?: AmazonSyncBrand;
   handle: string;
   title: string;
   category: string;
@@ -129,6 +133,45 @@ const pending = new Set([
   "publishing",
   "readback_pending",
 ]);
+export function projectAmazonOfferRows(state: any): PreparationRow[] {
+  const audit = state.amazonAudit || initialAmazonAudit;
+  const prep = state.amazonPreparation || initialPreparation;
+  if (!audit.sellerId) return [];
+  const rows = projectAmazonAudit(audit, state.inventory, state.listings);
+  const effective = { ...prep, decisions: { ...prep.decisions } };
+  const rate = amazonExchangeRate(prep, audit.sellerId);
+  for (const row of rows) {
+    const listing = state.listings.handleToListing[row.family];
+    const item = state.inventory.idToItem[row.key];
+    const brand = amazonSyncBrand(listing, item);
+    if (!brand) continue;
+    const old = prep.decisions[preparationScope(audit.sellerId, row.key)];
+    effective.decisions[preparationScope(audit.sellerId, row.key)] = {
+      ...old,
+      priceGBP:
+        brand !== "Amifa" && String(old?.priceGBP || "").trim()
+          ? old.priceGBP
+          : String(amazonPrice(item?.price, rate)),
+      ...(brand === "Amifa"
+        ? {
+            productType: categoryMapping(
+              prep,
+              audit.sellerId,
+              listing?.productCategory || "",
+            ).productType,
+          }
+        : {}),
+    };
+  }
+  return projectPreparation(
+    effective,
+    { ...audit, rows },
+    state.inventory,
+    state.listings,
+    undefined,
+    state.amazonCatalog,
+  );
+}
 export function projectAmazonSync(state: any): AmazonSyncRow[] {
   const audit = state.amazonAudit || initialAmazonAudit;
   if (!audit.sellerId) return [];
@@ -150,31 +193,12 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
         if (group.value) shippingGroups.set(group.value, group);
   const defaultShippingGroup =
     shippingGroups.size === 1 ? [...shippingGroups.values()][0] : null;
-  const rows = projectAmazonAudit(audit, inventory, listings);
-  const effective = { ...prep, decisions: { ...prep.decisions } };
-  for (const row of rows) {
-    const listing = listings.handleToListing[row.family];
-    if (!isAmifa(listing, inventory.idToItem[row.key])) continue;
-    effective.decisions[preparationScope(seller, row.key)] = {
-      ...prep.decisions[preparationScope(seller, row.key)],
-      priceGBP: String(amazonPrice(inventory.idToItem[row.key]?.price, rate)),
-      productType: categoryMapping(prep, seller, listing?.productCategory || "")
-        .productType,
-    };
-  }
-  const prepared = projectPreparation(
-    effective,
-    { ...audit, rows },
-    inventory,
-    listings,
-    undefined,
-    state.amazonCatalog,
-  );
+  const prepared = projectAmazonOfferRows(state);
   const groups = new Map<string, PreparationRow[]>();
   for (const r of prepared) {
     if (
       !r.row.family ||
-      !isAmifa(
+      !amazonSyncBrand(
         listings.handleToListing[r.row.family],
         inventory.idToItem[r.row.key],
       )
@@ -184,7 +208,15 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
   }
   return [...groups]
     .flatMap(([handle, members]) => {
-      const listing = listings.handleToListing[handle];
+      const listing = listings.handleToListing[handle] || {
+        title: members[0].row.title,
+      };
+      const brand = amazonSyncBrand(
+        listing,
+        inventory.idToItem[members[0].row.key],
+      )!;
+      const owned = brand === "Amifa";
+      if (owned && !listings.handleToListing[handle]) return [];
       const obs = (r: PreparationRow) =>
         audit.observations[
           auditScope(seller, UK_MARKETPLACE, r.row.sku || r.row.key)
@@ -198,6 +230,7 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
       );
       const result: AmazonSyncRow = {
         handle,
+        brand,
         title: listing.title,
         category: listing.productCategory || "",
         image:
@@ -227,7 +260,7 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
         if (!result.issues.includes(issue)) result.issues.push(issue);
       }
       const family =
-        members.length > 1
+        owned && members.length > 1
           ? buildAmazonVariationFamily({
               handle,
               rows: members,
@@ -243,7 +276,7 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
       const desired = new Map<string, PreparationEntry>();
       if (family && !family.reason)
         for (const entry of family.entries) desired.set(entry.itemKey, entry);
-      if (!family)
+      if (owned && !family)
         for (const r of members) {
           const draft = buildAmazonListingCreateDraft({
             handle,
@@ -340,12 +373,14 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
           );
           continue;
         }
-        const missingFacts = missingAmazonProductFacts(
-          mapping.productType,
-          inventory.idToItem[r.row.key],
-          listing,
-          r.decision.productFacts,
-        );
+        const missingFacts = owned
+          ? missingAmazonProductFacts(
+              mapping.productType,
+              inventory.idToItem[r.row.key],
+              listing,
+              r.decision.productFacts,
+            )
+          : [];
         if (
           job &&
           terminal.has(job.status) &&
@@ -451,6 +486,66 @@ export function projectAmazonSync(state: any): AmazonSyncRow[] {
               },
             ];
           }
+        }
+        if (!owned) {
+          if (liveExisting) {
+            if ((liveRaw.issues || []).some((i: any) => i.severity === "ERROR"))
+              detail(r, "attention", null, null, r.row.detail);
+            if (
+              !stockValid ||
+              !(r.price > 0) ||
+              !Number.isFinite(r.price) ||
+              !selectable
+            )
+              detail(
+                r,
+                "attention",
+                null,
+                null,
+                !selectable
+                  ? "Excluded or ambiguous inventory mapping. Review offer preparation."
+                  : "Enter a positive price and resolve the inventory stock unit.",
+              );
+          } else if (observation?.status === 200) {
+            detail(
+              r,
+              "attention",
+              null,
+              null,
+              "This seller SKU exists without a confirmed ASIN. Refresh or resolve it in Amazon before retrying.",
+            );
+          } else if (
+            !selectable ||
+            (observation && observation.status !== 404)
+          ) {
+            detail(
+              r,
+              "attention",
+              null,
+              null,
+              r.row.detail ||
+                "Review the inventory mapping and refresh the seller SKU.",
+            );
+          } else if (
+            r.entry?.body.requirements === "LISTING_OFFER_ONLY" &&
+            !r.reason
+          ) {
+            detail(r, "presence", r.entry.body.attributes, null);
+            result.entries.presence = [
+              ...(result.entries.presence || []),
+              { ...r.entry, syncIssue: "offer" },
+            ];
+          } else {
+            detail(
+              r,
+              "offer_match",
+              null,
+              null,
+              r.reason ||
+                "Choose and confirm the exact existing Amazon ASIN, variant and pack size.",
+            );
+          }
+          continue;
         }
         if (!mapping.productType)
           reason = "Choose a mapping on Amazon Categories.";

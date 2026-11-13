@@ -79,7 +79,7 @@ test("complete a missing tape length and retry with metres without changing inve
   try {
     await page.goto("/amazon-listings");
     const screen = page.getByRole("region", {
-      name: "Amifa Amazon sync issues",
+      name: "Amazon sync issues",
     });
     await screen.getByLabel("Search listings").fill(jan);
     const missing = screen.locator('details[data-issue="missing_data"]');

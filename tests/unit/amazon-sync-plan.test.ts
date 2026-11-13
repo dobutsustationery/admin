@@ -556,3 +556,103 @@ it("enumerates missing facts for both children of a shared-JAN family", () => {
   expect(row.details.filter((d) => d.issue === "missing_data")).toHaveLength(2);
   expect(row.entries.all).toEqual([]);
 });
+
+describe("supplier brands on the main sync screen", () => {
+  it.each(["Uni", "uni-ball", "Mitsubishi Pencil", "Zebra", "Pilot"])(
+    "prepares %s offers without creating catalogue products",
+    (brand) => {
+      const s = fixture();
+      s.listings.handleToListing.paper.title = `${brand} Pen`;
+      s.listings.handleToListing.paper.productCategory = "Unmapped";
+      let row = projectAmazonSync(s)[0];
+      expect(row.brand).toBe(
+        ["uni-ball", "Mitsubishi Pencil"].includes(brand) ? "Uni" : brand,
+      );
+      expect(row.issues).toContain("offer_match");
+      expect(row.entries.all).toEqual([]);
+      s.amazonPreparation.decisions[
+        preparationScope("seller", "4542804151534")
+      ] = { asin: "B012345678", asinVerified: true };
+      row = projectAmazonSync(s)[0];
+      expect(row.issues).toContain("presence");
+      expect(row.entries.all).toHaveLength(1);
+      const e = row.entries.all![0];
+      expect(e.body.requirements).toBe("LISTING_OFFER_ONLY");
+      expect(e.body.productType).toBe("PRODUCT");
+      expect(Object.keys(e.body.attributes).sort()).toEqual([
+        "condition_type",
+        "fulfillment_availability",
+        "merchant_suggested_asin",
+        "purchasable_offer",
+      ]);
+      expect(e.family).toBeUndefined();
+      expect(() =>
+        validateRequest({
+          creator: "test",
+          sellerId: "seller",
+          marketplaceId: UK_MARKETPLACE,
+          mode: "sync",
+          stockConfirmed: true,
+          entries: row.entries.all,
+        }),
+      ).not.toThrow();
+    },
+  );
+  it("keeps shared-JAN supplier variants as independent offers with exact ASIN confirmation", () => {
+    const s = fixture(true);
+    s.listings.handleToListing.paper.title = "Zebra Pens";
+    const keys = Object.keys(s.inventory.idToItem);
+    s.amazonPreparation.decisions[preparationScope("seller", keys[0])] = {
+      asin: "B012345678",
+      asinVerified: true,
+    };
+    s.amazonPreparation.decisions[preparationScope("seller", keys[1])] = {
+      asin: "B087654321",
+      asinVerified: false,
+    };
+    const row = projectAmazonSync(s)[0];
+    expect(row.entries.all?.map((e) => e.itemKey)).toEqual([keys[0]]);
+    expect(
+      row.details.some((d) => d.key === keys[1] && d.issue === "offer_match"),
+    ).toBe(true);
+    expect(
+      row.entries.all?.some(
+        (e) => e.family || e.body.attributes.parentage_level,
+      ),
+    ).toBe(false);
+  });
+  it("syncs existing supplier stock and price together without comparing catalogue content", () => {
+    const s = fixture();
+    s.listings.handleToListing.paper.title = "Pilot Pen";
+    s.amazonPreparation.decisions[preparationScope("seller", "4542804151534")] =
+      { asin: "B012345678", asinVerified: true };
+    const e = projectAmazonSync(s)[0].entries.all![0];
+    observe(s, e);
+    const o =
+      s.amazonAudit.observations[auditScope("seller", UK_MARKETPLACE, e.sku)];
+    o.raw.attributes.brand = [{ value: "Pilot" }];
+    o.raw.attributes.item_name = [{ value: "Amazon's original title" }];
+    s.inventory.idToItem[e.itemKey].qty = 9;
+    s.inventory.idToItem[e.itemKey].price = 5;
+    const row = projectAmazonSync(s)[0];
+    expect(row.issues).toContain("quantity");
+    expect(row.issues).toContain("price");
+    expect(row.issues).not.toContain("metadata");
+    expect(row.issues).not.toContain("category");
+    expect(row.entries.all).toHaveLength(1);
+    expect(
+      row.entries.all![0].body.patches.map((p: any) => p.path).sort(),
+    ).toEqual([
+      "/attributes/fulfillment_availability",
+      "/attributes/purchasable_offer",
+    ]);
+  });
+  it("does not promote unapproved unrelated brands or fabricate missing-ASIN supplier listings", () => {
+    const s = fixture();
+    s.listings.handleToListing.paper.title = "Sakura Pen";
+    expect(projectAmazonSync(s)).toEqual([]);
+    s.listings.handleToListing.paper.title = "Uni Pen";
+    const row = projectAmazonSync(s)[0];
+    expect(batchAmazonSync([row], "all")).toEqual([]);
+  });
+});
