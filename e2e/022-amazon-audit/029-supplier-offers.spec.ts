@@ -147,6 +147,14 @@ test("prepare supplier offers on the main screen and sync individually or in bul
         variant.getByLabel("Existing ASIN", { exact: true }),
       ).toHaveValue(p.asin);
       await variant.getByRole("checkbox").check();
+      if (p.brand === "Uni") {
+        await variant
+          .getByLabel("Existing ASIN", { exact: true })
+          .fill("B099999999");
+        await expect(variant.getByRole("checkbox")).not.toBeChecked();
+        await variant.getByLabel("Existing ASIN", { exact: true }).fill(p.asin);
+        await variant.getByRole("checkbox").check();
+      }
     }
     await editor.getByRole("button", { name: "Save offer choices" }).click();
     await expect(editor.getByRole("status")).toContainText("Choices saved");

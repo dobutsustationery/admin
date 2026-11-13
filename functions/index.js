@@ -8,6 +8,7 @@ const shopifyCore = require("./shared/shopify-sync-core.cjs");
 const shopifyWorker = require("./shared/shopify-sync-worker.cjs");
 const shopifyOrderLogic = require("./shared/shopify-order-logic.cjs");
 const etsyOrderLogic = require("./shared/etsy-order-logic.cjs");
+const { lookupWithRetry } = require("./shared/amazon-catalog-lookup.cjs");
 const photosWorker = require("./shared/photos-sync-worker.cjs");
 const {
   etsyReconcileBroadcastDocumentId,
@@ -1465,7 +1466,7 @@ exports.amazonCatalogProbeRequest = onDocumentCreated(
     timeoutSeconds: 300,
     memory: "512MiB",
     concurrency: 1,
-    maxInstances: 3,
+    maxInstances: 1,
   },
   async (event) => {
     const requestData = event.data?.data();
@@ -1607,14 +1608,18 @@ exports.amazonCatalogProbeRequest = onDocumentCreated(
       }
 
       for (const jan of jans) {
-        const response = await searchAmazonCatalogByJan({
-          config,
-          jan,
-          identifiersType,
-          includedData,
-          accessToken,
-          locale,
-        });
+        const response = await lookupWithRetry(() =>
+          searchAmazonCatalogByJan({
+            config,
+            jan,
+            identifiersType,
+            includedData,
+            accessToken,
+            locale,
+          }),
+        );
+        // Bulk preparation shares the catalogue quota with the background scanner.
+        await new Promise((resolve) => setTimeout(resolve, 1100));
         await writeApiCallEvent({
           requestType: "catalog_search_by_jan",
           key: jan,

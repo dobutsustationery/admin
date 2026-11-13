@@ -125,7 +125,6 @@
       for (let i = 0; i < skus.length; i += 100)
         batch.set(doc(collection(firestore, "request_amazon_audit")), {
           creator: $user.uid,
-          sellerId,
           marketplaceId: "A1F83G8C2ARO7P",
           mode: "selected",
           skus: skus.slice(i, i + 100),
