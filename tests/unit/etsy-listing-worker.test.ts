@@ -201,7 +201,9 @@ describe("Etsy listing worker", () => {
 });
 
 describe("Etsy sales between refresh and sync", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
   async function runScenario(
     kind: "already_correct" | "mixed" | "conflict" | "uncertain_write",
   ) {
