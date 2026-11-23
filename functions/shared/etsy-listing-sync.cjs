@@ -33,13 +33,16 @@ function inventoryUpdate(inventory, targets, field) {
     const offerings = (p.offerings || [])
       .filter((o) => !o.is_deleted)
       .map((o) => {
-        if (
-          target &&
-          (field === "quantity"
-            ? Number(o.quantity) !== target.beforeQuantity
-            : money(o.price) !== target.beforePrice)
-        ) {
-          throw Error("Etsy price or stock changed. Refresh and review again.");
+        const current =
+          field === "quantity" ? Number(o.quantity) : money(o.price);
+        const before =
+          field === "quantity" ? target?.beforeQuantity : target?.beforePrice;
+        // A sale may already have brought Etsy to the requested stock. That is
+        // success, not a conflict with the old screen snapshot.
+        if (target && current !== before && current !== target.value) {
+          throw Error(
+            `Etsy ${field} changed for SKU ${target.sku}: reviewed ${before}, now ${current}, requested ${target.value}. Latest Etsy values have been loaded; review this item and retry.`,
+          );
         }
         const value = target?.value;
         if (
@@ -246,6 +249,23 @@ function createWorker({ db, getConfig, now = Date.now, delay = sleep }) {
     const listing = await api.call(`listings/${id}?includes=Images`);
     if (String(listing.shop_id) !== String(api.config.shopId))
       throw Error("Listing belongs to a different Etsy shop");
+    try {
+      return await syncListing(api, entry, field, listing);
+    } catch (error) {
+      // A failed/uncertain PUT can still have changed Etsy. Persist its latest
+      // state so the next attempt never repeats the same stale screen values.
+      try {
+        const updated = await api.call(`listings/${id}?includes=Images`);
+        if (String(updated.shop_id) === String(api.config.shopId))
+          await saveObservation(await observe(api, updated));
+      } catch (refreshError) {
+        error.message += ` Could not reload the latest Etsy listing: ${refreshError.message}`;
+      }
+      throw error;
+    }
+  }
+  async function syncListing(api, entry, field, listing) {
+    const id = String(entry.listingId);
     let deactivated = false;
     const targetKeys = new Map();
     if (["quantity", "price"].includes(field)) {
@@ -257,9 +277,10 @@ function createWorker({ db, getConfig, now = Date.now, delay = sleep }) {
         throw Error("Missing variation changes");
       if (field === "price" && listing.price?.currency_code !== "EUR")
         throw Error("Local prices are EUR; currency differs");
-      const inventory = await api.call(
-        `listings/${id}/inventory?max_variations_supported=3`,
-      );
+      const fresh = await observe(api, listing);
+      await saveObservation(fresh);
+      if (fresh.inventoryError) throw Error(fresh.inventoryError);
+      const inventory = fresh.inventory;
       const body = inventoryUpdate(inventory, entry.targets, field);
       for (const t of entry.targets)
         targetKeys.set(
@@ -284,6 +305,28 @@ function createWorker({ db, getConfig, now = Date.now, delay = sleep }) {
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ state: "inactive" }).toString(),
           });
+      } else if (
+        entry.targets.every((t) => {
+          const product = liveProducts(inventory).find(
+            (p) => String(p.product_id) === String(t.productId),
+          );
+          const current = (product?.offerings || []).filter(
+            (o) => !o.is_deleted,
+          );
+          return (
+            current.length &&
+            current.every(
+              (o) =>
+                (field === "quantity" ? Number(o.quantity) : money(o.price)) ===
+                t.value,
+            )
+          );
+        })
+      ) {
+        return {
+          action: "already_in_sync",
+          message: `Etsy ${field} already matches the requested values. No update was needed.`,
+        };
       } else
         await api.call(`listings/${id}/inventory?max_variations_supported=3`, {
           method: "PUT",
