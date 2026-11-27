@@ -5,16 +5,8 @@ import {
   relatedStockProposals,
 } from "./listing-stock-allocation";
 import { initialPhotoRepair, applyPhotoRepair } from "./photo-repair";
-import {
-  initialPreparation,
-  reducePreparation,
-  projectPreparation,
-} from "./amazon-preparation";
-import {
-  initialAmazonAudit,
-  reduceAmazonAudit,
-  projectAmazonAudit,
-} from "./amazon-audit";
+import { initialPreparation, reducePreparation } from "./amazon-preparation";
+import { initialAmazonAudit, reduceAmazonAudit } from "./amazon-audit";
 import { orderReceipts, reduceReceipts } from "./order-receipts";
 import { combineReducers } from "@reduxjs/toolkit";
 import { customsSummary, reduceCustoms } from "./customs-summary-slice";
@@ -2910,43 +2902,11 @@ export const rootReducer = (
 
   nextState = applyPhotoRepair(nextState, action);
 
-  const audit = reduceAmazonAudit(state?.amazonAudit, action);
-  if (
-    audit !== state?.amazonAudit ||
-    nextState.inventory !== state?.inventory ||
-    nextState.listings !== state?.listings
-  ) {
-    nextState = {
-      ...nextState,
-      amazonAudit: {
-        ...audit,
-        rows: projectAmazonAudit(
-          audit,
-          nextState.inventory,
-          nextState.listings,
-        ),
-      },
-    };
-  } else nextState = { ...nextState, amazonAudit: audit };
-  const preparation = reducePreparation(state?.amazonPreparation, action);
-  if (
-    preparation !== state?.amazonPreparation ||
-    nextState.amazonAudit !== state?.amazonAudit ||
-    nextState.inventory !== state?.inventory ||
-    nextState.listings !== state?.listings
-  ) {
-    nextState = {
-      ...nextState,
-      amazonPreparation: {
-        ...preparation,
-        rows: projectPreparation(
-          preparation,
-          nextState.amazonAudit,
-          nextState.inventory,
-          nextState.listings,
-        ),
-      },
-    };
-  }
-  return nextState;
+  // Record Amazon facts during replay. The Amazon route derives its views
+  // after the loading screen has finished, rather than after every event.
+  return {
+    ...nextState,
+    amazonAudit: reduceAmazonAudit(state?.amazonAudit, action),
+    amazonPreparation: reducePreparation(state?.amazonPreparation, action),
+  };
 };

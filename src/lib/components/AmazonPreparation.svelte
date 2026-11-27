@@ -11,7 +11,7 @@
   import { firestore } from "$lib/firebase";
   import { store } from "$lib/store";
   import { user } from "$lib/user-store";
-  import { UK_MARKETPLACE } from "$lib/amazon-audit";
+  import { UK_MARKETPLACE, type AmazonAuditState } from "$lib/amazon-audit";
   import {
     initialPreparation,
     isAmazonProductCreation,
@@ -29,6 +29,7 @@
     type PreparationState,
   } from "$lib/amazon-preparation";
   const dispatch = createEventDispatcher();
+  export let audit: AmazonAuditState;
   let storageFailed = false;
   let lastRevision = 0;
   let busy = false,
@@ -138,7 +139,7 @@
   }
   $: previewRows = projectPreparation(
     effective,
-    $store.amazonAudit,
+    audit,
     $store.inventory,
     $store.listings,
     owner,

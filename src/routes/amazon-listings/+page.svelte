@@ -17,11 +17,12 @@
     limit,
   } from "firebase/firestore";
   import { firestore } from "$lib/firebase";
-  import { store } from "$lib/store";
+  import { store, initialSyncReady } from "$lib/store";
   import { user } from "$lib/user-store";
   import {
     UK_MARKETPLACE,
     initialAmazonAudit,
+    projectAmazonAudit,
     type AmazonAuditState,
   } from "$lib/amazon-audit";
   import {
@@ -129,16 +130,25 @@
     const timer = setInterval(() => (now = Date.now()), 10000);
     return () => clearInterval(timer);
   });
-  $: audit = ($store.amazonAudit || initialAmazonAudit) as AmazonAuditState;
+  $: auditFacts = ($store.amazonAudit ||
+    initialAmazonAudit) as AmazonAuditState;
+  $: audit = {
+    ...auditFacts,
+    rows: $initialSyncReady
+      ? projectAmazonAudit(auditFacts, $store.inventory, $store.listings)
+      : [],
+  };
   $: prep = $store.amazonPreparation || initialPreparation;
-  $: rows = projectPreparation(
-    prep,
-    audit,
-    $store.inventory,
-    $store.listings,
-    undefined,
-    $store.amazonCatalog,
-  );
+  $: rows = $initialSyncReady
+    ? projectPreparation(
+        prep,
+        audit,
+        $store.inventory,
+        $store.listings,
+        undefined,
+        $store.amazonCatalog,
+      )
+    : [];
   const brandOf = (r: PreparationRow) =>
     String(
       $store.inventory.idToItem[r.row.key]?.manufacturer ||
@@ -291,14 +301,16 @@
     (r) => listingStatus(r, now) === "Add offers",
   );
   $: reviewPricing = offerReviewPricing(prep, audit.sellerId, $user?.uid || "");
-  $: pricedOfferRows = projectPreparation(
-    reviewPricing.prep,
-    audit,
-    $store.inventory,
-    $store.listings,
-    undefined,
-    $store.amazonCatalog,
-  );
+  $: pricedOfferRows = $initialSyncReady
+    ? projectPreparation(
+        reviewPricing.prep,
+        audit,
+        $store.inventory,
+        $store.listings,
+        undefined,
+        $store.amazonCatalog,
+      )
+    : [];
   $: offerPrep = Object.entries(offerChoices).reduce(
     (state, [itemKey, decision]) =>
       reducePreparation(state, {
@@ -307,13 +319,17 @@
       }),
     reviewPricing.prep,
   );
-  $: offerRows = projectPreparation(
-    offerPrep,
-    audit,
-    $store.inventory,
-    $store.listings,
-    undefined,
-    $store.amazonCatalog,
+  $: offerRows = (
+    $initialSyncReady
+      ? projectPreparation(
+          offerPrep,
+          audit,
+          $store.inventory,
+          $store.listings,
+          undefined,
+          $store.amazonCatalog,
+        )
+      : []
   ).filter((r) => offerKeys.includes(r.row.key));
   $: offersToCheck = offerRows.filter(
     (r) =>
@@ -611,7 +627,7 @@
         : "Refresh from Amazon"}</button
     >
   </header>
-  <AmazonSyncIssues />
+  {#if $initialSyncReady}<AmazonSyncIssues />{/if}
   <details>
     <summary>Advanced Amazon preparation and diagnostics</summary>
     <div class="status" aria-live="polite">
@@ -759,7 +775,8 @@
         >{legacyDraft
           ? "Close saved draft"
           : "Review saved preparation draft"}</button
-      >{#if legacyDraft}<AmazonPreparation
+      >{#if $initialSyncReady && legacyDraft}<AmazonPreparation
+          {audit}
           on:create={(e) =>
             openReview(rows.filter((r) => e.detail.includes(r.row.key)))}
         />{/if}

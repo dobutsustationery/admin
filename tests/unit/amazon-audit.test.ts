@@ -181,11 +181,16 @@ describe("Whole catalogue audit replay", () => {
     s = reduceAmazonAudit(s, job("seller", 20));
     expect(s.sellerId).toBe("new-seller");
   });
-  it("projects inside the root reducer and replays deterministically", () => {
+  it("records facts without projecting UI rows during replay", () => {
     let state = rootReducer(undefined, { type: "@@INIT" });
     state = { ...state, inventory: { ...state.inventory, ...inventory } };
     state = rootReducer(state, job());
-    expect(state.amazonAudit.rows).toHaveLength(3);
+    expect(state.amazonAudit.sellerId).toBe("seller");
+    expect(state.amazonAudit.rows).toEqual([]);
+    expect(state.amazonPreparation.rows).toEqual([]);
+    expect(
+      projectAmazonAudit(state.amazonAudit, state.inventory, state.listings),
+    ).toHaveLength(3);
     expect(
       JSON.stringify(rootReducer(state, { type: "unrelated" }).amazonAudit),
     ).toBe(JSON.stringify(state.amazonAudit));
