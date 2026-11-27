@@ -17,6 +17,7 @@ import {
   type Item,
 } from "$lib/inventory";
 import { create_listing, type Listing } from "$lib/listings-slice";
+import { buildAdminShopifyListingProjection } from "$lib/shopify-listing-projection";
 
 const makeListing = (handle: string, title: string, janCode = "123"): Listing =>
   ({
@@ -35,6 +36,73 @@ const makeListing = (handle: string, title: string, janCode = "123"): Listing =>
   }) as Listing;
 
 describe("inventory handle updates sync to listings", () => {
+  it.each(["", "Perching Cat"])(
+    "replaces an old listing label on an explicit subtype edit from %j",
+    (subtype) => {
+      const janCode = "4570198770093";
+      const handle = "gacha-mystery-boxes";
+      const oldId = `${janCode}${subtype}`;
+      const newId = `${janCode}Perching Cat`;
+      const item: Item = {
+        janCode,
+        subtype,
+        description: "Perching Cat",
+        hsCode: "39264000",
+        image: "http://example.com/cat.jpg",
+        qty: 40,
+        pieces: 1,
+        shipped: 0,
+        creationDate: "2026-03-15",
+        timestamp: 0,
+        handle,
+      };
+      let state = rootReducer(undefined, { type: "@@INIT" });
+      state = rootReducer(
+        state,
+        create_listing({
+          listing: {
+            ...makeListing(handle, "Gacha Blind Mystery Boxes", janCode),
+            variantOptionsByItemId: {
+              [oldId]: "Collection",
+              otherItem: "Otter",
+            },
+          },
+        }),
+      );
+      state = rootReducer(state, update_item({ id: oldId, item }));
+      const before = state;
+      state = rootReducer(
+        state,
+        update_field({
+          id: oldId,
+          field: "subtype",
+          from: subtype,
+          to: "Perching Cat",
+        }),
+      );
+
+      const listing = state.listings.handleToListing[handle];
+      expect(listing.variantOptionsByItemId).toEqual({
+        [newId]: "Perching Cat",
+        otherItem: "Otter",
+      });
+      expect(state.inventory.idToItem[newId].qty).toBe(40);
+      expect(
+        before.listings.handleToListing[handle].variantOptionsByItemId,
+      ).toEqual({ [oldId]: "Collection", otherItem: "Otter" });
+      const projection = buildAdminShopifyListingProjection({
+        handle,
+        listing,
+        items: [{ ...state.inventory.idToItem[newId], id: newId }],
+      });
+      expect(projection?.variants[0]).toMatchObject({
+        sku: newId,
+        subtype: "Perching Cat",
+        available: 40,
+      });
+    },
+  );
+
   it("creates stable synthetic photo ids when importing existing variants", () => {
     const janCode = "4901234567890";
     const id = `${janCode}Blue`;

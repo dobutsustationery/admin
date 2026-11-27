@@ -1204,6 +1204,41 @@ export const rootReducer = (
       );
     }
 
+    // An explicit subtype edit also edits the label shown by the listing.
+    // A custom label can survive identity migration (or a same-value edit)
+    // and otherwise keep overriding the subtype the user just entered.
+    if (isSubtypeUpdate && newItemId && nonDefaultOptionLabel(newSubtype)) {
+      const listingState = nextState.listings;
+      const handle = listingState?.idToHandle?.[newItemId];
+      const listing = handle
+        ? listingState.handleToListing?.[handle]
+        : undefined;
+      const options = listing?.variantOptionsByItemId;
+      if (
+        nextState.inventory.idToItem[newItemId] &&
+        options &&
+        newItemId in options &&
+        options[newItemId] !== newSubtype
+      ) {
+        nextState = {
+          ...nextState,
+          listings: {
+            ...listingState,
+            handleToListing: {
+              ...listingState.handleToListing,
+              [handle]: {
+                ...listing,
+                variantOptionsByItemId: {
+                  ...options,
+                  [newItemId]: newSubtype,
+                },
+              },
+            },
+          },
+        };
+      }
+    }
+
     if (isFixJanCode && oldItemId && newItemId && oldItemId !== newItemId) {
       const oldJanBaseKey = oldBaseJan;
       const oldJanSubtypeKey = oldSubtype
