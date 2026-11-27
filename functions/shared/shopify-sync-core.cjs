@@ -235,6 +235,22 @@ function normalizeImageKey(rawUrl) {
   if (!value) return "";
   const driveId = extractGoogleDriveFileId(value);
   if (driveId) return `drive:${driveId}`;
+  // Shopify retains our Drive file ID in generated CDN filenames. Match it
+  // without treating the CDN URL as a source that should be imported again.
+  try {
+    const url = new URL(value);
+    if (url.hostname === "cdn.shopify.com") {
+      const filename = decodeURIComponent(url.pathname.split("/").pop() || "");
+      const match = /^(.+?)_s\d+(?:_[0-9a-f-]{8,})?\.[A-Za-z0-9]+$/i.exec(
+        filename,
+      );
+      if (/^[A-Za-z0-9_-]{10,}$/.test(match?.[1] || "")) {
+        return `drive:${match[1]}`;
+      }
+    }
+  } catch (_) {
+    // Non-URL inputs use the exact normalized identity below.
+  }
   return value.replace(/[#?].*$/, "");
 }
 
@@ -631,12 +647,6 @@ function buildProductPayload(requestPayload, existingProduct) {
     existingProduct?.variants || [],
   );
 
-  const imagesPayload = buildGalleryImageEntries(requestPayload).map((img) => ({
-    src: img.src,
-    position: img.position,
-    alt: img.alt,
-  }));
-
   const isSingleDefaultVariant =
     variants.length === 1 &&
     (!variants[0].subtype ||
@@ -683,7 +693,8 @@ function buildProductPayload(requestPayload, existingProduct) {
     standard_product_type: String(listing.productCategory || ""),
     tags: toTagsString(listing.tags),
     status: resolvedStatus,
-    images: imagesPayload,
+    // Images are reconciled separately by source identity, after this write.
+    // Including source URLs here makes Shopify import them on every sync.
     variants: variantsPayload,
   };
 
@@ -761,68 +772,89 @@ async function reconcileProductGallery(config, productId, requestPayload) {
   let latest = await fetchProductById(config, productId);
   if (!latest) return { product: null, variantImageIdBySku };
   const existingImages = Array.isArray(latest?.images) ? latest.images : [];
-  for (const img of existingImages) {
-    const imageId = toNumberOrNull(img?.id);
-    if (!imageId) continue;
-    await deleteProductImage(config, productId, imageId);
+  const desiredByKey = new Map();
+  for (const desired of [...desiredGalleryImages, ...variantAttachmentImages]) {
+    if (!desiredByKey.has(desired.key)) desiredByKey.set(desired.key, desired);
   }
 
-  let nextPosition = 1;
-  for (const desired of desiredGalleryImages) {
-    const created = await createProductImage(config, productId, {
-      ...desired,
-      position: nextPosition,
-    });
-    if (created) nextPosition += 1;
-  }
-
-  for (const desired of variantAttachmentImages) {
-    const created = await createProductImage(config, productId, {
-      ...desired,
-      position: nextPosition,
-    });
-    if (created) {
-      const imageId = toNumberOrNull(created?.id);
-      if (imageId) {
-        variantImageIdBySku.set(desired.sku, imageId);
-      }
-      nextPosition += 1;
-    }
-  }
-
-  latest = await fetchProductById(config, productId);
-  if (!latest) return { product: null, variantImageIdBySku };
-  const currentImages = (Array.isArray(latest?.images) ? latest.images : [])
-    .slice()
-    .sort((a, b) => Number(a?.position || 0) - Number(b?.position || 0));
-
-  const desiredAll = [
-    ...desiredGalleryImages,
-    ...variantAttachmentImages.map((img, idx) => ({
-      ...img,
-      position: desiredGalleryImages.length + idx + 1,
-    })),
-  ];
-  for (let i = 0; i < currentImages.length && i < desiredAll.length; i += 1) {
-    const current = currentImages[i];
-    const desired = desiredAll[i];
-    const imageId = toNumberOrNull(current?.id);
-    if (!imageId) continue;
-    const currentPos = toNumberOrNull(current?.position);
-    const currentAlt = String(current?.alt || "");
+  const existingByKey = new Map();
+  // Prefer an already attached image when an old sync left duplicate copies.
+  for (const image of existingImages) {
+    const key = normalizeImageKey(image.src);
+    const previous = existingByKey.get(key);
     if (
-      currentPos !== desired.position ||
-      currentAlt !== String(desired.alt || "")
+      !previous ||
+      (!previous.variant_ids?.length && image.variant_ids?.length)
     ) {
-      await updateProductImage(config, productId, imageId, {
-        position: desired.position,
-        alt: String(desired.alt || ""),
-      });
+      existingByKey.set(key, image);
     }
+  }
+
+  const desiredImages = [];
+  let changed = false;
+  let nextPosition = existingImages.length + 1;
+  // Upload missing images before removing any old ones. A failed upload leaves
+  // the existing gallery available for the next attempt.
+  for (const desired of desiredByKey.values()) {
+    let image = existingByKey.get(desired.key);
+    if (!toNumberOrNull(image?.id)) {
+      image = await createProductImage(config, productId, {
+        ...desired,
+        position: nextPosition++,
+      });
+      if (!toNumberOrNull(image?.id)) {
+        throw new Error(
+          `Shopify did not return an image ID for ${desired.src}`,
+        );
+      }
+      changed = true;
+    }
+    desiredImages.push({ desired, image });
+    existingByKey.set(desired.key, image);
+  }
+
+  const keepIds = new Set(desiredImages.map(({ image }) => Number(image.id)));
+  for (const image of existingImages) {
+    const imageId = toNumberOrNull(image?.id);
+    if (imageId && !keepIds.has(imageId)) {
+      await deleteProductImage(config, productId, imageId);
+      changed = true;
+    }
+  }
+
+  if (changed) latest = await fetchProductById(config, productId);
+  const currentImages = (latest?.images || [])
+    .slice()
+    .sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+  for (let idx = 0; idx < desiredImages.length; idx += 1) {
+    const { desired, image } = desiredImages[idx];
+    const currentIdx = currentImages.findIndex(
+      (img) => Number(img.id) === Number(image.id),
+    );
+    const current = currentImages[currentIdx];
+    if (!current)
+      throw new Error(`Shopify image ${image.id} missing after reconciliation`);
+    const fields = {};
+    if (currentIdx !== idx) fields.position = idx + 1;
+    if (String(current.alt || "") !== String(desired.alt || "")) {
+      fields.alt = String(desired.alt || "");
+    }
+    if (Object.keys(fields).length) {
+      await updateProductImage(config, productId, image.id, fields);
+      currentImages.splice(currentIdx, 1);
+      currentImages.splice(idx, 0, current);
+      changed = true;
+    }
+  }
+  for (const desired of variantAttachmentImages) {
+    variantImageIdBySku.set(
+      desired.sku,
+      Number(existingByKey.get(desired.key).id),
+    );
   }
 
   return {
-    product: await fetchProductById(config, productId),
+    product: changed ? await fetchProductById(config, productId) : latest,
     variantImageIdBySku,
   };
 }
@@ -1177,6 +1209,8 @@ module.exports = {
   findProductByVariantSku,
   resolveLocationId,
   buildProductPayload,
+  reconcileProductGallery,
+  reconcileVariantOrderAndImages,
   upsertProductFromRequest,
   ensureProductPublishedToOnlineStore,
   setInventoryLevel,
